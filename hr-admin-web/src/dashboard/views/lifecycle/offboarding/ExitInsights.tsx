@@ -1,14 +1,18 @@
 // Exit insights (O4): why people leave, from the exits and the exit interviews. The answers are
 // anonymised on the server (department, tenure band and month only); any group with fewer than 5
-// answers stays hidden, and the open answers are never shown, only the themes HR gave them.
+// answers stays hidden, and the open answers are never shown here, only the themes HR gave them
+// (Tag answers: the text alone, with no department, tenure or month, to pick a theme for).
+// A theme with fewer than 5 answers is left out too.
 import { useEffect, useState } from 'react';
+import { Modal } from '../shared';
+import { useStore } from '../../../store';
 import { Card, LoadError, PageActions, SkeletonCards, Th } from '../../../ui';
 import { TH, TR, btn, btnClass, cellName } from '../../../ds';
 import { IconDownload } from '../../../icons';
 import { downloadCsv } from '../../../export';
 import { StatTile } from '../../leaveParts';
-import { getExitInsights } from '../../../../services/lifecycleOffboarding';
-import type { InsightsDTO } from '../../../../services/lifecycleOffboarding';
+import { getExitAnswers, getExitInsights, tagExitAnswer } from '../../../../services/lifecycleOffboarding';
+import type { ExitAnswersDTO, InsightsDTO } from '../../../../services/lifecycleOffboarding';
 import { LockIcon, todayKey } from './parts';
 import '../../people.css';
 import './offboarding.css';
@@ -41,6 +45,7 @@ export function ExitInsights() {
   const [data, setData] = useState<InsightsDTO | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const [tagging, setTagging] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -61,8 +66,10 @@ export function ExitInsights() {
   return (
     <>
       <PageActions>
+        <button type="button" id="ob-tag-answers" onClick={() => setTagging(true)} className={btnClass()} style={btn()}>Tag answers{data?.untaggedAnswers ? ` · ${data.untaggedAnswers}` : ''}</button>
         <button type="button" onClick={exportRows} disabled={!data} className={btnClass()} style={btn()}><IconDownload stroke="currentColor" /> Export</button>
       </PageActions>
+      {tagging && <TagAnswers from={from} to={to} onClose={() => { setTagging(false); setAttempt((n) => n + 1); }} />}
       <Card padded>
         <div className="ob-filters">
           <p className="pd-lead" style={{ flex: '1 1 380px' }}>Why people leave, from exits and exit interviews. Answers are anonymised: no one sees them against a name, and any group with fewer than 5 answers stays hidden.</p>
@@ -89,7 +96,10 @@ export function ExitInsights() {
               </section>
               <section className="pd-card">
                 <div className="pd-card-h"><h3>What they would change</h3><small>Themes from the open question, grouped by HR. Quotes are not shown.</small></div>
-                {data.themes.length ? <Bars rows={data.themes} color="var(--p-purple)" /> : <div className="ob-empty">{data.hidden ? 'Hidden' : data.untaggedAnswers ? `${data.untaggedAnswers} answers have no theme yet.` : 'No themes yet.'}</div>}
+                {data.themes.length ? <Bars rows={data.themes} color="var(--p-purple)" /> : <div className="ob-empty">{data.hidden ? 'Hidden' : data.untaggedAnswers ? `${data.untaggedAnswers} answers have no theme yet. Tag them to see the themes.` : data.hiddenThemes ? `No theme has ${data.minGroup} answers yet.` : 'No themes yet.'}</div>}
+                {!data.hidden && data.themes.length > 0 && (data.hiddenThemes > 0 || data.untaggedAnswers > 0) && (
+                  <div className="ob-privacy" style={{ marginTop: 10 }}><LockIcon /><span>{[data.hiddenThemes ? `${data.hiddenThemes} ${data.hiddenThemes === 1 ? 'theme has' : 'themes have'} fewer than ${data.minGroup} answers and ${data.hiddenThemes === 1 ? 'is' : 'are'} hidden` : '', data.untaggedAnswers ? `${data.untaggedAnswers} answers have no theme yet` : ''].filter(Boolean).join(' · ')}.</span></div>
+                )}
               </section>
             </div>
             <section className="pd-card">
@@ -121,5 +131,72 @@ export function ExitInsights() {
         )}
       </Card>
     </>
+  );
+}
+
+const NEW_THEME = '__new__';
+
+/**
+ * HR gives each open answer a theme: from the list, one HR added before, or a new one. Only the
+ * answer's words show, with no department, tenure or month, in no particular order.
+ */
+function TagAnswers({ from, to, onClose }: { from: string; to: string; onClose: () => void }) {
+  const s = useStore();
+  const [data, setData] = useState<ExitAnswersDTO | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState('');
+  const [adding, setAdding] = useState<{ id: string; text: string } | null>(null);
+  useEffect(() => {
+    let live = true;
+    getExitAnswers(from, to).then((d) => { if (live) setData(d); }).catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not load the answers'); });
+    return () => { live = false; };
+  }, [from, to]);
+  const save = async (id: string, theme: string | null) => {
+    setBusy(id);
+    try {
+      await tagExitAnswer(id, theme);
+      setData((d) => d && {
+        ...d,
+        answers: d.answers.map((a) => (a.id === id ? { ...a, theme } : a)),
+        custom: theme && !d.themes.includes(theme) && !d.custom.includes(theme) ? [...d.custom, theme].sort() : d.custom,
+        untagged: d.answers.filter((a) => (a.id === id ? !theme : !a.theme)).length,
+      });
+    } catch (e) {
+      s.flash(e instanceof Error ? e.message : 'Could not save the theme', 'error');
+    } finally {
+      setBusy('');
+    }
+  };
+  return (
+    <Modal title="Tag what they would change" width={720} onClose={onClose}
+      sub="Give each answer a theme. Exit insights shows only the themes, never the words, and only themes with 5 or more answers."
+      footer={<button type="button" className="pd-btn primary" onClick={onClose}>Done</button>}>
+      {error && <div style={{ color: 'var(--bad)' }}>{error}</div>}
+      {!data && !error && <SkeletonCards count={3} minWidth={300} />}
+      {data && data.answers.length === 0 && <div className="ob-empty">No open answers in these dates.</div>}
+      {data && data.answers.length > 0 && <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 8 }}>{data.untagged} of {data.answers.length} without a theme</div>}
+      {data?.answers.map((a) => (
+        <div key={a.id} className="ob-row" style={{ alignItems: 'flex-start' }}>
+          <span className="t" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{a.text}</span>
+          <span className="pd-pick" style={{ flex: 'none', width: 230 }}>
+            <select className="pd-inp" aria-label="Theme" value={a.theme ?? ''} disabled={busy === a.id}
+              onChange={(e) => { const v = e.target.value; if (v === NEW_THEME) setAdding({ id: a.id, text: '' }); else void save(a.id, v || null); }}>
+              <option value="">No theme</option>
+              {data.themes.map((t) => <option key={t} value={t}>{t}</option>)}
+              {data.custom.length > 0 && <optgroup label="Added by HR">{data.custom.map((t) => <option key={t} value={t}>{t}</option>)}</optgroup>}
+              <option value={NEW_THEME}>New theme…</option>
+            </select>
+          </span>
+        </div>
+      ))}
+      {adding && (
+        <div className="ob-row">
+          <input className="pd-inp" autoFocus aria-label="New theme" placeholder="A new theme, e.g. Hybrid days" value={adding.text} maxLength={60}
+            onChange={(e) => setAdding({ ...adding, text: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter' && adding.text.trim()) { void save(adding.id, adding.text.trim()); setAdding(null); } }} style={{ flex: 1 }} />
+          <button type="button" className="pd-btn sm" onClick={() => setAdding(null)}>Cancel</button>
+          <button type="button" className="pd-btn primary sm" disabled={!adding.text.trim()} onClick={() => { void save(adding.id, adding.text.trim()); setAdding(null); }}>Add theme</button>
+        </div>
+      )}
+    </Modal>
   );
 }

@@ -8,7 +8,7 @@
  */
 import { surveyResponses, users } from '../../config/db';
 import type { SurveyResponse } from '../../models/lifecycle.model';
-import { LifecycleError, addDays, isDateKey, keyOfInstant, requireLifecycleOrg, todayKey } from './offboarding';
+import { LifecycleError, addDays, dashboardActor, isDateKey, keyOfInstant, requireHr, requireLifecycleOrg, todayKey } from './offboarding';
 
 export const MIN_GROUP = 5;
 const REASON_LABEL: Record<string, string> = {
@@ -93,9 +93,49 @@ export async function exitInsights(actorUserId: string, query: { from?: string; 
     comeBack: hidden ? null : { ...comeBack, answered: comeBack.yes + comeBack.maybe + comeBack.no },
     reasons: hidden ? [] : [...reasons.entries()].map(([key, count]) => ({ key, label: REASON_LABEL[key] ?? key, count, percent: pct(count, reasonTotal) })).sort((a, b) => b.count - a.count),
     reasonAnswers: hidden ? 0 : reasonTotal,
-    themes: hidden ? [] : [...themes.entries()].map(([label, count]) => ({ label, count, percent: pct(count, n) })).sort((a, b) => b.count - a.count),
+    // Theme groups only: never a quote, and a theme with fewer than 5 answers is left out (counted in hiddenThemes).
+    themes: hidden ? [] : [...themes.entries()].filter(([, count]) => count >= MIN_GROUP).map(([label, count]) => ({ label, count, percent: pct(count, n) })).sort((a, b) => b.count - a.count),
+    hiddenThemes: hidden ? 0 : [...themes.values()].filter((count) => count < MIN_GROUP).length,
     themeAnswers: hidden ? 0 : themeTotal,
     untaggedAnswers: hidden ? 0 : untagged,
     groups,
   };
+}
+
+// ———————————————————————————————————————————————— themes for "What they would change"
+
+/** The themes HR picks from; HR may add its own (kept on the answers, offered again after). */
+export const THEMES = [
+  'Clearer growth paths', 'Pay and pay reviews', 'Workload', 'Manager and team', 'Onboarding and training',
+  'Work-life balance', 'Tools and processes', 'Recognition', 'Culture and communication', 'Nothing to change',
+];
+
+/**
+ * GET /admin/lifecycle/exit-insights/answers?from=&to= — HR tags each open answer with a theme. Only the
+ * answer's text and its theme come back: no department, tenure, month or person, and in no set order
+ * (the row's random id), so the list cannot be read against an exit. The Insights page shows only the
+ * theme groups of 5 or more.
+ */
+export async function exitAnswers(actorUserId: string, query: { from?: string; to?: string } = {}, now = new Date()) {
+  const actor = await dashboardActor(actorUserId);
+  requireHr(actor, 'Only HR can tag exit answers');
+  const today = todayKey(now);
+  const to = isDateKey(query.to) ? query.to : today;
+  const from = isDateKey(query.from) ? query.from : addDays(to, -365);
+  const rows = await surveyResponses().find({ org: actor.org, kind: 'exit', month: { $gte: from.slice(0, 7), $lte: to.slice(0, 7) } }, { projection: { _id: 0, id: 1, answers: 1, theme: 1 } }).sort({ id: 1 }).toArray();
+  const answers = rows.filter((r) => typeof r.answers.change === 'string' && r.answers.change.trim()).map((r) => ({ id: r.id, text: String(r.answers.change).trim(), theme: r.theme ?? null }));
+  const used = await surveyResponses().distinct('theme', { org: actor.org, kind: 'exit', theme: { $exists: true } });
+  const custom = (used as unknown[]).filter((t): t is string => typeof t === 'string' && !!t && !THEMES.includes(t)).sort();
+  return { answers, themes: THEMES, custom, untagged: answers.filter((a) => !a.theme).length };
+}
+
+/** PUT /admin/lifecycle/exit-insights/answers/:id { theme } — a theme from the list or HR's own (null clears it). */
+export async function tagExitAnswer(actorUserId: string, id: string, body: Record<string, unknown>) {
+  const actor = await dashboardActor(actorUserId);
+  requireHr(actor, 'Only HR can tag exit answers');
+  const theme = body.theme == null ? '' : String(body.theme).trim().replace(/\s+/g, ' ').slice(0, 60);
+  const row = await surveyResponses().findOne({ id, org: actor.org, kind: 'exit' }, { projection: { _id: 0, answers: 1 } });
+  if (!row || typeof row.answers.change !== 'string' || !row.answers.change.trim()) throw new LifecycleError(404, 'No such answer');
+  await surveyResponses().updateOne({ id, org: actor.org, kind: 'exit' }, theme ? { $set: { theme } } : { $unset: { theme: '' } });
+  return { answer: { id, theme: theme || null } };
 }

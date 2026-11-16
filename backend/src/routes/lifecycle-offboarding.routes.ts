@@ -4,13 +4,13 @@ import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess, requireDashboardTabs } from '../middleware/admin.middleware';
 import { AdminError } from '../services/admin.service';
 import {
-  adminHandoverFile, appHandoverFile, changeLastDay, closeOffboarding, emailSettlement, managerLeaver, managerLeavers, markHandoverDone, myOffboarding,
-  offboardingBoard, offboardingDetail, offboardingTaskDone, removeHandoverUpload, requireLifecycleOrg, sendExitInterview, setAppPage, setHandoverChecklist,
-  setOffboardingClearance, settlementChecks, startExit, uploadHandover,
+  adminHandoverFile, appHandoverFile, changeLastDay, clearanceTeamOf, closeOffboarding, emailSettlement, managerLeaver, managerLeavers, markHandoverDone, myOffboarding,
+  offboardingBoard, offboardingCount, offboardingDetail, offboardingTaskDone, removeHandoverUpload, requireLifecycleOrg, saveSettlementDraft, sendExitInterview, sendNudge,
+  setAppPage, setClearanceTeam, setHandoverChecklist, setOffboardingClearance, settlementChecks, startExit, uploadHandover,
 } from '../services/lifecycle/offboarding';
 import type { UploadFile } from '../services/lifecycle/offboarding';
 import { acceptResignation, managerResignationAction, managerResignations, myResignation, resign, withdrawResignation } from '../services/lifecycle/resignations';
-import { exitInsights } from '../services/lifecycle/insights';
+import { exitAnswers, exitInsights, tagExitAnswer } from '../services/lifecycle/insights';
 
 /**
  * Offboarding (docs/lifecycle/CONTRACT.md › Offboarding). Errors are `{ error, message }` with
@@ -91,6 +91,10 @@ lifecycleOffboardingRouter.post('/manager/leavers/:userId/handover/done', send((
 export const lifecycleOffboardingAdminRouter = Router();
 lifecycleOffboardingAdminRouter.use(requireAuth, requireDashboardAccess, requireDashboardTabs, lifecycleOn);
 lifecycleOffboardingAdminRouter.get('/offboarding/board', send((req) => offboardingBoard(me(req), req.query as Record<string, string>)));
+// Before /offboarding/:userId, which would take "count" for a person.
+lifecycleOffboardingAdminRouter.get('/offboarding/count', send((req) => offboardingCount(me(req))));
+lifecycleOffboardingAdminRouter.get('/offboarding/clearance-team/:userId', send((req) => clearanceTeamOf(me(req), param(req, 'userId'))));
+lifecycleOffboardingAdminRouter.put('/offboarding/clearance-team/:userId', send((req) => setClearanceTeam(me(req), param(req, 'userId'), body(req))));
 lifecycleOffboardingAdminRouter.get('/offboarding/:userId', send((req) => offboardingDetail(me(req), param(req, 'userId'))));
 lifecycleOffboardingAdminRouter.post('/resignations/:id/accept', send((req) => acceptResignation(me(req), param(req, 'id'), body(req))));
 lifecycleOffboardingAdminRouter.post('/offboarding/:userId/start', send((req) => startExit(me(req), param(req, 'userId'), body(req))));
@@ -99,7 +103,11 @@ lifecycleOffboardingAdminRouter.post('/offboarding/:userId/last-day', send((req)
 lifecycleOffboardingAdminRouter.post('/offboarding/:userId/app-page', send((req) => setAppPage(me(req), param(req, 'userId'), body(req))));
 lifecycleOffboardingAdminRouter.post('/offboarding/:userId/tasks/:systemKey', send((req) => offboardingTaskDone(me(req), param(req, 'userId'), param(req, 'systemKey'), body(req))));
 lifecycleOffboardingAdminRouter.get('/offboarding/:userId/settlement/checks', send((req) => settlementChecks(me(req), param(req, 'userId'))));
+lifecycleOffboardingAdminRouter.put('/offboarding/:userId/settlement/draft', send((req) => saveSettlementDraft(me(req), param(req, 'userId'), body(req))));
+lifecycleOffboardingAdminRouter.post('/offboarding/:userId/nudge', send((req) => sendNudge(me(req), param(req, 'userId'), body(req))));
 lifecycleOffboardingAdminRouter.post('/offboarding/:userId/settlement/email', send((req) => emailSettlement(me(req), param(req, 'userId'), body(req))));
 lifecycleOffboardingAdminRouter.post('/offboarding/:userId/close', send((req) => closeOffboarding(me(req), param(req, 'userId'), body(req))));
 lifecycleOffboardingAdminRouter.get('/offboarding/:userId/handover/:id/file', sendFile((req) => adminHandoverFile(me(req), param(req, 'userId'), param(req, 'id'))));
+lifecycleOffboardingAdminRouter.get('/exit-insights/answers', send((req) => exitAnswers(me(req), req.query as Record<string, string>)));
+lifecycleOffboardingAdminRouter.put('/exit-insights/answers/:id', send((req) => tagExitAnswer(me(req), param(req, 'id'), body(req))));
 lifecycleOffboardingAdminRouter.get('/exit-insights', send((req) => exitInsights(me(req), req.query as Record<string, string>)));

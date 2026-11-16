@@ -115,7 +115,9 @@ export interface UserExitOffboarding {
   handoverNote?: string;
   handoverNoteAt?: Date;
   /** The final settlement PDF HR emailed to the personal email (never shown in the app). */
-  settlementEmail?: { to: string; at: Date; byName?: string };
+  settlementEmail?: { to: string; at: Date; byName?: string; overrideReason?: string };
+  /** O3 "Save draft": the settlement email as HR left it (the lines are kept on the settlement itself). */
+  settlementDraft?: { to: string; subject: string; message: string; savedAt: Date; byName?: string };
   /** Timed jobs that have fired for this exit, once each ('interview_open', 'settlement_due', 'gratuity_due'). */
   fired?: string[];
 }

@@ -35,6 +35,9 @@ const OWNER_TONE: Record<OwnerRole, { bg: string; fg: string }> = {
   done: { bg: 'var(--surface-2)', fg: 'var(--ink-3)' },
 };
 const ROLE_LABEL: Record<OwnerRole, string> = { employee: 'Employee', manager: 'Manager', hr: 'HR', payroll: 'Payroll', it: 'IT', admin: 'Admin', finance: 'Finance', automatic: 'Automatic', done: 'Done' };
+const TASK_ROLE_LABEL: Record<string, string> = { ...ROLE_LABEL, manager_employee: 'Manager and employee', hr_manager: 'HR and manager', it_admin: 'IT and Admin' };
+/** A task's owner role as people read it: "HR", "Finance", "IT", "Automatic" (never the raw key). */
+export const ownerRoleLabel = (role: string) => TASK_ROLE_LABEL[role] ?? role.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' and ');
 
 export function OwnerChip({ owner }: { owner: Owner }) {
   const tone = OWNER_TONE[owner.role];

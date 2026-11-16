@@ -8,7 +8,9 @@ import { Avatar, Card, LoadError, PageActions, SearchInput, SkeletonCards } from
 import { btn, btnClass } from '../../../ds';
 import { IconDownload, IconPlus } from '../../../icons';
 import { downloadCsv } from '../../../export';
-import { getOffboardingBoard } from '../../../../services/lifecycleOffboarding';
+import { getOffboardingBoard, sendNudge } from '../../../../services/lifecycleOffboarding';
+import { useStore } from '../../../store';
+import { refreshOffboardingBadge } from './badge';
 import type { BoardCard, BoardDTO, BoardTab } from '../../../../services/lifecycleOffboarding';
 import { ClockIcon, FlagPill, OwnerChip, addDays, dueText } from './parts';
 import { OffboardingDrawer } from './OffboardingDrawer';
@@ -25,7 +27,12 @@ const TABS: { key: BoardTab; label: string; note: string }[] = [
 type Quick = '' | 'mine' | 'late' | 'week';
 type Page = { kind: 'board' } | { kind: 'start' } | { kind: 'settlement'; userId: string };
 
+/** Sunday of this week (the week runs Monday to Sunday). */
+const endOfWeek = (today: string) => addDays(today, (7 - new Date(`${today}T00:00:00Z`).getUTCDay()) % 7);
+
 export function OffboardingBoard() {
+  const s = useStore();
+  const [nudging, setNudging] = useState('');
   const [page, setPage] = useState<Page>({ kind: 'board' });
   const [tab, setTab] = useState<BoardTab>('resignations');
   const [data, setData] = useState<BoardDTO | null>(null);
@@ -41,7 +48,7 @@ export function OffboardingBoard() {
     let live = true;
     setError('');
     getOffboardingBoard(tab, { from: from || undefined, to: to || undefined })
-      .then((d) => { if (live) setData(d); })
+      .then((d) => { if (live) { setData(d); refreshOffboardingBadge(); } })
       .catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not load the board'); });
     return () => { live = false; };
   }, [tab, from, to, attempt]);
@@ -57,7 +64,20 @@ export function OffboardingBoard() {
   const matches = (c: BoardCard) => quick === '' ? true
     : quick === 'mine' ? (hr ? c.waitingOnHr : c.owner.role === (data?.viewer.kind === 'team' ? data.viewer.team : ''))
     : quick === 'late' ? c.late
-    : !!c.due && c.due >= today && c.due <= addDays(today, 7);
+    : !!c.due && c.due >= today && c.due <= endOfWeek(today);
+  const remind = async (c: BoardCard) => {
+    if (!c.nudge) return;
+    setNudging(c.key);
+    try {
+      await sendNudge(c.userId, c.nudge.item);
+      s.flash(`${c.nudge.to} is reminded`);
+      reload();
+    } catch (e) {
+      s.flash(e instanceof Error ? e.message : 'Could not send the reminder', 'error');
+    } finally {
+      setNudging('');
+    }
+  };
 
   const exportRows = () => downloadCsv<BoardCard>(`offboarding-${tab}`, [
     { header: 'Employee', value: (r) => r.name },
@@ -120,7 +140,8 @@ export function OffboardingBoard() {
                 <div className="ob-lane-h"><span>{col.label}</span><b>{col.cards.length}</b></div>
                 {col.cards.length === 0 && <div className="ob-empty">No one here.</div>}
                 {col.cards.map((c) => (
-                  <button key={c.key} type="button" className={`ob-card${open?.key === c.key ? ' on' : ''}${matches(c) ? '' : ' dim'}`} onClick={() => setOpen(c)}>
+                  <div key={c.key} className={`ob-card-wrap${matches(c) ? '' : ' dim'}`}>
+                  <button type="button" className={`ob-card${open?.key === c.key ? ' on' : ''}${c.nudge ? ' has-nudge' : ''}`} onClick={() => setOpen(c)}>
                     <div className="ob-who">
                       <Avatar name={c.name} size={32} font={12.5} />
                       <div style={{ minWidth: 0 }}><b>{c.name}</b><span>{[c.designation, c.department].filter(Boolean).join(' · ') || c.employeeId}</span></div>
@@ -133,6 +154,14 @@ export function OffboardingBoard() {
                       <FlagPill flag={c.flag} />
                     </div>
                   </button>
+                  {/* Beside the card, not inside it: a button cannot hold another. */}
+                  {c.nudge && (
+                    <button type="button" className={`ob-nudge${c.nudge.late ? ' late' : ''}`} disabled={c.nudge.sentToday || nudging === c.key}
+                      title={c.nudge.sentToday ? 'Reminded today. You can remind again tomorrow.' : c.nudge.what} onClick={() => void remind(c)}>
+                      {nudging === c.key ? 'Sending…' : c.nudge.sentToday ? 'Reminded today' : c.nudge.label}
+                    </button>
+                  )}
+                  </div>
                 ))}
               </section>
             ))}

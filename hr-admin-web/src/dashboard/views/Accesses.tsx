@@ -21,6 +21,8 @@ import { LIFECYCLE_SECTION, OVERVIEW_ITEM, SECTIONS } from '../Chrome';
 import { lifecycleOn } from '../lifecycleSwitch';
 import { LIFECYCLE_VIEWS, PLACEMENT_VIEWS, SALARY_DETAILS } from '../access';
 import type { AccessKey } from '../access';
+import { getClearanceTeam, putClearanceTeam } from '../../services/lifecycleOffboarding';
+import type { ClearanceTeamDTO } from '../../services/lifecycleOffboarding';
 
 type SubTab = 'users' | 'roles';
 const TABS: { key: SubTab; label: string }[] = [
@@ -293,6 +295,8 @@ function EditAccess({ editing, setEditing, saving, onSave, self }: { editing: Ed
           </>
         )}
 
+        {!editing.admin && editing.tabs.has('offboarding') && !editing.tabs.has('employees') && units.some((u) => u.key === 'offboarding') && <ClearanceTeamPicker userId={editing.person.userId} name={editing.person.name} />}
+
         {self && !editing.admin && <div style={{ fontSize: 12.5, color: 'var(--bad)', marginTop: 12 }}>This is your own access. Without Admin you won't be able to come back to this page.</div>}
         </div>
 
@@ -306,6 +310,56 @@ function EditAccess({ editing, setEditing, saving, onSave, self }: { editing: Ed
         </div>
       </div>
     </div>
+  );
+}
+
+// —— Clearance team (Employee lifecycle › Offboarding) ——————————————————————
+const TEAM_CHOICES: { value: ClearanceTeamDTO['team']; label: string }[] = [
+  { value: null, label: 'From department' }, { value: 'it', label: 'IT' }, { value: 'admin', label: 'Admin' }, { value: 'finance', label: 'Finance' },
+];
+const TEAM_WORD = { it: 'IT', admin: 'Admin', finance: 'Finance' } as const;
+
+/** Someone given the Offboarding board without People is clearance staff: which team's items they see and tick. Saved at once. */
+function ClearanceTeamPicker({ userId, name }: { userId: string; name: string }) {
+  const { flash } = useStore();
+  const [data, setData] = useState<ClearanceTeamDTO | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState('');
+  useEffect(() => {
+    let live = true;
+    getClearanceTeam(userId).then((d) => { if (live) setData(d); }).catch((e) => { if (live) setFailed(e instanceof ApiError ? e.message : 'Could not load the clearance team'); });
+    return () => { live = false; };
+  }, [userId]);
+  const pick = async (team: ClearanceTeamDTO['team']) => {
+    setSaving(true);
+    try {
+      setData(await putClearanceTeam(userId, team));
+      flash(team ? `${name} clears ${TEAM_WORD[team]} items` : `${name}'s clearance team comes from their department`);
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not save', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const guess = data?.guess ? TEAM_WORD[data.guess] : null;
+  return (
+    <>
+      <div className="pd-eyebrow" style={{ margin: '20px 0 4px' }}>CLEARANCE TEAM</div>
+      <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginBottom: 8 }}>With Offboarding and without People, they see and tick only their team's clearance items, with no pay.</div>
+      {failed ? <div style={{ fontSize: 12.5, color: 'var(--bad)' }}>{failed}</div> : (
+        <div role="radiogroup" aria-label="Clearance team" className="pd-seg" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' }}>
+          {TEAM_CHOICES.map((c) => {
+            const on = !!data && data.team === c.value;
+            return <button key={c.label} type="button" role="radio" aria-checked={on} disabled={!data || saving} onClick={() => void pick(c.value)} className={on ? 'on' : undefined} style={{ justifyContent: 'center' }}>{c.label}</button>;
+          })}
+        </div>
+      )}
+      {data && data.team === null && (
+        <div style={{ fontSize: 11.5, color: data.guess ? 'var(--ink-3)' : 'var(--warn)', marginTop: 8, lineHeight: 1.45 }}>
+          {guess ? `From the department${data.department ? ` (${data.department})` : ''}: ${guess}.` : `The department${data.department ? ` (${data.department})` : ''} does not say which team. Pick one, or they see no clearance items.`}
+        </div>
+      )}
+    </>
   );
 }
 

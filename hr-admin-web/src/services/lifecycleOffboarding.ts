@@ -18,7 +18,11 @@ export type BoardCard = {
   exitType: ExitType | null; exitTypeLabel: string; tl: string | null; lastDayLine: string;
   nextStep: string; owner: Owner; due: string | null; late: boolean; flag: Flag | null;
   column: BoardColumn; tab: BoardTab; waitingOnHr: boolean;
+  /** HR's Remind for the card's next step (HR viewers only). */
+  nudge?: NudgeOption;
 };
+/** A reminder HR can send (Remind {name}): once per item per day. */
+export type NudgeOption = { item: string; label: string; to: string; what: string; late: boolean; sentToday: boolean };
 export type BoardDTO = {
   tab: BoardTab;
   columns: { key: BoardColumn; label: string; cards: BoardCard[] }[];
@@ -57,6 +61,7 @@ export type DrawerDTO = {
   clearance: ClearanceRow[];
   interview: { applies: boolean; opensAt: string | null; open: boolean; sent: boolean } | null;
   appPage: boolean;
+  nudges: NudgeOption[];
   settlement: { status: 'draft' | 'approved' | 'paid'; payablePaise: number; dueOn: string; emailedTo: string | null; emailedAt: string | null } | null;
   details: { label: string; value: string }[];
 };
@@ -67,7 +72,12 @@ export type SettlementChecksDTO = {
   clearance: { done: number; total: number; ok: boolean };
   salary: { ok: boolean; label: string };
   personalEmail: { ok: boolean; value: string };
+  /** What still stops the send (HR may send anyway, with a reason). */
+  blocking: string[];
   dueOn: string;
+  /** For the PDF's footer: "Questions: {hrEmail}". */
+  hrEmail: string;
+  draft: { to: string; subject: string; message: string; savedAt: string; byName: string } | null;
 };
 
 export type StartExitInput = {
@@ -86,6 +96,7 @@ export type InsightsDTO = {
   reasons: { key: string; label: string; count: number; percent: number }[];
   reasonAnswers: number;
   themes: { label: string; count: number; percent: number }[];
+  hiddenThemes: number;
   untaggedAnswers: number;
   groups: { key: string; label: string; left: number; answers: number; workingHere: number | null; manager: number | null; hidden: boolean }[];
 };
@@ -108,8 +119,16 @@ export const setAppPage = (userId: string, showAppPage: boolean) => api<DrawerDT
 export const taskDone = (userId: string, systemKey: string, note?: string) => api<DrawerDTO>(`${BASE}/offboarding/${userId}/tasks/${systemKey}`, { method: 'POST', body: { action: 'done', ...(note ? { note } : {}) } });
 export const closeExit = (userId: string, note?: string) => api<DrawerDTO>(`${BASE}/offboarding/${userId}/close`, { method: 'POST', body: note ? { note } : {} });
 export const getSettlementChecks = (userId: string) => api<SettlementChecksDTO>(`${BASE}/offboarding/${userId}/settlement/checks`);
-export const emailSettlementPdf = (userId: string, body: { pdfBase64: string; to: string; subject?: string; message?: string }) =>
+export const emailSettlementPdf = (userId: string, body: { pdfBase64: string; to: string; subject?: string; message?: string; overrideReason?: string }) =>
   api<DrawerDTO>(`${BASE}/offboarding/${userId}/settlement/email`, { method: 'POST', body });
+export const saveSettlementDraft = (userId: string, body: { to: string; subject: string; message: string }) =>
+  api<SettlementChecksDTO>(`${BASE}/offboarding/${userId}/settlement/draft`, { method: 'PUT', body });
+export const sendNudge = (userId: string, item: string) => api<DrawerDTO & { nudged: { item: string; to: string } }>(`${BASE}/offboarding/${userId}/nudge`, { method: 'POST', body: { item } });
+export type OffboardingCountDTO = { count: number; needsYou: number; late: number; viewer: Viewer };
+export const getOffboardingCount = () => api<OffboardingCountDTO>(`${BASE}/offboarding/count`);
+export type ClearanceTeamDTO = { team: Exclude<ClearanceTeam, 'manager'> | null; guess: Exclude<ClearanceTeam, 'manager'> | null; department: string };
+export const getClearanceTeam = (userId: string) => api<ClearanceTeamDTO>(`${BASE}/offboarding/clearance-team/${userId}`);
+export const putClearanceTeam = (userId: string, team: Exclude<ClearanceTeam, 'manager'> | null) => api<ClearanceTeamDTO>(`${BASE}/offboarding/clearance-team/${userId}`, { method: 'PUT', body: { team } });
 /** Opens a handover upload in a new tab: a short-lived link where files are stored, else the bytes (development). */
 export async function openHandoverFile(userId: string, itemId: string): Promise<void> {
   const tab = window.open('', '_blank');
@@ -125,3 +144,6 @@ export async function openHandoverFile(userId: string, itemId: string): Promise<
   setTimeout(() => URL.revokeObjectURL(href), 60_000);
 }
 export const getExitInsights = (from: string, to: string, groupBy: 'department' | 'tenure') => api<InsightsDTO>(`${BASE}/exit-insights${q({ from, to, groupBy })}`);
+export type ExitAnswersDTO = { answers: { id: string; text: string; theme: string | null }[]; themes: string[]; custom: string[]; untagged: number };
+export const getExitAnswers = (from: string, to: string) => api<ExitAnswersDTO>(`${BASE}/exit-insights/answers${q({ from, to })}`);
+export const tagExitAnswer = (id: string, theme: string | null) => api<{ answer: { id: string; theme: string | null } }>(`${BASE}/exit-insights/answers/${id}`, { method: 'PUT', body: { theme } });
