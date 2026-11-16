@@ -219,6 +219,8 @@ export interface Journey {
   meetUs?: { managerNote?: { kind: 'text' | 'video'; text?: string; fileId?: string; at?: Date }; seen?: string[] };
   /** Probation (onboarding). */
   probation?: { months: number; extendedBy?: number; decision?: ConfirmationDecision };
+  /** The portal's About you (emergency contact, PF), editable until Tj − 1. */
+  aboutYou?: AboutYou;
   /** Last time the candidate did anything on the portal (for the Quiet flag). */
   lastActivityAt?: Date;
   closedAt?: Date;

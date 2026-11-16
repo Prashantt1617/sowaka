@@ -124,6 +124,12 @@ export interface Company {
   maxUsers?: number;
   /** Face ID at punch-in, HR's to switch on; see CompanyFaceIdSettings. Absent is off. */
   faceId?: CompanyFaceIdSettings;
+  /**
+   * The pre-boarding portal's company content (features.lifecycle): the logo in
+   * its header and the culture video on the Accepted and Meet us screens.
+   * Absent: no logo (the company name shows) and no video item.
+   */
+  lifecyclePortal?: { logoUrl?: string; videoUrl?: string; videoTitle?: string };
   /** Features only some companies have; see CompanyFeatures. Absent is all off. */
   features?: CompanyFeatures;
   createdAt?: number;

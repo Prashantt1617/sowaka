@@ -202,6 +202,8 @@ export interface User {
   gender?: string;
   /** Personal mobile, captured when HR adds the employee. */
   phone?: string;
+  /** Personal email (from the candidate's offer, set at Mark joined): where the final settlement goes after they leave. */
+  personalEmail?: string;
   designation?: string;
   department?: string;
   teamDescription?: string;

@@ -19,6 +19,9 @@ const defaultCorsOrigins = [
   'https://dkikczh1847dh.cloudfront.net', // HR admin dashboard
 ];
 
+/** The pre-boarding portal (candidates, before they are employees): links in lifecycle emails, and a CORS origin. */
+const portalBaseUrl = (process.env.PORTAL_BASE_URL ?? 'http://localhost:5181').trim().replace(/\/+$/, '');
+
 const configuredCorsOrigins = (process.env.CORS_ORIGIN ?? '')
   .split(',')
   .map((origin) => origin.trim())
@@ -93,7 +96,14 @@ export const env = {
    */
   isLocal: DEV_ENVIRONMENTS.has(process.env.NODE_ENV ?? ''),
   port: Number(process.env.PORT ?? 4000),
-  corsOrigins: [...new Set([...defaultCorsOrigins, ...configuredCorsOrigins])],
+  corsOrigins: [...new Set([...defaultCorsOrigins, ...configuredCorsOrigins, ...(portalBaseUrl ? [portalBaseUrl] : [])])],
+  portalBaseUrl,
+  /**
+   * Signs the portal's candidate sessions (JWT, aud 'portal'). Unset, a key is
+   * derived from the Mongo connection string, as Scribble tickets do; set it in
+   * production so the database credentials and this key are not one secret.
+   */
+  portalJwtSecret: (process.env.PORTAL_JWT_SECRET ?? '').trim(),
   /** True for an origin the dashboard may call from; see [isDashboardOrigin]. */
   isDashboardOrigin,
   mobileAppApiBaseUrl: process.env.MOBILE_APP_API_BASE_URL ?? 'http://10.0.2.2:4000',
