@@ -9,13 +9,14 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useStore } from '../../store';
 import { canOpen } from '../../access';
-import { ListPending, StatusTabs } from '../../ui';
+import { ListPending, LoadError, SkeletonLines, StatusTabs } from '../../ui';
 import { downloadCsv } from '../../export';
 import { LIFECYCLE_TEMPLATES_KIND_KEY } from '../../setupGroups';
-import { createTemplate, deleteTemplate, getTemplate, isNotAvailable, listTemplates, updateTemplate } from '../../../services/lifecycle';
-import type { DueAnchor, DueRule, ExitTypeKey, LifecycleKind, LifecyclePhase, LifecycleTemplate, OwnerRole, TemplateListItem, TemplateTask } from '../../../services/lifecycle';
+import { createTemplate, deleteTemplate, getTemplate, getTemplateJourneys, isNotAvailable, listTemplates, updateTemplate } from '../../../services/lifecycle';
+import type { DueAnchor, DueRule, ExitTypeKey, LifecycleKind, LifecyclePhase, LifecycleTemplate, OwnerRole, TemplateJourney, TemplateListItem, TemplateTask } from '../../../services/lifecycle';
+import { JoinerPanel } from './JoinerPanel';
 import { ConfirmDialog, Field, Modal, NotSwitchedOn, OwnerChip, Pick, Switch } from './shared';
-import { OWNER_LABEL, PHASES, errText, readHandoff, inputStyle, linkBtn, phaseTitle, ruleText, sectionLabel } from './format';
+import { OWNER_LABEL, PHASES, errText, readHandoff, inputStyle, linkBtn, longDay, phaseTitle, ruleText, sectionLabel } from './format';
 import '../people.css';
 
 const KINDS: LifecycleKind[] = ['onboarding', 'offboarding'];
@@ -166,6 +167,68 @@ function CreateTemplateDialog({ kind, templates, onClose, onCreated }: { kind: L
   );
 }
 
+// —— Joiners on a template (S3's Joiners tab) ————————————————————————————
+
+const JOURNEY_STATUS: Record<string, string> = {
+  draft: 'Offer not sent', offer_sent: 'Offer sent', accepted: 'Accepted', finalised: 'Finalised', active: 'On the portal', docs_approved: 'Documents approved',
+  joined: 'Joined', moved_to_app: 'On the app', confirmed: 'Confirmed', declined: 'Declined', expired: 'Expired', not_joining: 'Not joining',
+};
+const COLUMN_NAME: Record<string, string> = {
+  offer_sent: 'Offer sent', accepted: 'Accepted', documents: 'Documents', letters: 'Letters to sign', ready_to_join: 'Ready to join',
+  day1: 'Day 1', week1_tasks: 'Week-1 tasks', day7_survey: 'Day-7 survey', week_done: 'Week done',
+  month1: 'Month 1', months_2_5: 'Months 2–5', final_month: 'Final month', confirmed: 'Confirmed',
+};
+
+/**
+ * Who follows this template. Each journey keeps the tasks the template had
+ * when it started (a snapshot), so nobody is moved from here: the list opens
+ * each joiner's panel (or the Offboarding board for a leaver).
+ */
+function TemplatePeople({ id, kind }: { id: string; kind: LifecycleKind }) {
+  const { setView } = useStore();
+  const [rows, setRows] = useState<TemplateJourney[] | null>(null);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const [open, setOpen] = useState('');
+  useEffect(() => {
+    let live = true;
+    setError('');
+    getTemplateJourneys(id).then((r) => { if (live) setRows(r); }).catch((e) => { if (live) setError(errText(e, 'Could not load who follows this template')); });
+    return () => { live = false; };
+  }, [id, attempt]);
+  const who = kind === 'onboarding' ? 'joiner' : 'leaver';
+  return (
+    <section className="pd-card">
+      <p className="pd-lead" style={{ marginTop: 0 }}>
+        Everyone {kind === 'onboarding' ? 'joining' : 'leaving'} on this template now. Each one keeps the tasks the template had when they started, so changes you save apply to people who start after that, and nobody moves to another template part-way.
+      </p>
+      {error ? <LoadError text={error} onRetry={() => setAttempt((n) => n + 1)} />
+        : !rows ? <SkeletonLines lines={5} />
+          : rows.length === 0 ? <div className="pd-empty">No {who}s on this template right now.</div>
+            : (
+              <div className="pd-list">
+                {rows.map((r) => (
+                  <div key={r.journeyId} className="pd-li">
+                    <span className="grow">
+                      <b>{r.name}</b>
+                      <span className="s">{[
+                        [r.designation, r.department].filter(Boolean).join(' · '),
+                        r.column ? COLUMN_NAME[r.column] ?? r.column : JOURNEY_STATUS[r.status] ?? r.status,
+                        r.tj ? `joins ${longDay(r.tj)}` : r.tl ? `last day ${longDay(r.tl)}` : '',
+                      ].filter(Boolean).join(' · ')}</span>
+                    </span>
+                    {kind === 'onboarding'
+                      ? <button type="button" className="pd-btn sm" onClick={() => setOpen(r.journeyId)}>Open</button>
+                      : <button type="button" className="pd-btn sm" onClick={() => setView('offboarding')}>Open board</button>}
+                  </div>
+                ))}
+              </div>
+            )}
+      {open && <JoinerPanel journeyId={open} onClose={() => setOpen('')} onChanged={() => setAttempt((n) => n + 1)} />}
+    </section>
+  );
+}
+
 // —— The editor ——————————————————————————————————————————————————————————
 
 function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings: TemplateListItem[]; onBack: () => void; onOpen: (id: string) => void }) {
@@ -179,6 +242,7 @@ function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [nameError, setNameError] = useState('');
+  const [tab, setTab] = useState<'template' | 'joiners'>('template');
 
   useEffect(() => {
     let live = true;
@@ -272,7 +336,13 @@ function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
+      <div style={{ marginBottom: 16 }}>
+        <StatusTabs<'template' | 'joiners'> options={['template', 'joiners']} active={tab} onSelect={setTab}
+          labels={{ template: 'Template', joiners: t.kind === 'onboarding' ? 'Joiners' : 'Leavers' }} counts={{ joiners: usage }} />
+      </div>
+      {tab === 'joiners' && <TemplatePeople id={id} kind={t.kind} />}
+
+      <div style={{ display: tab === 'template' ? 'flex' : 'none', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
         <div style={{ flex: '1 1 600px', minWidth: 0, display: 'grid', gap: 16 }}>
           <section className="pd-card">
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>

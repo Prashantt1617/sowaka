@@ -7,12 +7,12 @@ import type { ReactNode } from 'react';
 import { useStore } from '../../store';
 import { canSeePay } from '../../access';
 import {
-  createOffer, finaliseOffer, getMergeValues, listLetterTemplates, listTemplates, markJoined, sendOffer, updateOffer, uploadOfferPdf,
+  createOffer, finaliseOffer, getMergeValues, getSalaryBreakup, listLetterTemplates, listTemplates, markJoined, sendOffer, updateOffer, uploadOfferPdf,
 } from '../../../services/lifecycle';
-import type { JourneyView, LetterTemplateDTO, OfferFields, OfferView, TemplateListItem } from '../../../services/lifecycle';
+import type { JourneyView, LetterTemplateDTO, OfferFields, OfferView, SalaryBreakup, TemplateListItem } from '../../../services/lifecycle';
 import { BlobPreview, Field, Modal, Pick, Switch } from './shared';
 import { addDays, areaStyle, errText, firstName, inputStyle, longDay, rupees, todayKey } from './format';
-import { emailDraft, fieldLabel, LETTER_CSS, LETTER_TITLE, letterFileName, letterInner, letterPdf, missingFields } from './letterDoc';
+import { annexureHtml, emailDraft, fieldLabel, LETTER_CSS, LETTER_TITLE, letterFileName, letterInner, letterPdf, missingFields, takesAnnexure } from './letterDoc';
 import { Spinner } from '../../ui';
 import { useCompanyName, useOfferChoices } from './hooks';
 
@@ -151,11 +151,13 @@ export function OfferWizard({ mode, journey, offer, start, onClose, onDone }: {
   const [pdf, setPdf] = useState<Blob | null>(null);
   const [uploaded, setUploaded] = useState(Boolean(offer?.pdfFileId) && mode === 'send');
   const [previewing, setPreviewing] = useState(false);
+  const [breakup, setBreakup] = useState<SalaryBreakup | null>(null);
 
   // Email step.
   const manager = emps.find((e) => e.id === (fields.managerUserId || journey?.managerUserId));
   const [ccManager, setCcManager] = useState(true);
   const [ccOther, setCcOther] = useState('');
+  const [withLink, setWithLink] = useState(true);
   const draft = emailDraft('offer', { ...values, name, designation: fields.designation, validTill: values.validTill || values.valid || longDay(fields.validTill) }, { company, hrName: user?.name ?? 'HR', withLink: true });
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -196,9 +198,19 @@ export function OfferWizard({ mode, journey, offer, start, onClose, onDone }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
+  // Annexure A: the salary breakup the offer letter promises, from the company's salary template (pay only).
+  useEffect(() => {
+    if (step !== 'letter' || !journeyId || !pay) return;
+    let live = true;
+    getSalaryBreakup(journeyId).then((b) => { if (live) setBreakup(b); }).catch(() => { if (live) setBreakup(null); });
+    return () => { live = false; };
+  }, [step, journeyId, pay]);
+
   const template = letterTemplates?.find((t) => t.id === letterId);
   const missing = template ? missingFields(template.body, values, serverMissing) : [];
   const head = { company: values.companyName || company, address: values.companyAddress, refNo: values.refNo, title: LETTER_TITLE.offer };
+  const withAnnex = Boolean(template && takesAnnexure('offer', template.body));
+  const annex = withAnnex && breakup?.breakup ? annexureHtml(breakup.breakup, name) : '';
 
   const saveDetails = async () => {
     const e: typeof errors = validate(fields, pay);
@@ -227,7 +239,7 @@ export function OfferWizard({ mode, journey, offer, start, onClose, onDone }: {
     setBusy('pdf'); setError('');
     try {
       const fileName = letterFileName('offer', name);
-      const blob = await letterPdf(template.body, values, head, fileName);
+      const blob = await letterPdf(template.body, values, head, fileName, annex);
       await uploadOfferPdf(journeyId, blob, fileName);
       setPdf(blob); setUploaded(true);
       flash('Offer letter made and attached');
@@ -239,7 +251,7 @@ export function OfferWizard({ mode, journey, offer, start, onClose, onDone }: {
     setBusy('send'); setError('');
     try {
       const cc = [ccManager && manager?.email ? manager.email : '', ...ccOther.split(/[,\s]+/)].map((x) => x.trim()).filter(Boolean);
-      await sendOffer(journeyId, { subject: subject.trim(), body, cc: cc.length ? cc : undefined });
+      await sendOffer(journeyId, { subject: subject.trim(), body, cc: cc.length ? cc : undefined, withPortalLink: withLink });
       flash(`Offer sent to ${firstName(name)}`);
       onDone(journeyId, true);
     } catch (err) { setError(errText(err, 'Could not send the offer')); setBusy(''); }
@@ -321,8 +333,13 @@ export function OfferWizard({ mode, journey, offer, start, onClose, onDone }: {
                   ))}
                   {uploaded && pdf && <button type="button" className="pd-btn" onClick={() => setPreviewing(true)}>Preview the PDF</button>}
                   {uploaded && <div style={{ fontSize: 12.5, color: 'var(--ok)' }}>The PDF is attached to the offer.</div>}
+                  {withAnnex && breakup && (
+                    <div style={{ fontSize: 12, color: breakup.breakup ? 'var(--ink-3)' : 'var(--warn)' }}>
+                      {breakup.breakup ? `Annexure A (salary breakup, ${breakup.breakup.templateName}) is the letter’s last page.` : `${breakup.reason ?? 'The salary breakup could not be worked out'}. The letter goes without Annexure A.`}
+                    </div>
+                  )}
                 </div>
-                <LetterPreview html={template ? letterInner(template.body, values, head, 'preview') : ''} />
+                <LetterPreview html={template ? letterInner(template.body, values, head, 'preview', annex) : ''} />
               </div>
             )
       )}
@@ -344,9 +361,14 @@ export function OfferWizard({ mode, journey, offer, start, onClose, onDone }: {
           <Field label="Subject" required>
             <input value={subject} onChange={(e) => setSubject(e.target.value)} style={inputStyle} />
           </Field>
-          <Field label="Email body" required hint="A “View and accept your offer” button with their personal link is added under your message.">
+          <Field label="Email body" required hint={withLink ? 'A “View and accept your offer” button with their personal link is added under your message.' : undefined}>
             <textarea value={body} onChange={(e) => setBody(e.target.value)} style={{ ...areaStyle, minHeight: 220 }} />
           </Field>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13 }}>
+            <Switch on={withLink} onChange={setWithLink} label="Add the portal link" />
+            <span><b style={{ display: 'block', fontWeight: 500 }}>Add the portal link</b><span style={{ fontSize: 12, color: 'var(--ink-3)' }}>A “View and accept your offer” button in the email</span></span>
+          </label>
+          {!withLink && <div className="pd-note" style={{ color: 'var(--warn)' }}>Without the link they can’t read and accept the offer online. Send it again with the link if they ask.</div>}
           <div className="pd-li" style={{ border: '1px solid var(--line)', borderRadius: 14, padding: '10px 12px' }}>
             <span className="pd-li-i" aria-hidden>PDF</span>
             <span className="grow"><b>{letterFileName('offer', name)}</b><span className="s">{uploaded ? 'Generated from the offer details' : 'Not generated yet'}</span></span>

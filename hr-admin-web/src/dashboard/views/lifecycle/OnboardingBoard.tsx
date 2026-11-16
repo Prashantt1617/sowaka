@@ -11,8 +11,9 @@ import { IconDownload } from '../../icons';
 import { downloadCsv } from '../../export';
 import { getBoard, isNotAvailable } from '../../../services/lifecycle';
 import type { BoardCard, BoardDTO, BoardFilter, BoardTab } from '../../../services/lifecycle';
-import { FlagPill, NotSwitchedOn, OwnerChip, Plant } from './shared';
-import { FLAG, OWNER_LABEL, dueText, errText } from './format';
+import { FlagPill, NotSwitchedOn, NudgeButton, OwnerChip, Plant } from './shared';
+import { OWNER_LABEL, dueText, errText, flagLabel } from './format';
+import { refreshOnboardingBadge } from '../../onboardingBadge';
 import { JoinerPanel } from './JoinerPanel';
 import { OfferWizard } from './OfferDialogs';
 import '../people.css';
@@ -24,8 +25,12 @@ const TAB_NOTES: Record<BoardTab, string> = {
   first_week: 'Joining day to Day 7',
   probation: 'Monthly, until confirmation',
 };
+// The spec's three first (6Zs §7.1: Waiting on me · Late · Needs attention), then the finer ones.
 const FILTERS: [BoardFilter, string][] = [
-  ['mine', 'Waiting on me'], ['needs_you', 'Needs you'], ['late', 'Late'], ['quiet', 'Quiet'], ['joining_risk', 'Joining risk'], ['due_soon', 'Due soon'],
+  ['mine', 'Waiting on me'], ['late', 'Late'], ['needs_attention', 'Needs attention'],
+];
+const MORE_FILTERS: [BoardFilter, string][] = [
+  ['needs_you', 'Needs you'], ['quiet', 'Quiet'], ['joining_risk', 'Joining risk'], ['due_soon', 'Due soon'],
 ];
 const TAB_KEY = 'sowaka.onboarding.tab';
 
@@ -73,7 +78,7 @@ export function OnboardingBoard() {
     return () => { live = false; };
   }, [tab, q, from, to, attempt]);
 
-  const reload = useCallback(() => setAttempt((n) => n + 1), []);
+  const reload = useCallback(() => { setAttempt((n) => n + 1); refreshOnboardingBadge(); }, []);
   const shownTab = board?.tab === tab ? board : null;
   const cards = useMemo(() => shownTab?.columns.flatMap((c) => c.cards) ?? [], [shownTab]);
   const matching = filter ? cards.filter((c) => matches(c, filter)).length : cards.length;
@@ -89,7 +94,7 @@ export function OnboardingBoard() {
     { header: 'Next step', value: (c) => c.waitingOn[0]?.title ?? '' },
     { header: 'Waiting on', value: (c) => (c.waitingOn[0] ? `${OWNER_LABEL[c.waitingOn[0].ownerRole]}${c.waitingOn[0].ownerName ? ` (${c.waitingOn[0].ownerName})` : ''}` : '') },
     { header: 'Due', value: (c) => (c.waitingOn[0]?.dueAt ?? '').slice(0, 10) },
-    { header: 'Flags', value: (c) => c.flags.map((f) => FLAG[f]?.label ?? f).join('; ') },
+    { header: 'Flags', value: (c) => c.flags.map((f) => flagLabel(f, c)).join('; ') },
     { header: 'Tasks done', value: (c) => `${c.progress.done} of ${c.progress.total}` },
   ], (shownTab?.columns ?? []).flatMap((col) => col.cards.map((c) => ({ ...c, columnLabel: col.label }))));
 
@@ -114,8 +119,9 @@ export function OnboardingBoard() {
       <div className="pd-toolbar">
         <SearchInput value={search} onChange={setSearch} placeholder="Search this board" width={260} />
         <div className="pd-chips" role="group" aria-label="Quick filters">
-          {FILTERS.map(([f, label]) => (
-            <button key={f} type="button" aria-pressed={filter === f} className={`pd-chip sm${filter === f ? ' on' : ''}`} onClick={() => setFilter(filter === f ? null : f)}>
+          {[...FILTERS, ...MORE_FILTERS].map(([f, label], i) => (
+            <button key={f} type="button" aria-pressed={filter === f} className={`pd-chip sm${filter === f ? ' on' : ''}`} onClick={() => setFilter(filter === f ? null : f)}
+              style={i === FILTERS.length ? { marginLeft: 8 } : undefined}>
               {label}
               {shownTab && <span className="c">{cards.filter((c) => matches(c, f)).length}</span>}
             </button>
@@ -129,7 +135,7 @@ export function OnboardingBoard() {
 
       {filter && shownTab && (
         <div style={{ fontSize: 12.5, color: 'var(--ink-3)', margin: '-6px 0 12px' }}>
-          {matching} of {cards.length} match “{FILTERS.find(([f]) => f === filter)?.[1]}”. The rest are dimmed.{' '}
+          {matching} of {cards.length} match “{[...FILTERS, ...MORE_FILTERS].find(([f]) => f === filter)?.[1]}”. The rest are dimmed.{' '}
           <button type="button" className="pd-lnk" onClick={() => setFilter(null)} style={{ background: 'none', border: 0, padding: 0, color: 'var(--accent-ink)', cursor: 'pointer', font: 'inherit', fontWeight: 500 }}>Show all</button>
         </div>
       )}
@@ -153,7 +159,7 @@ export function OnboardingBoard() {
                 </header>
                 {col.cards.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--ink-3)', textAlign: 'center', padding: '18px 6px' }}>{q || from || to ? 'Nobody matches here' : 'Nobody here'}</div>}
                 {col.cards.map((c) => (
-                  <JoinerCard key={c.journeyId} card={c} selected={openId === c.journeyId} dim={filter ? !matches(c, filter) : false} onOpen={() => setOpenId(c.journeyId)} />
+                  <JoinerCard key={c.journeyId} card={c} selected={openId === c.journeyId} dim={filter ? !matches(c, filter) : false} onOpen={() => setOpenId(c.journeyId)} onNudged={reload} />
                 ))}
               </section>
             ))}
@@ -170,45 +176,52 @@ export function OnboardingBoard() {
   );
 }
 
-function JoinerCard({ card, selected, dim, onOpen }: { card: BoardCard; selected: boolean; dim: boolean; onOpen: () => void }) {
+function JoinerCard({ card, selected, dim, onOpen, onNudged }: { card: BoardCard; selected: boolean; dim: boolean; onOpen: () => void; onNudged: () => void }) {
   const next = card.waitingOn[0];
   const late = Boolean(next?.dueAt) && (card.flags.includes('late') || dueText(next?.dueAt).endsWith('late'));
   const role = [card.designation, card.department].filter(Boolean).join(' · ');
   const pct = card.progress.total ? Math.round((card.progress.done / card.progress.total) * 100) : 0;
   return (
-    <button type="button" onClick={onOpen} aria-pressed={selected}
-      style={{
-        textAlign: 'left', font: 'inherit', color: 'inherit', cursor: 'pointer', width: '100%',
-        background: 'var(--surface)', borderRadius: 14, padding: 12, display: 'grid', gap: 8,
-        border: `1px solid ${selected ? 'var(--accent)' : 'var(--line)'}`,
-        boxShadow: selected ? '0 0 0 3px var(--accent-soft)' : '0 1px 2px rgba(20,20,22,.04)',
-        opacity: dim ? 0.35 : 1, transition: 'opacity .15s, box-shadow .15s',
-      }}>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
-        <Plant plant={card.plant} size={30} />
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{card.name}</div>
-          {role && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', lineHeight: 1.35, overflowWrap: 'anywhere' }}>{role}</div>}
-        </div>
-      </div>
-      <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>{card.dayLabel}</div>
-      {next ? (
-        <>
-          <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.4, overflowWrap: 'anywhere' }}>{next.title}</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'space-between' }}>
-            <OwnerChip role={next.ownerRole} name={next.ownerRole === 'hr' ? undefined : next.ownerName} you={next.ownerRole === 'hr'} />
-            <span style={{ fontSize: 11.5, fontWeight: late ? 600 : 400, color: late ? 'var(--bad)' : 'var(--ink-3)', whiteSpace: 'nowrap' }}>{dueText(next.dueAt, late)}</span>
+    // The card opens the panel; the Nudge / Remind under it is its own button (never a button in a button).
+    <div style={{
+      background: 'var(--surface)', borderRadius: 14, display: 'grid',
+      border: `1px solid ${selected ? 'var(--accent)' : 'var(--line)'}`,
+      boxShadow: selected ? '0 0 0 3px var(--accent-soft)' : '0 1px 2px rgba(20,20,22,.04)',
+      opacity: dim ? 0.35 : 1, transition: 'opacity .15s, box-shadow .15s',
+    }}>
+      <button type="button" onClick={onOpen} aria-pressed={selected}
+        style={{ textAlign: 'left', font: 'inherit', color: 'inherit', cursor: 'pointer', width: '100%', background: 'none', border: 0, borderRadius: 14, padding: 12, display: 'grid', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
+          <Plant plant={card.plant} size={30} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{card.name}</div>
+            {role && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', lineHeight: 1.35, overflowWrap: 'anywhere' }}>{role}</div>}
           </div>
-        </>
-      ) : <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Nothing waiting</div>}
-      {card.flags.length > 0 && <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{card.flags.slice(0, 3).map((f) => <FlagPill key={f} flag={f} />)}</div>}
-      {card.progress.total > 0 && (
-        <div title={`${card.progress.done} of ${card.progress.total} tasks done`} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span aria-hidden style={{ flex: 1, height: 4, borderRadius: 99, background: 'var(--surface-2)', overflow: 'hidden' }}><i style={{ display: 'block', height: '100%', width: `${pct}%`, background: 'var(--ok-solid)', borderRadius: 99 }} /></span>
-          <span style={{ fontSize: 11, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>{card.progress.done}/{card.progress.total}</span>
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>{card.dayLabel}</div>
+        {next ? (
+          <>
+            <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.4, overflowWrap: 'anywhere' }}>{next.title}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'space-between' }}>
+              <OwnerChip role={next.ownerRole} name={next.ownerRole === 'hr' ? undefined : next.ownerName} you={next.ownerRole === 'hr'} />
+              <span style={{ fontSize: 11.5, fontWeight: late ? 600 : 400, color: late ? 'var(--bad)' : 'var(--ink-3)', whiteSpace: 'nowrap' }}>{dueText(next.dueAt, late)}</span>
+            </div>
+          </>
+        ) : <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Nothing waiting</div>}
+        {card.flags.length > 0 && <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{card.flags.slice(0, 3).map((f) => <FlagPill key={f} flag={f} card={card} />)}</div>}
+        {card.progress.total > 0 && (
+          <div title={`${card.progress.done} of ${card.progress.total} tasks done`} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span aria-hidden style={{ flex: 1, height: 4, borderRadius: 99, background: 'var(--surface-2)', overflow: 'hidden' }}><i style={{ display: 'block', height: '100%', width: `${pct}%`, background: 'var(--ok-solid)', borderRadius: 99 }} /></span>
+            <span style={{ fontSize: 11, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>{card.progress.done}/{card.progress.total}</span>
+          </div>
+        )}
+      </button>
+      {next?.canNudge && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 12px 10px', marginTop: -2 }}>
+          <NudgeButton compact journeyId={card.journeyId} taskId={next.taskId} role={next.ownerRole} name={next.ownerName} done={next.nudgedToday} onDone={onNudged} />
         </div>
       )}
-    </button>
+    </div>
   );
 }
 

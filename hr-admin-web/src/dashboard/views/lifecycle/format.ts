@@ -79,6 +79,13 @@ export const FLAG: Record<JourneyFlag, { label: string; tone: { bg: string; fg: 
   done: { label: 'Done', tone: OK },
   confirmed: { label: 'Confirmed', tone: OK },
 };
+const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
+/** A flag's words on a card: "Quiet 4 days", "Expires in 4 days" / "Expires today", else the flag's label. */
+export function flagLabel(flag: JourneyFlag, card?: { quietDays?: number; expiresInDays?: number }): string {
+  if (flag === 'quiet' && card?.quietDays) return `Quiet ${days(card.quietDays)}`;
+  if (flag === 'expires_soon' && card?.expiresInDays !== undefined) return card.expiresInDays <= 0 ? 'Expires today' : `Expires in ${days(card.expiresInDays)}`;
+  return FLAG[flag]?.label ?? flag;
+}
 export const PHASES: Record<LifecycleKind, Array<{ key: LifecyclePhase; title: string; desc: string }>> = {
   onboarding: [
     { key: 'pre_boarding', title: 'Pre-boarding', desc: 'From the offer to the joining day' },

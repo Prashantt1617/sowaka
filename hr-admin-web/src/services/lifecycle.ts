@@ -80,7 +80,7 @@ export type BoardColumn =
   | 'day1' | 'week1_tasks' | 'day7_survey' | 'week_done'
   | 'month1' | 'months_2_5' | 'final_month' | 'confirmed';
 export type JourneyFlag = 'needs_you' | 'late' | 'quiet' | 'joining_risk' | 'needs_attention' | 'expires_soon' | 'due_soon' | 'decide' | 'all_set' | 'done' | 'confirmed';
-export type BoardFilter = 'needs_you' | 'late' | 'quiet' | 'joining_risk' | 'due_soon' | 'mine';
+export type BoardFilter = 'needs_you' | 'late' | 'needs_attention' | 'quiet' | 'joining_risk' | 'due_soon' | 'mine';
 export type OnboardingStatus = 'draft' | 'offer_sent' | 'accepted' | 'finalised' | 'active' | 'docs_approved' | 'joined' | 'moved_to_app' | 'confirmed' | 'declined' | 'expired' | 'not_joining';
 export type OnboardingStage = 'pre_boarding' | 'welcome_week1' | 'settling_in' | 'growing_gains' | 'final_month' | 'ready_to_perform';
 
@@ -91,7 +91,8 @@ export interface PlantState {
   droop: boolean;
 }
 
-export interface WaitingOn { ownerRole: OwnerRole; ownerName?: string; title: string; dueAt?: string | null }
+/** `taskId` / `canNudge` / `nudgedToday` power Nudge and Remind {name}. */
+export interface WaitingOn { taskId: string; ownerRole: OwnerRole; ownerName?: string; title: string; dueAt?: string | null; late?: boolean; canNudge: boolean; nudgedToday?: boolean }
 
 export interface BoardCard {
   journeyId: string;
@@ -108,6 +109,9 @@ export interface BoardCard {
   waitingOn: WaitingOn[];
   progress: { done: number; total: number };
   plant: PlantState;
+  /** Days since the candidate last did anything (the Quiet flag) and days left on the offer (Expires soon). */
+  quietDays?: number;
+  expiresInDays?: number;
 }
 
 export interface BoardDTO {
@@ -138,6 +142,9 @@ export interface TaskView {
   note?: string;
   late: boolean;
   month?: number;
+  /** On the panel: whether Nudge can remind its owner, and whether someone did today. */
+  canNudge?: boolean;
+  nudgedToday?: boolean;
 }
 
 export interface CandidateDetails { name: string; personalEmail: string; phone?: string; workEmail?: string }
@@ -192,12 +199,25 @@ export interface JourneyView {
   closedReason?: string;
   createdAt?: string;
   updatedAt?: string;
+  /** The week-1 bank / PF change waiting for HR (HR's view only; the account and UAN show their last four). */
+  bankPfRequest?: BankPfRequest;
+  waitingOn?: WaitingOn[];
   managerName?: string;
   buddyName?: string;
   dayLabel: string;
   flags: JourneyFlag[];
   column: BoardColumn;
   tab: BoardTab;
+}
+
+export interface BankPfRequest {
+  status: 'pending' | 'approved' | 'declined';
+  changes: { bankName?: string; ifsc?: string; accountLast4?: string; uanLast4?: string };
+  note?: string;
+  requestedAt: string;
+  decidedAt?: string;
+  decidedByName?: string;
+  hrNote?: string;
 }
 
 // —— Offers, documents, letters ——————————————————————————————————————————
@@ -251,6 +271,10 @@ export interface CandidateDocumentView {
 }
 
 export type LetterKind = 'offer' | 'appointment' | 'nda' | 'confirmation' | 'extension' | 'relieving';
+export type AttachmentKind = 'salary_breakup' | 'joining_checklist' | 'policies' | 'other';
+export interface LetterAttachment { fileId: string; name: string; kind: AttachmentKind }
+/** A letter's email: HR's saved draft until `sentAt`. */
+export interface LetterEmail { to: string; cc?: string[]; subject: string; body: string; sentAt?: string; savedAt?: string; withPortalLink?: boolean; attachments?: LetterAttachment[] }
 export interface LetterView {
   id: string;
   kind: LetterKind;
@@ -260,6 +284,20 @@ export interface LetterView {
   signedPdfFileId?: string;
   sentAt?: string;
   signedAt?: string;
+  /** From GET /letters (the list); the panel's letters leave it out. */
+  email?: LetterEmail;
+  createdAt?: string;
+}
+
+/** Annexure A: the offer's CTC split by one of the company's salary templates (rupees). */
+export interface SalaryBreakup {
+  templates: Array<{ code: string; name: string }>;
+  templateCode?: string;
+  breakup: null | {
+    templateName: string; ctcAnnual: number; ctcMonthly: number; grossMonthly: number;
+    lines: Array<{ name: string; group: 'earning' | 'reimbursement' | 'benefit' | 'employer'; monthly: number; annual: number }>;
+  };
+  reason?: string;
 }
 export interface LetterTemplateDTO { id: string; kind: LetterKind; name: string; body: string; isDefault: boolean; updatedAt?: string }
 
@@ -295,6 +333,13 @@ export interface JourneyDetail {
   dateRequests: DateChangeRequestDTO[];
   probation: { months: ProbationMonthDTO[]; decision?: ConfirmationDecision };
   batch: Array<{ journeyId: string; name: string }>;
+  /** What this viewer may see: pay (a payroll tab) and candidates' documents (HR). */
+  viewer?: { seesPay: boolean; seesDocuments: boolean };
+}
+
+export interface TemplateJourney {
+  journeyId: string; kind: LifecycleKind; name: string; designation?: string; department?: string; userId?: string;
+  status: string; tj?: string; tl?: string; tab?: BoardTab; column?: BoardColumn;
 }
 
 // —— Calls ———————————————————————————————————————————————————————————————
@@ -331,6 +376,13 @@ export const journeyTaskAction = (id: string, taskId: string, action: 'done' | '
   api<{ task: TaskView }>(`${L}/journeys/${id}/tasks/${taskId}`, json('POST', { action, ...(note ? { note } : {}) })).then((r) => r.task);
 export const updateJourney = (id: string, patch: { managerUserId?: string; buddyUserId?: string; day1Pass?: Day1Pass; templateId?: string }) =>
   api<{ journey: JourneyView }>(`${L}/journeys/${id}`, json('PUT', patch)).then((r) => r.journey);
+export const nudgeTask = (id: string, taskId: string) =>
+  api<{ nudged: { taskId: string; channel: 'email' | 'push'; who: 'candidate' | 'joiner' | 'manager'; to: string; at: string } }>(`${L}/journeys/${id}/tasks/${taskId}/nudge`, json('POST')).then((r) => r.nudged);
+export const decideBankPfRequest = (id: string, decision: 'approve' | 'decline', note?: string) =>
+  api<{ journey: JourneyView }>(`${L}/journeys/${id}/bank-pf-request`, json('POST', { decision, ...(note ? { note } : {}) })).then((r) => r.journey);
+/** The sidebar's Onboarding badge: joiners who need HR now or are late. */
+export const getLifecycleCounts = () => api<{ onboarding: { badge: number; needsYou: number; late: number } }>(`${L}/counts`);
+export const getTemplateJourneys = (id: string) => api<{ journeys: TemplateJourney[] }>(`${L}/templates/${id}/journeys`).then((r) => r.journeys);
 export const getProbation = (id: string) => api<{ months: ProbationMonthDTO[]; decision?: ConfirmationDecision }>(`${L}/journeys/${id}/probation`);
 export const recordDecision = (id: string, body: Omit<ConfirmationDecision, 'decidedAt' | 'decidedByName' | 'letterId' | 'revealedAt'>) =>
   api<{ decision: ConfirmationDecision }>(`${L}/journeys/${id}/decision`, json('POST', body)).then((r) => r.decision);
@@ -347,7 +399,7 @@ const pdfForm = (pdf: Blob, filename: string) => {
 };
 export const uploadOfferPdf = (journeyId: string, pdf: Blob, filename: string) =>
   apiUpload<{ offer: OfferView }>(`${L}/offers/${journeyId}/pdf`, pdfForm(pdf, filename)).then((r) => r.offer);
-export const sendOffer = (journeyId: string, email: { subject: string; body: string; cc?: string[] }) =>
+export const sendOffer = (journeyId: string, email: { subject: string; body: string; cc?: string[]; withPortalLink?: boolean; attachments?: LetterAttachment[] }) =>
   api<{ offer: OfferView }>(`${L}/offers/${journeyId}/send`, json('POST', email)).then((r) => r.offer);
 export const finaliseOffer = (journeyId: string) =>
   api<{ offer: OfferView }>(`${L}/offers/${journeyId}/finalise`, json('POST')).then((r) => r.offer);
@@ -388,7 +440,20 @@ export const createLetter = (input: { kind: LetterKind; journeyId?: string; user
   api<{ letter: LetterView }>(`${L}/letters`, json('POST', input)).then((r) => r.letter);
 export const uploadLetterPdf = (id: string, pdf: Blob, filename: string) =>
   apiUpload<{ letter: LetterView }>(`${L}/letters/${id}/pdf`, pdfForm(pdf, filename)).then((r) => r.letter);
-export const sendLetter = (id: string, email: { to: string; cc?: string[]; subject: string; body: string; withPortalLink?: boolean }) =>
+export const sendLetter = (id: string, email: { to: string; cc?: string[]; subject: string; body: string; withPortalLink?: boolean; attachments?: LetterAttachment[] }) =>
   api<{ letter: LetterView }>(`${L}/letters/${id}/send`, json('POST', email)).then((r) => r.letter);
+/** Save draft: the email stays on the letter until it is sent. */
+export const saveLetterDraft = (id: string, email: { to?: string; cc?: string[]; subject?: string; body?: string; withPortalLink?: boolean; attachments?: LetterAttachment[] }) =>
+  api<{ letter: LetterView }>(`${L}/letters/${id}/draft`, json('PUT', email)).then((r) => r.letter);
+/** An extra file for a letter's email (salary breakup, joining checklist, company policies). */
+export const uploadLetterAttachment = (file: Blob, filename: string, kind: AttachmentKind, journeyId?: string) => {
+  const form = new FormData();
+  form.append('file', new File([file], filename, { type: file.type || 'application/pdf' }));
+  form.append('kind', kind);
+  if (journeyId) form.append('journeyId', journeyId);
+  return apiUpload<{ attachment: LetterAttachment; size: number; contentType: string }>(`${L}/letters/attachments`, form);
+};
+export const getSalaryBreakup = (journeyId: string, template?: string) =>
+  api<SalaryBreakup>(`${L}/letters/salary-breakup${qs({ journeyId, template })}`);
 export const listLetters = (p: { journeyId?: string; userId?: string; kind?: LetterKind }) =>
   api<{ letters: LetterView[] }>(`${L}/letters${qs(p)}`).then((r) => r.letters);
