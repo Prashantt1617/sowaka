@@ -418,7 +418,7 @@ async function main() {
   eq('An unknown filter is refused', (await refusal(async () => board.onboardingBoard(ORG, 'hr', { filter: 'nope' }))).status, 400);
   const J1b = await engine.createOnboardingJourney(ORG, 'hr', { candidate: cand('Arjun Nair'), tj: day(20), managerUserId: 'mgr' });
   const panel = await board.journeyPanel(ORG, J1.id);
-  ok('Side panel: tasks, BE-offer reads (stubbed), batch on the same Tj', panel.tasks.length === 52 && panel.offer === null && Array.isArray(panel.documents) && panel.batch.some((b) => b.journeyId === J1b.id));
+  ok('Side panel: tasks, the offer and its documents (BE-offer), batch on the same Tj', panel.tasks.length === 52 && panel.offer?.version === 1 && Array.isArray(panel.documents) && panel.documents.length === 4 && panel.batch.some((b) => b.journeyId === J1b.id), { tasks: panel.tasks.length, offer: panel.offer, documents: panel.documents, batch: panel.batch.length });
   ok('The panel hides the snapshot and encrypted fields', !('templateSnapshot' in panel.journey));
   const acted = await board.actOnTaskByHr(ORG, J1.id, byKey(await engine.tasksOf(J1.id), 'device_request').id, { action: 'done', note: 'Raised with IT' }, HR);
   eq('HR ticks a task', [acted.status, acted.doneByName, acted.note], ['done', 'Hema HR', 'Raised with IT']);

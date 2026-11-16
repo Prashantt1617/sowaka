@@ -9,6 +9,7 @@
  * insights (groups under 5 hidden, no quotes). On a scratch database only:
  *   MONGODB_URI=mongodb://127.0.0.1:27133 MONGODB_DB=el_off_check NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=offcheck AWS_S3_BUCKET= npm run offboarding:check
  */
+import { ensureDefaultTemplates } from '../services/lifecycle/templates';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { companies, connectDb, exitSettlements, getDb, handoverItems, journeyTasks, journeys, lifecycleFiles, lifecycleTemplates, resignations, surveyResponses, users } from '../config/db';
@@ -79,9 +80,10 @@ const keyOf = (d: string | null | undefined) => (d ? todayKey(new Date(d)) : nul
   console.log('resigning');
   const before = await myResignation('ravi', now);
   ok('notice from Exit settings when there is no template (60 days)', before.noticeDays === 60 && before.lastDayByNotice === addDays(T, 60) && before.canResign, before);
-  await lifecycleTemplates().insertOne({ id: 'tpl-std', org: ORG, kind: 'offboarding', name: 'Standard', isDefault: true, active: true, settings: { noticeDays: 45, exitInterviewOpensDays: 5 }, tasks: [], createdAt: now, updatedAt: now } as never);
-  // An empty task list would leave the stub engine nothing to make; the stub's own list is used when the template has none.
-  await lifecycleTemplates().updateOne({ id: 'tpl-std' }, { $unset: { tasks: '' } });
+  // The seeded Standard template (the T2 tasks) starts from the company's notice period; HR then sets 45 days on it.
+  await ensureDefaultTemplates(ORG);
+  ok('the seeded template starts from Exit settings (60 days)', (await lifecycleTemplates().findOne({ org: ORG, kind: 'offboarding', isDefault: true }))?.settings.noticeDays === 60);
+  await lifecycleTemplates().updateOne({ org: ORG, kind: 'offboarding', isDefault: true }, { $set: { id: 'tpl-std', 'settings.noticeDays': 45, 'settings.exitInterviewOpensDays': 5 } });
   ok('the default offboarding template wins (45 days)', (await myResignation('ravi', now)).noticeDays === 45);
   ok('a reason is required', (await refusal(() => resign('ravi', { reason: '  ' }, now))).status === 400);
   const sent = await resign('ravi', { reason: 'Better opportunity', note: 'Thank you for five years.' }, now);

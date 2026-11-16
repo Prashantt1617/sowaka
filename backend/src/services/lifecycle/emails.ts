@@ -40,6 +40,9 @@ export function orgMayEmail(org: string): boolean {
   return env.emailOrgs.length === 0 || env.emailOrgs.includes(org);
 }
 
+/** Whether a mail can really go out: SMTP set up. Without it (development) mails are only logged and kept in the outbox. */
+export function smtpConfigured(): boolean { return transporter !== null; }
+
 const mask = (email: string) => {
   const [local = '', domain = ''] = email.split('@');
   return `${local.slice(0, 2)}${'*'.repeat(Math.max(1, local.length - 2))}@${domain}`;

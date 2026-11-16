@@ -37,7 +37,8 @@ import {
 } from '../../models/user.model';
 import { closeJourney, completeTask, createOffboardingJourney, journeyTasksView, moveTl, setJourneyStatus } from './engine';
 import type { TaskView } from './engine';
-import { sendLifecycleEmail } from './emails';
+import { orgMayEmail, sendLifecycleEmail, smtpConfigured } from './emails';
+import { env } from '../../config/env';
 
 /** Answers with its status and message (the routes send `{ error, message }`). */
 export class LifecycleError extends AdminError {}
@@ -856,8 +857,10 @@ export async function emailSettlement(actorUserId: string, employeeUserId: strin
   const message = String(body.message ?? '').trim().slice(0, 4000)
     || `Dear ${first},\n\nYour full and final settlement statement is attached.\n\nFor any question, reply to this email or write to HR.\n\n${companyName}`;
   const html = message.split(/\n{2,}/).map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('');
+  if (!orgMayEmail(actor.org)) throw new LifecycleError(409, 'Email to this company is switched off on this server; the PDF was not sent');
   const sent = await sendLifecycleEmail(actor.org, to, subject, html, [{ filename: `Settlement_${user.employeeId || user.name.replace(/\s+/g, '_')}.pdf`, content: pdf, contentType: 'application/pdf' }]);
-  if (!sent) throw new LifecycleError(409, 'Email to this company is switched off on this server; the PDF was not sent');
+  // Without SMTP (development only) the mail is logged and kept in the outbox; anywhere else a failed send is an error.
+  if (!sent && (smtpConfigured() || env.nodeEnv === 'production')) throw new LifecycleError(502, 'The email could not be sent; the PDF was not sent. Try again');
   const settlementEmail = { to, at: now, ...(actor.name ? { byName: actor.name } : {}) };
   await users().updateOne({ userId: employeeUserId, org: actor.org }, {
     $set: { ...(user.exit.offboarding ? { 'exit.offboarding.settlementEmail': settlementEmail } : { 'exit.offboarding': { exitType: exitTypeOf(user.exit) ?? 'resignation', showAppPage: false, settlementEmail } }), ...(!user.personalEmail ? { personalEmail: to } : {}), updatedAt: now },
@@ -925,10 +928,18 @@ export async function offboardingMe(userId: string) {
   const user = await users().findOne({ userId }, { projection: { _id: 0, exit: 1, org: 1 } });
   const r = await resignations().findOne({ userId, status: { $in: ['with_manager', 'with_hr', 'accepted'] } }, { sort: { submittedAt: -1 }, projection: { _id: 0, id: 1, status: 1, lastDayByNotice: 1 } });
   const ob = user?.exit?.offboarding;
-  if (!user?.exit && !r) return undefined;
+  // The offboarding journey: the one the exit names, else an open one (an exit always comes with it in the product).
+  const journey = ob?.journeyId
+    ? await journeys().findOne({ id: ob.journeyId }, { projection: { _id: 0, id: 1, tl: 1, exitType: 1, showAppPage: 1, templateSnapshot: 1 } })
+    : await journeys().findOne({ userId, kind: 'offboarding', closedAt: { $exists: false } }, { sort: { createdAt: -1 }, projection: { _id: 0, id: 1, tl: 1, exitType: 1, showAppPage: 1, templateSnapshot: 1 } });
+  if (!user?.exit && !r && !journey) return undefined;
+  const appPageFor = journey?.templateSnapshot?.settings?.appPageFor ?? ['resignation', 'retirement', 'end_of_contract'];
+  const pageVisible = !!journey && (ob?.showAppPage ?? journey.showAppPage ?? appPageFor.includes(journey.exitType ?? 'resignation'));
   return {
-    ...(ob?.journeyId ? { journeyId: ob.journeyId } : {}), ...(r ? { resignationId: r.id } : {}),
-    status: user?.exit ? 'accepted' : r!.status, tl: user?.exit?.lastWorkingDay ?? r?.lastDayByNotice, pageVisible: !!ob?.journeyId && ob.showAppPage,
+    ...(journey ? { journeyId: journey.id } : {}), ...(r ? { resignationId: r.id } : {}),
+    status: user?.exit || journey ? 'accepted' : r!.status,
+    tl: journey?.tl ?? user?.exit?.lastWorkingDay ?? r?.lastDayByNotice,
+    pageVisible,
   };
 }
 

@@ -4,7 +4,7 @@
  * starts, so editing a template never touches a running journey.
  */
 import { randomUUID } from 'node:crypto';
-import { journeys, lifecycleTemplates } from '../../config/db';
+import { companies, journeys, lifecycleTemplates } from '../../config/db';
 import type {
   LifecycleKind, LifecycleTemplate, LifecycleTemplateSettings, LifecyclePhase, OwnerRole, SystemTaskKey, TaskKind, TaskSurface, TemplateTask,
 } from '../../models/lifecycle.model';
@@ -53,6 +53,12 @@ export async function ensureDefaultTemplates(org: string): Promise<void> {
     }
     // Keyed so two first visits at once still make one Standard.
     const doc = fresh(org, kind, 'Standard', true);
+    // The company's own notice period (Payroll › Exit settings), not the seed's 60 days:
+    // otherwise the first look at templates would quietly change everyone's last day.
+    if (kind === 'offboarding') {
+      const company = await companies().findOne({ id: org }, { projection: { _id: 0, exitNoticeDays: 1 } });
+      if (typeof company?.exitNoticeDays === 'number' && company.exitNoticeDays > 0) doc.settings.noticeDays = company.exitNoticeDays;
+    }
     await lifecycleTemplates().updateOne({ org, kind, isDefault: true }, { $setOnInsert: doc }, { upsert: true });
   }
 }
