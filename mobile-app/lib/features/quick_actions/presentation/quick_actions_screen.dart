@@ -23,6 +23,7 @@ import '../../requests/presentation/request_summary.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
 import '../../payroll/data/payroll_api_service.dart';
 import '../../payroll/data/payroll_models.dart';
+import '../../payroll/presentation/payroll_lock.dart';
 import '../../placements/data/placements_api_service.dart';
 import '../../placements/data/placements_models.dart';
 import '../../policies/data/policies_api_service.dart';
@@ -615,6 +616,7 @@ class QuickActionsScreen extends StatefulWidget {
     this.placements,
     this.payroll,
     this.pickPayrollFile,
+    this.payrollLock,
   });
 
   final ManagerBloc bloc;
@@ -639,6 +641,9 @@ class QuickActionsScreen extends StatefulWidget {
   /// Picks an investment proof. Supplied by tests; the system picker
   /// otherwise.
   final PayrollFilePicker? pickPayrollFile;
+
+  /// The phone's lock Payroll opens behind; tests hand in their own (the app uses the system's).
+  final DeviceLock? payrollLock;
 
   @override
   State<QuickActionsScreen> createState() => _QuickActionsScreenState();
@@ -971,16 +976,22 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         _QuickPage.overtime => _overtimeHub(),
         _QuickPage.applyOvertime => _applyOvertimeForm(),
         _QuickPage.reimbursements => _reimbursementHub(),
-        _QuickPage.payroll => PayrollScreen(
-          key: _payrollKey,
-          api: _payrollApi,
+        // Payroll shows salary: it opens only after the phone's own lock (Face ID, fingerprint or passcode).
+        _QuickPage.payroll => PayrollLockGate(
+          key: const ValueKey('payroll-gate'),
           onClose: _back,
-          profileAction: widget.profileAction,
-          onNotifications: widget.onNotifications,
-          onQuickCreate: _showQuickCreateComingSoon,
-          onFixPunchDay: _fixPunchDay,
-          onRaiseTicket: _openSupportDesk,
-          pickFile: widget.pickPayrollFile,
+          lock: widget.payrollLock,
+          child: PayrollScreen(
+            key: _payrollKey,
+            api: _payrollApi,
+            onClose: _back,
+            profileAction: widget.profileAction,
+            onNotifications: widget.onNotifications,
+            onQuickCreate: _showQuickCreateComingSoon,
+            onFixPunchDay: _fixPunchDay,
+            onRaiseTicket: _openSupportDesk,
+            pickFile: widget.pickPayrollFile,
+          ),
         ),
         _QuickPage.applyReimbursement => _applyReimbursementForm(),
         _QuickPage.policies => _policies(),
