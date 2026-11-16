@@ -163,9 +163,11 @@ async function journeyDayJobs(j: Journey, tasks: JourneyTask[], today: string, c
   }
   if (j.status === 'confirmed') return;
   const total = totalProbationMonths(j);
+  const monthDone = (key: SystemTaskKey, m: number) => tasks.some((t) => t.systemKey === key && t.month === m && (t.status === 'done' || t.status === 'skipped'));
   for (let m = 1; m <= total; m += 1) {
     const start = m === 1 ? addDaysKey(tj, 7) : probationMonthStart(tj, m);
-    await fire(`m${m}_goals`, start, () => tell([j.managerUserId], { scenario: 'lifecycle_goals_reminder', destination: 'lifecycle_probation_review', title: `Set ${first}'s month-${m} goals`, body: 'They check in against them at the end of the month', data: { ...data, month: String(m) } }));
+    // Goals already set for the month (on Day 1, or from last month's review): nothing to remind.
+    if (!monthDone('monthly_goals', m)) await fire(`m${m}_goals`, start, () => tell([j.managerUserId], { scenario: 'lifecycle_goals_reminder', destination: 'lifecycle_probation_review', title: `Set ${first}'s month-${m} goals`, body: 'They check in against them at the end of the month', data: { ...data, month: String(m) } }));
     const checkin = addDaysKey(probationMonthEnd(tj, m), -6);
     await fire(`m${m}_checkin`, checkin, async () => {
       const push = { scenario: 'lifecycle_checkin_reminder' as const, title: `Month-${m} check-in is open`, body: 'Due at the end of the month', data: { ...data, month: String(m) } };

@@ -125,7 +125,13 @@ const SAT_SUN: Record<string, number[]> = { '1': [5, 6], '2': [5, 6], '3': [5, 6
  */
 export async function workCalendar(org: string, opts: { userId?: string; location?: string } = {}): Promise<WorkCalendar> {
   let weeklyOff: Record<string, number[]> | undefined;
-  if (opts.userId) {
+  // The employee's own grid, once the company has set week-offs up (a shift template or a saved policy).
+  // Before that the shift service answers with its built-in default (Sunday only), which is not the
+  // company's: the fallback below (Saturday and Sunday) is, as it is for a candidate.
+  const setUp = !!opts.userId && (
+    (await shiftTemplates().countDocuments({ org, active: true, deletedAt: { $exists: false } }, { limit: 1 })) > 0
+    || (await shiftPolicies().countDocuments({ org, weeklyOff: { $exists: true } }, { limit: 1 })) > 0);
+  if (opts.userId && setUp) {
     try { weeklyOff = await weekOffGridFor(opts.userId); } catch { weeklyOff = undefined; }
   }
   if (!weeklyOff) {

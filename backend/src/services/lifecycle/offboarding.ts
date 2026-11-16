@@ -1199,10 +1199,12 @@ export async function markHandoverDone(managerUserId: string, leaverUserId: stri
  * Every hour, after closeDueExits (which ends access the day after Tl; not repeated here). Once each:
  * Tl − n the exit interview opens (push); access ended → the Close account task is done; Tl + 2
  * working days the settlement-due flag (journey status settlement_due); Tl + 30 gratuity due, when
- * eligible. Fired keys are kept on `user.exit.offboarding.fired`, so a second run sends nothing.
+ * eligible. The two pushes wait for 09:00 IST. Fired keys are kept on `user.exit.offboarding.fired`, so a second run sends nothing.
  */
 export async function runOffboardingJobs(now = new Date()) {
   const today = todayKey(now);
+  // Pushes go out in the day, from 09:00 IST (as the onboarding day jobs do); the state changes run every hour.
+  const pushHours = istParts(now).hour >= 9;
   const rows = await users().find({ 'exit.offboarding.journeyId': { $exists: true } }, { projection: { _id: 0, userId: 1, org: 1, name: 1, joiningDate: 1, exit: 1 } }).toArray();
   const counts = { interviewOpened: 0, accountsClosed: 0, settlementDue: 0, gratuityDue: 0 };
   for (const u of rows) {
@@ -1219,7 +1221,7 @@ export async function runOffboardingJobs(now = new Date()) {
         return res.modifiedCount === 1;
       };
       const opens = interviewOpensKey(e, journey);
-      if (opens && opens <= today && today <= e.lastWorkingDay && !e.interview && !e.accessEndedAt && !fired.has('interview_open') && (await fire('interview_open'))) {
+      if (pushHours && opens && opens <= today && today <= e.lastWorkingDay && !e.interview && !e.accessEndedAt && !fired.has('interview_open') && (await fire('interview_open'))) {
         await tell([u.userId], 'lifecycle_exit_interview_open', 'Your exit interview is open', 'Five short questions, all optional. Your answers go to HR only.', { journeyId });
         counts.interviewOpened++;
       }
@@ -1234,7 +1236,7 @@ export async function runOffboardingJobs(now = new Date()) {
         counts.settlementDue++;
       }
       const joined = keyOfInstant(u.joiningDate ?? null);
-      if (today >= addDays(e.lastWorkingDay, 30) && joined && serviceYears(joined, e.lastWorkingDay).completed >= 5 && !fired.has('gratuity_due') && (await fire('gratuity_due'))) {
+      if (pushHours && today >= addDays(e.lastWorkingDay, 30) && joined && serviceYears(joined, e.lastWorkingDay).completed >= 5 && !fired.has('gratuity_due') && (await fire('gratuity_due'))) {
         await tell(await clearanceStaff(u.org), 'lifecycle_gratuity_due', `Gratuity due: ${u.name}`, `Gratuity is due within 30 days of the last day (${shortDay(e.lastWorkingDay)}).`, { userId: u.userId });
         counts.gratuityDue++;
       }
@@ -1263,7 +1265,9 @@ export async function settlementChecks(actorUserId: string, employeeUserId: stri
     clearance: { done: clearance.filter((c) => c.done).length, total: clearance.length, ok: clearance.every((c) => c.done) },
     salary: { ok: true, label: user.exit.rules?.holdPay ? `Held${user.exit.noticeFrom ? ` from ${shortDay(user.exit.noticeFrom)}` : ''}, paid with the settlement` : 'Paid with each monthly run' },
     personalEmail: { ok: !!user.personalEmail, value: user.personalEmail ?? '' },
-    dueOn: addWorkingDays(user.exit.lastWorkingDay, 2),
+    // The journey's settlement task (the company's working days and holidays), else Saturday and Sunday off.
+    dueOn: keyOfInstant((user.exit.offboarding?.journeyId ? await journeyTasks().findOne({ journeyId: user.exit.offboarding.journeyId, systemKey: 'final_settlement' }, { projection: { _id: 0, dueAt: 1 } }) : null)?.dueAt ?? null)
+      ?? addWorkingDays(user.exit.lastWorkingDay, 2),
     teams: CLEARANCE_TEAMS,
   };
 }
