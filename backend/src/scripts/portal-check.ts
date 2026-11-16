@@ -176,6 +176,8 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   const account = (await db.candidateAccounts().findOne({ journeyId: A }))!;
   ok('finalise creates the account (scrypt) and emails the login', loginMail.subject.includes('login details') && password.length === 12 && account.passwordHash.startsWith('scrypt$') && !account.passwordHash.includes(password));
   ok('the journey is finalised', (await db.journeys().findOne({ id: A }))?.status === 'finalised');
+  const setupPush = await db.notifications().findOne({ userId: 'mgr', scenario: 'lifecycle_joiner_setup' });
+  ok('the manager’s set-up push opens the set-up screen (destination + journeyId)', setupPush?.data?.destination === 'lifecycle_joiner_setup' && setupPush?.data?.journeyId === A, setupPush?.data);
   ok('finalising twice is refused', (await refusal(() => offersSvc.finaliseOffer(HR, A))).status === 409);
   link = await offersSvc.openOfferLink(token2, '1.1.1.1');
   ok('the link now says "all set" with the masked email and both dates', link.state === 'finalised' && link.loginEmailMasked === 'ka***@example.com' && Boolean(link.acceptedAt && link.finalisedAt));

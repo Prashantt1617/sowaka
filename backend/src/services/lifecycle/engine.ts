@@ -399,7 +399,9 @@ export function deriveJourney(j: Journey, tasks: JourneyTask[], now: Date, extra
       .map((t) => t.month!)
       .filter((m) => live.some((c) => c.systemKey === 'monthly_checkin' && c.month === m && c.status === 'done')),
   ).size;
-  const leaves = (['week1_reels', 'people_to_meet', 'day7_survey'] as SystemTaskKey[]).filter((k) => keyDone(live, k)).length + closedCycles;
+  // A leaf is earned (done), never given for a group that was skipped or closed unfinished.
+  const keyEarned = (k: SystemTaskKey) => byKey(live, k).length > 0 && byKey(live, k).every((t) => t.status === 'done');
+  const leaves = (['week1_reels', 'people_to_meet', 'day7_survey'] as SystemTaskKey[]).filter(keyEarned).length + closedCycles;
   const late = live.filter((t) => taskLate(t, today));
   const droop = late.some((t) => t.ownerRole === 'employee' || t.ownerRole === 'manager_employee');
   const plant: PlantState = { stage: plantStage, water: Math.min(3, water) as PlantState['water'], leaves, droop };
@@ -450,7 +452,9 @@ export function deriveJourney(j: Journey, tasks: JourneyTask[], now: Date, extra
     }
     if (column === 'ready_to_join' && !active.some((t) => t.ownerRole !== 'automatic' && t.systemKey !== 'mark_joined' && isCounted(t))) flags.push('all_set');
   }
-  if (joined && tab === 'first_week' && tj && today >= addDaysKey(tj, 5) && late.some((t) => t.phase === 'first_week')) flags.push('needs_attention');
+  // From Tj + 5 (week-1 tasks due), anything of the joiner's due by today and still open needs attention.
+  const dueByToday = (t: JourneyTask) => !!t.dueAt && keyOfDay(t.dueAt) <= today && (t.ownerRole === 'employee' || t.ownerRole === 'manager_employee');
+  if (joined && tab === 'first_week' && tj && today >= addDaysKey(tj, 5) && (late.some((t) => t.phase === 'first_week') || active.some((t) => t.phase === 'first_week' && dueByToday(t)))) flags.push('needs_attention');
   if (j.probation?.decision?.outcome === 'not_confirm') flags.push('needs_attention');
   if (tab === 'probation' && !confirmed && !late.length && active.some((t) => t.phase === 'probation' && t.dueAt && keyOfDay(t.dueAt) >= today && keyOfDay(t.dueAt) <= addDaysKey(today, 3))) flags.push('due_soon');
   if (column === 'final_month' && byKey(live, 'confirmation_discussion').some((t) => ACTIVE_STATUSES.includes(t.status))) flags.push('decide');
@@ -509,6 +513,20 @@ const VISIBLE: Record<string, OwnerRole[]> = {
   employee: ['employee', 'manager_employee'],
   'team:it': ['it'], 'team:admin': ['admin'], 'team:finance': ['finance'],
 };
+
+/**
+ * The Day-1 items someone else does that the joiner still sees on their day (6Zs §5.3 A2 Day 1:
+ * Welcome and induction, Company vision and culture, Laptop and login, Meet your team): shown
+ * read-only ("HR does this"), counted toward the day, never ticked by the joiner. Custom
+ * first-week meetings of HR's or the manager's count too.
+ */
+const JOINER_READ_ONLY_KEYS = new Set<SystemTaskKey>(['welcome_induction', 'vision_culture', 'laptop_setup', 'meet_team']);
+export function joinerSeesReadOnly(task: Pick<JourneyTask, 'ownerRole' | 'status' | 'systemKey' | 'phase' | 'kind'>): boolean {
+  if (task.status === 'cancelled' || task.phase !== 'first_week') return false;
+  if (task.ownerRole === 'employee' || task.ownerRole === 'manager_employee' || task.ownerRole === 'automatic') return false;
+  if (task.systemKey) return JOINER_READ_ONLY_KEYS.has(task.systemKey);
+  return task.kind === 'meeting';
+}
 
 export function visibleTo(viewer: Viewer, task: Pick<JourneyTask, 'ownerRole' | 'status'>): boolean {
   if (viewer === 'hr') return true;
@@ -918,11 +936,14 @@ export async function syncDay1Meetings(journeyId: string): Promise<void> {
     const filter = { journeyId, title: item.title.slice(0, 120) };
     const existing = await lifecycleMeetings().findOne(filter, { projection: { _id: 0 } });
     if (existing?.met) continue;
-    const place = item.with ? undefined : j.day1Pass.place;
+    // The room stays when the line names a person too ("Room 4B · with Neha R.").
+    const place = j.day1Pass.place;
+    const withWho = item.with?.trim().slice(0, 120);
     await lifecycleMeetings().updateOne(filter, {
       $set: {
         startsAt, endsAt: new Date(startsAt.getTime() + 30 * 60_000), attendeeUserIds: attendees,
         ...(task ? { journeyTaskId: task.id } : {}), ...(place ? { place } : {}), ...(j.day1Pass.meetingLink ? { link: j.day1Pass.meetingLink } : {}),
+        ...(withWho ? { with: withWho } : {}),
       },
       $setOnInsert: { id: randomUUID(), org: j.org, journeyId },
       ...(existing && existing.startsAt.getTime() !== startsAt.getTime() ? { $unset: { remindedAt: '' } } : {}),

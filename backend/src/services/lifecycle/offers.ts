@@ -469,7 +469,8 @@ export async function finaliseOffer(hr: HrActor, journeyId: string, now = new Da
       await notifyUsers([journey.managerUserId], {
         scenario: 'lifecycle_joiner_setup', title: `Set up ${journey.candidate?.name ?? 'your new joiner'}`,
         body: `Joining ${formatDay(journey.tj)}. Pick people to meet, write a welcome note and name a buddy.`,
-        data: { type: 'lifecycle_joiner_setup', journeyId },
+        // `destination` opens the manager's set-up screen from the push (the launcher routes by it).
+        data: { type: 'lifecycle_joiner_setup', destination: 'lifecycle_joiner_setup', journeyId },
       });
     }
   } else {
