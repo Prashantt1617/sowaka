@@ -157,13 +157,15 @@ table.pd-t { width: 100%; border-collapse: separate !important; border-spacing: 
 .pd-row-hover:hover { background: var(--surface-2); }
 
 /* Focus ring on form fields inside the People and Shifts dialogs and forms */
-.pd-form input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
+.pd-form input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(.ds-inp-bare):focus,
 .pd-form select:focus,
 .pd-form textarea:focus,
-.pd-modal input:not([type="checkbox"]):not([type="radio"]):focus,
+.pd-modal input:not([type="checkbox"]):not([type="radio"]):not(.ds-inp-bare):focus,
 .pd-modal select:focus {
   outline: none; border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-soft);
 }
+/* A search box's own text field: the rounded box around it shows the focus, not the field. */
+.pd-form .ds-inp-bare:focus, .pd-modal .ds-inp-bare:focus { outline: none; box-shadow: none; }
 
 /* Person cell */
 .pd-who { display: flex; align-items: center; gap: 12px; min-width: 150px; }
