@@ -100,6 +100,9 @@ flutter:
     - assets/models/
     # The face check's step, verified and refused tones (generated sine tones, see face_sounds.dart).
     - assets/sounds/
+    # Built-in notification sounds for iOS (CAF), copied into Library/Sounds on
+    # start; Android's are res/raw. See tool/notification_sounds.py.
+    - assets/notification_sounds/
     # The update screens' rocket (an animated GIF) and its accents (Figma 3902:15655).
     - assets/images/update/
     # The anniversary cards' numbers 1 to 7 (Figma 4010:63927, "Birthday year").

@@ -36,6 +36,14 @@ target 'Runner' do
   end
 end
 
+# The Notification Service Extension (a push's picture on iOS, see
+# NotificationService/NotificationService.swift): Firebase's extension helper
+# only. Unpinned, so it resolves to the same Firebase the app's plugin uses.
+target 'NotificationService' do
+  use_frameworks!
+  pod 'Firebase/Messaging'
+end
+
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
