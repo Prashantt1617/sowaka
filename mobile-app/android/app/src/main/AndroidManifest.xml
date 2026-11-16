@@ -173,6 +173,17 @@
                 <data android:scheme="sowaka" android:host="open"/>
             </intent-filter>
         </activity-alias>
+        <!-- Downloaded notification sounds, for the channels made for them
+             (NotificationSoundProvider, lib/services/notification_sounds.dart). -->
+        <provider
+            android:name=".NotificationSoundProvider"
+            android:authorities="${applicationId}.notificationsounds"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/notification_sound_paths" />
+        </provider>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

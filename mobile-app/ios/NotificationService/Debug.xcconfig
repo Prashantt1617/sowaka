@@ -1,0 +1,5 @@
+// The Notification Service Extension's Debug settings: its pods (after pod install)
+// and Flutter's build name and number, which its Info.plist uses so the
+// extension's version always matches the app's.
+#include? "../Pods/Target Support Files/Pods-NotificationService/Pods-NotificationService.debug.xcconfig"
+#include "../Flutter/Generated.xcconfig"
