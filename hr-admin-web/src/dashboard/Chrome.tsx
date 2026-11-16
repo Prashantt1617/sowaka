@@ -382,7 +382,7 @@ export function Sidebar() {
 
       <div className="scry" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '0 12px 16px' }}>
         {canOpen(user, SETUP_ITEM.key) && <NavButton item={SETUP_ITEM} />}
-        {canOpen(user, BULK_ITEM.key) && <NavButton item={BULK_ITEM} />}
+        {/* Bulk assign is hidden from the sidebar for now (BULK_ITEM, its page and its access stay). */}
         {canOpen(user, OVERVIEW_ITEM.key) && <NavButton item={OVERVIEW_ITEM} badge={badgeFor(OVERVIEW_ITEM.key)} />}
         {sections.map((section) => (
           <NavSection

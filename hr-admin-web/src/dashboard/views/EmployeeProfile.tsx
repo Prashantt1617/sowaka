@@ -240,7 +240,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
     <div className="pd-prof" style={{ animation: 'fade .3s ease both' }}>
       <div className="pd-prof-top">
         <button onClick={onBack} className="pd-btn ghost sm" style={{ marginLeft: -12 }}>{backLabel}</button>
-        {user?.dashboardAdmin === true && user.id !== emp.id && (
+        {SHOW_DELETE_EMPLOYEE && user?.dashboardAdmin === true && user.id !== emp.id && (
           <button type="button" onClick={() => setDeleting(true)} className="pd-btn sm" style={{ color: 'var(--bad)' }}><PdTrash /> Delete employee</button>
         )}
       </div>
@@ -520,6 +520,9 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
     </div>
   );
 }
+
+/** Delete employee is hidden from the dashboard for now; the dialog and the server's delete stay. */
+const SHOW_DELETE_EMPLOYEE = false as boolean;
 
 export type ProfileTab = 'profile' | 'performance' | 'calendar' | 'requests' | 'salary' | 'orgchart' | 'activity';
 
