@@ -9,6 +9,7 @@
  * Also the small shared pieces every lifecycle mail and read model needs: the
  * company's display name and HR contact, IST dates, and once-only job keys.
  */
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import nodemailer from 'nodemailer';
 import { companies, getDb, users } from '../../config/db';
 import { env } from '../../config/env';
@@ -204,69 +205,100 @@ export function layout(companyName: string, content: string, button?: { label: s
 
 const p = (text: string) => `<p style="margin:0 0 14px">${text}</p>`;
 
-export const portalLink = (pathAndQuery: string) => `${env.portalBaseUrl}${pathAndQuery}`;
+// ─── Links into the portal, and the client they belong to ─────────────────
+
+/**
+ * Sign-in, forgot and reset show the client's logo and HR contact. A device
+ * that never opened the offer link has no remembered client, so every portal
+ * link in a mail carries `c=<client token>`: the org id and a short HMAC, which
+ * `GET /portal/client/:token` answers with the logo and HR contact. Signed, so
+ * the endpoint cannot be walked through org ids.
+ */
+function clientKey(): Buffer {
+  return createHash('sha256').update(`portal-client:${env.portalJwtSecret || env.mongoUri || 'local'}`).digest();
+}
+const clientMac = (org: string) => createHmac('sha256', clientKey()).update(`client:${org}`).digest('base64url').slice(0, 22);
+export function clientToken(org: string): string {
+  return `${Buffer.from(org).toString('base64url')}.${clientMac(org)}`;
+}
+/** The org a client token names, or null when it is not one of ours. */
+export function orgOfClientToken(token: unknown): string | null {
+  const [orgB64, mac] = String(token ?? '').split('.');
+  if (!orgB64 || !mac || mac.length !== 22) return null;
+  const org = Buffer.from(orgB64, 'base64url').toString('utf8');
+  if (!/^[\w.-]{1,64}$/.test(org)) return null;
+  const expected = Buffer.from(clientMac(org));
+  const actual = Buffer.from(mac);
+  return expected.length === actual.length && timingSafeEqual(expected, actual) ? org : null;
+}
+
+/** `${PORTAL_BASE_URL}${path}`; with an org, `c=<client token>` rides along (see `clientToken`). */
+export const portalLink = (pathAndQuery: string, org?: string) => {
+  if (!org) return `${env.portalBaseUrl}${pathAndQuery}`;
+  return `${env.portalBaseUrl}${pathAndQuery}${pathAndQuery.includes('?') ? '&' : '?'}c=${clientToken(org)}`;
+};
 
 export const mails = {
   offer(company: string, body: string, link: string | null) {
     return layout(company, textToHtml(body), link ? { label: 'View and accept your offer', url: link } : undefined);
   },
-  loginDetails(company: string, name: string, email: string, password: string) {
+  loginDetails(company: string, name: string, email: string, password: string, org?: string) {
     return layout(company,
       p(`Hi ${escapeHtml(firstName(name))},`)
       + p(`HR has confirmed your offer. Your joining portal is ready: upload your documents, meet the team and get your Day-1 pass, all before you join.`)
       + p(`<b>Email:</b> ${escapeHtml(email)}<br /><b>Password:</b> <span style="font-family:monospace">${escapeHtml(password)}</span>`)
       + p(`Keep this password to yourself. You can change it any time with <i>Forgot password</i> on the sign-in page.`),
-      { label: 'Sign in to your portal', url: portalLink('/sign-in') });
+      { label: 'Sign in to your portal', url: portalLink('/sign-in', org) });
   },
-  loginReminder(company: string, name: string, email: string, sentOn: string) {
+  loginReminder(company: string, name: string, email: string, sentOn: string, org?: string) {
     return layout(company,
       p(`Hi ${escapeHtml(firstName(name))},`)
       + p(`Your joining portal is waiting for you. Sign in with <b>${escapeHtml(email)}</b> and the password in our email of ${escapeHtml(sentOn)}.`)
       + p(`Can't find it? Use <i>Forgot password</i> on the sign-in page and we'll send you a link to set a new one.`),
-      { label: 'Sign in', url: portalLink('/sign-in') });
+      { label: 'Sign in', url: portalLink('/sign-in', org) });
   },
-  quietNudge(company: string, name: string, upNext: string | undefined) {
+  quietNudge(company: string, name: string, upNext: string | undefined, org?: string) {
     return layout(company,
       p(`Hi ${escapeHtml(firstName(name))},`)
       + p(`A quick reminder: a few things are still waiting on your joining portal.${upNext ? ` Next up: <b>${escapeHtml(upNext)}</b>.` : ''}`)
       + p(`It only takes a few minutes.`),
-      { label: 'Open your portal', url: portalLink('/') });
+      { label: 'Open your portal', url: portalLink('/', org) });
   },
-  documentSentBack(company: string, name: string, label: string, note: string) {
+  documentSentBack(company: string, name: string, label: string, note: string, org?: string) {
     return layout(company,
       p(`Hi ${escapeHtml(firstName(name))},`)
       + p(`HR looked at your <b>${escapeHtml(label)}</b> and needs another copy.`)
       + `<p style="margin:0 0 14px;padding:12px 14px;background:#FFF4E5;border-radius:12px"><b>Note from HR:</b> ${escapeHtml(note)}</p>`
       + p(`Please upload it again on your portal.`),
-      { label: 'Upload again', url: portalLink('/documents') });
+      { label: 'Upload again', url: portalLink('/documents', org) });
   },
-  lettersReady(company: string, name: string, due: string) {
+  lettersReady(company: string, name: string, due: string, org?: string) {
     return layout(company,
       p(`Hi ${escapeHtml(firstName(name))},`)
       + p(`HR has approved your documents. Your appointment letter and NDA are ready: open each PDF, read it, then sign it on your portal${due ? ` by ${escapeHtml(due)}` : ''}.`),
-      { label: 'Read and sign', url: portalLink('/letters') });
+      { label: 'Read and sign', url: portalLink('/letters', org) });
   },
-  letterNudge(company: string, name: string, due: string) {
+  letterNudge(company: string, name: string, due: string, org?: string) {
     return layout(company,
       p(`Hi ${escapeHtml(firstName(name))},`)
       + p(`Your appointment letter and NDA are still waiting for your signature${due ? ` (due ${escapeHtml(due)})` : ''}. It takes about three minutes.`),
-      { label: 'Read and sign', url: portalLink('/letters') });
+      { label: 'Read and sign', url: portalLink('/letters', org) });
   },
-  day1Pass(company: string, name: string, lines: Array<[string, string]>) {
+  day1Pass(company: string, name: string, lines: Array<[string, string]>, org?: string) {
     return layout(company,
       p(`Hi ${escapeHtml(firstName(name))},`)
       + p(`Your first day is one week away. Here is where to go and when; your Day-1 pass on the portal has it all, with an "Add to calendar" button.`)
       + `<table style="border-collapse:collapse;margin:0 0 14px">${lines.filter(([, v]) => v).map(([k, v]) => `<tr><td style="padding:4px 14px 4px 0;color:#717171">${escapeHtml(k)}</td><td style="padding:4px 0"><b>${escapeHtml(v)}</b></td></tr>`).join('')}</table>`,
-      { label: 'Open your Day-1 pass', url: portalLink('/pass') });
+      { label: 'Open your Day-1 pass', url: portalLink('/pass', org) });
   },
-  dateChange(company: string, name: string, approved: boolean, requested: string, note?: string) {
+  dateChange(company: string, name: string, approved: boolean, requested: string, note?: string, org?: string) {
     return layout(company,
       p(`Hi ${escapeHtml(firstName(name))},`)
       + (approved
         ? p(`Good news: HR has agreed to your new joining date, <b>${escapeHtml(requested)}</b>. Your task due dates have moved to match. HR will send you an updated offer to accept.`)
         : p(`HR couldn't move your joining date to ${escapeHtml(requested)}. Your joining date stays as it was.`))
       + (note ? `<p style="margin:0 0 14px;padding:12px 14px;background:#F7F7F9;border-radius:12px"><b>Note from HR:</b> ${escapeHtml(note)}</p>` : ''),
-      { label: 'Open your portal', url: portalLink('/') });
+      { label: 'Open your portal', url: portalLink('/', org) });
   },
   passwordReset(company: string, name: string, link: string) {
     return layout(company,

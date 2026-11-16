@@ -16,7 +16,7 @@ import {
 import { closeJourney, completeTask, journeyTasksView, type TaskView } from './engine';
 import { LifecycleOfferError } from './files';
 import { maybeSendLettersReady, portalLetters, SIGNED_KINDS } from './letters';
-import { CLOSED_STATUSES } from './portalAuth';
+import { CLOSED_STATUSES, mediaPath } from './portalAuth';
 
 type PathKey = 'offer' | 'docs' | 'about' | 'meet' | 'letter' | 'pass';
 type StepState = 'done' | 'current' | 'todo' | 'locked';
@@ -55,9 +55,18 @@ const DEFAULT_DUE: Partial<Record<PathKey, number>> = { docs: -5, about: -3, mee
 
 const isoDay = (iso: string | null | undefined) => (iso ? istDate(new Date(iso)) : undefined);
 const CHANGED_LABEL: Partial<Record<keyof OfferFields, string>> = {
-  tj: 'Joining date', ctc: 'Salary', designation: 'Role', department: 'Team', location: 'Location', managerUserId: 'Manager',
-  probationMonths: 'Probation', noticeDays: 'Notice period', validTill: 'Reply-by date', responsibilities: 'Responsibilities', employeeType: 'Employment type',
+  tj: 'joining date', ctc: 'salary', designation: 'role', department: 'team', location: 'location', managerUserId: 'manager',
+  probationMonths: 'probation', noticeDays: 'notice period', responsibilities: 'responsibilities', employeeType: 'employment type',
 };
+/** ['tj', 'ctc'] → "Joining date and salary changed" (the reply-by date is not a term, so it is left out, as on the banner). */
+export function changesLine(fields: Array<keyof OfferFields> | undefined): string | undefined {
+  const names = (fields ?? []).filter((k) => k !== 'validTill').map((k) => CHANGED_LABEL[k] ?? String(k));
+  if (!names.length) return undefined;
+  const joined = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return `${joined.charAt(0).toUpperCase()}${joined.slice(1)} changed`;
+}
+/** The offer the candidate is looking at: the newest version HR has sent (a draft revision stays HR's until it is sent). */
+export const sentVersion = <V extends { status: string }>(versions: V[] | undefined): V | undefined => [...(versions ?? [])].reverse().find((v) => v.status !== 'draft');
 function addMonthsDay(day: string, months: number): string {
   const d = new Date(`${day}T00:00:00Z`);
   const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months, 1));
@@ -83,8 +92,10 @@ export async function meetItems(journey: Journey): Promise<MeetItem[]> {
       id: 'manager_note', kind: 'manager_note',
       title: note.kind === 'video' ? `A hello from ${manager?.name ?? 'your manager'}` : 'Why we picked you',
       tag: 'FROM YOUR MANAGER', subtitle: note.kind === 'video' ? 'Your manager · video' : 'A note from your manager',
-      ...(manager?.name ? { authorName: manager.name } : {}), authorRole: manager?.designation ? `${manager.designation} · your manager` : 'Your manager',
-      ...(note.text ? { text: note.text } : {}), ...(note.kind === 'video' && note.fileId ? { videoUrl: `/portal/files/${note.fileId}` } : {}),
+      // The portal adds "· your manager" after the role ("Neha R. · Design lead · your manager").
+      ...(manager?.name ? { authorName: manager.name } : {}), ...(manager?.designation ? { authorRole: manager.designation } : {}),
+      // A signed link: <video src> cannot send the portal's Bearer token.
+      ...(note.text ? { text: note.text } : {}), ...(note.kind === 'video' && note.fileId ? { videoUrl: mediaPath(journey.id, note.fileId) } : {}),
     });
   }
   const company = await companyOf(journey.org);
@@ -92,7 +103,7 @@ export async function meetItems(journey: Journey): Promise<MeetItem[]> {
     items.push({ id: 'company_video', kind: 'video', tag: 'HOW WE WORK', title: company.lifecyclePortal.videoTitle || `Life at ${companyDisplayName(company, journey.org)}`, subtitle: 'Who we are and what we value', videoUrl: company.lifecyclePortal.videoUrl });
   }
   const offer = await offers().findOne({ journeyId: journey.id });
-  const responsibilities = offer?.versions[offer.versions.length - 1]?.fields.responsibilities;
+  const responsibilities = sentVersion(offer?.versions)?.fields.responsibilities;
   if (responsibilities) items.push({ id: 'role', kind: 'card', tag: 'YOUR ROLE', title: 'Your role, explained', subtitle: journey.designation ? `What you'll do as ${journey.designation}` : 'Your job description', text: responsibilities });
   const policies = await policyDocuments().find({ org: journey.org, active: true }, { projection: { _id: 0, title: 1, summary: 1 } }).sort({ order: 1 }).limit(20).toArray();
   if (policies.length) {
@@ -241,12 +252,14 @@ export async function portalHome(journey: Journey, now = new Date()): Promise<Po
   }
 
   const offer = await offers().findOne({ journeyId: journey.id });
-  const latest = offer?.versions[offer.versions.length - 1];
+  // A revision HR has only saved is not the candidate's yet: home changes when it is sent.
+  const latest = sentVersion(offer?.versions);
   const offerDone = latest?.status === 'accepted';
   const docs = await journeyDocumentsView(journey.id);
   const required = docs.filter((d) => d.required);
-  const docsDone = required.length > 0 && required.every((d) => d.status === 'approved');
   const sentBack = docs.find((d) => d.status === 'sent_back');
+  // Done only when every required document is approved and nothing is waiting to be uploaded again (an optional one included).
+  const docsDone = required.length > 0 && required.every((d) => d.status === 'approved') && !sentBack;
   const about = aboutYouOf(journey);
   const aboutDone = Boolean(about.emergencyContact && about.pf);
   const meet = await meetItems(journey);
@@ -281,7 +294,7 @@ export async function portalHome(journey: Journey, now = new Date()): Promise<Po
     meet: 'Meet the team', letter: 'Sign your appointment letter', pass: 'Check your Day-1 pass',
   };
   const helpers: Record<PathKey, string> = {
-    offer: (latest?.version ?? 1) > 1 && latest?.changedFields?.length ? `${latest.changedFields.map((k) => CHANGED_LABEL[k] ?? k).join(' and ')} changed` : 'Read it, then accept',
+    offer: ((latest?.version ?? 1) > 1 && changesLine(latest?.changedFields)) || 'Read it, then accept',
     docs: sentBack?.hrNote ?? 'One document at a time · PDF, JPG or PNG', about: 'Emergency contact and PF · 2 quick steps',
     meet: 'Short videos and cards from the team', letter: 'Open each PDF, then sign', pass: 'Where to go, when, and who to meet',
   };
@@ -369,7 +382,7 @@ export async function runPortalJobs(now = new Date()): Promise<{ expired: number
     // HR: accepted, not finalised within a working day.
     if (status === 'accepted' && journey.anchors.accepted) {
       const offer = await offers().findOne({ journeyId: journey.id });
-      const v = offer?.versions[offer.versions.length - 1];
+      const v = sentVersion(offer?.versions);
       if (v?.status === 'accepted' && !v.finalisedAt && today > addWeekdays(istDate(journey.anchors.accepted), 1) && await fireOnce(`finalise_reminder:${journey.id}:v${v.version}`, journey.org)) {
         const creator = await users().findOne({ userId: journey.createdByUserId, org: journey.org }, { projection: { _id: 0, email: 1 } });
         if (creator?.email) { await sendLifecycleEmail(journey.org, creator.email, `Waiting for you: finalise ${name}'s offer`, mails.hrFinaliseReminder(companyName, name)); sent += 1; }
@@ -382,7 +395,7 @@ export async function runPortalJobs(now = new Date()): Promise<{ expired: number
     // Two days after the login went out, no sign-in yet.
     if (!account.lastSignInAt && account.loginSentAt && now.getTime() - account.loginSentAt.getTime() >= 2 * 86_400_000
       && await fireOnce(`login_reminder:${journey.id}`, journey.org)) {
-      await sendLifecycleEmail(journey.org, email, 'Your joining portal is waiting', mails.loginReminder(companyName, name, account.email, formatDay(istDate(account.loginSentAt))));
+      await sendLifecycleEmail(journey.org, email, 'Your joining portal is waiting', mails.loginReminder(companyName, name, account.email, formatDay(istDate(account.loginSentAt)), journey.org));
       sent += 1;
     }
 
@@ -391,7 +404,7 @@ export async function runPortalJobs(now = new Date()): Promise<{ expired: number
     if (account.lastSignInAt && last && now.getTime() - last.getTime() >= 3 * 86_400_000 && journey.tj && today < journey.tj
       && await fireOnce(`quiet:${journey.id}:${last.toISOString()}`, journey.org)) {
       const home = await portalHome(journey, now);
-      await sendLifecycleEmail(journey.org, email, 'A few things are waiting on your joining portal', mails.quietNudge(companyName, name, home.upNext?.title));
+      await sendLifecycleEmail(journey.org, email, 'A few things are waiting on your joining portal', mails.quietNudge(companyName, name, home.upNext?.title, journey.org));
       sent += 1;
     }
 
@@ -404,7 +417,7 @@ export async function runPortalJobs(now = new Date()): Promise<{ expired: number
       const unsigned = await letters().find({ journeyId: journey.id, kind: { $in: SIGNED_KINDS }, signature: { $exists: false }, pdfFileId: { $exists: true } }).toArray();
       const lettersOpen = unsigned.length > 0 && (await portalLetters(journey)).some((l) => l.state === 'ready' || l.state === 'opened');
       if (lettersOpen && await fireOnce(`letter_nudge:${journey.id}:${today}`, journey.org)) {
-        await sendLifecycleEmail(journey.org, email, 'Reminder: sign your appointment letter', mails.letterNudge(companyName, name, formatDay(addDays(journey.tj, -2))));
+        await sendLifecycleEmail(journey.org, email, 'Reminder: sign your appointment letter', mails.letterNudge(companyName, name, formatDay(addDays(journey.tj, -2)), journey.org));
         sent += 1;
       }
     }
@@ -416,7 +429,7 @@ export async function runPortalJobs(now = new Date()): Promise<{ expired: number
       await sendLifecycleEmail(journey.org, email, `Your first day: ${formatDay(pass.date)}`, mails.day1Pass(companyName, name, [
         ['Date', formatDay(pass.date)], ['Reporting time', pass.reportingTime ?? ''], ['Where', pass.place ?? pass.meetingLink ?? ''],
         ['Ask for', pass.askFor?.name ?? ''], ['Your manager', pass.managerName ?? ''], ['Bring', (pass.bring ?? []).join(', ')],
-      ]));
+      ], journey.org));
       sent += 1;
     }
   }
@@ -432,15 +445,29 @@ const DOC_HINTS: Array<[RegExp, string]> = [
   [/reliev/i, 'From your last employer.'],
   [/photo/i, 'Plain background, face clearly visible.'],
 ];
-/** The reel's title, hint and due date ride along with each document. */
+/**
+ * 6Zs P8's reel copy for the documents the default template lists, matched on
+ * the label (HR can rename a document, and then its own words are used).
+ */
+const DOC_COPY: Array<[RegExp, { title: string; tag: string }]> = [
+  [/^id proof \(pan and aadhaar\)$/i, { title: 'Upload your PAN and Aadhaar', tag: 'ID proof' }],
+  [/^address proof$/i, { title: 'Upload an address proof', tag: 'Address proof' }],
+  [/^education( \(highest degree\)| certificates)?$/i, { title: 'Upload your highest degree', tag: 'Education' }],
+];
+/** "Upload your last payslip" from "Last payslip"; an acronym ("PAN card") keeps its capitals. */
+const uploadTitle = (label: string) => `Upload your ${/^[A-Z][a-z]/.test(label) ? label.charAt(0).toLowerCase() + label.slice(1) : label}`;
+
+/** The reel's title, tag, hint and due date ride along with each document. */
 export async function portalDocuments(journey: Journey) {
   const docs = await journeyDocumentsView(journey.id);
   const task = (await journeyTasksView(journey.id, 'employee')).find((t) => t.systemKey === 'upload_documents');
   const dueAt = isoDay(task?.dueAt) ?? (journey.tj ? addDays(journey.tj, DEFAULT_DUE.docs!) : undefined);
   return docs.map((d) => {
     const hint = DOC_HINTS.find(([re]) => re.test(`${d.docKey} ${d.label}`))?.[1];
+    const copy = DOC_COPY.find(([re]) => re.test(d.label.trim()))?.[1];
     return {
-      ...d, title: `Upload your ${/^[A-Z][a-z]/.test(d.label) ? d.label.charAt(0).toLowerCase() + d.label.slice(1) : d.label}`, ...(hint ? { hint } : {}), ...(dueAt ? { dueAt } : {}),
+      ...d, title: copy?.title ?? uploadTitle(d.label), tag: copy?.tag ?? d.label.replace(/\s*\([^)]*\)\s*$/, ''),
+      ...(hint ? { hint } : {}), ...(dueAt ? { dueAt } : {}),
       files: d.files.map((f) => ({ ...f, url: `/portal/files/${f.id}` })),
     };
   });

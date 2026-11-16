@@ -19,7 +19,7 @@ import { candidateAccounts, journeys } from '../../config/db';
 import { env } from '../../config/env';
 import type { CandidateAccount, Journey } from '../../models/lifecycle.model';
 import { logger } from '../../utils/logger';
-import { companyDisplayName, companyOf, lifecycleEnabled, mails, portalLink, sendLifecycleEmail } from './emails';
+import { companyDisplayName, companyOf, hrContactFor, lifecycleEnabled, mails, portalLink, sendLifecycleEmail } from './emails';
 import { completeTask, setJourneyStatus } from './engine';
 import { LifecycleOfferError } from './files';
 
@@ -187,7 +187,10 @@ export async function signIn(emailInput: unknown, passwordInput: unknown, ip: st
   }
   const journey = await journeys().findOne({ id: account.journeyId });
   if (!journey || !(await lifecycleEnabled(journey.org))) throw wrong();
-  if (CLOSED_STATUSES.has(String(journey.status))) throw new LifecycleOfferError(403, 'This portal is closed');
+  if (CLOSED_STATUSES.has(String(journey.status))) {
+    // The right password on a closed portal: say which closed screen (P16, PX, P3b, P3c), not just "closed".
+    throw new LifecycleOfferError(403, 'This portal is closed', { closed: await closedScreen(journey) });
+  }
   const first = !account.lastSignInAt;
   await candidateAccounts().updateOne({ email }, { $set: { failedTries: 0, lastSignInAt: now }, $unset: { lockedUntil: '' } });
   if (first && journey.status === 'finalised') {
@@ -197,6 +200,45 @@ export async function signIn(emailInput: unknown, passwordInput: unknown, ip: st
   }
   if (first) await completeTask(journey.id, 'portal_sign_in', { name: journey.candidate?.name });
   return { token: signPortalToken(journey.id, journey.org, now) };
+}
+
+export type ClosedScreenState = 'declined' | 'expired' | 'not_joining' | 'moved_to_app';
+/** What a closed portal shows after a correct sign-in: which screen, the client's logo and HR. */
+export async function closedScreen(journey: Journey): Promise<{ state: ClosedScreenState; company: { name: string; logoUrl?: string }; hrContact: { name: string; email: string } }> {
+  const status = String(journey.status);
+  const state: ClosedScreenState = status === 'declined' || status === 'expired' || status === 'not_joining' ? status : 'moved_to_app';
+  const company = await companyOf(journey.org);
+  return {
+    state,
+    company: { name: companyDisplayName(company, journey.org), ...(company?.lifecyclePortal?.logoUrl ? { logoUrl: company.lifecyclePortal.logoUrl } : {}) },
+    hrContact: await hrContactFor(journey, company),
+  };
+}
+
+// ─── Media links (a manager's video note in <video src>, which cannot send a Bearer token) ─
+
+const MEDIA_TTL_SECONDS = PORTAL_TOKEN_TTL_SECONDS;
+/** A short-lived, signed path for one of the journey's files: `/portal/media/<token>`. */
+export function mediaPath(journeyId: string, fileId: string, now = new Date()): string {
+  const exp = Math.floor(now.getTime() / 1000) + MEDIA_TTL_SECONDS;
+  const body = b64(JSON.stringify({ typ: 'media', j: journeyId, f: fileId, exp }));
+  return `/portal/media/${body}.${mac(`media.${body}`)}`;
+}
+/** The journey and file a media token names, or null (forged, expired, or anything else). */
+export function verifyMediaToken(token: string, now = new Date()): { journeyId: string; fileId: string } | null {
+  const [body, signature] = String(token ?? '').split('.');
+  if (!body || !signature) return null;
+  const expected = Buffer.from(mac(`media.${body}`));
+  const actual = Buffer.from(signature);
+  if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return null;
+  try {
+    const claims = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as { typ?: string; j?: unknown; f?: unknown; exp?: unknown };
+    if (claims.typ !== 'media' || typeof claims.j !== 'string' || typeof claims.f !== 'string' || typeof claims.exp !== 'number') return null;
+    if (claims.exp * 1000 <= now.getTime()) return null;
+    return { journeyId: claims.j, fileId: claims.f };
+  } catch {
+    return null;
+  }
 }
 
 /** Always `{ ok: true }`: whether the email exists is never said. */
@@ -211,7 +253,8 @@ export async function forgotPassword(emailInput: unknown, ip: string, now = new 
   await candidateAccounts().updateOne({ email }, { $set: { resetTokenHash: sha256(token), resetTokenExpiresAt: new Date(now.getTime() + RESET_TTL_MS) } });
   const company = await companyOf(journey.org);
   await sendLifecycleEmail(journey.org, email, 'Reset your joining portal password',
-    mails.passwordReset(companyDisplayName(company, journey.org), journey.candidate?.name ?? '', portalLink(`/reset?token=${encodeURIComponent(token)}`)));
+    // The portal routes /reset/:token (the token is base64url, so it needs no escaping in a path).
+    mails.passwordReset(companyDisplayName(company, journey.org), journey.candidate?.name ?? '', portalLink(`/reset/${token}`, journey.org)));
   return { ok: true };
 }
 

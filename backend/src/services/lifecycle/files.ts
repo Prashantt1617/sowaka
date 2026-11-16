@@ -17,7 +17,8 @@ import { s3EncryptionParams } from '../../utils/s3-encryption.util';
 
 /** A refusal with the status the route answers with (`{ error }`). */
 export class LifecycleOfferError extends Error {
-  constructor(public statusCode: number, message: string) { super(message); }
+  /** `details`: extra fields the route sends beside `error` (e.g. the closed portal's screen on sign-in). */
+  constructor(public statusCode: number, message: string, public details?: Record<string, unknown>) { super(message); }
 }
 
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -94,8 +95,50 @@ export async function storeFile(
 }
 
 function cleanName(name: string, ext: string): string {
-  const base = String(name ?? '').replace(/[\\/\0\r\n"]/g, '_').trim().slice(-120);
+  const base = uploadName(name).replace(/[\\/\0\r\n"]/g, '_').trim().slice(-120);
   return base || `file${ext}`;
+}
+
+/**
+ * A browser sends the file name as raw UTF-8, which multer (busboy) reads as
+ * latin1 unless told otherwise: "Appointment letter – Neel.pdf" arrives as
+ * "Appointment letter â\u0080\u0093 Neel.pdf". The lifecycle routes set
+ * `defParamCharset: 'utf8'`; this repairs a name that still arrives misread
+ * (another route's upload), and leaves a real name alone: only a string made
+ * of single bytes, with some above 0x7F, that decodes as valid UTF-8 is read again.
+ */
+/**
+ * Multer options for every lifecycle upload: read the part's file name as UTF-8
+ * (busboy's default is latin1). `defParamCharset` is read by multer 2 but not
+ * yet in @types/multer, hence the cast.
+ */
+export const UTF8_FILE_NAMES = { defParamCharset: 'utf8' } as unknown as Record<never, never>;
+
+export function uploadName(name: unknown): string {
+  const raw = String(name ?? '');
+  if (!/[\x80-\xff]/.test(raw) || /[^\x00-\xff]/.test(raw)) return raw;
+  const decoded = Buffer.from(raw, 'latin1').toString('utf8');
+  return decoded.includes('\ufffd') ? raw : decoded;
+}
+
+// ─── PDF page counts (P4 "Accepted version · 3 pages", P12 before opening) ────
+
+const pageCounts = new Map<string, number | null>();
+/** The number of pages of a stored PDF, or undefined when it cannot be read. Cached per file (files never change). */
+export async function pdfPageCount(file: Pick<LifecycleFile, 'id' | 'objectKey' | 'contentType'>): Promise<number | undefined> {
+  if (file.contentType !== 'application/pdf') return undefined;
+  if (!pageCounts.has(file.id)) {
+    let count: number | null = null;
+    try {
+      const { PDFDocument } = await import('pdf-lib');
+      count = (await PDFDocument.load(await readFileBytes(file), { ignoreEncryption: true, updateMetadata: false })).getPageCount();
+    } catch {
+      count = null;
+    }
+    if (pageCounts.size > 2000) pageCounts.clear();
+    pageCounts.set(file.id, count);
+  }
+  return pageCounts.get(file.id) ?? undefined;
 }
 
 export async function readFileBytes(file: Pick<LifecycleFile, 'objectKey'>): Promise<Buffer> {

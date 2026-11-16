@@ -5,11 +5,13 @@
  * The candidate's side of the offer link (open, accept) is here too.
  *
  * Rules (6Zs §1.3, §3.2, CONTRACT):
- * - Only the latest version can be accepted. Revising after sending makes
- *   v+1 with `changedFields`; older versions become `replaced`, and their
- *   links say so. If HR had finalised, the journey goes back to `accepted`
- *   and HR finalises the new version again (the appointment letter is then
- *   regenerated).
+ * - Only the latest sent version can be accepted. Revising after sending
+ *   makes a draft v+1 with `changedFields`; it is HR's until HR sends it
+ *   (6Zs §3.2.1 "Replaced: HR sends a revised offer"). On send, older
+ *   versions become `replaced` (their links say so), the journey takes the
+ *   new terms and, if HR had finalised, goes back to `accepted` so HR
+ *   finalises the new version again (the appointment letter is then
+ *   regenerated). Until then the candidate keeps seeing the version they have.
  * - The link token is random; only its sha256 is stored, per version.
  * - Valid-till expires an unaccepted offer; it stops counting once accepted.
  * - Candidates are not users until Mark joined, which creates the employee
@@ -27,7 +29,7 @@ import {
   addDays, companyDisplayName, companyOf, formatDay, hrContactFor, isDay, istDate, lifecycleEnabled, mails, portalLink, sendLifecycleEmail,
 } from './emails';
 import { closeJourney, completeTask, createOnboardingJourney, moveTj, onJoined, reopenTask, setJourneyStatus } from './engine';
-import { checkUpload, LifecycleOfferError, readFileBytes, storeFile } from './files';
+import { checkUpload, LifecycleOfferError, pdfPageCount, readFileBytes, storeFile } from './files';
 import { regenerateAppointmentLetters } from './letters';
 import { CLOSED_STATUSES, createCandidateAccount, LIMITS, newLinkToken, rateLimit, sha256 } from './portalAuth';
 
@@ -59,6 +61,8 @@ export interface PortalOfferView {
   /** W4's step dates. */
   acceptedAt?: Date;
   finalisedAt?: Date;
+  /** P4 "Accepted version · 3 pages". */
+  pdfPages?: number;
 }
 
 const FIELD_KEYS: Array<keyof OfferFields> = [
@@ -68,6 +72,8 @@ const PRE_JOIN = ['draft', 'offer_sent', 'accepted', 'finalised', 'active', 'doc
 const PRE_JOIN_OPEN = new Set<string>(PRE_JOIN);
 
 const current = (offer: Offer) => offer.versions[offer.versions.length - 1];
+/** The newest version HR has sent: what the candidate sees and accepts (a draft revision is still HR's). */
+const latestSent = (offer: Offer): OfferVersion => [...offer.versions].reverse().find((v) => v.status !== 'draft') ?? current(offer);
 
 async function journeyOf(org: string, journeyId: string): Promise<Journey> {
   const journey = await journeys().findOne({ id: journeyId, org, kind: 'onboarding' });
@@ -185,13 +191,14 @@ const maskEmail = (email: string) => {
 
 /** `pdfPath`: where this caller fetches the PDF (the link's own path, or the signed-in one). */
 async function buildPortalOfferView(offer: Offer, version: OfferVersion, journey: Journey, pdfPath: string): Promise<PortalOfferView> {
-  const latest = current(offer);
+  const latest = latestSent(offer);
   const status = String(journey.status);
   let state: PortalOfferState;
   if (status === 'declined') state = 'declined';
   else if (status === 'expired') state = 'expired';
   else if (status === 'not_joining') state = 'not_joining';
-  else if (['joined', 'moved_to_app', 'confirmed'].includes(status)) state = 'closed';
+  // Joined: the portal is open for week 1, so the link says "all set" (Sign in / Back to home), not P16's "Week 1 is done".
+  else if (['moved_to_app', 'confirmed'].includes(status)) state = 'closed';
   else if (version.version !== latest.version || version.status === 'replaced') state = 'replaced';
   else if (version.status === 'expired') state = 'expired';
   else if (version.status === 'declined') state = 'declined';
@@ -203,6 +210,8 @@ async function buildPortalOfferView(offer: Offer, version: OfferVersion, journey
   const account = state === 'finalised' ? await candidateAccounts().findOne({ journeyId: journey.id }, { projection: { _id: 0, email: 1 } }) : null;
   const showTerms = state === 'offer' || state === 'accepted' || state === 'finalised';
   const manager = showTerms && managerUserId ? await users().findOne({ userId: managerUserId }, { projection: { _id: 0, name: 1, designation: 1 } }) : null;
+  const pdfFile = showTerms && version.pdfFileId ? await lifecycleFiles().findOne({ id: version.pdfFileId, journeyId: journey.id }, { projection: { _id: 0 } }) : null;
+  const pdfPages = pdfFile ? await pdfPageCount(pdfFile) : undefined;
   return {
     state,
     company: { name: companyDisplayName(company, journey.org), ...(company?.lifecyclePortal?.logoUrl ? { logoUrl: company.lifecyclePortal.logoUrl } : {}) },
@@ -220,6 +229,7 @@ async function buildPortalOfferView(offer: Offer, version: OfferVersion, journey
     ...(account ? { loginEmailMasked: maskEmail(account.email) } : {}),
     ...(version.acceptedAt ? { acceptedAt: version.acceptedAt } : {}),
     ...(version.finalisedAt ? { finalisedAt: version.finalisedAt } : {}),
+    ...(pdfPages ? { pdfPages } : {}),
   };
 }
 
@@ -256,7 +266,11 @@ export async function createOffer(hr: HrActor, input: { candidate?: { name?: unk
   return { journeyId: journey.id, offer: (await offerView(journey.id))! };
 }
 
-/** Draft: edits in place. Sent or later: version + 1 with the changed fields; older versions are replaced. */
+/**
+ * Draft: edits in place. Sent or later: a draft version + 1 with the changed
+ * fields. Nothing changes for the candidate until HR sends it (`sendOffer`):
+ * their link, home and the journey's terms stay on the version they have.
+ */
 export async function reviseOffer(hr: HrActor | null, journeyId: string, input: unknown, org?: string): Promise<OfferView> {
   if (hr && !hr.seesPay) throw new LifecycleOfferError(403, 'Changing an offer needs access to pay');
   const journey = await journeyOf(hr?.org ?? org ?? '', journeyId);
@@ -275,24 +289,41 @@ export async function reviseOffer(hr: HrActor | null, journeyId: string, input: 
   } else {
     if (!diff.length) throw new LifecycleOfferError(400, 'Nothing changed');
     const next: OfferVersion = { version: v.version + 1, fields, changedFields: diff, status: 'draft', refNo: v.refNo };
-    const versions = offer.versions.map((x) => (['sent', 'accepted', 'expired', 'declined'].includes(x.status) ? { ...x, status: 'replaced' as const } : x));
-    await offers().updateOne({ id: offer.id }, { $set: { versions: [...versions, next], updatedAt: now } });
-    const status = String(journey.status);
-    if (['finalised', 'active', 'docs_approved'].includes(status)) {
-      // HR finalises the new version again once the candidate accepts it.
-      await setJourneyStatus(journeyId, 'accepted');
-      await reopenTask(journeyId, 'finalise_offer');
-      await reopenTask(journeyId, 'accept_offer');
-    } else if (status === 'accepted') {
-      await setJourneyStatus(journeyId, 'offer_sent');
-      await reopenTask(journeyId, 'accept_offer');
-    }
+    await offers().updateOne({ id: offer.id }, { $push: { versions: next }, $set: { updatedAt: now } });
     await reopenTask(journeyId, 'send_offer');
   }
-  const set: Partial<Journey> = { designation: fields.designation, department: fields.department, location: fields.location, managerUserId: fields.managerUserId };
-  await journeys().updateOne({ id: journeyId }, { $set: { ...set, updatedAt: now } });
-  if (fields.tj !== journey.tj) await moveTj(journeyId, fields.tj);
+  // A first offer nobody has seen yet shapes the journey now; a revision does when it is sent.
+  if (v.status === 'draft' && v.version === 1) await applyOfferTerms(journey, fields, now);
   return (await offerView(journeyId))!;
+}
+
+/** The journey takes an offer's terms: role, team, place, manager, and Tj (moving every open due date). */
+async function applyOfferTerms(journey: Journey, fields: OfferFields, now: Date): Promise<void> {
+  const set: Partial<Journey> = { designation: fields.designation, department: fields.department, location: fields.location, managerUserId: fields.managerUserId };
+  await journeys().updateOne({ id: journey.id }, { $set: { ...set, updatedAt: now } });
+  const tj = (await journeys().findOne({ id: journey.id }, { projection: { _id: 0, tj: 1 } }))?.tj;
+  if (fields.tj !== tj) await moveTj(journey.id, fields.tj);
+}
+
+/**
+ * A revision goes out: older versions are replaced (their links say so), the
+ * journey takes the new terms, and the candidate accepts again (HR then
+ * finalises again when they had already).
+ */
+async function onRevisionSent(journey: Journey, offerId: string, version: OfferVersion, now: Date): Promise<void> {
+  await offers().updateOne({ id: offerId }, { $set: { 'versions.$[old].status': 'replaced', updatedAt: now } }, {
+    arrayFilters: [{ 'old.version': { $lt: version.version }, 'old.status': { $in: ['sent', 'accepted', 'expired', 'declined'] } }],
+  });
+  await applyOfferTerms(journey, version.fields, now);
+  const status = String((await journeys().findOne({ id: journey.id }, { projection: { _id: 0, status: 1 } }))?.status ?? journey.status);
+  if (['finalised', 'active', 'docs_approved'].includes(status)) {
+    await setJourneyStatus(journey.id, 'accepted');
+    await reopenTask(journey.id, 'finalise_offer');
+    await reopenTask(journey.id, 'accept_offer');
+  } else if (status === 'accepted') {
+    await setJourneyStatus(journey.id, 'offer_sent');
+    await reopenTask(journey.id, 'accept_offer');
+  }
 }
 
 export async function uploadOfferPdf(hr: HrActor, journeyId: string, file: { originalname?: string; buffer: Buffer } | undefined): Promise<OfferView> {
@@ -327,10 +358,13 @@ export async function sendOffer(hr: HrActor, journeyId: string, input: { subject
   if (subject.length > 200 || body.length > 20_000) throw new LifecycleOfferError(400, 'The email is too long');
   const cc = Array.isArray(input.cc) ? input.cc.map(String).filter((a) => /^\S+@\S+\.\S+$/.test(a.trim())).slice(0, 10) : [];
   const token = newLinkToken();
+  const revision = v.status === 'draft' && v.version > 1;
   await offers().updateOne({ id: offer.id, 'versions.version': v.version }, {
     $set: { 'versions.$.status': 'sent', 'versions.$.sentAt': now, 'versions.$.linkTokenHash': sha256(token), updatedAt: now },
   });
-  if (['draft', 'offer_sent'].includes(String(journey.status))) await setJourneyStatus(journeyId, 'offer_sent');
+  if (revision) await onRevisionSent(journey, offer.id, v, now);
+  const statusNow = String((await journeys().findOne({ id: journeyId }, { projection: { _id: 0, status: 1 } }))?.status ?? journey.status);
+  if (['draft', 'offer_sent'].includes(statusNow)) await setJourneyStatus(journeyId, 'offer_sent');
   await completeTask(journeyId, 'send_offer', { userId: hr.userId, name: hr.name });
   const bytes = await readFileBytes(file);
   const contact = await hrContactFor(journey, company);
@@ -390,7 +424,7 @@ export async function acceptOffer(token: string, meta: { ip: string; userAgent?:
 /** Latest version only, once; stores time, IP and device; HR is emailed to finalise. */
 async function acceptVersion(offer: Offer, version: OfferVersion, journey: Journey, meta: { ip: string; userAgent?: string }, pdfPath: string, now: Date): Promise<PortalOfferView> {
   await expireIfDue(offer, version, journey, now);
-  const latest = current(offer);
+  const latest = latestSent(offer);
   if (CLOSED_STATUSES.has(String(journey.status)) || ['joined'].includes(String(journey.status))) throw new LifecycleOfferError(409, 'This offer is closed');
   if (version.version !== latest.version || version.status === 'replaced') throw new LifecycleOfferError(409, 'You have a newer offer. Open the latest email to see it.');
   if (version.status === 'accepted') return buildPortalOfferView(offer, version, journey, pdfPath);
@@ -452,7 +486,8 @@ export async function finaliseOffer(hr: HrActor, journeyId: string, now = new Da
   const journey = await journeyOf(hr.org, journeyId);
   if (String(journey.status) !== 'accepted') throw new LifecycleOfferError(409, 'Only an accepted offer can be finalised');
   const offer = await offerOf(journeyId);
-  const v = current(offer);
+  // A revision HR is still drafting does not hold this up: the candidate accepted what they were sent.
+  const v = latestSent(offer);
   if (v.status !== 'accepted') throw new LifecycleOfferError(409, 'The candidate has not accepted the latest version yet');
   if (v.finalisedAt) throw new LifecycleOfferError(409, 'Already finalised');
   await offers().updateOne({ id: offer.id, 'versions.version': v.version }, { $set: { 'versions.$.finalisedAt': now, 'versions.$.finalisedByUserId': hr.userId, updatedAt: now } });
@@ -462,7 +497,7 @@ export async function finaliseOffer(hr: HrActor, journeyId: string, now = new Da
   if (created) {
     await setJourneyStatus(journeyId, 'finalised');
     await sendLifecycleEmail(journey.org, created.account.email, `Your ${companyName} joining portal: login details`,
-      mails.loginDetails(companyName, journey.candidate?.name ?? '', created.account.email, created.password));
+      mails.loginDetails(companyName, journey.candidate?.name ?? '', created.account.email, created.password, journey.org));
     await candidateAccounts().updateOne({ journeyId }, { $set: { loginSentAt: now } });
     // The manager's set-up to-do arrives in the app (the task itself opens on the finalised anchor).
     if (journey.managerUserId) {
@@ -493,7 +528,7 @@ export async function declineOffer(hr: HrActor, journeyId: string, note?: unknow
   const journey = await journeyOf(hr.org, journeyId);
   if (!['offer_sent', 'accepted'].includes(String(journey.status))) throw new LifecycleOfferError(409, 'Only a sent or accepted offer can be marked declined');
   const offer = await offerOf(journeyId);
-  const v = current(offer);
+  const v = latestSent(offer);
   await offers().updateOne({ id: offer.id, 'versions.version': v.version }, { $set: { 'versions.$.status': 'declined', updatedAt: new Date() } });
   await closeJourney(journeyId, 'declined', String(note ?? '').trim().slice(0, 1000) || 'Declined by email');
   await tellManager(journey, 'lifecycle_offer_declined', `${journey.candidate?.name ?? 'Your new joiner'} declined the offer`, 'HR marked the offer declined.');
@@ -505,7 +540,7 @@ export async function reopenOffer(hr: HrActor, journeyId: string, now = new Date
   const journey = await journeyOf(hr.org, journeyId);
   if (!['declined', 'expired'].includes(String(journey.status))) throw new LifecycleOfferError(409, 'Only a declined or expired offer can be reopened');
   const offer = await offerOf(journeyId);
-  const v = current(offer);
+  const v = latestSent(offer);
   await journeys().updateOne({ id: journeyId }, { $unset: { closedAt: '', closedReason: '' } });
   const stillValid = v.status === 'declined' && v.fields.validTill >= istDate(now) && Boolean(v.linkTokenHash);
   if (stillValid) {
@@ -536,9 +571,11 @@ export async function markJoined(hr: HrActor, journeyId: string, input: { workEm
   const journey = await journeyOf(hr.org, journeyId);
   if (!['finalised', 'active', 'docs_approved'].includes(String(journey.status))) throw new LifecycleOfferError(409, 'Only a finalised offer can be marked joined');
   const offer = await offerOf(journeyId);
-  const v = current(offer);
+  const v = latestSent(offer);
   if (v.status !== 'accepted' || !v.finalisedAt) throw new LifecycleOfferError(409, 'The latest offer is not accepted and finalised');
-  if (istDate(now) < v.fields.tj) throw new LifecycleOfferError(409, `Mark joined opens on the joining day (${formatDay(v.fields.tj)})`);
+  // The journey's Tj: an approved date change moves it before HR has sent (or the candidate accepted) the revised offer.
+  const tj = journey.tj ?? v.fields.tj;
+  if (istDate(now) < tj) throw new LifecycleOfferError(409, `Mark joined opens on the joining day (${formatDay(tj)})`);
   const workEmail = String(input.workEmail ?? '').trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(workEmail)) throw new LifecycleOfferError(400, 'A valid work email is required');
   const employeeId = String(input.employeeId ?? '').trim() || undefined;
@@ -547,7 +584,7 @@ export async function markJoined(hr: HrActor, journeyId: string, input: { workEm
     const employee = await createEmployeeForAdmin(hr.userId, {
       name: journey.candidate?.name, email: workEmail, designation: v.fields.designation, department: v.fields.department,
       location: v.fields.location, employeeType: v.fields.employeeType, managerUserId: v.fields.managerUserId,
-      joiningDate: v.fields.tj, employeeId, mobile: journey.candidate?.phone,
+      joiningDate: tj, employeeId, mobile: journey.candidate?.phone,
     });
     userId = employee.userId;
   } catch (error) {
@@ -610,7 +647,7 @@ export async function decideDateRequest(hr: HrActor, requestId: string, input: {
   if (journey.candidate?.personalEmail) {
     await sendLifecycleEmail(journey.org, journey.candidate.personalEmail,
       decision === 'approve' ? `Your new joining date: ${formatDay(request.requestedTj)}` : 'About your joining date',
-      mails.dateChange(companyDisplayName(company, journey.org), journey.candidate.name, decision === 'approve', formatDay(request.requestedTj), note || undefined));
+      mails.dateChange(companyDisplayName(company, journey.org), journey.candidate.name, decision === 'approve', formatDay(request.requestedTj), note || undefined, journey.org));
   }
   return decided!;
 }

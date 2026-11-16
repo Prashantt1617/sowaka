@@ -14,13 +14,15 @@
  * installed; without it the signature record is kept with the original PDF.
  */
 import { randomUUID } from 'node:crypto';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { candidateAccounts, journeys, letters, letterTemplates, lifecycleFiles, offers, users } from '../../config/db';
 import type { Journey, Letter, LetterKind, LetterTemplate, OfferVersion } from '../../models/lifecycle.model';
 import {
   addDays, companyAddress, companyDisplayName, companyOf, fireOnce, forgetFired, formatDay, formatRupees, istDate, mails, portalLink, sendLifecycleEmail,
 } from './emails';
+import { logger } from '../../utils/logger';
 import { completeTask, reopenTask } from './engine';
-import { checkUpload, LifecycleOfferError, readFileBytes, sniffContentType, storeFile } from './files';
+import { checkUpload, LifecycleOfferError, pdfPageCount, readFileBytes, sniffContentType, storeFile } from './files';
 
 export const LETTER_KINDS: LetterKind[] = ['offer', 'appointment', 'nda', 'confirmation', 'extension', 'relieving'];
 /** The two the candidate signs on the portal. */
@@ -438,7 +440,7 @@ export async function sendLetter(
     const file = await lifecycleFiles().findOne({ id: letter.pdfFileId, org: hr.org });
     if (!file) throw new LifecycleOfferError(409, 'Generate the PDF first');
     const company = await companyOf(hr.org);
-    const link = withPortalLink && letter.journeyId && (await candidateAccounts().findOne({ journeyId: letter.journeyId })) ? portalLink('/') : null;
+    const link = withPortalLink && letter.journeyId && (await candidateAccounts().findOne({ journeyId: letter.journeyId })) ? portalLink('/', hr.org) : null;
     await sendLifecycleEmail(hr.org, to, subject, mails.letter(companyDisplayName(company, hr.org), body, link),
       [{ filename: file.name, content: await readFileBytes(file), contentType: 'application/pdf' }], { cc });
   }
@@ -501,28 +503,35 @@ export async function maybeSendLettersReady(journeyId: string): Promise<boolean>
   if (!(await fireOnce(`letters_ready:${journeyId}`, journey.org))) return false;
   const company = await companyOf(journey.org);
   await sendLifecycleEmail(journey.org, journey.candidate.personalEmail, 'Your appointment letter is ready to sign',
-    mails.lettersReady(companyDisplayName(company, journey.org), journey.candidate.name, formatDay(journey.tj ? addDays(journey.tj, -2) : undefined)));
+    mails.lettersReady(companyDisplayName(company, journey.org), journey.candidate.name, formatDay(journey.tj ? addDays(journey.tj, -2) : undefined), journey.org));
   return true;
 }
 
 // ─── Portal: list, open, sign ───────────────────────────────────────────────
 
-export interface PortalLetter { id: string; kind: LetterKind; title: string; fileName: string; state: 'locked' | 'ready' | 'opened' | 'signed'; pdfUrl: string | null; signedAt?: Date }
+export interface PortalLetter { id: string; kind: LetterKind; title: string; fileName: string; state: 'locked' | 'ready' | 'opened' | 'signed'; pdfUrl: string | null; signedAt?: Date; /** P12's card before the PDF is opened. */ pages?: number }
 
 export async function portalLetters(journey: Journey): Promise<PortalLetter[]> {
   const unlocked = !signsOnDay1(journey) && (await docsApproved(journey.id));
   const rows = await letters().find({ journeyId: journey.id, kind: { $in: SIGNED_KINDS } }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray();
   const fileIds = rows.flatMap((r) => [r.signedPdfFileId, r.pdfFileId]).filter((id): id is string => Boolean(id));
-  const fileNames = new Map((await lifecycleFiles().find({ id: { $in: fileIds } }, { projection: { _id: 0, id: 1, name: 1 } }).toArray()).map((f) => [f.id, f.name]));
-  return SIGNED_KINDS.map((kind) => {
-    // The newest of a kind (a regenerated letter replaces a signed one).
-    const row = rows.find((r) => r.kind === kind);
+  const fileRows = await lifecycleFiles().find({ id: { $in: fileIds } }, { projection: { _id: 0 } }).toArray();
+  const fileNames = new Map(fileRows.map((f) => [f.id, f.name]));
+  const pageCounts = new Map<string, number | undefined>();
+  for (const f of fileRows) pageCounts.set(f.id, await pdfPageCount(f));
+  // The newest of a kind (a regenerated letter replaces a signed one).
+  const newest = SIGNED_KINDS.map((kind) => rows.find((r) => r.kind === kind));
+  // Signing opens for the set, as the "ready to sign" mail does: once every unsigned letter has its PDF.
+  const setReady = newest.every((r) => r && (r.signature || r.pdfFileId));
+  return SIGNED_KINDS.map((kind, i) => {
+    const row = newest[i];
     const title = kind === 'nda' ? 'Non-disclosure agreement' : 'Appointment letter';
     const fallback = kind === 'nda' ? 'NDA.pdf' : 'Appointment letter.pdf';
-    if (!row || !unlocked || !row.pdfFileId) return { id: row?.id ?? kind, kind, title, fileName: fallback, state: 'locked' as const, pdfUrl: null };
+    if (!row || !unlocked || !row.pdfFileId || (!setReady && !row.signature)) return { id: row?.id ?? kind, kind, title, fileName: fallback, state: 'locked' as const, pdfUrl: null };
     const state = row.signature ? 'signed' as const : row.openedAt ? 'opened' as const : 'ready' as const;
     const fileName = fileNames.get(row.signedPdfFileId ?? '') ?? fileNames.get(row.pdfFileId) ?? fallback;
-    return { id: row.id, kind, title, fileName, state, pdfUrl: `/portal/letters/${row.id}/pdf`, ...(row.signature ? { signedAt: row.signature.signedAt } : {}) };
+    const pages = pageCounts.get(row.signedPdfFileId ?? '') ?? pageCounts.get(row.pdfFileId);
+    return { id: row.id, kind, title, fileName, state, pdfUrl: `/portal/letters/${row.id}/pdf`, ...(row.signature ? { signedAt: row.signature.signedAt } : {}), ...(pages ? { pages } : {}) };
   });
 }
 
@@ -588,7 +597,11 @@ export async function signLetter(
   if (original) {
     const stamped = await pdfStamper.stamp(await readFileBytes(original), {
       name: journey.candidate?.name ?? '', method: signature.method, typedName, image, signedAt: now, ip, device, refNo: letter.refNo,
-    }).catch(() => null);
+    }).catch((error: unknown) => {
+      // The signature record stands; only the stamped copy is missing (the original is served instead).
+      logger.warn('Lifecycle letter: the signature could not be stamped onto the PDF', { letterId: letter.id, error: error instanceof Error ? error.message : String(error) });
+      return null;
+    });
     if (stamped) {
       const signedFile = await storeFile(journey.org, journey.id, { name: original.name.replace(/\.pdf$/i, '') + ' (signed).pdf', contentType: 'application/pdf', bytes: stamped }, 'system');
       await letters().updateOne({ id: letter.id }, { $set: { signedPdfFileId: signedFile.id } });
@@ -609,21 +622,29 @@ export interface SignatureStamp {
 /** Returns the signed PDF, or null when it cannot stamp (the signature record is then kept with the original). */
 export interface PdfStamper { stamp(pdf: Buffer, sig: SignatureStamp): Promise<Buffer | null> }
 
-const latin1 = (s: string) => s.replace(/[^\x20-\x7e\xa0-\xff]/g, '?');
+/**
+ * Text the standard PDF fonts can draw (WinAnsi): typographic punctuation is
+ * kept as its ASCII look-alike, anything else outside Latin-1 becomes "?".
+ */
+const winAnsi = (s: string) => s
+  .replace(/[\u2018\u2019\u201a\u2032]/g, "'").replace(/[\u201c\u201d\u201e\u2033]/g, '"').replace(/[\u2013\u2014\u2212]/g, '-')
+  .replace(/\u2026/g, '...').replace(/\u20b9/g, 'Rs ').replace(/[\u00a0\u2007\u202f]/g, ' ')
+  .replace(/[^\x20-\x7e\xa1-\xff]/g, '?');
 const istStamp = (at: Date) => `${new Date(at.getTime() + 5.5 * 3_600_000).toISOString().slice(0, 16).replace('T', ' ')} IST`;
 
-/** pdf-lib, loaded when it is there (it is not a backend dependency yet). */
+/** The text of the record page's heading (portal:check looks for it in the signed PDF). */
+export const SIGNATURE_RECORD_TITLE = 'Signature record';
+
+/**
+ * pdf-lib (CONTRACT decision 11): the signature (drawn image or typed name)
+ * and a "Signed by · time · IP" line in the last page's lower right, then a
+ * record page at the end. The signed PDF also says so in its metadata
+ * (keywords "signed" and the letter's reference).
+ */
 export const pdfLibStamper: PdfStamper = {
   async stamp(pdf, sig) {
-    let lib: any; // eslint-disable-line @typescript-eslint/no-explicit-any
-    try {
-      const name = 'pdf-lib';
-      lib = await import(name);
-    } catch {
-      return null;
-    }
-    const { PDFDocument, StandardFonts, rgb } = lib;
     const doc = await PDFDocument.load(pdf, { ignoreEncryption: true });
+    if (doc.getPageCount() === 0) return null;
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const bold = await doc.embedFont(StandardFonts.HelveticaBold);
     const script = await doc.embedFont(StandardFonts.TimesRomanItalic);
@@ -631,31 +652,33 @@ export const pdfLibStamper: PdfStamper = {
     const pages = doc.getPages();
     const last = pages[pages.length - 1];
     const { width } = last.getSize();
-    const x = width - 260;
+    const x = Math.max(36, width - 260);
     if (sig.image) {
       const img = sig.image.type === 'image/png' ? await doc.embedPng(sig.image.bytes) : await doc.embedJpg(sig.image.bytes);
-      const fit = img.scaleToFit(200, 48);
+      const fit = img.scale(Math.min(1, 200 / img.width, 48 / img.height));
       last.drawImage(img, { x, y: 70, width: fit.width, height: fit.height });
     } else {
-      last.drawText(latin1(sig.typedName ?? sig.name), { x, y: 78, size: 20, font: script });
+      last.drawText(winAnsi(sig.typedName ?? sig.name), { x, y: 78, size: 20, font: script });
     }
-    last.drawText(latin1(`Signed by ${sig.name}`), { x, y: 58, size: 8, font: bold, color: grey });
-    last.drawText(latin1(`${istStamp(sig.signedAt)}  |  IP ${sig.ip ?? '-'}`), { x, y: 47, size: 7, font, color: grey });
+    last.drawText(winAnsi(`Signed by ${sig.name}`), { x, y: 58, size: 8, font: bold, color: grey });
+    last.drawText(winAnsi(`${istStamp(sig.signedAt)}  |  IP ${sig.ip ?? '-'}`), { x, y: 47, size: 7, font, color: grey });
     // A record page at the end: what was signed, by whom, when and from where.
-    const page = doc.addPage();
+    const page = doc.addPage([last.getWidth(), last.getHeight()]);
     const { height } = page.getSize();
     const lines: Array<[string, string]> = [
       ['Document', sig.refNo], ['Signed by', sig.name], ['Method', sig.method === 'draw' ? 'Drawn signature' : `Typed name (${sig.typedName ?? ''})`],
       ['Signed at', istStamp(sig.signedAt)], ['IP address', sig.ip ?? '-'], ['Device', sig.device ?? '-'],
     ];
-    page.drawText('Signature record', { x: 56, y: height - 72, size: 16, font: bold });
+    page.drawText(SIGNATURE_RECORD_TITLE, { x: 56, y: height - 72, size: 16, font: bold });
     let y = height - 110;
     for (const [label, value] of lines) {
-      page.drawText(latin1(label), { x: 56, y, size: 10, font: bold, color: grey });
-      const chunks = latin1(value).match(/.{1,80}/g) ?? [''];
+      page.drawText(winAnsi(label), { x: 56, y, size: 10, font: bold, color: grey });
+      const chunks = winAnsi(value).match(/.{1,80}/g) ?? [''];
       for (const chunk of chunks) { page.drawText(chunk, { x: 160, y, size: 10, font }); y -= 14; }
       y -= 6;
     }
+    doc.setKeywords(['signed', winAnsi(sig.refNo)]);
+    doc.setModificationDate(sig.signedAt);
     return Buffer.from(await doc.save());
   },
 };
