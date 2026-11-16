@@ -17,7 +17,8 @@ import type { SupportRole } from '../../services/support';
 import { ListPending, Spinner } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { IconPlus } from '../icons';
-import { OVERVIEW_ITEM, SECTIONS } from '../Chrome';
+import { LIFECYCLE_SECTION, OVERVIEW_ITEM, SECTIONS } from '../Chrome';
+import { lifecycleOn } from '../lifecycleSwitch';
 import { PLACEMENT_VIEWS, SALARY_DETAILS } from '../access';
 import type { AccessKey } from '../access';
 
@@ -55,7 +56,9 @@ const UNITS: Unit[] = [
 ];
 const ALL_TABS: AccessKey[] = UNITS.flatMap((u) => u.tabs);
 /** What this company can give: Placements only where the company has it. */
-const unitsFor = (me: AuthUser | null | undefined) => UNITS.filter((u) => u.key !== 'PLACEMENTS' || me?.features?.placements === true);
+const unitsFor = (me: AuthUser | null | undefined) => UNITS.filter((u) => (u.key !== 'PLACEMENTS' || me?.features?.placements === true)
+  // The employee lifecycle only where the company has it switched on.
+  && (u.key !== LIFECYCLE_SECTION || lifecycleOn() === true));
 const unitByTitle = (title: string) => UNITS.find((u) => u.title === title)!;
 const tabsOf = (...titles: string[]): AccessKey[] => titles.flatMap((t) => unitByTitle(t).tabs);
 const hasUnit = (tabs: Set<AccessKey> | AccessKey[], u: Unit) => u.tabs.every((t) => (Array.isArray(tabs) ? tabs.includes(t) : tabs.has(t)));

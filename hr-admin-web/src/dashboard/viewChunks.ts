@@ -65,6 +65,10 @@ const LOADERS: Partial<Record<View, Loader>> = {
   placements: () => import('./views/Placements').then((m) => ({ default: m.Placements })),
   placementclients: () => import('./views/Placements').then((m) => ({ default: m.PlacementClients })),
   placementcustomers: () => import('./views/Placements').then((m) => ({ default: m.PlacementCustomers })),
+  onboarding: () => import('./views/lifecycle/OnboardingBoard').then((m) => ({ default: m.OnboardingBoard })),
+  lifecycle_documents: () => import('./views/lifecycle/LifecycleDocuments').then((m) => ({ default: m.LifecycleDocuments })),
+  lifecycle_templates: () => import('./views/lifecycle/Templates').then((m) => ({ default: m.LifecycleTemplates })),
+  lifecycle_letter_templates: () => import('./views/lifecycle/LetterTemplates').then((m) => ({ default: m.LetterTemplates })),
 };
 
 /**

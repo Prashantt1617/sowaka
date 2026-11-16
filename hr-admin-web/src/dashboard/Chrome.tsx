@@ -20,6 +20,7 @@ import { SuwiOrb } from './suwi/SuwiPanel';
 import { useSuwiNotices } from './suwi/SuwiNoticed';
 import { PAGE_ACTIONS_ID } from './ds';
 import { BULK_VIEWS, SETUP_VIEWS } from './setupGroups';
+import { useLifecycleOn } from './lifecycleSwitch';
 
 /** `hidden`: not shown in the sidebar, but still part of its section's access (Accesses grants it). */
 export type NavItem = { key: View; label: string; hidden?: boolean };
@@ -114,6 +115,16 @@ const PLACEMENTS: NavItem[] = [
   { key: 'placementclients', label: 'Clients' },
   { key: 'placementcustomers', label: 'Candidates' },
 ];
+// Employee lifecycle: a company feature (lifecycleSwitch.ts), so the whole group
+// shows only where it is on. Templates and Document templates open from Setup
+// (hidden here, so Accesses still gives them with the group). The Offboarding
+// builder adds `offboarding` and `exit_insights` to this list.
+export const LIFECYCLE_SECTION = 'EMPLOYEE LIFECYCLE';
+const LIFECYCLE: NavItem[] = [
+  { key: 'onboarding', label: 'Onboarding' },
+  { key: 'lifecycle_documents', label: 'Documents' },
+  { key: 'lifecycle_templates', label: 'Templates', hidden: true },
+];
 export const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'PLACEMENTS', items: PLACEMENTS },
   { title: 'TIME OFFICE', items: REQUESTS },
@@ -125,6 +136,7 @@ export const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'TAX UPLOADS', items: TAX_UPLOADS },
   { title: 'CLAIMS', items: CLAIMS },
   { title: 'ENGAGEMENT', items: ENGAGEMENT },
+  { title: LIFECYCLE_SECTION, items: LIFECYCLE },
   { title: 'SUWI', items: [{ key: 'suwi', label: 'Settings & activity' }] },
 ];
 const SOON: Partial<Record<View, boolean>> = {};
@@ -278,7 +290,10 @@ export function Sidebar() {
   // The company's real name, not a constant baked in at build time.
   const companyName = brand.name ?? user?.company ?? ORG_DISPLAY_NAME;
   const { leaves, ots, rbs, corrs, fbMgrs, listState } = useStore();
-  const sections = SECTIONS.map((s) => ({ ...s, items: s.items.filter((item) => !item.hidden && canOpen(user, item.key)) })).filter((s) => s.items.length > 0);
+  const lifecycle = useLifecycleOn(Boolean(user?.dashboardAccess));
+  const sections = SECTIONS
+    .filter((s) => s.title !== LIFECYCLE_SECTION || lifecycle === true)
+    .map((s) => ({ ...s, items: s.items.filter((item) => !item.hidden && canOpen(user, item.key)) })).filter((s) => s.items.length > 0);
   // A cancellation request on an approved leave waits on HR's decision too.
   const leavesPending = leaves.filter((l) => l.status === 'Pending' || l.cancelRequest?.status === 'Pending').length;
   const otPending = ots.filter((o) => o.status === 'Pending').length;
