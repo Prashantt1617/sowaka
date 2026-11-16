@@ -1,0 +1,72 @@
+{
+  "months": [
+    {
+      "journeyId": "7be49524-2125-4d4f-9591-150f6703add7",
+      "monthNo": 1,
+      "goals": [
+        {
+          "text": "Ship the leave redesign"
+        },
+        {
+          "text": "Run one crit"
+        }
+      ],
+      "id": "6c892925-e4af-49d1-b0d4-c8eb9db02d07",
+      "org": "el-fixtures",
+      "goalsSetAt": "2026-11-16T17:26:02.059Z",
+      "startsOn": "2026-11-10",
+      "endsOn": "2026-12-09",
+      "final": false
+    },
+    {
+      "journeyId": "7be49524-2125-4d4f-9591-150f6703add7",
+      "monthNo": 2,
+      "goals": [],
+      "id": "6c44efd2-6880-4c94-8a20-21176c41511d",
+      "org": "el-fixtures",
+      "startsOn": "2026-12-10",
+      "endsOn": "2027-01-09",
+      "final": false
+    },
+    {
+      "journeyId": "7be49524-2125-4d4f-9591-150f6703add7",
+      "monthNo": 3,
+      "goals": [],
+      "id": "55650407-35c4-4d64-8b7f-e1badc3bb24e",
+      "org": "el-fixtures",
+      "startsOn": "2027-01-10",
+      "endsOn": "2027-02-09",
+      "final": false
+    },
+    {
+      "journeyId": "7be49524-2125-4d4f-9591-150f6703add7",
+      "monthNo": 4,
+      "goals": [],
+      "id": "d72d9714-3d5a-447e-8b50-e8a2b762475c",
+      "org": "el-fixtures",
+      "startsOn": "2027-02-10",
+      "endsOn": "2027-03-09",
+      "final": false
+    },
+    {
+      "journeyId": "7be49524-2125-4d4f-9591-150f6703add7",
+      "monthNo": 5,
+      "goals": [],
+      "id": "e57fdb7c-00b5-4bc0-8274-c76569f071be",
+      "org": "el-fixtures",
+      "startsOn": "2027-03-10",
+      "endsOn": "2027-04-09",
+      "final": false
+    },
+    {
+      "journeyId": "7be49524-2125-4d4f-9591-150f6703add7",
+      "monthNo": 6,
+      "goals": [],
+      "id": "8e98a094-a9b6-438b-9dd5-24b4a76fe748",
+      "org": "el-fixtures",
+      "startsOn": "2027-04-10",
+      "endsOn": "2027-05-09",
+      "final": true
+    }
+  ]
+}

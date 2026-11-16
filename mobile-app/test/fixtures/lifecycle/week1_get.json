@@ -1,0 +1,31 @@
+{
+  "policies": [
+    {
+      "id": "leave",
+      "title": "Leave policy",
+      "version": "2026-10-01T00:00:00.000Z"
+    },
+    {
+      "id": "conduct",
+      "title": "Code of conduct",
+      "version": "2026-09-15T00:00:00.000Z"
+    }
+  ],
+  "steps": {
+    "policies": false,
+    "tax": false,
+    "bank_pf": false,
+    "goals": false
+  },
+  "managerName": "Meera Iyer",
+  "bank": {
+    "masked": ""
+  },
+  "pf": {},
+  "goals": [
+    "Ship the leave redesign",
+    "Meet every designer"
+  ],
+  "probationMonths": 6,
+  "goalsLockOn": "2026-11-17"
+}

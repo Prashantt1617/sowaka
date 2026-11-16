@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { resignations, users } from '../../config/db';
 import type { Resignation } from '../../models/lifecycle.model';
 import {
-  LifecycleError, addDays, appUser, beginOffboarding, dashboardActor, firstName, isDateKey, keyOfInstant, longDay, noticeDaysFor, requireHr, resignationView, shortDay, todayKey,
+  LifecycleError, addDays, appUser, beginOffboarding, dashboardActor, daysFromTo, firstName, isDateKey, keyOfInstant, longDay, noticeDaysFor, requireHr, resignationView, shortDay, todayKey,
 } from './offboarding';
 import { completeTask } from './engine';
 import { notifyUsers } from '../notification.service';
@@ -80,15 +80,29 @@ export async function withdrawResignation(userId: string, now = new Date()) {
   return { resignation: resignationView({ ...r, status: 'withdrawn', withdrawnAt: now }, await managerNameOf(r.managerUserId), now) };
 }
 
-/** GET /lifecycle/manager/resignations — R7: the manager's reports' resignations not yet accepted by HR. */
+/**
+ * GET /lifecycle/manager/resignations — R7: the manager's reports' resignations not yet accepted by
+ * HR (the Requests cards), and the accepted ones whose exit is still under way (the app gives the
+ * report's profile its Resignation tab from these, for the handover; the cards skip them).
+ */
 export async function managerResignations(managerUserId: string, now = new Date()) {
   const manager = await appUser(managerUserId);
-  const rows = await resignations().find({ org: manager.org, managerUserId, status: { $in: OPEN } }, { projection: { _id: 0 } }).sort({ submittedAt: -1 }).toArray();
-  const people = await users().find({ userId: { $in: rows.map((r) => r.userId) } }, { projection: { _id: 0, userId: 1, name: 1, designation: 1, department: 1 } }).toArray();
+  const found = await resignations().find({ org: manager.org, managerUserId, status: { $in: [...OPEN, 'accepted'] } }, { projection: { _id: 0 } }).sort({ submittedAt: -1 }).toArray();
+  const people = await users().find({ userId: { $in: found.map((r) => r.userId) } }, { projection: { _id: 0, userId: 1, name: 1, designation: 1, department: 1, exit: 1 } }).toArray();
+  const underWay = (r: Resignation) => {
+    const e = people.find((x) => x.userId === r.userId)?.exit;
+    return !!e && !e.accessEndedAt && e.offboarding?.resignationId === r.id;
+  };
+  const rows = found.filter((r) => r.status !== 'accepted' || underWay(r));
   return {
     resignations: rows.map((r) => {
       const p = people.find((x) => x.userId === r.userId);
-      return { ...resignationView(r, manager.name, now), name: p?.name ?? '', designation: p?.designation ?? '', department: p?.department ?? '' };
+      // Accepted: the last day is the exit's (HR may have moved it since).
+      const tl = r.status === 'accepted' && p?.exit ? p.exit.lastWorkingDay : undefined;
+      return {
+        ...resignationView(r, manager.name, now), ...(tl ? { tl, daysLeft: daysFromTo(todayKey(now), tl) } : {}),
+        name: p?.name ?? '', designation: p?.designation ?? '', department: p?.department ?? '',
+      };
     }),
   };
 }

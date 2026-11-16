@@ -1,0 +1,8 @@
+{
+  "status": 403,
+  "body": {
+    "success": false,
+    "message": "This employee account is not active",
+    "requestId": "fixture"
+  }
+}

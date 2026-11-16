@@ -1,0 +1,21 @@
+{
+  "task": {
+    "id": "1b4c4bed-6486-419b-b19b-4e51ecbd8460",
+    "systemKey": "app_tour",
+    "phase": "first_week",
+    "title": "Take the Sowaka tour",
+    "helper": "The in-app spotlight tour",
+    "ownerRole": "employee",
+    "ownerName": "Isha Verma",
+    "kind": "tour",
+    "surface": "app",
+    "mustDo": false,
+    "status": "done",
+    "opensAt": "2026-11-10T00:00:00.000Z",
+    "dueAt": "2026-11-13T00:00:00.000Z",
+    "dueLabel": "Fri 13 Nov",
+    "doneAt": "2026-11-16T17:26:01.851Z",
+    "doneByName": "Isha Verma",
+    "late": false
+  }
+}

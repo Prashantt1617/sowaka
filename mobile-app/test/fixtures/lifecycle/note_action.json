@@ -1,0 +1,22 @@
+{
+  "notes": [
+    {
+      "id": "b8aa49ce-bf3a-41c9-a270-03b75ab396b7",
+      "authorUserId": "mgr",
+      "authorName": "Meera Iyer",
+      "text": "Settling in well. Next: the design crit.",
+      "shared": true,
+      "sharedAt": "2026-11-16T17:26:01.985Z",
+      "seenAt": "2026-11-16T17:26:01.990Z",
+      "createdAt": "2026-11-16T17:26:01.985Z",
+      "replies": [
+        {
+          "byUserId": "isha",
+          "text": "Thanks, Meera!",
+          "at": "2026-11-16T17:26:01.990Z",
+          "byName": "Isha Verma"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "success": true,
+  "resignation": {
+    "id": "9920db70-b815-4905-becd-3d5229390a01",
+    "userId": "ravi",
+    "managerUserId": "mgr",
+    "managerName": "Meera Iyer",
+    "reason": "Better opportunity",
+    "note": "Thank you for three great years.",
+    "submittedAt": "2026-11-16T17:26:01.552Z",
+    "noticeDays": 30,
+    "lastDayByNotice": "2026-12-16",
+    "status": "accepted",
+    "manager": {
+      "action": "release_early",
+      "date": "2026-11-20",
+      "note": "Fine by me",
+      "at": "2026-11-16T17:26:01.552Z",
+      "byName": "Meera Iyer"
+    },
+    "hrAcceptedAt": "2026-11-16T17:26:01.552Z",
+    "hrAcceptedByName": "Hema Rao",
+    "agreedLastDay": "2026-11-20",
+    "withdrawnAt": null,
+    "journeyId": "eb544344-23d4-4e0c-a964-9ce01db84acd",
+    "tl": "2026-11-20",
+    "daysLeft": 4
+  },
+  "noticeDays": 30,
+  "lastDayByNotice": "2026-12-16",
+  "canResign": false,
+  "reasons": [
+    "Better opportunity",
+    "Growth",
+    "Pay",
+    "Manager",
+    "Work-life balance",
+    "Higher studies",
+    "Relocation",
+    "Personal",
+    "Other"
+  ]
+}

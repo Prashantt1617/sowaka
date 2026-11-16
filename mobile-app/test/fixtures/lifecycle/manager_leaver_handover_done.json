@@ -1,0 +1,246 @@
+{
+  "success": true,
+  "leaver": {
+    "userId": "ravi",
+    "name": "Ravi Menon",
+    "designation": "Senior Designer",
+    "department": "Design"
+  },
+  "status": {
+    "exitType": "resignation",
+    "exitTypeLabel": "Resignation",
+    "acceptedOn": "2026-11-16",
+    "tl": "2026-11-20",
+    "daysLeft": 4
+  },
+  "tl": "2026-11-20",
+  "daysLeft": 4,
+  "acceptedAt": "2026-11-16T17:26:02.210Z",
+  "resignation": {
+    "id": "9920db70-b815-4905-becd-3d5229390a01",
+    "userId": "ravi",
+    "managerUserId": "mgr",
+    "managerName": "Meera Iyer",
+    "reason": "Better opportunity",
+    "note": "Thank you for three great years.",
+    "submittedAt": "2026-11-16T17:26:01.552Z",
+    "noticeDays": 30,
+    "lastDayByNotice": "2026-12-16",
+    "status": "accepted",
+    "manager": {
+      "action": "release_early",
+      "date": "2026-11-20",
+      "note": "Fine by me",
+      "at": "2026-11-16T17:26:01.552Z",
+      "byName": "Meera Iyer"
+    },
+    "hrAcceptedAt": "2026-11-16T17:26:01.552Z",
+    "hrAcceptedByName": "Hema Rao",
+    "agreedLastDay": "2026-11-20",
+    "withdrawnAt": null,
+    "journeyId": "eb544344-23d4-4e0c-a964-9ce01db84acd",
+    "tl": "2026-11-20",
+    "daysLeft": 4
+  },
+  "handover": {
+    "items": [
+      {
+        "id": "5df8a1ff-2c72-46df-99d8-ec8b81826b71",
+        "title": "Design system file",
+        "done": true,
+        "doneAt": "2026-11-16T17:26:01.552Z",
+        "upload": {
+          "kind": "link",
+          "name": "docs.example/design-system",
+          "url": "https://docs.example/design-system",
+          "at": "2026-11-16T17:26:01.552Z"
+        }
+      },
+      {
+        "id": "ed103ad4-6399-4f0c-8af3-22608e1a33e7",
+        "title": "Open projects",
+        "done": true,
+        "doneAt": "2026-11-16T17:26:01.552Z",
+        "upload": {
+          "kind": "link",
+          "name": "docs.example/projects",
+          "url": "https://docs.example/projects",
+          "at": "2026-11-16T17:26:01.552Z"
+        }
+      },
+      {
+        "id": "6d9a6bfc-7a3f-4d0a-9cbf-c164703a294b",
+        "title": "Vendor list",
+        "done": true,
+        "doneAt": "2026-11-16T17:26:01.552Z",
+        "upload": null
+      }
+    ],
+    "note": "Please share by Friday.",
+    "addedAt": "2026-11-16T17:26:02.255Z",
+    "dueAt": "2026-11-13T00:00:00.000Z",
+    "done": true,
+    "doneAt": "2026-11-16T17:26:02.296Z"
+  },
+  "tasks": [
+    {
+      "id": "1f2962e0-f81b-48b2-8a07-70e27092415c",
+      "systemKey": "send_resignation",
+      "phase": "resignation",
+      "title": "Send resignation",
+      "helper": "Profile › Work detail › Resign. Reason (required) and an optional note. No last-day picker",
+      "ownerRole": "employee",
+      "ownerName": "Ravi Menon",
+      "kind": "form",
+      "surface": "app",
+      "mustDo": true,
+      "status": "done",
+      "opensAt": null,
+      "dueAt": null,
+      "dueLabel": "Any time",
+      "doneAt": "2026-11-16T17:26:02.210Z",
+      "doneByName": "Automatic",
+      "late": false
+    },
+    {
+      "id": "59f9c03b-52eb-4828-832c-875b1a97d534",
+      "systemKey": "manager_resignation_action",
+      "phase": "resignation",
+      "title": "Accept, change last day or release early",
+      "helper": "Request card in Teams › Requests",
+      "ownerRole": "manager",
+      "ownerName": "Meera Iyer",
+      "kind": "review",
+      "surface": "app",
+      "mustDo": false,
+      "status": "done",
+      "opensAt": null,
+      "dueAt": null,
+      "dueLabel": "Shown on the HR board",
+      "doneAt": "2026-11-16T17:26:02.210Z",
+      "doneByName": "Automatic",
+      "late": false
+    },
+    {
+      "id": "aeb1ba62-703c-4408-9a0c-c48a5ba0ebe4",
+      "systemKey": "handover_checklist",
+      "phase": "when_accepted",
+      "title": "Handover checklist and note",
+      "helper": "Manager adds items; the employee uploads against each",
+      "ownerRole": "manager",
+      "ownerName": "Meera Iyer",
+      "kind": "form",
+      "surface": "app",
+      "mustDo": true,
+      "status": "done",
+      "opensAt": "2026-11-16T00:00:00.000Z",
+      "dueAt": "2026-11-19T00:00:00.000Z",
+      "dueLabel": "Thu 19 Nov",
+      "doneAt": "2026-11-16T17:26:02.255Z",
+      "doneByName": "Meera Iyer",
+      "late": false
+    },
+    {
+      "id": "81fb68a8-d116-40f9-92d2-63eef5354042",
+      "systemKey": "upload_handover",
+      "phase": "notice_period",
+      "title": "Upload handover items",
+      "helper": "File or link against each checklist item",
+      "ownerRole": "employee",
+      "ownerName": "Ravi Menon",
+      "kind": "upload",
+      "surface": "app",
+      "mustDo": true,
+      "status": "todo",
+      "opensAt": null,
+      "dueAt": "2026-11-13T00:00:00.000Z",
+      "dueLabel": "Fri 13 Nov",
+      "late": true
+    },
+    {
+      "id": "3d1009d7-590f-4520-b0c3-ea099786490f",
+      "systemKey": "exit_interview",
+      "phase": "notice_period",
+      "title": "Exit interview",
+      "helper": "Optional, 5 questions. Answers go to HR only and show anonymised in Exit insights",
+      "ownerRole": "employee",
+      "ownerName": "Ravi Menon",
+      "kind": "survey",
+      "surface": "app",
+      "mustDo": false,
+      "status": "todo",
+      "opensAt": "2026-11-15T00:00:00.000Z",
+      "dueAt": "2026-11-20T00:00:00.000Z",
+      "dueLabel": "Fri 20 Nov",
+      "late": false
+    },
+    {
+      "id": "7d9b536c-143f-4a40-91e1-ecc7497bed42",
+      "systemKey": "save_documents",
+      "phase": "notice_period",
+      "title": "Save your documents",
+      "helper": "Payslips and Form 16, before access ends",
+      "ownerRole": "employee",
+      "ownerName": "Ravi Menon",
+      "kind": "ack",
+      "surface": "app",
+      "mustDo": false,
+      "status": "todo",
+      "opensAt": "2026-11-16T00:00:00.000Z",
+      "dueAt": "2026-11-20T00:00:00.000Z",
+      "dueLabel": "Fri 20 Nov",
+      "late": false
+    },
+    {
+      "id": "a8714476-9880-42e1-ac7b-2d67439fc492",
+      "systemKey": "mark_handover_done",
+      "phase": "last_day",
+      "title": "Mark handover done",
+      "helper": "Manager confirms",
+      "ownerRole": "manager",
+      "ownerName": "Meera Iyer",
+      "kind": "review",
+      "surface": "app",
+      "mustDo": false,
+      "status": "done",
+      "opensAt": "2026-11-20T00:00:00.000Z",
+      "dueAt": "2026-11-20T00:00:00.000Z",
+      "dueLabel": "Fri 20 Nov",
+      "doneAt": "2026-11-16T17:26:02.296Z",
+      "doneByName": "Meera Iyer",
+      "late": false
+    }
+  ],
+  "otherSteps": [
+    {
+      "id": "laptop",
+      "label": "Laptop and accessories returned",
+      "title": "Laptop and accessories returned",
+      "team": "it",
+      "ownerRole": "it",
+      "done": false,
+      "status": "todo",
+      "helper": "Tracked by IT"
+    },
+    {
+      "id": "id_card",
+      "label": "ID card and access cards returned",
+      "title": "ID card and access cards returned",
+      "team": "admin",
+      "ownerRole": "admin",
+      "done": false,
+      "status": "todo",
+      "helper": "Tracked by Admin"
+    },
+    {
+      "id": "advances",
+      "label": "Advances and loans cleared",
+      "title": "Advances and loans cleared",
+      "team": "finance",
+      "ownerRole": "finance",
+      "done": false,
+      "status": "todo",
+      "helper": "Tracked by Finance"
+    }
+  ]
+}
