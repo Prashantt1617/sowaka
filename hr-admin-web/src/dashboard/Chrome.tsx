@@ -20,6 +20,7 @@ import { SuwiOrb } from './suwi/SuwiPanel';
 import { useSuwiNotices } from './suwi/SuwiNoticed';
 import { PAGE_ACTIONS_ID } from './ds';
 import { BULK_VIEWS, SETUP_VIEWS } from './setupGroups';
+import { useLifecycleOn } from './lifecycleSwitch';
 
 /** `hidden`: not shown in the sidebar, but still part of its section's access (Accesses grants it). */
 export type NavItem = { key: View; label: string; hidden?: boolean };
@@ -109,22 +110,29 @@ const ENGAGEMENT: NavItem[] = [
 ];
 // Placements: a placement agency's own work, so it comes first; only a
 // company with the feature sees it (see access.ts).
-// Employee lifecycle (features.lifecycle): the Offboarding board replaces People › Exits there.
-const LIFECYCLE: NavItem[] = [
-  { key: 'offboarding', label: 'Offboarding' },
-  { key: 'exit_insights', label: 'Exit insights' },
-];
 const PLACEMENTS: NavItem[] = [
   { key: 'placements', label: 'Placements' },
   { key: 'placementclients', label: 'Clients' },
   { key: 'placementcustomers', label: 'Candidates' },
+];
+// Employee lifecycle: a company feature (lifecycleSwitch.ts), so the whole group
+// shows only where it is on. Templates and Document templates open from Setup
+// (hidden here, so Accesses still gives them with the group). Where it is on,
+// Offboarding replaces People › Exits.
+export const LIFECYCLE_SECTION = 'EMPLOYEE LIFECYCLE';
+const LIFECYCLE: NavItem[] = [
+  { key: 'onboarding', label: 'Onboarding' },
+  { key: 'offboarding', label: 'Offboarding' },
+  { key: 'exit_insights', label: 'Exit insights' },
+  { key: 'lifecycle_documents', label: 'Documents' },
+  { key: 'lifecycle_templates', label: 'Templates', hidden: true },
 ];
 export const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'PLACEMENTS', items: PLACEMENTS },
   { title: 'TIME OFFICE', items: REQUESTS },
   { title: 'SUPPORT', items: SUPPORT },
   { title: 'PEOPLE', items: PEOPLE },
-  { title: 'EMPLOYEE LIFECYCLE', items: LIFECYCLE },
+  { title: LIFECYCLE_SECTION, items: LIFECYCLE },
   { title: 'SHIFTS', items: SHIFTS },
   { title: 'PERFORMANCE', items: PERFORMANCE },
   { title: 'PAYROLL', items: PAYROLL },
@@ -284,9 +292,12 @@ export function Sidebar() {
   // The company's real name, not a constant baked in at build time.
   const companyName = brand.name ?? user?.company ?? ORG_DISPLAY_NAME;
   const { leaves, ots, rbs, corrs, fbMgrs, listState } = useStore();
+  const lifecycle = useLifecycleOn(Boolean(user?.dashboardAccess));
   // Where the lifecycle is on, the Offboarding board takes the place of People › Exits.
-  const replaced = (key: View) => key === 'exits' && user?.features?.lifecycle === true;
-  const sections = SECTIONS.map((s) => ({ ...s, items: s.items.filter((item) => !item.hidden && !replaced(item.key) && canOpen(user, item.key)) })).filter((s) => s.items.length > 0);
+  const replaced = (key: View) => key === 'exits' && (user?.features?.lifecycle === true || lifecycle === true);
+  const sections = SECTIONS
+    .filter((s) => s.title !== LIFECYCLE_SECTION || lifecycle === true)
+    .map((s) => ({ ...s, items: s.items.filter((item) => !item.hidden && !replaced(item.key) && canOpen(user, item.key)) })).filter((s) => s.items.length > 0);
   // A cancellation request on an approved leave waits on HR's decision too.
   const leavesPending = leaves.filter((l) => l.status === 'Pending' || l.cancelRequest?.status === 'Pending').length;
   const otPending = ots.filter((o) => o.status === 'Pending').length;

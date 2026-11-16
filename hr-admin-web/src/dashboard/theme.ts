@@ -24,6 +24,10 @@ export type View =
   | 'shiftswaps'
   | 'reimbursements'
   | 'onboarding'
+  // Employee lifecycle (behind companies.features.lifecycle): the board is `onboarding`.
+  | 'lifecycle_documents'
+  | 'lifecycle_templates'
+  | 'lifecycle_letter_templates'
   | 'exit'
   | 'payroll'
   | 'payschedule'
@@ -176,7 +180,10 @@ export const TITLES: Record<View, [string, string]> = {
   roster: ['Roster', 'Shifts · schedule employees onto shifts'],
   shiftswaps: ['Swap Requests', 'Shifts · shift swap & change approvals'],
   reimbursements: ['Reimbursements', 'People'],
-  onboarding: ['Onboarding', 'People'],
+  onboarding: ['Onboarding', 'Employee lifecycle'],
+  lifecycle_documents: ['Documents', 'Employee lifecycle'],
+  lifecycle_templates: ['Templates', 'Employee lifecycle · the tasks every joiner and leaver gets'],
+  lifecycle_letter_templates: ['Document templates', 'Employee lifecycle · the wording of every letter'],
   exit: ['Exit', 'People'],
   payroll: ['Payroll', 'People'],
   payschedule: ['Pay Schedule', 'Payroll · how often and when payroll runs'],

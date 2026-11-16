@@ -17,8 +17,9 @@ import type { SupportRole } from '../../services/support';
 import { ListPending, Spinner } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { IconPlus } from '../icons';
-import { OVERVIEW_ITEM, SECTIONS } from '../Chrome';
-import { PLACEMENT_VIEWS, SALARY_DETAILS } from '../access';
+import { LIFECYCLE_SECTION, OVERVIEW_ITEM, SECTIONS } from '../Chrome';
+import { lifecycleOn } from '../lifecycleSwitch';
+import { LIFECYCLE_VIEWS, PLACEMENT_VIEWS, SALARY_DETAILS } from '../access';
 import type { AccessKey } from '../access';
 
 type SubTab = 'users' | 'roles';
@@ -38,13 +39,20 @@ const titleCase = (t: string) => t.charAt(0) + t.slice(1).toLowerCase();
 // Investment proofs, Statutory & tax settings, FBP requests and FBP splits are not tabs of their own here: they come with Payroll Runs or Salary details.
 // Reports › Company calendar and Punch log come with the Attendance report (Punch log with Attendance and OOL check-ins too), as access.ts and the server decide it.
 const RIDES_ALONG = new Set<AccessKey>([...PLACEMENT_VIEWS.filter((v) => v !== 'placements'), 'investmentproofs', 'payrollconfig', 'exits', 'fbprequests', 'fbpsplits', 'companycalendar', 'punchlog']);
+const LIFECYCLE_HINTS: Partial<Record<AccessKey, string>> = {
+  onboarding: 'Offers, pre-boarding, the first week and probation',
+  offboarding: 'Resignations, notice, clearance and settlement. Without People, only their own clearance items, no pay',
+  exit_insights: 'Why people leave, anonymised',
+  lifecycle_documents: 'Offer, appointment, confirmation and relieving letters, and their templates',
+  lifecycle_templates: 'Onboarding and offboarding templates (Setup)',
+};
 const SECTION_UNITS: Unit[] = SECTIONS.flatMap((s) => {
   const items = s.items.filter((i) => i.key !== 'usersroles' && i.key !== 'support' && i.key !== 'cuptv');
   const tabs = items.filter((i) => !RIDES_ALONG.has(i.key)).map((i) => i.key);
   // A section all of whose pages come with another (Tax uploads, with Payroll) is not given on its own.
   if (items.length === 0 || tabs.length === 0) return [];
   // Employee lifecycle: each page on its own, so IT, Admin and Finance staff can be given the Offboarding board alone.
-  if (s.title === 'EMPLOYEE LIFECYCLE') return items.map((i) => ({ key: i.key, title: i.label, tabs: [i.key], hint: i.key === 'offboarding' ? 'Resignations, notice, clearance and settlement. Without People, only their own clearance items, no pay' : 'Why people leave, anonymised' }));
+  if (s.title === LIFECYCLE_SECTION) return items.map((i) => ({ key: i.key, title: i.key === 'lifecycle_templates' ? 'Lifecycle templates' : i.label, tabs: [i.key], hint: LIFECYCLE_HINTS[i.key] ?? i.label }));
   const along = s.title === 'PAYROLL' ? SECTIONS.find((x) => x.title === 'TAX UPLOADS')?.items ?? [] : [];
   return [{ key: s.title, title: titleCase(s.title), tabs, hint: [...items, ...along].map((i) => i.label).join(' · ') }];
 });
@@ -57,7 +65,9 @@ const UNITS: Unit[] = [
 ];
 const ALL_TABS: AccessKey[] = UNITS.flatMap((u) => u.tabs);
 /** What this company can give: Placements only where the company has it. */
-const unitsFor = (me: AuthUser | null | undefined) => UNITS.filter((u) => (u.key !== 'PLACEMENTS' || me?.features?.placements === true) && ((u.key !== 'offboarding' && u.key !== 'exit_insights') || me?.features?.lifecycle === true));
+const unitsFor = (me: AuthUser | null | undefined) => UNITS.filter((u) => (u.key !== 'PLACEMENTS' || me?.features?.placements === true)
+  // The employee lifecycle only where the company has it switched on.
+  && (!LIFECYCLE_VIEWS.includes(u.key as AccessKey) || lifecycleOn() === true));
 const unitByTitle = (title: string) => UNITS.find((u) => u.title === title)!;
 const tabsOf = (...titles: string[]): AccessKey[] => titles.flatMap((t) => unitByTitle(t).tabs);
 const hasUnit = (tabs: Set<AccessKey> | AccessKey[], u: Unit) => u.tabs.every((t) => (Array.isArray(tabs) ? tabs.includes(t) : tabs.has(t)));

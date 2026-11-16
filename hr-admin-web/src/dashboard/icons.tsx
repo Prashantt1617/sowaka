@@ -252,9 +252,29 @@ export const navIcon: Record<View, ReactElement> = {
   ),
   onboarding: (
     <svg {...base(18, 'currentColor')}>
-      <path d="M16 19v-1.5A3.5 3.5 0 0 0 12.5 14h-5A3.5 3.5 0 0 0 4 17.5V19" />
-      <circle cx="10" cy="7.5" r="3.5" />
-      <path d="M19 8v6M22 11h-6" />
+      <path d="M12 21v-9" />
+      <path d="M12 12c0-4 2.5-6.5 7-6.5 0 4.2-2.6 6.5-7 6.5z" />
+      <path d="M12 14.5C12 11.3 9.9 9.3 5.5 9.3c0 3.3 2.3 5.2 6.5 5.2z" />
+      <path d="M7.5 21h9" />
+    </svg>
+  ),
+  // Employee lifecycle; the board's own item is `onboarding` (the sprout) above.
+  lifecycle_documents: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3v5h5M9 13h6M9 17h4" />
+    </svg>
+  ),
+  lifecycle_templates: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="4" y="3.5" width="16" height="17" rx="2.5" />
+      <path d="M8 8.5h8M8 12.5h8M8 16.5h5" />
+    </svg>
+  ),
+  lifecycle_letter_templates: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="3" y="5" width="18" height="14" rx="2.5" />
+      <path d="m3.5 6.5 8.5 6 8.5-6" />
     </svg>
   ),
   exit: (

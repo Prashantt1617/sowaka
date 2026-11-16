@@ -4,6 +4,7 @@ declare module 'html2pdf.js' {
     from(source: HTMLElement | string, type?: 'string' | 'element'): Html2Pdf;
     save(): Promise<void>;
     outputPdf(type: 'datauristring'): Promise<string>;
+    outputPdf(type: 'blob'): Promise<Blob>;
   }
   const html2pdf: () => Html2Pdf;
   export default html2pdf;

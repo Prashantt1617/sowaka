@@ -102,7 +102,8 @@ async function request<T>(path: string, opts: Options): Promise<T> {
 
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
-    const message = (data.message as string) || `Request failed (${res.status})`;
+    // Most routes answer { message }; the lifecycle routes answer { error }.
+    const message = (data.message as string) || (data.error as string) || `Request failed (${res.status})`;
     throw new ApiError(res.status, message);
   }
   return data as T;
@@ -133,7 +134,7 @@ async function upload<T>(path: string, form: FormData): Promise<T> {
   });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
-    throw new ApiError(res.status, (data.message as string) || `Request failed (${res.status})`);
+    throw new ApiError(res.status, (data.message as string) || (data.error as string) || `Request failed (${res.status})`);
   }
   return data as T;
 }
