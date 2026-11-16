@@ -371,6 +371,9 @@ class _MyTeamViewState extends State<_MyTeamView> {
           hint: 'Search employee',
         ),
         const SizedBox(height: 12),
+        // M0: a manager's reports in onboarding or probation, first; no
+        // joiners (or the lifecycle off) and it is not there at all.
+        if (widget.canManage && _query.isEmpty) const NewJoinersSection(),
         // The viewer is part of the team the server sends, so there is no
         // separate card for them any more — their row simply says "(You)".
         if (filtered.isEmpty)

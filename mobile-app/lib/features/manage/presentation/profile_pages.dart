@@ -5,6 +5,9 @@ part of '../../manager/presentation/manager_screen.dart';
 /// The profile's tabs, in the order they are laid out: who the person is
 /// first, then their requests, then the rest.
 enum ProfileTab {
+  /// A new joiner's onboarding (A1b): first on their own profile while
+  /// onboarding or probation runs, where the lifecycle is on.
+  onboarding('Onboarding'),
   workDetail('Work detail'),
   request('Request'),
   attendance('Attendance'),
@@ -89,7 +92,9 @@ List<ProfileTab> ownProfileTabs({
   required bool hasManager,
   required bool showsHelp,
   bool showsResignation = false,
+  bool showsOnboarding = false,
 }) => [
+  if (showsOnboarding) ProfileTab.onboarding,
   ProfileTab.workDetail,
   ProfileTab.request,
   ProfileTab.attendance,
@@ -586,6 +591,7 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
       // Never on someone else's profile.
       ProfileTab.counselor => const <Widget>[],
       ProfileTab.settings => const <Widget>[],
+      ProfileTab.onboarding => const <Widget>[],
     };
 
     return Scaffold(
@@ -1204,11 +1210,18 @@ class _ProfileScreenState extends State<_ProfileScreen> {
         if (mounted) setState(() {});
       });
     }
+    LifecycleMeStore.instance.addListener(_onLifecycleChanged);
+  }
+
+  /// The Onboarding tab comes and goes with what `/lifecycle/me` says.
+  void _onLifecycleChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     _offboarding.removeListener(_offboardingChanged);
+    LifecycleMeStore.instance.removeListener(_onLifecycleChanged);
     _posts?.dispose();
     super.dispose();
   }
@@ -1404,14 +1417,19 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     final helpHere = profileShowsHelp(user.enabledTabs);
     final helpOnly = !worksHere && helpHere;
     final posts = _posts;
+    final showsOnboarding = LifecycleMeStore.instance.value.showsOnboarding;
     final tabs = profileTabsOpeningOn([
       for (final tab in ownProfileTabs(
         hasManager: dashboard.hasManager,
         showsHelp: helpHere,
         showsResignation: _offboarding.showsResignationTab,
+        showsOnboarding: showsOnboarding,
       ))
         if (tab != ProfileTab.posts || posts != null) tab,
-    ], widget.openOn);
+    // Onboarding leads while it runs: the usual opening (Work detail) gives
+    // way to it; a profile opened on purpose elsewhere (Post, Org chart)
+    // still opens there.
+    ], showsOnboarding && widget.openOn == ProfileTab.workDetail ? ProfileTab.onboarding : widget.openOn);
     final selected = _shownTab(tabs, _tab);
     final today = DateTime.now();
     final todayRecord = dashboard.attendance
@@ -1550,6 +1568,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
       ProfileTab.settings => [
         ProfileSettingsTab(session: session, onLogOut: widget.onLogout),
       ],
+      ProfileTab.onboarding => [const OnboardingProfileCard()],
     };
 
     return ColoredBox(

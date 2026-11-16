@@ -62,6 +62,12 @@ import '../../lifecycle/offboarding/offboarding.dart'
         OffboardingStore,
         OwnResignationTab,
         ResignEntryRow;
+import '../../face_id/face_check_screen.dart' show FaceCheckOutcome;
+import '../../face_id/face_setup_screen.dart';
+import '../../lifecycle/onboarding/data/onboarding_api.dart';
+import '../../lifecycle/onboarding/onboarding_launcher.dart';
+import '../../lifecycle/onboarding/presentation/manager/new_joiners_section.dart';
+import '../../lifecycle/onboarding/presentation/profile_onboarding_card.dart';
 
 part '../../connect/presentation/connect_tab.dart';
 part '../../games/presentation/games_tab.dart';
@@ -181,6 +187,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
       onResume: () {
         _bloc.setInBackground(false);
         unawaited(NotificationBadge.refresh(_session));
+        unawaited(LifecycleMeStore.instance.refresh(HttpOnboardingApi(session: _session)));
       },
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -200,6 +207,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
     registerInboxProfileAction(_inboxProfileAction);
     // A profile's Post tab shares this feed's directory, composer and list.
     _profileFeed = _connectComposerController;
+    // The lifecycle's onboarding screens open over the shell from anywhere;
+    // what `/lifecycle/me` says decides whether they show at all.
+    registerOnboardingShell(_onboardingShell);
+    unawaited(LifecycleMeStore.instance.refresh(HttpOnboardingApi(session: widget.session)));
   }
 
   @override
@@ -208,6 +219,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
     unregisterPersonProfileOpener(_openTeamMember);
     unregisterSupportTicketOpener(_raiseSupportTicket);
     unregisterInboxProfileAction(_inboxProfileAction);
+    unregisterOnboardingShell(_onboardingShell);
     NetworkStatus.offline.removeListener(_onNetworkChanged);
     activeManagerBloc.value = null;
     _quickActionsController
@@ -403,6 +415,79 @@ class _ManagerScreenState extends State<ManagerScreen> {
     );
   }
 
+  /// The onboarding screens' view of the app around them: the header, the
+  /// tabs, the face setup, a new photo and the feed.
+  OnboardingShell _onboardingShell() {
+    final dashboard = _bloc.state.dashboard;
+    final user = _session.user;
+    return OnboardingShell(
+      api: HttpOnboardingApi(session: _session),
+      profileAction: _ProfileAvatarAction(
+        initial: dashboard?.managerInitial ?? '',
+        photoUrl: dashboard?.managerPhotoUrl,
+        onTap: _openProfile,
+        size: 30,
+      ),
+      onNotifications: () => _openNotifications(context),
+      tabs: visibleTabs(_session.user.enabledTabs),
+      selectedTab: _bloc.state.tab,
+      onSelectTab: (tab) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        _bloc.add(ChangeManagerTab(tab, fresh: true));
+      },
+      registerFace: (context) async {
+        await Navigator.of(context).push<FaceCheckOutcome>(
+          MaterialPageRoute(builder: (_) => FaceSetupScreen(api: _bloc.api, onboarding: true)),
+        );
+        return FaceCheckOutcome.enrolledThisRun;
+      },
+      changePhoto: _changeOnboardingPhoto,
+      openPost: (postId) {
+        _bloc.add(const ChangeManagerTab(ManagerTab.connect));
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _connectComposerController.openPost(postId),
+        );
+      },
+      viewerName: user.name,
+      viewerDesignation: user.designation,
+      viewerDepartment: user.department,
+      viewerPhotoUrl: user.profilePhotoUrl,
+    );
+  }
+
+  /// A new profile photo from the intro post: chosen, cropped square and
+  /// saved as the profile's photo, as the profile's own camera does.
+  Future<String?> _changeOnboardingPhoto(BuildContext context) async {
+    final file = await pickImageFrom(context);
+    if (file == null || !context.mounted) return null;
+    final cropped = await cropImageFile(
+      context,
+      path: file.path,
+      title: 'Crop your photo',
+      initial: CropShape.square,
+      allowShapeChange: false,
+      maxEdge: 1024,
+    );
+    if (cropped == null) return null;
+    try {
+      final photoUrl = await _bloc.service.updateProfilePhoto(
+        path: cropped,
+        filename: file.name.replaceAll(RegExp(r'\.[^.]+$'), '.png'),
+      );
+      _bloc.setManagerPhoto(photoUrl);
+      await _updateProfilePhoto(photoUrl);
+      return photoUrl;
+    } catch (error) {
+      if (context.mounted) {
+        showAppToast(
+          context,
+          error is ManagerApiException ? error.message : 'Could not update your photo. Try again.',
+        );
+      }
+      return null;
+    }
+  }
+
   /// Takes a tapped notification to the thing it is about, not just to a
   /// tab: the post, the request queue, the person, the review.
   void _handleNotificationDestination(Map<String, dynamic> data) {
@@ -412,6 +497,9 @@ class _ManagerScreenState extends State<ManagerScreen> {
     final employeeUserId = '${data['employeeUserId'] ?? ''}';
     setState(() => _profileOpen = false);
     Navigator.of(context).popUntil((route) => route.isFirst);
+    // Onboarding's own (meetings, starter tasks, shared notes, nudges, a
+    // joiner for their manager): their screens open over the shell.
+    if (openOnboardingDestination(context, data)) return;
     switch (destination) {
       case 'connect_post':
       case 'connect_comment':
@@ -635,6 +723,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // next account does not inherit it. Bounded, like the rest.
     await clearGamesWebData().timeout(const Duration(seconds: 3), onTimeout: () {});
     forgetPolicies();
+    LifecycleMeStore.instance.clear();
     await AuthSessionStore().clear();
     if (!mounted) return;
     Navigator.of(
