@@ -1,6 +1,7 @@
 import { peopleTasks } from '../services/peopleTasks.service';
 import { getMyLeaveBalance } from '../services/leave.service';
 import { users } from '../config/db';
+import { closeCase, endAccessNow, exitDetail, exitSettings, listExits, recordExit, saveInterview, setClearance, setExitSettings, settlementAction, withdrawExit } from '../services/exit.service';
 import { NextFunction, Request, Response } from 'express';
 import { applyImport, cancelImport, importTemplate, previewImport } from '../services/employeeImport.service';
 import { attendanceReport, employeeCalendar } from '../services/attendance-report.service';
@@ -407,6 +408,47 @@ export async function deleteEmployee(req: Request, res: Response, next: NextFunc
     const result = await deleteEmployeeForAdmin(adminUserId(req), String(req.params.userId ?? ''), (req.body ?? {}).confirmName);
     res.status(200).json({ success: true, ...result });
   } catch (error) { next(error); }
+}
+
+// ---- Exits ----
+const exitUser = (req: Request) => String(req.params.userId ?? '');
+export async function exitDetailHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await exitDetail(adminUserId(req), exitUser(req))) }); } catch (error) { next(error); }
+}
+export async function exitClearanceHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await setClearance(adminUserId(req), exitUser(req), req.body ?? {})) }); } catch (error) { next(error); }
+}
+export async function exitInterviewHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await saveInterview(adminUserId(req), exitUser(req), req.body ?? {})) }); } catch (error) { next(error); }
+}
+export async function exitCloseCaseHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await closeCase(adminUserId(req), exitUser(req))) }); } catch (error) { next(error); }
+}
+/** POST …/exit/settlement/:action — line (change a line), approve, reopen, paid. */
+export async function exitSettlementHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const action = String(req.params.action ?? '');
+    if (!['line', 'approve', 'reopen', 'paid'].includes(action)) { res.status(404).json({ success: false, message: 'Unknown settlement action' }); return; }
+    res.status(200).json({ success: true, ...(await settlementAction(adminUserId(req), exitUser(req), action as 'line' | 'approve' | 'reopen' | 'paid', req.body ?? {})) });
+  } catch (error) { next(error); }
+}
+export async function listExitsHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, exits: await listExits(adminUserId(req)) }); } catch (error) { next(error); }
+}
+export async function exitSettingsHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await exitSettings(adminUserId(req))) }); } catch (error) { next(error); }
+}
+export async function setExitSettingsHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await setExitSettings(adminUserId(req), req.body ?? {})) }); } catch (error) { next(error); }
+}
+export async function recordExitHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, exit: await recordExit(adminUserId(req), String(req.params.userId ?? ''), req.body ?? {}) }); } catch (error) { next(error); }
+}
+export async function withdrawExitHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await withdrawExit(adminUserId(req), String(req.params.userId ?? ''))) }); } catch (error) { next(error); }
+}
+export async function endAccessNowHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, exit: await endAccessNow(adminUserId(req), String(req.params.userId ?? '')) }); } catch (error) { next(error); }
 }
 
 export async function updateEmployeeDetails(req: Request, res: Response, next: NextFunction) {

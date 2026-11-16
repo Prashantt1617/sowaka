@@ -73,6 +73,8 @@ const RULES: Rule[] = [
   { path: /^\/admin\/payroll\/employees\/[^/]+\/payment-details/, read: ['employees', 'salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
   { path: /^\/admin\/payroll/, read: ['payschedule', 'taxdetails', 'payheads', 'statutorycomponents', 'templates', 'payruns', 'salarydetails'], write: ['payruns'] },
   // An employee's pay and calendar
+  // Exits: People (the service also requires a dashboard admin).
+  { path: /^\/admin\/(exits|exit-settings)/, read: ['employees'], write: ['employees'] },
   { path: /^\/admin\/employees\/[^/]+\/payslips/, read: ['salarydetails', 'payruns'] },
   { path: /^\/admin\/employees\/[^/]+\/calendar/, read: ['employees', 'attendancereport'], write: ['employees'] },
   { path: /^\/admin\/employees/, write: ['employees'] },

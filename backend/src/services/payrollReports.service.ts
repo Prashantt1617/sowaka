@@ -232,6 +232,8 @@ export async function salaryRegister(viewer: string, periodIn: unknown, opts: Op
         employer: Object.fromEntries(p.employer.map((e) => [e.key, e.paise])),
         employerTotalPaise: s.employer?.totalPaise ?? 0,
         netPayPaise: s.netPayablePaise,
+        // On notice: held for the final settlement, not paid with this run.
+        held: s.held ? true : false,
       };
     })
     .sort((a, b) => a.employeeId.localeCompare(b.employeeId, undefined, { numeric: true }));
@@ -334,7 +336,9 @@ export async function paymentDetails(viewer: string, runIdIn: string) {
   return {
     period: run.period,
     status: run.status,
-    rows: register.rows.map((r) => ({ employeeId: r.employeeId, name: r.name, paymentMode: r.paymentMode || 'Not set', bankName: r.bankName, accountNumber: r.accountNumber, ifsc: r.ifsc, netPayPaise: r.netPayPaise })),
+    // Held pay (people on notice) is not paid with the run: it stays out of the bank file, listed apart.
+    rows: register.rows.filter((r) => !r.held).map((r) => ({ employeeId: r.employeeId, name: r.name, paymentMode: r.paymentMode || 'Not set', bankName: r.bankName, accountNumber: r.accountNumber, ifsc: r.ifsc, netPayPaise: r.netPayPaise })),
+    held: register.rows.filter((r) => r.held).map((r) => ({ employeeId: r.employeeId, name: r.name, netPayPaise: r.netPayPaise })),
   };
 }
 

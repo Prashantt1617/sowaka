@@ -234,6 +234,8 @@ export type Emp = {
   isDirector: boolean;
   /** What HR has filed against them — offer letter, ID proof and the like. */
   documents: EmpDocument[];
+  /** An exit HR recorded: on notice until the last working day, then left. */
+  exit?: { lastWorkingDay: string; kind: string; left: boolean } | null;
 };
 
 export type UserForm = {

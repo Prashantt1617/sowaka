@@ -27,14 +27,15 @@ import {
   anyApprovedLeave,
   computeWorkingDays,
   getEmployeePeriodInputs,
+  parsePeriod,
   payrollPeriodRange,
 } from './payroll-inputs.service';
 import type { PeriodRange } from './payroll-inputs.service';
 import { resolveRuleSet } from './statutory.service';
 import { attendanceCountsForPeriod, payrollDeductions, unpaidLeaveDeduction } from './deduction.service';
 import { payslipHtml } from './payslip-html';
-import { employeeCalendar, invalidateAttendanceSetup, joinedOn } from './attendance-report.service';
-import { companies } from '../config/db';
+import { employeeCalendar, invalidateAttendanceSetup, joinedOn, leftOn } from './attendance-report.service';
+import { companies, exitSettlements } from '../config/db';
 import { declarationsFor, runTds, ytdFor } from './tds.service';
 import { requireTdsConfigs, statutoryConfigForPeriod } from './payrollConfig.service';
 import type { StatutoryConfig } from '../shared/payroll/statutory-config';
@@ -251,12 +252,28 @@ async function buildRunPayslips(
   // Each person's flexible split (app › Payroll), month by month, over their structure's own values.
   const splits = await splitsByUser(org, userIds);
 
+  // The pay dates of the months still to come this year, for the tax of someone who leaves in one of them.
+  const laterRanges = new Map<string, { from: string; to: string }>();
+  if (tdsOn && employees.some((e) => e.exit)) {
+    for (const p of periodsAfter(period)) {
+      try { const r = await payrollPeriodRange(org, p); laterRanges.set(p, { from: r.from, to: r.to }); }
+      catch { const r = parsePeriod(p); laterRanges.set(p, { from: r.from, to: r.to }); }
+    }
+  }
+
+  // People whose final settlement already paid this period from its own working (no payslip
+  // existed when it was approved): the run leaves them out, so the month is not paid twice.
+  const settledHere = scope
+    ? new Set<string>()
+    : new Set((await exitSettlements().find({ org, status: { $in: ['approved', 'paid'] }, lines: { $elemMatch: { period, estimated: true } } }, { projection: { _id: 0, userId: 1 } }).toArray()).map((r) => r.userId));
+
   const now = new Date();
   const slips: Payslip[] = [];
 
   for (const structure of structures) {
     const employee = employeeById.get(structure.userId);
     if (!employee) continue; // structure orphaned from its user; skip defensively
+    if (settledHere.has(structure.userId)) continue;
 
     // Resolve the assigned salary template; skip employees without one (SS-3).
     const template = structure.salaryTemplateCode
@@ -286,8 +303,20 @@ async function buildRunPayslips(
     // calendar month (joined the 27th, paid 27th to 31st in a 26th-to-25th
     // cycle) puts them on the run that way.
     if (joined && joined > range.to && (lopOverrides[structure.userId] === undefined || joined > calendarEnd(period))) continue;
+    // Left before this period began (an exit HR recorded): no payslip.
+    const left = leftOn(employee);
+    if (left && left < range.from) continue;
     const employedFrom = joined && joined > range.from ? joined : undefined;
     const notYetEmployedDays = employedFrom ? Math.round((Date.parse(employedFrom) - Date.parse(range.from)) / 86_400_000) : 0;
+    // Notice began (an exit HR recorded; the day it was recorded when no date was given): pay is held from then.
+    // (Unless this exit's rules say not to hold pay.)
+    // Recorded after they had already gone (an absconding found out later): held from their last working day.
+    const recordedOn = employee.exit ? new Date(employee.exit.recordedAt).toISOString().slice(0, 10) : '';
+    const noticeStart = employee.exit && employee.exit.rules?.holdPay !== false
+      ? (employee.exit.noticeFrom ?? (recordedOn < employee.exit.lastWorkingDay ? recordedOn : employee.exit.lastWorkingDay))
+      : undefined;
+    // Left during it: the days after the last working day are not paid, like the days before joining.
+    const leftDays = left && left < range.to ? Math.round((Date.parse(range.to) - Date.parse(left)) / 86_400_000) : 0;
     const salaryFor = (p: string, from?: string) => calculateSalaryStructure({
       monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
       payHeads: resolvedComponents,
@@ -319,7 +348,7 @@ async function buildRunPayslips(
     const allowance = paidDaysOn ? paidDays?.monthlyPaidLeaveDays ?? 0 : 0;
     // Days before joining are not paid either: attendance leaves them out, so
     // they come on top of what it docks from the joining day on.
-    const attendanceLopDays = Math.min(Math.max(0, docked.days - allowance) + unpaidLeave.days + notYetEmployedDays, workingDays);
+    const attendanceLopDays = Math.min(Math.max(0, docked.days - allowance) + unpaidLeave.days + notYetEmployedDays + leftDays, workingDays);
     const lopEnteredByHr = lopOverrides[structure.userId] !== undefined;
     const lopDays = lopEnteredByHr ? clampLop(lopOverrides[structure.userId], workingDays) : attendanceLopDays;
     // Overtime: what HR typed on the run, else the template's rule applied to
@@ -364,9 +393,13 @@ async function buildRunPayslips(
       // their salary reimbursements count as taxable (no bills for them yet).
       const taxableReimb = (lines: { code: string; monthlyPaise: number }[]) =>
         lines.filter((l) => catalogByCode.get(l.code)?.taxable !== false).reduce((t, l) => t + l.monthlyPaise, 0);
+      // Someone leaving earns nothing after their last working day, and only part of the month it falls in:
+      // the year's tax is worked out on what they will really earn, so the months left take less (often none).
       const futureTaxablePaise = periodsAfter(period).reduce((t, p) => {
+        const share = left ? shareBeforeLeaving(laterRanges.get(p), left) : 1;
+        if (share === 0) return t;
         const later = salaryFor(p);
-        return t + projectedTaxable(later, config.mealCard.exemptMonthlyPaise) + taxableReimb(later.reimbursements ?? []);
+        return t + Math.round((projectedTaxable(later, config.mealCard.exemptMonthlyPaise) + taxableReimb(later.reimbursements ?? [])) * share);
       }, 0);
       // This year's reimbursements so far less the bills approved so far: a late bill lowers the tax from now on.
       reimbTax = reimbursementTax(addInto(new Map(reimbPaidBefore.get(structure.userId) ?? []), slip.reimbursementLines), bills.get(structure.userId), catalogByCode);
@@ -402,6 +435,8 @@ async function buildRunPayslips(
       employeeId: employee.employeeId,
       designation: employee.designation,
       joiningDate: employee.joiningDate,
+      // On notice by the end of this period: the pay is held for the final settlement.
+      ...(noticeStart && noticeStart <= range.to ? { held: { reason: 'notice' as const, since: noticeStart } } : {}),
       annualCtcPaise: structure.annualCtcPaise,
       monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
       earnings: slip.earnings.map((e) => ({
@@ -437,7 +472,7 @@ async function buildRunPayslips(
         ...(tds ? { tds } : {}),
         ...(reimbTax && reimbTax.paidPaise > 0 ? { reimbursementTax: { paidPaise: reimbTax.paidPaise, exemptPaise: reimbTax.exemptPaise, taxablePaise: reimbTax.taxablePaise } } : {}),
         // The days before joining as a line of their own, so the lines add up to the loss of pay.
-        attendanceDeductions: [...docked.lines, ...unpaidLeave.lines, ...(notYetEmployedDays > 0 ? [{ label: 'Before joining', count: notYetEmployedDays, days: notYetEmployedDays, trigger: 'absent' as const, every: 1, deductDays: 1 }] : [])],
+        attendanceDeductions: [...docked.lines, ...unpaidLeave.lines, ...(notYetEmployedDays > 0 ? [{ label: 'Before joining', count: notYetEmployedDays, days: notYetEmployedDays, trigger: 'absent' as const, every: 1, deductDays: 1 }] : []), ...(leftDays > 0 ? [{ label: 'After leaving', count: leftDays, days: leftDays, trigger: 'absent' as const, every: 1, deductDays: 1 }] : [])],
         paidLeaveDaysApplied: Math.min(allowance, docked.days),
         payableDays: slip.payableDays,
         approvedLeaveDays: periodInputs.approvedLeaveDays,
@@ -454,6 +489,15 @@ async function buildRunPayslips(
     throw new PayrollRunError(409, 'No payslips could be generated for this period');
   }
   return slips;
+}
+
+/** The part of a later month someone is still employed for: 1 until they leave, 0 after, the days up to the last one in between. */
+function shareBeforeLeaving(range: { from: string; to: string } | undefined, left: string): number {
+  if (!range) return 1;
+  if (left < range.from) return 0;
+  if (left >= range.to) return 1;
+  const day = 86_400_000;
+  return (Math.round((Date.parse(left) - Date.parse(range.from)) / day) + 1) / (Math.round((Date.parse(range.to) - Date.parse(range.from)) / day) + 1);
 }
 
 /** One person's payslip as a run made now would compute it (the app's estimate). */
@@ -842,8 +886,10 @@ function sumTotals(slips: Payslip[]): PayrollRunTotals {
       netPaise: acc.netPaise + slip.netPaise,
       reimbursementsPaise: acc.reimbursementsPaise + slip.reimbursementsPaise,
       employerCostPaise: acc.employerCostPaise + slip.employerCostPaise,
+      heldPaise: (acc.heldPaise ?? 0) + (slip.held ? slip.netPayablePaise : 0),
+      heldCount: (acc.heldCount ?? 0) + (slip.held ? 1 : 0),
     }),
-    { grossPaise: 0, employeeDeductionsPaise: 0, netPaise: 0, reimbursementsPaise: 0, employerCostPaise: 0 },
+    { grossPaise: 0, employeeDeductionsPaise: 0, netPaise: 0, reimbursementsPaise: 0, employerCostPaise: 0, heldPaise: 0, heldCount: 0 },
   );
 }
 
@@ -954,6 +1000,7 @@ function payslipView(slip: Payslip & { _id?: ObjectId }) {
     designation: slip.designation,
     joiningDate: slip.joiningDate ? slip.joiningDate.toISOString().slice(0, 10) : undefined,
     period: slip.period,
+    ...(slip.held ? { held: slip.held } : {}),
     monthlyCtcPaise: slip.monthlyCtcPaise,
     earnings: slip.earnings,
     deductions: slip.deductions,

@@ -20,6 +20,7 @@ export const SETUP_GROUPS: SetupGroup[] = [
     { view: 'payheads', label: 'Salary components' },
     { view: 'templates', label: 'Salary templates' },
     { view: 'paiddays', label: 'Paid days templates' },
+    { view: 'exitsettings', label: 'Exit settings' },
   ] },
   { key: 'tax', title: 'Tax', icon: 'taxdetails', items: [
     { view: 'taxdetails', label: 'Tax details' },

@@ -6,6 +6,7 @@ import { sendLatePunchInReminders } from './punch-reminder.service';
 import { flushGroupedNotifications } from './notification-groups.service';
 import { istParts } from './notification-time';
 import { logger } from '../utils/logger';
+import { closeDueExits } from './exit.service';
 
 /**
  * Runs one scheduled job in isolation: a thrown error is logged and does not
@@ -29,6 +30,8 @@ export function msToNextIstHour(now: Date): number {
 /** The jobs for one IST hour. The spec's times are all IST. */
 export async function runHourlyJobs(now = new Date()): Promise<void> {
   const { hour, weekday } = istParts(now);
+  // Exits: access ends the day after the last working day. Every hour, so a missed one catches up.
+  await run('closeDueExits', () => closeDueExits(now));
   if (hour === 10) {
     await run('sendNewJoinerNotifications', () => sendNewJoinerNotifications(now));
     // Cycle open, the Friday reminder and the last day, to managers only.
