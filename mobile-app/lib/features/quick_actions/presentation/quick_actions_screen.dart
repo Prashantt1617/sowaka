@@ -32,6 +32,7 @@ import '../../shared/app_toast.dart';
 import '../../shared/attachment_picker.dart';
 import '../../shared/image_source_sheet.dart' show ImageSourceChoice;
 import '../../support/presentation/support_desk_screen.dart';
+import '../../lifecycle/onboarding/onboarding_launcher.dart';
 
 part 'placements_screen.dart';
 part 'payroll_screen.dart';
@@ -749,6 +750,12 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     _reimbursementAmount.addListener(_onReimbursementFieldChanged);
     _reimbursementDescription.addListener(_onReimbursementFieldChanged);
     _leaveReason.addListener(_onLeaveFieldChanged);
+    LifecycleMeStore.instance.addListener(_onLifecycleChanged);
+  }
+
+  /// The Onboarding tile comes and goes with what `/lifecycle/me` says.
+  void _onLifecycleChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onLeaveFieldChanged() {
@@ -757,6 +764,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   @override
   void dispose() {
+    LifecycleMeStore.instance.removeListener(_onLifecycleChanged);
     widget.controller._detach(this);
     _text.dispose();
     _leaveReason.dispose();
@@ -1156,6 +1164,18 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     mainAxisExtent: 123.185,
                   ),
                   children: [
+                    // A new joiner's onboarding, first while it runs (until
+                    // probation ends), only where the lifecycle is on.
+                    if (LifecycleMeStore.instance.value.showsOnboarding)
+                      _HomeActionCard(
+                        key: const ValueKey('onboarding-card'),
+                        icon: Icons.waving_hand_rounded,
+                        color: const Color(0xFF0571A6),
+                        tint: const Color(0xFFE8F4FA),
+                        title: 'Onboarding',
+                        subtitle: onboardingTileSubtitle(LifecycleMeStore.instance.value),
+                        onTap: () => openOnboardingHome(context),
+                      ),
                     // Someone marked present automatically has no attendance to
                     // manage: no leave to balance against days worked, and no
                     // overtime to claim beyond hours nobody records. What is
