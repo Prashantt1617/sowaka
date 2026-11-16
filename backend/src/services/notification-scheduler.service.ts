@@ -10,6 +10,7 @@ import { closeDueExits } from './exit.service';
 import { runPortalJobs } from './lifecycle/portal';
 import { runOffboardingJobs } from './lifecycle/offboarding';
 import { runLifecycleJobs } from './lifecycle/jobs';
+import { runContestNotifications } from './contest-notifications.service';
 
 /**
  * Runs one scheduled job in isolation: a thrown error is logged and does not
@@ -64,6 +65,8 @@ export function startNotificationScheduler() {
     void (async () => {
       await run('sendLatePunchInReminders', () => sendLatePunchInReminders());
       await run('flushGroupedNotifications', () => flushGroupedNotifications());
+      // Contests: two hours before closing, to those not in yet; then the results (once each).
+      await run('runContestNotifications', () => runContestNotifications());
       // Employee lifecycle: meeting reminders every tick, the day jobs once an hour (fired once each).
       await run('runLifecycleJobs', () => runLifecycleJobs());
     })().finally(() => { fiveMinuteRunning = false; });

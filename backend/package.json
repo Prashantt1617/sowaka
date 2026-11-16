@@ -28,6 +28,7 @@
     "poker:rooms-check": "MONGODB_DB=poker_check tsx src/scripts/poker-rooms-check.ts",
     "pool:check": "MONGODB_DB=pool_check tsx src/scripts/pool-check.ts",
     "notifications:check": "tsx src/scripts/notifications-check.ts",
+    "notifications:look-check": "MONGODB_DB=notif_look_check NOTIFY_ORGS=notif-look-check EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/notification-look-check.ts",
     "auth-speed:check": "tsx src/scripts/auth-speed-check.ts",
     "hot-paths:check": "tsx src/scripts/hot-paths-check.ts",
     "image-fit:check": "tsx src/scripts/image-fit-check.ts",

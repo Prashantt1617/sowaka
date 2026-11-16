@@ -152,6 +152,25 @@ export async function readConnectMedia(objectKey: string, range?: string) {
   };
 }
 
+/** Where notification sounds live in the bucket (never served by `/media`). */
+export const NOTIFICATION_SOUND_PREFIX = 'notification-sounds/';
+
+/** Whether S3 is set up at all; without it uploads are kept in Mongo. */
+export function s3Configured() {
+  return hasS3Configuration();
+}
+
+/** Reads one notification sound back (see services/notification-look.service.ts). */
+export async function readNotificationSoundObject(objectKey: string): Promise<Buffer> {
+  if (!objectKey.startsWith(NOTIFICATION_SOUND_PREFIX)) {
+    throw new Error(`Refusing to read a key outside the notification sounds prefix: ${objectKey}`);
+  }
+  validateConfiguration();
+  const object = await getClient().send(new GetObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }));
+  const bytes = await object.Body?.transformToByteArray();
+  return Buffer.from(bytes ?? []);
+}
+
 /**
  * The size and type of the Connect object at `objectKey` (S3 or the Mongo
  * fallback) without reading it, or undefined when there is none.

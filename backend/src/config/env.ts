@@ -107,6 +107,12 @@ export const env = {
   /** True for an origin the dashboard may call from; see [isDashboardOrigin]. */
   isDashboardOrigin,
   mobileAppApiBaseUrl: process.env.MOBILE_APP_API_BASE_URL ?? 'http://10.0.2.2:4000',
+  /**
+   * This API as a phone reaches it from anywhere (PUBLIC_API_URL): the base of
+   * the picture links a push carries, which the phone fetches with no sign-in
+   * (`/media/<key>`). The app's own default host unless set.
+   */
+  publicApiUrl: (process.env.PUBLIC_API_URL ?? 'https://d3lwup4rvo6csf.cloudfront.net').trim().replace(/\/+$/, ''),
   // The app's link domain: notification emails point their "view this" links at `${appWebUrl}/open?...`,
   // which opens the app where it is installed (see services/app-link.ts) and the dashboard's /open page where not.
   appWebUrl: process.env.APP_WEB_URL ?? 'https://go.getsowaka.com',
