@@ -1,0 +1,27 @@
+{
+  "name": "@hrms/preboarding-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pre-boarding portal: the candidate's web page from the offer email link to the end of week 1.",
+  "scripts": {
+    "dev": "vite --port 5181 --strictPort",
+    "dev:mock": "VITE_MOCK=1 vite --port 5181 --strictPort",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b",
+    "preview": "vite preview --port 5181"
+  },
+  "dependencies": {
+    "pdfjs-dist": "4.10.38",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "react-router-dom": "7.18.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "4.7.0",
+    "typescript": "5.9.3",
+    "vite": "6.4.3"
+  }
+}
