@@ -23,6 +23,8 @@ export const DASHBOARD_TABS = [
   'appusage', 'feed', 'engagementplan', 'contests', 'games',
   // Only for a company with features.placements; its routes check that too.
   'placements',
+  // Employee lifecycle (features.lifecycle): the Offboarding board (IT, Admin and Finance staff are given it alone) and Exit insights.
+  'offboarding', 'exit_insights',
 ] as const;
 export type DashboardTab = (typeof DASHBOARD_TABS)[number];
 
@@ -73,6 +75,9 @@ const RULES: Rule[] = [
   { path: /^\/admin\/payroll\/employees\/[^/]+\/payment-details/, read: ['employees', 'salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
   { path: /^\/admin\/payroll/, read: ['payschedule', 'taxdetails', 'payheads', 'statutorycomponents', 'templates', 'payruns', 'salarydetails'], write: ['payruns'] },
   // An employee's pay and calendar
+  // Employee lifecycle › Offboarding and Exit insights (the services also check who is HR).
+  { path: /^\/admin\/lifecycle\/exit-insights/, read: ['exit_insights'], write: ['exit_insights'] },
+  { path: /^\/admin\/lifecycle\/(offboarding|resignations)/, read: ['offboarding'], write: ['offboarding'] },
   // Exits: People (the service also requires a dashboard admin).
   { path: /^\/admin\/(exits|exit-settings)/, read: ['employees'], write: ['employees'] },
   { path: /^\/admin\/employees\/[^/]+\/payslips/, read: ['salarydetails', 'payruns'] },

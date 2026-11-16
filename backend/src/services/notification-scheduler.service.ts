@@ -7,6 +7,7 @@ import { flushGroupedNotifications } from './notification-groups.service';
 import { istParts } from './notification-time';
 import { logger } from '../utils/logger';
 import { closeDueExits } from './exit.service';
+import { runOffboardingJobs } from './lifecycle/offboarding';
 
 /**
  * Runs one scheduled job in isolation: a thrown error is logged and does not
@@ -32,6 +33,8 @@ export async function runHourlyJobs(now = new Date()): Promise<void> {
   const { hour, weekday } = istParts(now);
   // Exits: access ends the day after the last working day. Every hour, so a missed one catches up.
   await run('closeDueExits', () => closeDueExits(now));
+  // Offboarding: exit interview opens, settlement due, gratuity due (once each; access itself is closeDueExits').
+  await run('runOffboardingJobs', () => runOffboardingJobs(now));
   if (hour === 10) {
     await run('sendNewJoinerNotifications', () => sendNewJoinerNotifications(now));
     // Cycle open, the Friday reminder and the last day, to managers only.

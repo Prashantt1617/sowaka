@@ -37,6 +37,8 @@ app.use(compression());
 app.use('/admin/employees/import', express.json({ limit: '5mb' }));
 // A question to Suwi may carry one file: an image up to 5 MB (base64) or a spreadsheet's rows.
 app.use('/suwi/ask', express.json({ limit: '8mb' }));
+// The final settlement PDF HR emails from the Offboarding board (base64, up to 10 MB).
+app.use('/admin/lifecycle/offboarding', express.json({ limit: '15mb' }));
 app.use(express.json());
 morgan.token('request-id', (req) => (req as Request).requestId ?? '-');
 // A Scribble page reloads itself with a credential in its query string

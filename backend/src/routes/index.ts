@@ -40,6 +40,7 @@ import { suwiRouter } from '../suwi/routes';
 import { suwiPeopleRouter } from '../suwi/routes.people';
 import { suwiNoticesRouter } from '../suwi/routes.notices';
 import { forgetEngagement } from '../services/engagement-cache';
+import { lifecycleOffboardingAdminRouter, lifecycleOffboardingRouter } from './lifecycle-offboarding.routes';
 
 export const router = Router();
 
@@ -69,6 +70,8 @@ router.use('/admin/engagement/feed', engagementFeedRouter);
 router.use('/admin/engagement/plan', engagementPlanRouter);
 router.use('/admin/engagement/contests', engagementContestsRouter);
 router.use('/admin/engagement/games', engagementGamesRouter);
+// Employee lifecycle › Offboarding (features.lifecycle): the board, Start an exit, the settlement email, Exit insights.
+router.use('/admin/lifecycle', lifecycleOffboardingAdminRouter);
 router.use('/admin', adminRouter);
 router.use('/leaves', leaveRouter);
 router.use('/payslips', payslipRouter);
@@ -116,3 +119,5 @@ router.use('/care', careRouter);
 router.use('/profile', profileRouter);
 router.use('/support', supportRouter);
 router.use('/placements', placementsRouter);
+// Resigning, the Off-boarding page, the handover and the exit interview; the manager's resignations and leavers.
+router.use('/lifecycle', lifecycleOffboardingRouter);
