@@ -38,6 +38,8 @@ import { appPagesRouter } from './app-page.routes';
 import { appUpdateRouter } from './app-update.routes';
 import { lifecycleOfferRouter } from './lifecycle-offer.routes';
 import { portalRouter } from './portal.routes';
+import { lifecycleAdminRouter } from './lifecycle-admin.routes';
+import { lifecycleAppRouter } from './lifecycle-app.routes';
 import { suwiRouter } from '../suwi/routes';
 import { suwiPeopleRouter } from '../suwi/routes.people';
 import { suwiNoticesRouter } from '../suwi/routes.notices';
@@ -76,6 +78,8 @@ router.use('/admin/engagement/games', engagementGamesRouter);
 router.use('/admin/lifecycle', lifecycleOfferRouter);
 // Employee lifecycle › Offboarding (features.lifecycle): the board, Start an exit, the settlement email, Exit insights.
 router.use('/admin/lifecycle', lifecycleOffboardingAdminRouter);
+// Employee lifecycle (docs/lifecycle/CONTRACT.md): its own auth chain and the features.lifecycle switch.
+router.use('/admin/lifecycle', lifecycleAdminRouter);
 router.use('/admin', adminRouter);
 router.use('/leaves', leaveRouter);
 router.use('/payslips', payslipRouter);
@@ -127,3 +131,5 @@ router.use('/placements', placementsRouter);
 router.use('/portal', portalRouter);
 // Resigning, the Off-boarding page, the handover and the exit interview; the manager's resignations and leavers.
 router.use('/lifecycle', lifecycleOffboardingRouter);
+// The app's onboarding (joiner and manager); offboarding adds its own routes beside these.
+router.use('/lifecycle', lifecycleAppRouter);

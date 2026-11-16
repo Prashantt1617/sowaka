@@ -9,6 +9,7 @@ import { logger } from '../utils/logger';
 import { closeDueExits } from './exit.service';
 import { runPortalJobs } from './lifecycle/portal';
 import { runOffboardingJobs } from './lifecycle/offboarding';
+import { runLifecycleJobs } from './lifecycle/jobs';
 
 /**
  * Runs one scheduled job in isolation: a thrown error is logged and does not
@@ -63,6 +64,8 @@ export function startNotificationScheduler() {
     void (async () => {
       await run('sendLatePunchInReminders', () => sendLatePunchInReminders());
       await run('flushGroupedNotifications', () => flushGroupedNotifications());
+      // Employee lifecycle: meeting reminders every tick, the day jobs once an hour (fired once each).
+      await run('runLifecycleJobs', () => runLifecycleJobs());
     })().finally(() => { fiveMinuteRunning = false; });
   }, 5 * 60 * 1000);
   fiveMinuteTimer.unref();
