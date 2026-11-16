@@ -55,6 +55,13 @@ import '../../care/presentation/care_tab.dart';
 import '../../garden/presentation/garden_screen.dart';
 import '../../garden/presentation/floating_tree.dart';
 import '../../profile/profile.dart';
+import '../../lifecycle/offboarding/offboarding.dart'
+    show
+        ManagerLeaverTab,
+        ManagerResignationRequests,
+        OffboardingStore,
+        OwnResignationTab,
+        ResignEntryRow;
 
 part '../../connect/presentation/connect_tab.dart';
 part '../../games/presentation/games_tab.dart';

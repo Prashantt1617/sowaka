@@ -21,6 +21,9 @@ import '../../manager/bloc/manager_bloc.dart';
 import '../../manager/data/manager_models.dart';
 import '../../requests/presentation/request_summary.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
+import '../../manager_shell/presentation/app_bottom_nav.dart';
+import '../../lifecycle/offboarding/offboarding.dart'
+    show OffboardingChrome, OffboardingPage, OffboardingStore, shortDay;
 import '../../payroll/data/payroll_api_service.dart';
 import '../../payroll/data/payroll_models.dart';
 import '../../placements/data/placements_api_service.dart';
@@ -749,6 +752,49 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     _reimbursementAmount.addListener(_onReimbursementFieldChanged);
     _reimbursementDescription.addListener(_onReimbursementFieldChanged);
     _leaveReason.addListener(_onLeaveFieldChanged);
+    _offboarding.addListener(_onOffboardingChanged);
+    unawaited(_offboarding.ensureLoaded());
+  }
+
+  /// The Off-boarding tile and page (R3), while someone is on notice.
+  late final OffboardingStore _offboarding = OffboardingStore.of(
+    widget.bloc.session,
+  );
+
+  void _onOffboardingChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// R3, with the shell's header and tabs; "Save your documents" comes back
+  /// here and opens Payroll, where the payslips and Form 16 are.
+  void _openOffboarding() {
+    unawaited(
+      Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => OffboardingPage(
+            store: _offboarding,
+            chrome: OffboardingChrome(
+              header: AppHomeHeader(
+                profileAction: widget.profileAction,
+                onNotifications: widget.onNotifications,
+              ),
+              bottomNav: AppBottomNav(
+                tabs: visibleTabs(widget.bloc.session.user.enabledTabs),
+                selected: widget.bloc.state.tab,
+                onSelect: (tab) {
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                  widget.bloc.add(ChangeManagerTab(tab, fresh: true));
+                },
+              ),
+              onOpenDocuments: () {
+                Navigator.of(context).popUntil((route) => route.isFirst);
+                _open(_QuickPage.payroll);
+              },
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _onLeaveFieldChanged() {
@@ -757,6 +803,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   @override
   void dispose() {
+    _offboarding.removeListener(_onOffboardingChanged);
     widget.controller._detach(this);
     _text.dispose();
     _leaveReason.dispose();
@@ -1245,6 +1292,21 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                       imageAsset:
                           'assets/icons/connect_icon_my_post_pencil.png',
                     ),
+                    // Off-boarding (R3): someone serving notice, where the
+                    // lifecycle is on. Last, and quiet.
+                    if (_offboarding.showsOffboardingPage)
+                      _HomeActionCard(
+                        key: const ValueKey('offboarding-card'),
+                        icon: Icons.door_front_door_outlined,
+                        color: const Color(0xFF0571A6),
+                        tint: const Color(0xFFEAF3F8),
+                        title: 'Off-boarding',
+                        subtitle: switch (_offboarding.me.offboarding?.tl) {
+                          final tl? => 'Last day ${shortDay(tl)}',
+                          null => 'Before you go',
+                        },
+                        onTap: _openOffboarding,
+                      ),
                   ],
                 ),
               ],

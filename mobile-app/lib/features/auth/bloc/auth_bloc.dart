@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../../lifecycle/offboarding/offboarding_models.dart';
+import '../../lifecycle/offboarding/offboarding_store.dart';
 import '../data/auth_api_service.dart';
 import '../data/auth_models.dart';
 
@@ -15,6 +17,7 @@ class AuthState {
     required this.otp,
     this.session,
     this.error,
+    this.closedAccount,
   });
 
   factory AuthState.initial() {
@@ -33,6 +36,10 @@ class AuthState {
   final AuthSession? session;
   final String? error;
 
+  /// The email's account has ended, where the lifecycle is on: the
+  /// account-closed screen (R6) takes over from the form.
+  final AccountClosedInfo? closedAccount;
+
   bool get isEmailValid =>
       RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
 
@@ -48,6 +55,7 @@ class AuthState {
     AuthSession? session,
     String? error,
     bool clearError = false,
+    AccountClosedInfo? closedAccount,
   }) {
     return AuthState(
       step: step ?? this.step,
@@ -56,6 +64,8 @@ class AuthState {
       otp: otp ?? this.otp,
       session: session ?? this.session,
       error: clearError ? null : error ?? this.error,
+      // Shown once: any later event clears it.
+      closedAccount: closedAccount,
     );
   }
 }
@@ -147,8 +157,20 @@ class AuthBloc {
             ),
           );
         } catch (error) {
+          final closed = error is AuthApiException
+              ? await accountClosedFor(
+                  statusCode: error.statusCode,
+                  message: error.message,
+                  body: error.body,
+                  email: _state.email,
+                )
+              : null;
           _emit(
-            _state.copyWith(status: AuthStatus.idle, error: error.toString()),
+            _state.copyWith(
+              status: AuthStatus.idle,
+              error: error.toString(),
+              closedAccount: closed,
+            ),
           );
         }
       case VerifyAuthOtp():

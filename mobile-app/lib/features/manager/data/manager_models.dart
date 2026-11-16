@@ -2472,11 +2472,22 @@ class Payslip {
     required this.paidLeaveDaysApplied,
     required this.lines,
     this.paidAt,
+    this.held = false,
+    this.grossPaise = 0,
   });
 
   final String id;
   final String period;
   final String runStatus;
+
+  /// Held for the final settlement: worked out but not paid with the run,
+  /// because the person is serving notice. The payslip API sends
+  /// `held: { reason: 'notice', since }` (payrollRun.service payslipView);
+  /// `held: true` is read the same.
+  final bool held;
+
+  /// The month's gross, which a held month shows in place of "Credited".
+  final int grossPaise;
 
   /// When the run was paid: the slip's "Credited" date. Null until then.
   final DateTime? paidAt;
@@ -2514,6 +2525,8 @@ class Payslip {
       period: json['period'] as String? ?? run['period'] as String? ?? '',
       runStatus: run['status'] as String? ?? 'draft',
       paidAt: DateTime.tryParse(run['paidAt'] as String? ?? '')?.toLocal(),
+      held: json['held'] == true || json['held'] is Map,
+      grossPaise: (json['grossPaise'] as num?)?.toInt() ?? 0,
       employeeName: json['employeeName'] as String? ?? '',
       employeeId: json['employeeId'] as String? ?? '',
       designation: json['designation'] as String? ?? '',

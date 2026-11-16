@@ -8,6 +8,10 @@ enum ProfileTab {
   workDetail('Work detail'),
   request('Request'),
   attendance('Attendance'),
+
+  /// A resignation: one's own while it is open (R2a/R2b), or a report's for
+  /// their manager (R8b). Only where the lifecycle is on.
+  resignation('Resignation'),
   orgChart('Org chart'),
   grow('Grow'),
   rank('Rank'),
@@ -61,12 +65,14 @@ List<ProfileTab> memberProfileTabs({
   required bool inViewerChain,
   required bool viewerCanManage,
   required bool hasDocuments,
+  bool hasResignation = false,
 }) {
   if (!inViewerChain) return colleagueProfileTabs;
   return [
     ProfileTab.workDetail,
     if (viewerCanManage) ProfileTab.request,
     ProfileTab.attendance,
+    if (viewerCanManage && hasResignation) ProfileTab.resignation,
     ProfileTab.orgChart,
     ProfileTab.grow,
     ProfileTab.rank,
@@ -82,10 +88,12 @@ List<ProfileTab> memberProfileTabs({
 List<ProfileTab> ownProfileTabs({
   required bool hasManager,
   required bool showsHelp,
+  bool showsResignation = false,
 }) => [
   ProfileTab.workDetail,
   ProfileTab.request,
   ProfileTab.attendance,
+  if (showsResignation) ProfileTab.resignation,
   ProfileTab.orgChart,
   if (hasManager) ProfileTab.grow,
   ProfileTab.rank,
@@ -218,6 +226,15 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
   /// Their posts; null, and no Post tab, where the company has no Connect.
   _ProfilePosts? _posts;
 
+  /// Their resignation, when the viewer is their manager (R8b).
+  late final OffboardingStore _offboarding = OffboardingStore.of(
+    widget.bloc.service.session,
+  );
+
+  void _offboardingChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
@@ -228,10 +245,13 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
         if (mounted) setState(() {});
       });
     }
+    _offboarding.addListener(_offboardingChanged);
+    unawaited(_offboarding.ensureLoaded());
   }
 
   @override
   void dispose() {
+    _offboarding.removeListener(_offboardingChanged);
     _posts?.dispose();
     super.dispose();
   }
@@ -443,6 +463,8 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
                   inViewerChain: member.inViewerChain,
                   viewerCanManage: widget.canManage,
                   hasDocuments: member.documents.isNotEmpty,
+                  hasResignation:
+                      _offboarding.resignationOf(member.userId) != null,
                 ))
         if (tab != ProfileTab.posts || posts != null) tab,
     ], widget.openOn);
@@ -542,6 +564,14 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
           bloc: bloc,
           memberId: member.id,
           person: member,
+        ),
+      ],
+      ProfileTab.resignation => [
+        ManagerLeaverTab(
+          key: ValueKey('leaver-${member.userId}'),
+          store: _offboarding,
+          userId: member.userId,
+          name: member.name,
         ),
       ],
       ProfileTab.rank => [
@@ -1150,9 +1180,20 @@ class _ProfileScreenState extends State<_ProfileScreen> {
   /// Connect.
   _ProfilePosts? _posts;
 
+  /// Resigning and the Resignation tab (R0, R2a/R2b).
+  late final OffboardingStore _offboarding = OffboardingStore.of(
+    widget.session,
+  );
+
+  void _offboardingChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    _offboarding.addListener(_offboardingChanged);
+    unawaited(_offboarding.ensureLoaded());
     final session = widget.session;
     final enabled = session.user.enabledTabs;
     // A company whose app is Help alone has no tabs to show them in.
@@ -1167,6 +1208,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
 
   @override
   void dispose() {
+    _offboarding.removeListener(_offboardingChanged);
     _posts?.dispose();
     super.dispose();
   }
@@ -1366,6 +1408,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
       for (final tab in ownProfileTabs(
         hasManager: dashboard.hasManager,
         showsHelp: helpHere,
+        showsResignation: _offboarding.showsResignationTab,
       ))
         if (tab != ProfileTab.posts || posts != null) tab,
     ], widget.openOn);
@@ -1462,7 +1505,13 @@ class _ProfileScreenState extends State<_ProfileScreen> {
             label: 'Date of birth',
             value: _formatDate(user.birthday),
           ),
+        // R0: the only way to resign, at the bottom of one's own details.
+        ResignEntryRow(
+          store: _offboarding,
+          onSent: () => setState(() => _tab = ProfileTab.resignation),
+        ),
       ],
+      ProfileTab.resignation => [OwnResignationTab(store: _offboarding)],
       // Their manager, them and the people they lead — the Team tab's own
       // team without the peers.
       ProfileTab.orgChart => [
