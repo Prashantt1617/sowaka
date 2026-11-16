@@ -43,6 +43,8 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Payroll shows your salary, so Sowaka asks for your Face ID before opening it.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Sowaka uses the camera for the selfie that confirms it's you when you punch in or out, to take a photo for your profile picture or a post, to photograph a receipt, bill or document for a leave, reimbursement or payroll request, and to scan a colleague's code in a game.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

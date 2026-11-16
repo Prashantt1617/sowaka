@@ -71,6 +71,7 @@ dependencies:
   tflite_flutter: ^0.12.1
   audioplayers: ^6.8.1
   record: ^7.1.2
+  local_auth: ^3.0.2
 
 dev_dependencies:
   flutter_test:
