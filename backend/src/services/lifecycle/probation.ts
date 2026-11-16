@@ -10,7 +10,7 @@ import { journeyTasks, journeys, probationMonths, users } from '../../config/db'
 import type { ConfirmationDecision, Journey, JourneyTask, ProbationMonth, SystemTaskKey } from '../../models/lifecycle.model';
 import { companyTimeZone, humanDay, keyOfDay, probationMonthEnd, probationMonthStart, todayKey } from './dueRules';
 import {
-  ACTIVE_STATUSES, LifecycleError, OPEN_STATUSES, loadJourney, refreshJourney, syncProbationTasks, tasksOf, tell, totalProbationMonths,
+  ACTIVE_STATUSES, LifecycleError, OPEN_STATUSES, loadJourney, refreshJourney, reopenTask, syncProbationTasks, tasksOf, tell, totalProbationMonths,
 } from './engine';
 
 const strip = <T extends object>(doc: T & { _id?: unknown }): T => {
@@ -201,6 +201,13 @@ export async function recordDecision(journeyId: string, hr: { userId: string; na
   }
 
   if (discussion) await finishMonthTask(discussion, hr);
+  if (outcome === 'confirm') {
+    // Probation is over: what is left of its months (a later check-in, review or goals) is nobody's to do or be reminded of.
+    await journeyTasks().updateMany(
+      { journeyId, phase: 'probation', status: { $in: OPEN_STATUSES }, systemKey: { $nin: ['confirmation_letter', 'confirmation_reveal'] } },
+      { $set: { status: 'cancelled' } },
+    );
+  }
   // A new decision needs its own letter and its own reveal.
   for (const key of ['confirmation_letter', 'confirmation_reveal'] as SystemTaskKey[]) {
     await journeyTasks().updateMany({ journeyId, systemKey: key, status: { $in: ['done', 'skipped'] } }, { $set: { status: 'locked' }, $unset: { doneAt: '', doneByUserId: '', doneByName: '' } });
@@ -209,7 +216,11 @@ export async function recordDecision(journeyId: string, hr: { userId: string; na
   if (outcome === 'confirm') set.status = 'confirmed';
   if (outcome === 'extend') set['probation.extendedBy'] = (j.probation?.extendedBy ?? 0) + decision.extendMonths!;
   await journeys().updateOne({ id: journeyId }, { $set: set });
-  if (outcome === 'extend') await syncProbationTasks(journeyId);
+  if (outcome === 'extend') {
+    await syncProbationTasks(journeyId);
+    // The extension letter is for this decision: it opens now, not with the new final month's discussion.
+    await reopenTask(journeyId, 'confirmation_letter');
+  }
   await refreshJourney(journeyId);
   const name = (await users().findOne({ userId: j.userId }, { projection: { _id: 0, name: 1 } }))?.name ?? 'Your joiner';
   const said = outcome === 'confirm' ? 'is confirmed' : outcome === 'extend' ? `has probation extended by ${decision.extendMonths} months` : 'is not confirmed';
