@@ -191,6 +191,21 @@ the ones above:
 - Auth refusals of an ended account (`/auth/request-otp`, `/auth/verify-otp` 403; `/auth/me` and the
   auth check 401 "User is not active") carry `accountClosed: { company, lastWorkingDay, hrEmail }`,
   only when the person has an exit recorded and their company has `features.lifecycle` on.
+- Offboarding pushes carry `data: { type: lifecycle_offboarding | lifecycle_resignation, destination, …ids }`
+  (`OffboardingDestination`, services/lifecycle/offboarding.ts; the app's `offboarding_launcher.dart`):
+  `lifecycle_resignation_request` (manager's Requests card; `resignationId`, `userId`) for a new or withdrawn
+  resignation; `lifecycle_resignation` (own Resignation tab) when the manager passes it to HR
+  (`lifecycle_resignation_with_hr`, new), HR accepts / starts the exit, or the last day moves;
+  `lifecycle_handover` (R3b) when the checklist is shared; `lifecycle_exit_interview` (R5);
+  `lifecycle_leaver` (manager's R8b; `userId`) for the checklist ask, uploads and a moved last day;
+  `lifecycle_clearance` (dashboard only) for clearance and gratuity.
+- The app reads `GET /lifecycle/manager/leavers` too, so HR-started exits get the manager's R8b; the
+  leaver of an HR-started exit gets the R2b countdown (tab named "Exit"). `GET /lifecycle/offboarding`
+  carries `exitType`; `GET /lifecycle/resignation`'s `reasons` fill R1.
+- An exit (HR accepting a resignation, or HR starting one) closes any open onboarding journey of that
+  person (`closeOnboardingForExit`; status kept, `closedReason` says why).
+- The template's `accountCloses: 'tl_end_of_shift'` ends access on Tl once the person's shift ends
+  (runOffboardingJobs; overnight shifts and the default `tl_plus_1` stay with closeDueExits at Tl + 1).
 
 ## Who builds what
 

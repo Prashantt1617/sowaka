@@ -15,8 +15,11 @@ import path from 'node:path';
 import { companies, connectDb, exitSettlements, getDb, handoverItems, journeyTasks, journeys, lifecycleFiles, lifecycleTemplates, resignations, surveyResponses, users } from '../config/db';
 import type { User } from '../models/user.model';
 import { closeDueExits, listExits, setClearance } from '../services/exit.service';
+import { createOnboardingJourney, onJoined, setJourneyStatus } from '../services/lifecycle/engine';
+import { lifecycleMe } from '../services/lifecycle/appOnboarding';
+import { runLifecycleJobs } from '../services/lifecycle/jobs';
 import {
-  addDays, addWorkingDays, appHandoverFile, changeLastDay, closeOffboarding, emailSettlement, managerLeaver, managerLeavers, markHandoverDone, myOffboarding, offboardingBoard,
+  addDays, addWorkingDays, appHandoverFile, changeLastDay, closeOnboardingForExit, closesAtEndOfShift, closeOffboarding, emailSettlement, managerLeaver, managerLeavers, markHandoverDone, myOffboarding, offboardingBoard,
   offboardingDetail, offboardingTaskDone, removeHandoverUpload, runOffboardingJobs, sendExitInterview, setAppPage, setHandoverChecklist, setOffboardingClearance, settlementChecks,
   startExit, todayKey, uploadHandover,
 } from '../services/lifecycle/offboarding';
@@ -314,6 +317,52 @@ const keyOf = (d: string | null | undefined) => (d ? todayKey(new Date(d)) : nul
   ok('people who left: resigned and HR-started', ins.left.resigned === 1 && ins.left.hrStarted >= 0, ins.left);
   const byTenure = await exitInsights('hr', { from: addDays(T, -400), to: addDays(T, 400), groupBy: 'tenure' }, at(addDays(newTl, 2)));
   ok('by tenure band', byTenure.groups.some((g) => g.key === '1-2y' && g.answers === 5 && g.workingHere !== null), byTenure.groups);
+
+  console.log('leaving during probation, and an account that closes at the end of the shift');
+  // Wanda joined recently and is in probation: an onboarding journey, joined.
+  const onb = await createOnboardingJourney(ORG, 'hr', { candidate: { name: 'Wanda Withdraw', personalEmail: 'wanda.w@example.com' }, tj: addDays(T, -20), managerUserId: 'mgr', designation: 'Designer', department: 'Design' });
+  for (const st of ['offer_sent', 'accepted', 'finalised', 'active', 'docs_approved'] as const) await setJourneyStatus(onb.id, st);
+  await onJoined(onb.id, 'wanda');
+  ok('in probation: the Onboarding tile and tab are on', !!(await lifecycleMe({ userId: 'wanda', name: 'Wanda Withdraw', org: ORG }, now) as { onboarding?: unknown }).onboarding);
+  const w2 = await resign('wanda', { reason: 'Personal' }, now);
+  await managerResignationAction('mgr', w2.resignation.id, { action: 'accept' }, now);
+  const wTl = addDays(T, 12);
+  const wAcc = await acceptResignation('hr', w2.resignation.id, { lastWorkingDay: wTl }, now);
+  const onbAfter = await journeys().findOne({ id: onb.id });
+  ok('HR accepting closes the onboarding journey, with a reason, its status kept', !!onbAfter?.closedAt && onbAfter.status === 'joined' && /resignation/.test(onbAfter.closedReason ?? ''), onbAfter && { s: onbAfter.status, r: onbAfter.closedReason });
+  ok('…its open tasks cancelled', (await journeyTasks().countDocuments({ journeyId: onb.id, status: { $in: ['todo', 'locked', 'in_review', 'sent_back'] } })) === 0);
+  ok('…no Onboarding tile, tab or plant in the app', !(await lifecycleMe({ userId: 'wanda', name: 'Wanda Withdraw', org: ORG }, now) as { onboarding?: unknown }).onboarding);
+  const onbJobs = await runLifecycleJobs(at(addDays(T, 30), 11), { full: true, orgs: [ORG] });
+  ok('…and the onboarding jobs (probation pushes, the reveal) leave it alone', !onbJobs.fired.some((f) => f.startsWith(`${onb.id}:`)) && !!(await journeys().findOne({ id: onb.id }))?.closedAt, onbJobs.fired);
+  // HR-started exits close it too (an intern's end of contract in their first months).
+  const lalOnb = await createOnboardingJourney(ORG, 'hr', { candidate: { name: 'Lal Report', personalEmail: 'lal.r@example.com' }, tj: addDays(T, -40), managerUserId: 'lead', designation: 'Intern', department: 'Design' });
+  for (const st of ['offer_sent', 'accepted', 'finalised', 'active', 'docs_approved'] as const) await setJourneyStatus(lalOnb.id, st);
+  await onJoined(lalOnb.id, 'lead_report');
+  await startExit('hr', 'lead_report', { exitType: 'end_of_contract', lastWorkingDay: addDays(T, 25), noticeHandling: 'not_applicable' }, now);
+  const lalAfter = await journeys().findOne({ id: lalOnb.id });
+  ok('an HR-started exit closes it too', !!lalAfter?.closedAt && /end of contract/.test(lalAfter.closedReason ?? ''), lalAfter?.closedReason);
+  ok('closeOnboardingForExit is safe to run again', (await closeOnboardingForExit('wanda', 'resignation')).length === 0);
+
+  // The template says the account closes on the last day, at the end of the shift (S4).
+  await journeys().updateOne({ id: wAcc.journeyId }, { $set: { 'templateSnapshot.settings.accountCloses': 'tl_end_of_shift' } });
+  const beforeEnd = await runOffboardingJobs(at(wTl, 17));
+  ok('Tl, before the shift ends (18:00): still open', beforeEnd.endOfShiftClosed === 0 && !(await users().findOne({ userId: 'wanda' }))?.exit?.accessEndedAt, beforeEnd);
+  const dayBefore = await runOffboardingJobs(at(addDays(wTl, -1), 19));
+  ok('the evening before Tl: still open', dayBefore.endOfShiftClosed === 0 && !(await users().findOne({ userId: 'wanda' }))?.exit?.accessEndedAt);
+  const afterEnd = await runOffboardingJobs(new Date(`${wTl}T18:30:00+05:30`));
+  const wandaClosed = await users().findOne({ userId: 'wanda' });
+  ok('Tl, after the shift ends: access ends then, not at Tl + 1', afterEnd.endOfShiftClosed === 1 && !!wandaClosed?.exit?.accessEndedAt && wandaClosed.lifecycleStatus === 'offboarded', afterEnd);
+  ok('…the Close account task follows in the same run', afterEnd.accountsClosed === 1 && (await journeyTasks().findOne({ journeyId: wAcc.journeyId, systemKey: 'close_account' }))?.status === 'done');
+  ok('…and the live job has nothing left to do on Tl + 1', (await closeDueExits(at(addDays(wTl, 1), 0))) === 0 || !!(await users().findOne({ userId: 'wanda' }))?.exit?.accessEndedAt);
+  ok('…once', (await runOffboardingJobs(new Date(`${wTl}T19:30:00+05:30`))).endOfShiftClosed === 0);
+  // The default (the day after) is untouched by the end-of-shift close.
+  const lastDayOnly = await journeys().findOne({ id: eoc.journeyId });
+  ok('a template that says the day after: no close on Tl', !(await closesAtEndOfShift('ivy', addDays(T, 20), lastDayOnly, new Date(`${addDays(T, 20)}T23:00:00+05:30`))));
+
+  console.log('the manager\'s leavers (R8b for HR-started exits)');
+  const leavers = await managerLeavers('mgr', now);
+  ok('an HR-started exit is on the manager\'s leavers, with its last day', leavers.leavers.some((l) => l.userId === 'ivy' && l.tl === addDays(T, 20)), leavers);
+  ok('…not one whose access has ended', !leavers.leavers.some((l) => l.userId === 'tom' || l.userId === 'wanda'));
 
   // Clean the local file this check wrote.
   await fs.rm(path.resolve(__dirname, '../../.local-uploads/lifecycle', ORG), { recursive: true, force: true });

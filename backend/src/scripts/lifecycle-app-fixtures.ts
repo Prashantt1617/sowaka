@@ -219,12 +219,29 @@ async function main() {
   await save('offboarding_get', sent(await off.myOffboarding('ravi', now)));
   await save('manager_leaver', sent(await off.managerLeaver('mgr', 'ravi', now)));
   await save('manager_leaver_handover_done', sent(await off.markHandoverDone('mgr', 'ravi', now)));
+  // The interview opened at Tl − 5 (the job's push), before the answers go in.
+  await off.runOffboardingJobs(now);
   await save('exit_interview_post', sent(await off.sendExitInterview('ravi', { reason: 'growth', workingHere: 4, manager: 5, comeBack: 'maybe', change: 'Clearer growth paths' }, now)));
   await save('offboarding_get_after_interview', sent(await off.myOffboarding('ravi', now)));
 
+  // ─────────────────────────────────────────────────────────────── an exit HR started (no resignation)
+  console.log('an exit HR started');
+  const tara = await off.startExit('hr', 'p2', { exitType: 'retirement', lastWorkingDay: day(20), noticeHandling: 'served' }, now);
+  ok('HR started a retirement: the journey, the page on', !!tara.journeyId);
+  await save('me_hr_started', await app.lifecycleMe(me('p2', 'Tara Bose')));
+  await save('resignation_get_hr_started', sent(await res.myResignation('p2', now)));
+  await save('offboarding_get_hr_started', sent(await off.myOffboarding('p2', now)));
+  await save('manager_leavers', sent(await off.managerLeavers('mgr', now)));
+  await save('manager_leaver_hr_started', sent(await off.managerLeaver('mgr', 'p2', now)));
+
   // ─────────────────────────────────────────────────────────────── pushes
-  const pushes = await notifications().find({ userId: { $in: ['isha', 'ishita', 'mgr', 'ravi'] }, scenario: /^lifecycle_/ }, { projection: { _id: 0, userId: 1, scenario: 1, title: 1, body: 1, data: 1 } }).sort({ createdAt: 1 }).toArray();
+  const pushes = await notifications().find({ userId: { $in: ['isha', 'ishita', 'mgr', 'ravi', 'p2'] }, scenario: /^lifecycle_/ }, { projection: { _id: 0, userId: 1, scenario: 1, title: 1, body: 1, data: 1 } }).sort({ createdAt: 1 }).toArray();
   ok('pushes were recorded', pushes.length > 5, pushes.length);
+  const leavingPushes = pushes.filter((p) => ['lifecycle_offboarding', 'lifecycle_resignation'].includes(String((p.data as Record<string, unknown> | undefined)?.type)));
+  ok('every offboarding push names where the app opens it', leavingPushes.length >= 8 && leavingPushes.every((p) => typeof p.data?.destination === 'string' && String(p.data.destination).startsWith('lifecycle_')), leavingPushes.map((p) => [p.scenario, p.data?.destination]));
+  for (const scenario of ['lifecycle_resignation', 'lifecycle_resignation_with_hr', 'lifecycle_resignation_withdrawn', 'lifecycle_offboarding_open', 'lifecycle_handover_checklist', 'lifecycle_handover_shared', 'lifecycle_handover_uploaded', 'lifecycle_exit_interview_open']) {
+    ok(`a ${scenario} push went out`, leavingPushes.some((p) => p.scenario === scenario), leavingPushes.map((p) => p.scenario));
+  }
   await save('push_payloads', { pushes });
 
   // ─────────────────────────────────────────────────────────────── the account closes (R6)
