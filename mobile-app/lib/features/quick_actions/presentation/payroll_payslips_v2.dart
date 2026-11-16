@@ -86,6 +86,11 @@ class _PayslipsPageState extends State<_PayslipsPage> {
   }
 }
 
+/// Held (R4) shows only where the company has the employee lifecycle on:
+/// the payslip API already carries `held` for the live exits, and the chip
+/// is part of the lifecycle's off-boarding, not a change for everyone.
+bool _showsHeld(Payslip slip) => slip.held && LifecycleMeStore.instance.value.enabled;
+
 /// A month held for the final settlement (R4): amber, in words.
 const _prHeld = Color(0xFF8A5300);
 const _prHeldTint = Color(0xFFFFF4E0);
@@ -131,7 +136,7 @@ class _PayslipListRow extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   // Held (R4): the month's gross, since nothing was credited.
-                  slip.held
+                  _showsHeld(slip)
                       ? 'Gross ${_rupees(slip.grossPaise > 0 ? slip.grossPaise : slip.monthlyPaise)}'
                       : slip.paidAt == null
                       ? 'Released'
@@ -146,7 +151,7 @@ class _PayslipListRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          if (slip.held)
+          if (_showsHeld(slip))
             _PrPill(
               'Held',
               key: ValueKey('payslip-held-${slip.id}'),
@@ -431,7 +436,7 @@ class _PayslipPageState extends State<_PayslipPage> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  if (slip.held)
+                  if (_showsHeld(slip))
                     const _PrPill('Held', color: _prHeld, tint: _prHeldTint)
                   else
                     _PrPill(

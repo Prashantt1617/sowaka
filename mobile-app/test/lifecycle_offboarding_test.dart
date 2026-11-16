@@ -15,6 +15,8 @@ import 'package:http/testing.dart';
 import 'package:mobile_app/features/auth/bloc/auth_bloc.dart';
 import 'package:mobile_app/features/auth/data/auth_api_service.dart';
 import 'package:mobile_app/features/lifecycle/offboarding/offboarding.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/data/lifecycle_me_store.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_models.dart' as onb;
 import 'package:mobile_app/features/payroll/data/payroll_api_service.dart';
 import 'package:mobile_app/features/quick_actions/presentation/quick_actions_screen.dart';
 import 'package:mobile_app/features/shared/attachment_picker.dart';
@@ -880,6 +882,9 @@ void main() {
     'a held payslip shows Gross and Held, never the credited amount',
     (tester) async {
       phone(tester);
+      // Held shows only where the company has the lifecycle on.
+      LifecycleMeStore.instance.value = const onb.LifecycleMe(enabled: true);
+      addTearDown(LifecycleMeStore.instance.clear);
       Map<String, dynamic> slip(String period, {bool held = false}) => {
         'run': {
           'id': 'run-$period',
