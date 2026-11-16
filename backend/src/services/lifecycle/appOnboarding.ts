@@ -622,7 +622,8 @@ export async function checkinForMe(me: Me, month: number, body: Record<string, u
 export async function revealForMe(me: Me) {
   const j = await joinerJourney(me.userId);
   const reveal = await revealFor(j.id);
-  return { ...reveal, seen: 'revealedAt' in reveal && !!reveal.revealedAt, letterUrl: undefined as string | undefined };
+  // letterUrl: their own letter PDF, served by GET /lifecycle/onboarding/letters/:id/pdf.
+  return { ...reveal, seen: 'revealedAt' in reveal && !!reveal.revealedAt };
 }
 
 export async function revealSeenForMe(me: Me) {

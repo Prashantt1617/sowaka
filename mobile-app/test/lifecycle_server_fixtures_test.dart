@@ -295,6 +295,7 @@ void main() {
       expect(none.outcome, isNull);
       final ready = onb.RevealView.fromJson(fixture('reveal_ready'));
       expect([ready.outcome, ready.designation, ready.reportsTo, ready.seen], ['confirm', 'Senior Product Designer', 'Meera Iyer', false]);
+      expect(ready.letterUrl, matches(RegExp(r'^/lifecycle/onboarding/letters/[0-9a-f-]+/pdf$')), reason: 'the letter HR sent opens from the reveal');
       expect(onb.RevealView.fromJson(fixture('reveal_seen')).seen, isTrue);
     });
   });

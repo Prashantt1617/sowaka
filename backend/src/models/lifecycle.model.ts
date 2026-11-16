@@ -401,10 +401,14 @@ export interface Letter {
   /** Appointment / NDA: opened before signing is allowed. */
   openedAt?: Date;
   signature?: { method: 'draw' | 'type'; typedName?: string; imageFileId?: string; signedAt: Date; ip?: string; device?: string };
-  email?: { to: string; cc?: string[]; subject: string; body: string; sentAt?: Date; withPortalLink?: boolean };
+  /** The email: HR's saved draft until `sentAt`. `attachments`: extra files sent with the letter PDF (H3c suggested extras). */
+  email?: { to: string; cc?: string[]; subject: string; body: string; sentAt?: Date; withPortalLink?: boolean; attachments?: LetterAttachment[]; savedAt?: Date };
   createdAt: Date;
   createdByName?: string;
 }
+
+/** An extra file on a letter's email. `salary_breakup` states pay: only for people who may see it. */
+export interface LetterAttachment { fileId: string; name: string; kind: 'salary_breakup' | 'joining_checklist' | 'policies' | 'other' }
 
 export interface AboutYou {
   emergencyContact?: { name: string; relation: 'Parent' | 'Partner' | 'Sibling' | 'Friend'; phone: string };

@@ -4,7 +4,7 @@
  * starts, so editing a template never touches a running journey.
  */
 import { randomUUID } from 'node:crypto';
-import { companies, journeys, lifecycleTemplates } from '../../config/db';
+import { companies, journeys, lifecycleTemplates, users } from '../../config/db';
 import type {
   LifecycleKind, LifecycleTemplate, LifecycleTemplateSettings, LifecyclePhase, OwnerRole, SystemTaskKey, TaskKind, TaskSurface, TemplateTask,
 } from '../../models/lifecycle.model';
@@ -281,4 +281,34 @@ export async function deleteTemplate(org: string, id: string): Promise<Lifecycle
   if (inUse > 0) throw new LifecycleError(409, `${inUse} ${inUse === 1 ? 'person is' : 'people are'} following this template`);
   await lifecycleTemplates().deleteOne({ org, id });
   return current;
+}
+
+/**
+ * S3's Joiners tab: the open journeys following this template (the same
+ * count as "Joiners using it"). A running journey keeps the snapshot it
+ * started with, so there is no moving one to another template: the tab lists
+ * them and opens each one.
+ */
+export async function templateJourneys(org: string, id: string) {
+  const template = await getTemplate(org, id);
+  const rows = await journeys().find(
+    { org, templateId: id, closedAt: { $exists: false } },
+    { projection: { _id: 0, id: 1, kind: 1, userId: 1, candidate: 1, status: 1, tj: 1, tl: 1, designation: 1, department: 1, boardTab: 1, boardColumn: 1, createdAt: 1 } },
+  ).sort({ tj: 1, tl: 1, createdAt: 1 }).limit(500).toArray();
+  const ids = [...new Set(rows.map((r) => r.userId).filter((u): u is string => !!u))];
+  const people = ids.length ? await users().find({ userId: { $in: ids } }, { projection: { _id: 0, userId: 1, name: 1, designation: 1, department: 1 } }).toArray() : [];
+  const byId = new Map(people.map((p) => [p.userId, p]));
+  return {
+    template: { id: template.id, kind: template.kind, name: template.name },
+    journeys: rows.map((r) => {
+      const who = r.userId ? byId.get(r.userId) : undefined;
+      return {
+        journeyId: r.id, kind: r.kind, name: who?.name ?? r.candidate?.name ?? '—',
+        ...((r.designation ?? who?.designation) ? { designation: r.designation ?? who?.designation } : {}),
+        ...((r.department ?? who?.department) ? { department: r.department ?? who?.department } : {}),
+        ...(r.userId ? { userId: r.userId } : {}), status: r.status, ...(r.tj ? { tj: r.tj } : {}), ...(r.tl ? { tl: r.tl } : {}),
+        ...(r.boardTab ? { tab: r.boardTab } : {}), ...(r.boardColumn ? { column: r.boardColumn } : {}),
+      };
+    }),
+  };
 }
