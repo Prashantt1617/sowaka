@@ -75,6 +75,8 @@ export async function sendLifecycleEmail(
   }
   if (!transporter) {
     logger.info('SMTP is not configured; lifecycle email logged only', { recipient: mask(recipient), org, subject, attachments: attachments.map((a) => a.filename) });
+    // Development only: the mail's text (links, the portal login) so a local run can follow it. Never in production.
+    if (env.nodeEnv !== 'production') logger.info('Lifecycle email (development copy)', { to: recipient, subject, text: htmlToText(html) });
     return false;
   }
   try {
