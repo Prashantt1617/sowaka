@@ -120,7 +120,6 @@ export function TemplateEditPeople({
   const list = filtering ? shown : pool;
   useEffect(() => { setLimit(PAGE); }, [list]);
   const switchTo = (m: 'add' | 'remove') => { setMode(m); setPicked(new Set()); setFiltering(false); };
-  const onCount = emps.filter((e) => placement(e).on).length;
 
   const ids = [...picked];
   const toAdd = ids.filter((id) => { const e = emps.find((x) => x.id === id); return e && !placement(e).on; });
@@ -142,8 +141,9 @@ export function TemplateEditPeople({
         <h3>{mode === 'add' ? 'Add people to this template' : 'Remove people from this template'}</h3>
         <small>{filtering ? `${list.length} of ${pool.length}` : `${pool.length} ${pool.length === 1 ? 'person' : 'people'}`}</small>
       </div>
-      <StatusTabs<'add' | 'remove'> options={['add', 'remove']} active={mode} onSelect={switchTo}
-        labels={{ add: 'Add people', remove: 'Remove people' }} counts={{ remove: onCount }} />
+      <div style={{ justifySelf: 'start' }}>
+        <StatusTabs<'add' | 'remove'> options={['add', 'remove']} active={mode} onSelect={switchTo} labels={{ add: 'Add people', remove: 'Remove people' }} />
+      </div>
       {note && <div style={{ ...noteBox, display: 'block' }}>{note}</div>}
       {mode === 'remove' && !onRemove ? (
         <div style={{ ...noteBox, display: 'block' }}>{removeBlocked ?? 'People can’t be taken off this template here.'}</div>
