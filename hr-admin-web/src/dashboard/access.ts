@@ -17,6 +17,8 @@ export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boo
   if (view === 'usersroles' || view === 'employeeimport') return user.dashboardAdmin === true;
   // Exits is a company feature (on at sowaka only for now), then a dashboard admin's.
   if (view === 'exits' || view === 'exitsettings') return user.features?.exits === true && user.dashboardAdmin === true;
+  // Employee lifecycle: a company feature, then the tab (IT, Admin and Finance staff are given Offboarding alone).
+  if ((view === 'offboarding' || view === 'exit_insights') && user.features?.lifecycle !== true) return false;
   // Setup is a page of links: open to whoever may open any of the pages on it.
   if (view === 'setup') return SETUP_VIEWS.some((v) => canOpen(user, v));
   if (view === 'bulkassign') return BULK_VIEWS.some((v) => canOpen(user, v));

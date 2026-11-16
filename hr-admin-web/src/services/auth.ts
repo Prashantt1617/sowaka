@@ -22,7 +22,7 @@ export type AuthUser = {
   /** May edit the profile details of themselves and everyone below them in the reporting line. */
   canEditEmployees?: boolean;
   /** Features only some companies have; absent (an older sign-in) is all off. */
-  features?: { placements?: boolean; exits?: boolean };
+  features?: { placements?: boolean; exits?: boolean; lifecycle?: boolean };
 };
 
 export function getStoredUser(): AuthUser | null {

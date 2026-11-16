@@ -43,6 +43,8 @@ const SECTION_UNITS: Unit[] = SECTIONS.flatMap((s) => {
   const tabs = items.filter((i) => !RIDES_ALONG.has(i.key)).map((i) => i.key);
   // A section all of whose pages come with another (Tax uploads, with Payroll) is not given on its own.
   if (items.length === 0 || tabs.length === 0) return [];
+  // Employee lifecycle: each page on its own, so IT, Admin and Finance staff can be given the Offboarding board alone.
+  if (s.title === 'EMPLOYEE LIFECYCLE') return items.map((i) => ({ key: i.key, title: i.label, tabs: [i.key], hint: i.key === 'offboarding' ? 'Resignations, notice, clearance and settlement. Without People, only their own clearance items, no pay' : 'Why people leave, anonymised' }));
   const along = s.title === 'PAYROLL' ? SECTIONS.find((x) => x.title === 'TAX UPLOADS')?.items ?? [] : [];
   return [{ key: s.title, title: titleCase(s.title), tabs, hint: [...items, ...along].map((i) => i.label).join(' · ') }];
 });
@@ -55,7 +57,7 @@ const UNITS: Unit[] = [
 ];
 const ALL_TABS: AccessKey[] = UNITS.flatMap((u) => u.tabs);
 /** What this company can give: Placements only where the company has it. */
-const unitsFor = (me: AuthUser | null | undefined) => UNITS.filter((u) => u.key !== 'PLACEMENTS' || me?.features?.placements === true);
+const unitsFor = (me: AuthUser | null | undefined) => UNITS.filter((u) => (u.key !== 'PLACEMENTS' || me?.features?.placements === true) && ((u.key !== 'offboarding' && u.key !== 'exit_insights') || me?.features?.lifecycle === true));
 const unitByTitle = (title: string) => UNITS.find((u) => u.title === title)!;
 const tabsOf = (...titles: string[]): AccessKey[] => titles.flatMap((t) => unitByTitle(t).tabs);
 const hasUnit = (tabs: Set<AccessKey> | AccessKey[], u: Unit) => u.tabs.every((t) => (Array.isArray(tabs) ? tabs.includes(t) : tabs.has(t)));

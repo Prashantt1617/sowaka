@@ -92,7 +92,37 @@ export interface UserExit {
   /** An absconding: when HR closed the case, which starts its settlement. */
   caseClosedAt?: Date;
   caseClosedByName?: string;
+  /** The employee-lifecycle side of this exit (companies with features.lifecycle); absent for exits recorded on People › Exits. */
+  offboarding?: UserExitOffboarding;
 }
+
+/** How an exit came to be, in the lifecycle's words (end of contract records as kind 'other'). */
+export type OffboardingExitType = 'resignation' | 'retirement' | 'end_of_contract' | 'termination' | 'absconding';
+/** O2's notice choice: served in full, not applicable, waived, the shortfall recovered, or paid in lieu. */
+export type OffboardingNoticeHandling = 'served' | 'not_applicable' | 'waived' | 'recovered' | 'paid_in_lieu';
+
+/**
+ * What the offboarding journey keeps on the exit (services/lifecycle/offboarding.ts): the
+ * journey, the resignation it came from, whether the app shows the Off-boarding page, the
+ * manager's handover note, the settlement email, and which timed jobs have fired.
+ */
+export interface UserExitOffboarding {
+  exitType: OffboardingExitType;
+  journeyId?: string;
+  resignationId?: string;
+  showAppPage: boolean;
+  noticeHandling?: OffboardingNoticeHandling;
+  handoverNote?: string;
+  handoverNoteAt?: Date;
+  /** The final settlement PDF HR emailed to the personal email (never shown in the app). */
+  settlementEmail?: { to: string; at: Date; byName?: string };
+  /** Timed jobs that have fired for this exit, once each ('interview_open', 'settlement_due', 'gratuity_due'). */
+  fired?: string[];
+}
+
+/** Who clears an item: the manager (handover), Admin (ID card and access), IT (laptop and accounts), Finance (advances and claims). */
+export type ClearanceTeam = 'manager' | 'admin' | 'it' | 'finance';
+export const CLEARANCE_TEAMS: ClearanceTeam[] = ['manager', 'admin', 'it', 'finance'];
 
 export interface ExitClearanceItem {
   key: string;
@@ -100,16 +130,24 @@ export interface ExitClearanceItem {
   done: boolean;
   doneAt?: Date;
   doneByName?: string;
+  /** Who clears it; items saved before teams existed read theirs from the key (CLEARANCE_TEAM_OF). */
+  team?: ClearanceTeam;
+  /** Finance: an amount still open (an advance, a claim), in paise. */
+  amountPaise?: number;
+  note?: string;
 }
-/** The list every exit starts with. */
-export const DEFAULT_EXIT_CLEARANCE: { key: string; label: string }[] = [
-  { key: 'handover', label: 'Work handed over' },
-  { key: 'laptop', label: 'Laptop and accessories returned' },
-  { key: 'id_card', label: 'ID card and access cards returned' },
-  { key: 'advances', label: 'Advances and loans cleared' },
+/** The list every exit starts with, one item per team. */
+export const DEFAULT_EXIT_CLEARANCE: { key: string; label: string; team: ClearanceTeam }[] = [
+  { key: 'handover', label: 'Work handed over', team: 'manager' },
+  { key: 'laptop', label: 'Laptop and accessories returned', team: 'it' },
+  { key: 'id_card', label: 'ID card and access cards returned', team: 'admin' },
+  { key: 'advances', label: 'Advances and loans cleared', team: 'finance' },
 ];
+/** The team of a default item, by key, for clearance lists saved before items carried one. */
+export const CLEARANCE_TEAM_OF: Record<string, ClearanceTeam> = { handover: 'manager', laptop: 'it', id_card: 'admin', advances: 'finance' };
 
-export const EXIT_INTERVIEW_REASONS = ['pay', 'growth', 'manager', 'work_life', 'relocation', 'studies', 'other'] as const;
+// 'the_work' and 'personal' come from the app's exit interview (The work itself, Personal).
+export const EXIT_INTERVIEW_REASONS = ['pay', 'growth', 'manager', 'work_life', 'relocation', 'studies', 'the_work', 'personal', 'other'] as const;
 export type ExitInterviewReason = (typeof EXIT_INTERVIEW_REASONS)[number];
 export interface ExitInterview {
   reason?: ExitInterviewReason;
@@ -202,8 +240,16 @@ export interface User {
   gender?: string;
   /** Personal mobile, captured when HR adds the employee. */
   phone?: string;
-  /** Personal email (from the candidate's offer, set at Mark joined): where the final settlement goes after they leave. */
+  /**
+   * Personal (not work) email: the final settlement PDF goes here after they leave. Copied from the
+   * offer for joiners who came through the lifecycle; HR can add it when emailing the settlement.
+   */
   personalEmail?: string;
+  /**
+   * Which exit clearance items this person clears from the Offboarding board, when they hold only the
+   * offboarding tab (IT, Admin or Finance staff). Absent: read from their department's name.
+   */
+  clearanceTeam?: 'it' | 'admin' | 'finance';
   designation?: string;
   department?: string;
   teamDescription?: string;

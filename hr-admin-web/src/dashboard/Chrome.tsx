@@ -109,6 +109,11 @@ const ENGAGEMENT: NavItem[] = [
 ];
 // Placements: a placement agency's own work, so it comes first; only a
 // company with the feature sees it (see access.ts).
+// Employee lifecycle (features.lifecycle): the Offboarding board replaces People › Exits there.
+const LIFECYCLE: NavItem[] = [
+  { key: 'offboarding', label: 'Offboarding' },
+  { key: 'exit_insights', label: 'Exit insights' },
+];
 const PLACEMENTS: NavItem[] = [
   { key: 'placements', label: 'Placements' },
   { key: 'placementclients', label: 'Clients' },
@@ -119,6 +124,7 @@ export const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'TIME OFFICE', items: REQUESTS },
   { title: 'SUPPORT', items: SUPPORT },
   { title: 'PEOPLE', items: PEOPLE },
+  { title: 'EMPLOYEE LIFECYCLE', items: LIFECYCLE },
   { title: 'SHIFTS', items: SHIFTS },
   { title: 'PERFORMANCE', items: PERFORMANCE },
   { title: 'PAYROLL', items: PAYROLL },
@@ -278,7 +284,9 @@ export function Sidebar() {
   // The company's real name, not a constant baked in at build time.
   const companyName = brand.name ?? user?.company ?? ORG_DISPLAY_NAME;
   const { leaves, ots, rbs, corrs, fbMgrs, listState } = useStore();
-  const sections = SECTIONS.map((s) => ({ ...s, items: s.items.filter((item) => !item.hidden && canOpen(user, item.key)) })).filter((s) => s.items.length > 0);
+  // Where the lifecycle is on, the Offboarding board takes the place of People › Exits.
+  const replaced = (key: View) => key === 'exits' && user?.features?.lifecycle === true;
+  const sections = SECTIONS.map((s) => ({ ...s, items: s.items.filter((item) => !item.hidden && !replaced(item.key) && canOpen(user, item.key)) })).filter((s) => s.items.length > 0);
   // A cancellation request on an approved leave waits on HR's decision too.
   const leavesPending = leaves.filter((l) => l.status === 'Pending' || l.cancelRequest?.status === 'Pending').length;
   const otPending = ots.filter((o) => o.status === 'Pending').length;

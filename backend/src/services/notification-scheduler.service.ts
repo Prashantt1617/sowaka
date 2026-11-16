@@ -8,6 +8,7 @@ import { istParts } from './notification-time';
 import { logger } from '../utils/logger';
 import { closeDueExits } from './exit.service';
 import { runPortalJobs } from './lifecycle/portal';
+import { runOffboardingJobs } from './lifecycle/offboarding';
 
 /**
  * Runs one scheduled job in isolation: a thrown error is logged and does not
@@ -35,6 +36,8 @@ export async function runHourlyJobs(now = new Date()): Promise<void> {
   await run('closeDueExits', () => closeDueExits(now));
   // Pre-boarding portal: offer expiry, login/quiet/letter nudges, the Day-1 pass mail (idempotent).
   await run('runPortalJobs', () => runPortalJobs(now));
+  // Offboarding: exit interview opens, settlement due, gratuity due (once each; access itself is closeDueExits').
+  await run('runOffboardingJobs', () => runOffboardingJobs(now));
   if (hour === 10) {
     await run('sendNewJoinerNotifications', () => sendNewJoinerNotifications(now));
     // Cycle open, the Friday reminder and the last day, to managers only.

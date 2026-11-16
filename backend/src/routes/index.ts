@@ -42,6 +42,7 @@ import { suwiRouter } from '../suwi/routes';
 import { suwiPeopleRouter } from '../suwi/routes.people';
 import { suwiNoticesRouter } from '../suwi/routes.notices';
 import { forgetEngagement } from '../services/engagement-cache';
+import { lifecycleOffboardingAdminRouter, lifecycleOffboardingRouter } from './lifecycle-offboarding.routes';
 
 export const router = Router();
 
@@ -73,6 +74,8 @@ router.use('/admin/engagement/contests', engagementContestsRouter);
 router.use('/admin/engagement/games', engagementGamesRouter);
 // Employee lifecycle: offers, documents and letters (each route guards itself; others fall through).
 router.use('/admin/lifecycle', lifecycleOfferRouter);
+// Employee lifecycle › Offboarding (features.lifecycle): the board, Start an exit, the settlement email, Exit insights.
+router.use('/admin/lifecycle', lifecycleOffboardingAdminRouter);
 router.use('/admin', adminRouter);
 router.use('/leaves', leaveRouter);
 router.use('/payslips', payslipRouter);
@@ -122,3 +125,5 @@ router.use('/support', supportRouter);
 router.use('/placements', placementsRouter);
 // The pre-boarding portal: candidates, before they are employees (offer link, then a portal session).
 router.use('/portal', portalRouter);
+// Resigning, the Off-boarding page, the handover and the exit interview; the manager's resignations and leavers.
+router.use('/lifecycle', lifecycleOffboardingRouter);

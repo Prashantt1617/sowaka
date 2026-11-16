@@ -426,6 +426,8 @@ async function toAuthUser(
       placements: placementsFeatureOf(company),
       // Exits (People › Exits, Exit settings, Record exit): only where Sowaka switched it on.
       exits: company?.features?.exits === true,
+      // Employee lifecycle (onboarding and offboarding boards, resigning in the app).
+      lifecycle: company?.features?.lifecycle === true,
       // Payroll in the app, once HR switches it on (PUT /admin/payroll/employee-app-settings).
       payroll: payrollAppEnabledFrom(company?.payrollEmployee),
     },

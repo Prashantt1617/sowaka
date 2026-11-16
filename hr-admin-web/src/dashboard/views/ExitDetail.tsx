@@ -25,7 +25,7 @@ const STATUS = {
   approved: { label: 'Approved', tone: { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' } },
   paid: { label: 'Paid', tone: { bg: 'var(--ok-bg)', fg: 'var(--ok)' } },
 } as const;
-const REASONS: [ExitInterviewReason, string][] = [['pay', 'Pay'], ['growth', 'Growth'], ['manager', 'Manager'], ['work_life', 'Work-life balance'], ['relocation', 'Relocation'], ['studies', 'Studies'], ['other', 'Other']];
+const REASONS: [ExitInterviewReason, string][] = [['pay', 'Pay'], ['growth', 'Growth'], ['manager', 'Manager'], ['work_life', 'Work-life balance'], ['relocation', 'Relocation'], ['studies', 'Studies'], ['the_work', 'The work itself'], ['personal', 'Personal'], ['other', 'Other']];
 const COME_BACK: [NonNullable<ExitInterview['comeBack']>, string][] = [['yes', 'Yes'], ['maybe', 'Maybe'], ['no', 'No']];
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
@@ -181,9 +181,9 @@ function Fact({ label, value }: { label: string; value: ReactNode }) {
 // ———————————————————————————————————————————————— the statement
 
 const COLS = '1.4fr 2.2fr 0.9fr 96px';
-type Run = (what: string, work: () => Promise<ExitDetailDTO>, done?: string) => Promise<boolean>;
+export type Run = (what: string, work: () => Promise<ExitDetailDTO>, done?: string) => Promise<boolean>;
 
-function Statement({ exit, settlement, busy, run, userId }: { exit: ExitDTO; settlement: SettlementDTO; busy: string; run: Run; userId: string }) {
+export function Statement({ exit, settlement, busy, run, userId }: { exit: ExitDTO; settlement: SettlementDTO; busy: string; run: Run; userId: string }) {
   const [editing, setEditing] = useState('');
   const [reason, setReason] = useState('');
   const draft = settlement.status === 'draft';
