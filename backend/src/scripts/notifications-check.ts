@@ -127,7 +127,7 @@ const user = (id: string) => getDb().collection('users').findOne({ userId: id })
   await db.collection('connect_posts').insertOne(contest as never);
   await notifyPostPublished(contest);
   rows = await inbox(contest.id);
-  check('new contest copy', rows.length === 5 && rows.every((r) => r.pushed && r.title === 'New contest: Caption this' && r.body === 'Enter by 20 Oct'), rows[0]);
+  check('new contest copy', rows.length === 5 && rows.every((r) => r.pushed && r.title === 'Caption this' && r.body === 'Enter by 20 Oct'), rows[0]);
 
   const joinee = post({ type: 'new_joinee', body: { personName: 'X' } });
   await notifyPostPublished(joinee);
