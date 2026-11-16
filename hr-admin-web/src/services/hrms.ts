@@ -1194,3 +1194,10 @@ export const resetFaceId = (userId: string) =>
   api<{ removed: boolean }>(`/admin/face-id/people/${encodeURIComponent(userId)}`, { method: 'DELETE' });
 export const getFaceChecks = (from: string, to: string, all = false) =>
   api<{ checks: FaceCheckDTO[] }>(`/admin/face-id/checks?from=${from}&to=${to}${all ? '&all=true' : ''}`).then((r) => r.checks);
+
+/** Filters Suwi read from a people search in plain words (only values this company has). */
+export type PeopleSearchFilterDTO = {
+  departments: string[]; designations: string[]; locations: string[]; managerIds: string[];
+  types: string[]; genders: string[]; ids: string[]; joinedFrom?: string; joinedTo?: string; on?: 'yes' | 'no';
+};
+export const smartPeopleSearch = (q: string) => api<{ filter: PeopleSearchFilterDTO }>('/suwi/people-search', { method: 'POST', body: { q } }).then((r) => r.filter);

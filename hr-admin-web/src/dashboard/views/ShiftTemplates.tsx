@@ -3,14 +3,16 @@
 // grace, week-offs, how punches arrive, overtime, corrections, approvals and
 // leave. One template is the org's default, and everyone not assigned to
 // another one follows it. A new template starts as a copy of the default.
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { ListPending } from '../ui';
+import { ListPending, StatusTabs } from '../ui';
+import type { Emp } from '../seed';
+import { TemplateEditPeople, TemplateMembers } from './TemplatePeople';
 import { PdClock } from './pdIcons';
 import './people.css';
 import {
-  createShift, deleteShift as deleteShiftApi, getAllEmployees, getShifts, setDefaultShift, shiftHeadcount, updateShift, DEFAULT_OUTSIDE_LOCATION, DEFAULT_SHIFT_POLICY,
+  assignShift, createShift, deleteShift as deleteShiftApi, getAllEmployees, getShifts, unassignShift, setDefaultShift, shiftHeadcount, updateShift, DEFAULT_OUTSIDE_LOCATION, DEFAULT_SHIFT_POLICY,
   type EmployeeDTO, type OutsideLocationOutcome, type PunchFormat, type PunchMode, type ShiftDTO, type ShiftPolicyDTO,
 } from '../../services/hrms';
 import { downloadCsv } from '../export';
@@ -45,9 +47,12 @@ function formatDuration(mins: number): string {
 
 type Mode = { kind: 'list' } | { kind: 'edit'; id: string | null };
 
+type EditTab = 'template' | 'employees' | 'edit';
+
 export function ShiftTemplates() {
-  const { flash, setView } = useStore();
+  const { flash, setView, emps } = useStore();
   const [mode, setMode] = useState<Mode>({ kind: 'list' });
+  const [tab, setTab] = useState<EditTab>('template');
   const [shifts, setShifts] = useState<ShiftDTO[]>([]);
   const [loading, setLoading] = useState(true);
   // The first load failed: say so, with Retry, rather than "No templates yet".
@@ -82,6 +87,7 @@ export function ShiftTemplates() {
     setPunchMode(shift.punchMode || shift.policy.correction.punchMode);
     setOvertimeEligible((shift.overtimeEligible ?? shift.policy.overtime.eligible) === false ? 'no' : 'yes');
     setMode({ kind: 'edit', id: shift.id });
+    setTab('template');
   };
   const create = () => {
     // A new template starts as a copy of the default — the shift everyone is
@@ -92,8 +98,52 @@ export function ShiftTemplates() {
     setOvertimeEligible(base.overtime.eligible === false ? 'no' : 'yes');
     setPolicy(JSON.parse(JSON.stringify(base)) as ShiftPolicyDTO);
     setMode({ kind: 'edit', id: null });
+    setTab('template');
   };
   const current = mode.kind === 'edit' && mode.id ? shifts.find((t) => t.id === mode.id) : undefined;
+  // Who each person follows: their template, else the default.
+  const holder = useMemo(() => {
+    const m = new Map<string, ShiftDTO>();
+    for (const t of shifts) if (t.active || t.isDefault) for (const id of t.assignedUserIds) m.set(id, t);
+    return m;
+  }, [shifts]);
+  const defaultShift = shifts.find((t) => t.isDefault);
+  const onThis = useCallback((e: Emp) => (current ? (holder.get(e.id)?.id === current.id || (current.isDefault && !holder.has(e.id))) : false), [current, holder]);
+  // Only people still working: someone who has left is on no template.
+  const working = useMemo(() => {
+    const gone = new Set(roster.filter((r) => ['offboarded', 'terminated'].includes(r.lifecycleStatus ?? '')).map((r) => r.userId));
+    return emps.filter((e) => !gone.has(e.id));
+  }, [emps, roster]);
+  const members = useMemo(() => (current ? working.filter(onThis) : []), [current, working, onThis]);
+  const placement = useCallback((e: Emp) => {
+    const t = holder.get(e.id);
+    const on = onThis(e);
+    return { on, elsewhere: on ? undefined : t ? t.name : defaultShift ? `${defaultShift.name} (default)` : undefined };
+  }, [holder, onThis, defaultShift]);
+  const tomorrow = new Date(Date.now() + 5.5 * 3_600_000 + 86_400_000).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const addPeople = async (ids: string[]) => {
+    if (!current || !ids.length) return;
+    try {
+      if (current.isDefault) {
+        // Onto the default: off whatever template they are on now.
+        const byShift = new Map<string, string[]>();
+        for (const id of ids) { const t = holder.get(id); if (t && t.id !== current.id) byShift.set(t.id, [...(byShift.get(t.id) ?? []), id]); }
+        for (const [sid, list] of byShift) await unassignShift(sid, list);
+      } else {
+        await assignShift(current.id, ids);
+      }
+      await reload();
+      flash(`${ids.length} ${ids.length === 1 ? 'person moves' : 'people move'} to ${current.name} from ${tomorrow}`);
+    } catch (e) { flash((e as Error).message); }
+  };
+  const removePeople = async (ids: string[]) => {
+    if (!current || !ids.length) return;
+    try {
+      await unassignShift(current.id, ids);
+      await reload();
+      flash(`${ids.length} ${ids.length === 1 ? 'person goes' : 'people go'} back to ${defaultShift?.name ?? 'the default'} from ${tomorrow}`);
+    } catch (e) { flash((e as Error).message); }
+  };
   const makeDefault = async () => {
     if (!current) return;
     try {
@@ -282,11 +332,33 @@ export function ShiftTemplates() {
           {current?.isDefault && <span style={{ ...defaultPill, marginLeft: 0 }}>Default shift</span>}
           {current && !current.isDefault && <button onClick={() => void makeDefault()} className="pd-btn">Make default</button>}
           {mode.id && <button onClick={() => void remove(mode.id!)} className="pd-btn" style={{ color: 'var(--bad)' }}>Delete</button>}
-          <button onClick={() => void save()} disabled={saving} className="pd-btn primary">
-            {saving ? 'Saving…' : 'Save template'}
-          </button>
+          {tab === 'template' && (
+            <button onClick={() => void save()} disabled={saving} className="pd-btn primary">
+              {saving ? 'Saving…' : 'Save template'}
+            </button>
+          )}
         </div>
       </div>
+
+      {current && (
+        <div style={{ marginBottom: 20 }}>
+          <StatusTabs<EditTab> options={['template', 'employees', 'edit']} active={tab} onSelect={setTab}
+            labels={{ template: 'Template', employees: 'Employees', edit: 'Edit employees' }} counts={{ employees: members.length }} />
+        </div>
+      )}
+
+      {current && tab === 'employees' && (
+        <TemplateMembers members={members} emptyText="Nobody is on this template yet. Add people in Edit employees."
+          note={current.isDefault ? `The default: everyone not put on another template follows ${current.name}.` : undefined} />
+      )}
+      {current && tab === 'edit' && (
+        <TemplateEditPeople emps={working} placement={placement} onAdd={addPeople} onRemove={current.isDefault ? undefined : removePeople}
+          addWord="Move"
+          note={<>People ticked here start on {current.name} from <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>{tomorrow}</strong>; today is worked under their shift now. {current.isDefault ? 'Moving someone here takes them off their other template.' : `Removing someone sends them back to ${defaultShift?.name ?? 'the default'}.`}</>}
+          removeBlocked={current.isDefault ? 'Everyone not on another template is on the default. To take someone off, move them to another template from that template.' : undefined} />
+      )}
+
+      {(!current || tab === 'template') && <>
 
       <section className="pd-card" style={{ marginBottom: 20 }}>
         <Field label="Shift Name" required>
@@ -538,6 +610,7 @@ export function ShiftTemplates() {
         <YesNoRow label="Can HR override a correction decision?" value={policy.correction.hrOverride} onChange={(v) => patch({ correction: { ...policy.correction, hrOverride: v } })} />
         <YesNoRow label="Can HR override a leave decision?" value={policy.leave.hrOverride} onChange={(v) => patch({ leave: { ...policy.leave, hrOverride: v } })} />
       </Section>
+      </>}
     </div>
   );
 }

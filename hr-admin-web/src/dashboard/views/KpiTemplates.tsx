@@ -155,6 +155,7 @@ export function KpiTemplates() {
         onBack={() => setViewing(null)}
         onDeleted={() => { setViewing(null); void reload(); }}
         onError={setError}
+        templates={templates}
       />
     );
   }
