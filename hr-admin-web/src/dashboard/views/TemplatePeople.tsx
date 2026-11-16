@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useStore } from '../store';
 import type { Emp } from '../seed';
-import { Avatar, SearchInput, Th } from '../ui';
+import { Avatar, SearchInput, StatusTabs, Th } from '../ui';
 import { TH, TR, cellName, cellSub, note as noteBox } from '../ds';
 import { smartPeopleSearch } from '../../services/hrms';
 import { applyPeopleFilter, chipsOf, EMPTY_FILTER, isEmptyFilter, mergeFilters, parsePeopleQuery } from '../peopleQuery';
@@ -108,14 +108,19 @@ export function TemplateEditPeople({
   removeBlocked?: string;
   addWord?: string;
 }) {
-  const [shown, setShown] = useState<Emp[]>(emps);
+  // Adding and removing are separate lists: who is not on it yet, and who is.
+  const [mode, setMode] = useState<'add' | 'remove'>('add');
+  const pool = useMemo(() => emps.filter((e) => (mode === 'add' ? !placement(e).on : placement(e).on)), [emps, placement, mode]);
+  const [shown, setShown] = useState<Emp[]>(pool);
   const [filtering, setFiltering] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState('');
   const [limit, setLimit] = useState(PAGE);
   const onTemplate = useMemo(() => (e: Emp) => placement(e).on, [placement]);
-  const list = filtering ? shown : emps;
+  const list = filtering ? shown : pool;
   useEffect(() => { setLimit(PAGE); }, [list]);
+  const switchTo = (m: 'add' | 'remove') => { setMode(m); setPicked(new Set()); setFiltering(false); };
+  const onCount = emps.filter((e) => placement(e).on).length;
 
   const ids = [...picked];
   const toAdd = ids.filter((id) => { const e = emps.find((x) => x.id === id); return e && !placement(e).on; });
@@ -134,11 +139,17 @@ export function TemplateEditPeople({
   return (
     <section className="pd-card" style={{ display: 'grid', gap: 14 }}>
       <div className="pd-card-h" style={{ marginBottom: 0 }}>
-        <h3>Add or remove employees</h3>
-        <small>{filtering ? `${list.length} match` : `${emps.length} people`}</small>
+        <h3>{mode === 'add' ? 'Add people to this template' : 'Remove people from this template'}</h3>
+        <small>{filtering ? `${list.length} of ${pool.length}` : `${pool.length} ${pool.length === 1 ? 'person' : 'people'}`}</small>
       </div>
+      <StatusTabs<'add' | 'remove'> options={['add', 'remove']} active={mode} onSelect={switchTo}
+        labels={{ add: 'Add people', remove: 'Remove people' }} counts={{ remove: onCount }} />
       {note && <div style={{ ...noteBox, display: 'block' }}>{note}</div>}
-      <PeopleSearch emps={emps} onTemplate={onTemplate} onChange={(s, f) => { setShown(s); setFiltering(f); }} placeholder="Who? e.g. people on the 3D team under Ravi, not on this template" />
+      {mode === 'remove' && !onRemove ? (
+        <div style={{ ...noteBox, display: 'block' }}>{removeBlocked ?? 'People can’t be taken off this template here.'}</div>
+      ) : (<>
+      <PeopleSearch key={mode} emps={pool} onTemplate={onTemplate} onChange={(s, f) => { setShown(s); setFiltering(f); }}
+        placeholder={mode === 'add' ? 'Who to add? e.g. people on the 3D team under Ravi, interns in Gurgaon' : 'Who to remove? e.g. Sales team, joined before 2025'} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink-2)', cursor: 'pointer' }}>
@@ -147,21 +158,20 @@ export function TemplateEditPeople({
         </label>
         <span style={{ flex: 1 }} />
         {picked.size > 0 && <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{picked.size} ticked</span>}
-        <button type="button" id="people-add" disabled={!!busy || toAdd.length === 0} onClick={() => void run('add')} className="pd-btn primary">
-          {busy === 'add' ? 'Saving…' : `${addWord} ${toAdd.length || ''}${toAdd.length ? ` ${toAdd.length === 1 ? 'person' : 'people'}` : ''}`.trim()}
-        </button>
-        {onRemove
-          ? <button type="button" id="people-remove" disabled={!!busy || toRemove.length === 0} onClick={() => void run('remove')} className="pd-btn" style={{ color: toRemove.length ? 'var(--bad)' : undefined }}>
-              {busy === 'remove' ? 'Saving…' : `Remove ${toRemove.length || ''}${toRemove.length ? ` ${toRemove.length === 1 ? 'person' : 'people'}` : ''}`.trim()}
+        {mode === 'add'
+          ? <button type="button" id="people-add" disabled={!!busy || toAdd.length === 0} onClick={() => void run('add')} className="pd-btn primary">
+              {busy === 'add' ? 'Saving…' : `${addWord} ${toAdd.length || ''}${toAdd.length ? ` ${toAdd.length === 1 ? 'person' : 'people'}` : ''}`.trim()}
             </button>
-          : removeBlocked && <span style={{ fontSize: 12.5, color: 'var(--ink-3)', maxWidth: 360 }}>{removeBlocked}</span>}
+          : <button type="button" id="people-remove" disabled={!!busy || toRemove.length === 0} onClick={() => void run('remove')} className="pd-btn danger">
+              {busy === 'remove' ? 'Saving…' : `Remove ${toRemove.length || ''}${toRemove.length ? ` ${toRemove.length === 1 ? 'person' : 'people'}` : ''}`.trim()}
+            </button>}
       </div>
-      {moving > 0 && <div style={{ fontSize: 12.5, color: 'var(--warn)' }}>{moving} of them {moving === 1 ? 'is' : 'are'} on another template now and will move to this one.</div>}
+      {mode === 'add' && moving > 0 && <div style={{ fontSize: 12.5, color: 'var(--warn)' }}>{moving} of them {moving === 1 ? 'is' : 'are'} on another template now and will move to this one.</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 220px', gap: 16, alignItems: 'start' }}>
         <div style={{ minWidth: 0 }}>
           <div style={TH(EDIT_COLS)}><span /><Th>EMPLOYEE</Th><Th>TEAM</Th><Th>DESIGNATION</Th><Th>REPORTS TO</Th><Th>NOW</Th></div>
-          {list.length === 0 && <div style={{ ...TR(EDIT_COLS), color: 'var(--ink-3)', display: 'block' }}>Nobody matches.</div>}
+          {list.length === 0 && <div style={{ ...TR(EDIT_COLS), color: 'var(--ink-3)', display: 'block' }}>{pool.length === 0 ? (mode === 'remove' ? 'Nobody is on this template yet.' : 'Everyone is already on this template.') : 'Nobody matches.'}</div>}
           {list.slice(0, limit).map((e, i) => {
             const p = placement(e);
             return (
@@ -181,7 +191,7 @@ export function TemplateEditPeople({
         {/* Everyone ticked, wherever the search has moved since: the cart. */}
         <aside id="people-cart" style={{ position: 'sticky', top: 12, border: '1px solid var(--line)', borderRadius: 14, background: 'var(--surface-2)', padding: '12px 12px 8px', display: 'grid', gap: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>Ticked</span>
+            <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{mode === 'add' ? 'To add' : 'To remove'}</span>
             <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{picked.size}</span>
             <span style={{ flex: 1 }} />
             {picked.size > 0 && <button type="button" onClick={() => setPicked(new Set())} className="pd-btn ghost sm" style={{ height: 24, padding: '0 6px', fontSize: 12 }}>Clear</button>}
@@ -201,6 +211,7 @@ export function TemplateEditPeople({
           </div>
         </aside>
       </div>
+      </>)}
     </section>
   );
 }

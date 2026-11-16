@@ -137,7 +137,7 @@ export function TemplateDetailModal({
       {withPeople && tab === 'edit' && (
         nextOf ? (
           <TemplateEditPeople emps={working} placement={placement} onAdd={addPeople} onRemove={removePeople}
-            note={<>Changes start in <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>{periodLabel(next)}</strong>; {periodLabel(period)} is in progress and stays as it is. Adding someone replaces the template they have for {periodLabel(next)}.</>} />
+            note={<>Changes start in <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>{periodLabel(next)}</strong>; {periodLabel(period)} is in progress and stays as it is. Adding someone replaces the template they have for {periodLabel(next)}; removing someone leaves them with no KPIs for {periodLabel(next)} until you give them another template (there is no default KPI template).</>} />
         ) : <div style={{ ...panelCard, color: 'var(--ink-3)' }}>Loading…</div>
       )}
       {(!withPeople || tab === 'template') && (
