@@ -275,7 +275,7 @@ async function main() {
   eq('Day 1 on Tj only; Week 1 from Day 2; Week 2 at Tj + 7; Week 5 on 31 Dec; Month 2 from 1 Jan',
     [label('2026-12-01'), label('2026-12-02'), label('2026-12-07'), label('2026-12-08'), label('2026-12-31'), label('2027-01-01'), label('2027-05-15')],
     ['Day 1', 'Week 1', 'Week 1', 'Week 2', 'Week 5', 'Month 2', 'Month 6']);
-  eq('Before Tj: Day −7', engine.dayLabelFor({ ...pure, status: 'finalised', userId: undefined }, '2026-11-24'), 'Day −7');
+  eq('Before Tj: In 7 days', engine.dayLabelFor({ ...pure, status: 'finalised', userId: undefined }, '2026-11-24'), 'In 7 days');
   const pt = await engine.tasksOf(J1.id);
   const d = (key: string, j: Journey = pure, tasks = pt) => engine.deriveJourney(j, tasks, at(key));
   eq('Columns: Day 1 → Week-1 tasks → Day-7 survey → probation Month 1 → Months 2–5 → Final month',

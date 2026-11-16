@@ -57,7 +57,9 @@ export function waitingOnOf(j: Journey, tasks: JourneyTask[], names: Map<string,
   const today = todayKey(now, companyTimeZone(j.org));
   const open = tasks.filter((t) => ACTIVE_STATUSES.includes(t.status) && isCounted(t))
     // An upload in review waits on HR's review, not on the joiner.
-    .filter((t) => !(t.status === 'in_review' && t.ownerRole === 'employee'));
+    .filter((t) => !(t.status === 'in_review' && t.ownerRole === 'employee'))
+    // Optional things with no date (asking for another joining day) are nobody's to wait on.
+    .filter((t) => t.mustDo || !!t.dueAt);
   const due = (t: JourneyTask) => (t.dueAt ? keyOfDay(t.dueAt) : '9999-12-31');
   open.sort((a, b) => Number(taskLate(b, today)) - Number(taskLate(a, today)) || Number(b.mustDo) - Number(a.mustDo) || due(a).localeCompare(due(b)) || a.order - b.order);
   return open.slice(0, limit).map((t) => {

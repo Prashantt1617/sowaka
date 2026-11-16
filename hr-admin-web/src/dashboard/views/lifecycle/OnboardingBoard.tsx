@@ -144,7 +144,7 @@ export function OnboardingBoard() {
           {cards.length === 0 && !q && !from && !to && tab === 'pre_boarding' && (
             <div className="pd-note" style={{ marginBottom: 14 }}>No joiners yet. Start with <b>New offer letter</b>: the candidate gets the offer by email and accepts it on their portal, and their card moves along this board from there.</div>
           )}
-          <div className="scry" style={{ display: 'grid', gridAutoFlow: 'column', gridAutoColumns: 'minmax(248px, 1fr)', gap: 12, overflowX: 'auto', paddingBottom: 8, alignItems: 'start' }}>
+          <div className="scry" style={{ display: 'grid', gridAutoFlow: 'column', gridAutoColumns: 'minmax(200px, 1fr)', gap: 12, overflowX: 'auto', paddingBottom: 8, alignItems: 'start' }}>
             {shownTab.columns.map((col) => (
               <section key={col.key} aria-label={col.label} style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 16, padding: 10, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 160 }}>
                 <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 4px 4px' }}>

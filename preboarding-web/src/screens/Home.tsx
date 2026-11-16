@@ -141,10 +141,24 @@ export function Home() {
         ? [{ key: 'pass', icon: <Icon name="calendar" />, title: 'Day-1 pass', sub: `Ready on ${fmtShort(passOpensOn(me))}`, to: '/pass' }, askTile]
         : me.view === 'pass_unlocked'
           ? [{ key: 'letter', icon: <Icon name="check" />, title: 'Letter signed', sub: 'Saved in your documents', to: '/letters' }, askTile]
-          : [
-              { key: 'about', icon: 2, title: 'About you', sub: '2 quick steps', to: '/about' },
-              { key: 'meet', icon: <Icon name="play" />, title: 'Meet the team', sub: meetSub, to: '/meet' },
-            ];
+          : openTiles();
+
+  // Tasks open: only what is still to do. Once About you and Meet the team are done, the
+  // signed letters and the Day-1 pass take their place (never a tile for something finished).
+  function openTiles(): Tile[] {
+    const done = (key: string) => me.path.find((p) => p.key === key)?.state === 'done';
+    const open: Tile[] = [
+      ...(done('about') ? [] : [{ key: 'about', icon: 2, title: 'About you', sub: '2 quick steps', to: '/about' } as Tile]),
+      ...(done('meet') ? [] : [{ key: 'meet', icon: <Icon name="play" />, title: 'Meet the team', sub: meetSub, to: '/meet' } as Tile]),
+    ];
+    if (open.length) return open;
+    return [
+      done('letter')
+        ? { key: 'letter', icon: <Icon name="check" />, title: 'Letters signed', sub: 'Saved in your documents', to: '/letters' }
+        : { key: 'pass', icon: <Icon name="calendar" />, title: 'Day-1 pass', sub: `Ready on ${fmtShort(passOpensOn(me))}`, to: '/pass' },
+      askTile,
+    ];
+  }
 
   const heroCard = (
     <section className={`hero-card rise ${wide ? 'hero-card--web' : ''}`} aria-labelledby="hero-title">

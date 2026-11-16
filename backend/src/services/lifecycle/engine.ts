@@ -348,7 +348,8 @@ export function dayLabelFor(j: Journey, today: string): string {
   if (j.status === 'confirmed') return 'Confirmed';
   if (!isJoined(j)) {
     const toGo = daysBetween(today, j.tj);
-    return toGo > 0 ? `Day −${toGo}` : 'Day 1';
+    // Before the joining day it reads as time to go, never a negative day.
+    return toGo > 1 ? `In ${toGo} days` : toGo === 1 ? 'Tomorrow' : 'Day 1';
   }
   const d = daysBetween(j.tj, today);
   if (d <= 0) return 'Day 1';
