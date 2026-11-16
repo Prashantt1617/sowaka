@@ -5,7 +5,7 @@
  *   GET  /admin/notification-look            every kind, its look and the sounds to pick from
  *   PUT  /admin/notification-look            { kinds: { <kind>: look | null } } (null: Sowaka's default)
  *   POST /admin/notification-look/sounds     multipart `file` (WAV) + `name` (+ optional `key`)
- *   POST /admin/notification-look/pictures   multipart `file` (JPEG, PNG or WebP)
+ *   POST /admin/notification-look/pictures   multipart `file` (JPEG or PNG)
  */
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';

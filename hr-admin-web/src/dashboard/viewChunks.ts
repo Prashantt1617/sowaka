@@ -25,6 +25,7 @@ const LOADERS: Partial<Record<View, Loader>> = {
   employeeimport: () => import('./views/EmployeeImport').then((m) => ({ default: m.EmployeeImport })),
   exits: () => import('./views/Exits').then((m) => ({ default: m.Exits })),
   exitsettings: () => import('./views/ExitSettings').then((m) => ({ default: m.ExitSettings })),
+  notificationlook: () => import('./views/NotificationLook').then((m) => ({ default: m.NotificationLook })),
   offboarding: () => import('./views/lifecycle/offboarding/OffboardingBoard').then((m) => ({ default: m.OffboardingBoard })),
   exit_insights: () => import('./views/lifecycle/offboarding/ExitInsights').then((m) => ({ default: m.ExitInsights })),
   peopletasks: () => import('./views/PeopleTasks').then((m) => ({ default: m.PeopleTasks })),

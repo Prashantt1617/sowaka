@@ -20,6 +20,7 @@ import { authSessions, closeDb, connectDb, connectPosts, deviceTokens, getDb, no
 import { env } from '../config/env';
 import type { ConnectPost } from '../models/connect.model';
 import { hashSessionToken } from '../services/auth.service';
+import { pushPictureName } from '../services/media-lookup';
 import { notifyPostPublished } from '../services/connect-notifications.service';
 import { closingCopy, resultsCopy, runContestNotifications, timeLeft } from '../services/contest-notifications.service';
 import {
@@ -206,8 +207,9 @@ const content = (over: Partial<PushContent> = {}): PushContent => ({
     console.log('pictures');
     const prefix = env.s3.connectMediaPrefix.replace(/^\/+|\/+$/g, '');
     const key = `${prefix}/hr/2026/11/abc-cover.jpg`;
-    check('a Connect key is the public /media link at 1080 px', pictureUrl(key) === `${env.publicApiUrl}/media/${encodeURIComponent(key)}?w=1080`, pictureUrl(key));
-    check('a Mongo-held picture too', (pictureUrl('mongo/123') ?? '').endsWith('/media/mongo%2F123?w=1080'));
+    check('a Connect key is the public /media link at 1080 px, named for its type', pictureUrl(key) === `${env.publicApiUrl}/media/${encodeURIComponent(key)}?w=1080&push=1`, pictureUrl(key));
+    check('a Mongo-held picture too', (pictureUrl('mongo/123') ?? '').endsWith('/media/mongo%2F123?w=1080&push=1'));
+    check('a push picture is named for what is sent, not what was uploaded', pushPictureName('image/jpeg') === 'picture.jpg' && pushPictureName('image/png') === 'picture.png');
     check('a key outside Connect media (a receipt) is no picture', pictureUrl('reimbursements/receipts/x.jpg') === null);
     check('an https link passes', pictureUrl('https://cdn.example/banner.jpg') === 'https://cdn.example/banner.jpg');
     check('a bundled asset is no picture', pictureUrl('assets/games/pool.png') === null);
@@ -320,7 +322,22 @@ const content = (over: Partial<PushContent> = {}): PushContent => ({
     reply = await call(null, 'GET', '/notifications/sounds/file/00000000-0000-0000-0000-000000000000');
     check('an unknown sound is 404', reply.status === 404);
 
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+    const pictureForm = new FormData();
+    pictureForm.append('file', new Blob([new Uint8Array(png)], { type: 'image/png' }), 'banner.png');
+    reply = await call('hr', 'POST', '/admin/notification-look/pictures', pictureForm);
+    check('an admin uploads a picture', reply.status === 201 && typeof reply.body.objectKey === 'string' && String(reply.body.url).startsWith('/media/'), reply);
+    const pictureKey = String(reply.body.objectKey);
+    const served = await fetch(`${base}${new URL(pictureUrl(pictureKey)!).pathname}${new URL(pictureUrl(pictureKey)!).search}`);
+    check('its push link is served without sign-in, named for its type', served.status === 200 && served.headers.get('content-disposition') === `inline; filename="${pushPictureName(served.headers.get('content-type') ?? '')}"`, [served.status, served.headers.get('content-disposition')]);
+    const feedServed = await fetch(`${base}/media/${encodeURIComponent(pictureKey)}?w=720`);
+    check('the feed’s own link is unchanged (no file name)', feedServed.status === 200 && feedServed.headers.get('content-disposition') === null);
+    const gif = new FormData();
+    gif.append('file', new Blob([new Uint8Array(Buffer.from('GIF89a........'))], { type: 'image/gif' }), 'x.gif');
+    reply = await call('hr', 'POST', '/admin/notification-look/pictures', gif);
+    check('a picture that is not JPEG or PNG is refused', reply.status === 400, reply);
     reply = await call('hr', 'PUT', '/admin/notification-look', { kinds: {
+      cup_champion: { enabled: true, sound: 'fanfare', ownPicture: false, pictureKey },
       contest_closing: { enabled: true, sound: 'tick', ownPicture: true, pictureKey: 'mongo/closing-fallback' },
       cup_lobby: { enabled: true, sound: 'diwali_drum', ownPicture: true, pictureKey: null },
       other: { enabled: true, sound: 'pop', ownPicture: true, pictureKey: null },

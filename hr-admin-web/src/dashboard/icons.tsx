@@ -404,6 +404,13 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M16 8l4 4-4 4M20 12H10" />
     </svg>
   ),
+  // A bell with a note, for Notification sounds and pictures.
+  notificationlook: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16z" />
+      <path d="M10 20.5a2 2 0 0 0 4 0" />
+    </svg>
+  ),
   // A door, for the Offboarding board.
   offboarding: (
     <svg {...base(18, 'currentColor')}>

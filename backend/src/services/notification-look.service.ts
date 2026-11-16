@@ -341,14 +341,15 @@ function mediaKeyAllowed(key: string) {
   return key.startsWith('mongo/') || isConnectMediaKey(key);
 }
 
-/** The link a phone fetches the picture from, with no sign-in: `/media/<key>` at the 1080 px copy. */
+/** The link a phone fetches the picture from, with no sign-in: `/media/<key>` at the 1080 px copy, named for its type. */
 export function pictureUrl(keyOrUrl: string | null | undefined): string | null {
   const value = String(keyOrUrl ?? '').trim();
   if (!value) return null;
   if (value.startsWith('https://')) return value;
   if (value.startsWith('/media/')) return `${env.publicApiUrl}${value}`;
   if (!mediaKeyAllowed(value)) return null;
-  return `${env.publicApiUrl}${mediaPath(value, 1080)}`;
+  // `push=1`: served under a file name that says its real type (see pushPictureName).
+  return `${env.publicApiUrl}${mediaPath(value, 1080)}&push=1`;
 }
 
 /** The post's or event's own picture when the look takes it and there is one, else the look's own. */
@@ -515,12 +516,13 @@ export async function setNotificationLook(org: string, userId: string, kinds: Re
   return adminNotificationLook(org);
 }
 
-const PICTURE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+/** JPEG and PNG only: what an iPhone attaches to a notification without fuss. */
+const PICTURE_TYPES = new Set(['image/jpeg', 'image/png']);
 export const MAX_PICTURE_BYTES = 5 * 1024 * 1024;
 
 /** A picture for a kind, kept like a post's photo (with the smaller copies a push links to). */
 export async function uploadNotificationPicture(userId: string, file: { originalName: string; contentType: string; bytes: Buffer }) {
-  if (!PICTURE_TYPES.has(file.contentType)) throw new NotificationLookError(400, 'A picture must be a JPEG, PNG or WebP');
+  if (!PICTURE_TYPES.has(file.contentType)) throw new NotificationLookError(400, 'A picture must be a JPEG or PNG');
   if (file.bytes.length > MAX_PICTURE_BYTES) throw new NotificationLookError(413, 'A picture must be 5 MB or smaller');
   const stored = await uploadConnectMedia(
     userId,

@@ -6,6 +6,7 @@ import { requestedWidth } from '../services/image-fit';
 import {
   mediaCacheControl,
   mediaCandidates,
+  pushPictureName,
   rememberMissingCopy,
   type MediaCandidate,
 } from '../services/media-lookup';
@@ -89,6 +90,7 @@ mediaRouter.get('/:key', async (req, res, next) => {
         return;
       }
       res.setHeader('Content-Type', object.contentType);
+      if (req.query.push === '1') res.setHeader('Content-Disposition', `inline; filename="${pushPictureName(object.contentType)}"`);
       res.setHeader('Accept-Ranges', 'bytes');
       if (object.contentLength != null) {
         res.setHeader('Content-Length', String(object.contentLength));
@@ -127,6 +129,7 @@ mediaRouter.get('/:key', async (req, res, next) => {
     const bytes = media.bytes as unknown as { buffer: ArrayBuffer } | Buffer;
     const body = Buffer.isBuffer(bytes) ? bytes : Buffer.from((bytes as { buffer: ArrayBuffer }).buffer);
     res.setHeader('Content-Type', media.contentType);
+    if (req.query.push === '1') res.setHeader('Content-Disposition', `inline; filename="${pushPictureName(media.contentType)}"`);
     res.setHeader('Accept-Ranges', 'bytes');
     // Content is immutable per key, so let clients cache it hard rather than
     // refetching megabytes on every feed render.
