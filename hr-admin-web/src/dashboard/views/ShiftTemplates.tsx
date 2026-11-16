@@ -325,7 +325,7 @@ export function ShiftTemplates() {
   })();
 
   return (
-    <div className="pd-form" style={{ maxWidth: 880 }}>
+    <div className="pd-form" style={{ maxWidth: tab === 'template' ? 880 : 1180 }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
         <button onClick={() => setMode({ kind: 'list' })} className="pd-btn ghost sm" style={{ marginLeft: -12 }}>← All templates</button>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>

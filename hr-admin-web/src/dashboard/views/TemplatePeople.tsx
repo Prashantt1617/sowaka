@@ -7,13 +7,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useStore } from '../store';
 import type { Emp } from '../seed';
-import { Avatar, Pill, SearchInput, Th } from '../ui';
+import { Avatar, SearchInput, Th } from '../ui';
 import { TH, TR, cellName, cellSub, note as noteBox } from '../ds';
 import { smartPeopleSearch } from '../../services/hrms';
 import { applyPeopleFilter, chipsOf, EMPTY_FILTER, isEmptyFilter, mergeFilters, parsePeopleQuery } from '../peopleQuery';
 import type { FilterChip, PeopleFilter } from '../peopleQuery';
 
-const COLS = '36px 1.6fr 1fr 1fr 1fr 1.2fr';
+const EDIT_COLS = '20px 1.5fr 0.8fr 1fr 0.9fr 0.9fr';
 const PAGE = 50;
 
 /** Where someone is now, for the Edit employees list. */
@@ -158,25 +158,48 @@ export function TemplateEditPeople({
       </div>
       {moving > 0 && <div style={{ fontSize: 12.5, color: 'var(--warn)' }}>{moving} of them {moving === 1 ? 'is' : 'are'} on another template now and will move to this one.</div>}
 
-      <div style={{ overflowX: 'auto' }}>
-        <div style={{ minWidth: 760 }}>
-          <div style={TH(COLS)}><span /><Th>EMPLOYEE</Th><Th>TEAM</Th><Th>DESIGNATION</Th><Th>REPORTS TO</Th><Th>NOW</Th></div>
-          {list.length === 0 && <div style={{ ...TR(COLS), color: 'var(--ink-3)', display: 'block' }}>Nobody matches.</div>}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 220px', gap: 16, alignItems: 'start' }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={TH(EDIT_COLS)}><span /><Th>EMPLOYEE</Th><Th>TEAM</Th><Th>DESIGNATION</Th><Th>REPORTS TO</Th><Th>NOW</Th></div>
+          {list.length === 0 && <div style={{ ...TR(EDIT_COLS), color: 'var(--ink-3)', display: 'block' }}>Nobody matches.</div>}
           {list.slice(0, limit).map((e, i) => {
             const p = placement(e);
             return (
-              <label key={e.id} className="dc-row" style={{ ...TR(COLS, i === Math.min(limit, list.length) - 1), cursor: 'pointer' }}>
-                <input type="checkbox" checked={picked.has(e.id)} onChange={() => toggle(e.id)} style={tick} aria-label={`Tick ${e.name}`} />
+              <label key={e.id} className="dc-row" style={{ ...TR(EDIT_COLS, i === Math.min(limit, list.length) - 1), alignItems: 'start', cursor: 'pointer' }}>
+                <input type="checkbox" checked={picked.has(e.id)} onChange={() => toggle(e.id)} style={{ ...tick, marginTop: 7 }} aria-label={`Tick ${e.name}`} />
                 <Person e={e} />
-                <span style={cellText}>{e.team || '—'}</span>
-                <span style={cellText}>{e.role || '—'}</span>
-                <span style={cellText}>{e.manager || '—'}</span>
-                <span>{p.on ? <Pill label="On this template" tone={{ bg: 'var(--ok-bg)', fg: 'var(--ok)' }} /> : p.elsewhere ? <span style={{ ...cellSub, fontSize: 12.5 }}>{p.elsewhere}</span> : <span style={{ ...cellSub, fontSize: 12.5 }}>None</span>}</span>
+                <span style={wrapText}>{e.team || '—'}</span>
+                <span style={wrapText}>{e.role || '—'}</span>
+                <span style={wrapText}>{e.manager || '—'}</span>
+                <span style={{ ...wrapText, fontSize: 12.5, color: p.on ? 'var(--ok)' : 'var(--ink-3)', fontWeight: p.on ? 500 : 400 }}>{p.on ? 'On this template' : p.elsewhere ?? 'None'}</span>
               </label>
             );
           })}
           {list.length > limit && <div style={{ padding: '12px 0' }}><button type="button" onClick={() => setLimit((n) => n + PAGE)} className="pd-btn sm">Show {Math.min(PAGE, list.length - limit)} more</button></div>}
         </div>
+
+        {/* Everyone ticked, wherever the search has moved since: the cart. */}
+        <aside id="people-cart" style={{ position: 'sticky', top: 12, border: '1px solid var(--line)', borderRadius: 14, background: 'var(--surface-2)', padding: '12px 12px 8px', display: 'grid', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>Ticked</span>
+            <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{picked.size}</span>
+            <span style={{ flex: 1 }} />
+            {picked.size > 0 && <button type="button" onClick={() => setPicked(new Set())} className="pd-btn ghost sm" style={{ height: 24, padding: '0 6px', fontSize: 12 }}>Clear</button>}
+          </div>
+          {picked.size === 0 && <div style={{ fontSize: 12.5, color: 'var(--ink-3)', lineHeight: 1.45, paddingBottom: 6 }}>Tick people in the list; they collect here.</div>}
+          <div style={{ display: 'grid', gap: 2, maxHeight: 420, overflowY: 'auto' }}>
+            {ids.map((id) => {
+              const e = emps.find((x) => x.id === id);
+              if (!e) return null;
+              return (
+                <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 2px', fontSize: 13, color: 'var(--ink)' }}>
+                  <span style={{ flex: 1, minWidth: 0, lineHeight: 1.35 }}>{e.name}</span>
+                  <button type="button" aria-label={`Untick ${e.name}`} onClick={() => toggle(id)} style={{ ...chipX, color: 'var(--ink-3)' }}>×</button>
+                </div>
+              );
+            })}
+          </div>
+        </aside>
       </div>
     </section>
   );
@@ -219,6 +242,8 @@ function Person({ e }: { e: Emp }) {
 }
 
 const cellText = { fontSize: 13.5, color: 'var(--ink)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const;
+/** Long values wrap onto a second line instead of being cut off. */
+const wrapText = { fontSize: 13, lineHeight: 1.4, color: 'var(--ink)', minWidth: 0, whiteSpace: 'normal', overflowWrap: 'anywhere' } as const;
 const tick = { width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer', flexShrink: 0 } as const;
 const chip = { display: 'inline-flex', alignItems: 'center', gap: 4, height: 26, padding: '0 4px 0 10px', borderRadius: 999, fontSize: 12.5, fontWeight: 500, background: 'var(--accent-soft)', color: 'var(--accent-ink)' } as const;
 const chipX = { width: 20, height: 20, border: 'none', background: 'none', color: 'inherit', cursor: 'pointer', fontSize: 15, lineHeight: 1, borderRadius: 999, padding: 0 } as const;

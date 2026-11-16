@@ -106,7 +106,7 @@ export function TemplateDetailModal({
       subtitle={template.description || `${template.parameterIds.length} parameters`}
       backLabel="Back to templates"
       onBack={onBack}
-      width={900}
+      width={tab === 'template' ? 900 : 1180}
       actions={
         <>
           {/* Hidden rather than disabled: a template with assignments can never
