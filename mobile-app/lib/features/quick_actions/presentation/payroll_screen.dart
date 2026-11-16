@@ -245,6 +245,7 @@ String _monthSpan(DateTime? from, DateTime? to) {
 class _PrPill extends StatelessWidget {
   const _PrPill(
     this.text, {
+    super.key,
     required this.color,
     required this.tint,
     this.icon,

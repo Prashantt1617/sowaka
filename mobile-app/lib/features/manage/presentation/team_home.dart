@@ -20,6 +20,17 @@ class _TeamHome extends StatefulWidget {
 }
 
 class _TeamHomeState extends State<_TeamHome> {
+  /// Resignations waiting on this manager count with their requests (R7).
+  late final OffboardingStore _offboarding = OffboardingStore.of(
+    widget.bloc.session,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_offboarding.ensureLoaded());
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = widget.state.dashboard!;
@@ -54,11 +65,15 @@ class _TeamHomeState extends State<_TeamHome> {
                 // would have sat, so the header meets the page background the
                 // way it does on the Apply Leave and Reimbursement screens.
                 if (canManage)
-                  _TeamSectionBar(
-                    data: data,
-                    section: section,
-                    onChanged: (value) =>
-                        widget.bloc.add(ShowTeamSection(value)),
+                  ListenableBuilder(
+                    listenable: _offboarding,
+                    builder: (context, _) => _TeamSectionBar(
+                      data: data,
+                      section: section,
+                      onChanged: (value) =>
+                          widget.bloc.add(ShowTeamSection(value)),
+                      extraRequests: _offboarding.pendingForManager,
+                    ),
                   ),
               ],
             ),
@@ -132,11 +147,16 @@ class _TeamSectionBar extends StatelessWidget {
     required this.data,
     required this.section,
     required this.onChanged,
+    this.extraRequests = 0,
   });
 
   final ManagerDashboard data;
   final TeamSection section;
   final ValueChanged<TeamSection> onChanged;
+
+  /// Requests from outside the workspace: resignations waiting on the
+  /// manager.
+  final int extraRequests;
 
   @override
   Widget build(BuildContext context) {
@@ -161,7 +181,7 @@ class _TeamSectionBar extends StatelessWidget {
             Expanded(
               child: _SegmentTab(
                 label: 'Requests',
-                count: _pendingTeamRequests(data),
+                count: _pendingTeamRequests(data) + extraRequests,
                 selected: section == TeamSection.requests,
                 onTap: () => onChanged(TeamSection.requests),
               ),
@@ -1178,6 +1198,28 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
   _RequestViewMode _mode = _RequestViewMode.newestFirst;
   String _query = '';
 
+  /// Reports' resignations (R7), on their own cards above the rest.
+  late final OffboardingStore _offboarding = OffboardingStore.of(
+    widget.bloc.session,
+  );
+
+  void _offboardingChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _offboarding.addListener(_offboardingChanged);
+    unawaited(_offboarding.ensureLoaded());
+  }
+
+  @override
+  void dispose() {
+    _offboarding.removeListener(_offboardingChanged);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
@@ -1489,7 +1531,12 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
             hint: 'Search employee',
           ),
           const SizedBox(height: 14),
-          if (filtered.isEmpty)
+          // Resignations are not leave, overtime or corrections: they show
+          // under "All" only.
+          if (_mode == _RequestViewMode.newestFirst ||
+              _mode == _RequestViewMode.oldestFirst)
+            ManagerResignationRequests(store: _offboarding, query: _query),
+          if (filtered.isEmpty && !_showsResignations)
             _RequestsEmptyState(
               title: entries.isEmpty
                   ? 'Currently you have no request'
@@ -1507,6 +1554,22 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
             ],
         ],
       ),
+    );
+  }
+}
+
+extension on _TeamRequestsViewState {
+  /// Whether any resignation card is on screen, so the empty state stays off.
+  bool get _showsResignations {
+    if (_mode != _RequestViewMode.newestFirst &&
+        _mode != _RequestViewMode.oldestFirst) {
+      return false;
+    }
+    final needle = _query.trim().toLowerCase();
+    return _offboarding.managerResignations.any(
+      (r) =>
+          !r.accepted &&
+          (needle.isEmpty || (r.name ?? '').toLowerCase().contains(needle)),
     );
   }
 }
