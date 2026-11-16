@@ -84,8 +84,9 @@ export const celebrantOf = (post: ConnectPost): string =>
     ? String((post.body as { personUserId?: unknown }).personUserId ?? '')
     : '';
 
+/** A post's title; a contest with none goes by its task (Best Photo has no title of its own). */
 const titleOf = (post: ConnectPost): string =>
-  String(post.body.title ?? post.body.text ?? 'a post').slice(0, 80);
+  String(post.body.title || (post.body as { task?: unknown }).task || post.body.text || 'a post').trim().slice(0, 80);
 
 /**
  * Everyone who can see the post — the audience a notification may reach.

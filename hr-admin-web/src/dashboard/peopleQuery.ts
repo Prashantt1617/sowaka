@@ -45,6 +45,8 @@ export function parsePeopleQuery(query: string, emps: Emp[], now = new Date()): 
   let q = norm(query);
   const f: PeopleFilter = { ...EMPTY_FILTER, departments: [], designations: [], locations: [], managerIds: [], types: [], genders: [], ids: [] };
   const chips: FilterChip[] = [];
+  // Nothing typed: no filters at all.
+  if (!q.trim()) return { filter: f, chips, leftover: '' };
   const take = (pattern: RegExp) => { q = q.replace(pattern, ' '); };
   const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const phrase = (value: string) => new RegExp(`\\s${escape(norm(value).trim()).replace(/\s+/g, '\\s+')}(?:s)?\\s`);
@@ -61,7 +63,7 @@ export function parsePeopleQuery(query: string, emps: Emp[], now = new Date()): 
   // —— Their manager: "under Ravi", "reporting to Ravi Kumar", "Ravi's team", "managed by Ravi".
   const managers = new Map<string, Emp>();
   for (const e of emps) if (e.managerId) { const m = emps.find((x) => x.id === e.managerId); if (m) managers.set(m.id, m); }
-  const byLength = [...managers.values()].flatMap((m) => [{ m, key: m.name }, { m, key: m.name.split(/\s+/)[0] }]).sort((a, b) => b.key.length - a.key.length);
+  const byLength = [...managers.values()].flatMap((m) => [{ m, key: m.name }, { m, key: m.name.split(/\s+/)[0] }]).filter((x) => norm(x.key).trim()).sort((a, b) => b.key.length - a.key.length);
   for (const { m, key } of byLength) {
     if (f.managerIds.includes(m.id)) continue;
     const k = escape(norm(key).trim()).replace(/\s+/g, '\\s+');
@@ -75,6 +77,8 @@ export function parsePeopleQuery(query: string, emps: Emp[], now = new Date()): 
   // —— Values the company has: teams, designations, locations (longest first, so "Senior 3D Artist" wins over "3D").
   const facet = (values: string[], into: string[], label: (v: string) => string, key: string) => {
     for (const v of distinct(values).sort((a, b) => b.length - a.length)) {
+      // A blank or a placeholder ("—", "-", "NA") is no value: it would match any query.
+      if (!norm(v).trim() || /^(na|n a|none|nil)$/.test(norm(v).trim())) continue;
       // A value that is only common words ("Employee", "Manager") would match every query that says them.
       if (norm(v).trim().split(' ').every((w) => STOP.has(w) || STOP.has(w.replace(/s$/, '')))) continue;
       const re = phrase(v);
@@ -126,6 +130,7 @@ export function parsePeopleQuery(query: string, emps: Emp[], now = new Date()): 
 
   // —— People named outright (a full name, or a first name only one person has).
   for (const e of [...emps].sort((a, b) => b.name.length - a.name.length)) {
+    if (!norm(e.name).trim()) continue;
     const re = phrase(e.name);
     if (re.test(q)) { f.ids.push(e.id); take(new RegExp(re.source, 'g')); chips.push({ key: `id:${e.id}`, label: e.name, without: (x) => ({ ...x, ids: x.ids.filter((id) => id !== e.id) }) }); }
   }
