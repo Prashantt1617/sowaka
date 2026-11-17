@@ -1235,6 +1235,22 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
     }
     eq('slim read = full read: offboarding count', JSON.stringify(await off.offboardingCount('hr', new Date(), { fresh: true })), JSON.stringify(await off.offboardingCount('hr', new Date(), { full: true })));
 
+    // The manager home (GET /manager/workspace): the company roster is kept, today's punches never are.
+    const wsTeam = async () => (await get('mgr', '/manager/workspace')).team as Json[];
+    const member = (await wsTeam()).find((m) => m.reportsToViewer && !m.isSelf && !m.punchIn);
+    ok('the manager home lists a report not punched in yet', !!member, (await wsTeam()).map((m) => [m.name, m.punchIn]));
+    if (member) {
+      const who = await users().findOne({ userId: member.userId as string });
+      const day = new Date().toISOString().slice(0, 10);
+      // Written the way a punch lands (not a dashboard request): nothing to drop, and the next read still shows it.
+      await db.attendanceRecords().insertOne({ org: ORG, userId: who!.userId, employeeId: who!.employeeId, workDate: day, punchIn: new Date(), source: 'manual', sourceKey: `cache-check|${who!.userId}|${day}` } as never);
+      eq('a punch is on the very next read of the manager home', Boolean((await wsTeam()).find((m) => m.userId === member.userId)?.punchIn), true);
+      // HR may edit people only with this switch (People › Accesses); granted here as setup.
+      await users().updateOne({ userId: 'hr' }, { $set: { canEditEmployeeDetails: true } });
+      await send('hr', 'PATCH', `/admin/employees/${member.userId}`, { designation: 'Cache tester' });
+      eq('HR\u2019s change to a report (through the API) is on the next read of the manager home', (await wsTeam()).find((m) => m.userId === member.userId)?.designation, 'Cache tester');
+    }
+
     // A day job (no request) changes a journey: the next read sees it.
     const jobsBefore = await boardSvc.boardData(ORG);
     await jobs.runLifecycleJobs(new Date(), { full: true });

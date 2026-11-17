@@ -21,7 +21,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { cachedSwr, dropSwr, refreshSwr, type SwrKind } from '../swr-cache';
 
-export const LIFECYCLE_READ_KINDS: SwrKind[] = ['lc-board-data', 'off-board-data', 'suwi-notices'];
+export const LIFECYCLE_READ_KINDS: SwrKind[] = ['lc-board-data', 'off-board-data', 'suwi-notices', 'mgr-roster'];
 
 /**
  * Off until the API server switches it on (server.ts). Scripts and checks call the services
