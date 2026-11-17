@@ -144,7 +144,8 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   const closed = ['declined', 'expired', 'not_joining'].includes(status);
   const today = todayKey();
   const canJoin = PRE_JOIN.has(status) && status !== 'draft' && status !== 'offer_sent' && status !== 'accepted' && Boolean(journey.tj) && journey.tj! <= today;
-  const waiting = tasks.filter((t) => OPEN.has(t.status) && (!t.opensAt || t.opensAt.slice(0, 10) <= today))
+  // As the board's waiting-on: optional things with no date (asking for another joining day) wait on nobody.
+  const waiting = tasks.filter((t) => OPEN.has(t.status) && (!t.opensAt || t.opensAt.slice(0, 10) <= today) && (t.mustDo || Boolean(t.dueAt)))
     .sort((a, b) => String(a.dueAt ?? '9999').localeCompare(String(b.dueAt ?? '9999'))).slice(0, 6);
   const approved = documents.filter((d) => d.status === 'approved').length;
   const reviewQueue = documents.filter((d) => d.status === 'in_review').length;
