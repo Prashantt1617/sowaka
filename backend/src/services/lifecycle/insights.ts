@@ -45,11 +45,20 @@ export async function exitInsights(actorUserId: string, query: { from?: string; 
   // Everyone offered an exit interview in these dates: the leavers whose exit has one (or who answered),
   // and people still on notice who already answered (the interview opens before the last day). Each
   // answers at most once, so the answers never outnumber them.
+  // The answers are anonymous and dated by month only, so the people offered are counted over the same
+  // whole months: from the first of `from`'s month to the end of `to`'s month (not past today). Counted
+  // over exact days instead, someone who left earlier in the first month was not "offered" while their
+  // answer was counted, and the answers outnumbered the people offered.
+  const monthFrom = `${from.slice(0, 7)}-01`;
+  const monthEnd = addDays(`${addDays(`${to.slice(0, 7)}-01`, 32).slice(0, 7)}-01`, -1);
+  const monthUntil = monthEnd < today ? monthEnd : today;
+  const offeredLeavers = monthFrom === from && monthUntil === until ? leavers
+    : await users().find({ org, 'exit.lastWorkingDay': { $gte: monthFrom, $lte: monthUntil } }, { projection }).toArray();
   const answeredOnNotice = await users().find({
-    org, 'exit.lastWorkingDay': { $gt: until },
-    'exit.interview.filledAt': { $gte: new Date(`${from}T00:00:00+05:30`), $lte: new Date(`${until}T23:59:59.999+05:30`) },
+    org, 'exit.lastWorkingDay': { $gt: monthUntil },
+    'exit.interview.filledAt': { $gte: new Date(`${monthFrom}T00:00:00+05:30`), $lte: new Date(`${monthUntil}T23:59:59.999+05:30`) },
   }, { projection }).toArray();
-  const offeredPeople = [...leavers.filter((u) => interviewApplies(u.exit?.offboarding) || !!u.exit?.interview), ...answeredOnNotice];
+  const offeredPeople = [...offeredLeavers.filter((u) => interviewApplies(u.exit?.offboarding) || !!u.exit?.interview), ...answeredOnNotice];
   const rows = await surveyResponses().find({ org, kind: 'exit', month: { $gte: from.slice(0, 7), $lte: to.slice(0, 7) } }, { projection: { _id: 0, department: 1, tenureBand: 1, answers: 1, theme: 1 } }).toArray() as Array<Pick<SurveyResponse, 'department' | 'tenureBand' | 'answers' | 'theme'>>;
 
   const resigned = leavers.filter((u) => u.exit?.kind === 'resigned').length;

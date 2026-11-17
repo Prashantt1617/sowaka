@@ -10,7 +10,7 @@ import { companies, users } from '../../config/db';
 import { refreshBoardData } from './board';
 import { refreshOffBoardData } from './offboarding';
 import { refreshWorkspaceRoster } from '../manager.service';
-import { lifecycleReadCacheOn } from './readCache';
+import { lifecycleReadCacheOn, setLifecycleRewarm } from './readCache';
 import { settingsFor } from '../../suwi/store';
 import { contextFor } from '../../suwi/tools';
 import { suwiNotices } from '../../suwi/notices';
@@ -47,3 +47,6 @@ export async function warmLifecycle(org: string, isStopping: () => boolean = () 
   }
   return took;
 }
+
+// A company's kept answers dropped by a change are rebuilt shortly after (readCache.scheduleRewarm).
+setLifecycleRewarm((org) => warmLifecycle(org));

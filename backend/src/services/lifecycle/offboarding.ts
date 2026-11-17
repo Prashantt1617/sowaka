@@ -914,6 +914,7 @@ export async function offboardingDetail(actorUserId: string, employeeUserId: str
     if (ob?.noticeHandling) details.push({ label: 'Notice', value: NOTICE_HANDLING_LABEL[ob.noticeHandling] ?? ob.noticeHandling });
     if (e.note) details.push({ label: 'HR note', value: e.note });
     if (ctx.journey) details.push({ label: 'Template', value: ctx.journey.templateSnapshot?.name ?? 'Standard' });
+    details.push({ label: 'App access ends', value: accessEndsLabel(e.rules?.access, ctx.journey) });
     if (ctx.handover.length) details.push({ label: 'Handover', value: `${uploaded} of ${ctx.handover.length} uploaded` });
     details.push({ label: 'Exit interview', value: !interview.applies ? (e.interview ? 'Filled by HR' : 'Not part of this exit') : interview.sent ? 'Sent' : interview.open ? 'Opened, not sent' : `Opens ${shortDay(opens!)}` });
     details.push({ label: 'Service', value: serviceText(joined, e.lastWorkingDay) });
@@ -1519,6 +1520,17 @@ export async function markHandoverDone(managerUserId: string, leaverUserId: stri
   const item = clearanceOf(leaver.exit).find((c) => c.team === 'manager');
   if (item && !item.done) await tickClearanceItem(leaver.org, leaver, item.key, true, manager.name, {}, now);
   return managerLeaver(managerUserId, leaverUserId, now);
+}
+
+/**
+ * When the app closes for this exit, as it will actually happen: the exit's rules say at once or never,
+ * else the exit's template decides between the end of shift on the last day and the day after
+ * (closesAtEndOfShift reads the same template snapshot), so a template picked at accept shows here.
+ */
+export function accessEndsLabel(access: string | undefined, journey: Pick<Journey, 'templateSnapshot'> | null | undefined): string {
+  if (access === 'never') return 'Kept';
+  if (access === 'at_once') return 'At once';
+  return journey?.templateSnapshot?.settings?.accountCloses === 'tl_end_of_shift' ? 'Last day, end of shift' : 'The day after the last day';
 }
 
 // ———————————————————————————————————————————————— timed jobs

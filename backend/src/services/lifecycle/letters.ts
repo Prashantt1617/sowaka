@@ -652,15 +652,19 @@ export async function outdateChangedLetters(journeyId: string, now = new Date())
     // Only the fields this letter states (its template's placeholders): an NDA does not name the joining date.
     const body = (await letterTemplates().findOne({ id: newest.templateId }, { projection: { _id: 0, body: 1 } }))?.body;
     const used = body ? new Set([...body.matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map((m) => m[1])) : new Set(REQUIRED_FIELDS[kind]);
-    const fields = [...used].filter((k) => !DAY_KEYS.has(k) && (newest.values[k] ?? '') !== (values[k] ?? ''));
+    // Values HR typed on the letter that nothing merges (a company address the profile lacks) are not a
+    // change: a field counts only when the offer or profile now gives a value and it differs. Those typed
+    // values carry over to the redraft.
+    const typed: Record<string, string> = {};
+    for (const k of used) if (!DAY_KEYS.has(k) && !(values[k] ?? '').trim() && (newest.values[k] ?? '').trim()) typed[k] = newest.values[k];
+    const fields = [...used].filter((k) => !DAY_KEYS.has(k) && !(k in typed) && (newest.values[k] ?? '') !== (values[k] ?? ''));
     if (!fields.length) continue;
     changed.push({ kind, fields });
     if (!newest.signature) {
-      values.refNo = newest.refNo;
-      await letters().updateOne({ id: newest.id }, { $set: { values }, $unset: { pdfFileId: '', openedAt: '' } });
+      await letters().updateOne({ id: newest.id }, { $set: { values: { ...values, ...typed, refNo: newest.refNo } }, $unset: { pdfFileId: '', openedAt: '' } });
     } else {
       await letters().updateOne({ id: newest.id }, { $set: { outdatedAt: now, outdatedFields: fields } });
-      await createLetter({ org: journey.org, name: hrName }, { kind, journeyId });
+      await createLetter({ org: journey.org, name: hrName }, { kind, journeyId, templateId: newest.templateId, values: typed });
     }
   }
   if (changed.length) {

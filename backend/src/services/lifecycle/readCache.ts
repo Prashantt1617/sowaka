@@ -38,7 +38,35 @@ export const lifecycleReadCacheOn = () => enabled;
 /** Drop the kept lifecycle and Suwi answers of one org, or of every org (`null`). */
 export function forgetLifecycleReads(org: string | null): void {
   dropSwr(org, LIFECYCLE_READ_KINDS);
+  if (org) scheduleRewarm(org);
 }
+
+/**
+ * After a change drops a company's kept answers, they are worked out again a few seconds later in the
+ * background, so the next viewer (often a limited-role HR) finds them ready instead of paying the cold
+ * read. Coalesced per company: a burst of writes makes one rebuild, 3 s after the last. A rebuild that
+ * began before a later write is not kept (swr-cache's generation), so nothing stale is ever served.
+ * The work itself is the warm-up's (warm.ts registers it, which keeps this file free of imports).
+ */
+const REWARM_MS = 3_000;
+const rewarmTimers = new Map<string, NodeJS.Timeout>();
+let rewarm: ((org: string) => Promise<unknown>) | null = null;
+export function setLifecycleRewarm(fn: ((org: string) => Promise<unknown>) | null): void {
+  rewarm = fn;
+}
+export function scheduleRewarm(org: string): void {
+  if (!enabled || !rewarm) return;
+  const before = rewarmTimers.get(org);
+  if (before) clearTimeout(before);
+  const timer = setTimeout(() => {
+    rewarmTimers.delete(org);
+    rewarm?.(org).catch(() => undefined);
+  }, REWARM_MS);
+  timer.unref();
+  rewarmTimers.set(org, timer);
+}
+/** For checks: the companies with a rebuild waiting. */
+export const pendingRewarms = () => [...rewarmTimers.keys()];
 
 /** The kept answer for this org and kind, or `load()`'s. */
 export function cachedLifecycle<T>(org: string, kind: SwrKind, params: unknown, load: () => Promise<T>): Promise<T> {
@@ -85,6 +113,7 @@ export function forgetReadsOnWrite(req: Request, res: Response, next: NextFuncti
     dropped = true;
     const org = (req as Request & { auth?: { user?: { org?: string } } }).auth?.user?.org;
     dropSwr(org || null, kinds);
+    if (org) scheduleRewarm(org);
   };
   const end = res.end.bind(res) as (...args: unknown[]) => Response;
   // res.json and res.send both finish in res.end; dropping there covers every way out.

@@ -49,8 +49,16 @@ export async function listAllFeedbackForAdmin(adminUserId: string) {
 }
 
 /** Org-wide employee directory, for the HR dashboard. */
+/** The fields the dashboard's employee list renders (whole records carry payroll, exit and face data it never shows). */
+const EMPLOYEE_LIST_FIELDS = [
+  'userId', 'name', 'email', 'profilePhotoKey', 'profilePhotoUrl', 'documents', 'department', 'designation', 'state', 'role',
+  'isLeadership', 'dashboardAccess', 'overtimeEligible', 'managerUserId', 'lifecycleStatus',
+  'exit.lastWorkingDay', 'exit.kind', 'exit.accessEndedAt', 'employeeId', 'location', 'branch', 'recognition.label',
+  'employeeType', 'joiningDate', 'birthday', 'gender', 'phone', 'isDirector',
+];
+
 export async function listAllEmployeesForAdmin(adminUserId: string) {
-  const employees = await orgUsers(adminUserId);
+  const employees = await orgUsers(adminUserId, EMPLOYEE_LIST_FIELDS);
   const nameById = new Map(employees.map((e) => [e.userId, e.name]));
   // Presigning is local arithmetic, not a round trip, so the whole roster's
   // photos resolve in one pass without slowing the directory down.
