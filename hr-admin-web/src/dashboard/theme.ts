@@ -50,6 +50,7 @@ export type View =
   | 'employeeimport'
   | 'exits'
   | 'exitsettings'
+  | 'notificationlook'
   | 'offboarding'
   | 'exit_insights'
   | 'peopletasks'
@@ -205,6 +206,7 @@ export const TITLES: Record<View, [string, string]> = {
   employees: ['Employees', 'People'],
   exits: ['Exits', 'People · who is leaving, and who has left'],
   exitsettings: ['Exit settings', 'Setup'],
+  notificationlook: ['Notification sounds and pictures', 'Setup · how each kind of notification sounds and looks on phones'],
   offboarding: ['Offboarding', 'Employee lifecycle · everyone leaving, from resignation to final settlement'],
   exit_insights: ['Exit insights', 'Employee lifecycle · why people leave, anonymised'],
   employeeimport: ['Import employees', 'People · update details from a sheet, approved before it saves'],

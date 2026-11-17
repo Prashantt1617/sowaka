@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from 'express';
 import { listNotificationRows, listUnreadNotificationRows, withoutDeletedPosts, markAllNotificationsRead, markNotificationRead, registerDeviceToken, sendTestPush, unregisterDeviceToken } from '../services/notification.service';
 import { resolveNotifications, withoutEndedGames } from '../services/notification-resolution.service';
 import { optional } from '../utils/optional';
+import { readNotificationSound, soundManifest } from '../services/notification-look.service';
 
 const userId = (req: Request) => req.auth!.userId;
 export async function testNotification(req: Request, res: Response, next: NextFunction) {
@@ -10,7 +11,7 @@ export async function testNotification(req: Request, res: Response, next: NextFu
   } catch (error) { next(error); }
 }
 export async function registerToken(req: Request, res: Response, next: NextFunction) {
-  try { res.json({ success: true, ...(await registerDeviceToken(userId(req), String(req.body.token ?? ''), String(req.body.platform ?? ''))) }); } catch (error) { next(error); }
+  try { res.json({ success: true, ...(await registerDeviceToken(userId(req), String(req.body.token ?? ''), String(req.body.platform ?? ''), req.body.sounds)) }); } catch (error) { next(error); }
 }
 export async function unregisterToken(req: Request, res: Response, next: NextFunction) {
   try { res.json({ success: true, ...(await unregisterDeviceToken(userId(req), String(req.body.token ?? ''))) }); } catch (error) { next(error); }
@@ -63,4 +64,32 @@ export async function readNotification(req: Request, res: Response, next: NextFu
 }
 export async function readAllNotifications(req: Request, res: Response, next: NextFunction) {
   try { res.json({ success: true, ...(await markAllNotificationsRead(userId(req))) }); } catch (error) { next(error); }
+}
+
+/** The sounds a phone at this company may be asked to play, for the app to download. */
+export async function notificationSounds(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json({ success: true, sounds: await soundManifest(req.auth!.user?.org ?? '') });
+  } catch (error) { next(error); }
+}
+
+/**
+ * One uploaded sound's file. Without sign-in, as `/media` is: the id is random
+ * and the sound no secret, and the dashboard's ▶ plays it from an <audio> tag.
+ */
+export async function notificationSoundFile(req: Request, res: Response, next: NextFunction) {
+  try {
+    const id = String(req.params.id ?? '');
+    const file = /^[0-9a-f-]{36}$/.test(id) ? await readNotificationSound(id) : null;
+    if (!file) {
+      res.status(404).json({ success: false, message: 'Sound not found' });
+      return;
+    }
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader('Content-Length', String(file.bytes.length));
+    // A version's file never changes: a new upload is a new id.
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.end(file.bytes);
+  } catch (error) { next(error); }
 }

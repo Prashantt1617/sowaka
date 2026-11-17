@@ -24,6 +24,8 @@ export function canSeePay(user: AuthUser | null | undefined): boolean {
 export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boolean {
   if (!user?.dashboardAccess) return false;
   if (view === 'usersroles' || view === 'employeeimport') return user.dashboardAdmin === true;
+  // How every push sounds and looks, for the whole company: an admin's, as the server decides it.
+  if (view === 'notificationlook') return user.dashboardAdmin === true;
   // Exits is a company feature (on at sowaka only for now), then a dashboard admin's.
   if (view === 'exits' || view === 'exitsettings') return user.features?.exits === true && user.dashboardAdmin === true;
   // The employee lifecycle is a company feature (GET /admin/lifecycle/settings) before it is a tab;

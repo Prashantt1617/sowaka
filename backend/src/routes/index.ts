@@ -45,6 +45,7 @@ import { suwiPeopleRouter } from '../suwi/routes.people';
 import { suwiNoticesRouter } from '../suwi/routes.notices';
 import { forgetEngagement } from '../services/engagement-cache';
 import { lifecycleOffboardingAdminRouter, lifecycleOffboardingRouter } from './lifecycle-offboarding.routes';
+import { notificationLookRouter } from './notification-look.routes';
 
 export const router = Router();
 
@@ -77,6 +78,8 @@ router.use('/admin/engagement/games', engagementGamesRouter);
 // Employee lifecycle: offers, documents and letters (each route guards itself; others fall through).
 router.use('/admin/lifecycle', lifecycleOfferRouter);
 // Employee lifecycle › Offboarding (features.lifecycle): the board, Start an exit, the settlement email, Exit insights.
+// Setup › Notification sounds and pictures: dashboard admins only, ahead of /admin's own chain.
+router.use('/admin/notification-look', notificationLookRouter);
 router.use('/admin/lifecycle', lifecycleOffboardingAdminRouter);
 // Employee lifecycle (docs/lifecycle/CONTRACT.md): its own auth chain and the features.lifecycle switch.
 router.use('/admin/lifecycle', lifecycleAdminRouter);

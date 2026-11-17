@@ -113,6 +113,12 @@ export interface CupEvent extends CupEventConfig {
   linkUntil: Date;
   /** The public base of this API, for the feed post's link (e.g. https://d3lwup4rvo6csf.cloudfront.net). */
   linkBase: string;
+  /**
+   * The tournament's own banner (a Connect media key or an https link), put on
+   * its pushes when the kind's look takes the event's own picture. Absent: the
+   * game's catalog picture, when that is a link.
+   */
+  imageKey?: string;
   phase: CupPhase;
   /** The round being played (0 before round 1 opens). */
   round: number;

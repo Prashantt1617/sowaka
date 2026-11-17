@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notification sounds the app downloads (filesDir/notification_sounds), shared
+     read-only with the system's sound player through NotificationSoundProvider. -->
+<paths>
+    <files-path name="notification_sounds" path="notification_sounds/" />
+</paths>

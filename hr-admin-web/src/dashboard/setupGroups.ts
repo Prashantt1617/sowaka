@@ -42,6 +42,9 @@ export const SETUP_GROUPS: SetupGroup[] = [
   { key: 'reimbursements', title: 'Reimbursements', icon: 'reimbursementtypes', items: [
     { view: 'reimbursementtypes', label: 'Reimbursement types' },
   ] },
+  { key: 'notifications', title: 'Notifications', icon: 'notificationlook', isNew: true, items: [
+    { view: 'notificationlook', label: 'Notification sounds and pictures' },
+  ] },
   { key: 'lifecycle', title: 'Employee lifecycle', icon: 'onboarding', isNew: true, feature: 'lifecycle', items: [
     { view: 'lifecycle_templates', label: 'Onboarding templates', open: 'onboarding' },
     { view: 'lifecycle_templates', label: 'Offboarding templates', open: 'offboarding' },

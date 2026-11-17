@@ -1,16 +1,35 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../features/auth/data/auth_models.dart';
 import '../firebase_options.dart';
 import 'api_config.dart';
+import 'notification_sounds.dart';
+
+/// The channel a push that lands while the app is open is shown on: the one
+/// the server named, if this phone made it, else the plain one.
+String foregroundChannelFor(String? asked, Iterable<String> soundTags) {
+  if (asked == null || asked.isEmpty) return plainChannelId;
+  final made = soundTags.map((tag) {
+    final at = tag.lastIndexOf('@');
+    return at < 0
+        ? ''
+        : soundChannelId(tag.substring(0, at), int.tryParse(tag.substring(at + 1)) ?? 0);
+  }).toSet();
+  return made.contains(asked) ? asked : plainChannelId;
+}
+
+/// Every push before sounds could be chosen, and the fallback since.
+const plainChannelId = 'sowaka_notifications';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -23,6 +42,16 @@ class AppNotificationService {
 
   final _opened = StreamController<Map<String, dynamic>>.broadcast();
   final _local = FlutterLocalNotificationsPlugin();
+
+  /// The notification sounds this phone has (`key@version`), as last synced.
+  List<String> _soundTags = const [];
+  late final _sounds = NotificationSoundSync(
+    client: http.Client(),
+    files: DeviceSoundFiles(),
+    channels: kIsWeb ? null : DeviceSoundChannels(_local),
+    platform: defaultTargetPlatform,
+    baseUrl: ApiConfig.baseUrl,
+  );
   Stream<Map<String, dynamic>> get opened => _opened.stream;
 
   /// A notification that arrived while the app was open. Whatever it is
@@ -139,7 +168,7 @@ class AppNotificationService {
         >()
         ?.createNotificationChannel(
           const AndroidNotificationChannel(
-            'sowaka_notifications',
+            plainChannelId,
             'Sowaka notifications',
             description: 'Company activity, approvals and reminders',
             importance: Importance.high,
@@ -204,7 +233,10 @@ class AppNotificationService {
           )
           .timeout(_setupLimit);
       if (token != null) {
-        // The same token for the same person was handed over lately: every
+        // Built-in and downloaded sounds first, so the registration says
+        // which ones this phone can play. Never longer than the setup limit.
+        await _syncSounds();
+        // The same token, person and sounds were handed over lately: every
         // launch used to post it again.
         if (await _registeredLately(token, _session!.user.id)) return;
         debugPrint('Registering ${kIsWeb ? 'web' : 'native'} FCM token');
@@ -233,6 +265,19 @@ class AppNotificationService {
   /// again anyway, in case the server has let it go.
   static const _registrationLasts = Duration(days: 7);
 
+  /// Brings the phone's notification sounds in line with the server's list
+  /// (never throws, never longer than [_setupLimit] twice over).
+  Future<void> _syncSounds() async {
+    if (kIsWeb) return;
+    try {
+      _soundTags = await _sounds
+          .sync(token: _session?.token)
+          .timeout(_setupLimit * 2);
+    } catch (error) {
+      debugPrint('Notification sounds not synced: $error');
+    }
+  }
+
   Future<bool> _registeredLately(String token, String userId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -242,6 +287,8 @@ class AppNotificationService {
       final at = DateTime.tryParse('${kept['at']}');
       return kept['token'] == token &&
           kept['userId'] == userId &&
+          // A sound downloaded since is news for the server.
+          kept['sounds'] == _soundTags.join(',') &&
           at != null &&
           DateTime.now().difference(at) < _registrationLasts;
     } catch (_) {
@@ -257,6 +304,7 @@ class AppNotificationService {
         jsonEncode({
           'token': token,
           'userId': userId,
+          'sounds': _soundTags.join(','),
           'at': DateTime.now().toIso8601String(),
         }),
       );
@@ -279,25 +327,84 @@ class AppNotificationService {
     _opened.add(Map<String, dynamic>.from(data));
   }
 
+  /// A push that lands while the app is open, shown as the system would
+  /// have: on the channel (sound) the server picked if this phone has it,
+  /// with its picture when it carries one.
   Future<void> _showForeground(RemoteMessage message) async {
     final notification = message.notification;
     if (notification == null) return;
     if (kIsWeb) return;
+    final imageUrl =
+        '${message.data['imageUrl'] ?? notification.android?.imageUrl ?? notification.apple?.imageUrl ?? ''}';
+    final picture = imageUrl.startsWith('https://')
+        ? await _fetchPicture(imageUrl)
+        : null;
+    final channelId = foregroundChannelFor(
+      notification.android?.channelId,
+      _soundTags,
+    );
+    final iosSound = notification.apple?.sound?.name;
+    final attachment = picture == null || defaultTargetPlatform != TargetPlatform.iOS
+        ? null
+        : await _pictureFile(picture);
     await _local.show(
       id: message.hashCode,
       title: notification.title,
       body: notification.body,
-      notificationDetails: const NotificationDetails(
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          'sowaka_notifications',
+          channelId,
           'Sowaka notifications',
           importance: Importance.high,
           priority: Priority.high,
+          largeIcon: picture == null ? null : ByteArrayAndroidBitmap(picture),
+          styleInformation: picture == null
+              ? null
+              : BigPictureStyleInformation(
+                  ByteArrayAndroidBitmap(picture),
+                  hideExpandedLargeIcon: true,
+                ),
         ),
-        iOS: DarwinNotificationDetails(),
+        iOS: DarwinNotificationDetails(
+          sound: iosSound == null || iosSound == 'default' ? null : iosSound,
+          attachments: attachment == null
+              ? null
+              : [DarwinNotificationAttachment(attachment)],
+        ),
       ),
       payload: jsonEncode(message.data),
     );
+  }
+
+  /// A push's picture, small and quick, or nothing: the words go out anyway.
+  Future<Uint8List?> _fetchPicture(String url) async {
+    try {
+      final response = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 6));
+      final type = response.headers['content-type'] ?? '';
+      if (response.statusCode != 200 || !type.startsWith('image/')) return null;
+      if (response.bodyBytes.length > 2 * 1024 * 1024) return null;
+      return response.bodyBytes;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// iOS attaches a picture from a file, which it then moves into its store.
+  Future<String?> _pictureFile(Uint8List bytes) async {
+    try {
+      final dir = await getTemporaryDirectory();
+      // iOS goes by the extension: a PNG's own header, else a JPEG.
+      final png = bytes.length > 4 && bytes[0] == 0x89 && bytes[1] == 0x50;
+      final file = File(
+        '${dir.path}/push-${DateTime.now().microsecondsSinceEpoch}.${png ? 'png' : 'jpg'}',
+      );
+      await file.writeAsBytes(bytes, flush: true);
+      return file.path;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _register(String token) async {
@@ -317,6 +424,8 @@ class AppNotificationService {
                 : defaultTargetPlatform == TargetPlatform.iOS
                 ? 'ios'
                 : 'android',
+            // The sounds this phone can play, so the server picks one it has.
+            if (!kIsWeb) 'sounds': _soundTags,
           }),
         )
         .timeout(_setupLimit);
