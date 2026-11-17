@@ -5,7 +5,9 @@
  * prepared action. Every question is written to the audit log.
  */
 import { companies } from '../config/db';
-import { asLlmTool, contextFor, SUWI_AREAS, SuwiContext, SuwiLink, toolByName, toolAllowed, toolsFor } from './tools';
+import { asLlmTool, contextFor, SUWI_AREAS, SuwiArea, SuwiContext, SuwiLink, SuwiTable, SuwiTool, toolByName, toolAllowed, toolsFor } from './tools';
+import { instantAnswer } from './instant';
+import { hashOf, keptGet, keptSet, normalQuestion, suwiVersion } from './kept';
 import { callModel, ContentBlock, costUsd, LlmMessage, SuwiLlmError, SUWI_MODEL } from './llm';
 import { auditCol, LEVEL_LABEL, settingsFor, spentThisMonthUsd } from './store';
 import { cancelProposal, getProposal } from './proposals';
@@ -22,6 +24,59 @@ export interface SuwiAnswer {
   links: SuwiLink[];
   proposals: Awaited<ReturnType<typeof getProposal>>[];
   costUsd: number;
+  /** Lists the panel draws as tables under the text (from the tools' data, never written by the model). */
+  tables?: SuwiTable[];
+  /** How it was answered: from the kept data with no model, the model, or a kept answer to the same question. */
+  path?: 'instant' | 'model' | 'cache';
+}
+
+/** What the audit row records about how long a question took. */
+interface Timing { path: 'instant' | 'model' | 'cache'; totalMs: number; firstTextMs?: number; rounds?: { ms: number; input: number; output: number }[]; live?: boolean }
+
+/** A kept answer lives this long; one that read today's attendance (punches change it with no write hook) a minute. */
+const ANSWER_TTL_S = 10 * 60;
+const LIVE_ANSWER_TTL_S = 60;
+
+/**
+ * Which areas a question is about, from its words and the page it was asked on: only those areas'
+ * tools are offered, so the model reads a fraction of the tool list. Nothing recognised: every tool.
+ */
+const AREA_WORDS: [SuwiArea, RegExp][] = [
+  ['payroll', /pay(roll|slip|run)?s?|salar|ctc|tax|tds|pf|esi|bonus|deduct|form ?16|gross|net pay|arrear|gratuity|settlement/],
+  ['claims', /claim|reimburs|bills?|expense|receipt/],
+  ['performance', /kpi|review|apprais|performanc|rating|goal|feedback/],
+  ['connect', /posts?|poll|connect|engag|feed|survey|relay|games?|recogni|kudos|contest|tournament|report(ed)? content/],
+  ['people', /people|employee|headcount|designation|department|profile|joined|joining|birthday|missing|document|reports? to|team|who is/],
+  ['settings', /setting|polic|how do i|where (do|can)|shift|template|holiday|week ?off|help/],
+  ['requests', /leave|overtime|correction|check-?in|pending|waiting|approv|request|decid|remind/],
+  ['attendance', /late|absent|attend|punch|leave|present|missed|half day|wfh|work from home|in today|calendar|geotag|location/],
+];
+const PAGE_AREAS: [RegExp, SuwiArea][] = [
+  [/pay|salary|tax|fbp|form16|statutory/, 'payroll'], [/reimburs|claim|bill/, 'claims'], [/kpi|feedback|cycle|review/, 'performance'],
+  [/connect|engage|game|post|poll|contest/, 'connect'], [/employee|people|access|designation|import|bulk/, 'people'],
+  [/leave|overtime|attendance|regulari|oolcheck|request/, 'requests'], [/punch|calendar|attendance|shift|report/, 'attendance'], [/setting|setup|template|polic/, 'settings'],
+];
+/** Always offered: finding people and the help pages, which most answers lean on. */
+const ALWAYS = new Set(['search_people', 'person_details', 'dashboard_help']);
+function relevantTools(tools: SuwiTool[], question: string, page: string): SuwiTool[] {
+  const q = question.toLowerCase();
+  const areas = new Set<SuwiArea>(AREA_WORDS.filter(([, re]) => re.test(q)).map(([a]) => a));
+  if (!areas.size) return tools;
+  for (const [re, a] of PAGE_AREAS) if (re.test(page)) areas.add(a);
+  // Requests and attendance answer each other's questions (approved leave is attendance).
+  if (areas.has('requests') || areas.has('attendance')) { areas.add('requests'); areas.add('attendance'); }
+  const picked = tools.filter((t) => areas.has(t.area) || ALWAYS.has(t.name));
+  return picked.length ? picked : tools;
+}
+
+/** A list the panel already shows as a table: the model gets its first rows only, and a count. */
+function shorterForModel(v: unknown, depth = 0): unknown {
+  if (Array.isArray(v)) {
+    const head = v.slice(0, 10).map((x) => shorterForModel(x, depth + 1));
+    return v.length > 10 ? [...head, `…and ${v.length - 10} more (HR sees them all in the table)`] : head;
+  }
+  if (v && typeof v === 'object' && depth < 6) return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, shorterForModel(x, depth + 1)]));
+  return v;
 }
 
 /** JSON with keys in a fixed order, so the same inputs make the same memo key. */
@@ -51,6 +106,7 @@ How you work:
 - Never judge a person's ability, character or potential, and don't make decisions about people. Wellbeing or sentiment only for groups of 10 or more.
 - Never hide or remove reported content; moderation is a human decision.
 - Answer in short, plain sentences. Lead with the answer in one or two sentences. If listing people or items, use a short markdown table (at most 8 rows, then say how many more). End with the next step, if there is one.
+- Some tools come with their lists already shown to HR as tables under your answer (their data says "HR sees them all in the table"). Then do NOT list those people or rows again: write one or two sentences with the counts and anything notable, and stop.
 - Formatting: only **bold**, bullet or numbered lists, pipe tables, ### headings and links. No LaTeX or math notation, no --- lines, no *italics*. Write sums in words ("₹30,000 basic plus ₹12,000 HRA").
 - Link people as [Name](emp:USER_ID) only when a tool gave that person's userId; otherwise write the name as plain text. Never make up an id. Don't print raw ids.
 - Indian formats: ₹ with lakh grouping, DD Mon YYYY dates.
@@ -105,16 +161,39 @@ function attachmentOf(raw: unknown): { name: string; image?: { mimeType: string;
   throw new SuwiLlmError(400, 'Only images and Excel files can be attached.');
 }
 
-export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { question?: unknown; page?: unknown; history?: unknown; attachments?: unknown }, onProgress?: (checking: string) => void): Promise<SuwiAnswer> {
+export async function askSuwi(
+  user: Omit<User, 'profilePhotoUrl'>,
+  input: { question?: unknown; page?: unknown; history?: unknown; attachments?: unknown },
+  onProgress?: (checking: string) => void,
+  onPartial?: (textSoFar: string) => void,
+): Promise<SuwiAnswer> {
+  const started = Date.now();
   const attachment = attachmentOf(input.attachments);
   const typed = typeof input.question === 'string' ? input.question.trim().slice(0, 2000) : '';
   // A file alone is a question too: Suwi is asked to look at it.
   const question = typed || (attachment?.image ? 'Have a look at the attached image.' : attachment ? 'Have a look at the attached spreadsheet.' : '');
   if (!question) throw new SuwiLlmError(400, 'Ask Suwi a question');
   const page = typeof input.page === 'string' ? input.page.slice(0, 40) : '';
+  // A kept answer to the same question, by the same person, on the same data (suwi/kept.ts): the data
+  // version changes with every write Suwi reads from, so a change always misses. Never for a file or a
+  // follow-up (the history changes what the question means), and only while Suwi is on.
+  const history = Array.isArray(input.history) ? input.history : [];
+  const cacheable = !attachment && history.length === 0;
+  const version = cacheable ? await suwiVersion(user.org!) : null;
+  const today = istToday();
+  const cacheKey = version ? `ans:${user.org}:${version}:${hashOf(user.userId, normalQuestion(question), page, today)}` : '';
+  if (cacheKey) {
+    const kept = await keptGet<SuwiAnswer>(cacheKey);
+    if (kept && (await settingsFor(user.org!)).enabled) {
+      await auditCol().insertOne({ org: user.org!, userId: user.userId, kind: 'question', at: new Date(), page, question, answer: kept.text.slice(0, 50_000), status: 'answered', tools: [], model: SUWI_MODEL, costUsd: 0, timing: { path: 'cache', totalMs: Date.now() - started } } as never).catch(() => undefined);
+      return { ...kept, path: 'cache', proposals: [] };
+    }
+  }
   // Every question is kept, with what Suwi answered and whether it worked; a failure too.
   try {
-    return await answer(user, question, page, attachment, input, onProgress);
+    const { answer: done, live } = await answer(user, question, page, attachment, input, started, onProgress, onPartial);
+    if (cacheKey && !done.proposals.length) await keptSet(cacheKey, done, live ? LIVE_ANSWER_TTL_S : ANSWER_TTL_S);
+    return done;
   } catch (e) {
     await auditCol().insertOne({
       org: user.org!, userId: user.userId, kind: 'question', at: new Date(), page, question, status: 'failed',
@@ -128,8 +207,10 @@ export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { ques
 async function answer(
   user: Omit<User, 'profilePhotoUrl'>, question: string, page: string,
   attachment: ReturnType<typeof attachmentOf>, input: { history?: unknown },
+  started: number,
   onProgress?: (checking: string) => void,
-): Promise<SuwiAnswer> {
+  onPartial?: (textSoFar: string) => void,
+): Promise<{ answer: SuwiAnswer; live: boolean }> {
   const settings = await settingsFor(user.org!);
   if (!settings.enabled) throw new SuwiLlmError(403, 'Suwi is turned off for this company. An admin can turn it on in Settings → Suwi.');
   const spent = await spentThisMonthUsd(user.org!);
@@ -141,9 +222,22 @@ async function answer(
   if (parsedSheet) rememberSheet(ctx.userId, parsedSheet);
   const sheet = parsedSheet ?? (attachment ? undefined : lastSheet(ctx.userId));
   if (sheet) ctx.sheet = sheet;
+  // The common lookups straight from the kept data, no model (instant.ts); anything else goes on below.
+  if (!attachment && process.env.SUWI_INSTANT !== '0') {
+    const quick = await instantAnswer(ctx, question).catch(() => null);
+    if (quick) {
+      const timing: Timing = { path: 'instant', totalMs: Date.now() - started, live: quick.live };
+      await auditCol().insertOne({
+        org: ctx.org, userId: ctx.userId, kind: 'question', at: new Date(), page, question, answer: quick.text, status: 'answered',
+        tools: quick.checked.map((label) => ({ name: `instant:${quick.kind}`, label, ms: timing.totalMs, ok: true })), model: 'none', costUsd: 0, timing,
+      } as never);
+      return { answer: { text: quick.text, checked: quick.checked, links: quick.links.slice(0, 6), proposals: [], costUsd: 0, tables: quick.tables, path: 'instant' }, live: quick.live };
+    }
+  }
   const company = await companies().findOne({ id: ctx.org });
-  // A stable order keeps the tool list identical between questions, so it caches.
-  const tools = toolsFor(ctx).sort((a, b) => a.name.localeCompare(b.name));
+  // A stable order keeps the tool list identical between questions, so it caches; only the areas the
+  // question is about are offered (relevantTools), so the model reads a fraction of the list.
+  const tools = relevantTools(toolsFor(ctx), question, page).sort((a, b) => a.name.localeCompare(b.name));
   // Earlier turns of this chat, text only (the panel keeps them).
   const history: LlmMessage[] = Array.isArray(input.history)
     ? (input.history as { role?: unknown; text?: unknown }[]).slice(-8)
@@ -171,9 +265,20 @@ async function answer(
   const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   let text = '';
   let incomplete = false;
+  const tables: SuwiTable[] = [];
+  let live = false;
+  const rounds: { ms: number; input: number; output: number }[] = [];
+  let firstTextMs: number | undefined;
+  const onText = (soFar: string) => {
+    if (firstTextMs === undefined && soFar.trim()) firstTextMs = Date.now() - started;
+    onPartial?.(soFar);
+  };
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
-    const reply = await callModel({ system: instructions(ctx, company?.name ?? ctx.org, page, { spentUsd: spent, monthlyUsd: settings.monthlyBudgetUsd }), tools: tools.map(asLlmTool), messages });
+    const roundStarted = Date.now();
+    // Once the lists are on screen as tables, the answer is a sentence or two: no room to write them out.
+    const reply = await callModel({ system: instructions(ctx, company?.name ?? ctx.org, page, { spentUsd: spent, monthlyUsd: settings.monthlyBudgetUsd }), tools: tools.map(asLlmTool), messages, onText, ...(tables.length ? { maxTokens: 400 } : {}) });
+    rounds.push({ ms: Date.now() - roundStarted, input: reply.usage.input_tokens ?? 0, output: reply.usage.output_tokens ?? 0 });
     total += costUsd(reply.model || SUWI_MODEL, reply.usage);
     tokens.input += reply.usage.input_tokens ?? 0; tokens.output += reply.usage.output_tokens ?? 0;
     tokens.cacheRead += reply.usage.cache_read_input_tokens ?? 0; tokens.cacheWrite += reply.usage.cache_creation_input_tokens ?? 0;
@@ -197,7 +302,9 @@ async function answer(
         for (const l of out.links ?? []) if (!links.some((x) => x.label === l.label)) links.push(l);
         if (out.proposalId) proposalIds.push(out.proposalId);
         for (const id of out.proposalIds ?? []) if (!proposalIds.includes(id)) proposalIds.push(id);
-        const json = JSON.stringify(out.data ?? null);
+        if (out.live) live = true;
+        for (const tb of out.tables ?? []) if (!tables.some((x) => x.title === tb.title)) tables.push(tb);
+        const json = JSON.stringify((out.tables?.length ? shorterForModel(out.data) : out.data) ?? null);
         const content = json.length > MAX_RESULT_CHARS ? `${json.slice(0, MAX_RESULT_CHARS)}… (cut; ask a narrower question for the rest)` : json;
         if (memoKey) memo.set(memoKey, content);
         return { type: 'tool_result', tool_use_id: c.id, content };
@@ -222,6 +329,7 @@ async function answer(
     ...(proposals.length ? { proposalIds: proposals.map((p) => p.id) } : {}),
     ...(attachment ? { attachment: { name: attachment.name, kind: attachment.image ? 'image' : 'spreadsheet' } } : {}),
     tools: toolLog, model: SUWI_MODEL, costUsd: total, tokens,
-  });
-  return { text: text || "I couldn't find an answer to that.", checked, links: links.slice(0, 6), proposals, costUsd: total };
+    timing: { path: 'model', totalMs: Date.now() - started, ...(firstTextMs !== undefined ? { firstTextMs } : {}), rounds, live } satisfies Timing,
+  } as never);
+  return { answer: { text: text || "I couldn't find an answer to that.", checked, links: links.slice(0, 6), proposals, costUsd: total, ...(tables.length ? { tables } : {}), path: 'model' }, live };
 }

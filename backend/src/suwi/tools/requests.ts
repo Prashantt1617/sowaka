@@ -81,6 +81,13 @@ export async function pendingRows(
   return out;
 }
 
+const TYPE_LABEL: Record<PendingRow['type'], string> = { leave: 'Leave', overtime: 'Overtime', correction: 'Correction', checkin: 'Check-in', claim: 'Claim' };
+
+/** The waiting pile as the panel's table, oldest first (at most 50 rows). */
+export function pendingTable(rows: PendingRow[]) {
+  return { title: 'Waiting on a decision', columns: ['Who', 'Type', 'What', 'Dates', 'Waiting'], rows: rows.slice(0, 50).map((r) => [r.name, TYPE_LABEL[r.type], r.what, r.dates, `${r.daysWaiting} d`]) };
+}
+
 /** The tool's type names to the rows' own. */
 const TYPE_OF: Record<string, PendingRow['type']> = { leave: 'leave', overtime: 'overtime', corrections: 'correction', checkins: 'checkin', claims: 'claim' };
 
@@ -105,13 +112,14 @@ defineTools({
     // The company's waiting pile is read once and shared (orgData.ts: kept in memory, dropped on every
     // write that decides or makes a request), then narrowed to what this person's tabs allow.
     // When no copy is kept (just after a write), its own narrower read answers and the bundle refreshes behind it.
-    const { keptOrgSuwiData, pendingFor } = await import('../orgData');
+    const { keptOrgSuwiDataAsync, pendingFor } = await import('../orgData');
     const kind = type ? TYPE_OF[type] : null;
-    const all = keptOrgSuwiData(ctx.org, ctx.today, ctx.userId)?.pending ?? (await pendingRows(ctx, type));
+    const all = (await keptOrgSuwiDataAsync(ctx.org, ctx.today, ctx.userId))?.pending ?? (await pendingRows(ctx, type));
     const rows = pendingFor(ctx.user, all).filter((x) => (!kind || x.type === kind) && x.daysWaiting >= minWait).sort((a, b) => b.daysWaiting - a.daysWaiting);
     const counts = rows.reduce<Record<string, number>>((m, x) => ({ ...m, [x.type]: (m[x.type] ?? 0) + 1 }), {});
     return {
       data: { total: rows.length, counts, oldest: rows[0] ?? null, rows: rows.slice(0, num(i.limit, 20, 1, 200)) },
+      tables: rows.length ? [pendingTable(rows)] : undefined,
       links: Object.entries(REQUEST_LINKS).filter(([k]) => !type || type === k).map(([, l]) => l),
     };
   },

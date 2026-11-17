@@ -23,7 +23,8 @@ import { cachedLifecycle, lifecycleReadCacheOn, refreshLifecycle } from '../serv
 import { peekSwr } from '../services/swr-cache';
 import { listAllReimbursementsForAdmin } from '../services/reimbursement.service';
 import { peopleTasks } from '../services/peopleTasks.service';
-import { leaveSafety, INSIGHT_ROUTE, mayRead } from './insight';
+import { leaveSafety, managerStepCheck, INSIGHT_ROUTE, mayRead } from './insight';
+import { keptGet, keptSet, suwiVersion } from './kept';
 import { pendingRows, PendingRow, sharedAdminLists } from './tools/requests';
 
 const DAY = 86_400_000;
@@ -42,6 +43,11 @@ export interface OrgSuwiData {
   tasks: { payroll: boolean; people: { userId: string; keys: string[] }[] } | null;
   relayScheduled: number | null;
   engagementPostsRecent: number | null;
+  /**
+   * Whose call each waiting request is (`<type>:<id>`): the manager who still has to act, or none
+   * (HR's turn). Worked out once per company, so review_requests needs no reads of its own.
+   */
+  approvers?: Record<string, { managerUserId?: string; managerName?: string }>;
   /** Who the lists were read as (a dashboard admin of the company), for the record. */
   readerUserId: string;
   at: string;
@@ -80,6 +86,7 @@ export async function loadOrgSuwiData(org: string, today: string, fallbackUserId
     quietly(() => connectPosts().countDocuments({ org, systemKey: { $exists: false }, type: { $in: ['relay_game', 'live_game', 'survey', 'event', 'caption_challenge'] }, publishedAt: { $gte: new Date(Date.now() - 14 * DAY) } })),
   ]);
   const leaveRows = (pending ?? []).filter((r) => r.type === 'leave');
+  const approvers = pending ? await quietly(() => approversOf(org, today, pending)) : null;
   // No viewer: nobody's request is "their own" here; `forViewer` takes the viewer's own out.
   const safety = pending ? await quietly(() => leaveSafety(org, '', today, leaveRows)) : null;
   return {
@@ -91,14 +98,50 @@ export async function loadOrgSuwiData(org: string, today: string, fallbackUserId
     tasks: tasks ? { payroll: Boolean(tasks.payroll), people: tasks.people.map((p) => ({ userId: p.userId, keys: p.tasks.map((t) => t.key) })) } : null,
     relayScheduled,
     engagementPostsRecent,
+    ...(approvers ? { approvers } : {}),
     readerUserId: reader.userId,
     at: new Date().toISOString(),
   };
 }
 
-/** The company's shared Suwi inputs, from memory when kept; `fresh` reads them now and keeps them (the warm-up's way in). */
+const STEP_KIND = { leave: 'leave', overtime: 'overtime', correction: 'correction', checkin: 'correction' } as const;
+
+/** Each waiting request's approver: the manager who still has to act, else HR (no entry). */
+async function approversOf(org: string, today: string, rows: PendingRow[]): Promise<Record<string, { managerUserId?: string; managerName?: string }>> {
+  const people = await users().find({ org, userId: { $in: [...new Set(rows.map((r) => r.userId))] } }).toArray();
+  const byId = new Map(people.map((p) => [p.userId, p]));
+  const seen = new Map<string, Promise<{ managerUserId?: string; managerName?: string }>>();
+  const out: Record<string, { managerUserId?: string; managerName?: string }> = {};
+  await Promise.all(rows.map(async (r) => {
+    const employee = byId.get(r.userId);
+    if (r.type === 'claim' || !employee) return;
+    const key = `${r.userId}|${STEP_KIND[r.type]}|${r.submitted}`;
+    if (!seen.has(key)) seen.set(key, managerStepCheck(employee, STEP_KIND[r.type], r.submitted, today));
+    const step = await seen.get(key)!;
+    if (step.managerUserId) out[`${r.type}:${r.id}`] = { managerUserId: step.managerUserId, managerName: step.managerName };
+  }));
+  return out;
+}
+
+/**
+ * The bundle from Redis (suwi/kept.ts) when this company's data version has one, so a restart starts
+ * warm and every server shares one read; else read now and kept there for 15 minutes.
+ */
+async function loadThroughRedis(org: string, today: string, askerUserId: string): Promise<OrgSuwiData> {
+  const version = await suwiVersion(org);
+  const key = version ? `org:${org}:${today}:${version}` : '';
+  if (key) {
+    const kept = await keptGet<OrgSuwiData>(key);
+    if (kept) return kept;
+  }
+  const data = await loadOrgSuwiData(org, today, askerUserId);
+  if (key) await keptSet(key, data, 15 * 60);
+  return data;
+}
+
+/** The company's shared Suwi inputs, from memory when kept (then Redis); `fresh` reads them now and keeps them (the warm-up's way in). */
 export function orgSuwiData(org: string, today: string, askerUserId: string, fresh = false): Promise<OrgSuwiData> {
-  const load = () => loadOrgSuwiData(org, today, askerUserId);
+  const load = () => (fresh ? loadOrgSuwiData(org, today, askerUserId).then(async (d) => { const v = await suwiVersion(org); if (v) await keptSet(`org:${org}:${today}:${v}`, d, 15 * 60); return d; }) : loadThroughRedis(org, today, askerUserId));
   return fresh ? refreshLifecycle(org, 'suwi-org-data', { today }, load) : cachedLifecycle(org, 'suwi-org-data', { today }, load);
 }
 
@@ -113,6 +156,21 @@ export function keptOrgSuwiData(org: string, today: string, askerUserId: string)
   if (kept) return kept;
   orgSuwiData(org, today, askerUserId, true).catch(() => undefined);
   return null;
+}
+
+/**
+ * The kept bundle from memory, then Redis (the data version's copy), without reading the database:
+ * null when neither has one, and a refresh starts behind the caller.
+ */
+export async function keptOrgSuwiDataAsync(org: string, today: string, askerUserId: string): Promise<OrgSuwiData | null> {
+  if (!lifecycleReadCacheOn()) return null;
+  const inMemory = peekSwr<OrgSuwiData>(org, 'suwi-org-data', { today });
+  if (inMemory) return inMemory;
+  const version = await suwiVersion(org);
+  const fromRedis = version ? await keptGet<OrgSuwiData>(`org:${org}:${today}:${version}`) : null;
+  // Through orgSuwiData either way, so memory holds it next time (Redis answers the load at once when it has it).
+  orgSuwiData(org, today, askerUserId).catch(() => undefined);
+  return fromRedis;
 }
 
 const ROUTE_OF: Record<PendingRow['type'], string> = {

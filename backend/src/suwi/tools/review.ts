@@ -8,7 +8,7 @@ import { users } from '../../config/db';
 import { notifyUsers } from '../../services/notification.service';
 import { defineTools, num, str, SuwiContext } from '../tools';
 import { defineExecutor, propose } from '../proposals';
-import { Check, leaveSafety, managerStepCheck, OVERDUE_DAYS } from '../insight';
+import { Check, leaveSafety, managerStepCheck, ownRequestCheck, OVERDUE_DAYS } from '../insight';
 import { pendingRows, PendingRow, REQUEST_LINKS } from './requests';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -42,6 +42,45 @@ function byManager(rows: Awaited<ReturnType<typeof withApprover>>) {
   return [...groups.values()].sort((a, b) => b.oldestDays - a.oldestDays);
 }
 
+type KeptBundle = { pending: PendingRow[]; approvers: Record<string, { managerUserId?: string; managerName?: string }>; leaveSafe: { safe: (PendingRow & { checks: string[] })[]; checkFirst: (PendingRow & { issues: string[] })[] } };
+const TYPE_OF: Record<string, PendingRow['type']> = { leave: 'leave', overtime: 'overtime', corrections: 'correction', checkins: 'checkin', claims: 'claim' };
+
+/** review_requests from the kept bundle: the same answer as the full read, narrowed to what this viewer may see. */
+async function fromKept(ctx: SuwiContext, kept: KeptBundle, o: { type: string; forPerson: (r: PendingRow) => boolean; limit: number; show: number }) {
+  const { pendingFor } = await import('../orgData');
+  const kind = o.type ? TYPE_OF[o.type] : null;
+  const visible = pendingFor(ctx.user, kept.pending).filter((r) => (!kind || r.type === kind) && o.forPerson(r));
+  const ids = new Set(visible.map((r) => `${r.type}:${r.id}`));
+  const rows = visible.map((r) => {
+    const a = kept.approvers[`${r.type}:${r.id}`];
+    return { ...r, waitingOn: a?.managerUserId ? ('manager' as const) : ('HR' as const), managerUserId: a?.managerUserId, managerName: a?.managerName };
+  }).sort((a, b) => b.daysWaiting - a.daysWaiting);
+  const brief = (r: (typeof rows)[number]) => ({ type: r.type, id: r.id, userId: r.userId, name: r.name, what: r.what, dates: r.dates, daysWaiting: r.daysWaiting, waitingOn: r.waitingOn === 'manager' ? r.managerName : 'HR' });
+  const overdue = rows.filter((r) => r.daysWaiting >= o.limit);
+  const counts = rows.reduce<Record<string, number>>((m, x) => ({ ...m, [x.type]: (m[x.type] ?? 0) + 1 }), {});
+  const byKey = new Map(rows.map((r) => [`${r.type}:${r.id}`, r]));
+  // The bundle's checks were made with no viewer: the asker's own request is never "safe" for them.
+  const own = ownRequestCheck.text;
+  const safe = kept.leaveSafe.safe.filter((r) => ids.has(`leave:${r.id}`) && r.userId !== ctx.userId).map((r) => ({ ...brief(byKey.get(`leave:${r.id}`)!), checks: r.checks }));
+  const checkFirst = [
+    ...kept.leaveSafe.safe.filter((r) => ids.has(`leave:${r.id}`) && r.userId === ctx.userId).map((r) => ({ ...brief(byKey.get(`leave:${r.id}`)!), issues: [own] })),
+    ...kept.leaveSafe.checkFirst.filter((r) => ids.has(`leave:${r.id}`)).map((r) => ({ ...brief(byKey.get(`leave:${r.id}`)!), issues: r.userId === ctx.userId ? [own, ...r.issues] : r.issues })),
+  ];
+  return {
+    data: {
+      overdueLimitDays: o.limit,
+      note: `Sowaka has no escalation setting: nothing moves to HR by itself; approvers get a reminder on Tuesdays and Thursdays. Overdue here means waiting ${o.limit} days or more.`,
+      total: rows.length, counts,
+      overdue: { count: overdue.length, rows: overdue.slice(0, o.show).map(brief) },
+      waitingOnManagers: byManager(rows),
+      waitingOnHr: rows.filter((r) => r.waitingOn === 'HR').length,
+      ...(!o.type || o.type === 'leave' ? { leave: { safeToApprove: safe.slice(0, o.show), checkFirst: checkFirst.slice(0, o.show), checked: safe.length + checkFirst.length, note: 'Safe means: balance covers it, no one in the same department is on approved leave for those dates, and it is HR\'s turn to decide. HR still decides.' } } : {}),
+    },
+    tables: overdue.length ? [{ title: `Overdue (waiting ${o.limit}+ days)`, columns: ['Who', 'What', 'Dates', 'Waiting', 'With'], rows: overdue.slice(0, 50).map((r) => [r.name, r.what, r.dates, `${r.daysWaiting} d`, r.waitingOn === 'manager' ? r.managerName ?? 'Manager' : 'HR']) }] : undefined,
+    links: Object.entries(REQUEST_LINKS).filter(([k]) => !o.type || o.type === k).map(([, l]) => l),
+  };
+}
+
 defineTools(
   {
     name: 'review_requests',
@@ -54,8 +93,15 @@ defineTools(
       const limit = num(i.overdueDays, OVERDUE_DAYS, 1, 365);
       const type = str(i.type);
       const onlyId = str(i.userId), onlyName = str(i.name).toLowerCase();
+      const forPerson = (r: PendingRow) => (!onlyId || r.userId === onlyId) && (!onlyName || r.name.toLowerCase().includes(onlyName));
+      // The company's kept bundle (orgData.ts: memory, then Redis) already has the waiting pile, each
+      // request's approver and the leave checks: no database read at all. Only for the default overdue
+      // limit (the bundle's checks used it); otherwise, or with nothing kept, the full read below.
+      const { keptOrgSuwiDataAsync } = await import('../orgData');
+      const kept = limit === OVERDUE_DAYS ? await keptOrgSuwiDataAsync(ctx.org, ctx.today, ctx.userId) : null;
+      if (kept?.pending && kept.approvers && kept.leaveSafe) return fromKept(ctx, kept as KeptBundle, { type, forPerson, limit, show: num(i.limit, 15, 1, 100) });
       // Filter to one person before the checks: the leave checks are the slow part.
-      const mine = (await pendingRows(ctx, type)).filter((r) => (!onlyId || r.userId === onlyId) && (!onlyName || r.name.toLowerCase().includes(onlyName)));
+      const mine = (await pendingRows(ctx, type)).filter(forPerson);
       const rows = await withApprover(ctx, mine);
       rows.sort((a, b) => b.daysWaiting - a.daysWaiting);
       const show = num(i.limit, 15, 1, 100);
@@ -77,6 +123,7 @@ defineTools(
           waitingOnHr: rows.filter((r) => r.waitingOn === 'HR').length,
           ...(!type || type === 'leave' ? { leave: { safeToApprove: safe.slice(0, show), checkFirst: checkFirst.slice(0, show), checked: leaveSafe.checked, note: 'Safe means: balance covers it, no one in the same department is on approved leave for those dates, and it is HR\'s turn to decide. HR still decides.' } } : {}),
         },
+        tables: overdue.length ? [{ title: `Overdue (waiting ${limit}+ days)`, columns: ['Who', 'What', 'Dates', 'Waiting', 'With'], rows: overdue.slice(0, 50).map((r) => [r.name, r.what, r.dates, `${r.daysWaiting} d`, r.waitingOn === 'manager' ? r.managerName ?? 'Manager' : 'HR']) }] : undefined,
         links: Object.entries(REQUEST_LINKS).filter(([k]) => !type || type === k).map(([, l]) => l),
       };
     },

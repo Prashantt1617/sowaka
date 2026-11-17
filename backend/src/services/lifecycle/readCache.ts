@@ -20,6 +20,7 @@
  */
 import type { NextFunction, Request, Response } from 'express';
 import { cachedSwr, dropSwr, refreshSwr, type SwrKind } from '../swr-cache';
+import { bumpSuwiVersion } from '../../suwi/kept';
 
 /** Time office lists (timeOfficeLists.ts): dropped by the same writes as the boards. */
 export const TIME_OFFICE_LIST_KINDS: SwrKind[] = ['adm-regs', 'adm-leaves', 'adm-overtime', 'adm-feedback'];
@@ -40,6 +41,7 @@ export const lifecycleReadCacheOn = () => enabled;
 /** Drop the kept lifecycle and Suwi answers of one org, or of every org (`null`). */
 export function forgetLifecycleReads(org: string | null): void {
   dropSwr(org, LIFECYCLE_READ_KINDS);
+  void bumpSuwiVersion(org);
   if (org) scheduleRewarm(org);
 }
 
@@ -119,15 +121,23 @@ export function forgetReadsOnWrite(req: Request, res: Response, next: NextFuncti
   const kinds = kindsChangedBy(req.path);
   if (!kinds.length) { next(); return; }
   let dropped = false;
-  const drop = () => {
-    if (dropped) return;
+  const drop = (): Promise<void> | null => {
+    if (dropped) return null;
     dropped = true;
     const org = (req as Request & { auth?: { user?: { org?: string } } }).auth?.user?.org;
     dropSwr(org || null, kinds);
     if (org) scheduleRewarm(org);
+    // Suwi's copies in Redis (suwi/kept.ts) are keyed by a data version: bump it before the response
+    // goes out, so the next question anywhere misses them. Waits at most a moment for Redis.
+    return kinds.some((k) => SUWI_KINDS.includes(k)) ? bumpSuwiVersion(org || null) : null;
   };
   const end = res.end.bind(res) as (...args: unknown[]) => Response;
   // res.json and res.send both finish in res.end; dropping there covers every way out.
-  (res as unknown as { end: (...args: unknown[]) => Response }).end = (...args: unknown[]) => { drop(); return end(...args); };
+  (res as unknown as { end: (...args: unknown[]) => Response }).end = (...args: unknown[]) => {
+    const bump = drop();
+    if (!bump) return end(...args);
+    void Promise.race([bump, new Promise((r) => setTimeout(r, 300))]).then(() => end(...args));
+    return res;
+  };
   next();
 }
