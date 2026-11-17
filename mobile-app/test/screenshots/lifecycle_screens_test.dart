@@ -335,6 +335,7 @@ class _Shots {
   /// by more than a whole screen (unless [full] is false: sheets, dialogs,
   /// reels).
   Future<void> call(String code, String state, {bool full = true, String note = ''}) async {
+    _log('shot $code-$state');
     await _images();
     await tester.pump();
     final exception = tester.takeException();
@@ -347,6 +348,7 @@ class _Shots {
     final extra = page?.position.maxScrollExtent ?? 0;
     if (page != null && extra > page.position.viewportDimension && page.position.pixels == 0) {
       final tall = (_height + extra).clamp(_height, 6000.0);
+      _log('  -full at ${tall.round()}');
       _phone(tester, height: tall);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
@@ -388,7 +390,8 @@ class _Shots {
 /// One test per scenario; a failure is recorded, not thrown, so the other
 /// screens still get their pictures.
 void _scenario(String name, Future<void> Function(WidgetTester tester, _Shots shot) body) {
-  testWidgets(name, skip: _skip != null, (tester) async {
+  testWidgets(name, skip: _skip != null, timeout: const Timeout(Duration(minutes: 4)), (tester) async {
+    _log('── $name');
     final shot = _Shots(tester, name);
     final before = FlutterError.onError;
     FlutterError.onError = shot.onError;
@@ -410,6 +413,7 @@ void _scenario(String name, Future<void> Function(WidgetTester tester, _Shots sh
       shot.finish(failure);
       FlutterError.onError = before;
     }
+    _log('end of $name${failure == null ? '' : ': FAILED ${failure.toString().split('\n').first}'}');
     await tester.pumpWidget(const SizedBox.shrink());
     for (final end in _atEnd) {
       end();
@@ -434,35 +438,78 @@ Future<void> _settle(WidgetTester tester, {int rounds = 6}) async {
 }
 
 Future<void> _tap(WidgetTester tester, Finder finder, {bool scroll = true}) async {
-  if (finder.evaluate().isEmpty && scroll) {
-    await tester.scrollUntilVisible(finder, 200, scrollable: _mainScrollable());
+  _log('tap $finder');
+  if (scroll) {
+    await _reveal(tester, finder);
+  } else if (finder.evaluate().isEmpty) {
+    throw StateError('not on screen: $finder\n${_onScreen()}');
   }
-  await tester.ensureVisible(finder.first);
   await tester.pump(const Duration(milliseconds: 100));
   await tester.tap(finder.first, warnIfMissed: false);
   await _settle(tester);
 }
 
-Finder _mainScrollable() {
-  final all = find.byWidgetPredicate((w) => w is Scrollable && w.axisDirection == AxisDirection.down).evaluate().toList();
-  Element? best;
-  var bestHeight = 0.0;
-  for (final element in all) {
-    final box = element.renderObject;
-    if (box is RenderBox && box.hasSize && box.size.height > bestHeight) {
-      best = element;
-      bestHeight = box.size.height;
-    }
+/// The vertical lists on screen, the biggest first.
+List<ScrollableState> _lists() {
+  final states = <ScrollableState>[];
+  for (final element in find.byType(Scrollable).evaluate()) {
+    final state = (element as StatefulElement).state as ScrollableState;
+    final p = state.position;
+    if (state.axisDirection != AxisDirection.down || !p.hasContentDimensions || !p.hasViewportDimension || !p.hasPixels) continue;
+    states.add(state);
   }
-  return best == null ? find.byType(Scrollable).first : find.byElementPredicate((e) => identical(e, best));
+  states.sort((a, b) => b.position.viewportDimension.compareTo(a.position.viewportDimension));
+  return states;
 }
 
-Future<void> _scrollTo(WidgetTester tester, Finder finder) async {
-  if (finder.evaluate().isEmpty) {
-    await tester.scrollUntilVisible(finder, 200, scrollable: _mainScrollable());
+/// What is on screen, for a finder that found nothing.
+String _onScreen() {
+  final texts = <String>[];
+  for (final element in find.byType(Text).hitTestable().evaluate()) {
+    final data = (element.widget as Text).data;
+    if (data != null && data.trim().isNotEmpty) texts.add(data.trim());
+    if (texts.length > 30) break;
   }
+  return 'on screen: ${texts.join(' | ')}';
+}
+
+/// Scrolls the lists on screen (jumping, no gestures) until [finder] is
+/// built, then brings it into view. Throws, saying what is on screen, if
+/// it never shows.
+Future<void> _reveal(WidgetTester tester, Finder finder) async {
+  if (finder.evaluate().isEmpty) {
+    for (final state in _lists()) {
+      final p = state.position;
+      if (p.maxScrollExtent <= 0) continue;
+      p.jumpTo(p.minScrollExtent);
+      await tester.pump();
+      while (finder.evaluate().isEmpty && p.pixels < p.maxScrollExtent) {
+        p.jumpTo((p.pixels + p.viewportDimension * 0.7).clamp(p.minScrollExtent, p.maxScrollExtent));
+        await tester.pump();
+      }
+      if (finder.evaluate().isNotEmpty) break;
+    }
+  }
+  if (finder.evaluate().isEmpty) throw StateError('not found: $finder\n${_onScreen()}');
   await tester.ensureVisible(finder.first);
   await _settle(tester, rounds: 2);
+}
+
+Future<void> _scrollTo(WidgetTester tester, Finder finder) => _reveal(tester, finder);
+
+/// Closes the page or sheet [onIt] is on, as its own back button does.
+Future<void> _popFrom(WidgetTester tester, Finder onIt) async {
+  _log('pop from $onIt');
+  if (onIt.evaluate().isEmpty) throw StateError('nothing to go back from: $onIt\n${_onScreen()}');
+  Navigator.of(tester.element(onIt.first)).pop();
+  await _settle(tester);
+}
+
+/// Each step, with the time, to `steps.log` beside the PNGs: written at once,
+/// so a stuck step shows where it stuck.
+void _log(String line) {
+  if (_out.isEmpty) return;
+  File('$_out/steps.log').writeAsStringSync('${DateTime.now().toIso8601String().substring(11, 23)} $line\n', mode: FileMode.append, flush: true);
 }
 
 Future<void> _scrollTop(WidgetTester tester) async {
@@ -1096,12 +1143,9 @@ void _leaverScreens() {
     await shot('R3', '');
     await _tap(tester, find.byKey(const ValueKey('off-task-handover')));
     await shot('R3b', 'handover');
-    await tester.pageBack();
-    await _settle(tester);
+    await _popFrom(tester, find.byKey(const ValueKey('handover-screen')));
     await _tap(tester, find.byKey(const ValueKey('off-task-exit-interview')));
     await shot('R5', 'locked');
-    await tester.pageBack();
-    await _settle(tester);
   });
 
   _scenario('R5 exit interview open and sent', (tester, shot) async {
@@ -1120,9 +1164,7 @@ void _leaverScreens() {
     await _tap(tester, find.byKey(const ValueKey('off-task-exit-interview')));
     await shot('R5', 'open');
     for (final key in ['exit-reason-growth', 'exit-working-4', 'exit-manager-3', 'exit-come-back-maybe']) {
-      final finder = find.byKey(ValueKey(key));
-      if (finder.evaluate().isEmpty) await _scrollTo(tester, finder);
-      await _tap(tester, finder);
+      await _tap(tester, find.byKey(ValueKey(key)));
     }
     await _scrollTo(tester, find.byKey(const ValueKey('exit-change')));
     await tester.enterText(find.byKey(const ValueKey('exit-change')), 'Clearer growth paths for designers, and fewer last-minute priority changes.');
@@ -1133,8 +1175,7 @@ void _leaverScreens() {
     await _tap(tester, find.byKey(const ValueKey('exit-interview-send')));
     await _scrollTop(tester);
     await shot('R5', 'sent');
-    await tester.pageBack();
-    await _settle(tester);
+    await _popFrom(tester, find.byKey(const ValueKey('exit-interview-sent')));
     await shot('R3', 'interview-sent');
   });
 
