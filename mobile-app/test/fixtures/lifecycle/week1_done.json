@@ -3,22 +3,28 @@
     {
       "id": "leave",
       "title": "Leave policy",
-      "version": "2026-10-01T00:00:00.000Z"
+      "version": "2026-10-01T00:00:00.000Z",
+      "updatedOn": "2026-10-01",
+      "readMinutes": 1,
+      "body": "Take leave."
     },
     {
       "id": "conduct",
       "title": "Code of conduct",
-      "version": "2026-09-15T00:00:00.000Z"
+      "version": "2026-09-15T00:00:00.000Z",
+      "updatedOn": "2026-09-15",
+      "readMinutes": 1,
+      "body": "Be kind."
     }
   ],
   "taxRegime": {
     "regime": "new",
-    "at": "2026-11-16T17:26:01.865Z"
+    "at": "2026-11-16T18:22:56.930Z"
   },
   "bankPf": {
-    "confirmedAt": "2026-11-16T17:26:02.066Z"
+    "confirmedAt": "2026-11-16T18:22:57.145Z"
   },
-  "goalsReadAt": "2026-11-16T17:26:02.072Z",
+  "goalsReadAt": "2026-11-16T18:22:57.151Z",
   "policiesAck": {
     "versions": [
       {
@@ -30,10 +36,10 @@
         "version": "2026-09-15T00:00:00.000Z"
       }
     ],
-    "at": "2026-11-16T17:26:01.858Z",
+    "at": "2026-11-16T18:22:56.923Z",
     "device": "Fixture/1.0"
   },
-  "policiesAckAt": "2026-11-16T17:26:01.858Z",
+  "policiesAckAt": "2026-11-16T18:22:56.923Z",
   "steps": {
     "policies": true,
     "tax": true,
@@ -41,6 +47,7 @@
     "goals": true
   },
   "managerName": "Meera Iyer",
+  "managerUserId": "mgr",
   "bank": {
     "masked": ""
   },

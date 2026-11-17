@@ -1,0 +1,20 @@
+{
+  "enabled": true,
+  "onboarding": {
+    "journeyId": "8db67472-d473-4f79-82b8-52723e66d2b0",
+    "stage": "settling_in",
+    "dayLabel": "Week 2",
+    "plant": {
+      "stage": 2,
+      "water": 3,
+      "leaves": 0,
+      "droop": true
+    },
+    "tileVisible": true,
+    "progress": {
+      "done": 0,
+      "total": 8
+    },
+    "subtitle": "Week 2 · check-in opens Tue 1 Dec"
+  }
+}

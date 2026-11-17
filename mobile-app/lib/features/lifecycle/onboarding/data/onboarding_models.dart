@@ -63,6 +63,21 @@ DateTime? parseLifecycleDate(Object? value) {
   return DateTime.tryParse(text)?.toLocal();
 }
 
+/// A task's due or open day. The server sends a date-only rule as that day's
+/// UTC midnight ("2026-12-05T00:00:00.000Z"); read as an instant that would be
+/// 5:30 AM in India, so it is read as the calendar day instead and never
+/// shows (or sorts) as a clock time. Anything else reads as
+/// [parseLifecycleDate] does.
+DateTime? parseLifecycleDay(Object? value) {
+  final text = _str(value);
+  if (text == null) return null;
+  final midnight = RegExp(r'^(\d{4})-(\d{2})-(\d{2})T00:00(:00(\.0+)?)?(Z|\+00:00)$').firstMatch(text);
+  if (midnight != null) {
+    return DateTime(int.parse(midnight.group(1)!), int.parse(midnight.group(2)!), int.parse(midnight.group(3)!));
+  }
+  return parseLifecycleDate(text);
+}
+
 String lifecycleYmd(DateTime date) =>
     '${date.year.toString().padLeft(4, '0')}-'
     '${date.month.toString().padLeft(2, '0')}-'
@@ -166,6 +181,7 @@ class OnboardingMe {
     this.plant = const PlantState(),
     this.tileVisible = false,
     this.progress,
+    this.subtitle,
   });
 
   factory OnboardingMe.fromJson(Map<String, dynamic> json) => OnboardingMe(
@@ -175,6 +191,7 @@ class OnboardingMe {
     plant: PlantState.fromJson(json['plant']),
     tileVisible: _bool(json['tileVisible']),
     progress: TaskProgress.maybe(json['progress']),
+    subtitle: _str(json['subtitle']),
   );
 
   final String journeyId;
@@ -187,6 +204,10 @@ class OnboardingMe {
   /// the onboarding home.
   final TaskProgress? progress;
 
+  /// The Action tile's subtitle as the server words it for the stage ("2 of
+  /// 9 steps done" in week 1, "Week 6 · check-in due Fri 9 Jan" after).
+  final String? subtitle;
+
   OnboardingMe withProgress(TaskProgress? value) => OnboardingMe(
     journeyId: journeyId,
     stage: stage,
@@ -194,6 +215,7 @@ class OnboardingMe {
     plant: plant,
     tileVisible: tileVisible,
     progress: value ?? progress,
+    subtitle: subtitle,
   );
 }
 
@@ -273,6 +295,9 @@ class TaskView {
     this.meeting,
     this.meetingId,
     this.progress,
+    this.readOnly = false,
+    this.doneBy,
+    this.canMarkDone,
   });
 
   factory TaskView.fromJson(Map<String, dynamic> json) {
@@ -289,8 +314,8 @@ class TaskView {
       surface: _str(json['surface']) ?? 'app',
       mustDo: _bool(json['mustDo']),
       status: _str(json['status']) ?? 'todo',
-      opensAt: parseLifecycleDate(json['opensAt']),
-      dueAt: parseLifecycleDate(json['dueAt']),
+      opensAt: parseLifecycleDay(json['opensAt']),
+      dueAt: parseLifecycleDay(json['dueAt']),
       dueLabel: _str(json['dueLabel']),
       doneAt: parseLifecycleDate(json['doneAt']),
       doneByName: _str(json['doneByName']),
@@ -300,6 +325,9 @@ class TaskView {
       meeting: meeting.isEmpty ? null : Meeting.fromJson(meeting),
       meetingId: _str(json['meetingId']) ?? _str(meeting['id']),
       progress: TaskProgress.maybe(json['progress']),
+      readOnly: _bool(json['readOnly']),
+      doneBy: _str(json['doneBy']),
+      canMarkDone: json['canMarkDone'] is bool ? json['canMarkDone'] as bool : null,
     );
   }
 
@@ -332,22 +360,32 @@ class TaskView {
   /// "2 of 4" on a group row, when the server counts one.
   final TaskProgress? progress;
 
+  /// Someone else does it (HR, IT, the manager): shown on the joiner's day,
+  /// counted toward it, never ticked by them. [doneBy] says who ("HR").
+  final bool readOnly;
+  final String? doneBy;
+
+  /// M2: whether the manager may tick it there. HR's decision tasks never.
+  /// Null from an older server; [managerMayTick] then decides.
+  final bool? canMarkDone;
+
   bool get isDone => status == 'done' || status == 'skipped';
   bool get isLocked => status == 'locked';
   bool get isOpen => status == 'todo' || status == 'sent_back';
   bool get isClosed => isDone || status == 'cancelled';
 
   /// The joiner does it (alone or with the manager).
-  bool get forEmployee => ownerRole == 'employee' || ownerRole == 'manager_employee';
+  bool get forEmployee => !readOnly && (ownerRole == 'employee' || ownerRole == 'manager_employee');
 
   /// The manager does it (alone or with the joiner).
   bool get forManager =>
       ownerRole == 'manager' || ownerRole == 'manager_employee' || ownerRole == 'hr_manager';
 
-  /// When a timed item (a meeting) starts: the meeting's own time, else a
-  /// meeting task's due time when it has one past midnight.
+  /// When a timed item (a meeting) starts: the meeting's own time (a moved
+  /// one's new time), else a meeting task's due time when it has a real
+  /// clock time. A date-only due day is never a time.
   DateTime? get startsAt {
-    final fromMeeting = meeting?.startsAt;
+    final fromMeeting = meeting?.newTime ?? meeting?.startsAt;
     if (fromMeeting != null) return fromMeeting;
     final due = dueAt;
     if (kind == 'meeting' && due != null && (due.hour != 0 || due.minute != 0)) return due;
@@ -355,6 +393,20 @@ class TaskView {
   }
 
   bool get isTimed => startsAt != null;
+}
+
+/// Whether the manager can tick [task] on M2: the server's word, else theirs
+/// (alone or with the joiner), open, and not done on a screen of its own.
+/// HR's tasks — the Confirmation discussion — never.
+bool managerMayTick(TaskView task) {
+  final said = task.canMarkDone;
+  if (said != null) return said;
+  if (task.ownerRole != 'manager' && task.ownerRole != 'manager_employee') return false;
+  const ownScreens = {
+    'starter_task', 'one_on_one_notes', 'probation_goals', 'monthly_goals', 'monthly_checkin',
+    'monthly_review', 'manager_setup', 'assign_buddy',
+  };
+  return task.isOpen && !ownScreens.contains(task.systemKey);
 }
 
 TaskView _withMeeting(TaskView task, Meeting? meeting) => meeting == null
@@ -382,6 +434,9 @@ TaskView _withMeeting(TaskView task, Meeting? meeting) => meeting == null
         meeting: meeting,
         meetingId: task.meetingId ?? meeting.id,
         progress: task.progress,
+        readOnly: task.readOnly,
+        doneBy: task.doneBy,
+        canMarkDone: task.canMarkDone,
       );
 
 // ─── Onboarding home ────────────────────────────────────────────────────────
@@ -399,11 +454,15 @@ class OnboardingHome {
     this.done = const [],
     this.journey = const [],
     this.managerName,
+    this.serverProgress,
+    this.showWeekDone = false,
+    this.weekDoneStats,
   });
 
   factory OnboardingHome.fromJson(Map<String, dynamic> json) {
     final upNext = _map(json['upNext']);
     final meeting = _map(upNext['meeting']);
+    final stats = _map(json['weekDoneStats']);
     return OnboardingHome(
       journeyId: _str(json['journeyId']) ?? '',
       stage: _str(json['stage']),
@@ -421,6 +480,11 @@ class OnboardingHome {
       done: _maps(json['done']).map(TaskView.fromJson).toList(),
       journey: _maps(json['journey']).map(JourneyStage.fromJson).toList(),
       managerName: _str(json['managerName']),
+      serverProgress: TaskProgress.maybe(json['progress']),
+      showWeekDone: _bool(json['showWeekDone']),
+      weekDoneStats: stats.isEmpty
+          ? null
+          : (tasksDone: _int(stats['tasksDone']), peopleMet: _int(stats['peopleMet']), leaves: _int(stats['leaves'])),
     );
   }
 
@@ -438,10 +502,23 @@ class OnboardingHome {
   /// Not in CONTRACT; read when the server sends it ("Starter task from …").
   final String? managerName;
 
+  /// The server's count of the stretch's steps — the same one the Action
+  /// tile shows — when it sends one.
+  final TaskProgress? serverProgress;
+
+  /// "Week 1, done!" (A8) is due: the server's flag, so it shows once on
+  /// whichever device opens first, and never again once seen.
+  final bool showWeekDone;
+  final ({int tasksDone, int peopleMet, int leaves})? weekDoneStats;
+
   List<TaskView> get all => [...today, ...later, ...done];
 
-  /// Steps done of everything the joiner has in this stretch.
+  /// Steps done of everything the joiner has in this stretch: the server's
+  /// count (one source for the tile, the home and the profile card), else
+  /// counted here.
   TaskProgress get progress {
+    final server = serverProgress;
+    if (server != null) return server;
     final total = today.length + done.length;
     return TaskProgress(done.length, total == 0 ? 1 : total);
   }
@@ -487,6 +564,8 @@ class Meeting {
     this.expect = const [],
     this.mustDo = false,
     this.systemKey,
+    this.withWho,
+    this.canConfirm = true,
   });
 
   factory Meeting.fromJson(Map<String, dynamic> json) => Meeting(
@@ -502,6 +581,8 @@ class Meeting {
     expect: _strings(json['expect']),
     mustDo: _bool(json['mustDo']),
     systemKey: _str(json['systemKey']),
+    withWho: _str(json['with']),
+    canConfirm: json['canConfirm'] != false,
   );
 
   final String id;
@@ -520,7 +601,23 @@ class Meeting {
   final List<String> expect;
   final bool mustDo;
   final String? systemKey;
+
+  /// Who it is with, as the Day-1 agenda names them ("Neha R.").
+  final String? withWho;
+
+  /// Whether the joiner answers "Did you meet?": false for the ones HR
+  /// ticks (induction, the batch session).
+  final bool canConfirm;
 }
+
+/// A person's part in a meeting, as the screens say it: "your manager",
+/// "your buddy"; nothing for a colleague.
+String? meetingRoleLabel(String? role) => switch (role) {
+  'manager' => 'your manager',
+  'buddy' => 'your buddy',
+  'your manager' || 'your buddy' => role,
+  _ => null,
+};
 
 // ─── Week-1 reels ───────────────────────────────────────────────────────────
 
@@ -535,7 +632,16 @@ enum Week1Step {
 }
 
 class PolicyItem {
-  const PolicyItem({required this.id, required this.title, required this.version, this.url, this.readMinutes});
+  const PolicyItem({
+    required this.id,
+    required this.title,
+    required this.version,
+    this.url,
+    this.readMinutes,
+    this.summary,
+    this.body,
+    this.updatedOn,
+  });
 
   factory PolicyItem.fromJson(Map<String, dynamic> json) => PolicyItem(
     id: _str(json['id']) ?? '',
@@ -543,13 +649,24 @@ class PolicyItem {
     version: _str(json['version']) ?? '1',
     url: _str(json['url']),
     readMinutes: json['readMinutes'] == null ? null : _int(json['readMinutes']),
+    summary: _str(json['summary']),
+    body: _str(json['body']),
+    updatedOn: parseLifecycleDate(json['updatedOn']),
   );
 
   final String id;
   final String title;
+
+  /// What the acknowledgement stores (the server's version stamp); never
+  /// shown as it is.
   final String version;
   final String? url;
   final int? readMinutes;
+  final String? summary;
+
+  /// The policy's text, read in the app.
+  final String? body;
+  final DateTime? updatedOn;
 }
 
 class Week1Data {
@@ -568,6 +685,7 @@ class Week1Data {
     this.managerName,
     this.probationMonths,
     this.goalsLockOn,
+    this.managerUserId,
   });
 
   factory Week1Data.fromJson(Map<String, dynamic> json) {
@@ -602,6 +720,7 @@ class Week1Data {
       managerName: _str(json['managerName']),
       probationMonths: json['probationMonths'] == null ? null : _int(json['probationMonths']),
       goalsLockOn: parseLifecycleDate(json['goalsLockOn']),
+      managerUserId: _str(json['managerUserId']),
     );
   }
 
@@ -623,6 +742,7 @@ class Week1Data {
   final String? managerName;
   final int? probationMonths;
   final DateTime? goalsLockOn;
+  final String? managerUserId;
 
   bool isDone(Week1Step step) => switch (step) {
     Week1Step.policies => policiesAckAt != null,
@@ -648,7 +768,16 @@ Week1Step? firstUnfinishedWeek1Step(Week1Data data) {
 // ─── Intro post ─────────────────────────────────────────────────────────────
 
 class IntroPost {
-  const IntroPost({this.photoKey, this.line = '', this.funFacts = const [], this.postedAt, this.connectPostId});
+  const IntroPost({
+    this.photoKey,
+    this.line = '',
+    this.funFacts = const [],
+    this.postedAt,
+    this.connectPostId,
+    this.likes,
+    this.commentCount,
+    this.comments = const [],
+  });
 
   factory IntroPost.fromJson(Map<String, dynamic> json) {
     final intro = json['intro'] is Map ? _map(json['intro']) : json;
@@ -657,8 +786,24 @@ class IntroPost {
       line: _str(intro['line']) ?? '',
       funFacts: _strings(intro['funFacts']),
       postedAt: parseLifecycleDate(intro['postedAt']),
-      connectPostId: _str(intro['connectPostId']),
+      connectPostId: _str(intro['connectPostId']) ?? _str(json['connectPostId']),
+      likes: json['likes'] == null ? null : _int(json['likes']),
+      commentCount: json['commentCount'] == null ? null : _int(json['commentCount']),
+      comments: [
+        for (final c in _maps(json['comments']))
+          (name: _str(c['name']) ?? '', text: _str(c['text']) ?? '', at: parseLifecycleDate(c['at'])),
+      ],
     );
+  }
+
+  /// The bubble, word for word as Connect will post it: the line gets a full
+  /// stop unless it already ends a sentence (or an emoji).
+  static String messageFor(String line) {
+    final said = line.trim();
+    // Ends a sentence: punctuation, or an emoji (any symbol past the BMP's letters).
+    final last = said.isEmpty ? 0 : said.runes.last;
+    final ends = RegExp(r'[.!?…)]$').hasMatch(said) || last >= 0x2190;
+    return 'Hey everyone! $said${ends ? '' : '.'} Excited to meet you all 🙌';
   }
 
   static const maxLine = 80;
@@ -669,6 +814,11 @@ class IntroPost {
   final List<String> funFacts;
   final DateTime? postedAt;
   final String? connectPostId;
+
+  /// Once posted: how it is doing on Connect.
+  final int? likes;
+  final int? commentCount;
+  final List<({String name, String text, DateTime? at})> comments;
 
   bool get posted => postedAt != null;
 
@@ -716,6 +866,24 @@ class PersonToMeet {
   bool get met => metAt != null;
 }
 
+/// A6 as the server sends it: the people, the day to meet them by, and
+/// whether it closed at the end of month 1 (the unmet stay, as "Not met").
+class PeopleToMeetView {
+  const PeopleToMeetView({this.people = const [], this.meetBy, this.closed = false, this.managerName});
+
+  factory PeopleToMeetView.fromJson(Map<String, dynamic> json) => PeopleToMeetView(
+    people: _maps(json['people']).map(PersonToMeet.fromJson).toList(),
+    meetBy: parseLifecycleDate(json['meetBy']),
+    closed: _bool(json['closed']),
+    managerName: _str(json['managerName']),
+  );
+
+  final List<PersonToMeet> people;
+  final DateTime? meetBy;
+  final bool closed;
+  final String? managerName;
+}
+
 // ─── Starter tasks, notes ───────────────────────────────────────────────────
 
 class StarterTask {
@@ -729,6 +897,7 @@ class StarterTask {
     this.assignedAt,
     this.assignedByName,
     this.assignedByDesignation,
+    this.assignedByUserId,
     this.doneAt,
     this.doneNote,
     this.managerReply,
@@ -740,10 +909,11 @@ class StarterTask {
     journeyId: _str(json['journeyId']),
     links: _strings(json['links']),
     note: _str(json['note']),
-    dueAt: parseLifecycleDate(json['dueAt']),
+    dueAt: parseLifecycleDay(json['dueAt']),
     assignedAt: parseLifecycleDate(json['assignedAt']),
     assignedByName: _str(json['assignedByName']),
     assignedByDesignation: _str(json['assignedByDesignation']),
+    assignedByUserId: _str(json['assignedByUserId']),
     doneAt: parseLifecycleDate(json['doneAt']),
     doneNote: _str(json['doneNote']),
     managerReply: _str(json['managerReply']),
@@ -760,6 +930,7 @@ class StarterTask {
   /// Not in CONTRACT's StarterTask (it has assignedByUserId); read when sent.
   final String? assignedByName;
   final String? assignedByDesignation;
+  final String? assignedByUserId;
   final DateTime? doneAt;
   final String? doneNote;
   final String? managerReply;
@@ -879,22 +1050,35 @@ class SurveyAnswers {
 // ─── Probation ──────────────────────────────────────────────────────────────
 
 class CheckinEntry {
-  const CheckinEntry({required this.text, this.rating, this.at});
+  const CheckinEntry({required this.text, this.rating, this.at, this.goalRatings = const [], this.win, this.ask});
 
   static CheckinEntry? maybe(Object? json) {
     final map = _map(json);
     final text = _str(map['text']);
-    if (text == null && map['rating'] == null) return null;
+    final goals = map['goalRatings'] is List ? [for (final r in map['goalRatings'] as List) _int(r)] : const <int>[];
+    if (text == null && map['rating'] == null && goals.isEmpty) return null;
     return CheckinEntry(
       text: text ?? '',
       rating: map['rating'] == null ? null : _int(map['rating']),
       at: parseLifecycleDate(map['at']),
+      goalRatings: goals,
+      win: _str(map['win']),
+      ask: _str(map['ask']),
     );
   }
 
   final String text;
   final int? rating;
   final DateTime? at;
+
+  /// 1–5 per goal, in goal order (0 = not rated).
+  final List<int> goalRatings;
+
+  /// The joiner's side: one win, and what would help ("She asked").
+  final String? win;
+  final String? ask;
+
+  int? ratingFor(int goal) => goal < goalRatings.length && goalRatings[goal] > 0 ? goalRatings[goal] : null;
 }
 
 class ProbationMonth {
@@ -908,6 +1092,8 @@ class ProbationMonth {
     this.checkinManager,
     this.review,
     this.reviewAt,
+    this.reviewFeedback = const [],
+    this.askAck = false,
   });
 
   factory ProbationMonth.fromJson(Map<String, dynamic> json) {
@@ -922,6 +1108,8 @@ class ProbationMonth {
       checkinManager: CheckinEntry.maybe(json['checkinManager']),
       review: _str(review['text']),
       reviewAt: parseLifecycleDate(review['at']),
+      reviewFeedback: _strings(review['feedback']),
+      askAck: _bool(review['askAck']),
     );
   }
 
@@ -934,6 +1122,12 @@ class ProbationMonth {
   final CheckinEntry? checkinManager;
   final String? review;
   final DateTime? reviewAt;
+
+  /// One-tap feedback chips on the review, and "On it" for the ask.
+  final List<String> reviewFeedback;
+  final bool askAck;
+
+  bool get reviewed => reviewAt != null || review != null || reviewFeedback.isNotEmpty;
 
   bool get bothCheckedIn => checkinEmployee != null && checkinManager != null;
 }
@@ -974,16 +1168,32 @@ class ProbationView {
 }
 
 class RevealView {
-  const RevealView({this.outcome, this.letterUrl, this.designation, this.reportsTo, this.extendMonths, this.seen = false});
+  const RevealView({
+    this.outcome,
+    this.letterUrl,
+    this.designation,
+    this.reportsTo,
+    this.extendMonths,
+    this.seen = false,
+    this.salary,
+    this.kpiName,
+    this.kpis = const [],
+  });
 
-  factory RevealView.fromJson(Map<String, dynamic> json) => RevealView(
-    outcome: _str(json['outcome']),
-    letterUrl: _str(json['letterUrl']),
-    designation: _str(json['designation']),
-    reportsTo: _str(json['reportsTo']) ?? _str(json['reportingToName']),
-    extendMonths: json['extendMonths'] == null ? null : _int(json['extendMonths']),
-    seen: _bool(json['seen']) || json['revealedAt'] != null,
-  );
+  factory RevealView.fromJson(Map<String, dynamic> json) {
+    final kpis = _map(json['kpis']);
+    return RevealView(
+      outcome: _str(json['outcome']),
+      letterUrl: _str(json['letterUrl']),
+      designation: _str(json['designation']),
+      reportsTo: _str(json['reportsTo']) ?? _str(json['reportingToName']),
+      extendMonths: json['extendMonths'] == null ? null : _int(json['extendMonths']),
+      seen: _bool(json['seen']) || json['revealedAt'] != null,
+      salary: _double(json['salary']),
+      kpiName: _str(kpis['name']),
+      kpis: _strings(kpis['items']),
+    );
+  }
 
   /// confirm | extend | not_confirm.
   final String? outcome;
@@ -992,6 +1202,27 @@ class RevealView {
   final String? reportsTo;
   final int? extendMonths;
   final bool seen;
+
+  /// Their own new yearly CTC (3Rb A5 "NEW CTC"): the server sends it to the
+  /// joiner only, never to the manager.
+  final double? salary;
+  final String? kpiName;
+  final List<String> kpis;
+}
+
+/// ₹14,50,000 the Indian way.
+String formatRupees(double amount) {
+  final whole = amount.round().toString();
+  if (whole.length <= 3) return '₹$whole';
+  final last3 = whole.substring(whole.length - 3);
+  var rest = whole.substring(0, whole.length - 3);
+  final groups = <String>[];
+  while (rest.length > 2) {
+    groups.insert(0, rest.substring(rest.length - 2));
+    rest = rest.substring(0, rest.length - 2);
+  }
+  if (rest.isNotEmpty) groups.insert(0, rest);
+  return '₹${groups.join(',')},$last3';
 }
 
 // ─── Manager ────────────────────────────────────────────────────────────────
@@ -1012,6 +1243,7 @@ class JoinerSummary {
     this.tj,
     this.goalsLocked,
     this.probationMonths,
+    this.nextEvent,
   });
 
   factory JoinerSummary.fromJson(Map<String, dynamic> json) => JoinerSummary(
@@ -1029,6 +1261,7 @@ class JoinerSummary {
     tj: parseLifecycleDate(json['tj']),
     goalsLocked: json['goalsLocked'] == null ? null : _bool(json['goalsLocked']),
     probationMonths: json['probationMonths'] == null ? null : _int(json['probationMonths']),
+    nextEvent: _str(json['nextEvent']),
   );
 
   final String journeyId;
@@ -1045,6 +1278,9 @@ class JoinerSummary {
   final DateTime? tj;
   final bool? goalsLocked;
   final int? probationMonths;
+
+  /// In probation, what comes next ("Check-in Fri").
+  final String? nextEvent;
 
   String get firstName => name.split(RegExp(r'\s+')).first;
 
@@ -1122,12 +1358,24 @@ class JoinerDetail {
     this.meetings = const [],
     this.surveyCount,
     this.surveyAvg,
+    this.surveyKind,
+    this.surveys = const [],
     this.probation,
+    this.journey = const [],
+    this.joinerNextDue,
+    this.welcomeCanPost = false,
+    this.welcomePostedAt,
   });
 
   factory JoinerDetail.fromJson(Map<String, dynamic> json, {String? viewerId}) {
     final survey = _map(json['surveySummary']);
     final probation = _map(json['probation']);
+    final nextDue = _map(json['joinerNextDue']);
+    final welcome = _map(json['welcomePost']);
+    final surveys = [
+      for (final s in _maps(json['surveySummaries']))
+        (kind: _str(s['kind']) ?? 'day7', count: _int(s['count']), avg: _double(s['avg'])),
+    ];
     return JoinerDetail(
       joiner: JoinerSummary.fromJson(_map(json['joiner'])),
       tasks: _maps(json['tasks']).map(TaskView.fromJson).toList(),
@@ -1137,7 +1385,17 @@ class JoinerDetail {
       meetings: _maps(json['meetings']).map(Meeting.fromJson).toList(),
       surveyCount: survey.isEmpty ? null : _int(survey['count']),
       surveyAvg: _double(survey['avg']),
+      surveyKind: _str(survey['kind']),
+      surveys: surveys.isNotEmpty || survey.isEmpty
+          ? surveys
+          : [(kind: _str(survey['kind']) ?? 'day7', count: _int(survey['count']), avg: _double(survey['avg']))],
       probation: probation.isEmpty ? null : ProbationView.fromJson(probation),
+      journey: _maps(json['journey']).map(JourneyStage.fromJson).toList(),
+      joinerNextDue: nextDue.isEmpty
+          ? null
+          : (title: _str(nextDue['title']) ?? '', dueAt: parseLifecycleDate(nextDue['dueAt'])),
+      welcomeCanPost: _bool(welcome['canPost']),
+      welcomePostedAt: parseLifecycleDate(welcome['postedAt']),
     );
   }
 
@@ -1149,9 +1407,24 @@ class JoinerDetail {
   final List<Meeting> meetings;
   final int? surveyCount;
   final double? surveyAvg;
+  final String? surveyKind;
+
+  /// The team summaries, one per survey kind that 3+ different people have
+  /// answered (never merged, never a name).
+  final List<({String kind, int count, double? avg})> surveys;
 
   /// Not in CONTRACT's joiner detail; read when sent.
   final ProbationView? probation;
+
+  /// The joiner's stages as the server names them (Months 2–5 or Month 2).
+  final List<JourneyStage> journey;
+
+  /// The joiner's next due must-do ("Week-1 tasks are due Fri 5 Dec").
+  final ({String title, DateTime? dueAt})? joinerNextDue;
+
+  /// "Post a welcome": whether the manager can still post it, or when they did.
+  final bool welcomeCanPost;
+  final DateTime? welcomePostedAt;
 
   List<TaskView> get managerTasks => tasks.where((t) => t.forManager).toList();
   List<TaskView> get joinerTasks => tasks.where((t) => t.ownerRole == 'employee').toList();
@@ -1214,7 +1487,8 @@ double week1Fill({required DateTime tj, required DateTime today}) =>
 bool probationGoalsLocked({DateTime? tj, required DateTime now, bool? lockedFlag}) {
   if (lockedFlag != null) return lockedFlag;
   if (tj == null) return false;
-  return calendarDaysBetween(tj, now) > 7;
+  // The server locks on Tj + 7 itself.
+  return calendarDaysBetween(tj, now) >= 7;
 }
 
 DateTime? probationGoalsLockDate(DateTime? tj) =>

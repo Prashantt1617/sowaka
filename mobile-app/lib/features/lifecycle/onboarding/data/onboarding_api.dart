@@ -50,6 +50,12 @@ abstract class OnboardingApi {
   Future<IntroPost> saveIntro(IntroPost intro);
   Future<IntroPost> postIntro();
   Future<List<PersonToMeet>> fetchPeople();
+
+  /// A6 whole: the people, the meet-by day, and whether it closed.
+  Future<PeopleToMeetView> fetchPeopleView();
+
+  /// "Week 1, done!" was seen (on the server, so it shows on no other device).
+  Future<void> markWeekDoneSeen();
   Future<List<PersonToMeet>?> markPerson(String id, String action);
   Future<List<StarterTask>> fetchStarterTasks();
   Future<StarterTask?> markStarterTaskDone(String id, {String? note});
@@ -60,7 +66,7 @@ abstract class OnboardingApi {
   Future<SurveyState> fetchSurvey();
   Future<void> sendSurvey(SurveyAnswers answers);
   Future<ProbationView> fetchProbation();
-  Future<void> saveCheckin(int month, String text, {int? rating});
+  Future<void> saveCheckin(int month, String text, {int? rating, List<int>? goalRatings, String? win, String? ask});
   Future<RevealView> fetchReveal();
   Future<void> revealSeen();
   Future<Uint8List> download(String url);
@@ -85,12 +91,18 @@ abstract class OnboardingApi {
   Future<void> replyStarterTask(String id, String text);
   Future<void> addNote(String journeyId, String text, {required bool shared});
   Future<void> managerTaskDone(String journeyId, String taskId);
+
+  /// M2 "Post a welcome": the manager's welcome for the joiner on Connect.
+  Future<void> postWelcome(String journeyId, String text);
   Future<void> saveProbationMonth(
     String journeyId,
     int month, {
     List<String>? goals,
     CheckinEntry? checkin,
     String? review,
+    List<String>? feedback,
+    bool? askAck,
+    List<String>? nextGoals,
   });
   Future<List<DirectoryPerson>> fetchDirectory();
 }
@@ -170,6 +182,15 @@ class HttpOnboardingApi implements OnboardingApi {
     return json['people'] is List ? _people(json) : null;
   }
 
+  @override
+  Future<PeopleToMeetView> fetchPeopleView() async =>
+      PeopleToMeetView.fromJson(await _json('GET', '/lifecycle/onboarding/people'));
+
+  @override
+  Future<void> markWeekDoneSeen() async {
+    await _json('POST', '/lifecycle/onboarding/week-done/seen');
+  }
+
   List<PersonToMeet> _people(Map<String, dynamic> json) => [
     for (final item in json['people'] as List? ?? const [])
       if (item is Map) PersonToMeet.fromJson(Map<String, dynamic>.from(item)),
@@ -245,11 +266,17 @@ class HttpOnboardingApi implements OnboardingApi {
       ProbationView.fromJson(await _json('GET', '/lifecycle/onboarding/probation'));
 
   @override
-  Future<void> saveCheckin(int month, String text, {int? rating}) async {
+  Future<void> saveCheckin(int month, String text, {int? rating, List<int>? goalRatings, String? win, String? ask}) async {
     await _json(
       'PUT',
       '/lifecycle/onboarding/probation/$month/checkin',
-      body: {'text': text, 'rating': ?rating},
+      body: {
+        'text': text,
+        'rating': ?rating,
+        if (goalRatings != null && goalRatings.isNotEmpty) 'goalRatings': [for (final r in goalRatings) r > 0 ? r : null],
+        if (win != null && win.trim().isNotEmpty) 'win': win.trim(),
+        if (ask != null && ask.trim().isNotEmpty) 'ask': ask.trim(),
+      },
     );
   }
 
@@ -364,20 +391,40 @@ class HttpOnboardingApi implements OnboardingApi {
   }
 
   @override
+  Future<void> postWelcome(String journeyId, String text) async {
+    await _json('POST', '/lifecycle/manager/joiners/${Uri.encodeComponent(journeyId)}/welcome', body: {'text': text});
+  }
+
+  @override
   Future<void> saveProbationMonth(
     String journeyId,
     int month, {
     List<String>? goals,
     CheckinEntry? checkin,
     String? review,
+    List<String>? feedback,
+    bool? askAck,
+    List<String>? nextGoals,
   }) async {
+    final reviewing = review != null || (feedback != null && feedback.isNotEmpty);
     await _json(
       'PUT',
       '/lifecycle/manager/joiners/${Uri.encodeComponent(journeyId)}/probation/$month',
       body: {
         'goals': ?goals,
-        if (checkin != null) 'checkin': {'text': checkin.text, if (checkin.rating != null) 'rating': checkin.rating},
-        if (review != null) 'review': {'text': review},
+        if (checkin != null)
+          'checkin': {
+            'text': checkin.text,
+            if (checkin.rating != null) 'rating': checkin.rating,
+            if (checkin.goalRatings.any((r) => r > 0)) 'goalRatings': [for (final r in checkin.goalRatings) r > 0 ? r : null],
+          },
+        if (reviewing)
+          'review': {
+            'text': review ?? '',
+            if (feedback != null && feedback.isNotEmpty) 'feedback': feedback,
+            if (askAck == true) 'askAck': true,
+            if (nextGoals != null && nextGoals.isNotEmpty) 'nextGoals': nextGoals,
+          },
       },
     );
   }

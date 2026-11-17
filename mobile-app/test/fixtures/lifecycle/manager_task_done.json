@@ -1,6 +1,6 @@
 {
   "task": {
-    "id": "93446f4a-c17d-406a-b3a0-f8363130ac65",
+    "id": "22fb7a16-a271-4124-8f01-85288a83311c",
     "systemKey": "meet_manager",
     "phase": "first_week",
     "title": "Meet your manager",
@@ -14,7 +14,7 @@
     "opensAt": "2026-11-10T00:00:00.000Z",
     "dueAt": "2026-11-10T00:00:00.000Z",
     "dueLabel": "Tue 10 Nov",
-    "doneAt": "2026-11-16T17:26:02.052Z",
+    "doneAt": "2026-11-16T18:22:57.116Z",
     "doneByName": "Meera Iyer",
     "late": false
   }

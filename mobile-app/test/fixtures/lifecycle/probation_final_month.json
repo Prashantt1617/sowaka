@@ -2,29 +2,63 @@
   "months": [
     {
       "monthNo": 1,
-      "journeyId": "925aa5fd-16fc-47b1-8e50-3e0fa7aca009",
-      "goals": [],
-      "id": "a775ae22-c95a-4340-a716-1ab84ca922a7",
+      "journeyId": "df042e4b-57c5-4872-baf3-22c15ae8696a",
+      "goals": [
+        {
+          "text": "Ship the first feature"
+        },
+        {
+          "text": "Own the weekly report"
+        }
+      ],
+      "id": "1740aac8-92c0-423f-93a0-a95677f77a0b",
       "org": "el-fixtures",
+      "goalsSetAt": "2026-11-16T18:22:57.295Z",
+      "checkinEmployee": {
+        "text": "A win: Shipped the onboarding flow\nWould help: Access to analytics",
+        "rating": 3,
+        "goalRatings": [
+          4,
+          5
+        ],
+        "win": "Shipped the onboarding flow",
+        "ask": "Access to analytics",
+        "at": "2026-11-16T18:22:57.305Z"
+      },
+      "lockedAt": "2026-11-16T18:22:57.314Z",
+      "review": {
+        "text": "Great start",
+        "feedback": [
+          "Great start",
+          "Keep going"
+        ],
+        "askAck": true,
+        "at": "2026-11-16T18:22:57.322Z"
+      },
       "startsOn": "2026-06-13",
       "endsOn": "2026-07-12",
       "final": false
     },
     {
       "monthNo": 2,
-      "journeyId": "925aa5fd-16fc-47b1-8e50-3e0fa7aca009",
-      "goals": [],
-      "id": "32958f56-f271-4e52-9ac0-1c9df0c1f02f",
+      "journeyId": "df042e4b-57c5-4872-baf3-22c15ae8696a",
+      "goals": [
+        {
+          "text": "Pair with two teams"
+        }
+      ],
+      "id": "a4733af9-fe89-4267-9ac7-738b38f103c4",
       "org": "el-fixtures",
+      "goalsSetAt": "2026-11-16T18:22:57.322Z",
       "startsOn": "2026-07-13",
       "endsOn": "2026-08-12",
       "final": false
     },
     {
       "monthNo": 3,
-      "journeyId": "925aa5fd-16fc-47b1-8e50-3e0fa7aca009",
+      "journeyId": "df042e4b-57c5-4872-baf3-22c15ae8696a",
       "goals": [],
-      "id": "64177374-23cc-40e3-af74-671111c60354",
+      "id": "df691d9b-551f-426d-ac02-f78da1588370",
       "org": "el-fixtures",
       "startsOn": "2026-08-13",
       "endsOn": "2026-09-12",
@@ -32,9 +66,9 @@
     },
     {
       "monthNo": 4,
-      "journeyId": "925aa5fd-16fc-47b1-8e50-3e0fa7aca009",
+      "journeyId": "df042e4b-57c5-4872-baf3-22c15ae8696a",
       "goals": [],
-      "id": "92568d34-668e-4d8f-8bcb-baf89313d50b",
+      "id": "95d1efc1-492f-4922-8e4d-6d0e4678b192",
       "org": "el-fixtures",
       "startsOn": "2026-09-13",
       "endsOn": "2026-10-12",
@@ -42,9 +76,9 @@
     },
     {
       "monthNo": 5,
-      "journeyId": "925aa5fd-16fc-47b1-8e50-3e0fa7aca009",
+      "journeyId": "df042e4b-57c5-4872-baf3-22c15ae8696a",
       "goals": [],
-      "id": "806a5499-975b-4899-a7d6-8ac210ca1446",
+      "id": "e402c005-c8de-4086-9813-d1877d847e5b",
       "org": "el-fixtures",
       "startsOn": "2026-10-13",
       "endsOn": "2026-11-12",
@@ -52,9 +86,9 @@
     },
     {
       "monthNo": 6,
-      "journeyId": "925aa5fd-16fc-47b1-8e50-3e0fa7aca009",
+      "journeyId": "df042e4b-57c5-4872-baf3-22c15ae8696a",
       "goals": [],
-      "id": "f0b093fa-a270-46f9-a541-27b317a8f272",
+      "id": "20860bb4-48a6-4c47-a7e4-f0bb297465c8",
       "org": "el-fixtures",
       "startsOn": "2026-11-13",
       "endsOn": "2026-12-12",

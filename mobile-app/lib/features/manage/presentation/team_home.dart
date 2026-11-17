@@ -349,11 +349,36 @@ class _MyTeamViewState extends State<_MyTeamView> {
   void _toggleTeam(String title) =>
       setState(() => _openTeam = _openTeam == title ? null : title);
 
+  // M0: the New joiners section's joiners and its filter pill.
+  void _onJoiners() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    NewJoinersSection.joinerUserIds.addListener(_onJoiners);
+    NewJoinersSection.joinersOnly.addListener(_onJoiners);
+  }
+
+  @override
+  void dispose() {
+    NewJoinersSection.joinerUserIds.removeListener(_onJoiners);
+    NewJoinersSection.joinersOnly.removeListener(_onJoiners);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
+    // Joiners are drawn first, as joiner cards, by the New joiners section;
+    // they are not listed a second time below (unless searching).
+    final joiners = widget.canManage && _query.isEmpty
+        ? NewJoinersSection.joinerUserIds.value
+        : const <String>{};
+    final joinersOnly = joiners.isNotEmpty && NewJoinersSection.joinersOnly.value;
     final filtered = _query.isEmpty
-        ? data.team
+        ? data.team.where((member) => member.isSelf || !joiners.contains(member.userId)).toList()
         : data.team
               .where(
                 (member) =>
@@ -373,10 +398,13 @@ class _MyTeamViewState extends State<_MyTeamView> {
         const SizedBox(height: 12),
         // M0: a manager's reports in onboarding or probation, first; no
         // joiners (or the lifecycle off) and it is not there at all.
-        if (widget.canManage && _query.isEmpty) const NewJoinersSection(),
+        if (widget.canManage && _query.isEmpty)
+          NewJoinersSection(allCount: data.team.where((m) => m.reportsToViewer).length),
         // The viewer is part of the team the server sends, so there is no
         // separate card for them any more — their row simply says "(You)".
-        if (filtered.isEmpty)
+        if (joinersOnly)
+          const SizedBox.shrink()
+        else if (filtered.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 40),
             child: Center(

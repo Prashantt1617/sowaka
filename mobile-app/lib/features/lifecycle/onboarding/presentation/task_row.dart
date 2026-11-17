@@ -32,20 +32,42 @@ String taskEmoji(TaskView task) => switch (task.systemKey) {
   },
 };
 
-/// The meeting's place and people, for its meta line.
-String? _meetingWhere(TaskView task) {
+/// The meeting's place and people, for its meta line: the room, and who
+/// it is with as the agenda names them (else the others in it, never the
+/// viewer).
+String? _meetingWhere(TaskView task, {bool forManager = false}) {
   final meeting = task.meeting;
   if (meeting == null) return null;
-  final people = meeting.attendees.map((p) => p.name).where((n) => n.isNotEmpty).toList();
+  final others = meeting.attendees
+      .where((p) => p.role != (forManager ? 'manager' : 'joiner'))
+      .map((p) => p.name)
+      .where((n) => n.isNotEmpty)
+      .toList();
+  // The agenda's "with Neha R." is said to the joiner; the manager sees who else is in it.
+  final withWho = (forManager ? null : meeting.withWho) ?? (others.isEmpty ? null : others.join(', '));
   return [
     if (meeting.place != null) meeting.place!,
-    if (people.isNotEmpty) 'with ${people.join(', ')}',
+    if (meeting.place == null && meeting.link != null) 'Online',
+    if (withWho != null) 'with $withWho',
   ].join(' · ');
 }
 
-/// A row's meta line: when (the time, "Any time", the due day), where, and
-/// the task's own helper.
-String taskMeta(TaskView task, DateTime now) {
+/// "due Fri 5 Dec", "due today", "was due Tue 2 Dec": an untimed task's day.
+String? taskDueText(TaskView task, DateTime now) {
+  final due = task.dueAt;
+  if (due == null) return null;
+  final days = calendarDaysBetween(now, due);
+  if (days < 0) return 'was due ${onbRelativeDay(due, now).toLowerCase() == 'yesterday' ? 'yesterday' : onbDay(due)}';
+  if (days == 0) return null;
+  return 'due ${days == 1 ? 'tomorrow' : onbDay(due)}';
+}
+
+String _capitalised(String text) => text.isEmpty ? text : '${text[0].toUpperCase()}${text.substring(1)}';
+
+/// A row's meta line: when (the meeting's time, "Any time", "due Fri 5 Dec"),
+/// where and with whom, what is left ("2 left"), and the app's own copy for
+/// the task (6Zs §5.3 A2: "Any time · 2 min · needed to punch in").
+String taskMeta(TaskView task, DateTime now, {bool forManager = false}) {
   if (task.isDone) {
     final at = task.doneAt;
     if (at == null) return task.status == 'skipped' ? 'Skipped' : 'Done';
@@ -58,19 +80,25 @@ String taskMeta(TaskView task, DateTime now) {
   }
   final parts = <String>[];
   final start = task.startsAt;
+  final progress = task.progress;
+  if (progress != null && progress.done < progress.total) parts.add('${progress.total - progress.done} left');
   if (start != null) {
     parts.add(calendarDaysBetween(now, start) == 0 ? onbTime(start) : '${onbDay(start)} · ${onbTime(start)}');
-    final where = _meetingWhere(task);
+    final where = _meetingWhere(task, forManager: forManager);
     if (where != null && where.isNotEmpty) parts.add(where);
-  } else if (task.dueLabel != null) {
-    parts.add(task.dueLabel!);
-  } else if (task.dueAt != null && calendarDaysBetween(now, task.dueAt!) > 0) {
-    parts.add('Due ${onbDay(task.dueAt!)}');
   } else {
-    parts.add('Any time');
+    final due = taskDueText(task, now);
+    if (due != null) {
+      parts.add(due);
+    } else if (task.dueAt == null && task.dueLabel != null) {
+      // A rule with no date ("Manager sets", "Opens later").
+      parts.add(task.dueLabel!);
+    } else {
+      parts.add('Any time');
+    }
   }
   if (task.helper != null) parts.add(task.helper!);
-  return parts.join(' · ');
+  return _capitalised(parts.join(' · '));
 }
 
 /// A task row (Kit TaskRow): icon tile, title, meta and the badge on the
@@ -103,6 +131,10 @@ class OnbTaskRow extends StatelessWidget {
         mustDo: task.mustDo,
         late: task.late,
         count: count ?? task.progress?.label,
+        trailing: task.readOnly && !task.isDone && !task.mustDo && !task.isLocked
+            ? OnbTag(task.doneBy ?? 'Not yours', tone: OnbTone.locked)
+            : null,
+        semanticsHint: task.readOnly ? '${task.doneBy ?? 'Someone else'} does this one' : null,
       );
 
   final String emoji;

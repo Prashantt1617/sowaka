@@ -1,5 +1,5 @@
 {
-  "journeyId": "7be49524-2125-4d4f-9591-150f6703add7",
+  "journeyId": "4153eb32-f82c-47d2-8060-fdc8701756ff",
   "stage": "welcome_week1",
   "stageName": "Welcome",
   "dayLabel": "Week 1",
@@ -13,14 +13,13 @@
   "managerName": "Meera Iyer",
   "progress": {
     "done": 0,
-    "total": 7
+    "total": 11
   },
   "upNext": {
-    "id": "93446f4a-c17d-406a-b3a0-f8363130ac65",
+    "id": "22fb7a16-a271-4124-8f01-85288a83311c",
     "systemKey": "meet_manager",
     "phase": "first_week",
     "title": "Meet your manager",
-    "helper": "First 1:1. Timed item; push 30 min before",
     "ownerRole": "manager_employee",
     "ownerName": "Meera Iyer",
     "kind": "meeting",
@@ -31,13 +30,15 @@
     "dueAt": "2026-11-10T00:00:00.000Z",
     "dueLabel": "Tue 10 Nov",
     "late": true,
+    "helper": "Your first 1:1",
     "meetingId": "fx-meeting",
     "meeting": {
       "id": "fx-meeting",
       "title": "Meet your manager",
-      "startsAt": "2026-11-16T17:46:01.552Z",
-      "endsAt": "2026-11-16T18:16:01.552Z",
+      "startsAt": "2026-11-16T18:42:56.629Z",
+      "endsAt": "2026-11-16T19:12:56.629Z",
       "place": "Room 4B",
+      "canConfirm": true,
       "attendees": [
         {
           "userId": "isha",
@@ -59,16 +60,15 @@
       ],
       "mustDo": true,
       "systemKey": "meet_manager",
-      "taskId": "93446f4a-c17d-406a-b3a0-f8363130ac65"
+      "taskId": "22fb7a16-a271-4124-8f01-85288a83311c"
     }
   },
   "today": [
     {
-      "id": "d05acd38-dbf6-4027-95c7-8a983638b0f0",
+      "id": "2378ec4b-7879-4160-886d-404f4d1d7dee",
       "systemKey": "about_you",
       "phase": "pre_boarding",
       "title": "Emergency contact and PF",
-      "helper": "Two short steps (About you). UAN of 12 digits or “first job”",
       "ownerRole": "employee",
       "ownerName": "Isha Verma",
       "kind": "form",
@@ -78,14 +78,14 @@
       "opensAt": null,
       "dueAt": "2026-11-07T00:00:00.000Z",
       "dueLabel": "Sat 7 Nov",
-      "late": true
+      "late": true,
+      "helper": "Emergency contact and PF · 2 min"
     },
     {
-      "id": "f30f0b1e-7688-4849-bd6d-b1f52e252e7d",
+      "id": "38113972-1feb-465d-bae1-2f7bfa9f4ca2",
       "systemKey": "meet_us",
       "phase": "pre_boarding",
       "title": "Meet us videos",
-      "helper": "Manager note (text or video), culture, role and policies",
       "ownerRole": "employee",
       "ownerName": "Isha Verma",
       "kind": "reel",
@@ -95,14 +95,32 @@
       "opensAt": null,
       "dueAt": "2026-11-09T00:00:00.000Z",
       "dueLabel": "Mon 9 Nov",
-      "late": true
+      "late": true,
+      "helper": "Short videos from the team"
     },
     {
-      "id": "93446f4a-c17d-406a-b3a0-f8363130ac65",
+      "id": "be9d013a-9a8b-49f8-baea-a5bed452f342",
+      "systemKey": "welcome_induction",
+      "phase": "first_week",
+      "title": "Welcome and induction",
+      "ownerRole": "hr",
+      "kind": "meeting",
+      "surface": "dashboard",
+      "mustDo": false,
+      "status": "todo",
+      "opensAt": "2026-11-10T00:00:00.000Z",
+      "dueAt": "2026-11-10T00:00:00.000Z",
+      "dueLabel": "Tue 10 Nov",
+      "late": true,
+      "helper": "With HR · your first morning",
+      "readOnly": true,
+      "doneBy": "HR"
+    },
+    {
+      "id": "22fb7a16-a271-4124-8f01-85288a83311c",
       "systemKey": "meet_manager",
       "phase": "first_week",
       "title": "Meet your manager",
-      "helper": "First 1:1. Timed item; push 30 min before",
       "ownerRole": "manager_employee",
       "ownerName": "Meera Iyer",
       "kind": "meeting",
@@ -113,14 +131,99 @@
       "dueAt": "2026-11-10T00:00:00.000Z",
       "dueLabel": "Tue 10 Nov",
       "late": true,
-      "meetingId": "fx-meeting"
+      "helper": "Your first 1:1",
+      "meetingId": "fx-meeting",
+      "meeting": {
+        "id": "fx-meeting",
+        "title": "Meet your manager",
+        "startsAt": "2026-11-16T18:42:56.629Z",
+        "endsAt": "2026-11-16T19:12:56.629Z",
+        "place": "Room 4B",
+        "canConfirm": true,
+        "attendees": [
+          {
+            "userId": "isha",
+            "name": "Isha Verma",
+            "designation": "Product Designer",
+            "role": "joiner"
+          },
+          {
+            "userId": "mgr",
+            "name": "Meera Iyer",
+            "designation": "Design Lead",
+            "role": "manager"
+          }
+        ],
+        "expect": [
+          "How your first week will go and who to meet",
+          "Your probation goals, and what good looks like by month 1",
+          "Bring any questions, nothing to prepare"
+        ],
+        "mustDo": true,
+        "systemKey": "meet_manager",
+        "taskId": "22fb7a16-a271-4124-8f01-85288a83311c"
+      }
     },
     {
-      "id": "4999d6cf-6cb0-45ab-a98e-7c99cabc9484",
+      "id": "35faa73b-a4eb-4a90-9761-8eced674045e",
+      "systemKey": "vision_culture",
+      "phase": "first_week",
+      "title": "Company vision and culture",
+      "ownerRole": "hr",
+      "kind": "meeting",
+      "surface": "dashboard",
+      "mustDo": false,
+      "status": "todo",
+      "opensAt": "2026-11-10T00:00:00.000Z",
+      "dueAt": "2026-11-10T00:00:00.000Z",
+      "dueLabel": "Tue 10 Nov",
+      "late": true,
+      "helper": "A session for your batch",
+      "readOnly": true,
+      "doneBy": "HR"
+    },
+    {
+      "id": "1411f9a7-17f6-442d-a4f8-35d45cfb9049",
+      "systemKey": "meet_team",
+      "phase": "first_week",
+      "title": "Meet your team",
+      "ownerRole": "manager",
+      "ownerName": "Meera Iyer",
+      "kind": "meeting",
+      "surface": "app",
+      "mustDo": true,
+      "status": "todo",
+      "opensAt": "2026-11-10T00:00:00.000Z",
+      "dueAt": "2026-11-10T00:00:00.000Z",
+      "dueLabel": "Tue 10 Nov",
+      "late": true,
+      "helper": "Your manager introduces you",
+      "readOnly": true,
+      "doneBy": "Your manager"
+    },
+    {
+      "id": "15ccb850-09da-4c4d-a399-263fabfcf7e7",
+      "systemKey": "laptop_setup",
+      "phase": "first_week",
+      "title": "Set up laptop and login",
+      "ownerRole": "it",
+      "kind": "assign",
+      "surface": "dashboard",
+      "mustDo": false,
+      "status": "todo",
+      "opensAt": "2026-11-10T00:00:00.000Z",
+      "dueAt": "2026-11-10T00:00:00.000Z",
+      "dueLabel": "Tue 10 Nov",
+      "late": true,
+      "helper": "IT hands over your laptop and logins",
+      "readOnly": true,
+      "doneBy": "IT"
+    },
+    {
+      "id": "2314ebbe-8ec7-48cb-85b0-f68d5b92c35c",
       "systemKey": "register_face",
       "phase": "first_week",
       "title": "Register face for punch-in",
-      "helper": "Only for people who punch in the app; uses the existing face-check flow",
       "ownerRole": "employee",
       "ownerName": "Isha Verma",
       "kind": "face",
@@ -130,14 +233,14 @@
       "opensAt": "2026-11-10T00:00:00.000Z",
       "dueAt": "2026-11-11T00:00:00.000Z",
       "dueLabel": "Wed 11 Nov",
-      "late": true
+      "late": true,
+      "helper": "2 min · needed to punch in"
     },
     {
-      "id": "1b4c4bed-6486-419b-b19b-4e51ecbd8460",
+      "id": "4ece48c7-2a40-4807-9098-8e224a0b19bf",
       "systemKey": "app_tour",
       "phase": "first_week",
       "title": "Take the Sowaka tour",
-      "helper": "The in-app spotlight tour",
       "ownerRole": "employee",
       "ownerName": "Isha Verma",
       "kind": "tour",
@@ -147,14 +250,14 @@
       "opensAt": "2026-11-10T00:00:00.000Z",
       "dueAt": "2026-11-13T00:00:00.000Z",
       "dueLabel": "Fri 13 Nov",
-      "late": true
+      "late": true,
+      "helper": "5 min"
     },
     {
-      "id": "f52d881c-ccbc-413f-b62a-a919782dc9dd",
+      "id": "31974531-5649-4a09-a6d8-c19d437549a0",
       "systemKey": "intro_post",
       "phase": "first_week",
       "title": "Intro post",
-      "helper": "Photo, one line (80 characters), up to 3 fun facts → preview → Post to Connect; manager gets a “say hi” push",
       "ownerRole": "employee",
       "ownerName": "Isha Verma",
       "kind": "post",
@@ -164,14 +267,14 @@
       "opensAt": "2026-11-10T00:00:00.000Z",
       "dueAt": "2026-11-13T00:00:00.000Z",
       "dueLabel": "Fri 13 Nov",
-      "late": true
+      "late": true,
+      "helper": "Say hello on Connect · 2 min"
     },
     {
-      "id": "5ac176b0-1fbc-4dfc-9502-416359cd2ba4",
+      "id": "5bc285ce-b8c4-438a-8308-06465c6f30b2",
       "systemKey": "week1_reels",
       "phase": "first_week",
       "title": "Week-1 tasks",
-      "helper": "4 reels: policies (agree), tax regime (new by default), bank and PF (prefilled; edit goes to HR), probation goals (read-only)",
       "ownerRole": "employee",
       "ownerName": "Isha Verma",
       "kind": "reel",
@@ -182,17 +285,17 @@
       "dueAt": "2026-11-15T00:00:00.000Z",
       "dueLabel": "Sun 15 Nov",
       "late": true,
+      "helper": "Policies, tax regime, bank and PF, your goals",
       "progress": {
         "done": 0,
         "total": 4
       }
     },
     {
-      "id": "c7ba877a-376f-4c93-a86b-f0cc38056950",
+      "id": "1630c8f0-e57e-4fd8-a68f-610d462b442c",
       "systemKey": "day7_survey",
       "phase": "first_week",
       "title": "Day-7 survey",
-      "helper": "4 questions, one per reel. HR sees answers; manager a team summary (3+ answers)",
       "ownerRole": "employee",
       "ownerName": "Isha Verma",
       "kind": "survey",
@@ -202,14 +305,14 @@
       "opensAt": "2026-11-16T00:00:00.000Z",
       "dueAt": "2026-11-17T00:00:00.000Z",
       "dueLabel": "Tue 17 Nov",
-      "late": false
+      "late": false,
+      "helper": "4 quick questions"
     },
     {
-      "id": "ea677d60-29a2-43f2-bcd7-9bdd91578a79",
+      "id": "8e594e27-a963-47c9-a63b-47c84c914f9e",
       "systemKey": "people_to_meet",
       "phase": "first_week",
       "title": "People to meet · month 1",
-      "helper": "6 people the manager picked. Book 15 min, “We met” fills a card",
       "ownerRole": "employee",
       "ownerName": "Isha Verma",
       "kind": "meeting",
@@ -221,6 +324,7 @@
       "dueLabel": "Wed 9 Dec",
       "late": false,
       "month": 1,
+      "helper": "People your manager picked for you",
       "progress": {
         "done": 0,
         "total": 2
@@ -229,11 +333,10 @@
   ],
   "later": [
     {
-      "id": "4b387911-c368-43b4-b274-f31a795c2f7a",
+      "id": "f9aed043-ae98-4d97-9a20-183c2d1f2a45",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 1",
-      "helper": "Employee and manager together, at the end of each month",
       "ownerRole": "manager_employee",
       "ownerName": "Meera Iyer",
       "kind": "checkin",
@@ -244,14 +347,14 @@
       "dueAt": "2026-12-09T00:00:00.000Z",
       "dueLabel": "Wed 9 Dec",
       "late": false,
-      "month": 1
+      "month": 1,
+      "helper": "How the month went, with your manager"
     },
     {
-      "id": "cc0b9a31-a2b7-4047-b90e-144af6acdf52",
+      "id": "660c52cf-e1cf-40d7-965b-e65f7250b21d",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 2",
-      "helper": "Employee and manager together, at the end of each month",
       "ownerRole": "manager_employee",
       "ownerName": "Meera Iyer",
       "kind": "checkin",
@@ -262,14 +365,14 @@
       "dueAt": "2027-01-09T00:00:00.000Z",
       "dueLabel": "Sat 9 Jan",
       "late": false,
-      "month": 2
+      "month": 2,
+      "helper": "How the month went, with your manager"
     },
     {
-      "id": "c90a093c-e555-4a1d-970e-b67c90fbe457",
+      "id": "fff5c95e-d340-466a-8b6b-22988a16eb12",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 3",
-      "helper": "Employee and manager together, at the end of each month",
       "ownerRole": "manager_employee",
       "ownerName": "Meera Iyer",
       "kind": "checkin",
@@ -280,14 +383,14 @@
       "dueAt": "2027-02-09T00:00:00.000Z",
       "dueLabel": "Tue 9 Feb",
       "late": false,
-      "month": 3
+      "month": 3,
+      "helper": "How the month went, with your manager"
     },
     {
-      "id": "b8fdc618-6a57-4ba8-9a84-275ce6106abd",
+      "id": "a46c24ae-7ab6-470e-acce-8f8c42995849",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 4",
-      "helper": "Employee and manager together, at the end of each month",
       "ownerRole": "manager_employee",
       "ownerName": "Meera Iyer",
       "kind": "checkin",
@@ -298,14 +401,14 @@
       "dueAt": "2027-03-09T00:00:00.000Z",
       "dueLabel": "Tue 9 Mar",
       "late": false,
-      "month": 4
+      "month": 4,
+      "helper": "How the month went, with your manager"
     },
     {
-      "id": "d2078d17-d52c-42b5-9712-cd1272b38907",
+      "id": "462d9af9-4fae-4ec5-b290-3bea64b3247e",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 5",
-      "helper": "Employee and manager together, at the end of each month",
       "ownerRole": "manager_employee",
       "ownerName": "Meera Iyer",
       "kind": "checkin",
@@ -316,14 +419,14 @@
       "dueAt": "2027-04-09T00:00:00.000Z",
       "dueLabel": "Fri 9 Apr",
       "late": false,
-      "month": 5
+      "month": 5,
+      "helper": "How the month went, with your manager"
     },
     {
-      "id": "30d58ea3-d1be-4659-b993-0d76b34b9a1f",
+      "id": "78d4212b-1a89-4bc8-a702-4dad5ff0ce57",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 6",
-      "helper": "Employee and manager together, at the end of each month",
       "ownerRole": "manager_employee",
       "ownerName": "Meera Iyer",
       "kind": "checkin",
@@ -334,14 +437,14 @@
       "dueAt": "2027-05-09T00:00:00.000Z",
       "dueLabel": "Sun 9 May",
       "late": false,
-      "month": 6
+      "month": 6,
+      "helper": "How the month went, with your manager"
     },
     {
-      "id": "d0a45ebe-fb53-47be-b6f1-fdaaa330c6e2",
+      "id": "f30451e0-8e88-4599-bbc3-523ccb635b0a",
       "systemKey": "pulse_survey",
       "phase": "probation",
       "title": "Pulse survey · month 3",
-      "helper": "Same 4 questions as Day 7",
       "ownerRole": "employee",
       "ownerName": "Isha Verma",
       "kind": "survey",
@@ -351,14 +454,14 @@
       "opensAt": "2027-01-10T00:00:00.000Z",
       "dueAt": null,
       "late": false,
-      "month": 3
+      "month": 3,
+      "helper": "4 quick questions"
     },
     {
-      "id": "82dc1738-a2c2-4e07-a9bb-7e717efaf0b3",
+      "id": "75fba357-e408-4f17-b48f-d64312cab9ee",
       "systemKey": "pulse_survey",
       "phase": "probation",
       "title": "Pulse survey · month 6",
-      "helper": "Same 4 questions as Day 7",
       "ownerRole": "employee",
       "ownerName": "Isha Verma",
       "kind": "survey",
@@ -368,7 +471,8 @@
       "opensAt": "2027-04-10T00:00:00.000Z",
       "dueAt": null,
       "late": false,
-      "month": 6
+      "month": 6,
+      "helper": "4 quick questions"
     }
   ],
   "done": [],
@@ -408,9 +512,10 @@
     {
       "id": "fx-meeting",
       "title": "Meet your manager",
-      "startsAt": "2026-11-16T17:46:01.552Z",
-      "endsAt": "2026-11-16T18:16:01.552Z",
+      "startsAt": "2026-11-16T18:42:56.629Z",
+      "endsAt": "2026-11-16T19:12:56.629Z",
       "place": "Room 4B",
+      "canConfirm": true,
       "attendees": [
         {
           "userId": "isha",
@@ -432,8 +537,13 @@
       ],
       "mustDo": true,
       "systemKey": "meet_manager",
-      "taskId": "93446f4a-c17d-406a-b3a0-f8363130ac65"
+      "taskId": "22fb7a16-a271-4124-8f01-85288a83311c"
     }
   ],
-  "showWeekDone": false
+  "showWeekDone": false,
+  "weekDoneStats": {
+    "tasksDone": 0,
+    "peopleMet": 0,
+    "leaves": 0
+  }
 }

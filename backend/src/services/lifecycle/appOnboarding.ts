@@ -454,7 +454,10 @@ function cleanIntro(body: Record<string, unknown>, current?: IntroPost): IntroPo
 /** The post's bubble, as the preview shows it: the line gets a full stop unless it already ends a sentence. */
 export function introMessage(line: string): string {
   const said = line.trim();
-  return `Hey everyone! ${said}${/[.!?…)\p{Extended_Pictographic}]$/u.test(said) ? '' : '.'} Excited to meet you all 🙌`;
+  // Ends a sentence: punctuation, or an emoji / symbol (the app's preview uses the same rule).
+  const last = [...said].at(-1)?.codePointAt(0) ?? 0;
+  const ends = /[.!?…)]$/.test(said) || last >= 0x2190;
+  return `Hey everyone! ${said}${ends ? '' : '.'} Excited to meet you all 🙌`;
 }
 
 export async function introView(me: Me) {
@@ -564,8 +567,11 @@ export async function actOnPerson(me: Me, id: string, body: Record<string, unkno
 export async function starterTasksForJoiner(me: Me) {
   const j = await joinerJourney(me.userId);
   const rows = await starterTasks().find({ journeyId: j.id }, { projection: { _id: 0 } }).sort({ assignedAt: 1 }).toArray();
-  const names = await namesOf(rows.map((r) => r.assignedByUserId));
-  return { tasks: rows.map((r) => ({ ...r, assignedByName: names.get(r.assignedByUserId) ?? '' })) };
+  const people = await peopleOf(rows.map((r) => r.assignedByUserId));
+  return { tasks: rows.map((r) => ({
+    ...r, assignedByName: people.get(r.assignedByUserId)?.name ?? '',
+    ...(people.get(r.assignedByUserId)?.designation ? { assignedByDesignation: people.get(r.assignedByUserId)!.designation } : {}),
+  })) };
 }
 
 export async function starterDone(me: Me, id: string, body: Record<string, unknown>) {

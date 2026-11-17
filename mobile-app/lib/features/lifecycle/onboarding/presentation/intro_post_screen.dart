@@ -288,10 +288,45 @@ class _IntroPostScreenState extends State<IntroPostScreen> {
         const Align(alignment: Alignment.centerLeft, child: OnbTag('Posted', tone: OnbTone.done, icon: Icons.check_rounded)),
         const SizedBox(height: 12),
         _PostCard(shell: _shell, intro: intro),
+        if (intro.likes != null || intro.commentCount != null) ...[
+          const SizedBox(height: 10),
+          Row(
+            key: const ValueKey('intro-counts'),
+            children: [
+              const Icon(Icons.favorite_border_rounded, size: 18, color: OnbColors.icon),
+              const SizedBox(width: 4),
+              Text('${intro.likes ?? 0}', style: OnbText.bodyStrong),
+              const SizedBox(width: 16),
+              const Icon(Icons.mode_comment_outlined, size: 18, color: OnbColors.icon),
+              const SizedBox(width: 4),
+              Text('${intro.commentCount ?? 0}', style: OnbText.bodyStrong),
+            ],
+          ),
+        ],
+        for (final comment in intro.comments)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                OnbAvatar(name: comment.name, size: 32),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(comment.name, style: OnbText.bodyStrong),
+                      Text(comment.text, style: OnbText.body),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         const SizedBox(height: 12),
         if (postId != null && _shell.openPost != null)
           OnbLink(
-            label: 'See it on Connect',
+            label: intro.commentCount == null ? 'See it on Connect' : 'Reply on Connect',
             icon: Icons.open_in_new_rounded,
             onTap: () {
               Navigator.of(context).popUntil((route) => route.isFirst);
@@ -347,7 +382,8 @@ class _PostCard extends StatelessWidget {
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(color: OnbColors.tint, borderRadius: BorderRadius.circular(16)),
             child: Text(
-              'Hey everyone! ${intro.line.isEmpty ? '' : '${intro.line.trim().replaceAll(RegExp(r'[.!]+$'), '')}. '}Excited to meet you all 🙌',
+              // Word for word what Connect posts (the server's rule).
+              intro.line.trim().isEmpty ? 'Hey everyone! Excited to meet you all 🙌' : IntroPost.messageFor(intro.line),
               style: OnbText.body.copyWith(color: OnbColors.text),
             ),
           ),

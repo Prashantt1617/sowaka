@@ -188,6 +188,17 @@ the ones above:
   `handoverAddedAt`, `handoverDone`, `handoverDoneAt`.
 - `GET /lifecycle/onboarding/probation`: `totalMonths`, `currentMonth`, `managerName`.
   `GET /lifecycle/manager/joiners/:id`: `joiner.goalsLocked`. `POST …/starter-tasks/:id/done`: `task` beside `tasks`.
+- App onboarding audit fixes (el/fix-app-onb): joiner `TaskView`s carry `readOnly` + `doneBy` (Day-1 items
+  HR/IT/the manager do, counted in `progress`), `helper` is the app copy (`APP_COPY` in seed.ts, never the
+  template's HR helper), and every meeting task carries `meetingId` + `meeting` (with `with`, `canConfirm`)
+  on both the home and M2. M2 tasks carry `canMarkDone` (false for `hr_manager`, which
+  `POST …/tasks/:taskId` refuses with 403) and manager wording; M2 adds `journey`, `joinerNextDue`,
+  `welcomePost: { canPost, postedAt? }` and `surveySummaries: Array<{ kind, count, avg }>` (per kind, 3+
+  distinct people; `surveySummary` = the first). New: `POST /lifecycle/manager/joiners/:journeyId/welcome
+  { text }` (once per joiner). `/me` onboarding gains `subtitle`; home gains `weekDoneStats`; people gains
+  `closed`, `managerName`, `role`; week1 policies gain `readMinutes`, `updatedOn`, `summary`, `body`;
+  intro gains `message`, `likes`, `commentCount`, `comments`; reveal gains `kpis: { name, items }` and passes
+  `letterUrl` through. Check-ins take `goalRatings`, `win`, `ask`; reviews take `feedback` (4 chips), `askAck`.
 - Auth refusals of an ended account (`/auth/request-otp`, `/auth/verify-otp` 403; `/auth/me` and the
   auth check 401 "User is not active") carry `accountClosed: { company, lastWorkingDay, hrEmail }`,
   only when the person has an exit recorded and their company has `features.lifecycle` on.

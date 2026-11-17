@@ -170,7 +170,9 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   ok('accepting again just shows the status', (await offersSvc.acceptOffer(token2, { ip: '203.0.113.9' })).state === 'accepted');
   ok('no account before HR finalises', !(await db.candidateAccounts().findOne({ journeyId: A })));
   ok('a sign-in before finalise fails like a wrong password', (await refusal(() => auth.signIn(KABIR, 'whatever1', '5.5.5.5'))).status === 401);
-  await offersSvc.finaliseOffer(HR, A);
+  // Notifications reach the check's own org only for the finalise, so the set-up push can be read back.
+  env.notifyOrgs.push(ORG);
+  try { await offersSvc.finaliseOffer(HR, A); } finally { env.notifyOrgs.splice(env.notifyOrgs.indexOf(ORG), 1); }
   const loginMail = lastMail(KABIR)!;
   const password = /monospace">([^<]+)</.exec(loginMail.html)?.[1]?.replace(/&amp;/g, '&') ?? '';
   const account = (await db.candidateAccounts().findOne({ journeyId: A }))!;
