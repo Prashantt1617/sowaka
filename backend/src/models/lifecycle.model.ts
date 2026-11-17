@@ -427,7 +427,8 @@ export interface Day1Pass {
   askFor?: { name: string; phone?: string };
   hrContact?: { name: string; email?: string; phone?: string };
   bring?: string[];
-  agenda?: Array<{ time: string; title: string; with?: string }>;
+  /** `id` is the line's own (meetings follow it, not its words); `taskKey` is the task HR says it is (null: none). */
+  agenda?: Array<{ id?: string; time: string; title: string; with?: string; taskKey?: 'meet_manager' | 'meet_team' | 'welcome_induction' | 'vision_culture' | null }>;
 }
 
 export interface DateChangeRequest {
@@ -499,6 +500,8 @@ export interface Meeting {
   remindedAt?: Date;
   /** Who it is with, as the Day-1 agenda line names them ("Neha R.", "the founders"). */
   with?: string;
+  /** The Day-1 agenda line it was made from (its `id`); removed with the line. */
+  agendaId?: string;
 }
 
 export interface Week1Reels {

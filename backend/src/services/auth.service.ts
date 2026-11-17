@@ -200,6 +200,24 @@ const ACCOUNT_CLOSED_FIELDS = { _id: 0, org: 1, lifecycleStatus: 1, exit: 1, hrP
  * working day and where to write for documents. Anyone else (no exit recorded, the lifecycle
  * off, an account that is still active) gets nothing, so a refusal says no more than before.
  */
+/**
+ * Who a person whose account has closed can write to when the company has no
+ * reply-to or contact email: their HR contact, then the HR who recorded the
+ * exit, then a dashboard admin of the company (never a hidden support account).
+ */
+async function hrContactEmail(user: Pick<User, 'org' | 'exit' | 'hrPrimaryUserId'>): Promise<string> {
+  for (const userId of [user.hrPrimaryUserId, user.exit?.recordedByUserId]) {
+    if (!userId) continue;
+    const hr = await users().findOne({ userId, org: user.org, hiddenFromDirectory: { $ne: true } }, { projection: { _id: 0, email: 1 } });
+    if (hr?.email?.trim()) return hr.email.trim();
+  }
+  const admin = await users().find(
+    { org: user.org, dashboardAdmin: true, hiddenFromDirectory: { $ne: true }, lifecycleStatus: { $nin: ['offboarded', 'terminated'] }, email: { $ne: '', $not: /^support@/i } },
+    { projection: { _id: 0, email: 1 } },
+  ).sort({ createdAt: 1 }).limit(1).next();
+  return admin?.email?.trim() ?? '';
+}
+
 export async function accountClosedFor(
   user: Pick<User, 'org' | 'lifecycleStatus' | 'exit' | 'hrPrimaryUserId'> | null | undefined,
 ): Promise<AccountClosed | undefined> {
@@ -208,13 +226,11 @@ export async function accountClosedFor(
     if (user.lifecycleStatus !== 'offboarded' && user.lifecycleStatus !== 'terminated') return undefined;
     const company = await companies().findOne({ id: user.org }, { projection: { _id: 0, name: 1, features: 1, profile: 1 } });
     if (company?.features?.lifecycle !== true) return undefined;
-    const hr = !company.profile?.replyToEmail?.trim() && !company.profile?.primaryContactEmail?.trim() && user.hrPrimaryUserId
-      ? await users().findOne({ userId: user.hrPrimaryUserId, org: user.org }, { projection: { _id: 0, email: 1 } })
-      : null;
+    const companyEmail = company.profile?.replyToEmail?.trim() || company.profile?.primaryContactEmail?.trim() || '';
     return {
       company: company.profile?.displayName?.trim() || company.name?.trim() || user.org,
       lastWorkingDay: user.exit.lastWorkingDay,
-      hrEmail: company.profile?.replyToEmail?.trim() || company.profile?.primaryContactEmail?.trim() || hr?.email || '',
+      hrEmail: companyEmail || (await hrContactEmail(user)),
     };
   } catch (error) {
     // The refusal stands without it.

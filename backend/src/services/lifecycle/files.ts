@@ -22,6 +22,11 @@ export class LifecycleOfferError extends Error {
 }
 
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+/**
+ * multer's `fileSize` for a 10 MB limit. multer refuses a file that reaches its limit, so a limit of
+ * exactly 10 MB turned away a file of exactly 10 MB: one byte more lets 10 MB in and refuses 10 MB + 1.
+ */
+export const MULTER_FILE_LIMIT = MAX_UPLOAD_BYTES + 1;
 export type StoredContentType = 'application/pdf' | 'image/jpeg' | 'image/png';
 
 /** From the bytes, never the browser's word or the extension: the type is what the file is served back as. */

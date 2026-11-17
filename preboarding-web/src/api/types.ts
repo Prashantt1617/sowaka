@@ -96,7 +96,8 @@ export interface TaskView {
 
 export type HomeView = 'tasks_open' | 'offer_updated' | 'letter_ready' | 'pass_unlocked' | 'joined' | 'closed';
 export type PathKey = 'offer' | 'docs' | 'about' | 'meet' | 'letter' | 'pass';
-export type PathState = 'done' | 'current' | 'todo' | 'locked';
+/** `waiting`: the candidate's part is done and HR has it (documents in review: "With HR"). */
+export type PathState = 'done' | 'current' | 'todo' | 'locked' | 'waiting';
 
 export interface PortalHome {
   status: OnboardingStatus;
@@ -125,7 +126,7 @@ export interface PortalHome {
   closedState?: string;
 }
 
-/** not in CONTRACT: what sign-in answers (403, beside `error`) when the candidate's portal is closed. */
+/** not in CONTRACT: what sign-in answers (200 `{ closed }`, no session) when the candidate's portal is closed and the password is right. */
 export interface ClosedSignIn {
   state: 'declined' | 'expired' | 'not_joining' | 'moved_to_app';
   company: Company;

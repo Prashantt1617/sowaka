@@ -16,7 +16,7 @@ import { requireAuth } from '../middleware/auth.middleware';
 import { AdminError } from '../services/admin.service';
 import { journeyDocumentsView, reviewDocument } from '../services/lifecycle/documents';
 import { lifecycleEnabled } from '../services/lifecycle/emails';
-import { contentDisposition, fileForOrg, LifecycleOfferError, readFileBytes, UTF8_FILE_NAMES } from '../services/lifecycle/files';
+import { contentDisposition, fileForOrg, LifecycleOfferError, readFileBytes, UTF8_FILE_NAMES, MULTER_FILE_LIMIT } from '../services/lifecycle/files';
 import {
   createLetter, createLetterTemplate, letterWithoutPay, listLetters, listLetterTemplates, mergeValues, resolveAttachments, salaryBreakup, saveLetterDraft,
   sendLetter, updateLetterTemplate, uploadLetterAttachment, uploadLetterPdf, valuesWithoutPay,
@@ -87,7 +87,7 @@ const gate = (tabs: string[]) => async (req: Request, res: Response, next: NextF
   }
 };
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 }, ...UTF8_FILE_NAMES }).single('file');
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MULTER_FILE_LIMIT, files: 1 }, ...UTF8_FILE_NAMES }).single('file');
 const oneFile = (req: Request, res: Response, next: NextFunction) => upload(req, res, (error) => (error ? sendLifecycleError(error, res, next) : next()));
 
 const guard = (tabs: string[]) => [requireAuth, requireDashboardAccess, requireDashboardTabs, gate(tabs)];

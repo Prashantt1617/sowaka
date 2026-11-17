@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response, Router } from 'express';
+import { MULTER_FILE_LIMIT } from '../services/lifecycle/files';
 import multer from 'multer';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess, requireDashboardTabs } from '../middleware/admin.middleware';
@@ -35,8 +36,8 @@ async function lifecycleOn(req: Request, res: Response, next: NextFunction) {
   catch { res.status(404).json({ success: false, error: 'Not available', message: 'Not available' }); }
 }
 
-/** A handover file: 10 MB, any type; served back as what its bytes say (PDF, JPEG, PNG) or as a download. */
-const handoverUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } }).single('file');
+/** A handover file: 10 MB; documents, images, spreadsheets, slides, archives (checked by its bytes in uploadHandover). Served as a short-lived link (S3) or the bytes. */
+const handoverUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MULTER_FILE_LIMIT, files: 1 } }).single('file');
 function readUpload(req: Request, res: Response, next: NextFunction) {
   if (!req.is('multipart/form-data')) return next();
   handoverUpload(req, res, (error: unknown) => {

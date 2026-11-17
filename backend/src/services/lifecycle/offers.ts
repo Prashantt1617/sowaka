@@ -119,9 +119,14 @@ async function cleanFields(org: string, input: unknown, base: Partial<OfferField
   if (!Number.isFinite(ctc) || ctc <= 0 || ctc > 1e10) throw new LifecycleOfferError(400, 'Yearly CTC must be a positive amount in rupees');
   const tj = pick('tj');
   if (!isDay(tj)) throw new LifecycleOfferError(400, 'Joining date must be a date (YYYY-MM-DD)');
+  // A new joining date is after today (an unchanged one on a revision is left as it is).
+  if (tj !== base.tj && tj <= istDate()) throw new LifecycleOfferError(400, `The joining date must be after today (${formatDay(istDate())})`);
   const validTillRaw = pick('validTill');
-  const validTill = validTillRaw === undefined || validTillRaw === null || validTillRaw === '' ? addDays(istDate(), 7) : validTillRaw;
+  // Valid for a week by default, never past the joining day.
+  const validTill = validTillRaw === undefined || validTillRaw === null || validTillRaw === '' ? [addDays(istDate(), 7), tj].sort()[0] : validTillRaw;
   if (!isDay(validTill)) throw new LifecycleOfferError(400, 'Offer valid till must be a date (YYYY-MM-DD)');
+  // The candidate must be able to accept before they join.
+  if (tj < validTill) throw new LifecycleOfferError(400, `The joining date (${formatDay(tj)}) is before the offer’s valid-till date (${formatDay(validTill)}). Move the joining date, or make the offer valid till an earlier day.`);
   const managerUserId = text('managerUserId', 64);
   if (managerUserId && !(await users().findOne({ userId: managerUserId, org }, { projection: { _id: 1 } }))) {
     throw new LifecycleOfferError(400, 'The reporting manager is not in this company');

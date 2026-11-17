@@ -4,6 +4,7 @@
  * panel; and HR's actions on a journey (manager, buddy, Day-1 pass, template,
  * a task, a bank/PF change).
  */
+import { randomUUID } from 'node:crypto';
 import { dateChangeRequests, journeys, journeyTasks, offers, surveyResponses, users } from '../../config/db';
 import type {
   Day1Pass, Journey, JourneyFlag, JourneyTask, OnboardingBoardColumn, OnboardingBoardTab, OwnerRole, SurveyKind,
@@ -13,14 +14,14 @@ import { resolveProfilePhoto } from '../s3-connect-media.service';
 import { setPaymentDetails } from '../employeePayment.service';
 import { companyTimeZone, isDateKey, keyOfDay, todayKey } from './dueRules';
 import {
-  ACTIVE_STATUSES, LifecycleError, deriveJourney, finishTaskById, isCounted, isJoined, loadJourney, namesOf, reassignManager,
+  ACTIVE_STATUSES, AGENDA_TASK_KEYS, LifecycleError, deriveJourney, finishTaskById, guessAgendaTask, isCounted, isJoined, loadJourney, namesOf, reassignManager,
   refreshJourney, rematerialiseDraft, reopenTaskById, sanitiseJourney, syncDay1Meetings, taskLate, taskView, tasksOf, tell, completeTask,
-  type Derived, type TaskView,
+  type AgendaTaskKey, type Derived, type TaskView,
 } from './engine';
 import { journeyDocumentsView } from './documents';
 import { journeyLettersView } from './letters';
 import { offerView } from './offers';
-import { probationOf } from './probation';
+import { probationOf, sentDecisionLetter } from './probation';
 import { templateForJourney } from './templates';
 import { nudgedToday, nudgeTarget } from './nudges';
 
@@ -312,7 +313,7 @@ export async function batchOf(j: Pick<Journey, 'id' | 'org' | 'tj'>): Promise<Ar
   return rows.map((r) => ({ journeyId: r.id, name: (r.userId && names.get(r.userId)) || r.candidate?.name || '—' }));
 }
 
-function cleanDay1Pass(input: unknown): Day1Pass {
+function cleanDay1Pass(input: unknown, previous?: Day1Pass): Day1Pass {
   if (!input || typeof input !== 'object') throw new LifecycleError(400, 'day1Pass must be an object');
   const p = input as Record<string, unknown>;
   const text = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
@@ -344,8 +345,22 @@ function cleanDay1Pass(input: unknown): Day1Pass {
       if (typeof a.time !== 'string' || !time.test(a.time)) throw new LifecycleError(400, `Agenda item ${i + 1}: time is HH:mm`);
       const title = text(a.title, 120);
       if (!title) throw new LifecycleError(400, `Agenda item ${i + 1}: a title is required`);
-      return { time: a.time, title, ...(text(a.with, 120) ? { with: text(a.with, 120) } : {}) };
+      // Each line keeps its own id (its meeting follows it). A line sent without one takes the id of the
+      // same line already on the pass (time and title), else a new one.
+      const before = previous?.agenda?.find((x) => x.time === a.time && x.title === title);
+      const id = typeof a.id === 'string' && /^[\w-]{6,64}$/.test(a.id) ? a.id : before?.id ?? randomUUID();
+      // The task it is: what HR picked; else what it was; else (a line from before) what its words say.
+      let taskKey: AgendaTaskKey | null;
+      if (a.taskKey === null || a.taskKey === '') taskKey = null;
+      else if (a.taskKey !== undefined) {
+        if (!AGENDA_TASK_KEYS.includes(a.taskKey as AgendaTaskKey)) throw new LifecycleError(400, `Agenda item ${i + 1}: taskKey is one of ${AGENDA_TASK_KEYS.join(', ')}, or null`);
+        taskKey = a.taskKey as AgendaTaskKey;
+      } else taskKey = before && before.taskKey !== undefined ? before.taskKey : guessAgendaTask(title) ?? null;
+      return { id, time: a.time, title, ...(text(a.with, 120) ? { with: text(a.with, 120) } : {}), taskKey };
     });
+    // One line per task: a second line naming the same task is just a meeting.
+    const seen = new Set<string>();
+    for (const line of out.agenda) { if (line.taskKey && seen.has(line.taskKey)) line.taskKey = null; else if (line.taskKey) seen.add(line.taskKey); }
   }
   return out;
 }
@@ -366,7 +381,7 @@ export async function updateJourneyByHr(org: string, journeyId: string, body: Re
     if (body.buddyUserId === null || body.buddyUserId === '') unset.buddyUserId = '';
     else set.buddyUserId = await colleague(body.buddyUserId, 'buddy');
   }
-  if (body.day1Pass !== undefined) set.day1Pass = cleanDay1Pass(body.day1Pass);
+  if (body.day1Pass !== undefined) set.day1Pass = cleanDay1Pass(body.day1Pass, j.day1Pass);
   let rematerialise = false;
   if (body.templateId !== undefined) {
     if (j.status !== 'draft') throw new LifecycleError(409, 'The template can only change before the offer is sent');
@@ -377,10 +392,10 @@ export async function updateJourneyByHr(org: string, journeyId: string, body: Re
     rematerialise = true;
   }
   await journeys().updateOne({ id: journeyId }, { $set: set, ...(Object.keys(unset).length ? { $unset: unset } : {}) });
-  if (set.managerUserId && set.managerUserId !== j.managerUserId) await reassignManager(journeyId, set.managerUserId);
+  if (set.managerUserId && set.managerUserId !== j.managerUserId) await reassignManager(journeyId, set.managerUserId, j.managerUserId);
   if (set.buddyUserId) await completeTask(journeyId, 'assign_buddy', { name: 'HR' });
   if (rematerialise) await rematerialiseDraft(journeyId);
-  if (set.day1Pass) await syncDay1Meetings(journeyId);
+  if (set.day1Pass || (set.managerUserId && set.managerUserId !== j.managerUserId)) await syncDay1Meetings(journeyId);
   const fresh = await refreshJourney(journeyId);
   return { journey: sanitiseJourney(fresh) };
 }
@@ -390,6 +405,16 @@ export async function actOnTaskByHr(org: string, journeyId: string, taskId: stri
   const j = await requireOnboarding(org, journeyId);
   const note = typeof body.note === 'string' ? body.note.trim().slice(0, 1000) : undefined;
   let task: JourneyTask;
+  if (body.action === 'done') {
+    // The letter task is the reveal's trigger and its "Read your letter": it is done by sending the
+    // letter from Documents, never by a tick alone (a tick gave a reveal with no letter to read).
+    const target = await journeyTasks().findOne({ id: taskId, journeyId }, { projection: { _id: 0, systemKey: 1, status: 1 } });
+    if (target?.systemKey === 'confirmation_letter' && target.status !== 'done') {
+      const letterId = await sentDecisionLetter(j);
+      if (!letterId) throw new LifecycleError(409, 'Send the letter from Documents first: the joiner’s reveal opens with it');
+      await journeys().updateOne({ id: journeyId }, { $set: { 'probation.decision.letterId': letterId } });
+    }
+  }
   if (body.action === 'done' || body.action === 'skip') task = await finishTaskById(journeyId, taskId, body.action, hr, note);
   else if (body.action === 'reopen') task = await reopenTaskById(journeyId, taskId, note);
   else throw new LifecycleError(400, 'action is done, reopen or skip');

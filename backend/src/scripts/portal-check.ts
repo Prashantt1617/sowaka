@@ -26,6 +26,7 @@ process.env.NODE_ENV = 'test';
 
 let passed = 0;
 let failed = 0;
+const tokenOf = (out: { token: string } | { closed: unknown }) => { if (!('token' in out)) throw new Error('expected a session, got a closed portal'); return out.token; };
 function ok(label: string, condition: unknown, detail?: unknown) {
   if (condition) { passed += 1; console.log(`  ok   ${label}`); }
   else { failed += 1; console.log(`  FAIL ${label}${detail === undefined ? '' : ` — ${JSON.stringify(detail)}`}`); }
@@ -219,7 +220,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   ok('the fifth wrong try locks the account for 15 minutes', fifth.status === 403 && fifth.message.includes('15 minutes'), fifth);
   ok('the right password is refused while locked', (await refusal(() => auth.signIn(KABIR, password, '6.6.6.6', new Date(t0.getTime() + 5 * 60_000)))).status === 403);
   const signedIn = await auth.signIn(KABIR.toUpperCase(), password, '6.6.6.6', new Date(t0.getTime() + 16 * 60_000));
-  ok('after 15 minutes the right password signs in', typeof signedIn.token === 'string' && signedIn.token.split('.').length === 3);
+  ok('after 15 minutes the right password signs in', 'token' in signedIn && signedIn.token.split('.').length === 3);
   journeyA = (await db.journeys().findOne({ id: A }))!;
   ok('first sign-in: status active, sign-in task done', journeyA.status === 'active' && (await db.journeyTasks().findOne({ journeyId: A, systemKey: 'portal_sign_in' }))?.status === 'done');
   clearLifecycleOutbox();
@@ -231,7 +232,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   ok('8 characters of any kind is enough (the portal’s rule)', auth.checkNewPassword('abcdefgh') === 'abcdefgh');
   await auth.resetPassword(resetToken, 'NewPassword9');
   ok('the reset link works once', (await refusal(() => auth.resetPassword(resetToken, 'NewPassword9'))).status === 400);
-  ok('the new password signs in; the old one does not', Boolean((await auth.signIn(KABIR, 'NewPassword9', '6.6.6.7')).token) && (await refusal(() => auth.signIn(KABIR, password, '6.6.6.7'))).status === 401);
+  ok('the new password signs in; the old one does not', 'token' in (await auth.signIn(KABIR, 'NewPassword9', '6.6.6.7')) && (await refusal(() => auth.signIn(KABIR, password, '6.6.6.7'))).status === 401);
   auth.resetRateLimits();
   let limited: { status?: number } = {};
   for (let i = 0; i < auth.LIMITS.signIn.max + 1; i += 1) limited = await refusal(() => auth.signIn('nobody@example.com', 'x1xxxxxx', '9.9.9.9'));
@@ -241,7 +242,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   for (let i = 0; i < auth.LIMITS.offerLink.max + 1; i += 1) limited = await refusal(() => offersSvc.openOfferLink(token2, '8.8.8.8'));
   ok('the offer link is rate-limited per IP', limited.status === 429);
   auth.resetRateLimits();
-  const portalToken = (await auth.signIn(KABIR, 'NewPassword9', '6.6.6.8')).token;
+  const portalToken = tokenOf(await auth.signIn(KABIR, 'NewPassword9', '6.6.6.8'));
 
   section('Token audiences: app and portal tokens never pass for each other');
   const appToken = randomBytes(32).toString('hex');
@@ -380,6 +381,9 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   ok('an approved document cannot be uploaded to', (await refusal(() => docsSvc.uploadDocumentFiles(journeyA, idDoc.id, [{ originalname: 'x.pdf', buffer: PDF() }]))).status === 409);
   ok('a document with nothing uploaded cannot be approved', (await refusal(() => docsSvc.reviewDocument(HR, addrDoc.id, { decision: 'approve' }))).status === 409);
   await docsSvc.uploadDocumentFiles(journeyA, addrDoc.id, [{ originalname: 'bill.pdf', buffer: PDF('addr') }]);
+  home = await portalSvc.portalHome((await db.journeys().findOne({ id: A }))!);
+  ok('every required document in (one approved, one in review): Docs is With HR, and Up next moves on (or says HR is checking)',
+    home.path.find((p) => p.key === 'docs')?.state === 'waiting' && (home.upNext?.key !== 'docs' || home.upNext.title === 'HR is checking your documents'), { path: home.path, up: home.upNext });
   ok('letters are locked before the last approval', (await lettersSvc.portalLetters(journeyA)).every((l) => l.state === 'locked'));
   await docsSvc.reviewDocument(HR, addrDoc.id, { decision: 'approve' });
   journeyA = (await db.journeys().findOne({ id: A }))!;
@@ -612,16 +616,16 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   clearLifecycleOutbox();
   await offersSvc.finaliseOffer(HR, D.journeyId);
   const dPassword = /monospace">([^<]+)</.exec(lastMail('divya.check@example.com')!.html)![1].replace(/&amp;/g, '&');
-  const dToken = (await auth.signIn('divya.check@example.com', dPassword, '4.4.4.4')).token;
+  const dToken = tokenOf(await auth.signIn('divya.check@example.com', dPassword, '4.4.4.4'));
   await offersSvc.markNotJoining(HR, D.journeyId, 'Joined elsewhere');
   const dJourney = (await db.journeys().findOne({ id: D.journeyId }))!;
   ok('not joining: closed, open tasks cancelled', dJourney.status === 'not_joining' && (await db.journeyTasks().countDocuments({ journeyId: D.journeyId, status: { $in: ['todo', 'locked'] } })) === 0);
   ok('the link says not joining', (await offersSvc.openOfferLink(D.token, '1.1.1.1')).state === 'not_joining');
-  const closedTry = await refusal(() => auth.signIn('divya.check@example.com', dPassword, '4.4.4.4'));
-  ok('sign-in is refused: portal closed', closedTry.status === 403);
+  const closedTry = await auth.signIn('divya.check@example.com', dPassword, '4.4.4.4');
+  ok('the right password on a closed portal: no session, the closed screen', !('token' in closedTry) && 'closed' in closedTry && closedTry.closed.state === 'not_joining');
   const closedViaRoute = await call(portalRouter as never, 'POST', '/auth/sign-in', undefined, { email: 'divya.check@example.com', password: dPassword });
-  const closedBody = closedViaRoute.body as { error?: string; closed?: { state?: string; company?: { name?: string }; hrContact?: { email?: string } } };
-  ok('…with the closed screen to show (PX: not joining), the client and HR', closedViaRoute.status === 403 && closedBody.error === 'This portal is closed' && closedBody.closed?.state === 'not_joining' && closedBody.closed.company?.name === 'Sowaka Test' && closedBody.closed.hrContact?.email === 'hr@sowaka.test', closedViaRoute.body);
+  const closedBody = closedViaRoute.body as { token?: string; closed?: { state?: string; company?: { name?: string }; hrContact?: { email?: string } } };
+  ok('…a 200 with the closed screen to show (PX: not joining), the client and HR, and no token', closedViaRoute.status === 200 && !closedBody.token && closedBody.closed?.state === 'not_joining' && closedBody.closed.company?.name === 'Sowaka Test' && closedBody.closed.hrContact?.email === 'hr@sowaka.test', closedViaRoute.body);
   ok('…but a wrong password on a closed portal says nothing about it', !('closed' in ((await call(portalRouter as never, 'POST', '/auth/sign-in', undefined, { email: 'divya.check@example.com', password: 'Wrong-pass9' })).body as object)));
   const dHome = await portalSvc.portalHome(await auth.journeyForPortalToken(`Bearer ${dToken}`));
   ok('an old session sees the closed screen', dHome.view === 'closed' && dHome.closedState === 'not_joining');

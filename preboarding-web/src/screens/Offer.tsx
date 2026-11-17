@@ -68,7 +68,13 @@ function OfferFlow({ src, letter, base }: { src: OfferSource; letter: boolean; b
   if (error)
     return (
       <Page header={{}} layout="narrow">
-        {error instanceof ApiError && error.status === 404 ? (
+        {error instanceof ApiError && error.status === 404 && /another company/i.test(error.message) ? (
+          <section className="closed">
+            <Eyebrow>Wrong address</Eyebrow>
+            <h1 className="display">This link is for another company</h1>
+            <p className="body sub">{error.message}</p>
+          </section>
+        ) : error instanceof ApiError && error.status === 404 ? (
           <section className="closed">
             <Eyebrow>Link not found</Eyebrow>
             <h1 className="display">This link doesn’t work</h1>
@@ -234,7 +240,12 @@ function OfferLetter({ view, src, onAccepted, back }: { view: PortalOfferView; s
   const fileName = v2 ? `Offer letter · version ${view.version}.pdf` : 'Offer letter.pdf';
   const load = useCallback(() => portal.offerPdf(src), [src]);
 
+  // One accept per press sequence: the ref holds from the first press, before React re-renders the
+  // button as disabled, so quick double presses never send a second request.
+  const accepting = useRef(false);
   const accept = async () => {
+    if (accepting.current) return;
+    accepting.current = true;
     setBusy(true);
     setErr(undefined);
     try {
@@ -243,6 +254,7 @@ function OfferLetter({ view, src, onAccepted, back }: { view: PortalOfferView; s
     } catch (e) {
       setErr((e as Error).message);
     } finally {
+      accepting.current = false;
       setBusy(false);
     }
   };
@@ -257,7 +269,8 @@ function OfferLetter({ view, src, onAccepted, back }: { view: PortalOfferView; s
     </label>
   );
   const acceptBtn = (
-    <PrimaryButton onClick={accept} disabled={!agreed || busy} aria-describedby={err ? 'accept-err' : undefined}>
+    <PrimaryButton onClick={accept} disabled={!agreed || busy} aria-busy={busy || undefined} aria-describedby={err ? 'accept-err' : undefined}>
+      {busy && <span className="spinner spinner--inline" aria-hidden="true" />}
       {busy ? 'Accepting…' : v2 ? 'Accept updated offer' : 'Accept offer'}
     </PrimaryButton>
   );

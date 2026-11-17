@@ -27,6 +27,7 @@ const PATHS = {
   upload: 'M12 16V5M7 9.5l5-5 5 5M5 20h14',
   phone: 'M7 3h10v18H7zM11 18h2',
   external: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6',
+  'chevron-down': 'M6 9l6 6 6-6',
 } as const;
 
 export type IconName = keyof typeof PATHS;

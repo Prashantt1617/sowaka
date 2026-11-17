@@ -1,6 +1,7 @@
 import { request, upload, setSession } from './client';
 import type {
   AboutYou,
+  ClosedSignIn,
   CandidateDocumentView,
   DateRequestReason,
   DateRequestView,
@@ -34,14 +35,16 @@ export const portal = {
       : request<PortalOfferView>('/portal/me/offer/accept', { method: 'POST' }),
 
   // ── Account ───────────────────────────────────────────────────────────
-  async signIn(email: string, password: string) {
-    const { token } = await request<{ token: string }>('/portal/auth/sign-in', {
+  /** The right password: a session, or (a closed portal) which closed screen to show and no session. */
+  async signIn(email: string, password: string): Promise<{ token: string } | { closed: ClosedSignIn }> {
+    const out = await request<{ token?: string; closed?: ClosedSignIn }>('/portal/auth/sign-in', {
       method: 'POST',
       auth: false,
       body: { email, password },
     });
-    setSession(token);
-    return token;
+    if (out.closed?.state) return { closed: out.closed };
+    setSession(out.token!);
+    return { token: out.token! };
   },
   forgot: (email: string) => request<{ ok: true }>('/portal/auth/forgot', { method: 'POST', auth: false, body: { email } }),
   reset: (token: string, password: string) =>

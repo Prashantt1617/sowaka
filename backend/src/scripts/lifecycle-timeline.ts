@@ -411,7 +411,8 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
 
   // ── Mon 8 Mar 10:30: Kabir signs in
   section('3 · Signed in; quiet for 3 days → the nudge and the Quiet flag');
-  const tokA = (await auth.signIn(KABIR, passA, '6.6.6.6')).token;
+  const signedA = await auth.signIn(KABIR, passA, '6.6.6.6');
+  const tokA = 'token' in signedA ? signedA.token : '';
   ok('signed in: status active', (await journey(A)).status === 'active');
   let home = await portalHome(A);
   eq('portal home: tasks open; path Offer done, Docs current, Sign and Day 1 locked', [home.view, pathOf(home)], ['tasks_open', ['offer:done', 'docs:current', 'about:todo', 'meet:todo', 'letter:locked', 'pass:locked']]);
@@ -432,7 +433,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   const cHome = await portalHome(C);
   eq('portal: the closed screen, not joining', [cHome.view, cHome.closedState], ['closed', 'not_joining']);
   eq('the offer link says not joining', (await offersSvc.openOfferLink(tokenC, '1.1.1.1')).state, 'not_joining');
-  eq('sign-in refused: the portal is closed', (await refusal(() => auth.signIn(CHETAN, passC, '4.4.4.4'))).status, 403);
+  eq('sign-in on the closed portal: no session, the closed screen', (await auth.signIn(CHETAN, passC, '4.4.4.4') as { closed?: { state?: string } }).closed?.state, 'not_joining');
   ok('off the board', !(await onCard(C)));
   await expectPushes('the manager is told, once', ['lifecycle_not_joining>mgr']);
   await advanceTo(T('2027-03-11', '09:30'));
@@ -648,7 +649,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   await advanceTo(T('2027-03-28', '16:00'));
   await app.sendSurvey(KME, { answers: { q1: 4, q2: 'mostly', q3: 5, q4: 'More time with the team' } });
   card = await onCard(A);
-  ok('board: Week done', card?.column === 'week_done' && card.flags.includes('done'), card);
+  ok('board: every week-1 task done on Tj + 6: All set, still Day-7 survey (Week done is Tj + 7, the day the app shows it)', card?.column === 'day7_survey' && card.flags.includes('all_set'), card);
   await advanceTo(T('2027-03-29', '08:30'));
   await expectPushes('nothing overnight', []);
 
@@ -661,10 +662,10 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   me = await app.lifecycleMe(KME) as typeof me;
   eq('/lifecycle/me: Week 2, a seedling, Settling in', [me.onboarding?.dayLabel, me.onboarding?.plant.stage, me.onboarding?.stage], ['Week 2', 2, 'settling_in']);
   card = await onCard(A);
-  eq('board: Probation › Month 1', [card?.tab, card?.column], ['probation', 'month1']);
+  eq('board: Week done on Tj + 7, the same day as the app (Probation › Month 1 from the next day)', [card?.tab, card?.column, card?.flags.includes('done')], ['first_week', 'week_done', true]);
   home = await portalHome(A);
   eq('portal: closed, moved to the app', [home.view, home.closedState], ['closed', 'moved_to_app']);
-  eq('portal sign-in refused now', (await refusal(() => auth.signIn(KABIR, passA, '6.6.6.6'))).status, 403);
+  eq('portal sign-in now: no session, the closed screen', (await auth.signIn(KABIR, passA, '6.6.6.6') as { closed?: { state?: string } }).closed?.state, 'moved_to_app');
   eq('goals can no longer change', (await refusal(() => app.saveSetup(MGR, A, { goals: ['Late'] }))).status, 409);
   aHome = await app.onboardingHome(KME);
   ok('app home: the Week 1 done moment shows', aHome.showWeekDone);
@@ -742,6 +743,10 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   me = await app.lifecycleMe(KME) as typeof me;
   eq('/lifecycle/me: a bloom', me.onboarding?.plant.stage, 5);
   eq('no reveal before the letter', (await app.revealForMe(KME)).ready, false);
+  // The letter task is done by a sent letter, not a tick alone: refused first, then the letter goes out (as from Documents).
+  const letterTaskId = (await task(A, 'confirmation_letter')).id;
+  eq('the letter task cannot be ticked with no letter sent', (await refusal(() => board.actOnTaskByHr(ORG, A, letterTaskId, { action: 'done' }, HRME))).status, 409);
+  await db.getDb().collection('lifecycle_letters').insertOne({ id: 'L-kabir-confirm', org: ORG, journeyId: A, kind: 'confirmation', templateId: 't', refNo: 'CL-1', values: {}, createdAt: new Date(), email: { to: 'kabir@example.com', subject: 'Confirmed', body: 'x', sentAt: new Date() } });
   await board.actOnTaskByHr(ORG, A, (await task(A, 'confirmation_letter')).id, { action: 'done', note: 'Letter sent' }, HRME);
   await advanceTo(T('2027-06-01', '11:05'), 'sparse');
   await advanceTo(T('2027-06-01', '13:05'), 'sparse');
@@ -763,6 +768,8 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   eq('extended: 4 months, months_2_5 again', [ext.outcome, engine.totalProbationMonths(jB), (await onCard(B))?.column], ['extend', 4, 'months_2_5']);
   ok('month-4 tasks added (check-in, review, goals, a new decision)', !!(await task(B, 'monthly_checkin', 4)) && !!(await task(B, 'monthly_review', 4)) && (await task(B, 'confirmation_discussion', 4))?.status === 'locked');
   await doneTasksStayed('Bina’s extension', B, bBefore, ['confirmation_letter', 'confirmation_reveal']);
+  // The extension letter goes out from Documents; then its task can be marked done.
+  await db.getDb().collection('lifecycle_letters').insertOne({ id: 'L-bina-extend', org: ORG, journeyId: B, kind: 'extension', templateId: 't', refNo: 'EL-1', values: {}, createdAt: new Date(), email: { to: 'bina@example.com', subject: 'Extended', body: 'x', sentAt: new Date() } });
   await board.actOnTaskByHr(ORG, B, (await task(B, 'confirmation_letter')).id, { action: 'done', note: 'Extension letter sent' }, HRME);
   await advanceTo(T('2027-06-02', '13:05'), 'sparse');
   const pe = await newPushes();
@@ -777,6 +784,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   ok('board: Final month, Decide', cardB?.column === 'final_month' && cardB.flags.includes('decide'), cardB);
   await advanceTo(T('2027-07-01', '10:30'), 'sparse');
   await probation.recordDecision(B, HRME, { outcome: 'confirm' });
+  await db.getDb().collection('lifecycle_letters').insertOne({ id: 'L-bina-confirm', org: ORG, journeyId: B, kind: 'confirmation', templateId: 't', refNo: 'CL-2', values: {}, createdAt: new Date(), email: { to: 'bina@example.com', subject: 'Confirmed', body: 'x', sentAt: new Date() } });
   await board.actOnTaskByHr(ORG, B, (await task(B, 'confirmation_letter')).id, { action: 'done' }, HRME);
   await advanceTo(T('2027-07-01', '13:05'), 'sparse');
   const pg = await newPushes();

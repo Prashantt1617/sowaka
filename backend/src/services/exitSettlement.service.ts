@@ -96,12 +96,17 @@ export function settlementOpen(exit: UserExit): boolean {
  * The statement as the rules give it now. Nothing is saved.
  * `changes` are HR's figures laid over the computed lines.
  */
-export async function computeSettlement(employee: User, changes: Record<string, SettlementChange> = {}): Promise<Pick<ExitSettlement, 'lines' | 'earningsPaise' | 'deductionsPaise' | 'payablePaise' | 'tax'>> {
+export async function computeSettlement(employee: User, changes: Record<string, SettlementChange> = {}): Promise<Pick<ExitSettlement, 'lines' | 'earningsPaise' | 'deductionsPaise' | 'payablePaise' | 'tax' | 'notSetUp'>> {
   const exit = employee.exit;
   const org = employee.org;
   if (!exit || !org) throw new SettlementError(409, 'No exit recorded for this employee');
   const rules = exit.rules ?? DEFAULT_EXIT_RULES[exit.kind];
   const lastDay = exit.lastWorkingDay;
+  // No salary structure, no settlement: every line would be worked out at ₹0 (payroll never assumes figures).
+  const structureRow = await salaryStructures().findOne({ org, userId: employee.userId }, { projection: { _id: 0, salaryTemplateCode: 1 } });
+  if (!structureRow?.salaryTemplateCode) {
+    return { lines: [], earningsPaise: 0, deductionsPaise: 0, payablePaise: 0, notSetUp: 'No salary structure for this person. Set it up in Payroll to work out the settlement.' };
+  }
   const notice = await exitNoticeSettings(org);
 
   // —— Salary: held payslips from monthly runs, and the last month when no run has made it yet.
@@ -329,7 +334,7 @@ export async function settlementFor(employee: User, now = new Date()): Promise<E
   if (saved && saved.status !== 'draft') return saved;
   const computed = await computeSettlement(employee, saved?.changes ?? {});
   const doc: ExitSettlement = { org: employee.org, userId: employee.userId, status: 'draft', ...computed, ...(saved?.changes ? { changes: saved.changes } : {}), createdAt: saved?.createdAt ?? now, updatedAt: now };
-  await exitSettlements().updateOne({ org: employee.org, userId: employee.userId }, { $set: doc }, { upsert: true });
+  await exitSettlements().updateOne({ org: employee.org, userId: employee.userId }, { $set: doc, ...(computed.notSetUp ? {} : { $unset: { notSetUp: '' } }) }, { upsert: true });
   return doc;
 }
 
@@ -341,6 +346,7 @@ export function settlementView(s: ExitSettlement) {
     deductionsPaise: s.deductionsPaise,
     payablePaise: s.payablePaise,
     tax: s.tax ?? null,
+    notSetUp: s.notSetUp ?? null,
     clearanceOverrideReason: s.clearanceOverrideReason ?? null,
     approvedAt: s.approvedAt ? s.approvedAt.toISOString() : null,
     approvedByName: s.approvedByName ?? null,
@@ -373,6 +379,7 @@ export async function approveSettlement(org: string, employee: User, body: Recor
   const current = await settlementFor(employee, now);
   if (!current) throw new SettlementError(409, 'The settlement has not started yet');
   if (current.status !== 'draft') throw new SettlementError(409, 'This settlement is already approved');
+  if (current.notSetUp) throw new SettlementError(409, current.notSetUp);
   // An exit nobody has ticked yet still has the whole list open.
   const open = (employee.exit?.clearance ?? DEFAULT_EXIT_CLEARANCE.map((c) => ({ ...c, done: false }))).filter((c) => !c.done);
   const reason = String(body.clearanceOverrideReason ?? '').trim().slice(0, 300);

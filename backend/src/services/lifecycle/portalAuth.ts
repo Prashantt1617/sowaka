@@ -160,7 +160,7 @@ export async function createCandidateAccount(journey: Journey): Promise<{ accoun
   return { account, password };
 }
 
-export async function signIn(emailInput: unknown, passwordInput: unknown, ip: string, now = new Date()): Promise<{ token: string }> {
+export async function signIn(emailInput: unknown, passwordInput: unknown, ip: string, now = new Date()): Promise<{ token: string } | { closed: Awaited<ReturnType<typeof closedScreen>> }> {
   rateLimit('portal-sign-in', ip, LIMITS.signIn.max, LIMITS.signIn.windowMs, now.getTime());
   const email = String(emailInput ?? '').trim().toLowerCase();
   const password = String(passwordInput ?? '');
@@ -188,8 +188,10 @@ export async function signIn(emailInput: unknown, passwordInput: unknown, ip: st
   const journey = await journeys().findOne({ id: account.journeyId });
   if (!journey || !(await lifecycleEnabled(journey.org))) throw wrong();
   if (CLOSED_STATUSES.has(String(journey.status))) {
-    // The right password on a closed portal: say which closed screen (P16, PX, P3b, P3c), not just "closed".
-    throw new LifecycleOfferError(403, 'This portal is closed', { closed: await closedScreen(journey) });
+    // The right password on a closed portal: a normal answer naming which closed screen (P16, PX, P3b, P3c);
+    // not an error (the screen is the right one, and a 403 had the browser log a failed call). No session.
+    await candidateAccounts().updateOne({ email }, { $set: { failedTries: 0 }, $unset: { lockedUntil: '' } });
+    return { closed: await closedScreen(journey) };
   }
   const first = !account.lastSignInAt;
   await candidateAccounts().updateOne({ email }, { $set: { failedTries: 0, lastSignInAt: now }, $unset: { lockedUntil: '' } });

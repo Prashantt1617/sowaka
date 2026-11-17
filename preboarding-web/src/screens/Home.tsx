@@ -44,6 +44,7 @@ function dueLine(me: PortalHome, key: PathKey, state: string): string {
   // Documents approved, letters not uploaded yet: HR is making them, not waiting on the candidate's documents.
   if (key === 'letter' && state === 'locked') return stateOf(me, 'docs') === 'done' ? 'HR is preparing' : 'After docs';
   if (state === 'done') return 'Done';
+  if (state === 'waiting') return 'With HR';
   if (t?.dueAt) return `Due ${fmtShort(t.dueAt)}`;
   if (t?.dueLabel) return t.dueLabel;
   return 'Any time';
@@ -174,12 +175,12 @@ export function Home() {
           const node = (
             <>
               <span className={`node node--${p.state} ${p.state === 'current' ? 'pulse' : ''} ${p.state === 'done' ? 'pop' : ''}`} aria-hidden="true">
-                {p.state === 'done' ? <Icon name="check" size={18} /> : p.state === 'locked' ? <span className="node__dot" /> : i + 1}
+                {p.state === 'done' ? <Icon name="check" size={18} /> : p.state === 'locked' || p.state === 'waiting' ? <span className="node__dot" /> : i + 1}
               </span>
               <span className="path__label">{p.label}</span>
               {wide && <span className="label path__due">{dueLine(me, p.key, p.state)}</span>}
               <span className="sr-only">
-                {p.state === 'done' ? ', done' : p.state === 'current' ? ', up now' : p.state === 'locked' ? ', locked' : ', to do'}
+                {p.state === 'done' ? ', done' : p.state === 'current' ? ', up now' : p.state === 'locked' ? ', locked' : p.state === 'waiting' ? ', with HR' : ', to do'}
               </span>
             </>
           );

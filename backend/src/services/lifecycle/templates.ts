@@ -59,7 +59,12 @@ export async function ensureDefaultTemplates(org: string): Promise<void> {
       const company = await companies().findOne({ id: org }, { projection: { _id: 0, exitNoticeDays: 1 } });
       if (typeof company?.exitNoticeDays === 'number' && company.exitNoticeDays > 0) doc.settings.noticeDays = company.exitNoticeDays;
     }
-    await lifecycleTemplates().updateOne({ org, kind, isDefault: true }, { $setOnInsert: doc }, { upsert: true });
+    try {
+      await lifecycleTemplates().updateOne({ org, kind, isDefault: true }, { $setOnInsert: doc }, { upsert: true });
+    } catch (error) {
+      // Another first visit made it a moment ago (the one-Default index refused this one): that one stands.
+      if ((error as { code?: number }).code !== 11000) throw error;
+    }
   }
 }
 

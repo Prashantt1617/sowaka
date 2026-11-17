@@ -23,7 +23,7 @@ import {
   addDaysKey, companyTimeZone, dateKeyOf, dayDate, daysBetween, humanDay, isDateKey, keyOfDay, probationMonthEnd, probationMonthOn, todayKey,
 } from './dueRules';
 import {
-  ACTIVE_STATUSES, LifecycleError, OPEN_STATUSES, completeTask, deriveJourney, finishTaskById, isJoined, lifecycleEnabled,
+  ACTIVE_STATUSES, LifecycleError, OPEN_STATUSES, completeTask, deriveJourney, finishTaskById, isJoined, isWeek1Done, lifecycleEnabled,
   joinerSeesReadOnly, loadJourney, namesOf, refreshJourney, setTaskDue, stageName, taskLate, taskView, tasksOf, tell, totalProbationMonths, visibleTo,
   type TaskView,
 } from './engine';
@@ -282,7 +282,7 @@ export async function onboardingHome(me: Me, now = new Date()) {
     done: views.filter(isDone).sort((a, b) => (b.doneAt ?? '').localeCompare(a.doneAt ?? '')),
     journey: stagesFor(j, derived.stage),
     meetings: meetings.map((m) => meetingView(m, meetingPeople, ctxOf(m))),
-    showWeekDone: !!j.tj && today >= addDaysKey(j.tj, 7) && !j.week1DoneSeenAt,
+    showWeekDone: isWeek1Done(j.tj, today) && !j.week1DoneSeenAt,
     ...(j.week1DoneSeenAt ? { weekDoneSeenAt: j.week1DoneSeenAt } : {}),
     weekDoneStats: weekDoneStats(tasks, await countBadges(j), derived.plant.leaves),
   };
@@ -659,21 +659,26 @@ export async function actOnMeeting(me: Me, id: string, body: Record<string, unkn
 
 // ─── Surveys (A7) ───────────────────────────────────────────────────────────
 
+/** A survey closes at the end of its due day (company day): late answers are refused. */
+export const surveyClosed = (t: JourneyTask | undefined, today: string) => !!t?.dueAt && keyOfDay(t.dueAt) < today;
+
 /** The survey that is open now, else the next one coming. */
-function currentSurvey(tasks: JourneyTask[]): { kind: SurveyKind; task?: JourneyTask } {
+function currentSurvey(tasks: JourneyTask[], today: string): { kind: SurveyKind; task?: JourneyTask } {
   const day7 = tasks.find((t) => t.systemKey === 'day7_survey' && t.status !== 'cancelled');
   const pulses = tasks.filter((t) => t.systemKey === 'pulse_survey' && t.status !== 'cancelled').sort((a, b) => (a.month ?? 0) - (b.month ?? 0));
-  const open = [day7, ...pulses].find((t) => t && (t.status === 'todo' || t.status === 'sent_back'));
+  const open = [day7, ...pulses].find((t) => t && (t.status === 'todo' || t.status === 'sent_back') && !surveyClosed(t, today));
   const pick = open ?? [day7, ...pulses].find((t) => t && t.status === 'locked') ?? pulses.at(-1) ?? day7;
   const kind: SurveyKind = !pick || pick.systemKey === 'day7_survey' ? 'day7' : pick.month === 3 ? 'm3' : 'm6';
   return { kind, task: pick };
 }
 
-export async function surveyView(me: Me) {
+export async function surveyView(me: Me, now = new Date()) {
   const j = await joinerJourney(me.userId);
-  const { kind, task } = currentSurvey(await tasksOf(j.id));
+  const today = todayKey(now, companyTimeZone(j.org));
+  const { kind, task } = currentSurvey(await tasksOf(j.id), today);
   const sent = !!(await surveyResponses().findOne({ journeyId: j.id, kind }, { projection: { _id: 1 } }));
-  return { kind, open: !!task && (task.status === 'todo' || task.status === 'sent_back') && !sent, sent, ...(task?.opensAt ? { opensAt: task.opensAt } : {}), ...(task?.dueAt ? { dueAt: task.dueAt } : {}) };
+  const closed = !sent && surveyClosed(task, today);
+  return { kind, open: !!task && (task.status === 'todo' || task.status === 'sent_back') && !sent && !closed, sent, ...(closed ? { closed: true } : {}), ...(task?.opensAt ? { opensAt: task.opensAt } : {}), ...(task?.dueAt ? { dueAt: task.dueAt } : {}) };
 }
 
 export function cleanSurveyAnswers(input: unknown): Record<string, string | number | null> {
@@ -688,14 +693,15 @@ export function cleanSurveyAnswers(input: unknown): Record<string, string | numb
   return { q1: scale(a.q1, 'q1'), q2: a.q2, q3: scale(a.q3, 'q3'), q4: q4 || null };
 }
 
-export async function sendSurvey(me: Me, body: Record<string, unknown>) {
+export async function sendSurvey(me: Me, body: Record<string, unknown>, now = new Date()) {
   const j = await joinerJourney(me.userId);
   const tasks = await tasksOf(j.id);
-  const { kind, task } = currentSurvey(tasks);
+  const today = todayKey(now, companyTimeZone(j.org));
+  const { kind, task } = currentSurvey(tasks, today);
+  if (surveyClosed(task, today)) throw new LifecycleError(409, `This survey closed on ${humanDay(keyOfDay(task!.dueAt!))}`);
   if (!task || (task.status !== 'todo' && task.status !== 'sent_back')) throw new LifecycleError(409, 'No survey is open');
   const answers = cleanSurveyAnswers(body.answers);
   const user = await users().findOne({ userId: me.userId }, { projection: { _id: 0, department: 1 } });
-  const now = new Date();
   const claimed = await surveyResponses().updateOne(
     { journeyId: j.id, kind },
     { $setOnInsert: {

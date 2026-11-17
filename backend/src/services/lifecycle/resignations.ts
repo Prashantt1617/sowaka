@@ -11,7 +11,7 @@
  * seen by the manager and HR only.
  */
 import { randomUUID } from 'node:crypto';
-import { resignations, users } from '../../config/db';
+import { lifecycleTemplates, resignations, users } from '../../config/db';
 import type { Resignation } from '../../models/lifecycle.model';
 import {
   LifecycleError, addDays, appUser, beginOffboarding, dashboardActor, daysFromTo, firstName, isDateKey, keyOfInstant, longDay, noticeDaysFor, requireHr, resignationView, shortDay,
@@ -147,21 +147,46 @@ export async function acceptResignation(hrUserId: string, resignationId: string,
   const employee = await users().findOne({ userId: r.userId, org: hr.org });
   if (!employee) throw new LifecycleError(404, 'Employee not found');
   if (employee.exit) throw new LifecycleError(409, `An exit is already recorded for ${employee.name}`);
-  const lastWorkingDay = body.lastWorkingDay == null || body.lastWorkingDay === '' ? (r.manager?.date ?? r.lastDayByNotice) : String(body.lastWorkingDay);
-  if (!isDateKey(lastWorkingDay)) throw new LifecycleError(400, 'Last working day is a date like 2026-12-31');
   const sent = keyOfInstant(r.submittedAt)!;
+  // A template picked here is this exit's template: its notice sets the last day by notice too
+  // (the resignation was sent with the Default's), not only the interview and the account close.
+  let noticeDays = r.noticeDays;
+  let lastDayByNotice = r.lastDayByNotice;
+  if (body.templateId) {
+    const template = await lifecycleTemplates().findOne({ id: String(body.templateId), org: hr.org, kind: 'offboarding' }, { projection: { _id: 0, settings: 1 } });
+    if (!template) throw new LifecycleError(400, 'No such offboarding template');
+    if (typeof template.settings?.noticeDays === 'number') { noticeDays = template.settings.noticeDays; lastDayByNotice = addDays(sent, noticeDays); }
+  }
+  const lastWorkingDay = body.lastWorkingDay == null || body.lastWorkingDay === '' ? (r.manager?.date ?? lastDayByNotice) : String(body.lastWorkingDay);
+  if (!isDateKey(lastWorkingDay)) throw new LifecycleError(400, 'Last working day is a date like 2026-12-31');
   if (lastWorkingDay < sent) throw new LifecycleError(400, `The last day cannot be before the resignation (${longDay(sent)})`);
-  const early = lastWorkingDay < r.lastDayByNotice && body.recoverShortfall !== true;
-  const res = await beginOffboarding(hr, employee, {
-    exitType: 'resignation', lastWorkingDay, noticeFrom: sent, noticeDays: r.noticeDays,
-    ...(body.note ? { note: String(body.note).trim().slice(0, 1000) } : {}),
-    ...(early ? { rules: { noticeRecovery: 'none' } } : {}),
-    ...(body.newManagerUserId ? { newManagerUserId: String(body.newManagerUserId) } : {}),
-    moveTeamNow: body.moveTeamNow === true,
-    ...(body.templateId ? { templateId: String(body.templateId) } : {}),
-    resignationId: r.id, tellManagerNow: true, showAppPage: true,
-  }, now);
-  await resignations().updateOne({ id: r.id }, { $set: { status: 'accepted', hrAcceptedAt: now, ...(hr.name ? { hrAcceptedByName: hr.name } : {}), agreedLastDay: lastWorkingDay, journeyId: res.journeyId } });
+  const early = lastWorkingDay < lastDayByNotice && body.recoverShortfall !== true;
+  // One accept: the resignation moves to accepted in one conditional step before the exit and its journey
+  // are made, so a second click (or two HR at once) cannot start a second exit. Undone if the start fails.
+  const claimed = await resignations().updateOne(
+    { id: r.id, org: hr.org, status: { $in: OPEN } },
+    { $set: { status: 'accepted', hrAcceptedAt: now, ...(hr.name ? { hrAcceptedByName: hr.name } : {}), agreedLastDay: lastWorkingDay, noticeDays, lastDayByNotice } },
+  );
+  if (!claimed.modifiedCount) throw new LifecycleError(409, 'This resignation is already accepted');
+  let res: Awaited<ReturnType<typeof beginOffboarding>>;
+  try {
+    res = await beginOffboarding(hr, employee, {
+      exitType: 'resignation', lastWorkingDay, noticeFrom: sent, noticeDays,
+      ...(body.note ? { note: String(body.note).trim().slice(0, 1000) } : {}),
+      ...(early ? { rules: { noticeRecovery: 'none' } } : {}),
+      ...(body.newManagerUserId ? { newManagerUserId: String(body.newManagerUserId) } : {}),
+      moveTeamNow: body.moveTeamNow === true,
+      ...(body.templateId ? { templateId: String(body.templateId) } : {}),
+      resignationId: r.id, tellManagerNow: true, showAppPage: true,
+    }, now);
+  } catch (error) {
+    await resignations().updateOne({ id: r.id, status: 'accepted', journeyId: { $exists: false } }, {
+      $set: { status: r.status, noticeDays: r.noticeDays, lastDayByNotice: r.lastDayByNotice },
+      $unset: { hrAcceptedAt: '', hrAcceptedByName: '', agreedLastDay: '' },
+    });
+    throw error;
+  }
+  await resignations().updateOne({ id: r.id }, { $set: { journeyId: res.journeyId } });
   await completeTask(res.journeyId, 'send_resignation', { userId: r.userId });
   if (r.manager) await completeTask(res.journeyId, 'manager_resignation_action', { name: r.manager.byName });
   const after = await resignations().findOne({ id: r.id }, { projection: { _id: 0 } });
