@@ -20,6 +20,9 @@ import { SuwiOrb } from './suwi/SuwiPanel';
 import { useSuwiNotices } from './suwi/SuwiNoticed';
 import { PAGE_ACTIONS_ID } from './ds';
 import { BULK_VIEWS, SETUP_VIEWS } from './setupGroups';
+import { useLifecycleOn } from './lifecycleSwitch';
+import { TEAM_NAME, useOffboardingCount } from './views/lifecycle/offboarding/badge';
+import { useOnboardingBadge } from './onboardingBadge';
 
 /** `hidden`: not shown in the sidebar, but still part of its section's access (Accesses grants it). */
 export type NavItem = { key: View; label: string; hidden?: boolean };
@@ -114,11 +117,24 @@ const PLACEMENTS: NavItem[] = [
   { key: 'placementclients', label: 'Clients' },
   { key: 'placementcustomers', label: 'Candidates' },
 ];
+// Employee lifecycle: a company feature (lifecycleSwitch.ts), so the whole group
+// shows only where it is on. Templates and Document templates open from Setup
+// (hidden here, so Accesses still gives them with the group). Where it is on,
+// Offboarding replaces People › Exits.
+export const LIFECYCLE_SECTION = 'EMPLOYEE LIFECYCLE';
+const LIFECYCLE: NavItem[] = [
+  { key: 'onboarding', label: 'Onboarding' },
+  { key: 'offboarding', label: 'Offboarding' },
+  { key: 'exit_insights', label: 'Exit insights' },
+  { key: 'lifecycle_documents', label: 'Documents' },
+  { key: 'lifecycle_templates', label: 'Templates', hidden: true },
+];
 export const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'PLACEMENTS', items: PLACEMENTS },
   { title: 'TIME OFFICE', items: REQUESTS },
   { title: 'SUPPORT', items: SUPPORT },
   { title: 'PEOPLE', items: PEOPLE },
+  { title: LIFECYCLE_SECTION, items: LIFECYCLE },
   { title: 'SHIFTS', items: SHIFTS },
   { title: 'PERFORMANCE', items: PERFORMANCE },
   { title: 'PAYROLL', items: PAYROLL },
@@ -278,7 +294,12 @@ export function Sidebar() {
   // The company's real name, not a constant baked in at build time.
   const companyName = brand.name ?? user?.company ?? ORG_DISPLAY_NAME;
   const { leaves, ots, rbs, corrs, fbMgrs, listState } = useStore();
-  const sections = SECTIONS.map((s) => ({ ...s, items: s.items.filter((item) => !item.hidden && canOpen(user, item.key)) })).filter((s) => s.items.length > 0);
+  const lifecycle = useLifecycleOn(Boolean(user?.dashboardAccess));
+  // Where the lifecycle is on, the Offboarding board takes the place of People › Exits.
+  const replaced = (key: View) => key === 'exits' && (user?.features?.lifecycle === true || lifecycle === true);
+  const sections = SECTIONS
+    .filter((s) => s.title !== LIFECYCLE_SECTION || lifecycle === true)
+    .map((s) => ({ ...s, items: s.items.filter((item) => !item.hidden && !replaced(item.key) && canOpen(user, item.key)) })).filter((s) => s.items.length > 0);
   // A cancellation request on an approved leave waits on HR's decision too.
   const leavesPending = leaves.filter((l) => l.status === 'Pending' || l.cancelRequest?.status === 'Pending').length;
   const otPending = ots.filter((o) => o.status === 'Pending').length;
@@ -289,8 +310,12 @@ export function Sidebar() {
   const supportCount = useSupportBadge(canOpen(user, 'support') ? user?.supportRole : null);
   // FBP bills waiting for HR: counted under FBP requests, not under reimbursements.
   const fbpPending = useFbpBadge(canOpen(user, 'fbprequests'));
+  // Onboarding: joiners who need HR now or are late (red), where the lifecycle is on.
+  const onboardingPending = useOnboardingBadge(lifecycle === true && canOpen(user, 'onboarding'));
   // What Suwi noticed: requests waiting past the limit turn the Requests counts red (Claims already are).
   const overdue = useSuwiNotices().notices.some((n) => n.key === 'requests_overdue');
+  // Offboarding: cards that need you, and late ones.
+  const offboardingCount = useOffboardingCount(lifecycle === true && canOpen(user, 'offboarding'));
 
   // A count waits for its list: no "0" before the requests have arrived.
   const LIST_FOR: Partial<Record<View, StoreList>> = { leave: 'leaves', overtime: 'overtime', attendance: 'corrections', feedback: 'feedback', reimbursements: 'claims' };
@@ -312,6 +337,10 @@ export function Sidebar() {
         return <CountBadge value={supportCount} danger={supportCount > 0} />;
       case 'fbprequests':
         return fbpPending === null ? null : <CountBadge value={fbpPending} danger={fbpPending > 0} />;
+      case 'offboarding':
+        return offboardingCount === null ? null : <CountBadge value={offboardingCount.count} danger={offboardingCount.count > 0} />;
+      case 'onboarding':
+        return onboardingPending === null ? null : <CountBadge value={onboardingPending} danger={onboardingPending > 0} />;
       default:
         return SOON[key] ? <SoonBadge /> : null;
     }
@@ -480,6 +509,10 @@ export function Topbar() {
     ? `${new Date().toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'Asia/Kolkata' })}, ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })}`
     : fixedMeta;
   const displayName = user?.name ?? 'HR Admin';
+  // IT, Admin and Finance clearance staff see their team under their name, not "HR".
+  const lifecycleOn = useLifecycleOn(Boolean(user?.dashboardAccess));
+  const offViewer = useOffboardingCount(lifecycleOn === true && canOpen(user, 'offboarding'))?.viewer;
+  const roleLabel = offViewer?.kind === 'team' && offViewer.team ? TEAM_NAME[offViewer.team] : 'HR';
   const iconBtn = {
     position: 'relative' as const,
     width: 42,
@@ -524,7 +557,7 @@ export function Topbar() {
           <PersonAvatar name={displayName} userId={user?.id} size={32} font={12} tone={{ bg: 'var(--t-butter)', fg: 'var(--t-butter-i)' }} />
           <div style={{ minWidth: 0, lineHeight: 1.15, display: 'flex', flexDirection: 'column', gap: 2 }}>
             <div style={{ fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap' }}>{displayName}</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 }}>HR</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 }}>{roleLabel}</div>
           </div>
         </div>
         <button

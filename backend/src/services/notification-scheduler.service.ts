@@ -7,6 +7,10 @@ import { flushGroupedNotifications } from './notification-groups.service';
 import { istParts } from './notification-time';
 import { logger } from '../utils/logger';
 import { closeDueExits } from './exit.service';
+import { runPortalJobs } from './lifecycle/portal';
+import { runOffboardingJobs } from './lifecycle/offboarding';
+import { runLifecycleJobs } from './lifecycle/jobs';
+import { runContestNotifications } from './contest-notifications.service';
 
 /**
  * Runs one scheduled job in isolation: a thrown error is logged and does not
@@ -32,6 +36,10 @@ export async function runHourlyJobs(now = new Date()): Promise<void> {
   const { hour, weekday } = istParts(now);
   // Exits: access ends the day after the last working day. Every hour, so a missed one catches up.
   await run('closeDueExits', () => closeDueExits(now));
+  // Pre-boarding portal: offer expiry, login/quiet/letter nudges, the Day-1 pass mail (idempotent).
+  await run('runPortalJobs', () => runPortalJobs(now));
+  // Offboarding: exit interview opens, settlement due, gratuity due (once each; access itself is closeDueExits').
+  await run('runOffboardingJobs', () => runOffboardingJobs(now));
   if (hour === 10) {
     await run('sendNewJoinerNotifications', () => sendNewJoinerNotifications(now));
     // Cycle open, the Friday reminder and the last day, to managers only.
@@ -57,6 +65,10 @@ export function startNotificationScheduler() {
     void (async () => {
       await run('sendLatePunchInReminders', () => sendLatePunchInReminders());
       await run('flushGroupedNotifications', () => flushGroupedNotifications());
+      // Contests: two hours before closing, to those not in yet; then the results (once each).
+      await run('runContestNotifications', () => runContestNotifications());
+      // Employee lifecycle: meeting reminders every tick, the day jobs once an hour (fired once each).
+      await run('runLifecycleJobs', () => runLifecycleJobs());
     })().finally(() => { fiveMinuteRunning = false; });
   }, 5 * 60 * 1000);
   fiveMinuteTimer.unref();

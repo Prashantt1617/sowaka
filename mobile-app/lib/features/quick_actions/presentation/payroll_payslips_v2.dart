@@ -86,7 +86,17 @@ class _PayslipsPageState extends State<_PayslipsPage> {
   }
 }
 
-/// "September 2026 · Credited 30 Sep · ₹1,13,533 ›".
+/// Held (R4) shows only where the company has the employee lifecycle on:
+/// the payslip API already carries `held` for the live exits, and the chip
+/// is part of the lifecycle's off-boarding, not a change for everyone.
+bool _showsHeld(Payslip slip) => slip.held && LifecycleMeStore.instance.value.enabled;
+
+/// A month held for the final settlement (R4): amber, in words.
+const _prHeld = Color(0xFF8A5300);
+const _prHeldTint = Color(0xFFFFF4E0);
+
+/// "September 2026 · Credited 30 Sep · ₹1,13,533 ›"; a held month
+/// "November 2026 · Gross ₹1,24,000 · Held ›".
 class _PayslipListRow extends StatelessWidget {
   const _PayslipListRow({
     required this.slip,
@@ -125,7 +135,10 @@ class _PayslipListRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  slip.paidAt == null
+                  // Held (R4): the month's gross, since nothing was credited.
+                  _showsHeld(slip)
+                      ? 'Gross ${_rupees(slip.grossPaise > 0 ? slip.grossPaise : slip.monthlyPaise)}'
+                      : slip.paidAt == null
                       ? 'Released'
                       : 'Credited ${_short(slip.paidAt!)}',
                   style: _PrText.sub.copyWith(
@@ -138,13 +151,21 @@ class _PayslipListRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          Text(
-            _rupees(slip.netPayablePaise),
-            style: _PrText.amount.copyWith(
-              fontSize: 14.5,
-              fontFeatures: const [FontFeature.tabularFigures()],
+          if (_showsHeld(slip))
+            _PrPill(
+              'Held',
+              key: ValueKey('payslip-held-${slip.id}'),
+              color: _prHeld,
+              tint: _prHeldTint,
+            )
+          else
+            Text(
+              _rupees(slip.netPayablePaise),
+              style: _PrText.amount.copyWith(
+                fontSize: 14.5,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
             ),
-          ),
           const SizedBox(width: 12),
           const Icon(
             Icons.chevron_right_rounded,
@@ -415,13 +436,16 @@ class _PayslipPageState extends State<_PayslipPage> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  _PrPill(
-                    slip.paidAt == null
-                        ? 'Released'
-                        : 'Credited ${_short(slip.paidAt!)}',
-                    color: _prGreen,
-                    tint: _prGreenTint,
-                  ),
+                  if (_showsHeld(slip))
+                    const _PrPill('Held', color: _prHeld, tint: _prHeldTint)
+                  else
+                    _PrPill(
+                      slip.paidAt == null
+                          ? 'Released'
+                          : 'Credited ${_short(slip.paidAt!)}',
+                      color: _prGreen,
+                      tint: _prGreenTint,
+                    ),
                 ],
               ),
               const SizedBox(height: 10),

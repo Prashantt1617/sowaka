@@ -36,10 +36,16 @@ import { engagementGamesRouter } from './engagement-games.routes';
 import { policiesRouter } from './policy-document.routes';
 import { appPagesRouter } from './app-page.routes';
 import { appUpdateRouter } from './app-update.routes';
+import { lifecycleOfferRouter } from './lifecycle-offer.routes';
+import { portalRouter } from './portal.routes';
+import { lifecycleAdminRouter } from './lifecycle-admin.routes';
+import { lifecycleAppRouter } from './lifecycle-app.routes';
 import { suwiRouter } from '../suwi/routes';
 import { suwiPeopleRouter } from '../suwi/routes.people';
 import { suwiNoticesRouter } from '../suwi/routes.notices';
 import { forgetEngagement } from '../services/engagement-cache';
+import { lifecycleOffboardingAdminRouter, lifecycleOffboardingRouter } from './lifecycle-offboarding.routes';
+import { notificationLookRouter } from './notification-look.routes';
 
 export const router = Router();
 
@@ -69,6 +75,14 @@ router.use('/admin/engagement/feed', engagementFeedRouter);
 router.use('/admin/engagement/plan', engagementPlanRouter);
 router.use('/admin/engagement/contests', engagementContestsRouter);
 router.use('/admin/engagement/games', engagementGamesRouter);
+// Employee lifecycle: offers, documents and letters (each route guards itself; others fall through).
+router.use('/admin/lifecycle', lifecycleOfferRouter);
+// Employee lifecycle › Offboarding (features.lifecycle): the board, Start an exit, the settlement email, Exit insights.
+// Setup › Notification sounds and pictures: dashboard admins only, ahead of /admin's own chain.
+router.use('/admin/notification-look', notificationLookRouter);
+router.use('/admin/lifecycle', lifecycleOffboardingAdminRouter);
+// Employee lifecycle (docs/lifecycle/CONTRACT.md): its own auth chain and the features.lifecycle switch.
+router.use('/admin/lifecycle', lifecycleAdminRouter);
 router.use('/admin', adminRouter);
 router.use('/leaves', leaveRouter);
 router.use('/payslips', payslipRouter);
@@ -116,3 +130,9 @@ router.use('/care', careRouter);
 router.use('/profile', profileRouter);
 router.use('/support', supportRouter);
 router.use('/placements', placementsRouter);
+// The pre-boarding portal: candidates, before they are employees (offer link, then a portal session).
+router.use('/portal', portalRouter);
+// Resigning, the Off-boarding page, the handover and the exit interview; the manager's resignations and leavers.
+router.use('/lifecycle', lifecycleOffboardingRouter);
+// The app's onboarding (joiner and manager); offboarding adds its own routes beside these.
+router.use('/lifecycle', lifecycleAppRouter);

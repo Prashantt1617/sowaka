@@ -25,6 +25,9 @@ const LOADERS: Partial<Record<View, Loader>> = {
   employeeimport: () => import('./views/EmployeeImport').then((m) => ({ default: m.EmployeeImport })),
   exits: () => import('./views/Exits').then((m) => ({ default: m.Exits })),
   exitsettings: () => import('./views/ExitSettings').then((m) => ({ default: m.ExitSettings })),
+  notificationlook: () => import('./views/NotificationLook').then((m) => ({ default: m.NotificationLook })),
+  offboarding: () => import('./views/lifecycle/offboarding/OffboardingBoard').then((m) => ({ default: m.OffboardingBoard })),
+  exit_insights: () => import('./views/lifecycle/offboarding/ExitInsights').then((m) => ({ default: m.ExitInsights })),
   peopletasks: () => import('./views/PeopleTasks').then((m) => ({ default: m.PeopleTasks })),
   attendancereport: () => import('./views/AttendanceReport').then((m) => ({ default: m.AttendanceReport })),
   companycalendar: () => import('./views/CompanyCalendar').then((m) => ({ default: m.CompanyCalendar })),
@@ -65,6 +68,10 @@ const LOADERS: Partial<Record<View, Loader>> = {
   placements: () => import('./views/Placements').then((m) => ({ default: m.Placements })),
   placementclients: () => import('./views/Placements').then((m) => ({ default: m.PlacementClients })),
   placementcustomers: () => import('./views/Placements').then((m) => ({ default: m.PlacementCustomers })),
+  onboarding: () => import('./views/lifecycle/OnboardingBoard').then((m) => ({ default: m.OnboardingBoard })),
+  lifecycle_documents: () => import('./views/lifecycle/LifecycleDocuments').then((m) => ({ default: m.LifecycleDocuments })),
+  lifecycle_templates: () => import('./views/lifecycle/Templates').then((m) => ({ default: m.LifecycleTemplates })),
+  lifecycle_letter_templates: () => import('./views/lifecycle/LetterTemplates').then((m) => ({ default: m.LetterTemplates })),
 };
 
 /**

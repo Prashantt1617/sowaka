@@ -17,9 +17,12 @@ import type { SupportRole } from '../../services/support';
 import { ListPending, Spinner } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { IconPlus } from '../icons';
-import { OVERVIEW_ITEM, SECTIONS } from '../Chrome';
-import { PLACEMENT_VIEWS, SALARY_DETAILS } from '../access';
+import { LIFECYCLE_SECTION, OVERVIEW_ITEM, SECTIONS } from '../Chrome';
+import { lifecycleOn } from '../lifecycleSwitch';
+import { LIFECYCLE_VIEWS, PLACEMENT_VIEWS, SALARY_DETAILS } from '../access';
 import type { AccessKey } from '../access';
+import { getClearanceTeam, putClearanceTeam } from '../../services/lifecycleOffboarding';
+import type { ClearanceTeamDTO } from '../../services/lifecycleOffboarding';
 
 type SubTab = 'users' | 'roles';
 const TABS: { key: SubTab; label: string }[] = [
@@ -38,11 +41,20 @@ const titleCase = (t: string) => t.charAt(0) + t.slice(1).toLowerCase();
 // Investment proofs, Statutory & tax settings, FBP requests and FBP splits are not tabs of their own here: they come with Payroll Runs or Salary details.
 // Reports › Company calendar and Punch log come with the Attendance report (Punch log with Attendance and OOL check-ins too), as access.ts and the server decide it.
 const RIDES_ALONG = new Set<AccessKey>([...PLACEMENT_VIEWS.filter((v) => v !== 'placements'), 'investmentproofs', 'payrollconfig', 'exits', 'fbprequests', 'fbpsplits', 'companycalendar', 'punchlog']);
+const LIFECYCLE_HINTS: Partial<Record<AccessKey, string>> = {
+  onboarding: 'Offers, pre-boarding, the first week and probation',
+  offboarding: 'Resignations, notice, clearance and settlement. Without People, only their own clearance items, no pay',
+  exit_insights: 'Why people leave, anonymised',
+  lifecycle_documents: 'Offer, appointment, confirmation and relieving letters, and their templates',
+  lifecycle_templates: 'Onboarding and offboarding templates (Setup)',
+};
 const SECTION_UNITS: Unit[] = SECTIONS.flatMap((s) => {
   const items = s.items.filter((i) => i.key !== 'usersroles' && i.key !== 'support' && i.key !== 'cuptv');
   const tabs = items.filter((i) => !RIDES_ALONG.has(i.key)).map((i) => i.key);
   // A section all of whose pages come with another (Tax uploads, with Payroll) is not given on its own.
   if (items.length === 0 || tabs.length === 0) return [];
+  // Employee lifecycle: each page on its own, so IT, Admin and Finance staff can be given the Offboarding board alone.
+  if (s.title === LIFECYCLE_SECTION) return items.map((i) => ({ key: i.key, title: i.key === 'lifecycle_templates' ? 'Lifecycle templates' : i.label, tabs: [i.key], hint: LIFECYCLE_HINTS[i.key] ?? i.label }));
   const along = s.title === 'PAYROLL' ? SECTIONS.find((x) => x.title === 'TAX UPLOADS')?.items ?? [] : [];
   return [{ key: s.title, title: titleCase(s.title), tabs, hint: [...items, ...along].map((i) => i.label).join(' · ') }];
 });
@@ -55,7 +67,9 @@ const UNITS: Unit[] = [
 ];
 const ALL_TABS: AccessKey[] = UNITS.flatMap((u) => u.tabs);
 /** What this company can give: Placements only where the company has it. */
-const unitsFor = (me: AuthUser | null | undefined) => UNITS.filter((u) => u.key !== 'PLACEMENTS' || me?.features?.placements === true);
+const unitsFor = (me: AuthUser | null | undefined) => UNITS.filter((u) => (u.key !== 'PLACEMENTS' || me?.features?.placements === true)
+  // The employee lifecycle only where the company has it switched on.
+  && (!LIFECYCLE_VIEWS.includes(u.key as AccessKey) || lifecycleOn() === true));
 const unitByTitle = (title: string) => UNITS.find((u) => u.title === title)!;
 const tabsOf = (...titles: string[]): AccessKey[] => titles.flatMap((t) => unitByTitle(t).tabs);
 const hasUnit = (tabs: Set<AccessKey> | AccessKey[], u: Unit) => u.tabs.every((t) => (Array.isArray(tabs) ? tabs.includes(t) : tabs.has(t)));
@@ -281,6 +295,8 @@ function EditAccess({ editing, setEditing, saving, onSave, self }: { editing: Ed
           </>
         )}
 
+        {!editing.admin && editing.tabs.has('offboarding') && !editing.tabs.has('employees') && units.some((u) => u.key === 'offboarding') && <ClearanceTeamPicker userId={editing.person.userId} name={editing.person.name} />}
+
         {self && !editing.admin && <div style={{ fontSize: 12.5, color: 'var(--bad)', marginTop: 12 }}>This is your own access. Without Admin you won't be able to come back to this page.</div>}
         </div>
 
@@ -294,6 +310,56 @@ function EditAccess({ editing, setEditing, saving, onSave, self }: { editing: Ed
         </div>
       </div>
     </div>
+  );
+}
+
+// —— Clearance team (Employee lifecycle › Offboarding) ——————————————————————
+const TEAM_CHOICES: { value: ClearanceTeamDTO['team']; label: string }[] = [
+  { value: null, label: 'From department' }, { value: 'it', label: 'IT' }, { value: 'admin', label: 'Admin' }, { value: 'finance', label: 'Finance' },
+];
+const TEAM_WORD = { it: 'IT', admin: 'Admin', finance: 'Finance' } as const;
+
+/** Someone given the Offboarding board without People is clearance staff: which team's items they see and tick. Saved at once. */
+function ClearanceTeamPicker({ userId, name }: { userId: string; name: string }) {
+  const { flash } = useStore();
+  const [data, setData] = useState<ClearanceTeamDTO | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState('');
+  useEffect(() => {
+    let live = true;
+    getClearanceTeam(userId).then((d) => { if (live) setData(d); }).catch((e) => { if (live) setFailed(e instanceof ApiError ? e.message : 'Could not load the clearance team'); });
+    return () => { live = false; };
+  }, [userId]);
+  const pick = async (team: ClearanceTeamDTO['team']) => {
+    setSaving(true);
+    try {
+      setData(await putClearanceTeam(userId, team));
+      flash(team ? `${name} clears ${TEAM_WORD[team]} items` : `${name}'s clearance team comes from their department`);
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not save', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const guess = data?.guess ? TEAM_WORD[data.guess] : null;
+  return (
+    <>
+      <div className="pd-eyebrow" style={{ margin: '20px 0 4px' }}>CLEARANCE TEAM</div>
+      <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginBottom: 8 }}>With Offboarding and without People, they see and tick only their team's clearance items, with no pay.</div>
+      {failed ? <div style={{ fontSize: 12.5, color: 'var(--bad)' }}>{failed}</div> : (
+        <div role="radiogroup" aria-label="Clearance team" className="pd-seg" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' }}>
+          {TEAM_CHOICES.map((c) => {
+            const on = !!data && data.team === c.value;
+            return <button key={c.label} type="button" role="radio" aria-checked={on} disabled={!data || saving} onClick={() => void pick(c.value)} className={on ? 'on' : undefined} style={{ justifyContent: 'center' }}>{c.label}</button>;
+          })}
+        </div>
+      )}
+      {data && data.team === null && (
+        <div style={{ fontSize: 11.5, color: data.guess ? 'var(--ink-3)' : 'var(--warn)', marginTop: 8, lineHeight: 1.45 }}>
+          {guess ? `From the department${data.department ? ` (${data.department})` : ''}: ${guess}.` : `The department${data.department ? ` (${data.department})` : ''} does not say which team. Pick one, or they see no clearance items.`}
+        </div>
+      )}
+    </>
   );
 }
 

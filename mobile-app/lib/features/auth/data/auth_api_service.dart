@@ -9,10 +9,14 @@ import '../../../services/api_config.dart';
 import 'auth_models.dart';
 
 class AuthApiException implements Exception {
-  const AuthApiException(this.message, {this.statusCode});
+  const AuthApiException(this.message, {this.statusCode, this.body});
 
   final String message;
   final int? statusCode;
+
+  /// The refusal as the server sent it, for what it carries beyond the
+  /// message (an ended account's `accountClosed`).
+  final Map<String, dynamic>? body;
 
   @override
   String toString() => message;
@@ -104,6 +108,7 @@ class AuthApiService {
       throw AuthApiException(
         data['message'] as String? ?? 'Could not refresh profile',
         statusCode: response.statusCode,
+        body: data,
       );
     }
 
@@ -140,6 +145,7 @@ class AuthApiService {
       throw AuthApiException(
         data['message'] as String? ?? 'Authentication failed',
         statusCode: response.statusCode,
+        body: data,
       );
     }
 

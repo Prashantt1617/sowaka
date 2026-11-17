@@ -18,7 +18,7 @@ import { forgetAuthUser } from './auth-cache';
 import { invalidateAttendanceSetup } from './attendance-report.service';
 import { logActivity } from './employee-activity.service';
 import { istParts } from './notification-time';
-import { DEFAULT_EXIT_CLEARANCE, DEFAULT_EXIT_NOTICE, DEFAULT_EXIT_RULES, EXIT_INTERVIEW_REASONS, EXIT_KINDS, EXIT_NOTICE_CHOICES, EXIT_RULE_CHOICES, EXIT_RULE_KINDS, ExitClearanceItem, ExitInterview, ExitInterviewReason, ExitKind, ExitNoticeSettings, ExitRuleKind, ExitRules, User, UserExit, UserLifecycleStatus } from '../models/user.model';
+import { CLEARANCE_TEAM_OF, DEFAULT_EXIT_CLEARANCE, DEFAULT_EXIT_NOTICE, DEFAULT_EXIT_RULES, EXIT_INTERVIEW_REASONS, EXIT_KINDS, EXIT_NOTICE_CHOICES, EXIT_RULE_CHOICES, EXIT_RULE_KINDS, ExitClearanceItem, ExitInterview, ExitInterviewReason, ExitKind, ExitNoticeSettings, ExitRuleKind, ExitRules, User, UserExit, UserLifecycleStatus } from '../models/user.model';
 import { ExitSettlement } from '../models/exitSettlement.model';
 import { approveSettlement, changeSettlementLine, draftDueSettlements, exitNoticeSettings, markSettlementPaid, reopenSettlement, settlementFor, settlementOpen, settlementView } from './exitSettlement.service';
 import { notifyUsers } from './notification.service';
@@ -129,8 +129,9 @@ export async function setExitSettings(adminUserId: string, body: Record<string, 
   return settingsOf(admin.org);
 }
 
-/** The clearance list of an exit: its own, else the list every exit starts with. */
-const clearanceOf = (e: UserExit): ExitClearanceItem[] => e.clearance ?? DEFAULT_EXIT_CLEARANCE.map((c) => ({ ...c, done: false }));
+/** The clearance list of an exit: its own, else the list every exit starts with. Every item has its team. */
+export const clearanceOf = (e: UserExit): ExitClearanceItem[] =>
+  (e.clearance ?? DEFAULT_EXIT_CLEARANCE.map((c) => ({ ...c, done: false }))).map((c) => (c.team || !CLEARANCE_TEAM_OF[c.key] ? c : { ...c, team: CLEARANCE_TEAM_OF[c.key] }));
 
 type ExitUser = Pick<User, 'userId' | 'name' | 'employeeId' | 'department' | 'designation' | 'managerUserId' | 'joiningDate' | 'lifecycleStatus' | 'exit'>;
 interface ExitExtras { settlement?: Pick<ExitSettlement, 'status' | 'payablePaise'> | null; names?: Map<string, string>; team?: number }
@@ -170,7 +171,7 @@ export function exitView(user: ExitUser, now = new Date(), extras: ExitExtras = 
     team: e.newManagerUserId
       ? { newManagerUserId: e.newManagerUserId, newManagerName: extras.names?.get(e.newManagerUserId) ?? '', move: e.teamMove ?? 'now', movedAt: e.teamMovedAt ? e.teamMovedAt.toISOString() : null, toldAt: e.teamToldAt ? e.teamToldAt.toISOString() : null, size: extras.team ?? 0 }
       : null,
-    clearance: clearance.map((c) => ({ key: c.key, label: c.label, done: c.done, doneAt: c.doneAt ? c.doneAt.toISOString() : null, doneByName: c.doneByName ?? '' })),
+    clearance: clearance.map((c) => ({ key: c.key, label: c.label, done: c.done, doneAt: c.doneAt ? c.doneAt.toISOString() : null, doneByName: c.doneByName ?? '', team: c.team ?? null, ...(c.amountPaise ? { amountPaise: c.amountPaise } : {}), ...(c.note ? { note: c.note } : {}) })),
     clearanceDone: clearance.every((c) => c.done),
     interview: e.interview ? { ...e.interview, filledAt: e.interview.filledAt.toISOString() } : null,
     /** An absconding waits for HR to close the case before its settlement starts. */
@@ -283,6 +284,8 @@ export async function recordExit(adminUserId: string, employeeUserId: string, bo
     // What HR has already ticked, said or closed on this exit stays when its dates change.
     ...(employee.exit?.clearance ? { clearance: employee.exit.clearance } : {}),
     ...(employee.exit?.interview ? { interview: employee.exit.interview } : {}),
+    // The offboarding journey's side of the exit (lifecycle companies) stays too.
+    ...(employee.exit?.offboarding ? { offboarding: employee.exit.offboarding } : {}),
     ...(employee.exit?.teamToldAt && employee.exit.newManagerUserId === newManagerUserId ? { teamToldAt: employee.exit.teamToldAt } : {}),
   };
   await users().updateOne(
@@ -328,9 +331,10 @@ export async function endAccessNow(adminUserId: string, employeeUserId: string, 
 
 /**
  * Access ends: status Left, saved sessions and device tokens deleted, the cached auth user
- * forgotten so the very next request is refused. Safe to run twice.
+ * forgotten so the very next request is refused. Safe to run twice. (Exported for the
+ * offboarding template's "On the last day, end of shift", lifecycle/offboarding.ts.)
  */
-async function endAccess(employeeUserId: string, now: Date) {
+export async function endAccess(employeeUserId: string, now: Date) {
   const user = await users().findOne({ userId: employeeUserId }, { projection: { _id: 0, org: 1, exit: 1 } });
   if (!user?.exit || user.exit.accessEndedAt || user.exit.rules?.access === 'never') return false;
   await users().updateOne(
@@ -439,14 +443,30 @@ async function leaverOf(adminUserId: string, employeeUserId: string) {
 /** HR ticks (or unticks) one item of the clearance list. Body: { key, done }. */
 export async function setClearance(adminUserId: string, employeeUserId: string, body: Record<string, unknown>, now = new Date()) {
   const { admin, user } = await leaverOf(adminUserId, employeeUserId);
-  const key = String(body.key ?? '');
-  const list = clearanceOf(user.exit);
-  const item = list.find((c) => c.key === key);
-  if (!item) throw new ExitError(404, 'No such item on the clearance list');
-  const done = body.done === true;
-  const next = list.map((c) => (c.key === key ? { key: c.key, label: c.label, done, ...(done ? { doneAt: now, ...(admin.name ? { doneByName: admin.name } : {}) } : {}) } : c));
-  await users().updateOne({ userId: employeeUserId, org: admin.org }, { $set: { 'exit.clearance': next, updatedAt: now } });
+  await tickClearanceItem(admin.org, user, String(body.key ?? ''), body.done === true, admin.name, {}, now);
   return exitDetail(adminUserId, employeeUserId, now);
+}
+
+/**
+ * Ticks (or unticks) one clearance item, keeping its team; `extra` sets or clears an open amount
+ * (paise; null clears) and a note. Who may is the caller's to check: HR above, and the Offboarding
+ * board for the IT, Admin and Finance staff who clear their own team's items.
+ */
+export async function tickClearanceItem(
+  org: string, user: Pick<User, 'userId'> & { exit: UserExit }, key: string, done: boolean, byName: string | undefined,
+  extra: { amountPaise?: number | null; note?: string | null } = {}, now = new Date(),
+): Promise<ExitClearanceItem[]> {
+  const list = clearanceOf(user.exit);
+  if (!list.some((c) => c.key === key)) throw new ExitError(404, 'No such item on the clearance list');
+  const next = list.map((c) => {
+    if (c.key !== key) return c;
+    const { doneAt: _at, doneByName: _by, amountPaise: _amount, note: _note, ...rest } = c;
+    const amountPaise = extra.amountPaise === undefined ? c.amountPaise : extra.amountPaise ?? undefined;
+    const note = extra.note === undefined ? c.note : extra.note?.trim().slice(0, 300) || undefined;
+    return { ...rest, done, ...(done ? { doneAt: now, ...(byName ? { doneByName: byName } : {}) } : {}), ...(amountPaise ? { amountPaise } : {}), ...(note ? { note } : {}) };
+  });
+  await users().updateOne({ userId: user.userId, org }, { $set: { 'exit.clearance': next, updatedAt: now } });
+  return next;
 }
 
 /** HR fills the exit interview after a conversation (the employee can also, from the app). */

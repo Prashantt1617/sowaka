@@ -1,0 +1,15 @@
+{
+  "task": {
+    "id": "06d31424-78be-4e8a-a388-93c3bcd9c80a",
+    "org": "el-fixtures",
+    "journeyId": "ce4cafab-40a9-4200-ad7f-ec45ef0c8fcf",
+    "title": "Redesign the leave request screen",
+    "links": [
+      "https://docs.example/leave"
+    ],
+    "note": "Start with the research notes",
+    "dueAt": "2026-11-19T00:00:00.000Z",
+    "assignedByUserId": "mgr",
+    "assignedAt": "2026-11-17T05:16:26.508Z"
+  }
+}

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The built-in notification sounds are named only at runtime (as a channel's
+     android.resource://…/raw/<key> sound), so resource shrinking would drop
+     them from a release build. Keep them. See lib/services/notification_sounds.dart. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/chime,@raw/pop,@raw/fanfare,@raw/tick,@raw/whoosh,@raw/bell" />

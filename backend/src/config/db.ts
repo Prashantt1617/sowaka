@@ -58,6 +58,10 @@ import { AppPage } from '../models/app-page.model';
 import { EmployeeActivity } from '../models/employee-activity.model';
 import { FaceChallenge, FaceLivenessSession, FaceVerification } from '../models/face.model';
 import { Placement, PlacementClient, PlacementCustomer } from '../models/placement.model';
+import type {
+  CandidateAccount, CandidateDocument, DateChangeRequest, HandoverItem, Journey, JourneyTask, Letter, LetterTemplate,
+  LifecycleFile, LifecycleTemplate, Meeting, Offer, OneOnOneNote, PeopleToMeet, ProbationMonth, Resignation, StarterTask, SurveyResponse,
+} from '../models/lifecycle.model';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -355,6 +359,26 @@ export function payslips(): Collection<Payslip> {
 export function exitSettlements(): Collection<ExitSettlement> {
   return getDb().collection<ExitSettlement>('exit_settlements');
 }
+
+// ─── Employee lifecycle (models/lifecycle.model.ts, docs/lifecycle/CONTRACT.md) ───
+export function lifecycleTemplates(): Collection<LifecycleTemplate> { return getDb().collection<LifecycleTemplate>('lifecycle_templates'); }
+export function journeys(): Collection<Journey> { return getDb().collection<Journey>('lifecycle_journeys'); }
+export function journeyTasks(): Collection<JourneyTask> { return getDb().collection<JourneyTask>('lifecycle_journey_tasks'); }
+export function offers(): Collection<Offer> { return getDb().collection<Offer>('lifecycle_offers'); }
+export function candidateAccounts(): Collection<CandidateAccount> { return getDb().collection<CandidateAccount>('lifecycle_candidate_accounts'); }
+export function candidateDocuments(): Collection<CandidateDocument> { return getDb().collection<CandidateDocument>('lifecycle_candidate_documents'); }
+export function lifecycleFiles(): Collection<LifecycleFile> { return getDb().collection<LifecycleFile>('lifecycle_files'); }
+export function letterTemplates(): Collection<LetterTemplate> { return getDb().collection<LetterTemplate>('lifecycle_letter_templates'); }
+export function letters(): Collection<Letter> { return getDb().collection<Letter>('lifecycle_letters'); }
+export function dateChangeRequests(): Collection<DateChangeRequest> { return getDb().collection<DateChangeRequest>('lifecycle_date_requests'); }
+export function peopleToMeet(): Collection<PeopleToMeet> { return getDb().collection<PeopleToMeet>('lifecycle_people_to_meet'); }
+export function starterTasks(): Collection<StarterTask> { return getDb().collection<StarterTask>('lifecycle_starter_tasks'); }
+export function oneOnOneNotes(): Collection<OneOnOneNote> { return getDb().collection<OneOnOneNote>('lifecycle_one_on_one_notes'); }
+export function lifecycleMeetings(): Collection<Meeting> { return getDb().collection<Meeting>('lifecycle_meetings'); }
+export function probationMonths(): Collection<ProbationMonth> { return getDb().collection<ProbationMonth>('lifecycle_probation_months'); }
+export function surveyResponses(): Collection<SurveyResponse> { return getDb().collection<SurveyResponse>('lifecycle_survey_responses'); }
+export function resignations(): Collection<Resignation> { return getDb().collection<Resignation>('lifecycle_resignations'); }
+export function handoverItems(): Collection<HandoverItem> { return getDb().collection<HandoverItem>('lifecycle_handover_items'); }
 
 export function kpiParameters(): Collection<KpiParameter> {
   return getDb().collection<KpiParameter>('kpi_parameters');
@@ -699,6 +723,19 @@ async function ensureIndexes(database: Db): Promise<void> {
   await payslipsCollection.createIndex({ org: 1, runId: 1 });
   await payslipsCollection.createIndex({ userId: 1, period: -1 });
   await getDb().collection('exit_settlements').createIndex({ org: 1, userId: 1 }, { unique: true });
+  await getDb().collection('lifecycle_templates').createIndex({ org: 1, kind: 1 });
+  await getDb().collection('lifecycle_journeys').createIndex({ org: 1, kind: 1, status: 1 });
+  await getDb().collection('lifecycle_journeys').createIndex({ userId: 1, kind: 1 });
+  await getDb().collection('lifecycle_journey_tasks').createIndex({ journeyId: 1, order: 1 });
+  await getDb().collection('lifecycle_journey_tasks').createIndex({ org: 1, status: 1, dueAt: 1 });
+  await getDb().collection('lifecycle_offers').createIndex({ journeyId: 1 }, { unique: true });
+  await getDb().collection('lifecycle_offers').createIndex({ 'versions.linkTokenHash': 1 });
+  await getDb().collection('lifecycle_candidate_accounts').createIndex({ email: 1 }, { unique: true });
+  await getDb().collection('lifecycle_candidate_accounts').createIndex({ journeyId: 1 }, { unique: true });
+  await getDb().collection('lifecycle_candidate_documents').createIndex({ journeyId: 1 });
+  await getDb().collection('lifecycle_letters').createIndex({ org: 1, journeyId: 1 });
+  await getDb().collection('lifecycle_resignations').createIndex({ org: 1, userId: 1, status: 1 });
+  await getDb().collection('lifecycle_survey_responses').createIndex({ org: 1, kind: 1, createdAt: -1 });
 
   const relayEventsCollection = database.collection<RelayEvent>('relay_events');
   await relayEventsCollection.createIndex({ id: 1 }, { unique: true });

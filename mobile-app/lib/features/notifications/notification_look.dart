@@ -337,6 +337,18 @@ class NotificationLook {
     }
     // Anything else Secret Squad sends reads as the game too.
     if (scenario.startsWith('secret_squad')) return secretSquad;
+    // The employee lifecycle (onboarding meetings, starter tasks, shared
+    // 1:1 notes, nudges; a joiner for their manager).
+    // Offboarding's own kinds (resignation, handover, exit) are left to it.
+    // (Every offboarding push says so in its type: a moved last day, a
+    // clearance item and gratuity due included.)
+    final lifecycle = scenario.startsWith('lifecycle_') ? scenario : '${data['destination'] ?? ''}';
+    final leaving = const {'lifecycle_offboarding', 'lifecycle_resignation'}.contains('${data['type'] ?? ''}');
+    if (lifecycle.startsWith('lifecycle_') &&
+        !leaving &&
+        !RegExp('resign|offboard|exit|handover|leaver|settlement').hasMatch(lifecycle)) {
+      return _priority('ONBOARDING', Icons.spa_outlined);
+    }
     if (scenario.startsWith('post_published_')) {
       final type = '${data['postType'] ?? ''}'.isNotEmpty
           ? '${data['postType']}'

@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "resignation": {
+    "id": "962b89b7-088e-4b37-8874-3b3a2d25030f",
+    "userId": "ravi",
+    "managerUserId": "mgr",
+    "managerName": "Meera Iyer",
+    "reason": "Better opportunity",
+    "note": "Thank you for three great years.",
+    "submittedAt": "2026-11-17T05:16:26.129Z",
+    "noticeDays": 30,
+    "lastDayByNotice": "2026-12-17",
+    "status": "with_manager",
+    "manager": null,
+    "hrAcceptedAt": null,
+    "hrAcceptedByName": null,
+    "agreedLastDay": null,
+    "withdrawnAt": null,
+    "journeyId": null,
+    "tl": "2026-12-17",
+    "daysLeft": 30
+  }
+}

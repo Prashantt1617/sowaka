@@ -1,0 +1,22 @@
+{
+  "joiners": [
+    {
+      "journeyId": "ce4cafab-40a9-4200-ad7f-ec45ef0c8fcf",
+      "userId": "isha",
+      "name": "Isha Verma",
+      "designation": "Product Designer",
+      "dayLabel": "Week 1",
+      "stage": "welcome_week1",
+      "plant": {
+        "stage": 1,
+        "water": 3,
+        "leaves": 1,
+        "droop": true
+      },
+      "todayCount": 3,
+      "overdue": 3,
+      "preboarding": false,
+      "tj": "2026-11-11"
+    }
+  ]
+}

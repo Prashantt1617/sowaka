@@ -3,6 +3,7 @@
 import type { AuthUser } from '../services/auth';
 import type { View } from './theme';
 import { BULK_VIEWS, SETUP_VIEWS } from './setupGroups';
+import { lifecycleOn } from './lifecycleSwitch';
 
 /** Not a sidebar tab: the Salary details tab on an employee's profile. */
 export const SALARY_DETAILS = 'salarydetails';
@@ -11,12 +12,28 @@ export type AccessKey = View | typeof SALARY_DETAILS;
 /** The Placements section's pages; Clients and Candidates go with the placements tab. */
 export const PLACEMENT_VIEWS: AccessKey[] = ['placements', 'placementclients', 'placementcustomers'];
 
+/** The employee lifecycle's pages. */
+export const LIFECYCLE_VIEWS: AccessKey[] = ['onboarding', 'offboarding', 'exit_insights', 'lifecycle_documents', 'lifecycle_templates', 'lifecycle_letter_templates'];
+
+/** Pay figures (CTC, salary) show only to someone who may open payroll. */
+export function canSeePay(user: AuthUser | null | undefined): boolean {
+  return canOpen(user, 'payruns') || canOpen(user, SALARY_DETAILS);
+}
+
 /** Every tab, unless HR limited them. People › Accesses is an admin's alone; Support desk needs a Support role. */
 export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boolean {
   if (!user?.dashboardAccess) return false;
   if (view === 'usersroles' || view === 'employeeimport') return user.dashboardAdmin === true;
+  // How every push sounds and looks, for the whole company: an admin's, as the server decides it.
+  if (view === 'notificationlook') return user.dashboardAdmin === true;
   // Exits is a company feature (on at sowaka only for now), then a dashboard admin's.
   if (view === 'exits' || view === 'exitsettings') return user.features?.exits === true && user.dashboardAdmin === true;
+  // The employee lifecycle is a company feature (GET /admin/lifecycle/settings) before it is a tab;
+  // while that is still being asked, a page already open stays open. Document templates go with Documents.
+  if (LIFECYCLE_VIEWS.includes(view)) {
+    if (lifecycleOn() === false) return false;
+    if (view === 'lifecycle_letter_templates') return canOpen(user, 'lifecycle_documents');
+  }
   // Setup is a page of links: open to whoever may open any of the pages on it.
   if (view === 'setup') return SETUP_VIEWS.some((v) => canOpen(user, v));
   if (view === 'bulkassign') return BULK_VIEWS.some((v) => canOpen(user, v));

@@ -23,8 +23,13 @@ export const DASHBOARD_TABS = [
   'appusage', 'feed', 'engagementplan', 'contests', 'games',
   // Only for a company with features.placements; its routes check that too.
   'placements',
+  // Employee lifecycle: only for a company with features.lifecycle; its routes check that too.
+  'onboarding', 'offboarding', 'exit_insights', 'lifecycle_documents', 'lifecycle_templates',
 ] as const;
 export type DashboardTab = (typeof DASHBOARD_TABS)[number];
+
+/** The Employee lifecycle group's tabs (GET /admin/lifecycle/settings lists the ones a person has). */
+export const LIFECYCLE_TABS = ['onboarding', 'offboarding', 'exit_insights', 'lifecycle_documents', 'lifecycle_templates'] as const satisfies readonly DashboardTab[];
 
 type Rule = { path: RegExp; read?: DashboardTab[]; write?: DashboardTab[] };
 
@@ -73,6 +78,9 @@ const RULES: Rule[] = [
   { path: /^\/admin\/payroll\/employees\/[^/]+\/payment-details/, read: ['employees', 'salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
   { path: /^\/admin\/payroll/, read: ['payschedule', 'taxdetails', 'payheads', 'statutorycomponents', 'templates', 'payruns', 'salarydetails'], write: ['payruns'] },
   // An employee's pay and calendar
+  // Employee lifecycle › Offboarding and Exit insights (the services also check who is HR).
+  { path: /^\/admin\/lifecycle\/exit-insights/, read: ['exit_insights'], write: ['exit_insights'] },
+  { path: /^\/admin\/lifecycle\/(offboarding|resignations)/, read: ['offboarding'], write: ['offboarding'] },
   // Exits: People (the service also requires a dashboard admin).
   { path: /^\/admin\/(exits|exit-settings)/, read: ['employees'], write: ['employees'] },
   { path: /^\/admin\/employees\/[^/]+\/payslips/, read: ['salarydetails', 'payruns'] },
@@ -111,6 +119,15 @@ const RULES: Rule[] = [
   { path: /^\/admin\/(games|relay|cup)/, read: ['games'], write: ['games'] },
   // Placements: a placement agency's clients, candidates and placements, reading included.
   { path: /^\/admin\/placements/, read: ['placements'], write: ['placements'] },
+  // Employee lifecycle. /settings is open to every dashboard user (it says which of these tabs they have).
+  { path: /^\/admin\/lifecycle\/settings/ },
+  { path: /^\/admin\/lifecycle\/templates/, read: ['lifecycle_templates', 'onboarding', 'offboarding'], write: ['lifecycle_templates'] },
+  { path: /^\/admin\/lifecycle\/(letter-templates|letters)/, read: ['lifecycle_documents', 'onboarding', 'offboarding'], write: ['lifecycle_documents', 'onboarding', 'offboarding'] },
+  { path: /^\/admin\/lifecycle\/files/, read: ['onboarding', 'offboarding', 'lifecycle_documents'] },
+  { path: /^\/admin\/lifecycle\/exit-insights/, read: ['exit_insights'], write: ['exit_insights'] },
+  { path: /^\/admin\/lifecycle\/(offboarding|resignations)/, read: ['offboarding'], write: ['offboarding'] },
+  // The onboarding board, journeys, offers, candidate documents, date requests, surveys.
+  { path: /^\/admin\/lifecycle/, read: ['onboarding'], write: ['onboarding'] },
   { path: /^\/holidays/, write: ['holidaybank'] },
 ];
 

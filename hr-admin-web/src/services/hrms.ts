@@ -480,8 +480,8 @@ export type ExitSettingsDTO = { kinds: { kind: ExitRuleKind; rules: ExitRules; i
 export const getExitSettings = () => api<ExitSettingsDTO>('/admin/exit-settings');
 export const saveExitSettings = (kinds: Partial<Record<ExitRuleKind, Partial<ExitRules> | null>>, noticeDays?: number | null, notice?: Partial<ExitNoticeSettings>) =>
   api<ExitSettingsDTO>('/admin/exit-settings', { method: 'PUT', body: { kinds, ...(noticeDays !== undefined ? { noticeDays } : {}), ...(notice ? { notice } : {}) } });
-export type ExitClearanceItem = { key: string; label: string; done: boolean; doneAt: string | null; doneByName: string };
-export type ExitInterviewReason = 'pay' | 'growth' | 'manager' | 'work_life' | 'relocation' | 'studies' | 'other';
+export type ExitClearanceItem = { key: string; label: string; done: boolean; doneAt: string | null; doneByName: string; team?: 'manager' | 'admin' | 'it' | 'finance' | null; amountPaise?: number; note?: string };
+export type ExitInterviewReason = 'pay' | 'growth' | 'manager' | 'work_life' | 'relocation' | 'studies' | 'the_work' | 'personal' | 'other';
 export type ExitInterview = { reason?: ExitInterviewReason; workRating?: number; managerRating?: number; comeBack?: 'yes' | 'maybe' | 'no'; change?: string; filledBy: 'employee' | 'hr'; filledByName?: string; filledAt: string };
 export type ExitDTO = {
   userId: string; name: string; employeeId: string; department: string; designation: string; joiningDate: string | null;

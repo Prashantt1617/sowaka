@@ -19,6 +19,7 @@ import 'package:http/http.dart' as http;
 import 'package:mobile_app/features/manager/bloc/manager_bloc.dart';
 import 'package:mobile_app/features/manager/data/manager_api_service.dart';
 import 'package:mobile_app/features/payroll/data/payroll_api_service.dart';
+import 'package:mobile_app/features/payroll/presentation/payroll_lock.dart';
 import 'package:mobile_app/features/payroll/data/payroll_models.dart';
 import 'package:mobile_app/features/quick_actions/presentation/quick_actions_screen.dart';
 import 'package:mobile_app/features/support/support_launcher.dart';
@@ -2092,6 +2093,8 @@ void main() {
               baseUrl: 'https://example.test',
               client: FakePayrollClient(payrollServer),
             ),
+            // The phone's lock, already passed: this test is about the correction.
+            payrollLock: _UnlockedLock(),
           ),
         ),
       ),
@@ -2237,4 +2240,10 @@ class _DashboardServer extends FakePayrollServer {
       'balance': <String, dynamic>{},
     });
   }
+}
+
+/// A phone lock that always opens: tests about what Payroll does, not about its lock.
+class _UnlockedLock implements DeviceLock {
+  @override
+  Future<DeviceLockResult> unlock(String reason) async => DeviceLockResult.unlocked;
 }

@@ -66,3 +66,15 @@ export function mediaCacheControl(served: MediaCandidate, asked: number | 'origi
   const standIn = !served.copy && asked !== 'original' && mayHaveCopies(objectKey);
   return standIn ? 'private, max-age=604800' : 'private, max-age=31536000, immutable';
 }
+
+/**
+ * The file name a push's picture is sent under (`/media/<key>?push=1`): its
+ * extension from what is really sent, since a PNG upload may be served as a
+ * JPEG copy. iOS's notification extension (Firebase's helper) names the
+ * attachment after the response, and refuses a picture whose name says
+ * another type.
+ */
+export function pushPictureName(contentType: string): string {
+  const ext = contentType === 'image/png' ? 'png' : contentType === 'image/gif' ? 'gif' : 'jpg';
+  return `picture.${ext}`;
+}

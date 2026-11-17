@@ -20,6 +20,17 @@ class _TeamHome extends StatefulWidget {
 }
 
 class _TeamHomeState extends State<_TeamHome> {
+  /// Resignations waiting on this manager count with their requests (R7).
+  late final OffboardingStore _offboarding = OffboardingStore.of(
+    widget.bloc.session,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_offboarding.revalidate());
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = widget.state.dashboard!;
@@ -54,11 +65,15 @@ class _TeamHomeState extends State<_TeamHome> {
                 // would have sat, so the header meets the page background the
                 // way it does on the Apply Leave and Reimbursement screens.
                 if (canManage)
-                  _TeamSectionBar(
-                    data: data,
-                    section: section,
-                    onChanged: (value) =>
-                        widget.bloc.add(ShowTeamSection(value)),
+                  ListenableBuilder(
+                    listenable: _offboarding,
+                    builder: (context, _) => _TeamSectionBar(
+                      data: data,
+                      section: section,
+                      onChanged: (value) =>
+                          widget.bloc.add(ShowTeamSection(value)),
+                      extraRequests: _offboarding.pendingForManager,
+                    ),
                   ),
               ],
             ),
@@ -132,11 +147,16 @@ class _TeamSectionBar extends StatelessWidget {
     required this.data,
     required this.section,
     required this.onChanged,
+    this.extraRequests = 0,
   });
 
   final ManagerDashboard data;
   final TeamSection section;
   final ValueChanged<TeamSection> onChanged;
+
+  /// Requests from outside the workspace: resignations waiting on the
+  /// manager.
+  final int extraRequests;
 
   @override
   Widget build(BuildContext context) {
@@ -161,7 +181,7 @@ class _TeamSectionBar extends StatelessWidget {
             Expanded(
               child: _SegmentTab(
                 label: 'Requests',
-                count: _pendingTeamRequests(data),
+                count: _pendingTeamRequests(data) + extraRequests,
                 selected: section == TeamSection.requests,
                 onTap: () => onChanged(TeamSection.requests),
               ),
@@ -329,11 +349,36 @@ class _MyTeamViewState extends State<_MyTeamView> {
   void _toggleTeam(String title) =>
       setState(() => _openTeam = _openTeam == title ? null : title);
 
+  // M0: the New joiners section's joiners and its filter pill.
+  void _onJoiners() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    NewJoinersSection.joinerUserIds.addListener(_onJoiners);
+    NewJoinersSection.joinersOnly.addListener(_onJoiners);
+  }
+
+  @override
+  void dispose() {
+    NewJoinersSection.joinerUserIds.removeListener(_onJoiners);
+    NewJoinersSection.joinersOnly.removeListener(_onJoiners);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
+    // Joiners are drawn first, as joiner cards, by the New joiners section;
+    // they are not listed a second time below (unless searching).
+    final joiners = widget.canManage && _query.isEmpty
+        ? NewJoinersSection.joinerUserIds.value
+        : const <String>{};
+    final joinersOnly = joiners.isNotEmpty && NewJoinersSection.joinersOnly.value;
     final filtered = _query.isEmpty
-        ? data.team
+        ? data.team.where((member) => member.isSelf || !joiners.contains(member.userId)).toList()
         : data.team
               .where(
                 (member) =>
@@ -351,9 +396,15 @@ class _MyTeamViewState extends State<_MyTeamView> {
           hint: 'Search employee',
         ),
         const SizedBox(height: 12),
+        // M0: a manager's reports in onboarding or probation, first; no
+        // joiners (or the lifecycle off) and it is not there at all.
+        if (widget.canManage && _query.isEmpty)
+          NewJoinersSection(allCount: data.team.where((m) => m.reportsToViewer).length),
         // The viewer is part of the team the server sends, so there is no
         // separate card for them any more — their row simply says "(You)".
-        if (filtered.isEmpty)
+        if (joinersOnly)
+          const SizedBox.shrink()
+        else if (filtered.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 40),
             child: Center(
@@ -1178,6 +1229,46 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
   _RequestViewMode _mode = _RequestViewMode.newestFirst;
   String _query = '';
 
+  /// Reports' resignations (R7), on their own cards above the rest.
+  late final OffboardingStore _offboarding = OffboardingStore.of(
+    widget.bloc.session,
+  );
+
+  void _offboardingChanged() {
+    if (!mounted) return;
+    setState(() {
+      // A push about a resignation: its card shows under "All", unfiltered.
+      if (_offboarding.focusResignationId != null) {
+        if (_mode != _RequestViewMode.oldestFirst) {
+          _mode = _RequestViewMode.newestFirst;
+        }
+        _query = '';
+      }
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _offboarding.addListener(_offboardingChanged);
+    if (_offboarding.focusResignationId != null) {
+      _mode = _RequestViewMode.newestFirst;
+    }
+    unawaited(_offboarding.revalidate());
+  }
+
+  /// A pull: the requests and the resignations, both read again.
+  Future<void> _pullToRefresh() async {
+    widget.bloc.refreshRequestsNow();
+    await _offboarding.refresh();
+  }
+
+  @override
+  void dispose() {
+    _offboarding.removeListener(_offboardingChanged);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
@@ -1459,54 +1550,79 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
 
     return ColoredBox(
       color: const Color(0xFFF7F7F9),
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Team Requests',
-                style: TextStyle(
-                  color: Color(0xFF222222),
-                  fontWeight: FontWeight.w600,
-                  fontSize: 20,
-                  letterSpacing: 0.4,
+      child: RefreshIndicator(
+        onRefresh: _pullToRefresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Team Requests',
+                  style: TextStyle(
+                    color: Color(0xFF222222),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 20,
+                    letterSpacing: 0.4,
+                  ),
                 ),
-              ),
-              _ViewByButton(
-                mode: _mode,
-                onChanged: (mode) => setState(() => _mode = mode),
-              ),
-            ],
-          ),
+                _ViewByButton(
+                  mode: _mode,
+                  onChanged: (mode) => setState(() => _mode = mode),
+                ),
+              ],
+            ),
 
-          const SizedBox(height: 14),
-          _FeedbackSearchField(
-            query: _query,
-            onChanged: (value) => setState(() => _query = value),
-            onClear: () => setState(() => _query = ''),
-            hint: 'Search employee',
-          ),
-          const SizedBox(height: 14),
-          if (filtered.isEmpty)
-            _RequestsEmptyState(
-              title: entries.isEmpty
-                  ? 'Currently you have no request'
-                  : 'No matching requests',
-              body: entries.isEmpty
-                  ? 'This is where all your team’s open request would be actionable.'
-                  : _query.isNotEmpty
-                  ? 'No requests match "$_query".'
-                  : 'No requests match this filter.',
-            )
-          else
-            for (final entry in filtered) ...[
-              entry.$4,
-              const SizedBox(height: 12),
-            ],
-        ],
+            const SizedBox(height: 14),
+            _FeedbackSearchField(
+              query: _query,
+              onChanged: (value) => setState(() => _query = value),
+              onClear: () => setState(() => _query = ''),
+              hint: 'Search employee',
+            ),
+            const SizedBox(height: 14),
+            // Resignations are not leave, overtime or corrections: they show
+            // under "All" only.
+            if (_mode == _RequestViewMode.newestFirst ||
+                _mode == _RequestViewMode.oldestFirst)
+              ManagerResignationRequests(store: _offboarding, query: _query),
+            if (filtered.isEmpty && !_showsResignations)
+              _RequestsEmptyState(
+                title: entries.isEmpty
+                    ? 'Currently you have no request'
+                    : 'No matching requests',
+                body: entries.isEmpty
+                    ? 'This is where all your team’s open request would be actionable.'
+                    : _query.isNotEmpty
+                    ? 'No requests match "$_query".'
+                    : 'No requests match this filter.',
+              )
+            else
+              for (final entry in filtered) ...[
+                entry.$4,
+                const SizedBox(height: 12),
+              ],
+          ],
+        ),
       ),
+    );
+  }
+}
+
+extension on _TeamRequestsViewState {
+  /// Whether any resignation card is on screen, so the empty state stays off.
+  bool get _showsResignations {
+    if (_mode != _RequestViewMode.newestFirst &&
+        _mode != _RequestViewMode.oldestFirst) {
+      return false;
+    }
+    final needle = _query.trim().toLowerCase();
+    return _offboarding.managerResignations.any(
+      (r) =>
+          !r.accepted &&
+          (needle.isEmpty || (r.name ?? '').toLowerCase().contains(needle)),
     );
   }
 }

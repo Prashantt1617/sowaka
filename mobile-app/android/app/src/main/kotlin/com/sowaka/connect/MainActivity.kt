@@ -4,12 +4,13 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * Hosts Flutter, and swaps the launcher icon on request.
+ * Hosts Flutter, and swaps the launcher icon on request. A FragmentActivity, so
+ * the phone's own lock prompt (Payroll) can be shown (local_auth).
  *
  * Android has no alternate-icon API; the icon belongs to whichever launcher
  * component is enabled. The manifest declares one alias per company, all
@@ -23,7 +24,7 @@ import io.flutter.plugin.common.MethodChannel
  * the app afresh. Leaving for the camera or Settings does not count: the
  * user is coming straight back, and must find the app where they left it.
  */
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
     private val aliases = mapOf(
         "AppIconConvrse" to ".LauncherConvrse",
         "AppIconAcmt" to ".LauncherAcmt",
@@ -51,6 +52,18 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "sowaka/notification_sounds")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "contentUri") {
+                    result.notImplemented()
+                    return@setMethodCallHandler
+                }
+                try {
+                    result.success(notificationSoundUri(call.argument<String>("path") ?: ""))
+                } catch (error: Exception) {
+                    result.error("sound_uri", error.message, null)
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "sowaka/app_icon")
             .setMethodCallHandler { call, result ->
                 if (call.method != "use") {
@@ -104,6 +117,27 @@ class MainActivity : FlutterActivity() {
         } catch (_: Exception) {
             // An icon is decoration; the app must never fail over it.
         }
+    }
+
+    /**
+     * A downloaded notification sound as a content:// URI the system's sound
+     * player may read, for the channel made for it. The read grant goes to
+     * the packages that play notification sounds (SystemUI, and the system
+     * itself on some versions); granting again on every start keeps it after
+     * a reboot, once the app has been opened.
+     */
+    private fun notificationSoundUri(path: String): String {
+        val file = java.io.File(path)
+        require(file.isFile) { "No sound at $path" }
+        val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.notificationsounds", file)
+        for (player in listOf("com.android.systemui", "android")) {
+            try {
+                grantUriPermission(player, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) {
+                // Not on this phone: the other may still play it.
+            }
+        }
+        return uri.toString()
     }
 
     /** Whether the launcher entry already is the one [name] asks for. */

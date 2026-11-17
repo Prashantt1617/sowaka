@@ -25,7 +25,7 @@ const STATUS = {
   approved: { label: 'Approved', tone: { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' } },
   paid: { label: 'Paid', tone: { bg: 'var(--ok-bg)', fg: 'var(--ok)' } },
 } as const;
-const REASONS: [ExitInterviewReason, string][] = [['pay', 'Pay'], ['growth', 'Growth'], ['manager', 'Manager'], ['work_life', 'Work-life balance'], ['relocation', 'Relocation'], ['studies', 'Studies'], ['other', 'Other']];
+const REASONS: [ExitInterviewReason, string][] = [['pay', 'Pay'], ['growth', 'Growth'], ['manager', 'Manager'], ['work_life', 'Work-life balance'], ['relocation', 'Relocation'], ['studies', 'Studies'], ['the_work', 'The work itself'], ['personal', 'Personal'], ['other', 'Other']];
 const COME_BACK: [NonNullable<ExitInterview['comeBack']>, string][] = [['yes', 'Yes'], ['maybe', 'Maybe'], ['no', 'No']];
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
@@ -180,10 +180,17 @@ function Fact({ label, value }: { label: string; value: ReactNode }) {
 
 // ———————————————————————————————————————————————— the statement
 
-const COLS = '1.4fr 2.2fr 0.9fr 96px';
-type Run = (what: string, work: () => Promise<ExitDetailDTO>, done?: string) => Promise<boolean>;
+const COLS_PLAIN = '1.4fr 2.2fr 0.9fr 96px';
+/** With a "From" column (the lifecycle's settlement page: Payroll, Leave, Rule, Offboarding, HR). */
+const COLS_FROM = '1.3fr 1.9fr 0.8fr 0.9fr 96px';
+export type Run = (what: string, work: () => Promise<ExitDetailDTO>, done?: string) => Promise<boolean>;
 
-function Statement({ exit, settlement, busy, run, userId }: { exit: ExitDTO; settlement: SettlementDTO; busy: string; run: Run; userId: string }) {
+/**
+ * The statement's lines, totals and HR's actions. `sourceOf` adds a From column; `extra` sits
+ * under the lines (the lifecycle page's Add a line). People › Exits passes neither.
+ */
+export function Statement({ exit, settlement, busy, run, userId, sourceOf, extra }: { exit: ExitDTO; settlement: SettlementDTO; busy: string; run: Run; userId: string; sourceOf?: (line: SettlementLine) => string; extra?: ReactNode }) {
+  const COLS = sourceOf ? COLS_FROM : COLS_PLAIN;
   const [editing, setEditing] = useState('');
   const [reason, setReason] = useState('');
   const draft = settlement.status === 'draft';
@@ -199,11 +206,11 @@ function Statement({ exit, settlement, busy, run, userId }: { exit: ExitDTO; set
       <div style={{ ...eyebrowRow }}>{title}</div>
       {lines.length === 0 && <div style={{ ...TR(COLS), color: 'var(--ink-3)' }}>Nothing here.</div>}
       {lines.map((l) => (
-        <LineRow key={l.key} line={l} draft={draft} busy={!!busy} editing={editing === l.key} onEdit={() => setEditing(editing === l.key ? '' : l.key)}
+        <LineRow key={l.key} line={l} cols={COLS} source={sourceOf?.(l)} draft={draft} busy={!!busy} editing={editing === l.key} onEdit={() => setEditing(editing === l.key ? '' : l.key)}
           onSave={async (amountPaise, why) => { if (await run(`line-${l.key}`, () => settlementAction(userId, 'line', { key: l.key, amountPaise, reason: why }), amountPaise == null ? 'Line put back' : 'Line changed')) setEditing(''); }} />
       ))}
       <div style={{ ...TR(COLS), fontWeight: 600, background: 'var(--surface-2)', borderRadius: 10, borderBottom: 'none', marginTop: 4 }}>
-        <div>Total {title.toLowerCase()}</div><div /><div style={{ textAlign: 'right' }}>{inr(total)}</div><div />
+        <div>Total {title.toLowerCase()}</div><div />{sourceOf && <div />}<div style={{ textAlign: 'right' }}>{inr(total)}</div><div />
       </div>
     </>
   );
@@ -212,11 +219,12 @@ function Statement({ exit, settlement, busy, run, userId }: { exit: ExitDTO; set
     <div style={{ display: 'grid', gap: 16 }}>
       <div style={{ overflowX: 'auto' }}>
         <div style={{ minWidth: 760 }}>
-          <div style={TH(COLS)}><Th>LINE</Th><Th>HOW IT IS WORKED OUT</Th><Th align="right">AMOUNT</Th><span /></div>
+          <div style={TH(COLS)}><Th>LINE</Th><Th>HOW IT IS WORKED OUT</Th>{sourceOf && <Th>FROM</Th>}<Th align="right">AMOUNT</Th><span /></div>
           {group('Earnings', earnings, settlement.earningsPaise)}
           {group('Deductions', deductions, settlement.deductionsPaise)}
         </div>
       </div>
+      {extra}
 
       <div id="settle-total" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', padding: '14px 16px', borderRadius: 14, background: pay ? 'var(--ok-bg)' : 'var(--bad-bg)' }}>
         <div>
@@ -260,7 +268,7 @@ function Statement({ exit, settlement, busy, run, userId }: { exit: ExitDTO; set
   );
 }
 
-function LineRow({ line, draft, busy, editing, onEdit, onSave }: { line: SettlementLine; draft: boolean; busy: boolean; editing: boolean; onEdit: () => void; onSave: (amountPaise: number | null, reason: string) => Promise<void> }) {
+function LineRow({ line, cols, source, draft, busy, editing, onEdit, onSave }: { line: SettlementLine; cols: string; source?: string; draft: boolean; busy: boolean; editing: boolean; onEdit: () => void; onSave: (amountPaise: number | null, reason: string) => Promise<void> }) {
   const changed = line.changedReason !== undefined;
   // "HR decides" notice pay: worked out, and paid only once HR chooses to.
   const undecided = line.key === 'notice_pay' && !changed && line.amountPaise === 0 && line.computedPaise > 0;
@@ -274,12 +282,13 @@ function LineRow({ line, draft, busy, editing, onEdit, onSave }: { line: Settlem
   const minus = line.side === 'deduction' ? '− ' : '';
   return (
     <>
-      <div id={`line-${line.key}`} style={TR(COLS, editing)}>
+      <div id={`line-${line.key}`} style={TR(cols, editing)}>
         <div style={{ ...cellName, fontSize: 13.5 }}>{line.label}</div>
         <div style={{ fontSize: 12.5, color: 'var(--ink-3)', lineHeight: 1.45, minWidth: 0 }}>
           {line.note}
           {changed && <div style={{ color: 'var(--warn)', marginTop: 2 }}>Changed{line.changedByName ? ` by ${line.changedByName}` : ''}: {line.changedReason}</div>}
         </div>
+        {source !== undefined && <div><span style={{ display: 'inline-flex', fontSize: 11.5, padding: '2px 8px', borderRadius: 99, background: 'var(--surface-2)', border: '1px solid var(--line)', color: 'var(--ink-2)', whiteSpace: 'nowrap' }}>{source}</span></div>}
         <div style={{ textAlign: 'right', fontWeight: 500, whiteSpace: 'nowrap' }}>
           {minus}{inr(line.amountPaise)}
           {changed && line.computedPaise !== line.amountPaise && <div style={{ ...cellSub, textDecoration: 'line-through' }}>{inr(line.computedPaise)}</div>}

@@ -9,6 +9,8 @@ import '../data/auth_models.dart';
 import '../data/auth_api_service.dart';
 import '../data/auth_session_store.dart';
 import '../../shared/org_branding.dart';
+import '../../lifecycle/offboarding/offboarding.dart'
+    show AccountClosedInfo, AccountClosedScreen, accountClosedFor;
 import 'login_screen.dart';
 import 'splash_screen.dart';
 
@@ -26,6 +28,10 @@ class _AuthGateState extends State<AuthGate> {
   /// settles on the right wordmark within the first frames rather than
   /// showing Sowaka's to a Convrse employee for two seconds.
   OrgBranding _branding = OrgBranding.sowaka;
+
+  /// The kept session's account has ended, where the lifecycle is on: the
+  /// account-closed screen (R6) instead of sign-in.
+  AccountClosedInfo? _closed;
 
   @override
   void initState() {
@@ -69,10 +75,26 @@ class _AuthGateState extends State<AuthGate> {
       unawaited(
         refreshed.then((result) {
           if (result == null && mounted) {
-            appNavigatorKey.currentState?.pushNamedAndRemoveUntil(
-              AppRoutes.login,
-              (_) => false,
-            );
+            final closed = _closed;
+            final navigator = appNavigatorKey.currentState;
+            if (closed != null) {
+              navigator?.pushAndRemoveUntil(
+                MaterialPageRoute<void>(
+                  builder: (context) => AccountClosedScreen(
+                    info: closed,
+                    onBackToSignIn: () => Navigator.of(
+                      context,
+                    ).pushNamedAndRemoveUntil(AppRoutes.login, (_) => false),
+                  ),
+                ),
+                (_) => false,
+              );
+            } else {
+              navigator?.pushNamedAndRemoveUntil(
+                AppRoutes.login,
+                (_) => false,
+              );
+            }
           }
         }),
       );
@@ -92,6 +114,12 @@ class _AuthGateState extends State<AuthGate> {
       return refreshed;
     } on AuthApiException catch (error) {
       if (error.statusCode == 401 || error.statusCode == 403) {
+        _closed = await accountClosedFor(
+          statusCode: error.statusCode,
+          message: error.message,
+          body: error.body,
+          email: cached.user.email,
+        );
         await store.clear();
         return null;
       }
@@ -111,6 +139,13 @@ class _AuthGateState extends State<AuthGate> {
         }
 
         final session = snapshot.data;
+        final closed = _closed;
+        if (session == null && closed != null) {
+          return AccountClosedScreen(
+            info: closed,
+            onBackToSignIn: () => setState(() => _closed = null),
+          );
+        }
         return session == null
             ? const LoginScreen()
             : HomeScreen(session: session);

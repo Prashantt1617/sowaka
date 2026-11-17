@@ -1,0 +1,27 @@
+{
+  "success": true,
+  "leavers": [
+    {
+      "userId": "p2",
+      "name": "Tara Bose",
+      "designation": "Researcher",
+      "tl": "2026-12-07",
+      "daysLeft": 20,
+      "handover": {
+        "items": 0,
+        "uploaded": 0
+      }
+    },
+    {
+      "userId": "ravi",
+      "name": "Ravi Menon",
+      "designation": "Senior Designer",
+      "tl": "2026-11-21",
+      "daysLeft": 4,
+      "handover": {
+        "items": 3,
+        "uploaded": 2
+      }
+    }
+  ]
+}

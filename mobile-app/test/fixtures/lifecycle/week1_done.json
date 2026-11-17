@@ -1,0 +1,61 @@
+{
+  "policies": [
+    {
+      "id": "leave",
+      "title": "Leave policy",
+      "version": "2026-10-01T00:00:00.000Z",
+      "updatedOn": "2026-10-01",
+      "readMinutes": 1,
+      "body": "Take leave."
+    },
+    {
+      "id": "conduct",
+      "title": "Code of conduct",
+      "version": "2026-09-15T00:00:00.000Z",
+      "updatedOn": "2026-09-15",
+      "readMinutes": 1,
+      "body": "Be kind."
+    }
+  ],
+  "taxRegime": {
+    "regime": "new",
+    "at": "2026-11-17T05:16:26.440Z"
+  },
+  "bankPf": {
+    "confirmedAt": "2026-11-17T05:16:26.666Z"
+  },
+  "goalsReadAt": "2026-11-17T05:16:26.672Z",
+  "policiesAck": {
+    "versions": [
+      {
+        "id": "leave",
+        "version": "2026-10-01T00:00:00.000Z"
+      },
+      {
+        "id": "conduct",
+        "version": "2026-09-15T00:00:00.000Z"
+      }
+    ],
+    "at": "2026-11-17T05:16:26.433Z",
+    "device": "Fixture/1.0"
+  },
+  "policiesAckAt": "2026-11-17T05:16:26.433Z",
+  "steps": {
+    "policies": true,
+    "tax": true,
+    "bank_pf": true,
+    "goals": true
+  },
+  "managerName": "Meera Iyer",
+  "managerUserId": "mgr",
+  "bank": {
+    "masked": ""
+  },
+  "pf": {},
+  "goals": [
+    "Ship the leave redesign",
+    "Meet every designer"
+  ],
+  "probationMonths": 6,
+  "goalsLockOn": "2026-11-18"
+}

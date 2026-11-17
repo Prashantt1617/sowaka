@@ -124,6 +124,12 @@ export interface Company {
   maxUsers?: number;
   /** Face ID at punch-in, HR's to switch on; see CompanyFaceIdSettings. Absent is off. */
   faceId?: CompanyFaceIdSettings;
+  /**
+   * The pre-boarding portal's company content (features.lifecycle): the logo in
+   * its header and the culture video on the Accepted and Meet us screens.
+   * Absent: no logo (the company name shows) and no video item.
+   */
+  lifecyclePortal?: { logoUrl?: string; videoUrl?: string; videoTitle?: string };
   /** Features only some companies have; see CompanyFeatures. Absent is all off. */
   features?: CompanyFeatures;
   createdAt?: number;
@@ -146,6 +152,13 @@ export interface CompanyFeatures {
   placements?: boolean;
   /** Exits: recording exits, Exit settings and People › Exits. Tried at sowaka first; off everywhere else. */
   exits?: boolean;
+  /**
+   * Employee lifecycle: offers and the pre-boarding portal, the onboarding board,
+   * templates and letters, the joiner's and manager's onboarding in the app,
+   * resigning in the app and the offboarding board (replaces People › Exits
+   * where it is on). Off everywhere until switched on.
+   */
+  lifecycle?: boolean;
   /**
    * Speed Poker's big tables: eight seats, a 1,000 buy-in, table chat, watching
    * a full table, sounds and the newer table. Off: six seats and 1,500, as before.

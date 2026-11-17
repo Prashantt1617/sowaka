@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "item": {
+    "id": "5e6cc465-03ad-4f70-95bf-fdfcef920d5d",
+    "title": "Design system file",
+    "done": false,
+    "doneAt": null,
+    "upload": {
+      "kind": "link",
+      "name": "docs.example/design-system",
+      "url": "https://docs.example/design-system",
+      "at": "2026-11-17T05:16:26.129Z"
+    }
+  }
+}
