@@ -12,9 +12,9 @@
  * told once per change.
  */
 import { randomUUID } from 'node:crypto';
-import { companies, journeys, journeyTasks, lifecycleMeetings, offers, users } from '../../config/db';
+import { companies, journeys, journeyTasks, lifecycleMeetings, offers, peopleToMeet, users } from '../../config/db';
 import type {
-  CandidateDetails, DueRule, ExitType, Journey, JourneyFlag, JourneyTask, JourneyTaskStatus, LifecyclePhase,
+  CandidateDetails, Day1Pass, DueRule, ExitType, Journey, JourneyFlag, JourneyTask, JourneyTaskStatus, LifecyclePhase,
   OffboardingStatus, OnboardingBoardColumn, OnboardingBoardTab, OnboardingStage, OnboardingStatus, OwnerRole,
   PlantState, SystemTaskKey, TaskKind, TaskSurface, TemplateTask,
 } from '../../models/lifecycle.model';
@@ -363,6 +363,14 @@ const STAGE_NAMES: Record<OnboardingStage, string> = {
 };
 export const stageName = (stage: OnboardingStage) => STAGE_NAMES[stage];
 
+/**
+ * Week 1 is done on Tj + 7 (company day): the one rule for the board's "Week done" column and the
+ * app's Week-1-done moment, so both flip on the same day. Finishing the week-1 tasks early marks the
+ * card All set; it does not move it.
+ */
+export const week1DoneOn = (tj: string) => addDaysKey(tj, 7);
+export const isWeek1Done = (tj: string | undefined, today: string) => !!tj && today >= week1DoneOn(tj);
+
 export function deriveJourney(j: Journey, tasks: JourneyTask[], now: Date, extra: { offerValidTill?: string } = {}): Derived {
   const tz = companyTimeZone(j.org);
   const today = todayKey(now, tz);
@@ -415,11 +423,10 @@ export function deriveJourney(j: Journey, tasks: JourneyTask[], now: Date, extra
     else if (keyDone(live, 'sign_letters')) column = 'ready_to_join';
     else if (j.status === 'docs_approved' || keyDone(live, 'review_documents')) column = 'letters';
     else column = 'documents';
-  } else if (d < 7 && !confirmed) {
+  } else if (d <= 7 && !confirmed) {
     tab = 'first_week';
-    const weekDone = (['week1_reels', 'intro_post', 'day7_survey'] as SystemTaskKey[]).every((k) => !byKey(live, k).length || keyDone(live, k));
     if (d <= 0) column = 'day1';
-    else if (weekDone) column = 'week_done';
+    else if (isWeek1Done(tj, today)) column = 'week_done';
     else if (d >= 6) column = 'day7_survey';
     else column = 'week1_tasks';
   } else {
@@ -459,6 +466,8 @@ export function deriveJourney(j: Journey, tasks: JourneyTask[], now: Date, extra
   if (tab === 'probation' && !confirmed && !late.length && active.some((t) => t.phase === 'probation' && t.dueAt && keyOfDay(t.dueAt) >= today && keyOfDay(t.dueAt) <= addDaysKey(today, 3))) flags.push('due_soon');
   if (column === 'final_month' && byKey(live, 'confirmation_discussion').some((t) => ACTIVE_STATUSES.includes(t.status))) flags.push('decide');
   if (column === 'week_done') flags.push('done');
+  // Week-1 tasks finished before Tj + 7: All set on the card; it moves to Week done on the day.
+  else if (tab === 'first_week' && column !== 'day1' && (['week1_reels', 'intro_post', 'day7_survey'] as SystemTaskKey[]).every((k) => !byKey(live, k).length || keyDone(live, k)) && !flags.includes('all_set')) flags.push('all_set');
   if (confirmed) flags.push('confirmed');
 
   // Labels
@@ -774,12 +783,41 @@ export async function setTaskDue(journeyId: string, systemKey: SystemTaskKey, du
 }
 
 /** Re-points the manager-owned tasks when the manager changes (open ones only). */
-export async function reassignManager(journeyId: string, managerUserId: string | undefined): Promise<void> {
+export async function reassignManager(journeyId: string, managerUserId: string | undefined, previousManagerUserId?: string): Promise<void> {
   const tasks = (await tasksOf(journeyId)).filter((t) => MANAGER_ROLES.includes(t.ownerRole) && OPEN_STATUSES.includes(t.status));
   await writeTasks(tasks.map((t) => {
     const { ownerUserId: _o, ...rest } = t;
     return managerUserId ? { ...rest, ownerUserId: managerUserId } : rest;
   }));
+  // The meetings not held yet move with the joiner: the old manager's seat goes to the new one.
+  if (previousManagerUserId && managerUserId && previousManagerUserId !== managerUserId) {
+    const meetings = await lifecycleMeetings().find({ journeyId, met: { $exists: false }, attendeeUserIds: previousManagerUserId }, { projection: { _id: 0, id: 1, attendeeUserIds: 1 } }).toArray();
+    for (const m of meetings) {
+      await lifecycleMeetings().updateOne({ id: m.id }, { $set: { attendeeUserIds: [...new Set(m.attendeeUserIds.map((u) => (u === previousManagerUserId ? managerUserId : u)))] } });
+    }
+  }
+}
+
+/**
+ * A leaving manager's joiners (pre-boarding and onboarding, not closed) move to their successor: the
+ * journey's manager, its open manager tasks, the Day-1 meetings not yet held and the people to meet.
+ * Returns the journeys moved.
+ */
+export async function moveJourneysToManager(org: string, fromUserId: string, toUserId: string, now = new Date()): Promise<string[]> {
+  if (!toUserId || toUserId === fromUserId) return [];
+  const list = await journeys().find({ org, kind: 'onboarding', managerUserId: fromUserId, closedAt: { $exists: false } }, { projection: { _id: 0, id: 1 } }).toArray();
+  for (const { id } of list) {
+    await journeys().updateOne({ id }, { $set: { managerUserId: toUserId, updatedAt: now } });
+    await reassignManager(id, toUserId, fromUserId);
+    const meet = await peopleToMeet().findOne({ journeyId: id, personUserId: fromUserId, metAt: { $exists: false } }, { projection: { _id: 0, id: 1 } });
+    if (meet) {
+      if (await peopleToMeet().findOne({ journeyId: id, personUserId: toUserId }, { projection: { _id: 1 } })) await peopleToMeet().deleteOne({ id: meet.id });
+      else await peopleToMeet().updateOne({ id: meet.id }, { $set: { personUserId: toUserId } });
+    }
+    // The manager meeting on the Day-1 pass and its meeting now name the successor.
+    await syncDay1Meetings(id);
+  }
+  return list.map((j) => j.id);
 }
 
 /** After Mark joined: binds userId, resolves employee-owned tasks to the user, status 'joined', stage welcome_week1, plant sprout. */
@@ -922,6 +960,21 @@ const MEETING_MATCH: Array<[RegExp, SystemTaskKey]> = [
   [/vision|culture/i, 'vision_culture'],
 ];
 
+export const AGENDA_TASK_KEYS = ['meet_manager', 'meet_team', 'welcome_induction', 'vision_culture'] as const;
+export type AgendaTaskKey = (typeof AGENDA_TASK_KEYS)[number];
+type AgendaLine = NonNullable<Day1Pass['agenda']>[number];
+
+/** The task a title's words suggest; used once, for a line saved before lines had ids. */
+export const guessAgendaTask = (title: string | undefined): AgendaTaskKey | undefined =>
+  (title ? MEETING_MATCH.find(([re]) => re.test(title))?.[1] : undefined) as AgendaTaskKey | undefined;
+
+/** The task an agenda line stands for: the one HR picked; a line from before ids falls back to its words. */
+export const agendaTaskKey = (item: AgendaLine): AgendaTaskKey | undefined =>
+  item.taskKey !== undefined ? item.taskKey ?? undefined : item.id ? undefined : guessAgendaTask(item.title);
+
+/** A Day-1 agenda line that is the meeting with the manager. */
+export const isManagerMeeting = (item: AgendaLine) => agendaTaskKey(item) === 'meet_manager';
+
 /** Local wall-clock time on a day, as an instant (company time zone; India has no DST). */
 export function localInstant(day: string, time: string): Date | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(time.trim());
@@ -930,38 +983,58 @@ export function localInstant(day: string, time: string): Date | null {
 }
 
 /**
- * The joining day's timed items come from the Day-1 pass agenda HR fills: one
- * meeting per agenda line, tied to its task by name (the manager 1:1, the team
- * intro, induction, the culture session). Re-run when the pass changes; a
- * meeting already marked met is left alone.
+ * The joining day's timed items come from the Day-1 pass agenda HR fills: one meeting per agenda line,
+ * followed by the line's own id (not its words) and tied to the task HR picked for it (the manager 1:1,
+ * the team intro, induction, the culture session). Re-run when the pass or the manager changes; a
+ * meeting already marked met is left alone; a line taken off the pass takes its meeting with it.
  */
 export async function syncDay1Meetings(journeyId: string): Promise<void> {
   const j = await loadJourney(journeyId);
-  if (!j.userId || !j.tj || !j.day1Pass?.agenda?.length) return;
-  const day = j.day1Pass.date && isDateKey(j.day1Pass.date) ? j.day1Pass.date : j.tj;
+  if (!j.userId || !j.tj) return;
+  const agenda = j.day1Pass?.agenda ?? [];
+  const day = j.day1Pass?.date && isDateKey(j.day1Pass.date) ? j.day1Pass.date : j.tj;
   const tasks = await tasksOf(journeyId);
-  for (const item of j.day1Pass.agenda) {
+  // The manager meeting names the journey's manager as it is now, not the name typed when the pass was made.
+  const managerName = j.managerUserId ? (await users().findOne({ userId: j.managerUserId }, { projection: { _id: 0, name: 1 } }))?.name : undefined;
+  const kept = new Set<string>();
+  for (const item of agenda) {
     const startsAt = localInstant(day, item.time);
     if (!startsAt || !item.title) continue;
-    const key = MEETING_MATCH.find(([re]) => re.test(item.title))?.[1];
+    const key = agendaTaskKey(item);
     const task = key ? tasks.find((t) => t.systemKey === key) : undefined;
     const attendees = [j.userId, ...(key === 'meet_manager' || key === 'meet_team' ? [j.managerUserId] : [])].filter((id): id is string => !!id);
-    const filter = { journeyId, title: item.title.slice(0, 120) };
-    const existing = await lifecycleMeetings().findOne(filter, { projection: { _id: 0 } });
+    const title = item.title.slice(0, 120);
+    // By the line's id; a meeting made before lines had ids is taken over by its title once.
+    const existing = (item.id ? await lifecycleMeetings().findOne({ journeyId, agendaId: item.id }, { projection: { _id: 0 } }) : null)
+      ?? await lifecycleMeetings().findOne({ journeyId, title, agendaId: { $exists: false } }, { projection: { _id: 0 } });
+    if (existing) kept.add(existing.id);
     if (existing?.met) continue;
     // The room stays when the line names a person too ("Room 4B · with Neha R.").
-    const place = j.day1Pass.place;
-    const withWho = item.with?.trim().slice(0, 120);
-    await lifecycleMeetings().updateOne(filter, {
+    const place = j.day1Pass?.place;
+    const withWho = (key === 'meet_manager' && managerName ? managerName : item.with?.trim())?.slice(0, 120);
+    const id = existing?.id ?? randomUUID();
+    kept.add(id);
+    await lifecycleMeetings().updateOne({ id }, {
       $set: {
-        startsAt, endsAt: new Date(startsAt.getTime() + 30 * 60_000), attendeeUserIds: attendees,
-        ...(task ? { journeyTaskId: task.id } : {}), ...(place ? { place } : {}), ...(j.day1Pass.meetingLink ? { link: j.day1Pass.meetingLink } : {}),
+        title, startsAt, endsAt: new Date(startsAt.getTime() + 30 * 60_000), attendeeUserIds: attendees,
+        ...(item.id ? { agendaId: item.id } : {}),
+        ...(place ? { place } : {}), ...(j.day1Pass?.meetingLink ? { link: j.day1Pass.meetingLink } : {}),
         ...(withWho ? { with: withWho } : {}),
       },
-      $setOnInsert: { id: randomUUID(), org: j.org, journeyId },
-      ...(existing && existing.startsAt.getTime() !== startsAt.getTime() ? { $unset: { remindedAt: '' } } : {}),
+      $setOnInsert: { id, org: j.org, journeyId },
+      // A line that is no longer a task's meeting stops pointing at it.
+      ...(task ? {} : { $unset: { journeyTaskId: '' } }),
+      ...(existing && existing.startsAt.getTime() !== startsAt.getTime() ? { $unset: { remindedAt: '', ...(task ? {} : { journeyTaskId: '' }) } } : {}),
     }, { upsert: true });
+    if (task) await lifecycleMeetings().updateOne({ id }, { $set: { journeyTaskId: task.id } });
   }
+  // Lines taken off the pass: their meetings go, unless already held. Older meetings (no line id) go only when they were on the pass's day.
+  const dayStart = localInstant(day, '00:00')!;
+  const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+  await lifecycleMeetings().deleteMany({
+    journeyId, id: { $nin: [...kept] }, met: { $exists: false },
+    $or: [{ agendaId: { $exists: true } }, { startsAt: { $gte: dayStart, $lt: dayEnd } }],
+  });
 }
 
 export function sanitiseJourney(j: Journey): Omit<Journey, 'templateSnapshot'> {

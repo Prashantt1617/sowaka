@@ -31,7 +31,7 @@ import {
 import type { LifecycleAttachment } from './emails';
 import { closeJourney, completeTask, createOnboardingJourney, moveTj, onJoined, reopenTask, setJourneyStatus } from './engine';
 import { checkUpload, LifecycleOfferError, pdfPageCount, readFileBytes, storeFile } from './files';
-import { regenerateAppointmentLetters } from './letters';
+import { regenerateAppointmentLetters, outdateChangedLetters } from './letters';
 import { CLOSED_STATUSES, createCandidateAccount, LIMITS, newLinkToken, rateLimit, sha256 } from './portalAuth';
 
 /** The dashboard user acting, as the routes resolve them. `seesPay`: may see and set CTC. */
@@ -119,9 +119,14 @@ async function cleanFields(org: string, input: unknown, base: Partial<OfferField
   if (!Number.isFinite(ctc) || ctc <= 0 || ctc > 1e10) throw new LifecycleOfferError(400, 'Yearly CTC must be a positive amount in rupees');
   const tj = pick('tj');
   if (!isDay(tj)) throw new LifecycleOfferError(400, 'Joining date must be a date (YYYY-MM-DD)');
+  // A new joining date is after today (an unchanged one on a revision is left as it is).
+  if (tj !== base.tj && tj <= istDate()) throw new LifecycleOfferError(400, `The joining date must be after today (${formatDay(istDate())})`);
   const validTillRaw = pick('validTill');
-  const validTill = validTillRaw === undefined || validTillRaw === null || validTillRaw === '' ? addDays(istDate(), 7) : validTillRaw;
+  // Valid for a week by default, never past the joining day.
+  const validTill = validTillRaw === undefined || validTillRaw === null || validTillRaw === '' ? [addDays(istDate(), 7), tj].sort()[0] : validTillRaw;
   if (!isDay(validTill)) throw new LifecycleOfferError(400, 'Offer valid till must be a date (YYYY-MM-DD)');
+  // The candidate must be able to accept before they join.
+  if (tj < validTill) throw new LifecycleOfferError(400, `The joining date (${formatDay(tj)}) is before the offer’s valid-till date (${formatDay(validTill)}). Move the joining date, or make the offer valid till an earlier day.`);
   const managerUserId = text('managerUserId', 64);
   if (managerUserId && !(await users().findOne({ userId: managerUserId, org }, { projection: { _id: 1 } }))) {
     throw new LifecycleOfferError(400, 'The reporting manager is not in this company');
@@ -318,8 +323,8 @@ async function onRevisionSent(journey: Journey, offerId: string, version: OfferV
   await applyOfferTerms(journey, version.fields, now);
   const status = String((await journeys().findOne({ id: journey.id }, { projection: { _id: 0, status: 1 } }))?.status ?? journey.status);
   if (['finalised', 'active', 'docs_approved'].includes(status)) {
-    await setJourneyStatus(journey.id, 'accepted');
-    await reopenTask(journey.id, 'finalise_offer');
+    // Past finalise (a date change, a new role): the candidate accepts again, but keeps their portal and
+    // progress; there is no second finalise. Letters it changed are dealt with when they accept.
     await reopenTask(journey.id, 'accept_offer');
   } else if (status === 'accepted') {
     await setJourneyStatus(journey.id, 'offer_sent');
@@ -445,6 +450,23 @@ async function acceptVersion(offer: Offer, version: OfferVersion, journey: Journ
     { returnDocument: 'after' },
   );
   if (!updated) throw new LifecycleOfferError(409, 'This offer is no longer open');
+  if (['finalised', 'active', 'docs_approved'].includes(String(journey.status))) {
+    // A revision accepted by someone already finalised: it counts as finalised (their login exists), the
+    // journey stays where they had got to, and letters whose fields changed are out of date to sign again.
+    await offers().updateOne({ id: offer.id, 'versions.version': version.version }, { $set: { 'versions.$.finalisedAt': now, 'versions.$.finalisedByUserId': 'automatic', updatedAt: now } });
+    await journeys().updateOne({ id: journey.id }, { $set: { lastActivityAt: now, updatedAt: now } });
+    await completeTask(journey.id, 'accept_offer', { name: journey.candidate?.name });
+    const changed = await outdateChangedLetters(journey.id, now);
+    const company = await companyOf(journey.org);
+    const creator = await users().findOne({ userId: journey.createdByUserId, org: journey.org }, { projection: { _id: 0, email: 1 } });
+    if (creator?.email) {
+      await sendLifecycleEmail(journey.org, creator.email, `${journey.candidate?.name ?? 'A candidate'} accepted the updated offer${changed.length ? ': letters to sign again' : ''}`,
+        mails.hrRevisionAccepted(companyDisplayName(company, journey.org), journey.candidate?.name ?? '', version.version, changed.map((c) => (c.kind === 'nda' ? 'NDA' : 'appointment letter'))));
+    }
+    const freshJourney = (await journeys().findOne({ id: journey.id }))!;
+    const fresh = (await offers().findOne({ id: offer.id }))!;
+    return buildPortalOfferView(fresh, fresh.versions.find((x) => x.version === version.version)!, freshJourney, pdfPath);
+  }
   await setJourneyStatus(journey.id, 'accepted', { lastActivityAt: now });
   await completeTask(journey.id, 'accept_offer', { name: journey.candidate?.name });
   // HR: the board alert is the engine's flag; the email is here.

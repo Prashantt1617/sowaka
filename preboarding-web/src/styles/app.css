@@ -418,6 +418,52 @@ a {
   gap: 10px;
   padding-left: 8px;
 }
+.joiner-menu {
+  position: relative;
+}
+.joiner-chip--button {
+  display: inline-flex;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: var(--r-row);
+  padding: 4px 8px;
+}
+.joiner-chip--button:hover {
+  background: var(--brand-tint);
+}
+.joiner-menu__list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 160px;
+  background: var(--surface, #fff);
+  border-radius: var(--r-row);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  padding: 6px;
+  z-index: 30;
+}
+.joiner-menu__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  font: inherit;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.joiner-menu__item:hover,
+.joiner-menu__item:focus-visible {
+  background: var(--brand-tint);
+}
+.sheet__sign-out {
+  margin-top: 10px;
+  width: 100%;
+}
 .joiner-chip__text {
   display: flex;
   flex-direction: column;
@@ -711,6 +757,20 @@ a {
   border: 3px solid var(--brand-tint);
   border-top-color: var(--brand);
   animation: spin 0.9s linear infinite;
+}
+/* Inside a button while it works (Accept offer). */
+.spinner--inline {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+  border-color: color-mix(in srgb, currentColor 35%, transparent);
+  border-top-color: currentColor;
+  margin-right: 8px;
+  vertical-align: -3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner--inline { animation-duration: 2.4s; }
 }
 @keyframes spin {
   to {
@@ -1062,6 +1122,14 @@ a {
 .node--locked {
   background: var(--surface);
   border: 2px solid var(--border);
+}
+/* With HR: the candidate's part is in; a calm brand ring, no pulse. */
+.node--waiting {
+  background: var(--brand-tint);
+  border: 2px solid var(--brand);
+}
+.node--waiting .node__dot {
+  background: var(--brand);
 }
 .node__dot {
   width: 6px;

@@ -278,9 +278,9 @@ async function main() {
   eq('Before Tj: In 7 days', engine.dayLabelFor({ ...pure, status: 'finalised', userId: undefined }, '2026-11-24'), 'In 7 days');
   const pt = await engine.tasksOf(J1.id);
   const d = (key: string, j: Journey = pure, tasks = pt) => engine.deriveJourney(j, tasks, at(key));
-  eq('Columns: Day 1 → Week-1 tasks → Day-7 survey → probation Month 1 → Months 2–5 → Final month',
-    ['2026-12-01', '2026-12-03', '2026-12-07', '2026-12-08', '2027-02-10', '2027-05-03'].map((k) => `${d(k).tab}/${d(k).column}`),
-    ['first_week/day1', 'first_week/week1_tasks', 'first_week/day7_survey', 'probation/month1', 'probation/months_2_5', 'probation/final_month']);
+  eq('Columns: Day 1 → Week-1 tasks → Day-7 survey → Week done on Tj + 7 (the day the app shows it) → probation Month 1 → Months 2–5 → Final month',
+    ['2026-12-01', '2026-12-03', '2026-12-07', '2026-12-08', '2026-12-09', '2027-02-10', '2027-05-03'].map((k) => `${d(k).tab}/${d(k).column}`),
+    ['first_week/day1', 'first_week/week1_tasks', 'first_week/day7_survey', 'first_week/week_done', 'probation/month1', 'probation/months_2_5', 'probation/final_month']);
   eq('Stages: welcome → settling in → growing gains → final month', ['2026-12-03', '2026-12-08', '2027-02-10', '2027-05-03'].map((k) => d(k).stage), ['welcome_week1', 'settling_in', 'growing_gains', 'final_month']);
   eq('Plant: seed → sprout (Tj) → seedling (Tj + 7) → sapling (after month 1) → bud (final month) → bloom (confirmed)',
     [d('2026-11-20', { ...pure, status: 'finalised', userId: undefined }).plant.stage, d('2026-12-01').plant.stage, d('2026-12-08').plant.stage, d('2027-01-01').plant.stage, d('2027-05-01').plant.stage, d('2027-05-20', { ...pure, status: 'confirmed' }).plant.stage],
@@ -470,7 +470,7 @@ async function main() {
   ok('The home links the meeting to its task', (await app.onboardingHome(ISHA)).today.some((v) => v.systemKey === 'meet_manager' && (v as { meetingId?: string }).meetingId === mv.id));
   type MeetingRow = TaskView & { meeting?: { id: string; startsAt: string; place?: string; with?: string; canConfirm?: boolean } };
   const homeRow = ((await app.onboardingHome(ISHA)).today as MeetingRow[]).find((v) => v.systemKey === 'meet_manager');
-  eq('Every meeting row carries its meeting (time, the room kept beside the person)', [homeRow?.meeting?.id, homeRow?.meeting?.startsAt, homeRow?.meeting?.place, homeRow?.meeting?.with, homeRow?.meeting?.canConfirm], [mv.id, at(J2.tj!, '11:00').toISOString(), 'Room 4B', 'Neha', true]);
+  eq('Every meeting row carries its meeting (time, the room kept beside the person)', [homeRow?.meeting?.id, homeRow?.meeting?.startsAt, homeRow?.meeting?.place, homeRow?.meeting?.with, homeRow?.meeting?.canConfirm], [mv.id, at(J2.tj!, '11:00').toISOString(), 'Room 4B', 'Neha Rao', true]);
   const mgrRow = ((await app.joinerForManager(MGR, J2.id)).tasks as MeetingRow[]).find((v) => v.systemKey === 'meet_manager');
   eq('…on the manager’s M2 too, phrased for them', [mgrRow?.meeting?.id, mgrRow?.title], [mv.id, 'Meet Isha']);
   ok('The Day-1 agenda becomes a meeting tied to “Meet your manager”', meetings.length === 1 && meetings[0].journeyTaskId === byKey(await engine.tasksOf(J2.id), 'meet_manager').id && meetings[0].attendeeUserIds.includes('mgr'));
@@ -526,6 +526,9 @@ async function main() {
   let j5 = await engine.loadJourney(J5.id);
   eq('Confirm: status confirmed, column Confirmed, bloom, flag Confirmed', [conf.outcome, j5.status, j5.boardColumn, j5.plant?.stage, j5.flags!.includes('confirmed')], ['confirm', 'confirmed', 'confirmed', 5, true]);
   eq('No reveal before the letter is sent', (await app.revealForMe(ISHITA)).ready, false);
+  const j5LetterTask = byKey(await engine.tasksOf(J5.id), 'confirmation_letter').id;
+  eq('The letter task cannot be ticked with no letter sent', (await refusal(() => board.actOnTaskByHr(ORG, J5.id, j5LetterTask, { action: 'done' }, HR))).status, 409);
+  await db.letters().insertOne({ id: 'L-ishita', org: ORG, journeyId: J5.id, kind: 'confirmation', templateId: 't', refNo: 'CL-9', values: {}, createdAt: new Date(), email: { to: 'ishita@example.com', subject: 'Confirmed', body: 'x', sentAt: new Date() } } as never);
   await board.actOnTaskByHr(ORG, J5.id, byKey(await engine.tasksOf(J5.id), 'confirmation_letter').id, { action: 'done' }, HR);
   const rv = await app.revealForMe(ISHITA) as Record<string, unknown>;
   eq('Letter sent: the reveal shows the outcome, title, CTC (to them), manager and KPIs', [rv.ready, rv.outcome, rv.designation, rv.salary, rv.reportsTo, rv.kpis], [true, 'confirm', 'Senior designer', 1_600_000, 'Neha Rao', { name: 'Design IC', items: ['Design quality'] }]);

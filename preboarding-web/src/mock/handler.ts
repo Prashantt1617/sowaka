@@ -424,7 +424,7 @@ export async function handleMock(method: string, path: string, body: unknown, au
     if (password === 'wrong') throw new ApiError(401, 'That email and password don’t match. 4 tries left.');
     if (password === 'locked') throw new ApiError(403, 'Too many wrong tries. Try again in 15 minutes, or reset your password.');
     if (password === 'closed' || password === 'not-joining') {
-      throw new ApiError(403, 'This portal is closed', { closed: { state: password === 'closed' ? 'moved_to_app' : 'not_joining', company: COMPANY, hrContact: HR } });
+      return { closed: { state: password === 'closed' ? 'moved_to_app' : 'not_joining', company: COMPANY, hrContact: HR } };
     }
     return { token: 'mock-session' };
   }

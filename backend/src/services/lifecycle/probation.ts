@@ -7,7 +7,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { ObjectId } from 'mongodb';
-import { journeyTasks, journeys, kpiParameters, kpiTemplates, probationMonths, users } from '../../config/db';
+import { journeyTasks, journeys, kpiParameters, kpiTemplates, letters, probationMonths, users } from '../../config/db';
 import type { ConfirmationDecision, Journey, JourneyTask, ProbationMonth, SystemTaskKey } from '../../models/lifecycle.model';
 import { companyTimeZone, humanDay, keyOfDay, probationMonthEnd, probationMonthStart, todayKey } from './dueRules';
 import {
@@ -264,6 +264,21 @@ export async function recordDecision(journeyId: string, hr: { userId: string; na
   return decision;
 }
 
+/**
+ * The confirmation or extension letter sent to this person for the current
+ * decision (the kind matching its outcome, emailed on or after the decision):
+ * the latest one, or none.
+ */
+export async function sentDecisionLetter(j: Journey): Promise<string | undefined> {
+  const decision = j.probation?.decision;
+  if (!decision || (decision.outcome !== 'confirm' && decision.outcome !== 'extend')) return undefined;
+  const kind = decision.outcome === 'confirm' ? 'confirmation' : 'extension';
+  const who = j.userId ? [{ journeyId: j.id }, { userId: j.userId }] : [{ journeyId: j.id }];
+  const letter = await letters().find({ org: j.org, kind, $or: who, 'email.sentAt': { $gte: new Date(decision.decidedAt) } }, { projection: { _id: 0, id: 1 } })
+    .sort({ 'email.sentAt': -1 }).limit(1).next();
+  return letter?.id;
+}
+
 /** The reveal (PB3): only once the letter is out. */
 export async function revealFor(journeyId: string) {
   const j = await loadJourney(journeyId);
@@ -271,6 +286,11 @@ export async function revealFor(journeyId: string) {
   const tasks = await tasksOf(journeyId);
   const letterSent = tasks.some((t) => t.systemKey === 'confirmation_letter' && t.status === 'done') || !!decision?.letterId;
   if (!decision || !letterSent) return { ready: false };
+  // A letter sent from Documents without the link to the decision (an older send) still opens from the reveal.
+  if (!decision.letterId) {
+    const found = await sentDecisionLetter(j);
+    if (found) { decision.letterId = found; await journeys().updateOne({ id: journeyId }, { $set: { 'probation.decision.letterId': found } }); }
+  }
   const manager = decision.reportingToUserId ? (await users().findOne({ userId: decision.reportingToUserId }, { projection: { _id: 0, name: 1 } }))?.name : undefined;
   const kpis = decision.kpiTemplateId ? await kpisOf(j.org, decision.kpiTemplateId) : undefined;
   return {

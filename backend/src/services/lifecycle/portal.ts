@@ -13,14 +13,15 @@ import { journeyDocumentsView } from './documents';
 import {
   addDays, companyDisplayName, companyOf, daysBetween, fireOnce, formatDay, hrContactFor, istDate, istHour, mails, sendLifecycleEmail,
 } from './emails';
-import { closeJourney, completeTask, journeyTasksView, type TaskView } from './engine';
+import { closeJourney, completeTask, isManagerMeeting, journeyTasksView, type TaskView } from './engine';
 import { LifecycleOfferError } from './files';
 import { maybeSendLettersReady, portalLetters, SIGNED_KINDS } from './letters';
 import { CLOSED_STATUSES, mediaPath } from './portalAuth';
 import { addWorkingDaysKey, workCalendar } from './dueRules';
 
 type PathKey = 'offer' | 'docs' | 'about' | 'meet' | 'letter' | 'pass';
-type StepState = 'done' | 'current' | 'todo' | 'locked';
+/** `waiting`: the candidate's part is done and HR has it (every required document uploaded, in review). */
+type StepState = 'done' | 'current' | 'todo' | 'locked' | 'waiting';
 
 export interface PortalHome {
   status: string;
@@ -188,8 +189,11 @@ export async function portalPass(journey: Journey, now = new Date()): Promise<Po
     journey.buddyUserId ? users().findOne({ userId: journey.buddyUserId }, { projection: { _id: 0, name: 1 } }) : null,
     companyOf(journey.org),
   ]);
+  const pass = journey.day1Pass ?? {};
   return {
-    ...(journey.day1Pass ?? {}),
+    ...pass,
+    // The manager meeting names the current manager (the line HR typed goes stale when the manager changes).
+    ...(pass.agenda ? { agenda: pass.agenda.map((a) => (isManagerMeeting(a) && manager?.name ? { ...a, with: manager.name } : a)) } : {}),
     date: journey.day1Pass?.date ?? journey.tj,
     candidateName: journey.candidate?.name ?? '', designation: journey.designation, department: journey.department,
     ...(manager ? { managerName: manager.name } : {}), ...(buddy ? { buddyName: buddy.name } : {}),
@@ -261,6 +265,8 @@ export async function portalHome(journey: Journey, now = new Date()): Promise<Po
   const sentBack = docs.find((d) => d.status === 'sent_back');
   // Done only when every required document is approved and nothing is waiting to be uploaded again (an optional one included).
   const docsDone = required.length > 0 && required.every((d) => d.status === 'approved') && !sentBack;
+  // Every required document is in and HR is reviewing: nothing for the candidate to do there now.
+  const docsWaiting = !docsDone && !sentBack && required.length > 0 && required.every((d) => d.status === 'in_review' || d.status === 'approved');
   const about = aboutYouOf(journey);
   const aboutDone = Boolean(about.emergencyContact && about.pf);
   const meet = await meetItems(journey);
@@ -279,17 +285,17 @@ export async function portalHome(journey: Journey, now = new Date()): Promise<Po
     const offset = DEFAULT_DUE[key];
     return journey.tj && offset !== undefined ? addDays(journey.tj, offset) : undefined;
   };
-  const steps: Array<{ key: PathKey; done: boolean; locked: boolean; started: boolean }> = [
+  const steps: Array<{ key: PathKey; done: boolean; locked: boolean; started: boolean; waiting?: boolean }> = [
     { key: 'offer', done: offerDone, locked: false, started: true },
-    { key: 'docs', done: docsDone, locked: false, started: docs.some((d) => d.fileIds.length > 0) },
+    { key: 'docs', done: docsDone, locked: false, started: docs.some((d) => d.fileIds.length > 0), waiting: docsWaiting },
     { key: 'about', done: aboutDone, locked: false, started: Boolean(about.emergencyContact || about.pf) },
     { key: 'meet', done: meetDone, locked: false, started: meet.some((i) => i.seen) },
     ...(onDay1 ? [] : [{ key: 'letter' as const, done: lettersDone, locked: !lettersReady && !lettersDone, started: portalLetterList.some((l) => l.state === 'opened') }]),
     { key: 'pass', done: passUnlocked && today >= (journey.tj ?? '9999'), locked: !passUnlocked, started: false },
   ];
 
-  // Up next: sent back → due soonest → not started.
-  const open = steps.filter((s) => !s.done && !s.locked);
+  // Up next: sent back → due soonest → not started. A step waiting on HR is not the candidate's to do.
+  const open = steps.filter((s) => !s.done && !s.locked && !s.waiting);
   const titles: Record<PathKey, string> = {
     offer: (latest?.version ?? 1) > 1 ? 'Review your updated offer' : 'Accept your offer', docs: 'Upload your documents', about: 'Tell us about you',
     meet: 'Meet the team', letter: 'Sign your appointment letter', pass: 'Check your Day-1 pass',
@@ -306,11 +312,12 @@ export async function portalHome(journey: Journey, now = new Date()): Promise<Po
     const dated = open.map((s) => ({ s, due: dueOf(s.key) })).filter((x) => x.due).sort((a, b) => a.due!.localeCompare(b.due!));
     const pick = dated[0]?.s ?? open.find((s) => !s.started) ?? open[0];
     if (pick) upNext = { key: pick.key, title: titles[pick.key], due: dueOf(pick.key), helper: helpers[pick.key] };
+    else if (docsWaiting) upNext = { key: 'docs', title: 'HR is checking your documents', helper: 'You’ll hear from HR when they’re approved' };
   }
   const currentKey = upNext && upNext.key !== 'app' ? upNext.key : open[0]?.key;
   const path = steps.map((s) => ({
     key: s.key, label: LABELS[s.key], due: dueOf(s.key),
-    state: (s.done ? 'done' : s.locked ? 'locked' : s.key === currentKey ? 'current' : 'todo') as StepState,
+    state: (s.done ? 'done' : s.locked ? 'locked' : s.waiting ? 'waiting' : s.key === currentKey ? 'current' : 'todo') as StepState,
   }));
   const doneCount = steps.filter((s) => s.done).length;
 

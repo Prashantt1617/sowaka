@@ -33,7 +33,7 @@ export function homeTiles(me: PortalHome, meetCount?: number): HomeTile[] {
   const todo: HomeTile[] = [];
   if (state('about') && state('about') !== 'done') todo.push({ key: 'about', icon: { count: 2 }, title: 'About you', sub: '2 quick steps', to: '/about' });
   if (state('meet') && state('meet') !== 'done') {
-    todo.push({ key: 'meet', icon: meetCount ? { count: meetCount } : { icon: 'play' }, title: 'Meet the team', sub: meetCount ? `${meetCount} short videos` : 'Short videos', to: '/meet' });
+    todo.push({ key: 'meet', icon: meetCount ? { count: meetCount } : { icon: 'play' }, title: 'Meet the team', sub: meetCount ? `${meetCount} short video${meetCount === 1 ? '' : 's'}` : 'Short videos', to: '/meet' });
   }
   if (hero !== 'letter' && (state('letter') === 'current' || state('letter') === 'todo')) {
     todo.push({ key: 'letter', icon: { icon: 'pen' }, title: 'Sign your letters', sub: 'Appointment letter and NDA', to: '/letters' });

@@ -161,6 +161,11 @@ async function journeyDayJobs(j: Journey, tasks: JourneyTask[], today: string, c
       logger.info('People to meet left open at the end of month 1', { journeyId: j.id, reason: (error as Error).message });
     }
   }
+  // A survey not answered by its due day closes (the app refuses late answers); a must-do one stays open and shows late.
+  for (const t of tasks) {
+    if ((t.systemKey !== 'day7_survey' && t.systemKey !== 'pulse_survey') || (t.status !== 'todo' && t.status !== 'sent_back') || !t.dueAt || keyOfDay(t.dueAt) >= today || t.mustDo) continue;
+    try { await finishTaskById(j.id, t.id, 'skip', { name: 'Automatic' }, 'Not answered by its deadline'); } catch (error) { logger.info('A survey past its deadline stayed open', { journeyId: j.id, reason: (error as Error).message }); }
+  }
   if (!done(tasks, 'day7_survey')) {
     await fire('tj6_survey_open', addDaysKey(tj, 6), () => tell([j.userId], { scenario: 'lifecycle_survey_open', destination: 'lifecycle_survey', title: 'How was your first week?', body: '4 quick questions', data }));
   }

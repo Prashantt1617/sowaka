@@ -30,14 +30,16 @@ import { policyForUser } from '../shift.service';
 import { serviceYears, settlementFor } from '../exitSettlement.service';
 import { notifyUsers } from '../notification.service';
 import { istParts } from '../notification-time';
-import { hasReceiptStorage, presignReceiptDownload, uploadEmployeeDocument } from '../s3-receipt.service';
+import { hasReceiptStorage, presignReceiptDownload, uploadObjectAt } from '../s3-receipt.service';
+import { HANDOVER_TYPES_MESSAGE, handoverFileType } from './handoverFiles';
+import { removeFile } from './files';
 import { logger } from '../../utils/logger';
 import type { HandoverItem, Journey, JourneyTask, Resignation, SurveyResponse, SystemTaskKey } from '../../models/lifecycle.model';
 import type { ExitSettlement } from '../../models/exitSettlement.model';
 import {
   CLEARANCE_TEAMS, DEFAULT_EXIT_CLEARANCE, ClearanceTeam, ExitKind, ExitRules, OffboardingExitType, OffboardingNoticeHandling, User, UserExit, UserExitOffboarding,
 } from '../../models/user.model';
-import { closeJourney, completeTask, createOffboardingJourney, journeyTasksView, moveTl, reopenTask, setJourneyStatus, skipTask } from './engine';
+import { closeJourney, completeTask, createOffboardingJourney, journeyTasksView, moveTl, refreshJourney, reopenTask, setJourneyStatus, skipTask } from './engine';
 import type { TaskView } from './engine';
 import { orgMayEmail, sendLifecycleEmail, smtpConfigured } from './emails';
 import { env } from '../../config/env';
@@ -271,6 +273,7 @@ export async function beginOffboarding(hr: Actor, employee: User, input: BeginIn
   if (!input.resignationId) await completeTask(journey.id, 'hr_start_exit', by);
   await completeTask(journey.id, 'tell_clearance_teams', by);
   if (showAppPage) await completeTask(journey.id, 'offboarding_page', by);
+  await syncInterviewTask(journey.id, offboarding);
   await syncGratuityTask(journey.id, employee.joiningDate, input.lastWorkingDay);
   // The quiet door: someone leaving during onboarding or probation gets no plant, no probation pushes, no reveal.
   await closeOnboardingForExit(employee.userId, input.exitType);
@@ -537,6 +540,13 @@ function dedupeWaiting(rows: WaitingOn[]): WaitingOn[] {
 }
 
 /** When the exit interview opens: the journey's task, else Tl less the template's days (5 by default). */
+/** An exit with no exit interview (end of contract, no app page) has its interview task skipped, so the drawer and its counts match the app. */
+export async function syncInterviewTask(journeyId: string, ob: UserExitOffboarding | undefined): Promise<void> {
+  if (!ob || interviewApplies(ob)) return;
+  const open = await journeyTasks().findOne({ journeyId, systemKey: 'exit_interview', status: { $in: ['locked', 'todo'] } }, { projection: { _id: 1 } });
+  if (open) await skipTask(journeyId, 'exit_interview', { name: 'Automatic' }, 'Not part of this exit');
+}
+
 export function interviewOpensKey(e: UserExit, journey: Journey | null): string | null {
   if (!interviewApplies(e.offboarding)) return null;
   const days = journey?.templateSnapshot?.settings?.exitInterviewOpensDays ?? 5;
@@ -1057,6 +1067,10 @@ const escapeHtml = (v: string) => v.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', 
  * statement PDF the dashboard made (settlementDoc.ts), emailed to the personal email once the settlement
  * is approved. It is never shown in the app. The personal email is kept on the person when they had none.
  */
+/** A second settlement email within this long of the first needs `resend: true` (the dashboard asks HR to confirm). */
+export const SETTLEMENT_RESEND_MS = 10 * 60_000;
+const minutesAgo = (at: Date, now: Date) => { const m = Math.max(0, Math.round((now.getTime() - at.getTime()) / 60_000)); return m < 1 ? 'a moment ago' : m === 1 ? 'a minute ago' : `${m} minutes ago`; };
+
 export async function emailSettlement(actorUserId: string, employeeUserId: string, body: Record<string, unknown>, now = new Date()) {
   const actor = await dashboardActor(actorUserId);
   requireHr(actor);
@@ -1082,12 +1096,45 @@ export async function emailSettlement(actorUserId: string, employeeUserId: strin
     || `Dear ${first},\n\nYour full and final settlement statement is attached.\n\nFor any question, reply to this email or write to HR.\n\n${companyName}`;
   const html = message.split(/\n{2,}/).map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('');
   if (!orgMayEmail(actor.org)) throw new LifecycleError(409, 'Email to this company is switched off on this server; the PDF was not sent');
-  const sent = await sendLifecycleEmail(actor.org, to, subject, html, [{ filename: `Settlement_${user.employeeId || user.name.replace(/\s+/g, '_')}.pdf`, content: pdf, contentType: 'application/pdf' }]);
+  // One settlement email at a time: a second send soon after the first (a double click, two tabs) is refused
+  // unless HR confirms a resend; two sends at the same moment are refused by the claim below.
+  const last = user.exit.offboarding?.settlementEmail;
+  if (last?.at && now.getTime() - new Date(last.at).getTime() < SETTLEMENT_RESEND_MS && body.resend !== true) {
+    throw new LifecycleError(409, `The settlement was already emailed to ${last.to} ${minutesAgo(new Date(last.at), now)}. Send it again?`);
+  }
+  // (Exits recorded before offboarding existed have no offboarding block to hold the claim; the time check above still applies.)
+  const claim = !!user.exit.offboarding;
+  if (claim) {
+    // The claim holds only if nobody has sent since this request read the exit (a double click read the same
+    // "last sent"), and nobody is sending right now (a stale claim older than 2 minutes is ignored).
+    const claimed = await users().updateOne(
+      {
+        userId: employeeUserId, org: actor.org, 'exit.offboarding': { $exists: true },
+        'exit.offboarding.settlementEmail.at': last?.at ? new Date(last.at) : { $exists: false },
+        $or: [{ 'exit.offboarding.settlementSendingAt': { $exists: false } }, { 'exit.offboarding.settlementSendingAt': { $lt: new Date(now.getTime() - 2 * 60_000) } }],
+      },
+      { $set: { 'exit.offboarding.settlementSendingAt': now } },
+    );
+    if (!claimed.modifiedCount) throw new LifecycleError(409, 'The settlement is being emailed right now, or was just sent');
+  }
+  const release = () => (claim ? users().updateOne({ userId: employeeUserId, org: actor.org, 'exit.offboarding': { $exists: true } }, { $unset: { 'exit.offboarding.settlementSendingAt': '' } }) : Promise.resolve());
+  let sent: boolean;
+  try {
+    sent = await sendLifecycleEmail(actor.org, to, subject, html, [{ filename: `Settlement_${user.employeeId || user.name.replace(/\s+/g, '_')}.pdf`, content: pdf, contentType: 'application/pdf' }]);
+  } catch (error) {
+    await release();
+    throw error;
+  }
   // Without SMTP (development only) the mail is logged and kept in the outbox; anywhere else a failed send is an error.
-  if (!sent && (smtpConfigured() || env.nodeEnv === 'production')) throw new LifecycleError(502, 'The email could not be sent; the PDF was not sent. Try again');
+  if (!sent && (smtpConfigured() || env.nodeEnv === 'production')) {
+    await release();
+    throw new LifecycleError(502, 'The email could not be sent; the PDF was not sent. Try again');
+  }
   const settlementEmail = { to, at: now, ...(actor.name ? { byName: actor.name } : {}), ...(blocking.length ? { overrideReason } : {}) };
+  // Recorded and released in one write, so no second send can slip in between.
+  const unset: Record<string, ''> = { ...(user.exit.offboarding?.settlementDraft ? { 'exit.offboarding.settlementDraft': '' as const } : {}), ...(claim ? { 'exit.offboarding.settlementSendingAt': '' as const } : {}) };
   await users().updateOne({ userId: employeeUserId, org: actor.org }, {
-    ...(user.exit.offboarding?.settlementDraft ? { $unset: { 'exit.offboarding.settlementDraft': '' } } : {}),
+    ...(Object.keys(unset).length ? { $unset: unset } : {}),
     $set: { ...(user.exit.offboarding ? { 'exit.offboarding.settlementEmail': settlementEmail } : { 'exit.offboarding': { exitType: exitTypeOf(user.exit) ?? 'resignation', showAppPage: false, settlementEmail } }), ...(!user.personalEmail ? { personalEmail: to } : {}), updatedAt: now },
   });
   const journeyId = user.exit.offboarding?.journeyId;
@@ -1119,7 +1166,10 @@ async function storeFile(org: string, journeyId: string, userId: string, file: U
   const id = randomUUID();
   let objectKey: string;
   if (hasReceiptStorage()) {
-    objectKey = (await uploadEmployeeDocument(userId, { originalName: file.name, contentType: file.contentType, size: file.bytes.length, bytes: file.bytes })).objectKey;
+    // Handover files under their own prefix, not with reimbursement receipts (whose clean-up rules would reach them).
+    // Files stored earlier keep their old keys and still open (the download signs whatever key the row holds).
+    const safe = (v: string) => v.replace(/[^a-zA-Z0-9_-]/g, '_');
+    objectKey = (await uploadObjectAt(`lifecycle/handover/${safe(org)}/${safe(journeyId)}/${id}${handoverFileType(file.name, file.bytes)?.ext ?? ''}`, file)).objectKey;
   } else {
     objectKey = `lifecycle/${org}/${journeyId}/${id}`;
     await fs.mkdir(path.join(LOCAL_ROOT, path.dirname(objectKey)), { recursive: true });
@@ -1187,7 +1237,8 @@ export async function myOffboarding(userId: string, now = new Date()) {
   const resignedOn = resignation ? keyOfInstant(resignation.submittedAt) : e.noticeFrom ?? null;
   const managerUserId = journey?.managerUserId ?? user.managerUserId;
   const managerName = managerUserId ? (await users().findOne({ userId: managerUserId }, { projection: { _id: 0, name: 1 } }))?.name : undefined;
-  const summary = handoverSummary(items, ob, tasks);
+  const markedDone = await journeyTasks().findOne({ journeyId, systemKey: 'mark_handover_done', status: 'done' }, { projection: { _id: 0, doneAt: 1 } });
+  const summary = handoverSummary(items, ob, tasks, markedDone);
   const acceptedAt = journey?.anchors.exit_accepted ?? journey?.createdAt ?? null;
   return {
     tl: e.lastWorkingDay,
@@ -1228,13 +1279,17 @@ export async function uploadHandover(userId: string, itemId: string, input: { fi
   let upload: NonNullable<HandoverItem['upload']>;
   if (input.file) {
     if (input.file.bytes.length > 10 * 1024 * 1024) throw new LifecycleError(413, 'A file must be 10 MB or smaller');
-    upload = { kind: 'file', fileId: await storeFile(user.org, journeyId, userId, input.file, now), name: input.file.name.slice(0, 200), at: now };
+    const type = handoverFileType(input.file.name, input.file.bytes);
+    if (!type) throw new LifecycleError(415, HANDOVER_TYPES_MESSAGE);
+    upload = { kind: 'file', fileId: await storeFile(user.org, journeyId, userId, { ...input.file, contentType: type.contentType }, now), name: input.file.name.slice(0, 200), at: now };
   } else {
     const url = String(input.url ?? '').trim();
     if (!/^https?:\/\/\S+$/i.test(url) || url.length > 2000) throw new LifecycleError(400, 'A link starts with https://');
     upload = { kind: 'link', url, name: url.replace(/^https?:\/\//i, '').slice(0, 80), at: now };
   }
   await handoverItems().updateOne({ id: item.id }, { $set: { upload } });
+  // The file it replaces goes (its row and its stored object): a replaced upload is never kept.
+  if (item.upload?.kind === 'file' && item.upload.fileId && item.upload.fileId !== (upload.kind === 'file' ? upload.fileId : undefined)) await removeFile(item.upload.fileId);
   const all = await handoverItems().find({ journeyId }, { projection: { _id: 0, upload: 1 } }).toArray();
   if (all.every((h) => !!h.upload)) await completeTask(journeyId, 'upload_handover', { userId, name: user.name });
   const journey = await journeys().findOne({ id: journeyId }, { projection: { _id: 0, managerUserId: 1 } });
@@ -1248,6 +1303,7 @@ export async function removeHandoverUpload(userId: string, itemId: string) {
   const { item } = await myItem(userId, itemId);
   if (item.done) throw new LifecycleError(409, 'Your manager has marked the handover done');
   await handoverItems().updateOne({ id: item.id }, { $unset: { upload: '' } });
+  if (item.upload?.kind === 'file' && item.upload.fileId) await removeFile(item.upload.fileId);
   return { item: handoverView({ ...item, upload: undefined }) };
 }
 
@@ -1373,9 +1429,11 @@ export async function managerLeaver(managerUserId: string, leaverUserId: string,
 const CLEARANCE_TEAM_LABEL: Record<ClearanceTeam, string> = { manager: 'your manager', it: 'IT', admin: 'Admin', finance: 'Finance' };
 
 /** The handover checklist for the app: the items, the manager's note, when it was shared and is due, whether it is done. */
-function handoverSummary(items: HandoverItem[], ob: UserExitOffboarding, tasks: Awaited<ReturnType<typeof journeyTasksView>>) {
+function handoverSummary(items: HandoverItem[], ob: UserExitOffboarding, tasks: Awaited<ReturnType<typeof journeyTasksView>>, markedDone?: { doneAt?: Date | null } | null) {
   const upload = tasks.find((t) => t.systemKey === 'upload_handover');
-  const marked = tasks.find((t) => t.systemKey === 'mark_handover_done' && t.status === 'done');
+  // "Handover done" is the manager's task: a leaver's own task list does not hold it, so their page passes it in.
+  const fromList = tasks.find((t) => t.systemKey === 'mark_handover_done' && t.status === 'done');
+  const marked = fromList ?? (markedDone ? { doneAt: markedDone.doneAt ? new Date(markedDone.doneAt).toISOString() : null } : undefined);
   const shared = tasks.find((t) => t.systemKey === 'handover_checklist' && t.status === 'done');
   const addedAt = items.length ? shared?.doneAt ?? (ob.handoverNoteAt ? new Date(ob.handoverNoteAt).toISOString() : null) : null;
   const doneAt = marked?.doneAt ?? items.map((h) => h.doneAt).filter((d): d is Date => !!d).map((d) => d.toISOString()).sort().at(-1) ?? null;
@@ -1395,7 +1453,11 @@ export async function setHandoverChecklist(managerUserId: string, leaverUserId: 
   const existing = await handoverItems().find({ journeyId }, { projection: { _id: 0 } }).toArray();
   const keep = new Set(titles);
   const gone = existing.filter((h) => !keep.has(h.title));
-  if (gone.length) await handoverItems().deleteMany({ id: { $in: gone.map((h) => h.id) } });
+  if (gone.length) {
+    await handoverItems().deleteMany({ id: { $in: gone.map((h) => h.id) } });
+    // An item taken off the checklist takes its uploaded file with it.
+    for (const h of gone) if (h.upload?.kind === 'file' && h.upload.fileId) await removeFile(h.upload.fileId);
+  }
   const known = new Set(existing.map((h) => h.title));
   const added: HandoverItem[] = titles.filter((t) => !known.has(t)).map((title) => ({ id: randomUUID(), org: leaver.org, journeyId, userId: leaver.userId, title, createdByUserId: managerUserId, done: false }));
   if (added.length) await handoverItems().insertMany(added.map((h) => ({ ...h })));
@@ -1465,6 +1527,10 @@ export async function runOffboardingJobs(now = new Date()) {
       const journey = await journeys().findOne({ id: journeyId }, { projection: { _id: 0 } });
       if (!journey || journey.status === 'closed' || !u.org) continue;
       if (!(await companies().findOne({ id: u.org, 'features.lifecycle': true }, { projection: { _id: 1 } }))) continue;
+      // Offboarding tasks that open on a day (the exit interview at Tl − n, closing the account) open
+      // only when the journey is re-dated; the onboarding day job does this for joiners, this does it for exits.
+      await refreshJourney(journeyId, now);
+      await syncInterviewTask(journeyId, ob);
       const fired = new Set(ob.fired ?? []);
       const fire = async (key: string) => {
         const res = await users().updateOne({ userId: u.userId, 'exit.offboarding.fired': { $ne: key } }, { $push: { 'exit.offboarding.fired': key } });

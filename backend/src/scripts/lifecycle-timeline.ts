@@ -188,7 +188,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
     clearLifecycleOutbox();
   }
   const MAIL_KIND: Array<[RegExp, string]> = [
-    [/^Your offer from/, 'offer'], [/accepted the offer: finalise it$/, 'accepted'], [/^Waiting for you: finalise/, 'finalise_reminder'],
+    [/^Your offer from/, 'offer'], [/accepted the offer: finalise it$/, 'accepted'], [/accepted the updated offer/, 'revision_accepted'], [/^Waiting for you: finalise/, 'finalise_reminder'],
     [/joining portal: login details$/, 'login'], [/^Your joining portal is waiting$/, 'login_reminder'], [/^A few things are waiting/, 'quiet'],
     [/^Please upload your .* again$/, 'sent_back'], [/^Your appointment letter is ready to sign$/, 'letters_ready'], [/^Reminder: sign/, 'letter_nudge'],
     [/^Your first day:/, 'day1_pass'], [/full and final settlement/, 'settlement'], [/joining date/, 'date_change'], [/^Reset your/, 'reset'],
@@ -411,7 +411,8 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
 
   // ── Mon 8 Mar 10:30: Kabir signs in
   section('3 · Signed in; quiet for 3 days → the nudge and the Quiet flag');
-  const tokA = (await auth.signIn(KABIR, passA, '6.6.6.6')).token;
+  const signedA = await auth.signIn(KABIR, passA, '6.6.6.6');
+  const tokA = 'token' in signedA ? signedA.token : '';
   ok('signed in: status active', (await journey(A)).status === 'active');
   let home = await portalHome(A);
   eq('portal home: tasks open; path Offer done, Docs current, Sign and Day 1 locked', [home.view, pathOf(home)], ['tasks_open', ['offer:done', 'docs:current', 'about:todo', 'meet:todo', 'letter:locked', 'pass:locked']]);
@@ -432,7 +433,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   const cHome = await portalHome(C);
   eq('portal: the closed screen, not joining', [cHome.view, cHome.closedState], ['closed', 'not_joining']);
   eq('the offer link says not joining', (await offersSvc.openOfferLink(tokenC, '1.1.1.1')).state, 'not_joining');
-  eq('sign-in refused: the portal is closed', (await refusal(() => auth.signIn(CHETAN, passC, '4.4.4.4'))).status, 403);
+  eq('sign-in on the closed portal: no session, the closed screen', (await auth.signIn(CHETAN, passC, '4.4.4.4') as { closed?: { state?: string } }).closed?.state, 'not_joining');
   ok('off the board', !(await onCard(C)));
   await expectPushes('the manager is told, once', ['lifecycle_not_joining>mgr']);
   await advanceTo(T('2027-03-11', '09:30'));
@@ -457,7 +458,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   const tokenB2 = tokenIn(lastMailTo(BINA)!.html);
   expectMail('the revised offer goes to Bina', ['offer>bina']);
   eq('the old link says replaced', (await offersSvc.openOfferLink(tokenB1, '1.1.1.1')).state, 'replaced');
-  eq('the journey is back to accepted, Tj moved', [(await journey(B)).status, (await journey(B)).tj], ['accepted', TJ_B]);
+  eq('the journey stays where Bina had got to (active, no second finalise), Tj moved', [(await journey(B)).status, (await journey(B)).tj], ['active', TJ_B]);
   await doneTasksStayed('Bina’s Tj moved a week', B, bDoneBefore, ['send_offer', 'accept_offer', 'finalise_offer']);
   const bOpenAfter = await openDue(B);
   eq('open Tj tasks moved a week (documents, mark joined)', [bOpenAfter.get('upload_documents'), bOpenAfter.get('mark_joined')], [rules.addDaysKey(bOpenBefore.get('upload_documents')!, 7), TJ_B]);
@@ -466,10 +467,9 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   eq('Bina’s portal: offer updated, the banner names salary and joining date', [home.view, home.banner?.changedFields, home.upNext?.title], ['offer_updated', ['ctc', 'tj', 'validTill'], 'Review your updated offer']);
   ok('the new link opens v2; the old one cannot accept', (await offersSvc.openOfferLink(tokenB2, '1.1.1.1')).version === 2 && (await refusal(() => offersSvc.acceptOffer(tokenB1, { ip: '1.1.1.1' }))).status === 409);
   await advanceTo(T('2027-03-11', '15:00'));
-  await offersSvc.acceptOfferForJourney(await journey(B), { ip: '203.0.113.10' });
-  await offersSvc.finaliseOffer(HR, B);
-  eq('accepted v2 and finalised again: back to active, no second login', (await journey(B)).status, 'active');
-  expectMail('HR told of the v2 acceptance; no new login', ['accepted>hr']);
+  eq('accepting v2: already finalised (the login exists)', (await offersSvc.acceptOfferForJourney(await journey(B), { ip: '203.0.113.10' })).state, 'finalised');
+  eq('still active, nothing for HR to finalise, no second login', [(await journey(B)).status, (await refusal(() => offersSvc.finaliseOffer(HR, B))).status], ['active', 409]);
+  expectMail('HR told of the v2 acceptance; no new login', ['revision_accepted>hr']);
   await expectPushes('the revision and the re-acceptance push nothing else (due-date pushes counted apart)', []);
   const dueChangedB = allPushes.filter((p) => p.scenario === 'lifecycle_due_changed' && p.data.journeyId === B);
   eq('the manager was told once that Bina’s dates moved', dueChangedB.map((p) => nameOf(p.userId)), ['mgr']);
@@ -648,7 +648,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   await advanceTo(T('2027-03-28', '16:00'));
   await app.sendSurvey(KME, { answers: { q1: 4, q2: 'mostly', q3: 5, q4: 'More time with the team' } });
   card = await onCard(A);
-  ok('board: Week done', card?.column === 'week_done' && card.flags.includes('done'), card);
+  ok('board: every week-1 task done on Tj + 6: All set, still Day-7 survey (Week done is Tj + 7, the day the app shows it)', card?.column === 'day7_survey' && card.flags.includes('all_set'), card);
   await advanceTo(T('2027-03-29', '08:30'));
   await expectPushes('nothing overnight', []);
 
@@ -661,10 +661,10 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   me = await app.lifecycleMe(KME) as typeof me;
   eq('/lifecycle/me: Week 2, a seedling, Settling in', [me.onboarding?.dayLabel, me.onboarding?.plant.stage, me.onboarding?.stage], ['Week 2', 2, 'settling_in']);
   card = await onCard(A);
-  eq('board: Probation › Month 1', [card?.tab, card?.column], ['probation', 'month1']);
+  eq('board: Week done on Tj + 7, the same day as the app (Probation › Month 1 from the next day)', [card?.tab, card?.column, card?.flags.includes('done')], ['first_week', 'week_done', true]);
   home = await portalHome(A);
   eq('portal: closed, moved to the app', [home.view, home.closedState], ['closed', 'moved_to_app']);
-  eq('portal sign-in refused now', (await refusal(() => auth.signIn(KABIR, passA, '6.6.6.6'))).status, 403);
+  eq('portal sign-in now: no session, the closed screen', (await auth.signIn(KABIR, passA, '6.6.6.6') as { closed?: { state?: string } }).closed?.state, 'moved_to_app');
   eq('goals can no longer change', (await refusal(() => app.saveSetup(MGR, A, { goals: ['Late'] }))).status, 409);
   aHome = await app.onboardingHome(KME);
   ok('app home: the Week 1 done moment shows', aHome.showWeekDone);
@@ -742,6 +742,10 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   me = await app.lifecycleMe(KME) as typeof me;
   eq('/lifecycle/me: a bloom', me.onboarding?.plant.stage, 5);
   eq('no reveal before the letter', (await app.revealForMe(KME)).ready, false);
+  // The letter task is done by a sent letter, not a tick alone: refused first, then the letter goes out (as from Documents).
+  const letterTaskId = (await task(A, 'confirmation_letter')).id;
+  eq('the letter task cannot be ticked with no letter sent', (await refusal(() => board.actOnTaskByHr(ORG, A, letterTaskId, { action: 'done' }, HRME))).status, 409);
+  await db.getDb().collection('lifecycle_letters').insertOne({ id: 'L-kabir-confirm', org: ORG, journeyId: A, kind: 'confirmation', templateId: 't', refNo: 'CL-1', values: {}, createdAt: new Date(), email: { to: 'kabir@example.com', subject: 'Confirmed', body: 'x', sentAt: new Date() } });
   await board.actOnTaskByHr(ORG, A, (await task(A, 'confirmation_letter')).id, { action: 'done', note: 'Letter sent' }, HRME);
   await advanceTo(T('2027-06-01', '11:05'), 'sparse');
   await advanceTo(T('2027-06-01', '13:05'), 'sparse');
@@ -763,6 +767,8 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   eq('extended: 4 months, months_2_5 again', [ext.outcome, engine.totalProbationMonths(jB), (await onCard(B))?.column], ['extend', 4, 'months_2_5']);
   ok('month-4 tasks added (check-in, review, goals, a new decision)', !!(await task(B, 'monthly_checkin', 4)) && !!(await task(B, 'monthly_review', 4)) && (await task(B, 'confirmation_discussion', 4))?.status === 'locked');
   await doneTasksStayed('Bina’s extension', B, bBefore, ['confirmation_letter', 'confirmation_reveal']);
+  // The extension letter goes out from Documents; then its task can be marked done.
+  await db.getDb().collection('lifecycle_letters').insertOne({ id: 'L-bina-extend', org: ORG, journeyId: B, kind: 'extension', templateId: 't', refNo: 'EL-1', values: {}, createdAt: new Date(), email: { to: 'bina@example.com', subject: 'Extended', body: 'x', sentAt: new Date() } });
   await board.actOnTaskByHr(ORG, B, (await task(B, 'confirmation_letter')).id, { action: 'done', note: 'Extension letter sent' }, HRME);
   await advanceTo(T('2027-06-02', '13:05'), 'sparse');
   const pe = await newPushes();
@@ -777,6 +783,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   ok('board: Final month, Decide', cardB?.column === 'final_month' && cardB.flags.includes('decide'), cardB);
   await advanceTo(T('2027-07-01', '10:30'), 'sparse');
   await probation.recordDecision(B, HRME, { outcome: 'confirm' });
+  await db.getDb().collection('lifecycle_letters').insertOne({ id: 'L-bina-confirm', org: ORG, journeyId: B, kind: 'confirmation', templateId: 't', refNo: 'CL-2', values: {}, createdAt: new Date(), email: { to: 'bina@example.com', subject: 'Confirmed', body: 'x', sentAt: new Date() } });
   await board.actOnTaskByHr(ORG, B, (await task(B, 'confirmation_letter')).id, { action: 'done' }, HRME);
   await advanceTo(T('2027-07-01', '13:05'), 'sparse');
   const pg = await newPushes();

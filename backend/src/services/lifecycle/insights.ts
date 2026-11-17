@@ -8,7 +8,7 @@
  */
 import { surveyResponses, users } from '../../config/db';
 import type { SurveyResponse } from '../../models/lifecycle.model';
-import { LifecycleError, addDays, dashboardActor, isDateKey, keyOfInstant, requireHr, requireLifecycleOrg, todayKey } from './offboarding';
+import { LifecycleError, addDays, dashboardActor, interviewApplies, isDateKey, keyOfInstant, requireHr, requireLifecycleOrg, todayKey } from './offboarding';
 
 export const MIN_GROUP = 5;
 const REASON_LABEL: Record<string, string> = {
@@ -39,10 +39,17 @@ export async function exitInsights(actorUserId: string, query: { from?: string; 
   if (from > to) throw new LifecycleError(400, 'From is before To');
   const groupBy = query.groupBy === 'tenure' ? 'tenure' : 'department';
 
-  const leavers = await users().find(
-    { org, 'exit.lastWorkingDay': { $gte: from, $lte: to < today ? to : today } },
-    { projection: { _id: 0, department: 1, joiningDate: 1, 'exit.kind': 1, 'exit.lastWorkingDay': 1 } },
-  ).toArray();
+  const until = to < today ? to : today;
+  const projection = { _id: 0, department: 1, joiningDate: 1, 'exit.kind': 1, 'exit.lastWorkingDay': 1, 'exit.offboarding.showAppPage': 1, 'exit.offboarding.exitType': 1, 'exit.interview.filledAt': 1 } as const;
+  const leavers = await users().find({ org, 'exit.lastWorkingDay': { $gte: from, $lte: until } }, { projection }).toArray();
+  // Everyone offered an exit interview in these dates: the leavers whose exit has one (or who answered),
+  // and people still on notice who already answered (the interview opens before the last day). Each
+  // answers at most once, so the answers never outnumber them.
+  const answeredOnNotice = await users().find({
+    org, 'exit.lastWorkingDay': { $gt: until },
+    'exit.interview.filledAt': { $gte: new Date(`${from}T00:00:00+05:30`), $lte: new Date(`${until}T23:59:59.999+05:30`) },
+  }, { projection }).toArray();
+  const offeredPeople = [...leavers.filter((u) => interviewApplies(u.exit?.offboarding) || !!u.exit?.interview), ...answeredOnNotice];
   const rows = await surveyResponses().find({ org, kind: 'exit', month: { $gte: from.slice(0, 7), $lte: to.slice(0, 7) } }, { projection: { _id: 0, department: 1, tenureBand: 1, answers: 1, theme: 1 } }).toArray() as Array<Pick<SurveyResponse, 'department' | 'tenureBand' | 'answers' | 'theme'>>;
 
   const resigned = leavers.filter((u) => u.exit?.kind === 'resigned').length;
@@ -68,7 +75,7 @@ export async function exitInsights(actorUserId: string, query: { from?: string; 
   // By department or tenure band: who left (from the exits) and the answers (anonymised), ratings only from 5 answers.
   const keyOfLeaver = (u: (typeof leavers)[number]) => (groupBy === 'tenure' ? bandOf(u.joiningDate, u.exit!.lastWorkingDay) : u.department?.trim() || null) ?? 'Not set';
   const keyOfRow = (r: (typeof rows)[number]) => (groupBy === 'tenure' ? r.tenureBand : r.department?.trim()) || 'Not set';
-  const keys = new Set<string>([...leavers.map(keyOfLeaver), ...rows.map(keyOfRow)]);
+  const keys = new Set<string>([...leavers.map(keyOfLeaver), ...offeredPeople.map(keyOfLeaver), ...rows.map(keyOfRow)]);
   const ordered = groupBy === 'tenure' ? [...BANDS, 'Not set'].filter((k) => keys.has(k)) : [...keys];
   const groups = ordered.map((key) => {
     const answers = rows.filter((r) => keyOfRow(r) === key);
@@ -76,6 +83,7 @@ export async function exitInsights(actorUserId: string, query: { from?: string; 
     return {
       key, label: groupBy === 'tenure' ? BAND_LABEL[key] ?? key : key,
       left: leavers.filter((u) => keyOfLeaver(u) === key).length,
+      offered: offeredPeople.filter((u) => keyOfLeaver(u) === key).length,
       answers: answers.length,
       workingHere: shown ? avg(answers.map((r) => num(r.answers.workingHere)).filter((x): x is number => x !== null)) : null,
       manager: shown ? avg(answers.map((r) => num(r.answers.manager)).filter((x): x is number => x !== null)) : null,
@@ -86,7 +94,8 @@ export async function exitInsights(actorUserId: string, query: { from?: string; 
   return {
     from, to, groupBy, minGroup: MIN_GROUP,
     left: { total: leavers.length, resigned, hrStarted: leavers.length - resigned },
-    answered: { count: n, resignations: resigned, percent: pct(n, resigned) },
+    // Share of the people offered an interview; never over 100 (rows answered before an exit's dates moved stay counted).
+    answered: { count: n, offered: offeredPeople.length, resignations: resigned, percent: Math.min(100, pct(n, offeredPeople.length)) },
     hidden,
     workingHere: hidden ? null : { average: avg(work), answers: work.length },
     manager: hidden ? null : { average: avg(mgr), answers: mgr.length },

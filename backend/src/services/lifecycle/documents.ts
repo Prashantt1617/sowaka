@@ -70,14 +70,26 @@ export async function uploadDocumentFiles(journey: Journey, docId: string, files
   const doc = await candidateDocuments().findOne({ id: docId, journeyId: journey.id });
   if (!doc) throw new LifecycleOfferError(404, 'Document not found');
   if (doc.status === 'approved') throw new LifecycleOfferError(409, 'HR has already approved this document');
-  if (doc.fileIds.length + files.length > MAX_FILES_PER_DOCUMENT) throw new LifecycleOfferError(400, `Up to ${MAX_FILES_PER_DOCUMENT} files per document`);
+  // A re-upload after Send back replaces what was sent back (it is not shown beside the new file).
+  const replacing = doc.status === 'sent_back' ? doc.fileIds : [];
+  if (doc.fileIds.length - replacing.length + files.length > MAX_FILES_PER_DOCUMENT) throw new LifecycleOfferError(400, `Up to ${MAX_FILES_PER_DOCUMENT} files per document`);
   // Every file checked before any is stored: a bad second file must not leave the first behind.
   const types = files.map((f) => checkUpload(f.buffer));
   const stored = [];
   for (const [i, f] of files.entries()) {
     stored.push(await storeFile(journey.org, journey.id, { name: f.originalname || `${doc.label}`, contentType: types[i], bytes: f.buffer }, 'candidate'));
   }
-  await candidateDocuments().updateOne({ id: doc.id }, { $push: { fileIds: { $each: stored.map((s) => s.id) } }, $set: { status: 'in_review', uploadedAt: now } });
+  if (replacing.length) {
+    // The sent-back files are superseded: noted on the document (name, when, why), then removed with their stored object.
+    const old = await lifecycleFiles().find({ id: { $in: replacing } }, { projection: { _id: 0, id: 1, name: 1 } }).toArray();
+    await candidateDocuments().updateOne({ id: doc.id }, {
+      $set: { fileIds: stored.map((s) => s.id), status: 'in_review', uploadedAt: now },
+      $push: { superseded: { $each: old.map((f) => ({ name: f.name, at: now, ...(doc.hrNote ? { reason: doc.hrNote } : {}) })) } },
+    });
+    for (const id of replacing) await removeFile(id);
+  } else {
+    await candidateDocuments().updateOne({ id: doc.id }, { $push: { fileIds: { $each: stored.map((s) => s.id) } }, $set: { status: 'in_review', uploadedAt: now } });
+  }
   await journeys().updateOne({ id: journey.id }, { $set: { lastActivityAt: now } });
   const docs = await candidateDocuments().find({ journeyId: journey.id }).toArray();
   if (docs.filter((d) => d.required).every((d) => d.status === 'in_review' || d.status === 'approved')) await setTaskInReview(journey.id, 'upload_documents');

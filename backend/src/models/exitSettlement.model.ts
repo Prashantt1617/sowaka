@@ -69,6 +69,8 @@ export interface ExitSettlement {
   /** Earnings less deductions: paid to them when positive, recovered from them when negative. */
   payablePaise: number;
   tax?: SettlementTaxWorking;
+  /** Why there is nothing to work out yet (no salary structure): the statement says this instead of ₹0 lines. */
+  notSetUp?: string;
   /** HR's changes by line key, laid over the computed lines of a draft. */
   changes?: Record<string, SettlementChange>;
   /** Approved with clearance still open: why. */

@@ -11,7 +11,7 @@ import { journeys } from '../config/db';
 import type { Journey } from '../models/lifecycle.model';
 import { removeDocumentFile, uploadDocumentFiles } from '../services/lifecycle/documents';
 import { companyDisplayName, companyOf, lifecycleEnabled, orgOfClientToken } from '../services/lifecycle/emails';
-import { contentDisposition, fileForJourney, LifecycleOfferError, readFileBytes, UTF8_FILE_NAMES } from '../services/lifecycle/files';
+import { contentDisposition, fileForJourney, LifecycleOfferError, readFileBytes, UTF8_FILE_NAMES, MULTER_FILE_LIMIT } from '../services/lifecycle/files';
 import { letterPdfForPortal, openLetter, portalLetters, signLetter } from '../services/lifecycle/letters';
 import {
   acceptOffer, acceptOfferForJourney, createDateRequest, offerLinkPdf, openOfferLink, orgOfOfferToken, portalOfferForJourney, portalOfferPdfForJourney,
@@ -94,7 +94,7 @@ async function requirePortal(req: Request, res: Response, next: NextFunction) {
   }
 }
 
-const docsUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 4 }, ...UTF8_FILE_NAMES }).array('files', 4);
+const docsUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MULTER_FILE_LIMIT, files: 4 }, ...UTF8_FILE_NAMES }).array('files', 4);
 const files = (req: Request, res: Response, next: NextFunction) => docsUpload(req, res, (error) => (error ? sendLifecycleError(error, res, next) : next()));
 const body = (req: Request) => (req.body ?? {}) as Record<string, unknown>;
 const param = (req: Request, name: string) => String(req.params[name] ?? '');

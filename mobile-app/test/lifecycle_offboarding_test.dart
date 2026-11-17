@@ -848,6 +848,7 @@ void main() {
             ),
             onBackToSignIn: () => back++,
             openMail: (uri) async => mails.add(uri),
+            today: DateTime(2027, 1, 5),
           ),
         ),
       );
@@ -863,6 +864,48 @@ void main() {
       expect(mails.single.toString(), 'mailto:hr@sowaka.test');
       await tester.tap(key('account-closed-sign-in'));
       expect(back, 1);
+    });
+
+    testWidgets('a last day still ahead (access closed at once) reads "is"', (
+      tester,
+    ) async {
+      phone(tester);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AccountClosedScreen(
+            info: AccountClosedInfo(
+              companyName: 'Sowaka Test',
+              lastDay: DateTime(2026, 11, 18),
+              hrEmail: 'hr@sowaka.test',
+            ),
+            onBackToSignIn: () {},
+            today: DateTime(2026, 11, 17, 15, 30),
+          ),
+        ),
+      );
+      expect(
+        text(
+          'Your last day at Sowaka Test is 18 Nov 2026. For your documents, contact HR at hr@sowaka.test.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a last day of today reads "was"', (tester) async {
+      phone(tester);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AccountClosedScreen(
+            info: AccountClosedInfo(lastDay: DateTime(2026, 11, 17)),
+            onBackToSignIn: () {},
+            today: DateTime(2026, 11, 17, 20),
+          ),
+        ),
+      );
+      expect(
+        text('Your last day was 17 Nov 2026. For your documents, contact HR.'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('without an HR email there is no Email HR', (tester) async {

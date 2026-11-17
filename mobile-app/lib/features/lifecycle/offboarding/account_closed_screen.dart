@@ -16,6 +16,7 @@ class AccountClosedScreen extends StatelessWidget {
     required this.info,
     required this.onBackToSignIn,
     this.openMail,
+    this.today,
   });
 
   final AccountClosedInfo info;
@@ -24,16 +25,27 @@ class AccountClosedScreen extends StatelessWidget {
   /// Opens the mail app; `url_launcher` otherwise (tests pass their own).
   final Future<void> Function(Uri uri)? openMail;
 
+  /// Today, for the tense of the last day (tests pass their own).
+  final DateTime? today;
+
   @override
   Widget build(BuildContext context) {
     final company = info.companyName;
     final hrEmail = info.hrEmail;
     final lastDay = info.lastDay;
+    // Access can close before the last day (an exit that closes at once): then the day is still ahead.
+    final now = today ?? DateTime.now();
+    final ahead =
+        lastDay != null &&
+        DateTime(lastDay.year, lastDay.month, lastDay.day).isAfter(
+          DateTime(now.year, now.month, now.day),
+        );
+    final verb = ahead ? 'is' : 'was';
     final body = [
       if (lastDay != null)
         company == null
-            ? 'Your last day was ${dayMonthYear(lastDay)}.'
-            : 'Your last day at $company was ${dayMonthYear(lastDay)}.',
+            ? 'Your last day $verb ${dayMonthYear(lastDay)}.'
+            : 'Your last day at $company $verb ${dayMonthYear(lastDay)}.',
       hrEmail == null
           ? 'For your documents, contact HR.'
           : 'For your documents, contact HR at $hrEmail.',

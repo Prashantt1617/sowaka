@@ -78,12 +78,25 @@ export interface HeaderProps {
   joiner?: { name: string; tj: string };
   /** Keep back/close on wide screens (mobile-only layouts centred on desktop). */
   navOnWide?: boolean;
+  /** Signed in: Sign out in the joiner menu (web) and the Help sheet (phone). */
+  onSignOut?: () => void;
 }
 
 /** PortalHeader (60 px, mobile) / PortalWebHeader (72 px, ≥ 960 px). One component. */
-export function Header({ company, hr, tone = 'light', back, close, help, bell, joiner, navOnWide }: HeaderProps) {
+export function Header({ company, hr, tone = 'light', back, close, help, bell, joiner, navOnWide, onSignOut }: HeaderProps) {
   const navigate = useNavigate();
   const [askOpen, setAskOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const off = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', off);
+    document.addEventListener('keydown', off);
+    return () => { document.removeEventListener('mousedown', off); document.removeEventListener('keydown', off); };
+  }, [menuOpen]);
   const navCls = navOnWide ? '' : 'narrow-only';
   // 6Zs §12 #20: the header's Email HR / help carry no subject (P3 and the home tiles do).
   return (
@@ -108,7 +121,7 @@ export function Header({ company, hr, tone = 'light', back, close, help, bell, j
           )}
           {help && hr && <IconButton icon="help" label="Help" onClick={() => setAskOpen(true)} className="narrow-only" />}
           {bell && <BellButton bell={bell} />}
-          {joiner && (
+          {joiner && !onSignOut && (
             <span className="joiner-chip wide-only">
               <span className="avatar" aria-hidden="true">
                 {initials(joiner.name)}
@@ -119,10 +132,31 @@ export function Header({ company, hr, tone = 'light', back, close, help, bell, j
               </span>
             </span>
           )}
+          {joiner && onSignOut && (
+            <div className="joiner-menu wide-only" ref={menuRef}>
+              <button type="button" className="joiner-chip joiner-chip--button" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
+                <span className="avatar" aria-hidden="true">
+                  {initials(joiner.name)}
+                </span>
+                <span className="joiner-chip__text">
+                  <span className="body-strong">{joiner.name}</span>
+                  <span className="label">Joining {fmtWeekday(joiner.tj)}</span>
+                </span>
+                <Icon name="chevron-down" size={16} />
+              </button>
+              {menuOpen && (
+                <div className="joiner-menu__list" role="menu">
+                  <button type="button" role="menuitem" className="joiner-menu__item" onClick={() => { setMenuOpen(false); onSignOut(); }}>
+                    Sign out
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           {close && <IconButton icon="close" label="Close" onClick={() => navigate(close)} className={navCls} />}
         </div>
       </div>
-      {hr && <AskHrSheet open={askOpen} onClose={() => setAskOpen(false)} name={hr.name} email={hr.email} />}
+      {hr && <AskHrSheet open={askOpen} onClose={() => setAskOpen(false)} name={hr.name} email={hr.email} onSignOut={onSignOut ? () => { setAskOpen(false); onSignOut(); } : undefined} />}
     </header>
   );
 }

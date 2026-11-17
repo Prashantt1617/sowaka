@@ -12,7 +12,7 @@
  * Their records (attendance, leave, payslips, documents) all stay.
  * A recorded exit can be withdrawn while access has not ended yet.
  */
-import { authSessions, companies, deviceTokens, exitSettlements, users } from '../config/db';
+import { authSessions, companies, deviceTokens, exitSettlements, journeys, users } from '../config/db';
 import { AdminError } from './admin.service';
 import { forgetAuthUser } from './auth-cache';
 import { invalidateAttendanceSetup } from './attendance-report.service';
@@ -252,11 +252,17 @@ export async function recordExit(adminUserId: string, employeeUserId: string, bo
   }
   const note = body.note == null ? '' : String(body.note).trim().slice(0, 1000);
 
-  // Their team needs a new manager before they go.
-  const team = await users().countDocuments({ org: admin.org, managerUserId: employeeUserId, lifecycleStatus: { $nin: LEFT } });
+  // Their team needs a new manager before they go: the people reporting to them, and the people about to
+  // join under them (pre-boarding journeys that name them as manager; joined ones are counted as reports).
+  const reports = await users().countDocuments({ org: admin.org, managerUserId: employeeUserId, lifecycleStatus: { $nin: LEFT } });
+  const joining = await journeys().countDocuments({ org: admin.org, kind: 'onboarding', managerUserId: employeeUserId, closedAt: { $exists: false }, userId: { $exists: false } });
+  const team = reports + joining;
   const newManagerUserId = body.newManagerUserId == null ? '' : String(body.newManagerUserId).trim();
   if (team > 0) {
-    if (!newManagerUserId) throw new ExitError(409, `${team} ${team === 1 ? 'person reports' : 'people report'} to ${employee.name}. Pick who they report to next.`);
+    if (!newManagerUserId) {
+      const who = [reports ? `${reports} ${reports === 1 ? 'person reports' : 'people report'} to ${employee.name}` : '', joining ? `${joining} ${joining === 1 ? 'person is' : 'people are'} joining under ${employee.name}` : ''].filter(Boolean).join(' and ');
+      throw new ExitError(409, `${who}. Pick who they report to next.`);
+    }
     if (newManagerUserId === employeeUserId) throw new ExitError(400, 'Pick someone other than the person leaving');
     const next = await users().findOne({ userId: newManagerUserId, org: admin.org, lifecycleStatus: { $nin: LEFT } }, { projection: { _id: 0, userId: 1, exit: 1 } });
     if (!next) throw new ExitError(400, 'The new manager must be someone still working here');
@@ -364,6 +370,13 @@ async function moveTeam(org: string, leaverUserId: string, now: Date) {
   if (!leaver?.exit || !to || leaver.exit.teamMovedAt) return 0;
   const team = await users().find({ org, managerUserId: leaverUserId, lifecycleStatus: { $nin: LEFT } }, { projection: { _id: 0, userId: 1 } }).toArray();
   await users().updateOne({ userId: leaverUserId, org }, { $set: { 'exit.teamMovedAt': now } });
+  // Their joiners' journeys too (pre-boarding and onboarding): manager tasks, Day-1 meetings, people to meet.
+  try {
+    const { moveJourneysToManager } = await import('./lifecycle/engine');
+    await moveJourneysToManager(org, leaverUserId, to, now);
+  } catch (error) {
+    logger.warn('Exit: the joiners could not be moved to the new manager', { org, leaverUserId, reason: error instanceof Error ? error.message : String(error) });
+  }
   if (!team.length) return 0;
   const ids = team.map((t) => t.userId).filter((id) => id !== to);
   await users().updateMany({ org, userId: { $in: ids } }, { $set: { managerUserId: to, updatedAt: now } });

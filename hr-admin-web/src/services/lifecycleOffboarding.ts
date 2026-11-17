@@ -88,7 +88,7 @@ export type StartExitInput = {
 export type InsightsDTO = {
   from: string; to: string; groupBy: 'department' | 'tenure'; minGroup: number;
   left: { total: number; resigned: number; hrStarted: number };
-  answered: { count: number; resignations: number; percent: number };
+  answered: { count: number; offered: number; resignations: number; percent: number };
   hidden: boolean;
   workingHere: { average: number | null; answers: number } | null;
   manager: { average: number | null; answers: number } | null;
@@ -98,7 +98,7 @@ export type InsightsDTO = {
   themes: { label: string; count: number; percent: number }[];
   hiddenThemes: number;
   untaggedAnswers: number;
-  groups: { key: string; label: string; left: number; answers: number; workingHere: number | null; manager: number | null; hidden: boolean }[];
+  groups: { key: string; label: string; left: number; offered: number; answers: number; workingHere: number | null; manager: number | null; hidden: boolean }[];
 };
 
 const BASE = '/admin/lifecycle';
