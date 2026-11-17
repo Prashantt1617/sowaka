@@ -7,7 +7,7 @@
 import { offboardingMe } from './offboarding';
 import { randomUUID } from 'node:crypto';
 import {
-  connectPosts, employeePaymentDetails, journeys, lifecycleMeetings, oneOnOneNotes, peopleToMeet, starterTasks, surveyResponses, users,
+  connectPosts, employeePaymentDetails, journeyTasks, journeys, lifecycleMeetings, oneOnOneNotes, peopleToMeet, starterTasks, surveyResponses, users,
 } from '../../config/db';
 import type {
   AboutYou, IntroPost, Journey, JourneyTask, Meeting, OnboardingStage, SurveyKind, SystemTaskKey, Week1Reels,
@@ -784,14 +784,67 @@ function nextEventLabel(j: Journey, tasks: JourneyTask[], today: string): string
   return `${what} ${when}`;
 }
 
-export async function joinersForManager(me: Me, now = new Date()) {
+/** The tasks of a journey that M0's row reads: the plant's keys, the manager's open tasks, what can be late, the next probation event. */
+const LIST_KEYS: SystemTaskKey[] = ['upload_documents', 'about_you', 'meet_us', 'sign_letters', 'week1_reels', 'people_to_meet', 'day7_survey', 'confirmation_discussion'];
+const MONTH_KEYS: SystemTaskKey[] = ['monthly_checkin', 'monthly_review', 'monthly_goals'];
+/** Only the fields M0's row reads (the stage, plant, counts and next event): the list stays small on a slow database link. */
+const LIST_TASK_PROJECTION = {
+  _id: 0, journeyId: 1, systemKey: 1, status: 1, dueAt: 1, opensAt: 1, month: 1, ownerRole: 1, phase: 1, surface: 1, order: 1,
+} as const;
+
+/**
+ * M0's tasks, without the rest (a probation journey has ~50, most of them later months'):
+ * every task that can change a row's plant, counts or next event, and nothing else. A superset by
+ * date (a day either side of today, the next 62 days of month tasks), so the row's own rules decide.
+ */
+async function listTasks(ids: string[], now: Date): Promise<Map<string, JourneyTask[]>> {
+  if (!ids.length) return new Map();
+  const DAY = 86_400_000;
+  const soon = new Date(now.getTime() + 2 * DAY);
+  const from = new Date(now.getTime() - 2 * DAY);
+  const until = new Date(now.getTime() + 62 * DAY);
+  const rows = await journeyTasks().find({
+    journeyId: { $in: ids }, status: { $ne: 'cancelled' },
+    $or: [
+      { systemKey: { $in: LIST_KEYS } },
+      // Leaves: a month's check-in and review both done.
+      { systemKey: { $in: ['monthly_checkin', 'monthly_review'] }, status: 'done' },
+      // The next probation event (M0's pill): open or locked, opening or due from about today.
+      { systemKey: { $in: MONTH_KEYS }, status: { $in: [...ACTIVE_STATUSES, 'locked'] }, $or: [{ opensAt: { $gte: from, $lte: until } }, { dueAt: { $gte: from, $lte: until } }] },
+      // The manager's own open tasks (today's count, overdue).
+      { ownerRole: { $in: MANAGER_OWNED }, status: { $in: ACTIVE_STATUSES } },
+      // Anything that can be late by today (the plant droops).
+      { status: { $in: ['todo', 'sent_back'] }, dueAt: { $lt: soon } },
+    ],
+  } as never, { projection: LIST_TASK_PROJECTION }).sort({ order: 1, month: 1 }).toArray();
+  const out = new Map<string, JourneyTask[]>();
+  for (const row of rows as JourneyTask[]) {
+    const list = out.get(row.journeyId) ?? [];
+    list.push(row);
+    out.set(row.journeyId, list);
+  }
+  return out;
+}
+
+/** The journey fields M0's row reads (deriveJourney's stage, plant and day label; the name and role). */
+const LIST_JOURNEY_PROJECTION = {
+  _id: 0, id: 1, org: 1, kind: 1, userId: 1, managerUserId: 1, status: 1, tj: 1, tl: 1, anchors: 1, designation: 1, lastActivityAt: 1, closedAt: 1,
+  'candidate.name': 1, 'templateSnapshot.settings': 1,
+  'probation.months': 1, 'probation.extendedBy': 1, 'probation.goalsLockedAt': 1,
+  'probation.decision.outcome': 1, 'probation.decision.decidedAt': 1, 'probation.decision.revealedAt': 1,
+} as const;
+
+/** `fullTasks`: read whole journeys and every task (the checks compare the two, so the slim read never changes a row). */
+export async function joinersForManager(me: Me, now = new Date(), opts: { fullTasks?: boolean } = {}) {
   const rows = (await journeys().find({
     org: me.org, kind: 'onboarding', managerUserId: me.userId, closedAt: { $exists: false },
     status: { $nin: ['draft', 'offer_sent', 'accepted', 'declined', 'expired', 'not_joining'] },
-  }).toArray()).map(strip).filter((j) => !(j.status === 'confirmed' && j.probation?.decision?.revealedAt));
+  }, opts.fullTasks ? {} : { projection: LIST_JOURNEY_PROJECTION }).toArray()).map(strip).filter((j) => !(j.status === 'confirmed' && j.probation?.decision?.revealedAt));
   const ids = rows.map((j) => j.id);
-  const allTasks = await groupTasks(ids);
-  const folks = await users().find({ userId: { $in: rows.map((j) => j.userId).filter((u): u is string => !!u) } }, { projection: { _id: 0, userId: 1, name: 1, designation: 1, profilePhotoKey: 1 } }).toArray();
+  const [allTasks, folks] = await Promise.all([
+    opts.fullTasks ? groupTasks(ids) : listTasks(ids, now),
+    users().find({ userId: { $in: rows.map((j) => j.userId).filter((u): u is string => !!u) } }, { projection: { _id: 0, userId: 1, name: 1, designation: 1, profilePhotoKey: 1 } }).toArray(),
+  ]);
   const by = new Map(folks.map((f) => [f.userId, f]));
   const out = await Promise.all(rows.map(async (j) => {
     const tasks = allTasks.get(j.id) ?? [];
@@ -817,12 +870,10 @@ export async function joinersForManager(me: Me, now = new Date()) {
 
 export async function joinerForManager(me: Me, journeyId: string, now = new Date()) {
   const j = await managedJourney(me.userId, journeyId);
-  const tasks = await tasksOf(j.id);
-  const derived = deriveJourney(j, tasks, now);
-  const person = j.userId ? await users().findOne({ userId: j.userId }, { projection: { _id: 0, name: 1, designation: 1, department: 1, profilePhotoKey: 1 } }) : null;
-  const names = await namesOf([j.userId, j.buddyUserId, ...tasks.map((t) => t.ownerUserId)]);
-  const visible = tasks.filter((t) => visibleTo('manager', t));
-  const [people, starters, notes, meetings, summaries, probation] = await Promise.all([
+  // Everything that needs only the journey, at once (the database link is slow; one wait, not eight).
+  const [tasks, person, people, starters, notes, meetings, summaries, probation] = await Promise.all([
+    tasksOf(j.id),
+    j.userId ? users().findOne({ userId: j.userId }, { projection: { _id: 0, name: 1, designation: 1, department: 1, profilePhotoKey: 1 } }) : Promise.resolve(null),
     peopleViews(j),
     starterTasks().find({ journeyId: j.id }, { projection: { _id: 0 } }).sort({ assignedAt: 1 }).toArray(),
     notesFor(j.id, false),
@@ -830,14 +881,20 @@ export async function joinerForManager(me: Me, journeyId: string, now = new Date
     surveySummariesFor(me.userId),
     probationOf(j.id),
   ]);
-  const meetingPeople = await peopleOf(meetings.flatMap((m) => m.attendeeUserIds));
+  const derived = deriveJourney(j, tasks, now);
+  // Then the names and photo those point to, at once too.
+  const [names, meetingPeople, starterNames, photoUrl] = await Promise.all([
+    namesOf([j.userId, j.buddyUserId, ...tasks.map((t) => t.ownerUserId)]),
+    peopleOf(meetings.flatMap((m) => m.attendeeUserIds)),
+    namesOf(starters.map((s) => s.assignedByUserId)),
+    photoOf(person),
+  ]);
+  const visible = tasks.filter((t) => visibleTo('manager', t));
   const meetingCtx = (m: Meeting) => ({ joinerId: j.userId, managerId: j.managerUserId, buddyId: j.buddyUserId, task: tasks.find((t) => t.id === m.journeyTaskId) });
   const meetingOf = new Map(meetings.filter((m) => m.journeyTaskId).map((m) => [m.journeyTaskId!, m]));
   const first = (person?.name ?? j.candidate?.name ?? '').split(/\s+/)[0] || 'them';
-  const starterNames = await namesOf(starters.map((s) => s.assignedByUserId));
   // Managers never see pay: the decision reaches them without the salary.
   const decision = probation.decision ? (({ salary: _salary, ...rest }) => rest)(probation.decision) : undefined;
-  const photoUrl = await photoOf(person);
   const own = tasks.filter((t) => visibleTo('employee', t));
   const today = todayKey(now, companyTimeZone(j.org));
   // "On track. Week-1 tasks are due Fri 5 Dec." — the joiner's next must-do still open.
