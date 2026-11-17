@@ -14,13 +14,44 @@ import { companyDisplayName, companyOf, lifecycleEnabled, orgOfClientToken } fro
 import { contentDisposition, fileForJourney, LifecycleOfferError, readFileBytes, UTF8_FILE_NAMES } from '../services/lifecycle/files';
 import { letterPdfForPortal, openLetter, portalLetters, signLetter } from '../services/lifecycle/letters';
 import {
-  acceptOffer, acceptOfferForJourney, createDateRequest, offerLinkPdf, openOfferLink, portalOfferForJourney, portalOfferPdfForJourney,
+  acceptOffer, acceptOfferForJourney, createDateRequest, offerLinkPdf, openOfferLink, orgOfOfferToken, portalOfferForJourney, portalOfferPdfForJourney,
 } from '../services/lifecycle/offers';
 import {
   aboutYouView, markMeetSeen, meetItems, portalDocuments, portalHome, portalPass, portalPassIcs, saveAboutYou,
 } from '../services/lifecycle/portal';
 import { CLOSED_STATUSES, forgotPassword, journeyForPortalToken, resetPassword, signIn, verifyMediaToken } from '../services/lifecycle/portalAuth';
 import { sendLifecycleError } from './lifecycle-offer.routes';
+import { env } from '../config/env';
+
+/**
+ * The portal lives on each company's own address (<org>.getsowaka.com/onboarding). A request
+ * from a company's address must be about that company: a Convrse offer opened under another
+ * company's address is refused as if it did not exist. Shared addresses (join., go., www.)
+ * and anything off the product domain carry no company and are not checked.
+ */
+const SHARED_LABELS = new Set(['join', 'go', 'www', 'app', 'api', 'care', 'admin']);
+export function companyOfRequest(req: Request): string | null {
+  const domain = env.dashboardDomain;
+  if (!domain) return null;
+  for (const raw of [req.header('origin'), req.header('referer')]) {
+    if (!raw) continue;
+    let host = '';
+    try { host = new URL(raw).hostname.toLowerCase(); } catch { continue; }
+    if (!host.endsWith(`.${domain}`)) return null;
+    const label = host.slice(0, -(domain.length + 1));
+    if (!/^[a-z0-9-]+$/.test(label) || SHARED_LABELS.has(label)) return null;
+    return label;
+  }
+  return null;
+}
+function assertCompany(req: Request, org: string | null | undefined) {
+  const label = companyOfRequest(req);
+  if (label && org && label !== org) throw new LifecycleOfferError(404, 'This link is for another company. Open it from the email you were sent.');
+}
+const offerHost = (fn: (req: Request, res: Response) => Promise<unknown>) => async (req: Request, res: Response) => {
+  assertCompany(req, await orgOfOfferToken(String(req.params.token ?? '')));
+  return fn(req, res);
+};
 
 /**
  * The caller's address. Behind the proxy every request arrives from loopback
@@ -50,6 +81,7 @@ const journeyOf = (res: Response) => res.locals.portalJourney as Journey;
 async function requirePortal(req: Request, res: Response, next: NextFunction) {
   try {
     const journey = await journeyForPortalToken(req.header('authorization'));
+    assertCompany(req, journey.org);
     res.locals.portalJourney = journey;
     const now = new Date();
     if (!CLOSED_STATUSES.has(String(journey.status)) && (!journey.lastActivityAt || now.getTime() - journey.lastActivityAt.getTime() > 60_000)) {
@@ -77,12 +109,19 @@ export const portalRouter = Router();
 const r = portalRouter;
 
 // ─── The offer link (no login) ──────────────────────────────────────────────
-r.get('/offer/:token', handle(async (req) => openOfferLink(param(req, 'token'), clientIp(req))));
-r.get('/offer/:token/pdf', handle(async (req, res) => sendPdf(res, await offerLinkPdf(param(req, 'token'), clientIp(req)), req.query.download === '1')));
-r.post('/offer/:token/accept', handle(async (req) => acceptOffer(param(req, 'token'), { ip: clientIp(req), userAgent: req.header('user-agent') })));
+r.get('/offer/:token', handle(offerHost(async (req) => openOfferLink(param(req, 'token'), clientIp(req)))));
+r.get('/offer/:token/pdf', handle(offerHost(async (req, res) => sendPdf(res, await offerLinkPdf(param(req, 'token'), clientIp(req)), req.query.download === '1'))));
+r.post('/offer/:token/accept', handle(offerHost(async (req) => acceptOffer(param(req, 'token'), { ip: clientIp(req), userAgent: req.header('user-agent') }))));
 
 // ─── Sign-in ────────────────────────────────────────────────────────────────
-r.post('/auth/sign-in', handle(async (req) => signIn(body(req).email, body(req).password, clientIp(req))));
+r.post('/auth/sign-in', handle(async (req) => {
+  const out = await signIn(body(req).email, body(req).password, clientIp(req));
+  // Signed in under another company's address: refuse rather than hand over a session for the wrong portal.
+  if (out && typeof out === 'object' && 'token' in out && typeof (out as { token: unknown }).token === 'string') {
+    assertCompany(req, (await journeyForPortalToken(`Bearer ${(out as { token: string }).token}`)).org);
+  }
+  return out;
+}));
 r.post('/auth/forgot', handle(async (req) => forgotPassword(body(req).email, clientIp(req))));
 r.post('/auth/reset', handle(async (req) => resetPassword(body(req).token, body(req).password)));
 

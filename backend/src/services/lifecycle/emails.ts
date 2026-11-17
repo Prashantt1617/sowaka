@@ -234,8 +234,10 @@ export function orgOfClientToken(token: unknown): string | null {
 
 /** `${PORTAL_BASE_URL}${path}`; with an org, `c=<client token>` rides along (see `clientToken`). */
 export const portalLink = (pathAndQuery: string, org?: string) => {
-  if (!org) return `${env.portalBaseUrl}${pathAndQuery}`;
-  return `${env.portalBaseUrl}${pathAndQuery}${pathAndQuery.includes('?') ? '&' : '?'}c=${clientToken(org)}`;
+  // PORTAL_BASE_URL may name the company: https://{org}.getsowaka.com/onboarding. Without a company, the shared join address.
+  const base = env.portalBaseUrl.includes('{org}') ? env.portalBaseUrl.replace('{org}', org || 'join') : env.portalBaseUrl;
+  if (!org) return `${base}${pathAndQuery}`;
+  return `${base}${pathAndQuery}${pathAndQuery.includes('?') ? '&' : '?'}c=${clientToken(org)}`;
 };
 
 export const mails = {

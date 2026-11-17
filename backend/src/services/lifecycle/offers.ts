@@ -373,7 +373,7 @@ export async function sendOffer(hr: HrActor, journeyId: string, input: { subject
   await completeTask(journeyId, 'send_offer', { userId: hr.userId, name: hr.name });
   const bytes = await readFileBytes(file);
   const contact = await hrContactFor(journey, company);
-  await sendLifecycleEmail(journey.org, journey.candidate!.personalEmail, subject, mails.offer(companyName, body, input.withPortalLink === false ? null : portalLink(`/o/${token}`)),
+  await sendLifecycleEmail(journey.org, journey.candidate!.personalEmail, subject, mails.offer(companyName, body, input.withPortalLink === false ? null : portalLink(`/o/${token}`, journey.org)),
     [{ filename: file.name.endsWith('.pdf') ? file.name : `${file.name}.pdf`, content: bytes, contentType: 'application/pdf' }, ...(input.attachments ?? [])],
     { cc, replyTo: contact.email || undefined });
   return (await offerView(journeyId))!;
@@ -400,6 +400,11 @@ async function expireIfDue(offer: Offer, version: OfferVersion, journey: Journey
     journey.status = 'expired';
   }
   return true;
+}
+
+/** The company an offer link belongs to, or null for a link that matches no offer (the routes' host check). */
+export async function orgOfOfferToken(token: string): Promise<string | null> {
+  try { return (await offerByToken(token)).journey.org; } catch { return null; }
 }
 
 export async function openOfferLink(token: string, ip: string, now = new Date()): Promise<PortalOfferView> {
