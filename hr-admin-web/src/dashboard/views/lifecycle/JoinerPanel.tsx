@@ -10,7 +10,7 @@ import { useStore } from '../../store';
 import { canSeePay } from '../../access';
 import { LoadError, Pill, SkeletonLines } from '../../ui';
 import {
-  decideBankPfRequest, decideDateRequest, getJourney, isNotAvailable, journeyTaskAction, listTemplates, nudgeTask, offerStatusAction, reviewDocument, updateJourney,
+  AGENDA_TASK_KEYS, AGENDA_TASK_LABEL, decideBankPfRequest, decideDateRequest, getJourney, isNotAvailable, journeyTaskAction, listTemplates, nudgeTask, offerStatusAction, reviewDocument, updateJourney,
 } from '../../../services/lifecycle';
 import type {
   BankPfRequest, CandidateDocumentView, ConfirmationDecision, Day1Pass, JourneyDetail, LetterKind, LetterView, TaskView, TemplateListItem,
@@ -612,15 +612,18 @@ function Day1PassEditor({ value, tj, onSave, busy }: { value?: Day1Pass; tj?: st
             ['Ask for', value?.askFor ? `${value.askFor.name}${value.askFor.phone ? ` · ${value.askFor.phone}` : ''}` : ''],
             ['HR contact', value?.hrContact ? [value.hrContact.name, value.hrContact.email, value.hrContact.phone].filter(Boolean).join(' · ') : ''],
             ['Bring', value?.bring?.length ? value.bring.join(', ') : ''],
-            ['Agenda', value?.agenda?.length ? value.agenda.map((a) => `${a.time} ${a.title}${a.with ? ` (${a.with})` : ''}`).join(' · ') : ''],
+            ['Agenda', value?.agenda?.length ? value.agenda.map((a) => `${a.time} ${a.title}${a.with ? ` (${a.with})` : ''}${a.taskKey ? ` · ${AGENDA_TASK_LABEL[a.taskKey]}` : ''}`).join(' · ') : ''],
           ]} />
         ) : <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>Not filled in yet. The candidate sees it from 7 days before joining: time, place or link, who to ask for, what to bring and the day’s agenda.</div>}
-        <div><button type="button" className="pd-btn sm" onClick={() => setEditing(true)}>{filledIn ? 'Edit pass' : 'Fill in the pass'}</button></div>
+        <div><button type="button" className="pd-btn sm" onClick={() => { setP(value ?? {}); setBring((value?.bring ?? []).join('\n')); setEditing(true); }}>{filledIn ? 'Edit pass' : 'Fill in the pass'}</button></div>
       </div>
     );
   }
   const agenda = p.agenda ?? [];
-  const setAgenda = (i: number, patch: Partial<{ time: string; title: string; with?: string }>) => set({ agenda: agenda.map((a, n) => (n === i ? { ...a, ...patch } : a)) });
+  type AgendaLine = NonNullable<Day1Pass['agenda']>[number];
+  const setAgenda = (i: number, patch: Partial<AgendaLine>) => set({ agenda: agenda.map((a, n) => (n === i ? { ...a, ...patch } : a)) });
+  // One line per task: a task picked on one line is not offered on another.
+  const taken = (i: number) => new Set(agenda.filter((_, n) => n !== i).map((a) => a.taskKey).filter(Boolean));
   return (
     <div style={{ display: 'grid', gap: 10 }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -643,14 +646,26 @@ function Day1PassEditor({ value, tj, onSave, busy }: { value?: Day1Pass; tj?: st
         <div style={{ fontSize: 11.5, color: 'var(--ink-2)', marginBottom: 6 }}>Agenda</div>
         <div style={{ display: 'grid', gap: 6 }}>
           {agenda.map((a, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: '92px minmax(0, 1fr) minmax(0, 0.8fr) auto', gap: 6 }}>
+            <div key={a.id ?? `new-${i}`} data-agenda-line={i} style={{ display: 'grid', gridTemplateColumns: '92px minmax(0, 1fr) minmax(0, 0.8fr) auto', gap: 6, alignItems: 'center' }}>
               <input type="time" value={a.time} onChange={(e) => setAgenda(i, { time: e.target.value })} aria-label="Time" style={inputStyle} />
               <input value={a.title} onChange={(e) => setAgenda(i, { title: e.target.value })} placeholder="What" aria-label="What" style={inputStyle} />
               <input value={a.with ?? ''} onChange={(e) => setAgenda(i, { with: e.target.value })} placeholder="With / where" aria-label="With or where" style={inputStyle} />
               <button type="button" className="pd-btn sm ghost" aria-label="Remove" onClick={() => set({ agenda: agenda.filter((_, n) => n !== i) })}>×</button>
+              {/* Which Day-1 task this line is: its meeting follows the pick, not the words in the title. */}
+              <label style={{ gridColumn: '2 / 4', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--ink-3)' }}>
+                <span style={{ whiteSpace: 'nowrap' }}>Meeting for</span>
+                <span className="pd-pick" style={{ flex: 1, minWidth: 0 }}>
+                  <select className="pd-inp" aria-label={`Meeting for, line ${i + 1}`} value={a.taskKey === undefined ? 'auto' : a.taskKey ?? ''}
+                    onChange={(e) => setAgenda(i, { taskKey: e.target.value === 'auto' ? undefined : (e.target.value || null) as AgendaLine['taskKey'] })} style={{ width: '100%', height: 32, fontSize: 12.5 }}>
+                    {a.taskKey === undefined && <option value="auto">From the title (decided when saved)</option>}
+                    <option value="">No task, just on the agenda</option>
+                    {AGENDA_TASK_KEYS.map((k) => <option key={k} value={k} disabled={taken(i).has(k)}>{AGENDA_TASK_LABEL[k]}{taken(i).has(k) ? ' (on another line)' : ''}</option>)}
+                  </select>
+                </span>
+              </label>
             </div>
           ))}
-          <div><button type="button" className="pd-btn sm" onClick={() => set({ agenda: [...agenda, { time: '10:00', title: '' }] })}>+ Add to the agenda</button></div>
+          <div><button type="button" className="pd-btn sm" onClick={() => set({ agenda: [...agenda, { time: '10:00', title: '', taskKey: null }] })}>+ Add to the agenda</button></div>
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
