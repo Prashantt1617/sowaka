@@ -12,7 +12,8 @@ export type SuwiProposal = {
 };
 /** A list Suwi shows as a table under its answer (drawn from the data, not written by the model). */
 export type SuwiTable = { title: string; columns: string[]; rows: (string | number)[][] };
-export type SuwiAnswer = { text: string; checked: string[]; links: SuwiLink[]; proposals: SuwiProposal[]; costUsd: number; tables?: SuwiTable[]; path?: 'instant' | 'model' | 'cache' | 'planner' | 'prepared' };
+export type SuwiAnswer = { text: string; checked: string[]; links: SuwiLink[]; proposals: SuwiProposal[]; costUsd: number; tables?: SuwiTable[]; path?: SuwiPath };
+export type SuwiPath = 'instant' | 'model' | 'cache' | 'planner' | 'prepared' | 'router';
 export type SuwiHistoryTurn = { role: 'user' | 'assistant'; text: string };
 
 /**
@@ -71,3 +72,18 @@ export type SuwiActivityRow = {
 };
 export const getSuwiActivity = (before?: string) =>
   api<{ activity: SuwiActivityRow[]; nextBefore: string | null }>(`/suwi/activity${before ? `?before=${encodeURIComponent(before)}` : ''}`);
+
+// —— Suwi › Response times (dashboard admins): how long each question took, and where the time went.
+export type SuwiTimingRow = {
+  at: string; userId: string; user: string | null; page: string | null; question: string; status: string | null;
+  path: SuwiPath | null; totalMs: number | null; firstTextMs: number | null; writer: string | null; mode: string | null; live: boolean | null;
+  rounds: { step?: string; model?: string; ms: number; input: number; output: number }[] | null;
+  tools: { name: string; label?: string; ms: number; ok: boolean; timedOut?: boolean; memo?: boolean }[];
+  tokens: { input: number; output: number; cacheRead?: number; cacheWrite?: number } | null; costUsd: number | null;
+};
+export const getSuwiTimings = (q: { before?: string; path?: string; slowMs?: number; q?: string; limit?: number } = {}) => {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== '' && v !== 0) params.set(k, String(v));
+  const qs = params.toString();
+  return api<{ timings: SuwiTimingRow[]; next: string | null }>(`/suwi/timings${qs ? `?${qs}` : ''}`);
+};

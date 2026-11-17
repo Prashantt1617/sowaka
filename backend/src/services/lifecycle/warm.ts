@@ -18,6 +18,7 @@ import { suwiNotices } from '../../suwi/notices';
 import { orgSuwiData, readerFor } from '../../suwi/orgData';
 import { istToday } from '../../suwi/digest';
 import { prepareRecent, recentSuwiUsers } from '../../suwi/planner';
+import { prepareFrequent } from '../../suwi/prepared';
 import { logger } from '../../utils/logger';
 
 export async function warmLifecycle(org: string, isStopping: () => boolean = () => false): Promise<Record<string, number | string>> {
@@ -45,6 +46,8 @@ export async function warmLifecycle(org: string, isStopping: () => boolean = () 
     // "What needs my attention today?" made ahead for the people who use Suwi (planner.ts): once per
     // data version, at most once a minute each, so asking it is usually instant.
     await prepareRecent(org, today, isStopping);
+    // And the questions each of them keeps asking (suwi/prepared.ts), so those are instant too.
+    await prepareFrequent(org, isStopping);
   }]);
   for (const [name, run] of steps) {
     if (isStopping()) break;
@@ -85,6 +88,7 @@ export async function warmSuwiAtBoot(isStopping: () => boolean = () => false): P
         await suwiNotices(contextFor(u, settings.levels, today)).catch(() => undefined);
       }
       await prepareRecent(org, today, isStopping);
+      await prepareFrequent(org, isStopping);
     } catch (error) {
       logger.warn('Suwi boot warm failed for a company', { org, error: (error as Error).message });
     }
