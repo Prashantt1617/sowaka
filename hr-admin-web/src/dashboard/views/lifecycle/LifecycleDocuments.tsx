@@ -4,18 +4,23 @@
 // until nothing is missing, makes the PDF in the browser and uploads it; Draft
 // email (H3c) opens the email with the PDF attached. The offer letter goes
 // through the offer itself (its PDF and its email carry the portal link).
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../store';
 import { canOpen, canSeePay } from '../../access';
 import { DrawerShell, CloseButton } from '../../drawers/shell';
 import { LoadError, PageActions, SkeletonLines, Spinner, StatusTabs } from '../../ui';
 import {
-  createLetter, getBoard, getJourney, getMergeValues, isNotAvailable, listLetterTemplates, listLetters, sendLetter, sendOffer, uploadLetterPdf, uploadOfferPdf,
+  createLetter, getBoard, getJourney, getMergeValues, getSalaryBreakup, isNotAvailable, listLetterTemplates, listLetters, saveLetterDraft, sendLetter, sendOffer,
+  uploadLetterAttachment, uploadLetterPdf, uploadOfferPdf,
 } from '../../../services/lifecycle';
-import type { BoardCard, BoardTab, LetterKind, LetterTemplateDTO, LetterView } from '../../../services/lifecycle';
+import type { AttachmentKind, BoardCard, BoardTab, LetterAttachment, LetterEmail, LetterKind, LetterTemplateDTO, LetterView, SalaryBreakup } from '../../../services/lifecycle';
+import { htmlToPdfBlob } from '../../pdf';
 import { BlobPreview, FilePreview, Field, NotSwitchedOn, Pick, Switch } from './shared';
 import { DOCS_OPEN_KEY, LETTER_TEMPLATE_OPEN_KEY, areaStyle, errText, firstName, inputStyle, readHandoff, shortDay } from './format';
-import { KIND_LABEL, LETTER_KINDS, LETTER_TITLE, emailDraft, fieldLabel, filled, letterFileName, letterInner, letterPdf, missingFields, placeholders, valueName } from './letterDoc';
+import {
+  KIND_LABEL, LETTER_KINDS, LETTER_TITLE, annexureHtml, checklistHtml, emailDraft, fieldLabel, filled, letterFileName, letterInner, letterPdf, missingFields, placeholders,
+  simpleDocument, takesAnnexure, valueName,
+} from './letterDoc';
 import { LetterPreview } from './OfferDialogs';
 import { useCompanyName } from './hooks';
 import '../people.css';
@@ -123,7 +128,9 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
   const [mailOpen, setMailOpen] = useState(false);
   const [preview, setPreview] = useState<{ blob?: Blob; fileId?: string; name: string } | null>(null);
   const [earlier, setEarlier] = useState<LetterView[]>([]);
-  const [candidate, setCandidate] = useState<{ email?: string; managerUserId?: string }>({});
+  const [candidate, setCandidate] = useState<{ email?: string; managerUserId?: string; docs?: Array<{ label: string; required: boolean }>; bring?: string[]; tj?: string }>({});
+  const [breakup, setBreakup] = useState<SalaryBreakup | null>(null);
+  const [breakupTemplate, setBreakupTemplate] = useState('');
 
   useEffect(() => {
     let live = true;
@@ -143,9 +150,27 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
       .then((m) => { if (live) { setBase(m.values); setServerMissing(m.missing); } })
       .catch((e) => { if (live) { setBase({}); setError(errText(e, 'Could not fill in the details')); } });
     listLetters({ journeyId, userId }).then((l) => { if (live) setEarlier(l); }).catch(() => undefined);
-    if (journeyId) getJourney(journeyId).then((d) => { if (live) setCandidate({ email: d.journey.candidate?.personalEmail, managerUserId: d.journey.managerUserId }); }).catch(() => undefined);
+    if (journeyId) {
+      getJourney(journeyId).then((d) => {
+        if (live) setCandidate({
+          email: d.journey.candidate?.personalEmail, managerUserId: d.journey.managerUserId, tj: d.journey.tj,
+          docs: d.documents.map((x) => ({ label: x.label, required: x.required })), bring: d.journey.day1Pass?.bring ?? [],
+        });
+      }).catch(() => undefined);
+    }
     return () => { live = false; };
   }, [kind, journeyId, userId, attempt]);
+
+  // Annexure A (offer, appointment): the CTC split by the company's salary template. Pay only.
+  const wantsBreakup = pay && (kind === 'offer' || kind === 'appointment') && Boolean(journeyId);
+  useEffect(() => {
+    if (!wantsBreakup || !journeyId) { setBreakup(null); return; }
+    let live = true;
+    getSalaryBreakup(journeyId, breakupTemplate || undefined)
+      .then((b) => { if (live) setBreakup(b); })
+      .catch((e) => { if (live) setBreakup({ templates: [], breakup: null, reason: errText(e, 'The salary breakup could not be worked out') }); });
+    return () => { live = false; };
+  }, [wantsBreakup, journeyId, breakupTemplate, attempt]);
 
   const template = templates?.find((t) => t.id === templateId);
   const values = useMemo(() => ({ ...(base ?? {}), ...edits }), [base, edits]);
@@ -155,8 +180,10 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
     return list;
   }, [template, serverMissing]);
   const missing = template ? missingFields(template.body, values, serverMissing) : [];
-  const valuesKey = JSON.stringify([templateId, values]);
   const name = valueName(values) || person?.name || '';
+  const withAnnex = Boolean(template && takesAnnexure(kind, template.body));
+  const annex = withAnnex && breakup?.breakup ? annexureHtml(breakup.breakup, name) : '';
+  const valuesKey = JSON.stringify([templateId, values, annex]);
   const first = firstName(name);
   const head = { company: values.companyName || company, address: values.companyAddress, refNo: letter?.refNo || values.refNo, title: LETTER_TITLE[kind] };
   const fileName = letterFileName(kind, name);
@@ -165,17 +192,47 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
   const shown = pay ? values : Object.fromEntries(Object.entries(values).map(([k, v]) => [k, PAY_FIELD.test(k) && v ? '••••••' : v]));
   const isOffer = kind === 'offer';
 
-  /** The letter row for these exact values (a new one if anything changed since the last save). */
+  // The latest email draft saved for this letter kind and person (H3c's Save draft), not sent yet.
+  const savedDraft = earlier.find((l) => l.kind === kind && l.email && !l.email.sentAt && l.email.savedAt) ?? null;
+
+  /** The letter row for these exact values (a new one if anything changed since the last save); a saved email draft moves with it. */
   const ensureLetter = async (): Promise<LetterView> => {
     if (letter && savedKey === valuesKey) return letter;
     const l = await createLetter({ kind, journeyId: person?.journeyId, userId: person?.userId, templateId, values });
+    if (savedDraft?.email && savedDraft.id !== l.id) {
+      const e = savedDraft.email;
+      await saveLetterDraft(l.id, { to: e.to, cc: e.cc, subject: e.subject, body: e.body, withPortalLink: e.withPortalLink, attachments: e.attachments }).catch(() => undefined);
+    }
     setLetter(l); setSavedKey(valuesKey);
     return l;
   };
+  const reloadEarlier = () => listLetters({ journeyId: person?.journeyId, userId: person?.userId }).then(setEarlier).catch(() => undefined);
   const saveDraft = async () => {
     if (!template || !person) return;
     setBusy('draft');
-    try { const l = await ensureLetter(); flash(`Draft saved${l.refNo ? ` · ${l.refNo}` : ''}`); } catch (e) { flash(errText(e, 'Could not save the draft'), 'error'); } finally { setBusy(''); }
+    try { const l = await ensureLetter(); flash(`Draft saved${l.refNo ? ` · ${l.refNo}` : ''}`); void reloadEarlier(); } catch (e) { flash(errText(e, 'Could not save the draft'), 'error'); } finally { setBusy(''); }
+  };
+  /** Save draft in the email panel: the letter's values and the email (to, cc, subject, body, link, extras) are kept. */
+  const saveEmailDraft = async (mail: MailOut) => {
+    if (!template || !person) return;
+    setBusy('draft');
+    try {
+      const l = await ensureLetter();
+      await saveLetterDraft(l.id, { to: mail.to, cc: mail.cc, subject: mail.subject, body: mail.body, withPortalLink: mail.withPortalLink, attachments: mail.attachments });
+      flash('Email draft saved');
+      void reloadEarlier();
+    } catch (e) { flash(errText(e, 'Could not save the draft'), 'error'); } finally { setBusy(''); }
+  };
+  /** The suggested extras (H3c): Annexure A on its own and the joining checklist are made here, like the letter. */
+  const makeExtra = async (which: 'salary_breakup' | 'joining_checklist'): Promise<{ blob: Blob; name: string } | null> => {
+    const docHead = { ...head, title: which === 'salary_breakup' ? 'Annexure A · Salary breakup' : 'Joining checklist' };
+    if (which === 'salary_breakup') {
+      if (!breakup?.breakup) return null;
+      const fileName = `Salary breakup (Annexure A) – ${name}.pdf`.replace(/[/\\:*?"<>|]/g, '');
+      return { blob: await htmlToPdfBlob(simpleDocument(docHead, annexureHtml(breakup.breakup, name)), fileName), name: fileName };
+    }
+    const fileName = `Joining checklist – ${name}.pdf`.replace(/[/\\:*?"<>|]/g, '');
+    return { blob: await htmlToPdfBlob(simpleDocument(docHead, checklistHtml(name, candidate.docs ?? [], candidate.bring ?? [], values.joiningDate)), fileName), name: fileName };
   };
   /** Makes the PDF and uploads it (to the offer, or to the letter). */
   const generate = async (): Promise<boolean> => {
@@ -184,12 +241,12 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
     setBusy('pdf');
     try {
       if (isOffer) {
-        const blob = await letterPdf(template.body, values, head, fileName);
+        const blob = await letterPdf(template.body, values, head, fileName, annex);
         await uploadOfferPdf(person.journeyId!, blob, fileName);
         setPdf({ blob, key: valuesKey });
       } else {
         const l = await ensureLetter();
-        const blob = await letterPdf(template.body, values, { ...head, refNo: l.refNo || head.refNo }, fileName);
+        const blob = await letterPdf(template.body, values, { ...head, refNo: l.refNo || head.refNo }, fileName, annex);
         const up = await uploadLetterPdf(l.id, blob, fileName);
         setLetter(up); setPdf({ blob, key: valuesKey });
       }
@@ -256,10 +313,21 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
               </Field>
             );
           })}
+          {withAnnex && pay && (
+            <Field label="Annexure A · salary breakup" hint={breakup?.breakup ? `Added as the letter’s last page, from the ${breakup.breakup.templateName} salary structure.` : undefined}>
+              {!breakup ? <SkeletonLines lines={1} />
+                : breakup.templates.length > 1 ? (
+                  <Pick value={breakup.templateCode ?? ''} onChange={setBreakupTemplate}>
+                    {breakup.templates.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}
+                  </Pick>
+                ) : breakup.breakup ? <input value={breakup.breakup.templateName} readOnly style={{ ...inputStyle, color: 'var(--ink-2)' }} /> : null}
+              {breakup && !breakup.breakup && <div style={{ fontSize: 12, color: 'var(--warn)', marginTop: 4 }}>{breakup.reason ?? 'The salary breakup could not be worked out'}. The letter goes without Annexure A.</div>}
+            </Field>
+          )}
           <button type="button" onClick={() => setMailOpen(true)} disabled={!template || !base}
             style={{ textAlign: 'left', border: '1px solid var(--line)', borderRadius: 14, padding: '12px 14px', background: 'var(--surface)', cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
             <b style={{ display: 'block', fontSize: 13.5, fontWeight: 500 }}>Email this letter to {first || 'them'}</b>
-            <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>Opens a draft with the PDF attached{isOffer || kind === 'appointment' || kind === 'nda' ? ' and the portal link' : ''}</span>
+            <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{savedDraft ? `Your draft from ${shortDay(savedDraft.email?.savedAt)} opens` : `Opens a draft with the PDF attached${isOffer || kind === 'appointment' || kind === 'nda' ? ' and the portal link' : ''}`}</span>
           </button>
           {earlier.length > 0 && (
             <div>
@@ -285,29 +353,33 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
             {template && canEditTemplates && <button type="button" className="pd-btn ghost sm" onClick={() => onEditTemplate(template.id)}>Edit template</button>}
           </div>
           {!template || !base ? <div style={{ padding: 40, textAlign: 'center' }}><Spinner label="Filling in the letter…" /></div>
-            : <LetterPreview html={letterInner(template.body, shown, head, 'preview')} />}
+            : <LetterPreview html={letterInner(template.body, shown, head, 'preview', annex)} />}
         </section>
       </div>
 
       {mailOpen && template && base && (
         <MailPanel kind={kind} values={values} name={name} to={to} manager={manager} company={company} hrName={hrName}
-          missing={missing.length} pdfReady={pdfReady} fileName={fileName} busy={busy}
+          missing={missing.length} pdfReady={pdfReady} fileName={fileName} busy={busy} draft={savedDraft?.email}
+          annexInLetter={Boolean(annex)} journeyId={person.journeyId}
+          canBreakup={pay && Boolean(breakup?.breakup) && (kind === 'offer' || kind === 'appointment')}
+          canChecklist={kind === 'offer' && Boolean(person.journeyId)}
+          makeExtra={makeExtra}
           onPreview={() => pdf && setPreview({ blob: pdf.blob, name: fileName })}
-          onSaveDraft={isOffer ? undefined : () => void saveDraft()}
+          onSaveDraft={(mail) => void saveEmailDraft(mail)}
           onClose={() => setMailOpen(false)}
           onSend={async (mail) => {
             if (!(await generate())) return;
             setBusy('send');
             try {
-              if (isOffer) await sendOffer(person.journeyId!, { subject: mail.subject, body: mail.body, cc: mail.cc });
+              if (isOffer) await sendOffer(person.journeyId!, { subject: mail.subject, body: mail.body, cc: mail.cc, withPortalLink: mail.withPortalLink, attachments: mail.attachments });
               else {
                 const l = await ensureLetter();
-                const sent = await sendLetter(l.id, { to: mail.to, cc: mail.cc, subject: mail.subject, body: mail.body, withPortalLink: mail.withPortalLink });
+                const sent = await sendLetter(l.id, { to: mail.to, cc: mail.cc, subject: mail.subject, body: mail.body, withPortalLink: mail.withPortalLink, attachments: mail.attachments });
                 setLetter(sent);
               }
               flash(`${KIND_LABEL[kind]} sent to ${first || mail.to}`);
               setMailOpen(false);
-              listLetters({ journeyId: person.journeyId, userId: person.userId }).then(setEarlier).catch(() => undefined);
+              void reloadEarlier();
             } catch (e) { flash(errText(e, 'Could not send the email'), 'error'); } finally { setBusy(''); }
           }} />
       )}
@@ -317,31 +389,65 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
   );
 }
 
-function MailPanel({ kind, values, name, to: toStart, manager, company, hrName, missing, pdfReady, fileName, busy, onPreview, onSaveDraft, onClose, onSend }: {
+type MailOut = { to: string; cc?: string[]; subject: string; body: string; withPortalLink?: boolean; attachments?: LetterAttachment[] };
+type Suggestion = { kind: AttachmentKind; title: string; sub: string };
+
+function MailPanel({ kind, values, name, to: toStart, manager, company, hrName, missing, pdfReady, fileName, busy, draft, annexInLetter, journeyId, canBreakup, canChecklist, makeExtra, onPreview, onSaveDraft, onClose, onSend }: {
   kind: LetterKind; values: Record<string, string>; name: string; to: string; manager?: { name: string; email: string };
   company: string; hrName: string; missing: number; pdfReady: boolean; fileName: string; busy: string;
-  onPreview: () => void; onSaveDraft?: () => void; onClose: () => void;
-  onSend: (mail: { to: string; cc?: string[]; subject: string; body: string; withPortalLink?: boolean }) => Promise<void>;
+  /** HR's saved draft of this email, if any (it opens instead of the template's words). */
+  draft?: LetterEmail;
+  annexInLetter: boolean; journeyId?: string; canBreakup: boolean; canChecklist: boolean;
+  makeExtra: (which: 'salary_breakup' | 'joining_checklist') => Promise<{ blob: Blob; name: string } | null>;
+  onPreview: () => void; onSaveDraft: (mail: MailOut) => void; onClose: () => void;
+  onSend: (mail: MailOut) => Promise<void>;
 }) {
+  const { flash } = useStore();
   const isOffer = kind === 'offer';
-  const portalSwitch = kind === 'appointment' || kind === 'nda';
-  const [withLink, setWithLink] = useState(true);
-  const start = emailDraft(kind, values, { company, hrName, withLink: isOffer || withLink });
-  const [to, setTo] = useState(toStart);
-  const [ccManager, setCcManager] = useState(Boolean(manager?.email));
-  const [subject, setSubject] = useState(start.subject);
-  const [body, setBody] = useState(start.body);
-  const [edited, setEdited] = useState(false);
+  // The offer's link is how they accept: on by default, with a switch (6Zs H3c). Appointment / NDA: their portal, where they sign.
+  const portalSwitch = isOffer || kind === 'appointment' || kind === 'nda';
+  const [withLink, setWithLink] = useState(draft?.withPortalLink ?? true);
+  const start = emailDraft(kind, values, { company, hrName, withLink });
+  const [to, setTo] = useState(draft?.to || toStart);
+  const [ccManager, setCcManager] = useState(draft ? Boolean(manager?.email && draft.cc?.includes(manager.email.toLowerCase())) : Boolean(manager?.email));
+  const [subject, setSubject] = useState(draft?.subject || start.subject);
+  const [body, setBody] = useState(draft?.body || start.body);
+  const [edited, setEdited] = useState(Boolean(draft?.body));
+  const [extras, setExtras] = useState<LetterAttachment[]>(draft?.attachments ?? []);
+  const [adding, setAdding] = useState<AttachmentKind | ''>('');
   const [error, setError] = useState('');
+  const fileInput = useRef<HTMLInputElement>(null);
   const flip = (v: boolean) => {
     setWithLink(v);
     if (!edited) setBody(emailDraft(kind, values, { company, hrName, withLink: v }).body);
   };
+  const mail = (): MailOut => ({
+    to: to.trim(), cc: ccManager && manager?.email ? [manager.email] : undefined, subject: subject.trim(), body,
+    withPortalLink: portalSwitch ? withLink : undefined, attachments: extras.length ? extras : undefined,
+  });
   const send = () => {
     if (!isOffer && !/^\S+@\S+\.\S+$/.test(to.trim())) { setError('Enter who it goes to'); return; }
     if (!subject.trim() || !body.trim()) { setError('Write a subject and a message'); return; }
     setError('');
-    void onSend({ to: to.trim(), cc: ccManager && manager?.email ? [manager.email] : undefined, subject: subject.trim(), body, withPortalLink: portalSwitch ? withLink : undefined });
+    void onSend(mail());
+  };
+  const suggestions: Suggestion[] = [
+    ...(canBreakup ? [{ kind: 'salary_breakup' as const, title: 'Salary breakup (Annexure A)', sub: annexInLetter ? '1 page · also the letter’s last page' : '1 page · from the offer' }] : []),
+    ...(canChecklist ? [{ kind: 'joining_checklist' as const, title: 'Joining checklist', sub: '1 page · documents to keep ready' }] : []),
+    ...(!isOffer ? [{ kind: 'policies' as const, title: 'Company policies', sub: 'The handbook · a PDF from your computer' }] : []),
+  ].filter((x) => !extras.some((e) => e.kind === x.kind));
+  const upload = async (blob: Blob, filename: string, k: AttachmentKind) => {
+    const r = await uploadLetterAttachment(blob, filename, k, journeyId);
+    setExtras((list) => [...list, r.attachment]);
+  };
+  const attach = async (sg: Suggestion) => {
+    if (sg.kind === 'policies') { fileInput.current?.click(); return; }
+    setAdding(sg.kind);
+    try {
+      const made = await makeExtra(sg.kind as 'salary_breakup' | 'joining_checklist');
+      if (!made) { flash('That can’t be made yet', 'error'); return; }
+      await upload(made.blob, made.name, sg.kind);
+    } catch (e) { flash(errText(e, 'Could not attach it'), 'error'); } finally { setAdding(''); }
   };
   const chip = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 99, background: 'var(--surface-2)', border: '1px solid var(--line)', fontSize: 12.5, maxWidth: '100%', overflowWrap: 'anywhere' } as const;
   return (
@@ -351,6 +457,7 @@ function MailPanel({ kind, values, name, to: toStart, manager, company, hrName, 
         <CloseButton onClose={onClose} />
       </div>
       <div className="pd-form" style={{ padding: 20, display: 'grid', gap: 12, fontSize: 13 }}>
+        {draft?.savedAt && <div className="pd-note">Your draft from {shortDay(draft.savedAt)}.</div>}
         <div style={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr)', gap: 8, alignItems: 'center' }}>
           <span style={{ color: 'var(--ink-3)' }}>From</span><span><span style={chip}>HR · {hrName}</span></span>
           <span style={{ color: 'var(--ink-3)' }}>To</span>
@@ -361,29 +468,52 @@ function MailPanel({ kind, values, name, to: toStart, manager, company, hrName, 
             <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Switch on={ccManager} onChange={setCcManager} label={`Copy ${manager.name}`} /><span style={chip}>{manager.name} (manager)</span></label>
           </>}
         </div>
+        {kind === 'relieving' && values.personalEmail && to.trim().toLowerCase() === values.personalEmail.toLowerCase() && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: -4 }}>Their personal email: the work email closes when they leave.</div>}
         <Field label="Subject"><input value={subject} onChange={(e) => setSubject(e.target.value)} style={inputStyle} /></Field>
         <Field label="Email body"><textarea value={body} onChange={(e) => { setBody(e.target.value); setEdited(true); }} style={{ ...areaStyle, minHeight: 240 }} /></Field>
-        {isOffer && <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>A “View and accept your offer” button with their personal portal link goes under your message.</div>}
         {portalSwitch && (
           <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
             <Switch on={withLink} onChange={flip} label="Add the portal link" />
-            <span><b style={{ display: 'block', fontWeight: 500 }}>Add the portal link</b><span style={{ fontSize: 12, color: 'var(--ink-3)' }}>A button to open their joining portal, where they sign it</span></span>
+            <span><b style={{ display: 'block', fontWeight: 500 }}>Add the portal link</b><span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{isOffer ? 'A “View and accept your offer” button in the email' : 'A button to open their joining portal, where they sign it'}</span></span>
           </label>
         )}
+        {isOffer && !withLink && <div className="pd-note" style={{ color: 'var(--warn)' }}>Without the link they can’t read and accept the offer online. Send it again with the link if they ask.</div>}
         <div>
           <div style={{ fontSize: 11.5, color: 'var(--ink-2)', marginBottom: 6 }}>Attachments</div>
-          <div className="pd-li" style={{ border: '1px solid var(--line)', borderRadius: 14, padding: '10px 12px' }}>
-            <span className="pd-li-i" aria-hidden style={{ fontSize: 10, fontWeight: 600 }}>PDF</span>
-            <span className="grow"><b style={{ overflowWrap: 'anywhere' }}>{fileName}</b><span className="s">{pdfReady ? 'Generated from the details' : missing ? 'Not generated yet' : 'Generated when you send'}</span></span>
-            {pdfReady && <button type="button" className="pd-btn sm" onClick={onPreview}>Preview</button>}
+          <div style={{ display: 'grid', gap: 6 }}>
+            <div className="pd-li" style={{ border: '1px solid var(--line)', borderRadius: 14, padding: '10px 12px' }}>
+              <span className="pd-li-i" aria-hidden style={{ fontSize: 10, fontWeight: 600 }}>PDF</span>
+              <span className="grow"><b style={{ overflowWrap: 'anywhere' }}>{fileName}</b><span className="s">{pdfReady ? `Generated from the details${annexInLetter ? ', with Annexure A' : ''}` : missing ? 'Not generated yet' : 'Generated when you send'}</span></span>
+              {pdfReady && <button type="button" className="pd-btn sm" onClick={onPreview}>Preview</button>}
+            </div>
+            {extras.map((x) => (
+              <div key={x.fileId} className="pd-li" style={{ border: '1px solid var(--line)', borderRadius: 14, padding: '10px 12px' }}>
+                <span className="pd-li-i" aria-hidden style={{ fontSize: 10, fontWeight: 600 }}>PDF</span>
+                <span className="grow"><b style={{ overflowWrap: 'anywhere' }}>{x.name}</b><span className="s">Attached</span></span>
+                <button type="button" className="pd-btn sm ghost" onClick={() => setExtras((list) => list.filter((e) => e.fileId !== x.fileId))}>Remove</button>
+              </div>
+            ))}
+            {suggestions.map((sg) => (
+              <div key={sg.kind} className="pd-li" style={{ border: '1px dashed var(--line-2)', borderRadius: 14, padding: '10px 12px' }}>
+                <span className="grow"><b style={{ overflowWrap: 'anywhere' }}><span style={{ color: 'var(--ink-3)', fontWeight: 400 }}>Suggested · </span>{sg.title}</b><span className="s">{sg.sub}</span></span>
+                <button type="button" className="pd-btn sm" onClick={() => void attach(sg)} disabled={Boolean(adding) || Boolean(busy)}>{adding === sg.kind ? 'Attaching…' : 'Attach'}</button>
+              </div>
+            ))}
+            <input ref={fileInput} type="file" accept="application/pdf" hidden onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (!f) return;
+              setAdding('policies');
+              upload(f, f.name, 'policies').catch((err) => flash(errText(err, 'Could not attach it'), 'error')).finally(() => setAdding(''));
+            }} />
           </div>
         </div>
         {missing > 0 && <div className="pd-note" style={{ color: 'var(--bad)' }}>The letter can’t be attached yet: fill the missing details first.</div>}
         {error && <div role="alert" style={{ color: 'var(--bad)' }}>{error}</div>}
       </div>
       <div style={{ marginTop: 'auto', position: 'sticky', bottom: 0, background: 'var(--surface)', borderTop: '1px solid var(--line)', padding: '14px 20px', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        {onSaveDraft && <button type="button" className="pd-btn" onClick={onSaveDraft} disabled={Boolean(busy)}>Save draft</button>}
-        <button type="button" className="pd-btn primary" onClick={send} disabled={Boolean(busy) || missing > 0}>{busy === 'send' ? 'Sending…' : busy === 'pdf' ? 'Generating…' : 'Send email'}</button>
+        <button type="button" className="pd-btn" onClick={() => onSaveDraft(mail())} disabled={Boolean(busy) || Boolean(adding)}>{busy === 'draft' ? 'Saving…' : 'Save draft'}</button>
+        <button type="button" className="pd-btn primary" onClick={send} disabled={Boolean(busy) || Boolean(adding) || missing > 0}>{busy === 'send' ? 'Sending…' : busy === 'pdf' ? 'Generating…' : 'Send email'}</button>
       </div>
     </DrawerShell>
   );

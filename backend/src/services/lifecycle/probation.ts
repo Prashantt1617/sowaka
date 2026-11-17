@@ -198,8 +198,14 @@ async function saveMonth(j: Journey, row: ProbationMonth, set: Partial<Probation
 
 // ─── The decision ───────────────────────────────────────────────────────────
 
-/** HR's final-month decision (H1c). Extend restarts a review cycle for extendMonths. */
-export async function recordDecision(journeyId: string, hr: { userId: string; name: string }, body: Record<string, unknown>): Promise<ConfirmationDecision> {
+/**
+ * HR's final-month decision (H1c). Extend restarts a review cycle for
+ * extendMonths. A new salary is pay: only someone who may see pay sets it.
+ */
+export async function recordDecision(journeyId: string, hr: { userId: string; name: string; seesPay?: boolean }, body: Record<string, unknown>): Promise<ConfirmationDecision> {
+  if (hr.seesPay === false && body.salary !== undefined && body.salary !== null && body.salary !== '') {
+    throw new LifecycleError(403, 'Only someone with payroll access can set the salary');
+  }
   const j = await loadJourney(journeyId);
   if (j.kind !== 'onboarding' || !j.userId) throw new LifecycleError(409, 'The decision is for someone who has joined');
   if (j.status === 'confirmed') throw new LifecycleError(409, 'Already confirmed');
@@ -276,7 +282,7 @@ export async function revealFor(journeyId: string) {
     ...(decision.salary ? { salary: decision.salary } : {}),
     ...(manager ? { reportsTo: manager } : {}),
     ...(kpis ? { kpis } : {}),
-    ...(decision.letterId ? { letterId: decision.letterId } : {}),
+    ...(decision.letterId ? { letterId: decision.letterId, letterUrl: `/lifecycle/onboarding/letters/${decision.letterId}/pdf` } : {}),
     ...(decision.revealedAt ? { revealedAt: decision.revealedAt } : {}),
     decidedOn: todayKey(decision.decidedAt, companyTimeZone(j.org)),
   };

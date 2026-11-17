@@ -7,6 +7,8 @@ import {
   saveWeek1Step, sendSurvey, starterDone, starterTasksForJoiner, surveyView, week1View,
 } from '../services/lifecycle/appOnboarding';
 import { LifecycleError } from '../services/lifecycle/engine';
+import { contentDisposition } from '../services/lifecycle/files';
+import { letterPdfForEmployee } from '../services/lifecycle/letters';
 import { lifecycleGate, lifecycleHandler } from './lifecycle-admin.routes';
 
 /**
@@ -56,6 +58,21 @@ lifecycleAppRouter.get('/onboarding/probation', lifecycleHandler(async (req) => 
 lifecycleAppRouter.put('/onboarding/probation/:month/checkin', lifecycleHandler(async (req) => checkinForMe(me(req), Number(param(req, 'month')), body(req))));
 lifecycleAppRouter.get('/onboarding/reveal', lifecycleHandler(async (req) => revealForMe(me(req))));
 lifecycleAppRouter.post('/onboarding/reveal/seen', lifecycleHandler(async (req) => revealSeenForMe(me(req))));
+// Their own letter PDF (the reveal's letterUrl): only letters of theirs that HR has sent or they signed.
+lifecycleAppRouter.get('/onboarding/letters/:id/pdf', async (req, res, next) => {
+  try {
+    const who = me(req);
+    const file = await letterPdfForEmployee(who.org, who.userId, param(req, 'id'));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', contentDisposition(file.name, req.query.download === '1'));
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(file.bytes);
+  } catch (error) {
+    const code = (error as { statusCode?: unknown }).statusCode;
+    if (typeof code === 'number' && code >= 400 && code < 500) { res.status(code).json({ error: (error as Error).message }); return; }
+    next(error);
+  }
+});
 
 // The manager
 lifecycleAppRouter.get('/manager/joiners', lifecycleHandler(async (req) => joinersForManager(me(req))));

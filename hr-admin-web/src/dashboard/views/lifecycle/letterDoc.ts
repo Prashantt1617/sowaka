@@ -2,7 +2,7 @@
 // from the merge values, for the live preview (filled values blue, missing
 // orange "[Field label]") and for the PDF the dashboard makes with html2pdf and
 // uploads (CONTRACT decision 11: the server never renders HTML to PDF).
-import type { LetterKind } from '../../../services/lifecycle';
+import type { LetterKind, SalaryBreakup } from '../../../services/lifecycle';
 import { htmlToPdfBlob } from '../../pdf';
 import { firstName, longDay, todayKey } from './format';
 
@@ -114,27 +114,76 @@ export const LETTER_CSS = `
   .lf-body img { max-width: 100%; }
   mark.lf-on { background: #E5F2FF; color: inherit; border-radius: 4px; padding: 0 2px; }
   mark.lf-miss { background: #FFEDE4; color: #C2562A; border-radius: 4px; padding: 0 2px; }
+  .lf-annex { margin-top: 28px; padding-top: 18px; border-top: 1px dashed #D5D5D5; page-break-before: always; break-before: page; }
+  .lf-annex table { border-collapse: collapse; width: 100%; margin: 10px 0 14px; } .lf-annex td, .lf-annex th { border: 1px solid #E3E3E3; padding: 7px 10px; text-align: left; }
+  .lf-annex td.n, .lf-annex th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .lf-annex tr.t td { font-weight: 600; background: #F7F7F9; }
+  .lf-annex p.s { color: #555; font-size: 11.5px; }
 `;
 
-/** The page inside (letterhead, title, filled body) as HTML, for the preview and the PDF. */
-export function letterInner(body: string, values: Record<string, string>, head: Letterhead, mode: 'preview' | 'pdf'): string {
+/** The page inside (letterhead, title, filled body, then any annexure) as HTML, for the preview and the PDF. */
+export function letterInner(body: string, values: Record<string, string>, head: Letterhead, mode: 'preview' | 'pdf', annex = ''): string {
   return `<div class="lf-page">
   <div class="lf-head">
     <div class="lf-co"><b>${esc(head.company)}</b>${head.address ? `<span>${esc(head.address)}</span>` : ''}</div>
     <div class="lf-ref">${head.refNo ? `Ref ${esc(head.refNo)}<br>` : ''}${esc(head.date ?? longDay(todayKey()))}</div>
   </div>
   <h1 class="lf-title">${esc(head.title)}</h1>
-  <div class="lf-body">${fillBody(body, values, mode)}</div>
+  <div class="lf-body">${fillBody(body, values, mode)}</div>${annex}
 </div>`;
 }
 
 /** A whole document, ready for html2pdf. */
-export function letterDocument(body: string, values: Record<string, string>, head: Letterhead): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(head.title)}</title><style>${LETTER_CSS} body { margin: 0; padding: 24px; background: #fff; }</style></head><body>${letterInner(body, values, head, 'pdf')}</body></html>`;
+export function letterDocument(body: string, values: Record<string, string>, head: Letterhead, annex = ''): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(head.title)}</title><style>${LETTER_CSS} body { margin: 0; padding: 24px; background: #fff; }</style></head><body>${letterInner(body, values, head, 'pdf', annex)}</body></html>`;
 }
 
-export async function letterPdf(body: string, values: Record<string, string>, head: Letterhead, filename: string): Promise<Blob> {
-  return htmlToPdfBlob(letterDocument(body, values, head), filename);
+export async function letterPdf(body: string, values: Record<string, string>, head: Letterhead, filename: string, annex = ''): Promise<Blob> {
+  return htmlToPdfBlob(letterDocument(body, values, head, annex), filename);
+}
+
+// —— Annexure A and the other suggested extras (H3c) —————————————————————
+
+/** Offer and appointment letters whose wording promises Annexure A get the salary breakup as their last page. */
+export const takesAnnexure = (kind: LetterKind, body: string) => (kind === 'offer' || kind === 'appointment') && /annexure\s*a/i.test(body);
+
+const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+
+/** Annexure A: the CTC split by the company's salary template, as the payroll calculator works it out. */
+export function annexureHtml(b: NonNullable<SalaryBreakup['breakup']>, name: string): string {
+  const groups: Array<[string, typeof b.lines]> = [
+    ['Earnings', b.lines.filter((l) => l.group === 'earning')],
+    ['Reimbursements', b.lines.filter((l) => l.group === 'reimbursement')],
+    ['Benefits and employer contributions', b.lines.filter((l) => l.group === 'benefit' || l.group === 'employer')],
+  ];
+  const rows = groups.filter(([, l]) => l.length).map(([title, l]) => `<tr><th colspan="3">${esc(title)}</th></tr>${l.map((x) => `<tr><td>${esc(x.name)}</td><td class="n">${inr(x.monthly)}</td><td class="n">${inr(x.annual)}</td></tr>`).join('')}`).join('');
+  return `<div class="lf-annex">
+  <h2 class="lf-title">Annexure A · Salary breakup</h2>
+  <p>${name ? `For ${esc(name)}. ` : ''}Yearly cost to company ${inr(b.ctcAnnual)}, a month ${inr(b.ctcMonthly)}.</p>
+  <table><thead><tr><th>Component</th><th class="n">Monthly</th><th class="n">Yearly</th></tr></thead><tbody>${rows}
+  <tr class="t"><td>Cost to company</td><td class="n">${inr(b.ctcMonthly)}</td><td class="n">${inr(b.ctcAnnual)}</td></tr></tbody></table>
+  <p class="s">Gross pay a month ${inr(b.grossMonthly)}. Income tax and the statutory deductions that apply to you (Provident Fund, ESI, Professional Tax) come out of gross pay. Worked out on the ${esc(b.templateName)} salary structure.</p>
+</div>`;
+}
+
+/** A one-page document (Annexure A on its own, the joining checklist) on the letterhead, ready for html2pdf. */
+export function simpleDocument(head: Letterhead, inner: string): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(head.title)}</title><style>${LETTER_CSS} body { margin: 0; padding: 24px; background: #fff; } .lf-annex { margin-top: 0; padding-top: 0; border-top: 0; page-break-before: auto; break-before: auto; }</style></head><body><div class="lf-page">
+  <div class="lf-head"><div class="lf-co"><b>${esc(head.company)}</b>${head.address ? `<span>${esc(head.address)}</span>` : ''}</div><div class="lf-ref">${head.refNo ? `Ref ${esc(head.refNo)}<br>` : ''}${esc(head.date ?? longDay(todayKey()))}</div></div>
+  ${inner}
+</div></body></html>`;
+}
+
+/** The joining checklist: the documents to keep ready and what to bring on Day 1. */
+export function checklistHtml(name: string, docs: Array<{ label: string; required: boolean }>, bring: string[], joining?: string): string {
+  const li = (t: string) => `<li style="margin:0 0 6px">☐ ${t}</li>`;
+  return `<div class="lf-annex">
+  <h2 class="lf-title">Joining checklist</h2>
+  <p>${name ? `Hi ${esc(firstName(name))}, ` : ''}here is what to keep ready${joining ? ` before you join on ${esc(joining)}` : ''}. You upload the documents on your joining portal.</p>
+  ${docs.length ? `<p><b>Documents</b></p><ul style="list-style:none;padding:0;margin:0 0 14px">${docs.map((d) => li(`${esc(d.label)}${d.required ? '' : ' <span style="color:#777">(optional)</span>'}`)).join('')}</ul>` : ''}
+  ${bring.length ? `<p><b>On your first day, bring</b></p><ul style="list-style:none;padding:0;margin:0 0 14px">${bring.map((b) => li(esc(b))).join('')}</ul>` : ''}
+  <p class="s">Questions? Reply to the email this came with.</p>
+</div>`;
 }
 
 /** "Offer letter – Kabir Mehta.pdf". */

@@ -10,7 +10,7 @@
  */
 import { NextFunction, Request, Response, Router } from 'express';
 import multer from 'multer';
-import { journeys, letters, letterTemplates, offers } from '../config/db';
+import { candidateDocuments, journeys, letters, letterTemplates, offers } from '../config/db';
 import { hasAllDashboardTabs, requireDashboardAccess, requireDashboardTabs } from '../middleware/admin.middleware';
 import { requireAuth } from '../middleware/auth.middleware';
 import { AdminError } from '../services/admin.service';
@@ -18,8 +18,10 @@ import { journeyDocumentsView, reviewDocument } from '../services/lifecycle/docu
 import { lifecycleEnabled } from '../services/lifecycle/emails';
 import { contentDisposition, fileForOrg, LifecycleOfferError, readFileBytes, UTF8_FILE_NAMES } from '../services/lifecycle/files';
 import {
-  createLetter, createLetterTemplate, listLetters, listLetterTemplates, mergeValues, sendLetter, updateLetterTemplate, uploadLetterPdf,
+  createLetter, createLetterTemplate, letterWithoutPay, listLetters, listLetterTemplates, mergeValues, resolveAttachments, salaryBreakup, saveLetterDraft,
+  sendLetter, updateLetterTemplate, uploadLetterAttachment, uploadLetterPdf, valuesWithoutPay,
 } from '../services/lifecycle/letters';
+import { documentStatusOnly, lifecycleViewer } from '../services/lifecycle/board';
 import {
   createOffer, decideDateRequest, declineOffer, finaliseOffer, type HrActor, markJoined, markNotJoining, offerView, reopenOffer, reviseOffer,
   sendOffer, uploadOfferPdf,
@@ -31,17 +33,18 @@ type DashUser = { userId: string; name: string; org?: string; dashboardAdmin?: b
 const OFFER_TABS = ['onboarding', 'lifecycle_documents'];
 const LETTER_TABS = ['lifecycle_documents', 'onboarding', 'offboarding'];
 const FILE_TABS = ['onboarding', 'lifecycle_documents', 'offboarding'];
-/** Tabs that carry pay: the offer's CTC shows only with one of these (or every tab). */
-const PAY_TABS = ['payruns', 'salarydetails', 'lifecycle_documents'];
-
 const userOf = (req: Request) => req.auth!.user as unknown as DashUser;
+/**
+ * The one "may see pay" rule (board.ts `lifecycleViewer`, as the dashboard's
+ * `canSeePay` decides it): a dashboard admin, someone never limited, or a
+ * holder of Payroll runs / Salary details. Documents is not a pay tab.
+ */
 export function actorOf(req: Request): HrActor {
   const user = userOf(req);
-  return {
-    userId: user.userId, name: user.name, org: user.org ?? '',
-    seesPay: hasAllDashboardTabs(user) || (user.dashboardTabs ?? []).some((t) => PAY_TABS.includes(t)),
-  };
+  return { userId: user.userId, name: user.name, org: user.org ?? '', seesPay: lifecycleViewer(user).seesPay };
 }
+/** HR (admin, never limited, or People › Employees) sees candidates' documents; the onboarding tab alone sees status only. */
+const seesDocuments = (req: Request) => lifecycleViewer(userOf(req)).seesDocuments;
 
 export function sendLifecycleError(error: unknown, res: Response, next: NextFunction): void {
   if (error instanceof LifecycleOfferError) {
@@ -108,7 +111,16 @@ r.put('/offers/:journeyId', ...guard(OFFER_TABS), handle(async (req) => ({ offer
 r.post('/offers/:journeyId/pdf', ...guard(OFFER_TABS), oneFile, handle(async (req) => ({ offer: await uploadOfferPdf(actorOf(req), param(req, 'journeyId'), req.file) })));
 r.post('/offers/:journeyId/send', ...guard(OFFER_TABS), handle(async (req) => {
   const hr = actorOf(req);
-  const offer = await sendOffer(hr, param(req, 'journeyId'), body(req));
+  const b = body(req);
+  const extras = await resolveAttachments(hr, b.attachments);
+  const offer = await sendOffer(hr, param(req, 'journeyId'), { subject: b.subject, body: b.body, cc: b.cc, withPortalLink: b.withPortalLink, attachments: extras.files });
+  // A draft of this email saved on an offer letter (Documents › Save draft) is now sent.
+  const now = new Date();
+  await letters().updateMany({ org: hr.org, journeyId: param(req, 'journeyId'), kind: 'offer', 'email.sentAt': { $exists: false } }, { $set: {
+    'email.sentAt': now, 'email.to': (await journeys().findOne({ id: param(req, 'journeyId') }, { projection: { _id: 0, candidate: 1 } }))?.candidate?.personalEmail ?? '',
+    'email.subject': String(b.subject ?? ''), 'email.body': String(b.body ?? ''), 'email.withPortalLink': b.withPortalLink !== false, 'email.attachments': extras.list,
+    ...(offer.pdfFileId ? { pdfFileId: offer.pdfFileId } : {}),
+  } });
   return { offer: hr.seesPay ? offer : await offerView(param(req, 'journeyId'), { hidePay: true }) };
 }));
 r.post('/offers/:journeyId/finalise', ...guard(OFFER_TABS), handle(async (req) => {
@@ -128,9 +140,13 @@ r.post('/date-requests/:id', ...guard(OFFER_TABS), handle(async (req) => ({ requ
 r.get('/journeys/:id/documents', ...guard(OFFER_TABS), handle(async (req) => {
   const hr = actorOf(req);
   if (!(await journeys().findOne({ id: param(req, 'id'), org: hr.org }, { projection: { _id: 1 } }))) throw new LifecycleOfferError(404, 'Joiner not found');
-  return { documents: await journeyDocumentsView(param(req, 'id')) };
+  const documents = await journeyDocumentsView(param(req, 'id'));
+  return { documents: seesDocuments(req) ? documents : documents.map(documentStatusOnly) };
 }));
-r.post('/documents/:id/review', ...guard(OFFER_TABS), handle(async (req) => ({ document: await reviewDocument(actorOf(req), param(req, 'id'), body(req)) })));
+r.post('/documents/:id/review', ...guard(OFFER_TABS), handle(async (req) => {
+  if (!seesDocuments(req)) throw new LifecycleOfferError(403, 'Only HR reviews candidates’ documents');
+  return { document: await reviewDocument(actorOf(req), param(req, 'id'), body(req)) };
+}));
 r.get('/files/:id', ...guard(FILE_TABS), handle(async (req, res) => {
   const hr = actorOf(req);
   const file = await fileForOrg(hr.org, param(req, 'id'));
@@ -138,7 +154,12 @@ r.get('/files/:id', ...guard(FILE_TABS), handle(async (req, res) => {
   if (!hr.seesPay && (
     await offers().findOne({ org: hr.org, 'versions.pdfFileId': file.id }, { projection: { _id: 1 } })
     || await letters().findOne({ org: hr.org, kind: { $in: ['offer', 'appointment'] }, $or: [{ pdfFileId: file.id }, { signedPdfFileId: file.id }] }, { projection: { _id: 1 } })
+    || await letters().findOne({ org: hr.org, 'email.attachments': { $elemMatch: { fileId: file.id, kind: 'salary_breakup' } } }, { projection: { _id: 1 } })
   )) throw new LifecycleOfferError(403, 'This file needs access to pay');
+  // Candidates' documents and ID proofs are HR's: the onboarding tab alone sees their status, never the files.
+  if (!seesDocuments(req) && await candidateDocuments().findOne({ org: hr.org, fileIds: file.id }, { projection: { _id: 1 } })) {
+    throw new LifecycleOfferError(403, 'Only HR can open candidates’ documents');
+  }
   const bytes = await readFileBytes(file);
   res.setHeader('Content-Type', file.contentType);
   res.setHeader('Content-Disposition', contentDisposition(file.name, req.query.download === '1'));
@@ -165,12 +186,23 @@ const payCheck = (hr: HrActor, kind: unknown) => {
 r.get('/letters/merge', ...guard(LETTER_TABS), handle(async (req) => {
   const hr = actorOf(req);
   payCheck(hr, req.query.kind);
-  return mergeValues(hr.org, { kind: req.query.kind, journeyId: req.query.journeyId, userId: req.query.userId }, hr.name);
+  const merged = await mergeValues(hr.org, { kind: req.query.kind, journeyId: req.query.journeyId, userId: req.query.userId }, hr.name);
+  // Every kind's values carry the offer's CTC: never to someone without pay access.
+  return hr.seesPay ? merged : { values: valuesWithoutPay(merged.values), missing: merged.missing };
 }));
+/** Annexure A: the offer's CTC split by a salary template (pay only). */
+r.get('/letters/salary-breakup', ...guard(LETTER_TABS), handle(async (req) => {
+  const hr = actorOf(req);
+  if (!hr.seesPay) throw new LifecycleOfferError(403, 'The salary breakup needs access to pay');
+  return salaryBreakup(hr.org, String(req.query.journeyId ?? ''), req.query.template);
+}));
+/** An extra file for a letter's email (salary breakup, joining checklist, policies). */
+r.post('/letters/attachments', ...guard(LETTER_TABS), oneFile, handle(async (req) => uploadLetterAttachment(actorOf(req), body(req), req.file)));
 r.post('/letters', ...guard(LETTER_TABS), handle(async (req) => {
   const hr = actorOf(req);
   payCheck(hr, body(req).kind);
-  return { letter: await createLetter(hr, body(req)) };
+  const letter = await createLetter(hr, body(req));
+  return { letter: hr.seesPay ? letter : letterWithoutPay(letter) };
 }));
 /** The letter's kind, for the pay check on its own routes (another org's letter is 404 in the service). */
 const letterPayCheck = async (hr: HrActor, id: string) => {
@@ -185,10 +217,18 @@ r.post('/letters/:id/pdf', ...guard(LETTER_TABS), oneFile, handle(async (req) =>
 r.post('/letters/:id/send', ...guard(LETTER_TABS), handle(async (req) => {
   const hr = actorOf(req);
   await letterPayCheck(hr, param(req, 'id'));
-  return { letter: await sendLetter(hr, param(req, 'id'), body(req)) };
+  const letter = await sendLetter(hr, param(req, 'id'), body(req));
+  return { letter: hr.seesPay ? letter : letterWithoutPay(letter) };
+}));
+/** H3c's Save draft: the email kept on the letter until it is sent. */
+r.put('/letters/:id/draft', ...guard(LETTER_TABS), handle(async (req) => {
+  const hr = actorOf(req);
+  await letterPayCheck(hr, param(req, 'id'));
+  const letter = await saveLetterDraft(hr, param(req, 'id'), body(req));
+  return { letter: hr.seesPay ? letter : letterWithoutPay(letter) };
 }));
 r.get('/letters', ...guard(LETTER_TABS), handle(async (req) => {
   const hr = actorOf(req);
   const rows = await listLetters(hr.org, req.query);
-  return { letters: hr.seesPay ? rows : rows.filter((l) => !PAY_LETTERS.has(l.kind)) };
+  return { letters: hr.seesPay ? rows : rows.filter((l) => !PAY_LETTERS.has(l.kind)).map(letterWithoutPay) };
 }));

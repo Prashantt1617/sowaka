@@ -10,14 +10,14 @@ import { useStore } from '../../store';
 import { canSeePay } from '../../access';
 import { LoadError, Pill, SkeletonLines } from '../../ui';
 import {
-  decideDateRequest, getJourney, isNotAvailable, journeyTaskAction, listTemplates, offerStatusAction, reviewDocument, updateJourney,
+  decideBankPfRequest, decideDateRequest, getJourney, isNotAvailable, journeyTaskAction, listTemplates, nudgeTask, offerStatusAction, reviewDocument, updateJourney,
 } from '../../../services/lifecycle';
 import type {
-  CandidateDocumentView, ConfirmationDecision, Day1Pass, JourneyDetail, LetterKind, LetterView, TaskView, TemplateListItem,
+  BankPfRequest, CandidateDocumentView, ConfirmationDecision, Day1Pass, JourneyDetail, LetterKind, LetterView, TaskView, TemplateListItem,
 } from '../../../services/lifecycle';
-import { FilePreview, NoteDialog, OwnerChip, Pick, Plant, Field } from './shared';
+import { FilePreview, NoteDialog, NudgeButton, OwnerChip, Pick, Plant, Field } from './shared';
 import {
-  DOCS_OPEN_KEY, PHASES, areaStyle, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, longDay, rupees, sectionLabel, shortDay, todayKey,
+  DOCS_OPEN_KEY, PHASES, areaStyle, nudgeLabel, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, longDay, rupees, sectionLabel, shortDay, todayKey,
 } from './format';
 import { FinaliseDialog, MarkJoinedDialog, OfferWizard } from './OfferDialogs';
 import { DecisionDialog, ProbationMonths } from './Probation';
@@ -65,6 +65,7 @@ type Dialog =
   | { kind: 'sendback'; doc: CandidateDocumentView }
   | { kind: 'date'; id: string; decision: 'approve' | 'decline'; day: string }
   | { kind: 'file'; id: string; name: string }
+  | { kind: 'bankpf'; decision: 'approve' | 'decline' }
   | null;
 
 function Section({ title, aside, children, id }: { title: string; aside?: ReactNode; children: ReactNode; id?: string }) {
@@ -151,6 +152,10 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   const decisionLetter: LetterKind | null = decision?.outcome === 'confirm' ? 'confirmation' : decision?.outcome === 'extend' ? 'extension' : null;
   const hasDecisionLetter = decisionLetter ? letters.some((l) => l.kind === decisionLetter && l.state !== 'draft') : true;
   const template = templates.find((t) => t.id === journey.templateId);
+  // The onboarding tab alone (IT, Admin) sees each document's status, never the files.
+  const seesDocuments = data.viewer?.seesDocuments !== false;
+  // Nudge: the first thing waiting that can be reminded and was not today.
+  const nudgeable = waiting.find((t) => t.canNudge && !t.nudgedToday);
 
   // The one thing to do next, as the board's card names it.
   let primary: { label: string; go: () => void } | null = null;
@@ -170,6 +175,12 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   if (status === 'offer_sent') secondary.push({ label: 'Mark declined', go: () => setDialog({ kind: 'status', action: 'decline' }), danger: true });
   if (['accepted', 'finalised', 'active', 'docs_approved'].includes(status)) secondary.push({ label: 'Not joining', go: () => setDialog({ kind: 'status', action: 'not-joining' }), danger: true });
   if (journey.column === 'final_month' && decision) secondary.push({ label: 'Change decision', go: () => setDialog({ kind: 'decision' }) });
+  if (nudgeable && !closed) {
+    secondary.push({
+      label: busy === 'nudge' ? 'Sending…' : nudgeLabel(nudgeable.ownerRole, nudgeable.ownerName),
+      go: () => void run('nudge', async () => { const r = await nudgeTask(journey.id, nudgeable.id); flash(r.channel === 'email' ? `Reminder emailed to ${r.to}` : `Reminder sent to ${r.to} in the app`); }),
+    });
+  }
 
   const offerFacts: [string, ReactNode][] = offer ? [
     ['Role', offer.fields.designation],
@@ -211,7 +222,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
       {(primary || secondary.length > 0) && (
         <div style={{ padding: '0 20px 16px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {primary && <button type="button" className="pd-btn primary" onClick={primary.go}>{primary.label}</button>}
-          {secondary.map((b) => <button key={b.label} type="button" className="pd-btn" onClick={b.go} style={b.danger ? { color: 'var(--bad)' } : undefined}>{b.label}</button>)}
+          {secondary.map((b) => <button key={b.label} type="button" className="pd-btn" onClick={b.go} disabled={Boolean(busy)} style={b.danger ? { color: 'var(--bad)' } : undefined}>{b.label}</button>)}
         </div>
       )}
 
@@ -221,10 +232,15 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
         ) : (
           <div style={{ display: 'grid', gap: 8 }}>
             {waiting.map((t) => (
-              <div key={t.id} style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: 10, alignItems: 'center', fontSize: 13 }}>
+              <div key={t.id} style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: '4px 10px', alignItems: 'center', fontSize: 13 }}>
                 <OwnerChip role={t.ownerRole} name={t.ownerName} />
                 <span style={{ overflowWrap: 'anywhere' }}>{t.title}</span>
                 <span style={{ color: t.late ? 'var(--bad)' : 'var(--ink-3)', whiteSpace: 'nowrap', fontWeight: t.late ? 500 : 400 }}>{dueText(t.dueAt, t.late)}</span>
+                {t.canNudge && !closed && (
+                  <span style={{ gridColumn: '2 / 4', justifySelf: 'end' }}>
+                    <NudgeButton compact journeyId={journey.id} taskId={t.id} role={t.ownerRole} name={t.ownerName} done={t.nudgedToday} />
+                  </span>
+                )}
               </div>
             ))}
           </div>
@@ -281,10 +297,17 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
         </Section>
       )}
 
+      {journey.bankPfRequest && (journey.bankPfRequest.status === 'pending' || journey.bankPfRequest.decidedAt) && (
+        <Section title="Bank and PF change">
+          <BankPfCard request={journey.bankPfRequest} pay={pay} busy={Boolean(busy)} onDecide={(d) => setDialog({ kind: 'bankpf', decision: d })} />
+        </Section>
+      )}
+
       {documents.length > 0 && (
         <Section id="lf-panel-docs" title={`Documents · ${approved} of ${documents.length} approved`}>
+          {!seesDocuments && <div className="pd-note" style={{ marginBottom: 10 }}>Only HR opens candidates’ documents and ID proofs. You see where each one is.</div>}
           <div style={{ display: 'grid', gap: 10 }}>
-            {documents.map((d) => <DocumentRow key={d.id} doc={d} busy={busy === `doc:${d.id}`}
+            {documents.map((d) => <DocumentRow key={d.id} doc={d} busy={busy === `doc:${d.id}`} canReview={seesDocuments}
               onOpen={(f) => setDialog({ kind: 'file', id: f.id, name: f.name })}
               onApprove={() => void run(`doc:${d.id}`, () => reviewDocument(d.id, 'approve'), `${d.label} approved`)}
               onSendBack={() => setDialog({ kind: 'sendback', doc: d })} />)}
@@ -385,12 +408,50 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
           onClose={() => setDialog(null)}
           onConfirm={async (note) => { await decideDateRequest(dialog.id, dialog.decision, note || undefined); setDialog(null); flash(dialog.decision === 'approve' ? 'New joining date approved' : 'Request declined'); changed(); }} />
       )}
+      {dialog?.kind === 'bankpf' && (
+        <NoteDialog
+          title={dialog.decision === 'approve' ? 'Approve the bank and PF change?' : 'Decline the bank and PF change'}
+          sub={dialog.decision === 'approve' ? 'The new details go into payroll from the next run. They are told in the app.' : 'Payroll keeps the details it has. They see your note in the app.'}
+          placeholder={dialog.decision === 'approve' ? 'Note (optional)' : 'What they should do instead (optional)'}
+          confirm={dialog.decision === 'approve' ? 'Approve' : 'Decline'} tone={dialog.decision === 'approve' ? 'primary' : 'danger'}
+          onClose={() => setDialog(null)}
+          onConfirm={async (note) => { await decideBankPfRequest(journey.id, dialog.decision, note || undefined); setDialog(null); flash(dialog.decision === 'approve' ? 'Bank and PF details updated' : 'Change declined'); changed(); }} />
+      )}
       {dialog?.kind === 'file' && <FilePreview fileId={dialog.id} name={dialog.name} onClose={() => setDialog(null)} />}
     </DrawerShell>
   );
 }
 
-function DocumentRow({ doc, busy, onOpen, onApprove, onSendBack }: { doc: CandidateDocumentView; busy: boolean; onOpen: (f: { id: string; name: string }) => void; onApprove: () => void; onSendBack: () => void }) {
+/** The week-1 bank / PF change the joiner asked for: payroll keeps the old details until someone with payroll access approves. */
+function BankPfCard({ request, pay, busy, onDecide }: { request: BankPfRequest; pay: boolean; busy: boolean; onDecide: (d: 'approve' | 'decline') => void }) {
+  const c = request.changes;
+  const pending = request.status === 'pending';
+  return (
+    <div style={{ border: '1px solid var(--line)', borderRadius: 14, padding: '10px 12px', display: 'grid', gap: 8, fontSize: 13 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <b style={{ fontWeight: 500, flex: 1 }}>{pending ? `Asked ${shortDay(request.requestedAt)}` : request.status === 'approved' ? 'Approved' : 'Declined'}</b>
+        <Pill label={pending ? 'Waiting for HR' : request.status === 'approved' ? 'Approved' : 'Declined'} tone={pending ? { bg: 'var(--attn-bg)', fg: 'var(--attn)' } : request.status === 'approved' ? { bg: 'var(--ok-bg)', fg: 'var(--ok)' } : { bg: 'var(--surface-2)', fg: 'var(--ink-2)' }} fontSize={11} padding="2px 9px" />
+      </div>
+      <Facts rows={[
+        ['Bank', c.bankName],
+        ['IFSC', c.ifsc],
+        ['Account', c.accountLast4 ? `•••• ${c.accountLast4}` : ''],
+        ['UAN', c.uanLast4 ? `•••• ${c.uanLast4}` : ''],
+        ['Their note', request.note],
+        ['Decided', request.decidedAt ? `${shortDay(request.decidedAt)}${request.decidedByName ? ` by ${request.decidedByName}` : ''}` : ''],
+        ['Your note', request.hrNote],
+      ]} />
+      {pending && (pay ? (
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" className="pd-btn sm primary" disabled={busy} onClick={() => onDecide('approve')}>Approve</button>
+          <button type="button" className="pd-btn sm" disabled={busy} onClick={() => onDecide('decline')}>Decline</button>
+        </div>
+      ) : <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Someone with payroll access approves or declines this.</div>)}
+    </div>
+  );
+}
+
+function DocumentRow({ doc, busy, canReview, onOpen, onApprove, onSendBack }: { doc: CandidateDocumentView; busy: boolean; canReview: boolean; onOpen: (f: { id: string; name: string }) => void; onApprove: () => void; onSendBack: () => void }) {
   const st = DOC_STATUS[doc.status] ?? DOC_STATUS.todo;
   return (
     <div style={{ border: '1px solid var(--line)', borderRadius: 14, padding: '10px 12px', display: 'grid', gap: 6 }}>
@@ -409,7 +470,7 @@ function DocumentRow({ doc, busy, onOpen, onApprove, onSendBack }: { doc: Candid
       )}
       {doc.hrNote && doc.status === 'sent_back' && <div style={{ fontSize: 12.5, color: 'var(--warn)', overflowWrap: 'anywhere' }}>Your note: {doc.hrNote}</div>}
       {doc.reviewedAt && doc.status === 'approved' && <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>Approved {shortDay(doc.reviewedAt)}{doc.reviewedByName ? ` by ${doc.reviewedByName}` : ''}</div>}
-      {doc.status === 'in_review' && (
+      {doc.status === 'in_review' && canReview && (
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" className="pd-btn sm primary" onClick={onApprove} disabled={busy}>{busy ? 'Approving…' : 'Approve'}</button>
           <button type="button" className="pd-btn sm" onClick={onSendBack} disabled={busy}>Send back with a note</button>

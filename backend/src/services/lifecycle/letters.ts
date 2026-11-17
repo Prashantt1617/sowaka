@@ -16,12 +16,13 @@
 import { randomUUID } from 'node:crypto';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { candidateAccounts, journeys, letters, letterTemplates, lifecycleFiles, offers, users } from '../../config/db';
-import type { Journey, Letter, LetterKind, LetterTemplate, OfferVersion } from '../../models/lifecycle.model';
+import type { Journey, Letter, LetterAttachment, LetterKind, LetterTemplate, OfferVersion } from '../../models/lifecycle.model';
 import {
   addDays, companyAddress, companyDisplayName, companyOf, fireOnce, forgetFired, formatDay, formatRupees, istDate, mails, portalLink, sendLifecycleEmail,
 } from './emails';
 import { logger } from '../../utils/logger';
 import { completeTask, reopenTask } from './engine';
+import type { LifecycleAttachment } from './emails';
 import { checkUpload, LifecycleOfferError, pdfPageCount, readFileBytes, sniffContentType, storeFile } from './files';
 
 export const LETTER_KINDS: LetterKind[] = ['offer', 'appointment', 'nda', 'confirmation', 'extension', 'relieving'];
@@ -195,7 +196,11 @@ export async function mergeValues(org: string, input: { kind?: unknown; journeyI
   if (!LETTER_KINDS.includes(kind)) throw new LifecycleOfferError(400, 'Unknown letter kind');
   const journeyId = typeof input.journeyId === 'string' && input.journeyId ? input.journeyId : undefined;
   let userId = typeof input.userId === 'string' && input.userId ? input.userId : undefined;
-  const journey = journeyId ? await journeys().findOne({ id: journeyId, org }) : null;
+  // A confirmation or extension letter picked by the employee reads their onboarding journey (probation, decision).
+  const journey = journeyId ? await journeys().findOne({ id: journeyId, org })
+    : userId && (kind === 'confirmation' || kind === 'extension')
+      ? await journeys().find({ org, kind: 'onboarding', userId, closedAt: { $exists: false } }).sort({ createdAt: -1 }).limit(1).next()
+      : null;
   if (journeyId && !journey) throw new LifecycleOfferError(404, 'Joiner not found');
   userId ??= journey?.userId;
   const user = userId ? await users().findOne({ userId, org }, { projection: { _id: 0, profilePhotoUrl: 0 } }) : null;
@@ -240,8 +245,21 @@ export async function mergeValues(org: string, input: { kind?: unknown; journeyI
     extensionUntil: endsOn && extendedBy ? formatDay(addMonths(endsOn, extendedBy)) : '',
     lastWorkingDay: formatDay(user?.exit?.lastWorkingDay),
     hrName,
+    // Where a letter to someone leaving goes by default (CONTRACT decision 2 copies it at Mark joined).
+    personalEmail: user?.personalEmail ?? journey?.candidate?.personalEmail ?? '',
   };
   return { values, missing: missingFields(kind, values) };
+}
+
+/** Merge values that state pay (CTC, salary): for people who may see pay only. */
+export const PAY_VALUE = /ctc|salary/i;
+export function valuesWithoutPay(values: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(values).filter(([k]) => !PAY_VALUE.test(k)));
+}
+/** A letter row as someone without pay access may see it: no pay values, no salary-breakup attachment. */
+export function letterWithoutPay<T extends Pick<Letter, 'values' | 'email'>>(letter: T): T {
+  const email = letter.email ? { ...letter.email, ...(letter.email.attachments ? { attachments: letter.email.attachments.filter((a) => a.kind !== 'salary_breakup') } : {}) } : undefined;
+  return { ...letter, values: valuesWithoutPay(letter.values ?? {}), ...(email ? { email } : {}) };
 }
 
 export function missingFields(kind: LetterKind, values: Record<string, string>): string[] {
@@ -412,11 +430,13 @@ export async function uploadLetterPdf(hr: { org: string }, letterId: string, fil
 export async function sendLetter(
   hr: { org: string; userId: string; name: string; seesPay: boolean },
   letterId: string,
-  input: { to?: unknown; cc?: unknown; subject?: unknown; body?: unknown; withPortalLink?: unknown },
+  input: { to?: unknown; cc?: unknown; subject?: unknown; body?: unknown; withPortalLink?: unknown; attachments?: unknown },
 ): Promise<Letter> {
   const letter = await letters().findOne({ id: letterId, org: hr.org });
   if (!letter) throw new LifecycleOfferError(404, 'Letter not found');
   if (!letter.pdfFileId) throw new LifecycleOfferError(409, 'Generate the PDF first');
+  const extras = await cleanAttachments(hr, input.attachments);
+  const extraFiles = await attachmentBytes(hr.org, extras);
   const missing = missingFields(letter.kind, letter.values);
   if (missing.length) throw new LifecycleOfferError(409, `Fill the missing details first: ${missing.map((k) => MERGE_FIELDS[k] ?? k).join(', ')}`);
   const to = String(input.to ?? '').trim().toLowerCase();
@@ -426,7 +446,8 @@ export async function sendLetter(
   const body = String(input.body ?? '').trim();
   if (!body) throw new LifecycleOfferError(400, 'Write the email');
   if (subject.length > 200 || body.length > 20_000) throw new LifecycleOfferError(400, 'The email is too long');
-  const withPortalLink = input.withPortalLink === true;
+  // The offer's portal link is on unless HR turns it off; other letters add it only when asked.
+  const withPortalLink = letter.kind === 'offer' ? input.withPortalLink !== false : input.withPortalLink === true;
   const now = new Date();
   if (letter.kind === 'offer' && letter.journeyId) {
     const { sendOffer } = await import('./offers');
@@ -435,16 +456,132 @@ export async function sendLetter(
     if (offer && v?.status === 'draft' && !v.pdfFileId) {
       await offers().updateOne({ id: offer.id, 'versions.version': v.version }, { $set: { 'versions.$.pdfFileId': letter.pdfFileId } });
     }
-    await sendOffer(hr, letter.journeyId, { subject, body, cc });
+    await sendOffer(hr, letter.journeyId, { subject, body, cc, withPortalLink, attachments: extraFiles });
   } else {
     const file = await lifecycleFiles().findOne({ id: letter.pdfFileId, org: hr.org });
     if (!file) throw new LifecycleOfferError(409, 'Generate the PDF first');
     const company = await companyOf(hr.org);
     const link = withPortalLink && letter.journeyId && (await candidateAccounts().findOne({ journeyId: letter.journeyId })) ? portalLink('/', hr.org) : null;
     await sendLifecycleEmail(hr.org, to, subject, mails.letter(companyDisplayName(company, hr.org), body, link),
-      [{ filename: file.name, content: await readFileBytes(file), contentType: 'application/pdf' }], { cc });
+      [{ filename: file.name, content: await readFileBytes(file), contentType: 'application/pdf' }, ...extraFiles], { cc });
   }
-  return (await letters().findOneAndUpdate({ id: letterId }, { $set: { email: { to, ...(cc.length ? { cc } : {}), subject, body, sentAt: now, withPortalLink } } }, { returnDocument: 'after', projection: { _id: 0 } }))!;
+  const sent = (await letters().findOneAndUpdate({ id: letterId }, { $set: { email: {
+    to, ...(cc.length ? { cc } : {}), subject, body, sentAt: now, withPortalLink, ...(extras.length ? { attachments: extras } : {}),
+  } } }, { returnDocument: 'after', projection: { _id: 0 } }))!;
+  await closeLetterTask(hr, sent);
+  return sent;
+}
+
+/**
+ * A sent letter does its task: a confirmation or extension letter (matching
+ * the decision) is the journey's `confirmation_letter`, which opens the app's
+ * reveal, and the decision keeps the letter (the reveal's letterUrl); a
+ * relieving letter is the exit's `relieving_letter`.
+ */
+export async function closeLetterTask(hr: { userId: string; name: string }, letter: Letter): Promise<void> {
+  const by = { userId: hr.userId, name: hr.name };
+  if (letter.kind === 'confirmation' || letter.kind === 'extension') {
+    const journey = letter.journeyId
+      ? await journeys().findOne({ id: letter.journeyId, org: letter.org })
+      : letter.userId ? await journeys().find({ org: letter.org, kind: 'onboarding', userId: letter.userId, closedAt: { $exists: false } }).sort({ createdAt: -1 }).limit(1).next() : null;
+    const outcome = journey?.probation?.decision?.outcome;
+    if (!journey || !outcome) return;
+    if ((letter.kind === 'confirmation') !== (outcome === 'confirm') || (letter.kind === 'extension') !== (outcome === 'extend')) return;
+    await journeys().updateOne({ id: journey.id }, { $set: { 'probation.decision.letterId': letter.id } });
+    await completeTask(journey.id, 'confirmation_letter', by);
+    return;
+  }
+  if (letter.kind === 'relieving') {
+    const userId = letter.userId ?? (letter.journeyId ? (await journeys().findOne({ id: letter.journeyId }, { projection: { _id: 0, userId: 1 } }))?.userId : undefined);
+    if (!userId) return;
+    const user = await users().findOne({ userId, org: letter.org }, { projection: { _id: 0, exit: 1 } });
+    const journeyId = user?.exit?.offboarding?.journeyId
+      ?? (await journeys().find({ org: letter.org, kind: 'offboarding', userId, closedAt: { $exists: false } }).sort({ createdAt: -1 }).limit(1).next())?.id;
+    if (journeyId) await completeTask(journeyId, 'relieving_letter', by);
+  }
+}
+
+const ATTACHMENT_KINDS: LetterAttachment['kind'][] = ['salary_breakup', 'joining_checklist', 'policies', 'other'];
+
+/** HR's extra files for a letter's email: files of this company, at most 5; a salary breakup needs pay access. */
+async function cleanAttachments(hr: { org: string; seesPay: boolean }, raw: unknown): Promise<LetterAttachment[]> {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) throw new LifecycleOfferError(400, 'attachments is a list');
+  if (raw.length > 5) throw new LifecycleOfferError(400, 'At most 5 extra attachments');
+  const out: LetterAttachment[] = [];
+  for (const item of raw) {
+    const a = (item ?? {}) as Record<string, unknown>;
+    const kind = (ATTACHMENT_KINDS.includes(a.kind as LetterAttachment['kind']) ? a.kind : 'other') as LetterAttachment['kind'];
+    if (kind === 'salary_breakup' && !hr.seesPay) throw new LifecycleOfferError(403, 'The salary breakup needs access to pay');
+    const file = await lifecycleFiles().findOne({ id: String(a.fileId ?? ''), org: hr.org }, { projection: { _id: 0, id: 1, name: 1 } });
+    if (!file) throw new LifecycleOfferError(404, 'Attachment not found');
+    if (!out.some((x) => x.fileId === file.id)) out.push({ fileId: file.id, name: file.name, kind });
+  }
+  return out;
+}
+
+/** The extra files an email carries, checked (this company, pay for a salary breakup) and read. */
+export async function resolveAttachments(hr: { org: string; seesPay: boolean }, raw: unknown): Promise<{ list: LetterAttachment[]; files: LifecycleAttachment[] }> {
+  const list = await cleanAttachments(hr, raw);
+  return { list, files: await attachmentBytes(hr.org, list) };
+}
+
+async function attachmentBytes(org: string, list: LetterAttachment[]): Promise<LifecycleAttachment[]> {
+  const out: LifecycleAttachment[] = [];
+  for (const a of list) {
+    const file = await lifecycleFiles().findOne({ id: a.fileId, org });
+    if (!file) throw new LifecycleOfferError(404, 'Attachment not found');
+    out.push({ filename: file.name, content: await readFileBytes(file), contentType: file.contentType });
+  }
+  return out;
+}
+
+/** An extra file for a letter's email (H3c suggested extras), uploaded from the dashboard. */
+export async function uploadLetterAttachment(hr: { org: string; seesPay: boolean }, input: { journeyId?: unknown; kind?: unknown }, file: { originalname?: string; buffer: Buffer } | undefined): Promise<{ attachment: LetterAttachment; size: number; contentType: string }> {
+  if (!file) throw new LifecycleOfferError(400, 'Attach the file as "file"');
+  const kind = (ATTACHMENT_KINDS.includes(input.kind as LetterAttachment['kind']) ? input.kind : 'other') as LetterAttachment['kind'];
+  if (kind === 'salary_breakup' && !hr.seesPay) throw new LifecycleOfferError(403, 'The salary breakup needs access to pay');
+  const journeyId = typeof input.journeyId === 'string' && input.journeyId ? input.journeyId : undefined;
+  if (journeyId && !(await journeys().findOne({ id: journeyId, org: hr.org }, { projection: { _id: 1 } }))) throw new LifecycleOfferError(404, 'Joiner not found');
+  const contentType = checkUpload(file.buffer);
+  const name = String(file.originalname || 'Attachment').replace(/[\r\n"]/g, '').slice(0, 120) || 'Attachment';
+  const stored = await storeFile(hr.org, journeyId, { name, contentType, bytes: file.buffer }, 'hr');
+  return { attachment: { fileId: stored.id, name: stored.name, kind }, size: file.buffer.length, contentType };
+}
+
+/** H3c's Save draft: the email (to, cc, subject, body, portal link, extra files) is kept on the letter until it is sent. */
+export async function saveLetterDraft(
+  hr: { org: string; seesPay: boolean },
+  letterId: string,
+  input: { to?: unknown; cc?: unknown; subject?: unknown; body?: unknown; withPortalLink?: unknown; attachments?: unknown },
+): Promise<Letter> {
+  const letter = await letters().findOne({ id: letterId, org: hr.org });
+  if (!letter) throw new LifecycleOfferError(404, 'Letter not found');
+  if (letter.email?.sentAt) throw new LifecycleOfferError(409, 'This letter has been sent; make a new one instead');
+  const to = String(input.to ?? '').trim().toLowerCase().slice(0, 200);
+  const cc = Array.isArray(input.cc) ? input.cc.map((a) => String(a).trim().toLowerCase()).filter((a) => /^\S+@\S+\.\S+$/.test(a)).slice(0, 10) : [];
+  const subject = String(input.subject ?? '').slice(0, 200);
+  const body = String(input.body ?? '').slice(0, 20_000);
+  const attachments = await cleanAttachments(hr, input.attachments);
+  const email: NonNullable<Letter['email']> = {
+    to, ...(cc.length ? { cc } : {}), subject, body, ...(input.withPortalLink !== undefined ? { withPortalLink: input.withPortalLink === true } : {}),
+    ...(attachments.length ? { attachments } : {}), savedAt: new Date(),
+  };
+  return (await letters().findOneAndUpdate({ id: letterId }, { $set: { email } }, { returnDocument: 'after', projection: { _id: 0 } }))!;
+}
+
+/**
+ * GET /lifecycle/onboarding/letters/:id/pdf — an employee's own letter (the
+ * confirmation reveal's letterUrl), once HR has sent or they have signed it.
+ */
+export async function letterPdfForEmployee(org: string, userId: string, letterId: string): Promise<{ name: string; bytes: Buffer }> {
+  const letter = await letters().findOne({ id: letterId, org });
+  const mine = !!letter && (letter.userId === userId
+    || (!!letter.journeyId && !!(await journeys().findOne({ id: letter.journeyId, org, userId }, { projection: { _id: 1 } }))));
+  if (!letter || !mine || !(letter.email?.sentAt || letter.signature)) throw new LifecycleOfferError(404, 'Letter not found');
+  const file = await lifecycleFiles().findOne({ id: letter.signedPdfFileId ?? letter.pdfFileId, org });
+  if (!file) throw new LifecycleOfferError(404, 'Letter not found');
+  return { name: file.name, bytes: await readFileBytes(file) };
 }
 
 // ─── Journey letters: unlock, regenerate, letters-ready mail ────────────────
@@ -686,3 +823,67 @@ export const pdfLibStamper: PdfStamper = {
 export let pdfStamper: PdfStamper = pdfLibStamper;
 /** For tests: swap the stamper. */
 export function setPdfStamper(stamper: PdfStamper): void { pdfStamper = stamper; }
+
+// ─── Annexure A: the salary breakup ─────────────────────────────────────────
+
+export interface SalaryBreakup {
+  templates: Array<{ code: string; name: string }>;
+  templateCode?: string;
+  /** Rupees. `lines` add up to the yearly CTC. */
+  breakup: null | {
+    templateName: string; ctcAnnual: number; ctcMonthly: number; grossMonthly: number;
+    lines: Array<{ name: string; group: 'earning' | 'reimbursement' | 'benefit' | 'employer'; monthly: number; annual: number }>;
+  };
+  /** Why there is no breakup: no salary template set up, no CTC, or the payroll rules are not set up for this year. */
+  reason?: string;
+}
+
+/**
+ * The offer's CTC split by one of the company's salary templates (Payroll ›
+ * Salary templates), worked out by the payroll calculator as it would pay a
+ * month: Annexure A of the offer and appointment letters. Every rate comes
+ * from the company's payroll set-up; with none, there is no breakup and the
+ * reason says what to set up. Pay: the routes allow it only to people who may see pay.
+ */
+export async function salaryBreakup(org: string, journeyId: string, templateCode?: unknown): Promise<SalaryBreakup> {
+  const { salaryTemplates, salaryStructures } = await import('../../config/db');
+  const journey = await journeys().findOne({ id: journeyId, org });
+  if (!journey) throw new LifecycleOfferError(404, 'Joiner not found');
+  const offer = await offers().findOne({ journeyId, org });
+  const fields = offer?.versions[offer.versions.length - 1]?.fields;
+  const active = await salaryTemplates().find({ org, active: true }, { projection: { _id: 0, code: 1, name: 1 } }).sort({ name: 1 }).toArray();
+  const templates = active.map((t) => ({ code: t.code, name: t.name }));
+  if (!templates.length) return { templates, breakup: null, reason: 'No salary template is set up yet (Payroll › Salary templates)' };
+  let code = typeof templateCode === 'string' && templates.some((t) => t.code === templateCode) ? templateCode : undefined;
+  if (!code) {
+    // The template most of the company is on.
+    const used = await salaryStructures().aggregate<{ _id: string; n: number }>([
+      { $match: { org, salaryTemplateCode: { $in: templates.map((t) => t.code) } } }, { $group: { _id: '$salaryTemplateCode', n: { $sum: 1 } } }, { $sort: { n: -1 } }, { $limit: 1 },
+    ]).toArray();
+    code = used[0]?._id ?? templates[0].code;
+  }
+  if (!fields?.ctc) return { templates, templateCode: code, breakup: null, reason: 'The offer has no CTC yet' };
+  const { computeStructureFor } = await import('../salaryStructure.service');
+  try {
+    const employee = { userId: `candidate:${journeyId}`, org, name: journey.candidate?.name ?? '', location: fields.location ?? journey.location } as never;
+    const { computed, template } = await computeStructureFor(org, `candidate:${journeyId}`, {
+      org, userId: `candidate:${journeyId}`, salaryTemplateCode: code, annualCtcPaise: Math.round(fields.ctc * 100), status: 'draft', createdAt: new Date(), updatedAt: new Date(),
+    } as never, employee);
+    const r = (paise: number) => Math.round(paise / 100);
+    const line = (group: 'earning' | 'reimbursement' | 'benefit') => (l: { payslipName: string; name: string; monthlyPaise: number; annualPaise: number }) => ({ name: l.payslipName || l.name, group, monthly: r(l.monthlyPaise), annual: r(l.annualPaise) });
+    const lines = [
+      ...computed.earnings.filter((l) => l.monthlyPaise > 0).map(line('earning')),
+      ...computed.reimbursements.filter((l) => l.monthlyPaise > 0).map(line('reimbursement')),
+      ...computed.benefits.filter((l) => l.monthlyPaise > 0).map(line('benefit')),
+      ...(computed.includedInCtcPaise > 0 ? [{ name: 'Employer contributions (PF, ESI and others)', group: 'employer' as const, monthly: r(computed.includedInCtcPaise), annual: r(computed.includedInCtcPaise * 12) }] : []),
+    ];
+    return {
+      templates, templateCode: code,
+      breakup: { templateName: template.name, ctcAnnual: fields.ctc, ctcMonthly: r(computed.monthlyCtcPaise), grossMonthly: r(computed.grossMonthlyPaise), lines },
+    };
+  } catch (error) {
+    const e = error as { statusCode?: number; message?: string };
+    if (typeof e.statusCode === 'number' && e.statusCode < 500) return { templates, templateCode: code, breakup: null, reason: e.message ?? 'The breakup could not be worked out' };
+    throw error;
+  }
+}

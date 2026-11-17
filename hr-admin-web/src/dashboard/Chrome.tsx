@@ -22,6 +22,7 @@ import { PAGE_ACTIONS_ID } from './ds';
 import { BULK_VIEWS, SETUP_VIEWS } from './setupGroups';
 import { useLifecycleOn } from './lifecycleSwitch';
 import { TEAM_NAME, useOffboardingCount } from './views/lifecycle/offboarding/badge';
+import { useOnboardingBadge } from './onboardingBadge';
 
 /** `hidden`: not shown in the sidebar, but still part of its section's access (Accesses grants it). */
 export type NavItem = { key: View; label: string; hidden?: boolean };
@@ -309,6 +310,8 @@ export function Sidebar() {
   const supportCount = useSupportBadge(canOpen(user, 'support') ? user?.supportRole : null);
   // FBP bills waiting for HR: counted under FBP requests, not under reimbursements.
   const fbpPending = useFbpBadge(canOpen(user, 'fbprequests'));
+  // Onboarding: joiners who need HR now or are late (red), where the lifecycle is on.
+  const onboardingPending = useOnboardingBadge(lifecycle === true && canOpen(user, 'onboarding'));
   // What Suwi noticed: requests waiting past the limit turn the Requests counts red (Claims already are).
   const overdue = useSuwiNotices().notices.some((n) => n.key === 'requests_overdue');
   // Offboarding: cards that need you, and late ones.
@@ -336,6 +339,8 @@ export function Sidebar() {
         return fbpPending === null ? null : <CountBadge value={fbpPending} danger={fbpPending > 0} />;
       case 'offboarding':
         return offboardingCount === null ? null : <CountBadge value={offboardingCount.count} danger={offboardingCount.count > 0} />;
+      case 'onboarding':
+        return onboardingPending === null ? null : <CountBadge value={onboardingPending} danger={onboardingPending > 0} />;
       default:
         return SOON[key] ? <SoonBadge /> : null;
     }

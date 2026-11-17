@@ -3,15 +3,16 @@
 // and label helpers. Drawn with the dashboard's own tokens and pd-* classes
 // so the lifecycle pages read like the rest of the dashboard.
 import { useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Pill, Spinner } from '../../ui';
 import { iconBtn } from '../../ds';
 import { IconClose } from '../../icons';
 import type { JourneyFlag, OwnerRole, PlantState } from '../../../services/lifecycle';
-import { fetchLifecycleFile } from '../../../services/lifecycle';
+import { fetchLifecycleFile, nudgeTask } from '../../../services/lifecycle';
+import { useStore } from '../../store';
 import '../people.css';
-import { areaStyle, errText, FLAG, inputStyle, labelStyle, OWNER_LABEL, OWNER_TONE } from './format';
+import { areaStyle, errText, FLAG, flagLabel, inputStyle, labelStyle, nudgeLabel, OWNER_LABEL, OWNER_TONE } from './format';
 
 /** Who a task waits on: Employee (Arjun), HR · you, Automatic. */
 export function OwnerChip({ role, name, you }: { role: OwnerRole; name?: string; you?: boolean }) {
@@ -24,10 +25,11 @@ export function OwnerChip({ role, name, you }: { role: OwnerRole; name?: string;
   );
 }
 
-export function FlagPill({ flag }: { flag: JourneyFlag }) {
+/** A card's flag; Quiet and Expires soon carry their days ("Quiet 4 days", "Expires in 4 days") when the card has them. */
+export function FlagPill({ flag, card }: { flag: JourneyFlag; card?: { quietDays?: number; expiresInDays?: number } }) {
   const f = FLAG[flag];
   if (!f) return null;
-  return <Pill label={f.label} tone={f.tone} fontSize={11} padding="2px 9px" />;
+  return <Pill label={flagLabel(flag, card)} tone={f.tone} fontSize={11} padding="2px 9px" />;
 }
 
 // —— Plant ———————————————————————————————————————————————————————————————
@@ -225,5 +227,41 @@ export function ConfirmDialog({ title, body, confirm, onClose, onConfirm }: { ti
       <div>{body}</div>
       {error && <div role="alert" style={{ color: 'var(--bad)' }}>{error}</div>}
     </Modal>
+  );
+}
+
+// —— Nudge / Remind ——————————————————————————————————————————————————————
+
+/**
+ * Reminds whoever a task waits on (email to a candidate, a push to the joiner
+ * or the manager), once per task per day: after that it reads "Reminded today".
+ */
+export function NudgeButton({ journeyId, taskId, role, name, done, onDone, compact }: {
+  journeyId: string; taskId: string; role: OwnerRole; name?: string; done?: boolean; onDone?: () => void; compact?: boolean;
+}) {
+  const { flash } = useStore();
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(Boolean(done));
+  useEffect(() => { if (done) setSent(true); }, [done]);
+  const go = async (e: MouseEvent) => {
+    e.stopPropagation();
+    setBusy(true);
+    try {
+      const r = await nudgeTask(journeyId, taskId);
+      setSent(true);
+      flash(r.channel === 'email' ? `Reminder emailed to ${r.to}` : `Reminder sent to ${r.to} in the app`);
+      onDone?.();
+    } catch (err) {
+      const msg = errText(err, 'Could not send the reminder');
+      if (/already reminded/i.test(msg)) setSent(true);
+      flash(msg, 'error');
+    } finally { setBusy(false); }
+  };
+  if (sent) return <span style={{ fontSize: compact ? 11.5 : 12, color: 'var(--ink-3)', whiteSpace: 'nowrap' }} title="One reminder a day per task">Reminded today</span>;
+  return (
+    <button type="button" className={`pd-btn sm${compact ? ' ghost' : ''}`} onClick={(e) => void go(e)} disabled={busy}
+      style={compact ? { padding: '2px 8px', minHeight: 0, height: 24, fontSize: 11.5 } : undefined}>
+      {busy ? 'Sending…' : nudgeLabel(role, name)}
+    </button>
   );
 }

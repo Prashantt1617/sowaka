@@ -696,7 +696,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   await db.authSessions().insertOne({ tokenHash: createHash('sha256').update(itSession).digest('hex'), userId: 'it', createdAt: new Date(), expiresAt: new Date(Date.now() + 86_400_000) } as never);
   const offerPdfId = (await db.offers().findOne({ journeyId: A }))!.versions[0].pdfFileId!;
   ok('staff without pay access cannot download an offer PDF (CTC)', (await call(lifecycleOfferRouter as never, 'GET', `/files/${offerPdfId}`, itSession)).status === 403);
-  ok('…but can open a candidate document', (await call(lifecycleOfferRouter as never, 'GET', `/files/${idFile.id}`, itSession)).status === 200);
+  ok('…nor a candidate document: the onboarding tab alone sees status only (HR opens the files)', (await call(lifecycleOfferRouter as never, 'GET', `/files/${idFile.id}`, itSession)).status === 403);
   ok('…and cannot read an appointment letter’s merge values', (await call(lifecycleOfferRouter as never, 'POST', `/letters/${appt.id}/send`, itSession, { to: 'x@y.co', body: 'x' })).status === 403);
   const noTab = await call(lifecycleOfferRouter as never, 'GET', '/letter-templates', itSession);
   ok('the onboarding tab opens letter templates; offboarding-only staff would too', noTab.status === 200);

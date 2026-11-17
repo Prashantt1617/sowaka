@@ -196,7 +196,12 @@ async function main() {
   await save('manager_probation_review', await app.managerProbationMonth(MGR, J5.id, 1, { review: { text: 'Great start', feedback: ['Great start', 'Keep going'], askAck: true, nextGoals: ['Pair with two teams'] } }));
   await save('manager_joiner_probation', await app.joinerForManager(MGR, J5.id));
   await probation.recordDecision(J5.id, HR, { outcome: 'confirm', salary: 1_600_000, designation: 'Senior Product Designer', reportingToUserId: 'mgr' });
-  await board.actOnTaskByHr(ORG, J5.id, byKey(await engine.tasksOf(J5.id), 'confirmation_letter').id, { action: 'done' }, HR);
+  // HR sends the confirmation letter from Documents: that does the letter task and gives the reveal its letterUrl.
+  const letters = await import('../services/lifecycle/letters');
+  const confirmation = await letters.createLetter(HR, { kind: 'confirmation', journeyId: J5.id, values: { employeeId: 'SWK-1042' } });
+  await letters.uploadLetterPdf(HR, confirmation.id, { originalname: 'Confirmation letter - Ishita Kaur.pdf', buffer: Buffer.from('%PDF-1.4\n% confirmation\n%%EOF\n') });
+  await letters.sendLetter({ ...HR, seesPay: true }, confirmation.id, { to: 'ishita.kaur@example.com', subject: 'Your confirmation letter', body: 'Congratulations on completing your probation.' });
+  ok('the confirmation letter did the letter task', byKey(await engine.tasksOf(J5.id), 'confirmation_letter').status === 'done');
   await save('probation_final_month', await app.probationForMe(ISHITA));
   await save('reveal_ready', await app.revealForMe(ISHITA));
   await save('reveal_seen', await app.revealSeenForMe(ISHITA));

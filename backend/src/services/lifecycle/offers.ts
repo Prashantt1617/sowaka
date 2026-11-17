@@ -28,6 +28,7 @@ import { allRequiredApproved } from './documents';
 import {
   addDays, companyDisplayName, companyOf, formatDay, hrContactFor, isDay, istDate, lifecycleEnabled, mails, portalLink, sendLifecycleEmail,
 } from './emails';
+import type { LifecycleAttachment } from './emails';
 import { closeJourney, completeTask, createOnboardingJourney, moveTj, onJoined, reopenTask, setJourneyStatus } from './engine';
 import { checkUpload, LifecycleOfferError, pdfPageCount, readFileBytes, storeFile } from './files';
 import { regenerateAppointmentLetters } from './letters';
@@ -340,7 +341,11 @@ export async function uploadOfferPdf(hr: HrActor, journeyId: string, file: { ori
 }
 
 /** Emails the offer (PDF attached, the personal link) and marks the version sent. Re-sending a sent version issues a new link. */
-export async function sendOffer(hr: HrActor, journeyId: string, input: { subject?: unknown; body?: unknown; cc?: unknown }, now = new Date()): Promise<OfferView> {
+/**
+ * `withPortalLink: false` leaves the "View and accept your offer" button out
+ * (H3c's switch, on by default); `attachments` go beside the offer PDF.
+ */
+export async function sendOffer(hr: HrActor, journeyId: string, input: { subject?: unknown; body?: unknown; cc?: unknown; withPortalLink?: unknown; attachments?: LifecycleAttachment[] }, now = new Date()): Promise<OfferView> {
   const journey = await journeyOf(hr.org, journeyId);
   if (!PRE_JOIN_OPEN.has(String(journey.status))) throw new LifecycleOfferError(409, 'This offer is closed');
   const offer = await offerOf(journeyId);
@@ -368,8 +373,8 @@ export async function sendOffer(hr: HrActor, journeyId: string, input: { subject
   await completeTask(journeyId, 'send_offer', { userId: hr.userId, name: hr.name });
   const bytes = await readFileBytes(file);
   const contact = await hrContactFor(journey, company);
-  await sendLifecycleEmail(journey.org, journey.candidate!.personalEmail, subject, mails.offer(companyName, body, portalLink(`/o/${token}`)),
-    [{ filename: file.name.endsWith('.pdf') ? file.name : `${file.name}.pdf`, content: bytes, contentType: 'application/pdf' }],
+  await sendLifecycleEmail(journey.org, journey.candidate!.personalEmail, subject, mails.offer(companyName, body, input.withPortalLink === false ? null : portalLink(`/o/${token}`)),
+    [{ filename: file.name.endsWith('.pdf') ? file.name : `${file.name}.pdf`, content: bytes, contentType: 'application/pdf' }, ...(input.attachments ?? [])],
     { cc, replyTo: contact.email || undefined });
   return (await offerView(journeyId))!;
 }

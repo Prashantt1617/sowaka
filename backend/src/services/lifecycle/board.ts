@@ -22,6 +22,7 @@ import { journeyLettersView } from './letters';
 import { offerView } from './offers';
 import { probationOf } from './probation';
 import { templateForJourney } from './templates';
+import { nudgedToday, nudgeTarget } from './nudges';
 
 export const BOARD_COLUMNS: Record<OnboardingBoardTab, Array<{ key: OnboardingBoardColumn; label: string }>> = {
   pre_boarding: [
@@ -36,18 +37,63 @@ export const BOARD_COLUMNS: Record<OnboardingBoardTab, Array<{ key: OnboardingBo
   ],
 };
 const TABS: OnboardingBoardTab[] = ['pre_boarding', 'first_week', 'probation'];
-const FILTERS = ['needs_you', 'late', 'quiet', 'joining_risk', 'due_soon', 'mine'] as const;
+const FILTERS = ['needs_you', 'late', 'needs_attention', 'quiet', 'joining_risk', 'due_soon', 'mine'] as const;
 type QuickFilter = (typeof FILTERS)[number];
 /** Confirmed joiners stay on the board this long. */
 const CONFIRMED_DAYS = 30;
 
-export interface WaitingOn { ownerRole: OwnerRole; ownerName?: string; title: string; dueAt?: string; late?: boolean }
+/** `taskId` and `canNudge` power the Nudge / Remind buttons; `nudgedToday` once one went out today. */
+export interface WaitingOn { taskId: string; ownerRole: OwnerRole; ownerName?: string; title: string; dueAt?: string; late?: boolean; canNudge: boolean; nudgedToday?: boolean }
 
 export interface BoardCard {
   journeyId: string; name: string; designation?: string; department?: string; managerName?: string; photoUrl?: string; tj?: string;
   dayLabel: string; status: Journey['status']; statusLabel: string; column: OnboardingBoardColumn; flags: JourneyFlag[];
   waitingOn: WaitingOn[]; progress: { done: number; total: number }; plant: Derived['plant'];
   quietDays?: number; expiresInDays?: number;
+}
+
+// ─── Who is asking ──────────────────────────────────────────────────────────
+
+/** The tabs that carry pay, as the dashboard's `canSeePay` reads them (Payroll runs, Salary details). */
+export const PAY_TABS = ['payruns', 'salarydetails'];
+
+/**
+ * What a dashboard user may see on a joiner. `seesPay`: an admin, someone
+ * never limited to some tabs, or a payroll tab holder (the dashboard's
+ * `canSeePay`). `seesDocuments`: HR, i.e. an admin, someone never limited, or
+ * someone who also holds People › Employees; a holder of only the onboarding
+ * tab (IT, Admin) sees each document's status, never the files.
+ */
+export interface PanelViewer { seesPay: boolean; seesDocuments: boolean }
+export function lifecycleViewer(user: { dashboardAdmin?: boolean; dashboardTabs?: string[] } | undefined): PanelViewer {
+  const all = user?.dashboardAdmin === true || !Array.isArray(user?.dashboardTabs);
+  const tabs = new Set(user?.dashboardTabs ?? []);
+  return { seesPay: all || PAY_TABS.some((t) => tabs.has(t)), seesDocuments: all || tabs.has('employees') };
+}
+export const FULL_VIEW: PanelViewer = { seesPay: true, seesDocuments: true };
+
+/** A decision without its salary (pay is for payroll tab holders only). */
+export function decisionWithoutPay<T extends { salary?: number } | undefined>(decision: T): T {
+  if (!decision) return decision;
+  const { salary: _s, ...rest } = decision as { salary?: number };
+  return rest as T;
+}
+
+/** A journey as someone without pay access (or without HR's view) may see it. */
+export function journeyForViewer<T extends Partial<Pick<Journey, 'probation' | 'aboutYou' | 'bankPfRequest'>>>(journey: T, viewer: PanelViewer): T {
+  let out = journey;
+  if (!viewer.seesPay && out.probation?.decision) out = { ...out, probation: { ...out.probation, decision: decisionWithoutPay(out.probation.decision) } };
+  if (!viewer.seesDocuments) {
+    // Emergency contact, PF and bank details are HR's, like the documents.
+    const { aboutYou: _a, bankPfRequest: _b, ...rest } = out;
+    out = rest as T;
+  }
+  return out;
+}
+
+async function markNudged(waiting: WaitingOn[], now: Date): Promise<void> {
+  const done = await nudgedToday(waiting.filter((w) => w.canNudge).map((w) => w.taskId), now);
+  for (const w of waiting) if (done.has(w.taskId)) w.nudgedToday = true;
 }
 
 const TAB_PHASE: Record<OnboardingBoardTab, JourneyTask['phase']> = { pre_boarding: 'pre_boarding', first_week: 'first_week', probation: 'probation' };
@@ -65,8 +111,9 @@ export function waitingOnOf(j: Journey, tasks: JourneyTask[], names: Map<string,
   return open.slice(0, limit).map((t) => {
     const ownerName = t.ownerUserId ? names.get(t.ownerUserId) : t.ownerRole === 'employee' ? j.candidate?.name : undefined;
     return {
-      ownerRole: t.ownerRole, ...(ownerName ? { ownerName } : {}), title: t.title,
+      taskId: t.id, ownerRole: t.ownerRole, ...(ownerName ? { ownerName } : {}), title: t.title,
       ...(t.dueAt ? { dueAt: t.dueAt.toISOString() } : {}), ...(taskLate(t, today) ? { late: true } : {}),
+      canNudge: !('reason' in nudgeTarget(j, t)),
     };
   });
 }
@@ -132,6 +179,7 @@ function matchesFilter(card: BoardCard, filter: QuickFilter, tasks: JourneyTask[
   switch (filter) {
     case 'needs_you': return card.flags.includes('needs_you');
     case 'late': return card.flags.includes('late');
+    case 'needs_attention': return card.flags.includes('needs_attention');
     case 'quiet': return card.flags.includes('quiet');
     case 'joining_risk': return card.flags.includes('joining_risk');
     case 'due_soon': return card.flags.includes('due_soon');
@@ -183,6 +231,7 @@ export async function onboardingBoard(org: string, viewerUserId: string, query: 
     columns.find((c) => c.key === derived.column)?.cards.push(card);
   }
   for (const column of columns) column.cards.sort((a, b) => urgency(a) - urgency(b) || (a.tj ?? '').localeCompare(b.tj ?? '') || a.name.localeCompare(b.name));
+  await markNudged(columns.flatMap((c) => c.cards.flatMap((card) => card.waitingOn)), now);
   return { tab, columns, counts };
 }
 
@@ -192,8 +241,31 @@ async function requireOnboarding(org: string, journeyId: string): Promise<Journe
   return j;
 }
 
-/** The side panel (H1b). */
-export async function journeyPanel(org: string, journeyId: string, now = new Date()) {
+/**
+ * The sidebar's Onboarding badge: joiners on the board that need HR now
+ * (Needs you) or are late, each counted once.
+ */
+export async function onboardingCounts(org: string, now = new Date()) {
+  const all = await boardJourneys(org, now);
+  const ids = all.map((j) => j.id);
+  const [tasksBy, tills] = await Promise.all([groupTasks(ids), validTills(ids)]);
+  let needsYou = 0; let late = 0; let badge = 0;
+  for (const j of all) {
+    const { flags } = deriveJourney(j, tasksBy.get(j.id) ?? [], now, { offerValidTill: tills.get(j.id) });
+    const ny = flags.includes('needs_you'); const lt = flags.includes('late');
+    if (ny) needsYou += 1;
+    if (lt) late += 1;
+    if (ny || lt) badge += 1;
+  }
+  return { onboarding: { badge, needsYou, late } };
+}
+
+/**
+ * The side panel (H1b). Without pay access the offer's CTC and the decision's
+ * salary are left out; without HR's view the documents come as status only
+ * (no files) and the About-you and bank/PF details are left out.
+ */
+export async function journeyPanel(org: string, journeyId: string, now = new Date(), viewer: PanelViewer = FULL_VIEW) {
   const j = await requireOnboarding(org, journeyId);
   if (j.kind !== 'onboarding') throw new LifecycleError(404, 'Journey not found');
   const tasks = await tasksOf(journeyId);
@@ -201,23 +273,32 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
   const derived = deriveJourney(j, tasks, now, { offerValidTill: tills.get(journeyId) });
   const names = await namesOf([j.managerUserId, j.buddyUserId, j.userId, ...tasks.map((t) => t.ownerUserId)]);
   const [documents, letters, offer, dateRequests, probation, batch] = await Promise.all([
-    journeyDocumentsView(journeyId),
+    journeyDocumentsView(journeyId).then((docs) => (viewer.seesDocuments ? docs : docs.map(documentStatusOnly))),
     journeyLettersView(journeyId),
-    offerView(journeyId),
+    offerView(journeyId, { hidePay: !viewer.seesPay }),
     dateChangeRequests().find({ journeyId }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray(),
     probationOf(journeyId),
     batchOf(j),
   ]);
   const journey = {
-    ...sanitiseJourney(j),
+    ...journeyForViewer(sanitiseJourney(j), viewer),
     ...(j.managerUserId && names.get(j.managerUserId) ? { managerName: names.get(j.managerUserId) } : {}),
     ...(j.buddyUserId && names.get(j.buddyUserId) ? { buddyName: names.get(j.buddyUserId) } : {}),
     dayLabel: derived.dayLabel, statusLabel: derived.statusLabel, flags: derived.flags, column: derived.column, tab: derived.tab,
     stage: derived.stage, plant: derived.plant,
     waitingOn: waitingOnOf(j, tasks, names, now, 10), progress: progressOf(tasks, derived.tab),
   };
-  const views: TaskView[] = tasks.map((t) => taskView(t, j, names, now));
-  return { journey, tasks: views, documents, letters, offer, dateRequests, probation, batch };
+  await markNudged(journey.waitingOn, now);
+  const nudged = await nudgedToday(tasks.map((t) => t.id), now);
+  const views = tasks.map((t) => ({ ...taskView(t, j, names, now), canNudge: !('reason' in nudgeTarget(j, t)), ...(nudged.has(t.id) ? { nudgedToday: true } : {}) }));
+  const probationView = viewer.seesPay ? probation : { ...probation, decision: decisionWithoutPay(probation.decision) };
+  return { journey, tasks: views, documents, letters, offer, dateRequests, probation: probationView, batch, viewer };
+}
+
+/** A candidate document without its files: what someone outside HR may see. */
+export function documentStatusOnly<T extends { fileIds: string[]; files: unknown[]; hrNote?: string }>(doc: T): T {
+  const { hrNote: _n, ...rest } = doc;
+  return { ...rest, fileIds: [], files: [] } as unknown as T;
 }
 
 /** Others joining on the same day ("6 people join with you"). */
@@ -326,7 +407,8 @@ export async function surveyAnswers(org: string, kind?: unknown) {
 }
 
 /** HR decides a bank/PF change the joiner asked for in the week-1 reel. Approving writes it to payroll (payroll access needed). */
-export async function decideBankPfRequest(org: string, journeyId: string, body: Record<string, unknown>, hr: { userId: string; name: string }) {
+export async function decideBankPfRequest(org: string, journeyId: string, body: Record<string, unknown>, hr: { userId: string; name: string }, viewer: PanelViewer = FULL_VIEW) {
+  if (!viewer.seesPay) throw new LifecycleError(403, 'Only someone with payroll access can decide a bank or PF change');
   const j = await requireOnboarding(org, journeyId);
   const request = j.bankPfRequest;
   if (!request || request.status !== 'pending') throw new LifecycleError(409, 'No change is waiting');

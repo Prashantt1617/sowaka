@@ -752,8 +752,9 @@ export async function checkinForMe(me: Me, month: number, body: Record<string, u
 /** PB3 for the joiner: the outcome, their own new CTC (only to them), title, manager, KPIs, and the letter when the server has one. */
 export async function revealForMe(me: Me) {
   const j = await joinerJourney(me.userId);
-  const reveal = await revealFor(j.id) as Awaited<ReturnType<typeof revealFor>> & { letterUrl?: string; revealedAt?: Date };
-  return { ...reveal, seen: !!reveal.revealedAt, ...(reveal.letterUrl ? { letterUrl: reveal.letterUrl } : {}) };
+  const reveal = await revealFor(j.id);
+  // letterUrl: their own letter PDF, served by GET /lifecycle/onboarding/letters/:id/pdf.
+  return { ...reveal, seen: 'revealedAt' in reveal && !!reveal.revealedAt };
 }
 
 export async function revealSeenForMe(me: Me) {
