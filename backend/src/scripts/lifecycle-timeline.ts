@@ -188,7 +188,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
     clearLifecycleOutbox();
   }
   const MAIL_KIND: Array<[RegExp, string]> = [
-    [/^Your offer from/, 'offer'], [/accepted the offer: finalise it$/, 'accepted'], [/^Waiting for you: finalise/, 'finalise_reminder'],
+    [/^Your offer from/, 'offer'], [/accepted the offer: finalise it$/, 'accepted'], [/accepted the updated offer/, 'revision_accepted'], [/^Waiting for you: finalise/, 'finalise_reminder'],
     [/joining portal: login details$/, 'login'], [/^Your joining portal is waiting$/, 'login_reminder'], [/^A few things are waiting/, 'quiet'],
     [/^Please upload your .* again$/, 'sent_back'], [/^Your appointment letter is ready to sign$/, 'letters_ready'], [/^Reminder: sign/, 'letter_nudge'],
     [/^Your first day:/, 'day1_pass'], [/full and final settlement/, 'settlement'], [/joining date/, 'date_change'], [/^Reset your/, 'reset'],
@@ -458,7 +458,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   const tokenB2 = tokenIn(lastMailTo(BINA)!.html);
   expectMail('the revised offer goes to Bina', ['offer>bina']);
   eq('the old link says replaced', (await offersSvc.openOfferLink(tokenB1, '1.1.1.1')).state, 'replaced');
-  eq('the journey is back to accepted, Tj moved', [(await journey(B)).status, (await journey(B)).tj], ['accepted', TJ_B]);
+  eq('the journey stays where Bina had got to (active, no second finalise), Tj moved', [(await journey(B)).status, (await journey(B)).tj], ['active', TJ_B]);
   await doneTasksStayed('Bina’s Tj moved a week', B, bDoneBefore, ['send_offer', 'accept_offer', 'finalise_offer']);
   const bOpenAfter = await openDue(B);
   eq('open Tj tasks moved a week (documents, mark joined)', [bOpenAfter.get('upload_documents'), bOpenAfter.get('mark_joined')], [rules.addDaysKey(bOpenBefore.get('upload_documents')!, 7), TJ_B]);
@@ -467,10 +467,9 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   eq('Bina’s portal: offer updated, the banner names salary and joining date', [home.view, home.banner?.changedFields, home.upNext?.title], ['offer_updated', ['ctc', 'tj', 'validTill'], 'Review your updated offer']);
   ok('the new link opens v2; the old one cannot accept', (await offersSvc.openOfferLink(tokenB2, '1.1.1.1')).version === 2 && (await refusal(() => offersSvc.acceptOffer(tokenB1, { ip: '1.1.1.1' }))).status === 409);
   await advanceTo(T('2027-03-11', '15:00'));
-  await offersSvc.acceptOfferForJourney(await journey(B), { ip: '203.0.113.10' });
-  await offersSvc.finaliseOffer(HR, B);
-  eq('accepted v2 and finalised again: back to active, no second login', (await journey(B)).status, 'active');
-  expectMail('HR told of the v2 acceptance; no new login', ['accepted>hr']);
+  eq('accepting v2: already finalised (the login exists)', (await offersSvc.acceptOfferForJourney(await journey(B), { ip: '203.0.113.10' })).state, 'finalised');
+  eq('still active, nothing for HR to finalise, no second login', [(await journey(B)).status, (await refusal(() => offersSvc.finaliseOffer(HR, B))).status], ['active', 409]);
+  expectMail('HR told of the v2 acceptance; no new login', ['revision_accepted>hr']);
   await expectPushes('the revision and the re-acceptance push nothing else (due-date pushes counted apart)', []);
   const dueChangedB = allPushes.filter((p) => p.scenario === 'lifecycle_due_changed' && p.data.journeyId === B);
   eq('the manager was told once that Bina’s dates moved', dueChangedB.map((p) => nameOf(p.userId)), ['mgr']);

@@ -1105,23 +1105,36 @@ export async function emailSettlement(actorUserId: string, employeeUserId: strin
   // (Exits recorded before offboarding existed have no offboarding block to hold the claim; the time check above still applies.)
   const claim = !!user.exit.offboarding;
   if (claim) {
+    // The claim holds only if nobody has sent since this request read the exit (a double click read the same
+    // "last sent"), and nobody is sending right now (a stale claim older than 2 minutes is ignored).
     const claimed = await users().updateOne(
-      { userId: employeeUserId, org: actor.org, 'exit.offboarding': { $exists: true }, $or: [{ 'exit.offboarding.settlementSendingAt': { $exists: false } }, { 'exit.offboarding.settlementSendingAt': { $lt: new Date(now.getTime() - 2 * 60_000) } }] },
+      {
+        userId: employeeUserId, org: actor.org, 'exit.offboarding': { $exists: true },
+        'exit.offboarding.settlementEmail.at': last?.at ? new Date(last.at) : { $exists: false },
+        $or: [{ 'exit.offboarding.settlementSendingAt': { $exists: false } }, { 'exit.offboarding.settlementSendingAt': { $lt: new Date(now.getTime() - 2 * 60_000) } }],
+      },
       { $set: { 'exit.offboarding.settlementSendingAt': now } },
     );
-    if (!claimed.modifiedCount) throw new LifecycleError(409, 'The settlement is being emailed right now');
+    if (!claimed.modifiedCount) throw new LifecycleError(409, 'The settlement is being emailed right now, or was just sent');
   }
+  const release = () => (claim ? users().updateOne({ userId: employeeUserId, org: actor.org, 'exit.offboarding': { $exists: true } }, { $unset: { 'exit.offboarding.settlementSendingAt': '' } }) : Promise.resolve());
   let sent: boolean;
   try {
     sent = await sendLifecycleEmail(actor.org, to, subject, html, [{ filename: `Settlement_${user.employeeId || user.name.replace(/\s+/g, '_')}.pdf`, content: pdf, contentType: 'application/pdf' }]);
-  } finally {
-    if (claim) await users().updateOne({ userId: employeeUserId, org: actor.org, 'exit.offboarding': { $exists: true } }, { $unset: { 'exit.offboarding.settlementSendingAt': '' } });
+  } catch (error) {
+    await release();
+    throw error;
   }
   // Without SMTP (development only) the mail is logged and kept in the outbox; anywhere else a failed send is an error.
-  if (!sent && (smtpConfigured() || env.nodeEnv === 'production')) throw new LifecycleError(502, 'The email could not be sent; the PDF was not sent. Try again');
+  if (!sent && (smtpConfigured() || env.nodeEnv === 'production')) {
+    await release();
+    throw new LifecycleError(502, 'The email could not be sent; the PDF was not sent. Try again');
+  }
   const settlementEmail = { to, at: now, ...(actor.name ? { byName: actor.name } : {}), ...(blocking.length ? { overrideReason } : {}) };
+  // Recorded and released in one write, so no second send can slip in between.
+  const unset: Record<string, ''> = { ...(user.exit.offboarding?.settlementDraft ? { 'exit.offboarding.settlementDraft': '' as const } : {}), ...(claim ? { 'exit.offboarding.settlementSendingAt': '' as const } : {}) };
   await users().updateOne({ userId: employeeUserId, org: actor.org }, {
-    ...(user.exit.offboarding?.settlementDraft ? { $unset: { 'exit.offboarding.settlementDraft': '' } } : {}),
+    ...(Object.keys(unset).length ? { $unset: unset } : {}),
     $set: { ...(user.exit.offboarding ? { 'exit.offboarding.settlementEmail': settlementEmail } : { 'exit.offboarding': { exitType: exitTypeOf(user.exit) ?? 'resignation', showAppPage: false, settlementEmail } }), ...(!user.personalEmail ? { personalEmail: to } : {}), updatedAt: now },
   });
   const journeyId = user.exit.offboarding?.journeyId;

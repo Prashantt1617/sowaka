@@ -361,6 +361,8 @@ export interface CandidateDocument {
   uploadedAt?: Date;
   reviewedAt?: Date;
   reviewedByName?: string;
+  /** Files a re-upload after Send back replaced: kept as a note only (the files are removed). */
+  superseded?: Array<{ name: string; at: Date; reason?: string }>;
 }
 
 /** A stored file (S3 when configured, else backend/.local-uploads for development). */
@@ -403,6 +405,9 @@ export interface Letter {
   /** Appointment / NDA: opened before signing is allowed. */
   openedAt?: Date;
   signature?: { method: 'draw' | 'type'; typedName?: string; imageFileId?: string; signedAt: Date; ip?: string; device?: string };
+  /** A signed letter a revised offer made out of date (its fields changed): kept as history; a new one is signed. */
+  outdatedAt?: Date;
+  outdatedFields?: string[];
   /** The email: HR's saved draft until `sentAt`. `attachments`: extra files sent with the letter PDF (H3c suggested extras). */
   email?: { to: string; cc?: string[]; subject: string; body: string; sentAt?: Date; withPortalLink?: boolean; attachments?: LetterAttachment[]; savedAt?: Date };
   createdAt: Date;

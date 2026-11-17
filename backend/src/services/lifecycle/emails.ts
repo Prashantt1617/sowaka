@@ -314,6 +314,14 @@ export const mails = {
       p(`${escapeHtml(candidate)} accepted ${version > 1 ? `the updated offer (version ${version})` : 'their offer'}.`)
       + p(`Finalise it on the dashboard (Onboarding › Pre-boarding): that creates their portal login and emails it to them.`));
   },
+  /** A revised offer accepted by someone already finalised: no second finalise; the letters it changed are named. */
+  hrRevisionAccepted(company: string, candidate: string, version: number, letters: string[]) {
+    return layout(company,
+      p(`${escapeHtml(candidate)} accepted the updated offer (version ${version}). Their portal and progress stay as they were: nothing to finalise again.`)
+      + (letters.length
+        ? p(`These letters no longer match the offer and need signing again: ${escapeHtml(letters.join(', '))}. Make them again in Documents; the portal asks ${escapeHtml(candidate.split(' ')[0] || candidate)} to sign once they are ready.`)
+        : p('Their signed letters still match the offer.')));
+  },
   hrFinaliseReminder(company: string, candidate: string) {
     return layout(company,
       p(`${escapeHtml(candidate)} accepted their offer over a working day ago and is waiting for HR to finalise it.`)

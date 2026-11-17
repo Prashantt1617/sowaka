@@ -226,7 +226,7 @@ const HR = { userId: 'hr', name: 'Hema HR' };
   const at11 = new Date(now.getTime() + 11 * 60_000);
   await emailSettlement('hr', 'dan', body, at11);
   ok('after ten minutes it goes without asking', true);
-  const race = await Promise.allSettled([emailSettlement('hr', 'dan', { ...body, resend: true }, at11), emailSettlement('hr', 'dan', { ...body, resend: true }, at11)]);
+  const race = await Promise.allSettled([emailSettlement('hr', 'dan', { ...body, resend: true }, new Date(at11.getTime() + 1)), emailSettlement('hr', 'dan', { ...body, resend: true }, new Date(at11.getTime() + 2))]);
   ok('two sends at the same moment: one goes', race.filter((r) => r.status === 'fulfilled').length === 1, race.map((r) => r.status));
   ok('the sending mark is cleared after', !(await users().findOne({ userId: 'dan' }))?.exit?.offboarding?.settlementSendingAt);
   void salaryStructures;
