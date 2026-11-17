@@ -135,6 +135,8 @@ h1 .face{width:26px;height:24px}
 .hbox{padding:8px 10px;display:flex;flex-direction:column;gap:5px;min-width:0;border:1px solid var(--line);border-radius:14px;background:var(--paper);box-shadow:var(--sh)}
 .hbox b{font-family:var(--pixel);font-weight:800;font-size:15px;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}
 .hbox.worth{background:var(--mint)}
+.mist{font-weight:700;font-size:11.5px;color:var(--muted)}
+.mist.on{color:var(--bad)}
 .hbox.worth .lab{color:#4A5640}
 .hstars{display:flex;gap:3px;font-size:13px;line-height:1;color:var(--faint)}
 .hstars span.on{color:#FFB547}
@@ -339,7 +341,7 @@ html.app .howto{padding-top:20px}
     <div class="hright"><button class="sq" id="help" type="button" aria-label="How to play" title="How to play">?</button><button class="sq" id="snd" type="button" aria-pressed="true" aria-label="Sound on"></button></div>
   </header>
   <div class="hud" id="hud" hidden>
-    <div class="hbox"><span class="lab">Time</span><b id="timer" role="timer">00:00</b></div>
+    <div class="hbox"><span class="lab">Time</span><b id="timer" role="timer">00:00</b><small class="mist" id="mistakes">0 mistakes</small></div>
     <div class="hbox worth"><span class="lab">Worth</span><b id="worth">0</b><span class="hstars" id="hstars" aria-hidden="true"><span>★</span><span>★</span><span>★</span></span></div>
     <div class="hbox"><span class="lab">Cats</span><b id="cats">0/6</b><span class="pips" id="pips" aria-hidden="true"></span></div>
   </div>
@@ -383,11 +385,12 @@ const levelOf=idx=>ORDER.indexOf(idx)+1;
 /* A solved puzzle is worth its level's base (425 at level 1, up 25 a level to 1,900 at level 60), plus up to as much again for speed (all of it
    at once, none at twice the par time), less 150 a hint, and never under a quarter of the base. Par in seconds, by size. Three stars at the par
    time with no hints. */
-const PAR={6:90,7:150,8:240}, HINT_COST=150;
+const PAR={6:90,7:150,8:240}, HINT_COST=150, MISTAKE_COST=50;
 const baseFor=L=>400+25*Math.min(Math.max(1,L|0),60);
 const fmtn=x=>Math.round(x).toLocaleString('en-IN');
 const fmtt=t=>{ t=Math.max(0,Math.floor(t)); return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0'); };
-function worthOf(n,t,h,L){ const b=baseFor(L), w=Math.round(b+b*Math.max(0,1-t/(2*PAR[n]))-h*HINT_COST); return Math.max(Math.round(b/4),w); }
+/* m: mistakes, cats put where they clash with another (−50 each; Undo doesn't give it back). */
+function worthOf(n,t,h,L,m){ const b=baseFor(L), w=Math.round(b+b*Math.max(0,1-t/(2*PAR[n]))-h*HINT_COST-(m||0)*MISTAKE_COST); return Math.max(Math.round(b/4),w); }
 const starsOf=(L,s)=>s>0?1+(s>=baseFor(L)*1.25?1:0)+(s>=baseFor(L)*1.5?1:0):0;
 /* seeded-boards:start
    A challenge's puzzle, from the server's seed: any of the 36, so two players given one seed get the same puzzle (scored at its level). */
@@ -444,7 +447,7 @@ const COLORS=TILE_COLS;
   for(let i=0;i<n*n;i++){ const st=['--color:'+COLORS[g[i]]]; if(i%n<n-1&&g[i]!==g[i+1])st.push('--edge-r:2px'); if(i<n*(n-1)&&g[i]!==g[i+n])st.push('--edge-b:2px');
     h+='<span class="cell" style="'+st.join(';')+'">'+(cats.includes(i)?FACE:'')+'</span>'; } d.innerHTML=h; })();
 $('steps').innerHTML=[[0,'One per row and column','Every row and every column gets exactly one cat.'],[1,'One per colour','Each coloured region gets exactly one cat too.'],
-  [2,'Cats can’t touch','Not even corner to corner. Faster, with fewer hints, scores more.']].map(([i,b,t])=>'<li><i>'+ruleSvg(i)+'</i><span><b>'+b+'</b>'+t+'</span></li>').join('');
+  [2,'Cats can’t touch','Not even corner to corner. A cat that clashes costs 50; faster, with fewer hints, scores more.']].map(([i,b,t])=>'<li><i>'+ruleSvg(i)+'</i><span><b>'+b+'</b>'+t+'</span></li>').join('');
 
 /* ---------- save ---------- */
 /* The save is kept per account in the app, under meowdoku.v1.<userId>, so the next person to sign in on this phone starts clean; in a plain browser
@@ -657,7 +660,8 @@ function paint(){ const {n,g,f}=pz(), bad=conflicts(), kids=$('board').children;
   $('undo').disabled=!round.history.length||mode!=='play'; $('hint').disabled=mode!=='play';
   renderHud(); }
 /* The clock, what solving it now would score (and its stars), the cats placed, and in a challenge the score to beat. */
-function renderHud(){ if(!round)return; const n=pz().n, w=round.gaveUp?0:worthOf(n,round.elapsed,round.hints,round.lv), k=round.gaveUp?0:count();
+function renderHud(){ if(!round)return; const n=pz().n, w=round.gaveUp?0:worthOf(n,round.elapsed,round.hints,round.lv,round.mistakes), k=round.gaveUp?0:count();
+  $('mistakes').textContent=(round.mistakes||0)+' mistake'+(round.mistakes===1?'':'s'); $('mistakes').classList.toggle('on',(round.mistakes||0)>0);
   $('timer').textContent=fmtt(round.elapsed); $('worth').textContent=fmtn(w);
   const st=starsOf(round.lv,w); [...$('hstars').children].forEach((s,i)=>s.classList.toggle('on',i<st));
   $('cats').textContent=k+'/'+n; $('pips').innerHTML=Array.from({length:n},(_,i)=>'<i class="'+(i<k?'on':'')+'"></i>').join('');
@@ -674,7 +678,7 @@ function setCell(i,v,note){ if(mode!=='play')return false; const f=pz().f;
   round.cells[i]=v; focusIndex=i;
   const bad=conflicts(), done=solved();
   if(v===1)sfx.place(count()); else if(v===2)sfx.mark(); else sfx.clear();
-  if(bad.length>before&&v===1){ setTimeout(sfx.no,60); buzz([20,30,20]); const b=$('board'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); }
+  if(bad.length>before&&v===1){ round.mistakes=(round.mistakes||0)+1; toast('−'+MISTAKE_COST+' mistake','bad'); setTimeout(sfx.no,60); buzz([20,30,20]); const b=$('board'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); }
   else buzz(v===1?14:8);
   message(done?'Every cat has a spot!':note||(bad.length?'Cats marked ! share a row, column or colour, or are touching.':''));
   keep(); paint(); if(done)setTimeout(()=>endRound(true),reduce()?60:250); return true; }
@@ -712,11 +716,11 @@ function start(opp,sd,resumeCur){
   hideHowTo(); clearInterval(countTimer); clearInterval(timer); closeSheet();
   let c=resumeCur&&validCur(resumeCur)?resumeCur:null;
   if(!c){ const idx=opp?puzzleFor(+sd,null):levelPuzzle(save.level), lv=opp?levelOf(idx):save.level;
-    c={idx,lv,cells:blank(idx),history:[],elapsed:0,hints:0,duel:opp?{id:opp.id,name:opp.name,theirFinal:opp.theirFinal==null?null:+opp.theirFinal}:null}; }
-  if(!Array.isArray(c.history))c.history=[]; c.elapsed=Math.max(0,+c.elapsed||0); c.hints=Math.max(0,+c.hints||0);
+    c={idx,lv,cells:blank(idx),history:[],elapsed:0,hints:0,mistakes:0,duel:opp?{id:opp.id,name:opp.name,theirFinal:opp.theirFinal==null?null:+opp.theirFinal}:null}; }
+  if(!Array.isArray(c.history))c.history=[]; c.elapsed=Math.max(0,+c.elapsed||0); c.hints=Math.max(0,+c.hints||0); c.mistakes=Math.max(0,+c.mistakes||0);
   round=c; duel=c.duel?Object.assign({},c.duel,{first:firstOf(c.duel.name)}):null;
   if(duel&&opp&&opp.theirFinal!=null)duel.theirFinal=+opp.theirFinal;
-  behindSaid=!!(duel&&duel.theirFinal!=null&&worthOf(pz().n,c.elapsed,c.hints,c.lv)<=duel.theirFinal);
+  behindSaid=!!(duel&&duel.theirFinal!=null&&worthOf(pz().n,c.elapsed,c.hints,c.lv,c.mistakes)<=duel.theirFinal);
   placeHeader(null); mode='count'; playing(true); buildBoard(); message(''); keep();
   $('pzno').textContent=(duel?'CHALLENGE':'LEVEL '+c.lv)+' · '+pz().n+'×'+pz().n;
   renderTop(); const cv=$('cover'); cv.hidden=false; cv.className='cover'; cv.innerHTML='';
@@ -733,8 +737,8 @@ function tick(){ const t=performance.now(), dt=Math.min(1,(t-lastAt)/1000); last
 function endRound(won){
   if(mode!=='play'&&mode!=='pause')return;
   mode='over'; clearInterval(timer); timer=null; const n=pz().n, L=round.lv;
-  const score=won?worthOf(n,round.elapsed,round.hints,L):0, stars=starsOf(L,score), newBest=won&&score>save.best;
-  const rows=[[duel?'Puzzle':'Level',(duel?'':L+' · ')+n+'×'+n],['Time',fmtt(round.elapsed)],['Hints',String(round.hints)]];
+  const score=won?worthOf(n,round.elapsed,round.hints,L,round.mistakes):0, stars=starsOf(L,score), newBest=won&&score>save.best;
+  const rows=[[duel?'Puzzle':'Level',(duel?'':L+' · ')+n+'×'+n],['Time',fmtt(round.elapsed)],['Hints',String(round.hints)],['Mistakes',String(round.mistakes||0)]];
   /* A level of your own moves you on, solved or given up (a puzzle whose answer you have seen would score for nothing). */
   if(!duel&&L===save.level)save.level=L+1;
   save.cur=null; save.rounds++; if(newBest)save.best=score; store(); paint(); renderTop();
@@ -805,7 +809,7 @@ function results(title,stars,pending,newBest,rows,score){
    have played. What it pays (engagement points, scaled and capped) is the server's to say. */
 const CH={incoming:[],outgoing:[],active:[],recent:[],waiting:null,result:null,showing:null,celebrated:{},opened:false,accepting:false,sending:false,listSeq:-1};
 const KINDS=['incoming','outgoing','active','recent'];
-const SAME='Same puzzle for both of you. Faster, with fewer hints, scores more; the higher score wins, and the result shows once you have both played.';
+const SAME='Same puzzle for both of you. Faster, with fewer hints and no clashing cats, scores more; the higher score wins, and the result shows once you have both played.';
 function canChallenge(){ const b=bridge(); return !!(b&&['challenge','challenges','getChallenge','acceptChallenge','declineChallenge','finishChallenge','colleagues'].every(k=>typeof b[k]==='function')); }
 function ask(method,...args){ const b=bridge(); if(!b||typeof b[method]!=='function')return Promise.reject(new Error('Challenges need the Sowaka app.'));
   return Promise.resolve().then(()=>b[method](...args)); }
