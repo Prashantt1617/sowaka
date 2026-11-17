@@ -42,9 +42,8 @@ export const SETUP_GROUPS: SetupGroup[] = [
   { key: 'reimbursements', title: 'Reimbursements', icon: 'reimbursementtypes', items: [
     { view: 'reimbursementtypes', label: 'Reimbursement types' },
   ] },
-  { key: 'notifications', title: 'Notifications', icon: 'notificationlook', isNew: true, items: [
-    { view: 'notificationlook', label: 'Notification sounds and pictures' },
-  ] },
+  // Notification sounds and pictures: hidden from Setup (17 Nov 2026). Sowaka manages the looks
+  // for companies directly; the page, its API and the looks themselves stay as they are.
   { key: 'lifecycle', title: 'Employee lifecycle', icon: 'onboarding', isNew: true, feature: 'lifecycle', items: [
     { view: 'lifecycle_templates', label: 'Onboarding templates', open: 'onboarding' },
     { view: 'lifecycle_templates', label: 'Offboarding templates', open: 'offboarding' },
