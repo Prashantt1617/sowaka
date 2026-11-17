@@ -21,7 +21,7 @@
 import { users } from '../config/db';
 import { logger } from '../utils/logger';
 import { lifecycleReadCacheOn } from '../services/lifecycle/readCache';
-import { hashOf, keptGet, keptSet, suwiDataVersion } from './kept';
+import { hashOf, keptGet, keptSet, suwiDataVersion, suwiPeopleVersion } from './kept';
 import type { SuwiContext, SuwiTool, ToolOutput } from './tools';
 
 const MAX_KEEP_CHARS = 400_000;
@@ -118,14 +118,15 @@ function reviveDates(rows: PersonRow[]): PersonRow[] {
 }
 
 /**
- * Everyone on the company's active roll with the fields the people tools read, kept per data version
- * (a person added, edited or moved bumps it through the write hook). Read straight from the database
+ * Everyone on the company's active roll with the fields the people tools read, kept per people version
+ * (a person added, edited or moved bumps it through the write hook; a request write does not). Read straight from the database
  * when the cache is off (scripts and checks).
  */
 export async function peopleBundle(org: string): Promise<PersonRow[]> {
   const load = () => users().find({ org, ...ACTIVE_FILTER } as never, { projection: PEOPLE_PROJECTION }).toArray() as unknown as Promise<PersonRow[]>;
   if (!cacheOn()) return load();
-  const key = `people:${org}:${await suwiDataVersion(org)}`;
+  // The people version: a request write (leave decided, claim made) leaves the roster kept.
+  const key = `people:${org}:${await suwiPeopleVersion(org)}`;
   const mem = memGet<PersonRow[]>(key);
   if (mem) return mem;
   const pending = inflight.get(key) as Promise<PersonRow[]> | undefined;
@@ -165,8 +166,16 @@ export function prerunnable(tools: SuwiTool[]): SuwiTool[] {
 }
 
 /**
- * Asks each recent Suwi user's no-input tools ahead (once per data version, at most every five minutes
- * per company), so their first question after a change finds the answers kept. One tool at a time.
+ * Tools that answer from the company bundle (suwi/orgData.ts) with no reads of their own: asking them
+ * ahead costs next to nothing, so they are asked on every new data version, within the five minutes too
+ * (after a request write, the patched bundle is ready in a fraction of a second and these follow it).
+ */
+const FROM_BUNDLE = new Set(['review_requests', 'pending_requests', 'claims_to_check', 'missing_details']);
+
+/**
+ * Asks each recent Suwi user's no-input tools ahead (once per data version; the heavier ones at most
+ * every five minutes per company), so their first question after a change finds the answers kept.
+ * One tool at a time.
  */
 export async function prerunTools(
   org: string,
@@ -178,11 +187,13 @@ export async function prerunTools(
   const version = await suwiDataVersion(org);
   const last = lastPrerun.get(org);
   if (last && last.startsWith(`${version}@`)) return 0;
-  if (last && Date.now() - Number(last.split('@')[1]) < PRERUN_GAP_MS) return 0;
-  lastPrerun.set(org, `${version}@${Date.now()}`);
+  const lastAt = last ? Number(last.split('@')[1]) : 0;
+  const withinGap = Date.now() - lastAt < PRERUN_GAP_MS;
+  // Within the gap only the bundle's tools, and the gap still runs from the last full round.
+  lastPrerun.set(org, `${version}@${withinGap ? lastAt : Date.now()}`);
   let ran = 0;
   for (const ctx of people) {
-    for (const t of prerunnable(toolsFor(ctx))) {
+    for (const t of prerunnable(toolsFor(ctx)).filter((x) => !withinGap || FROM_BUNDLE.has(x.name))) {
       if (isStopping()) return ran;
       try { await t.run(ctx, {}); ran++; } catch { /* a tool that needs its input after all: skipped */ }
     }

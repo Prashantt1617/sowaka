@@ -16,7 +16,7 @@ import { settingsFor } from '../../suwi/store';
 import { contextFor, toolsFor } from '../../suwi/tools';
 import { peopleBundle, prerunTools } from '../../suwi/toolCache';
 import { suwiNotices } from '../../suwi/notices';
-import { orgSuwiData, readerFor } from '../../suwi/orgData';
+import { orgSuwiData, patchedRecently, readerFor } from '../../suwi/orgData';
 import { istToday } from '../../suwi/digest';
 import { prepareRecent, recentSuwiUsers } from '../../suwi/planner';
 import { logger } from '../../utils/logger';
@@ -38,7 +38,8 @@ export async function warmLifecycle(org: string, isStopping: () => boolean = () 
     // then one viewer's notices, which are now a quick filter over them.
     const today = istToday();
     // Only with someone to read the lists as: a company with no full-access dashboard user is left to its first viewer.
-    if ((await readerFor(org, '')).userId) await orgSuwiData(org, today, '', true);
+    // Not read whole again right after a request write patched it (orgData.ts): the patch is current.
+    if ((await readerFor(org, '')).userId) await orgSuwiData(org, today, '', !patchedRecently(org));
     const viewer = await users().findOne(
       { org, dashboardAccess: true, lifecycleStatus: { $nin: ['offboarded', 'terminated'] }, hiddenFromDirectory: { $ne: true }, $or: [{ dashboardAdmin: true }, { dashboardTabs: { $exists: false } }] },
     );

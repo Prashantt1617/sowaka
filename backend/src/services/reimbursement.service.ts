@@ -166,12 +166,14 @@ export async function getManagerReimbursementInbox(managerUserId: string) {
 }
 
 /** Org-wide list of every reimbursement claim, for the HR dashboard. */
-export async function listAllReimbursementsForAdmin(adminUserId: string) {
+export async function listAllReimbursementsForAdmin(adminUserId: string, opts: { status?: string } = {}) {
   // The roster and its claims in one round trip, each person trimmed to what
   // the card shows.
   const { employees, rows } = await orgUsersWithRows(adminUserId, reimbursementClaims(), {
     onlyWithRows: true,
     userFields: ['userId', 'name', 'department', 'designation', 'profilePhotoKey', 'profilePhotoUrl'],
+    // Only these statuses, filtered in the database (Suwi's pending lists), when asked.
+    ...(opts.status ? { rowMatch: { status: opts.status } } : {}),
   });
   if (employees.length === 0) return [];
   const employeeById = new Map(employees.map((e) => [e.userId, e]));

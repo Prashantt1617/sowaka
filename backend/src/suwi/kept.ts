@@ -62,11 +62,32 @@ export async function suwiVersion(org: string): Promise<string | null> {
 const localVersion = new Map<string, number>();
 
 /** A change Suwi must not answer from before: the next read of every kept copy misses. */
-export async function bumpSuwiVersion(org: string | null): Promise<void> {
+export async function bumpSuwiVersion(org: string | null, opts: { requestsOnly?: boolean } = {}): Promise<void> {
   localVersion.set(org || ALL, (localVersion.get(org || ALL) ?? 0) + 1);
+  // A request made, decided or cancelled changes nobody's record: the people version stays.
+  if (!opts.requestsOnly) localPeopleVersion.set(org || ALL, (localPeopleVersion.get(org || ALL) ?? 0) + 1);
   const r = redis();
   if (!r) return;
-  try { await r.incr(`${PREFIX}ver:${org || ALL}`); } catch (e) { quietFail(e); }
+  try {
+    if (opts.requestsOnly) await r.incr(`${PREFIX}ver:${org || ALL}`);
+    else await r.multi().incr(`${PREFIX}ver:${org || ALL}`).incr(`${PREFIX}pver:${org || ALL}`).exec();
+  } catch (e) { quietFail(e); }
+}
+
+/**
+ * The version of the company's people records alone: bumped by every change but a request write
+ * (readCache: a leave, overtime, correction or claim made, decided or cancelled). What is read only
+ * from people records (toolCache's people bundle) keys on it, so a leave approved doesn't re-read
+ * the roster.
+ */
+const localPeopleVersion = new Map<string, number>();
+export async function suwiPeopleVersion(org: string): Promise<string> {
+  const r = redis();
+  let shared: string | null = null;
+  if (r) {
+    try { const [own, all] = await r.mget(`${PREFIX}pver:${org}`, `${PREFIX}pver:${ALL}`); shared = `${own ?? 0}.${all ?? 0}`; } catch (e) { quietFail(e); }
+  }
+  return `${shared ?? 'n'}|${localPeopleVersion.get(org) ?? 0}.${localPeopleVersion.get(ALL) ?? 0}`;
 }
 
 /** The company's data version for keys that must work with or without Redis: Redis's when there is one, plus this process's. */

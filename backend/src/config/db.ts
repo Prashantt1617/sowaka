@@ -583,11 +583,15 @@ async function ensureIndexes(database: Db): Promise<void> {
 
   const overtimeCollection = database.collection<OvertimeRequest>('overtime_requests');
   await overtimeCollection.createIndex({ userId: 1, createdAt: -1 });
+  // The waiting requests only (Suwi's lists look each person's up with a status filter).
+  await overtimeCollection.createIndex({ userId: 1, status: 1 });
   await overtimeCollection.createIndex({ managerUserId: 1, status: 1, createdAt: -1 });
 
   const reimbursementCollection =
     database.collection<ReimbursementClaim>('reimbursement_claims');
   await reimbursementCollection.createIndex({ userId: 1, createdAt: -1 });
+  // The waiting requests only (Suwi's lists look each person's up with a status filter).
+  await reimbursementCollection.createIndex({ userId: 1, status: 1 });
   await reimbursementCollection.createIndex({ managerUserId: 1, status: 1, createdAt: -1 });
 
   await database.collection<Company>('companies').createIndex({ id: 1 }, { unique: true });

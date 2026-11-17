@@ -23,6 +23,9 @@ export interface AdminLists {
 }
 
 /** `AdminLists` that each read at most once, whoever asks first. */
+/** Only waiting requests: Suwi's lists never need the decided ones. */
+const PENDING = { status: 'pending' } as const;
+
 export function sharedAdminLists(): AdminLists {
   const once = <T>(read: (userId: string) => Promise<T>) => {
     const kept = new Map<string, Promise<T>>();
@@ -31,14 +34,15 @@ export function sharedAdminLists(): AdminLists {
       return kept.get(userId)!;
     };
   };
-  return { leave: once(listAllLeavesForAdmin), claims: once(listAllReimbursementsForAdmin) };
+  // Pending only, filtered in the database: the whole history was most of a cold read (≈400 KB at Convrse).
+  return { leave: once((id) => listAllLeavesForAdmin(id, PENDING)), claims: once((id) => listAllReimbursementsForAdmin(id, PENDING)) };
 }
 
 /** Every pending request this person may see, newest last. */
 export async function pendingRows(
   ctx: { userId: string; today: string; user: { dashboardAdmin?: boolean; dashboardTabs?: string[] } },
   type: string,
-  lists: AdminLists = { leave: listAllLeavesForAdmin, claims: listAllReimbursementsForAdmin },
+  lists: AdminLists = { leave: (id) => listAllLeavesForAdmin(id, PENDING), claims: (id) => listAllReimbursementsForAdmin(id, PENDING) },
 ): Promise<PendingRow[]> {
   const out: PendingRow[] = [];
   const day = (d: Date | string | number | undefined) => (d == null ? '' : new Date(d).toISOString().slice(0, 10));
@@ -47,8 +51,8 @@ export async function pendingRows(
   // The four lists are independent; fetch them side by side.
   const [leaveList, otList, regList, claimList] = await Promise.all([
     want('leave', INSIGHT_ROUTE.leave) ? lists.leave(ctx.userId) : null,
-    want('overtime', INSIGHT_ROUTE.overtime) ? listAllOvertimeForAdmin(ctx.userId) : null,
-    wantRegs ? listAllRegularizationsForAdmin(ctx.userId) : null,
+    want('overtime', INSIGHT_ROUTE.overtime) ? listAllOvertimeForAdmin(ctx.userId, PENDING) : null,
+    wantRegs ? listAllRegularizationsForAdmin(ctx.userId, PENDING) : null,
     want('claims', INSIGHT_ROUTE.claim) ? lists.claims(ctx.userId) : null,
   ]);
   if (leaveList) {

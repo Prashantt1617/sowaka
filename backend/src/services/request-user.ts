@@ -23,3 +23,8 @@ export function requestUserFor(userId: string): RequestUser | undefined {
   const user = scope.getStore();
   return user && user.userId === userId ? user : undefined;
 }
+
+/** The signed-in person's company for this request, if known (no lookup). */
+export function requestUserOrg(): string | undefined {
+  return scope.getStore()?.org;
+}

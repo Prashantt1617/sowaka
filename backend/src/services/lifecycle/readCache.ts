@@ -111,6 +111,28 @@ export function kindsChangedBy(path: string): SwrKind[] {
 }
 
 /**
+ * Writes that change only the waiting requests: a leave, overtime, correction or claim made, decided
+ * or cancelled (the employee's routes and HR's). For these Suwi's company bundle (suwi/orgData.ts) is
+ * not read again whole: only its waiting-request sections are (a few KB, pending rows only), and the
+ * rest (People › Tasks, claim types, engagement counts) carries over, since none of these writes can
+ * change it. `/admin/reimbursement-types` is not one (the claim types change). A Suwi action marks
+ * itself (`res.locals.suwiRequestsOnly`) when it only decides requests (approve_claims).
+ */
+const REQUEST_WRITES = /^\/(leaves|overtime|reimbursements|attendance\/regularizations)(\/|$)|^\/admin\/(leaves|overtime|reimbursements|regularizations)\//;
+export const changesOnlyRequests = (path: string): boolean => REQUEST_WRITES.test(path);
+
+/**
+ * Patches Suwi's company bundle after a request write (registered by suwi/orgData.ts, which keeps this
+ * file free of imports). Called before the drop, so it can take the kept bundle; returns what to start
+ * once the drop is done (a refresh readers join), or null when there is nothing kept to patch.
+ */
+type OrgDataPatch = (org: string, bumped: Promise<void>) => (() => void) | null;
+let orgDataPatch: OrgDataPatch | null = null;
+export function setSuwiOrgDataPatch(fn: OrgDataPatch | null): void {
+  orgDataPatch = fn;
+}
+
+/**
  * Every write through the API that can change a board or Suwi's notices drops those answers for
  * the writer's company (every company when the request names none: a candidate on the portal)
  * just before the response is sent, so the next read anywhere (dashboard, app, portal) is worked
@@ -120,16 +142,23 @@ export function forgetReadsOnWrite(req: Request, res: Response, next: NextFuncti
   if (READS.has(req.method)) { next(); return; }
   const kinds = kindsChangedBy(req.path);
   if (!kinds.length) { next(); return; }
+  // Read now: by the time the response ends, routing may have rewritten the path.
+  const requestsOnly = changesOnlyRequests(req.path);
   let dropped = false;
   const drop = (): Promise<void> | null => {
     if (dropped) return null;
     dropped = true;
     const org = (req as Request & { auth?: { user?: { org?: string } } }).auth?.user?.org;
-    dropSwr(org || null, kinds);
-    if (org) scheduleRewarm(org);
     // Suwi's copies in Redis (suwi/kept.ts) are keyed by a data version: bump it before the response
     // goes out, so the next question anywhere misses them. Waits at most a moment for Redis.
-    return kinds.some((k) => SUWI_KINDS.includes(k)) ? bumpSuwiVersion(org || null) : null;
+    const patchOnly = requestsOnly || (res.locals as { suwiRequestsOnly?: boolean } | undefined)?.suwiRequestsOnly === true;
+    const bump = kinds.some((k) => SUWI_KINDS.includes(k)) ? bumpSuwiVersion(org || null, { requestsOnly: patchOnly && Boolean(org) }) : null;
+    // Taken before the drop (it needs the kept bundle), started after it (so it lands as the new copy).
+    const patch = enabled && org && bump && patchOnly && orgDataPatch ? orgDataPatch(org, bump) : null;
+    dropSwr(org || null, kinds);
+    patch?.();
+    if (org) scheduleRewarm(org);
+    return bump;
   };
   const end = res.end.bind(res) as (...args: unknown[]) => Response;
   // res.json and res.send both finish in res.end; dropping there covers every way out.
