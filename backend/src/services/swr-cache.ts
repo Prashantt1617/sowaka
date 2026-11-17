@@ -16,7 +16,9 @@
  */
 export type SwrKind = 'ool'
   // Employee lifecycle and Suwi (lifecycle/readCache.ts): dropped on every write, see there.
-  | 'lc-board-data' | 'off-board-data' | 'suwi-notices';
+  | 'lc-board-data' | 'off-board-data' | 'suwi-notices'
+  // The manager workspace's company roster (manager.service.ts workspaceRoster).
+  | 'mgr-roster';
 
 const FRESH_MS = 60_000;
 const MAX_STALE_MS = 15 * 60_000;

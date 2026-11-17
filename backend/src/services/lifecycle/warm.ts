@@ -2,12 +2,14 @@
  * The employee-lifecycle boards and Suwi's notices, worked out ahead of HR in the
  * engagement warm-up's round (engagement-warmup.service.ts: one company at a time,
  * a page at a time, skipped while the last round runs), so HR's first open is
- * served from memory. Only for companies with the lifecycle on; Suwi's notices for
+ * served from memory: the manager home's roster for every company; the boards only for companies
+ * with the lifecycle on; Suwi's notices for
  * the one dashboard user the Time office warm-up also uses, when Suwi is on.
  */
 import { companies, users } from '../../config/db';
 import { refreshBoardData } from './board';
 import { refreshOffBoardData } from './offboarding';
+import { refreshWorkspaceRoster } from '../manager.service';
 import { lifecycleReadCacheOn } from './readCache';
 import { settingsFor } from '../../suwi/store';
 import { contextFor } from '../../suwi/tools';
@@ -18,7 +20,8 @@ export async function warmLifecycle(org: string, isStopping: () => boolean = () 
   const took: Record<string, number | string> = {};
   if (!lifecycleReadCacheOn()) return took;
   const company = await companies().findOne({ id: org }, { projection: { _id: 0, features: 1 } });
-  const steps: [string, () => Promise<unknown>][] = [];
+  // The manager home's roster: every company (the app's manager home is not a lifecycle feature).
+  const steps: [string, () => Promise<unknown>][] = [['mgr-roster', () => refreshWorkspaceRoster(org)]];
   if (company?.features?.lifecycle === true) {
     steps.push(['lc-board', () => refreshBoardData(org)]);
     steps.push(['off-board', () => refreshOffBoardData(org)]);
