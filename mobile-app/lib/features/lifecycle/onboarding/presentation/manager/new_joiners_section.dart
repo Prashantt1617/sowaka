@@ -11,9 +11,12 @@ import '../plant.dart';
 /// (6Zs M0, artboard AppTeams): who they are, most urgent first, the day it is
 /// for their day labels, and how to open one.
 class JoinersInTree {
-  const JoinersInTree({required this.joiners, required this.now, required this.open});
+  const JoinersInTree({required this.joiners, required this.now, required this.open, this.offline = false});
 
   final List<JoinerSummary> joiners;
+
+  /// The live read failed: these are the device's last copy.
+  final bool offline;
   final DateTime now;
   final Future<void> Function(JoinerSummary joiner) open;
 }
@@ -57,6 +60,9 @@ class _NewJoinersSectionState extends State<NewJoinersSection> {
   List<JoinerSummary> _joiners = const [];
   bool _loaded = false;
 
+  /// Showing the device's copy because the live read failed.
+  bool _offline = false;
+
   LifecycleMeStore get _store => widget.store ?? LifecycleMeStore.instance;
   OnboardingShell? get _shell => widget.shell ?? currentOnboardingShell();
 
@@ -90,7 +96,7 @@ class _NewJoinersSectionState extends State<NewJoinersSection> {
   void _publish() {
     final shell = _shell;
     NewJoinersSection.tree.value = widget.inTree && shell != null && _store.value.enabled && _joiners.isNotEmpty
-        ? JoinersInTree(joiners: _joiners, now: shell.now(), open: _open)
+        ? JoinersInTree(joiners: _joiners, now: shell.now(), open: _open, offline: _offline)
         : null;
   }
 
@@ -102,25 +108,59 @@ class _NewJoinersSectionState extends State<NewJoinersSection> {
   Future<void> _load() async {
     final shell = _shell;
     if (shell == null || !_store.value.enabled) return;
+    // Last time's joiners from the device at once; the live list replaces them.
+    if (!_loaded && _joiners.isEmpty) {
+      final kept = await shell.api.fromDevice((api) => api.fetchJoiners());
+      if (kept != null && kept.isNotEmpty && mounted && !_loaded) _show(kept);
+    }
     try {
       final joiners = await shell.api.fetchJoiners();
       if (mounted) {
-        setState(() {
-          _joiners = sortJoinersByUrgency(joiners);
-          _loaded = true;
-        });
-        NewJoinersSection.joinerUserIds.value = {for (final j in joiners) ?j.userId};
-        _publish();
+        _loaded = true;
+        _offline = false;
+        _show(joiners);
+        unawaited(_warm(shell, _joiners));
       }
     } catch (_) {
-      // Nothing to show is better than a broken Team tab.
+      // The last copy stays, marked offline; nothing kept, nothing shown.
+      if (mounted && _joiners.isNotEmpty) {
+        setState(() => _offline = true);
+        _publish();
+      }
+    }
+  }
+
+  void _show(List<JoinerSummary> joiners) {
+    setState(() => _joiners = sortJoinersByUrgency(joiners));
+    NewJoinersSection.joinerUserIds.value = {for (final j in joiners) ?j.userId};
+    _publish();
+    // Their faces into the image cache now, so the cards and M2 paint them at once.
+    for (final joiner in _joiners) {
+      final url = joiner.photoUrl;
+      if (url != null && url.isNotEmpty) unawaited(precacheOnbAvatar(context, url));
+    }
+  }
+
+  /// The most urgent joiners' M2, read ahead (two at a time) so opening one
+  /// paints from the device; once per few minutes for the Team tab.
+  static DateTime? _warmedAt;
+  static Future<void> _warm(OnboardingShell shell, List<JoinerSummary> joiners) async {
+    final now = DateTime.now();
+    if (_warmedAt != null && now.difference(_warmedAt!) < const Duration(minutes: 3)) return;
+    _warmedAt = now;
+    final ahead = joiners.where((j) => !j.preboarding).take(6).toList();
+    for (var i = 0; i < ahead.length; i += 2) {
+      await Future.wait([
+        for (final joiner in ahead.skip(i).take(2))
+          shell.api.fetchJoiner(joiner.journeyId).then<void>((_) {}, onError: (Object _) {}),
+      ]);
     }
   }
 
   Future<void> _open(JoinerSummary joiner) async {
     final shell = _shell;
     if (shell == null) return;
-    await openJoiner(context, joiner.journeyId, shell: shell);
+    await openJoiner(context, joiner.journeyId, shell: shell, summary: joiner);
     if (mounted) await _load();
   }
 
@@ -138,6 +178,7 @@ class _NewJoinersSectionState extends State<NewJoinersSection> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           JoinersFilterPills(allCount: widget.allCount, joinersCount: _joiners.length),
+          if (_offline) ...[const SizedBox(height: 8), const JoinersOfflineNote()],
           const SizedBox(height: 12),
           for (final joiner in _joiners)
             Padding(
@@ -148,6 +189,21 @@ class _NewJoinersSectionState extends State<NewJoinersSection> {
       ),
     );
   }
+}
+
+/// Under the pills when the joiners are the device's copy.
+class JoinersOfflineNote extends StatelessWidget {
+  const JoinersOfflineNote({super.key});
+
+  @override
+  Widget build(BuildContext context) => const Row(
+    key: ValueKey('joiners-offline'),
+    children: [
+      Icon(Icons.cloud_off_rounded, size: 14, color: OnbColors.waterText),
+      SizedBox(width: 6),
+      Text(OnbOfflineNote.text, style: TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.waterText)),
+    ],
+  );
 }
 
 /// Direct Reports' filter pills (M0): "All n" · "New joiners n", black when
@@ -288,12 +344,12 @@ class JoinerCard extends StatelessWidget {
               child: Row(
                 children: [
                   SizedBox(
-                    width: 56,
-                    height: 56,
+                    width: 52,
+                    height: 52,
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        OnbAvatar(name: joiner.name, photoUrl: joiner.photoUrl, size: 56),
+                        OnbAvatar(name: joiner.name, photoUrl: joiner.photoUrl, size: 52),
                         // The plant badge: a small green tile on the photo's
                         // corner, where a teammate's presence dot would be.
                         Positioned(
@@ -323,7 +379,7 @@ class JoinerCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

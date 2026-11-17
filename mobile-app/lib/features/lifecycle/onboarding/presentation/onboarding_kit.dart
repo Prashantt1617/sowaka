@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 
 import '../../../../services/api_config.dart';
@@ -126,6 +128,7 @@ class OnbScaffold extends StatelessWidget {
     this.showNav = true,
     this.onBack,
     this.background = OnbColors.screen,
+    this.offline = false,
   });
 
   final OnboardingShell shell;
@@ -136,6 +139,9 @@ class OnbScaffold extends StatelessWidget {
   final bool showNav;
   final VoidCallback? onBack;
   final Color background;
+
+  /// The live read failed and the screen shows the device's last copy.
+  final bool offline;
 
   @override
   Widget build(BuildContext context) {
@@ -181,6 +187,7 @@ class OnbScaffold extends StatelessWidget {
               ],
             ),
           ),
+          if (offline) const OnbOfflineNote(),
           Expanded(child: body),
           if (footer != null)
             nav == null ? footer : MediaQuery.removePadding(context: context, removeBottom: true, child: footer),
@@ -189,6 +196,29 @@ class OnbScaffold extends StatelessWidget {
       ),
     );
   }
+}
+
+/// "Offline · showing your last update": the screen is the device's copy
+/// because the live read failed. Never an error card while a copy exists.
+class OnbOfflineNote extends StatelessWidget {
+  const OnbOfflineNote({super.key});
+
+  static const text = 'Offline · showing your last update';
+
+  @override
+  Widget build(BuildContext context) => Container(
+    key: const ValueKey('offline-note'),
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    color: OnbColors.waterTint,
+    child: const Row(
+      children: [
+        Icon(Icons.cloud_off_rounded, size: 16, color: OnbColors.waterText),
+        SizedBox(width: 8),
+        Expanded(child: Text(text, style: TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.waterText))),
+      ],
+    ),
+  );
 }
 
 /// The white strip a pinned primary button sits on.
@@ -228,9 +258,10 @@ class OnbPrimaryButton extends StatelessWidget {
       onPressed: busy ? null : onTap,
       style: FilledButton.styleFrom(
         backgroundColor: OnbColors.primary,
-        disabledBackgroundColor: OnbColors.primary.withValues(alpha: 0.35),
+        // Not yet possible: grey, as the reels draw it ("Agree and continue").
+        disabledBackgroundColor: OnbColors.line,
         foregroundColor: Colors.white,
-        disabledForegroundColor: Colors.white,
+        disabledForegroundColor: OnbColors.text3,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         textStyle: const TextStyle(fontFamily: 'Sora', fontSize: 15, fontWeight: FontWeight.w600),
       ),
@@ -267,11 +298,14 @@ class OnbSecondaryButton extends StatelessWidget {
 
 /// A text link in the brand blue.
 class OnbLink extends StatelessWidget {
-  const OnbLink({super.key, required this.label, required this.onTap, this.icon});
+  const OnbLink({super.key, required this.label, required this.onTap, this.icon, this.color = OnbColors.primary});
 
   final String label;
   final VoidCallback? onTap;
   final IconData? icon;
+
+  /// White on a blue card; the brand blue elsewhere.
+  final Color color;
 
   @override
   Widget build(BuildContext context) => Semantics(
@@ -284,8 +318,8 @@ class OnbLink extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (icon != null) ...[Icon(icon, size: 16, color: OnbColors.primary), const SizedBox(width: 6)],
-            Flexible(child: Text(label, style: OnbText.link)),
+            if (icon != null) ...[Icon(icon, size: 16, color: color), const SizedBox(width: 6)],
+            Flexible(child: Text(label, style: OnbText.link.copyWith(color: color))),
           ],
         ),
       ),
@@ -377,20 +411,31 @@ class OnbCard extends StatelessWidget {
 
 /// The 36–40 px tinted tile a task's emoji sits in.
 class OnbIconTile extends StatelessWidget {
-  const OnbIconTile(this.emoji, {super.key, this.size = 40, this.tint = OnbColors.tint});
+  const OnbIconTile(this.emoji, {super.key, this.size = 40, this.tint = OnbColors.tint, this.radius = 12});
 
   final String emoji;
   final double size;
   final Color tint;
+  final double radius;
 
   @override
   Widget build(BuildContext context) => Container(
     width: size,
     height: size,
     alignment: Alignment.center,
-    decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(12)),
+    decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(radius)),
     child: ExcludeSemantics(child: Text(emoji, style: TextStyle(fontSize: size * 0.48))),
   );
+}
+
+/// A face into the image cache ahead of its card (the disk-cached provider
+/// every avatar uses), so the card and M2 paint it at once. Never under the
+/// test runner, whose image loads never answer.
+Future<void> precacheOnbAvatar(BuildContext context, String url) async {
+  if (Platform.environment['FLUTTER_TEST'] == 'true' || !context.mounted) return;
+  try {
+    await precacheImage(avatarImageProvider(url), context, onError: (_, _) {});
+  } catch (_) {}
 }
 
 /// A person's photo, or their initials on the brand tint.
@@ -466,9 +511,10 @@ class OnbStoryBar extends StatelessWidget {
               height: 4,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(2),
-                color: i <= current
-                    ? (onWhite ? OnbColors.primary : Colors.white)
-                    : (onWhite ? OnbColors.line : Colors.white24),
+                // Done blue, the current one light blue, the rest grey (as drawn).
+                color: onWhite
+                    ? (i < current ? OnbColors.primary : (i == current ? OnbColors.brandBorder : OnbColors.line))
+                    : (i <= current ? Colors.white : Colors.white24),
               ),
             ),
           ),

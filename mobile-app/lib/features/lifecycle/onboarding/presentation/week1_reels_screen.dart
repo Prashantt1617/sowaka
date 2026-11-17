@@ -40,7 +40,21 @@ class _Week1ReelsScreenState extends State<Week1ReelsScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(_load());
+    unawaited(_first());
+  }
+
+  /// Last time's reels from the device at once; the live read replaces them.
+  Future<void> _first() async {
+    final kept = await _shell.api.fromDevice((api) => api.fetchWeek1());
+    if (kept != null && mounted && _data == null) setState(() => _apply(kept));
+    await _load();
+  }
+
+  void _apply(Week1Data data) {
+    _data = data;
+    _step = data.resumeAt?.index ?? Week1Step.values.length;
+    _regime = data.taxRegime ?? 'new';
+    _agreed = data.policiesAckAt != null;
   }
 
   Future<void> _load() async {
@@ -48,11 +62,8 @@ class _Week1ReelsScreenState extends State<Week1ReelsScreen> {
       final data = await _shell.api.fetchWeek1();
       if (!mounted) return;
       setState(() {
-        _data = data;
         _error = null;
-        _step = data.resumeAt?.index ?? Week1Step.values.length;
-        _regime = data.taxRegime ?? 'new';
-        _agreed = data.policiesAckAt != null;
+        _apply(data);
       });
     } catch (error) {
       if (mounted) setState(() => _error = onboardingErrorText(error));
@@ -106,19 +117,21 @@ class _Week1ReelsScreenState extends State<Week1ReelsScreen> {
       shell: _shell,
       title: 'Week-1 tasks',
       showNav: false,
+      background: Colors.white,
+      offline: _error != null,
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
             child: OnbStoryBar(count: Week1Step.values.length, current: _step),
           ),
           Expanded(
             child: ListView(
               key: ValueKey('reel-${step.key}'),
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
               children: [
-                Text('TASK ${_step + 1} OF 4 · ${_durations[_step].toUpperCase()}', style: OnbText.eyebrow),
-                const SizedBox(height: 8),
+                Text('Task ${_step + 1} of 4 · ${_durations[_step]}', style: _ReelText.step),
+                const SizedBox(height: 4),
                 OnbRise(child: body),
               ],
             ),
@@ -138,7 +151,7 @@ class _Week1ReelsScreenState extends State<Week1ReelsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Read the company policies', style: OnbText.display),
+        const Text('Read the company policies', style: _ReelText.title),
         const SizedBox(height: 14),
         if (data.policies.isEmpty)
           const Text('HR hasn’t added policies yet. You can still agree to the company’s policies.', style: OnbText.body),
@@ -147,7 +160,7 @@ class _Week1ReelsScreenState extends State<Week1ReelsScreen> {
             padding: const EdgeInsets.only(bottom: 8),
             child: OnbCard(
               radius: 16,
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               onTap: policy.url != null
                   ? () => openExternalLink(context, policy.url!)
                   : policy.body != null
@@ -155,13 +168,22 @@ class _Week1ReelsScreenState extends State<Week1ReelsScreen> {
                   : null,
               child: Row(
                 children: [
-                  const OnbIconTile('📄', size: 36),
+                  OnbIconTile(policyEmoji(policy), size: 36, tint: OnbColors.screen, radius: 10),
                   const SizedBox(width: 12),
-                  Expanded(child: Text(policy.title, style: OnbText.bodyStrong)),
-                  if (read)
-                    const OnbTag('Read', tone: OnbTone.done, icon: Icons.check_rounded)
-                  else
-                    Text(policyMeta(policy), style: OnbText.label),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(policy.title, style: OnbText.bodyStrong),
+                        const SizedBox(height: 2),
+                        Text(
+                          read ? '✓ Read' : policyMeta(policy),
+                          style: OnbText.label.copyWith(color: read ? OnbColors.doneText : OnbColors.text3),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right_rounded, size: 18, color: OnbColors.icon),
                 ],
               ),
             ),
@@ -169,14 +191,45 @@ class _Week1ReelsScreenState extends State<Week1ReelsScreen> {
         if (more > 0)
           OnbLink(label: '+ $more more ${more == 1 ? 'policy' : 'policies'}', onTap: () => setState(() => _allPolicies = true)),
         const SizedBox(height: 10),
-        CheckboxListTile(
-          key: const ValueKey('policies-agree'),
-          value: _agreed,
-          onChanged: (value) => setState(() => _agreed = value ?? false),
-          controlAffinity: ListTileControlAffinity.leading,
-          contentPadding: EdgeInsets.zero,
-          activeColor: OnbColors.primary,
-          title: const Text('I have read and agree to the company policies', style: OnbText.bodyStrong),
+        // "I have read and agree": a grey card with the box, as drawn.
+        Semantics(
+          checked: _agreed,
+          label: 'I have read and agree to the company policies',
+          child: ExcludeSemantics(
+            child: Material(
+              key: const ValueKey('policies-agree'),
+              color: OnbColors.screen,
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => setState(() => _agreed = !_agreed),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: _agreed ? OnbColors.primary : Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: _agreed ? null : Border.all(color: OnbColors.icon, width: 2),
+                        ),
+                        child: _agreed ? const Icon(Icons.check_rounded, size: 16, color: Colors.white) : null,
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'I have read and agree to the company policies',
+                          style: TextStyle(fontFamily: 'Sora', fontSize: 13, height: 1.35, color: OnbColors.text2),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -198,7 +251,7 @@ class _Week1ReelsScreenState extends State<Week1ReelsScreen> {
   Widget _tax() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      const Text('Choose your tax regime', style: OnbText.display),
+      const Text('Choose your tax regime', style: _ReelText.title),
       const SizedBox(height: 6),
       const Text(
         'This decides how much tax is taken from your salary. You can change it once a year.',
@@ -229,7 +282,7 @@ class _Week1ReelsScreenState extends State<Week1ReelsScreen> {
   Widget _bank(Week1Data data) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      const Text('Check your bank and PF details', style: OnbText.display),
+      const Text('Check your bank and PF details', style: _ReelText.title),
       const SizedBox(height: 6),
       const Text('We filled these in from your pre-boarding. Your salary goes here.', style: OnbText.body),
       const SizedBox(height: 16),
@@ -270,7 +323,7 @@ class _Week1ReelsScreenState extends State<Week1ReelsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('What your probation looks like', style: OnbText.display),
+        const Text('What your probation looks like', style: _ReelText.title),
         const SizedBox(height: 6),
         Text(
           [if (months != null) '$months months.', '$manager set these goals for you.'].join(' '),
@@ -336,7 +389,7 @@ class _Week1ReelsScreenState extends State<Week1ReelsScreen> {
         const SizedBox(height: 12),
         Text('4/4', style: OnbText.displayXl(48), textAlign: TextAlign.center),
         const SizedBox(height: 6),
-        const Text('Week-1 tasks done', style: OnbText.display, textAlign: TextAlign.center),
+        const Text('Week-1 tasks done', style: _ReelText.doneTitle, textAlign: TextAlign.center),
         const SizedBox(height: 8),
         Text(
           'Your plant grew a new leaf. HR and ${data.managerName ?? 'your manager'} can see you’re all set.',
@@ -469,3 +522,21 @@ Future<void> showPolicySheet(BuildContext context, PolicyItem policy) => showOnb
     ),
   ),
 );
+
+/// The reels' type, as the artboard sets it (A4).
+abstract final class _ReelText {
+  static const step = TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.text3);
+  static const title = TextStyle(fontFamily: 'Sora', fontSize: 28, height: 1.1, fontWeight: FontWeight.w800, letterSpacing: -0.56, color: OnbColors.text);
+  static const doneTitle = TextStyle(fontFamily: 'Sora', fontSize: 22, fontWeight: FontWeight.w700, color: OnbColors.text);
+}
+
+/// A policy's icon (A4): leave 🌴, attendance ⏰, conduct 🤝, else a page.
+String policyEmoji(PolicyItem policy) {
+  final t = policy.title.toLowerCase();
+  if (t.contains('leave') || t.contains('holiday')) return '🌴';
+  if (t.contains('attendance') || t.contains('hours') || t.contains('time')) return '⏰';
+  if (t.contains('conduct') || t.contains('ethic')) return '🤝';
+  if (t.contains('travel') || t.contains('expense') || t.contains('reimburse')) return '💼';
+  if (t.contains('security') || t.contains('it ') || t.contains('device')) return '🔒';
+  return '📄';
+}

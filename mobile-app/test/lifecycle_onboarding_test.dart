@@ -1,3 +1,5 @@
+import 'dart:async';
+
 // The app's onboarding (employee lifecycle, docs/lifecycle/CONTRACT.md "App —
 // joiner and manager"): the rules the screens apply (the day label, what is
 // up next and the list order, where the week-1 reels resume, when the
@@ -80,6 +82,12 @@ class FakeOnboardingApi implements OnboardingApi {
 
   @override
   String? get viewerId => 'me';
+
+  /// What the device kept, for the kept-first paints: off unless a test turns it on.
+  bool keptOnDevice = false;
+
+  @override
+  Future<T?> fromDevice<T>(Future<T> Function(OnboardingApi api) read) async => keptOnDevice ? read(this) : null;
 
   @override
   Future<LifecycleMe> fetchMe() async => me;
@@ -369,7 +377,7 @@ void main() {
       await pumpPage(tester, Week1ReelsScreen(shell: shellFor(api, DateTime(2026, 12, 2))));
 
       expect(find.text('Choose your tax regime'), findsOneWidget);
-      expect(find.text('TASK 2 OF 4 · 2 MIN'), findsOneWidget);
+      expect(find.text('Task 2 of 4 · 2 min'), findsOneWidget);
       // New is the default.
       await tester.tap(find.text('Confirm choice'));
       await tester.pumpAndSettle();
@@ -556,7 +564,7 @@ void main() {
       final api = FakeOnboardingApi();
       await pumpPage(tester, SurveyScreen(shell: shellFor(api, DateTime(2026, 12, 7))));
       expect(find.text('Your first week'), findsOneWidget);
-      expect(find.text('QUESTION 1 OF 4'), findsOneWidget);
+      expect(find.text('Question 1 of 4'), findsOneWidget);
       FilledButton next() => tester.widget<FilledButton>(
         find.descendant(of: find.byKey(const ValueKey('survey-next')), matching: find.byType(FilledButton)),
       );
@@ -622,6 +630,8 @@ void main() {
     await pumpPage(tester, MeetingScreen(shell: shellFor(api, DateTime(2026, 12, 1, 11, 40)), meetingId: 'm1'));
     expect(find.text('Did you meet Neha?'), findsOneWidget);
     expect(find.text('Add to calendar'), findsNothing);
+    await tester.ensureVisible(find.byKey(const ValueKey('meeting-yes')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('meeting-yes')));
     await tester.pumpAndSettle();
     expect(api.calls, contains('meeting:m1:yes'));
@@ -749,9 +759,13 @@ void main() {
       expect(find.text('Week 1'), findsWidgets);
       expect(find.text('Assign'), findsOneWidget);
       expect(find.text('Add'), findsWidgets);
-      expect(find.text('0 of 6'), findsOneWidget);
+      // As drawn (M2): one card, then the week's tasks; the set-up opens from its own task.
+      expect(find.text('WELCOME STAGE'), findsOneWidget);
+      expect(find.text('Your tasks this week'), findsOneWidget);
+      expect(find.text('After you meet'), findsOneWidget);
+      expect(find.text('0 of 6'), findsNothing);
 
-      await tester.tap(find.text('Done'));
+      await tester.tap(find.text('Mark done'));
       await tester.pumpAndSettle();
       expect(api.calls, contains('mgr-done:t3'));
 
@@ -1026,7 +1040,9 @@ void main() {
           })..['dueAt'] = '2026-12-01T00:00:00.000Z';
       final api = FakeOnboardingApi()..joiner = detail(tasks: [meetingTask(DateTime(2026, 12, 1, 11))]);
       await pumpPage(tester, JoinerScreen(shell: shellFor(api, DateTime(2026, 12, 1, 9)), journeyId: 'j1'));
-      expect(find.descendant(of: find.byKey(const ValueKey('mgr-task-mm')), matching: find.text('11:00 AM')), findsWidgets);
+      // The pill as drawn ("4 PM"); the time in full on the row's second line.
+      expect(find.descendant(of: find.byKey(const ValueKey('mgr-task-mm')), matching: find.text('11 AM')), findsOneWidget);
+      expect(find.descendant(of: find.byKey(const ValueKey('mgr-task-mm')), matching: find.text('Tue · 11:00 AM · must-do')), findsNothing);
       expect(find.textContaining('5:30'), findsNothing);
       api.joiner = detail(tasks: [meetingTask(DateTime(2026, 12, 1, 9, 5))]);
       await pumpPage(tester, JoinerScreen(shell: shellFor(api, DateTime(2026, 12, 1, 9)), journeyId: 'j1'));
@@ -1045,7 +1061,12 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('welcome-post')));
       await tester.pumpAndSettle();
       expect(api.calls, contains('welcome:Welcome, Kabir!'));
-      expect(find.text('Post a welcome'), findsNothing);
+      // Posted once: the row stays, ticked green, and Write is gone.
+      expect(find.byKey(const ValueKey('welcome-write')), findsNothing);
+      expect(find.text('1 done'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('mgr-done-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('mgr-welcome-done')), findsOneWidget);
     });
 
     testWidgets('the survey summary per kind, people not answers; the due line under On track', (tester) async {
@@ -1063,6 +1084,68 @@ void main() {
       expect(find.textContaining('first-week survey: 3 people answered, 3.7 out of 5'), findsOneWidget);
       expect(find.textContaining('month-3 pulse survey: 4 people answered'), findsOneWidget);
       expect(find.text('On track. Week-1 tasks are due Sun 6 Dec.'), findsOneWidget);
+    });
+  });
+
+  group('M2 paints at once', () {
+    JoinerDetail kept() => JoinerDetail.fromJson({
+      'joiner': {'journeyId': 'j1', 'name': 'Kabir Mehta', 'designation': 'Product Designer', 'tj': '2026-12-01', 'stage': 'welcome_week1'},
+      'tasks': [task('t1', 'Give Kabir a starter task', systemKey: 'starter_task', ownerRole: 'manager')],
+      'setup': {'people': [], 'goals': []},
+    });
+
+    testWidgets('last time\'s week from the device before the live read answers', (tester) async {
+      final live = Completer<JoinerDetail>();
+      final api = _SlowJoinerApi(live.future)
+        ..keptOnDevice = true
+        ..joiner = kept();
+      await tester.pumpWidget(MaterialApp(home: JoinerScreen(shell: shellFor(api, DateTime(2026, 12, 2)), journeyId: 'j1')));
+      await tester.pump();
+      await tester.pump();
+      // Painted from the device: no spinner, the week is there.
+      expect(find.text('Your tasks this week'), findsOneWidget);
+      expect(find.text('Assign'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      live.complete(kept());
+      await tester.pumpAndSettle();
+      expect(find.text('Assign'), findsOneWidget);
+    });
+
+    testWidgets('nothing kept: the Team tab\'s row paints the card while the week loads', (tester) async {
+      final live = Completer<JoinerDetail>();
+      final api = _SlowJoinerApi(live.future);
+      const row = JoinerSummary(journeyId: 'j1', name: 'Kabir Mehta', designation: 'Product Designer', dayLabel: 'Week 1', stage: 'welcome_week1');
+      await tester.pumpWidget(MaterialApp(home: JoinerScreen(shell: shellFor(api, DateTime(2026, 12, 2)), journeyId: 'j1', summary: row)));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('mgr-hero')), findsOneWidget);
+      expect(find.text('Week 1'), findsOneWidget);
+      expect(find.text('WELCOME STAGE'), findsOneWidget);
+      live.complete(kept());
+      await tester.pumpAndSettle();
+      expect(find.text('Your tasks this week'), findsOneWidget);
+    });
+  });
+
+  group('offline: the last copy, said so', () {
+    testWidgets('M2: the live read fails after the device copy painted → the note, not an error card', (tester) async {
+      final api = _FailingJoinerApi()
+        ..keptOnDevice = true
+        ..joiner = JoinerDetail.fromJson({
+          'joiner': {'journeyId': 'j1', 'name': 'Kabir Mehta', 'tj': '2026-12-01', 'stage': 'welcome_week1'},
+          'tasks': [task('t1', 'Give Kabir a starter task', systemKey: 'starter_task', ownerRole: 'manager')],
+          'setup': {'people': [], 'goals': []},
+        });
+      await pumpPage(tester, JoinerScreen(shell: shellFor(api, DateTime(2026, 12, 2)), journeyId: 'j1'));
+      expect(find.text('Your tasks this week'), findsOneWidget);
+      expect(find.text(OnbOfflineNote.text), findsOneWidget);
+      expect(find.text('Try again'), findsNothing);
+    });
+
+    testWidgets('the onboarding home: the device copy with the note when offline', (tester) async {
+      final api = _FailingHomeApi()..keptOnDevice = true;
+      await pumpPage(tester, OnboardingHomeScreen(shell: shellFor(api, DateTime(2026, 12, 2))));
+      expect(find.byKey(const ValueKey('day-label')), findsOneWidget);
+      expect(find.text(OnbOfflineNote.text), findsOneWidget);
     });
   });
 
@@ -1174,3 +1257,61 @@ class _RevealApi extends FakeOnboardingApi {
   Future<RevealView> fetchReveal() async => reveal;
 }
 
+/// M2's live read held until the test lets it answer.
+class _SlowJoinerApi extends FakeOnboardingApi {
+  _SlowJoinerApi(this.live);
+
+  final Future<JoinerDetail> live;
+  bool _replaying = false;
+
+  @override
+  Future<T?> fromDevice<T>(Future<T> Function(OnboardingApi api) read) async {
+    if (!keptOnDevice) return null;
+    _replaying = true;
+    try {
+      return await read(this);
+    } finally {
+      _replaying = false;
+    }
+  }
+
+  @override
+  Future<JoinerDetail> fetchJoiner(String journeyId) => _replaying ? super.fetchJoiner(journeyId) : live;
+}
+
+/// The live read fails; the device copy (the fake's own data) answers.
+class _FailingJoinerApi extends FakeOnboardingApi {
+  bool _replaying = false;
+
+  @override
+  Future<T?> fromDevice<T>(Future<T> Function(OnboardingApi api) read) async {
+    _replaying = true;
+    try {
+      return await read(this);
+    } finally {
+      _replaying = false;
+    }
+  }
+
+  @override
+  Future<JoinerDetail> fetchJoiner(String journeyId) =>
+      _replaying ? super.fetchJoiner(journeyId) : Future.error(const OnboardingApiException(OnboardingApiException.offline));
+}
+
+class _FailingHomeApi extends FakeOnboardingApi {
+  bool _replaying = false;
+
+  @override
+  Future<T?> fromDevice<T>(Future<T> Function(OnboardingApi api) read) async {
+    _replaying = true;
+    try {
+      return await read(this);
+    } finally {
+      _replaying = false;
+    }
+  }
+
+  @override
+  Future<OnboardingHome> fetchHome() =>
+      _replaying ? super.fetchHome() : Future.error(const OnboardingApiException(OnboardingApiException.offline));
+}

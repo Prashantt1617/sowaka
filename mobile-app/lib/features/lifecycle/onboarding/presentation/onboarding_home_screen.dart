@@ -39,16 +39,31 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(_load());
+    unawaited(_first());
   }
+
+  /// Last time's home from the device at once; the live read replaces it.
+  Future<void> _first() async {
+    final kept = await _shell.api.fromDevice(_read);
+    if (kept != null && mounted && _home == null) {
+      setState(() {
+        _home = kept[0] as OnboardingHome;
+        _starterTasks = kept[1] as List<StarterTask>;
+        _notes = kept[2] as List<OneOnOneNote>;
+      });
+    }
+    await _load();
+  }
+
+  static Future<List<Object?>> _read(OnboardingApi api) => Future.wait<Object?>([
+    api.fetchHome(),
+    api.fetchStarterTasks().then<Object?>((v) => v, onError: (_) => const <StarterTask>[]),
+    api.fetchNotes().then<Object?>((v) => v, onError: (_) => const <OneOnOneNote>[]),
+  ]);
 
   Future<void> _load() async {
     try {
-      final results = await Future.wait<Object?>([
-        _shell.api.fetchHome(),
-        _shell.api.fetchStarterTasks().then<Object?>((v) => v, onError: (_) => const <StarterTask>[]),
-        _shell.api.fetchNotes().then<Object?>((v) => v, onError: (_) => const <OneOnOneNote>[]),
-      ]);
+      final results = await _read(_shell.api);
       if (!mounted) return;
       final home = results[0] as OnboardingHome;
       setState(() {
@@ -98,6 +113,7 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
     return OnbScaffold(
       shell: _shell,
       title: 'Onboarding',
+      offline: home != null && _error != null,
       body: home == null
           ? OnbLoadState(error: _error, onRetry: _load)
           : RefreshIndicator(onRefresh: _load, child: _body(home)),
@@ -157,11 +173,11 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
           const SizedBox(height: 14),
           OnbRise(delay: 60, child: _UpNextCard(task: upNext, now: now, onTap: () => _open(upNext))),
         ],
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
         Row(
           children: [
-            Expanded(child: Text(listTitle, style: OnbText.h1)),
-            Text('${done.length} of ${total == 0 ? done.length : total} done', style: OnbText.label),
+            Expanded(child: Text(listTitle, style: _A2Text.listTitle)),
+            Text('${done.length} of ${total == 0 ? done.length : total} done', style: _A2Text.listMeta),
           ],
         ),
         const SizedBox(height: 10),
@@ -243,21 +259,29 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
     final next = nextOnboardingStageLabel(home.stage);
     final journey = home.journey;
     return OnbCard(
-      radius: 24,
+      radius: 20,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Plant.of(home.plant, size: 46, showPill: false),
+              // The plant on its tile, as drawn.
+              Container(
+                width: 52,
+                height: 58,
+                decoration: BoxDecoration(color: OnbColors.tint, borderRadius: BorderRadius.circular(14)),
+                alignment: Alignment.bottomCenter,
+                child: Plant.of(home.plant, size: 46, showPill: false),
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('YOU ARE HERE', style: OnbText.eyebrow),
+                    const Text('YOU ARE HERE', style: _A2Text.eyebrow),
                     const SizedBox(height: 2),
-                    Text(dayLabel, key: const ValueKey('day-label'), style: OnbText.displayXl(32)),
+                    Text(dayLabel, key: const ValueKey('day-label'), style: _A2Text.day),
                     const SizedBox(height: 2),
                     Row(
                       children: [
@@ -279,19 +303,21 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
                     key: const ValueKey('journey-toggle'),
                     onPressed: () => setState(() => _journeyOpen = !_journeyOpen),
                     style: TextButton.styleFrom(
-                      foregroundColor: OnbColors.primary,
-                      backgroundColor: OnbColors.tint,
-                      shape: const StadiumBorder(),
+                      foregroundColor: OnbColors.text,
+                      backgroundColor: Colors.white,
+                      shape: const StadiumBorder(side: BorderSide(color: OnbColors.lineDark)),
+                      minimumSize: const Size(0, 34),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text('Journey', style: TextStyle(fontFamily: 'Sora', fontWeight: FontWeight.w600, fontSize: 13)),
+                        const Text('Journey', style: TextStyle(fontFamily: 'Sora', fontWeight: FontWeight.w600, fontSize: 12)),
+                        const SizedBox(width: 4),
                         AnimatedRotation(
                           turns: _journeyOpen ? 0.5 : 0,
                           duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 200),
-                          child: const Icon(Icons.expand_more_rounded, size: 18),
+                          child: const Icon(Icons.expand_more_rounded, size: 14),
                         ),
                       ],
                     ),
@@ -377,7 +403,7 @@ class _UpNextCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 16, 14, 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: ExcludeSemantics(
               child: Row(
                 children: [
@@ -385,18 +411,18 @@ class _UpNextCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('UP NEXT', style: OnbText.eyebrow.copyWith(color: Colors.white70)),
-                        const SizedBox(height: 6),
-                        Text(task.title, style: OnbText.display.copyWith(color: Colors.white, fontSize: 22)),
-                        const SizedBox(height: 4),
-                        Text(meta, style: OnbText.label.copyWith(color: Colors.white.withValues(alpha: 0.85))),
+                        const Text('UP NEXT', style: _A2Text.upNextEyebrow),
+                        const SizedBox(height: 3),
+                        Text(task.title, style: _A2Text.upNextTitle),
+                        const SizedBox(height: 3),
+                        Text(meta, style: _A2Text.upNextMeta),
                       ],
                     ),
                   ),
                   const SizedBox(width: 10),
                   Container(
-                    width: 44,
-                    height: 44,
+                    width: 40,
+                    height: 40,
                     decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
                     child: const Icon(Icons.arrow_forward_rounded, color: OnbColors.primary),
                   ),
@@ -422,7 +448,7 @@ class _DoneSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => OnbCard(
-    padding: const EdgeInsets.all(12),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
     radius: 16,
     child: Column(
       children: [
@@ -431,7 +457,7 @@ class _DoneSummary extends StatelessWidget {
             Container(
               width: 36,
               height: 36,
-              decoration: BoxDecoration(color: OnbColors.doneTint, borderRadius: BorderRadius.circular(12)),
+              decoration: BoxDecoration(color: OnbColors.doneTint, borderRadius: BorderRadius.circular(10)),
               child: const Icon(Icons.check_rounded, color: OnbColors.doneText),
             ),
             const SizedBox(width: 12),
@@ -439,7 +465,7 @@ class _DoneSummary extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('${done.length} done', style: OnbText.bodyStrong),
+                  Text('${done.length} done', style: OnbText.bodyStrong.copyWith(color: OnbColors.text2)),
                   Text(
                     done.map((t) => t.title).join(' · '),
                     maxLines: 1,
@@ -456,12 +482,21 @@ class _DoneSummary extends StatelessWidget {
                 key: const ValueKey('done-toggle'),
                 onPressed: onToggle,
                 style: TextButton.styleFrom(
-                  foregroundColor: OnbColors.primary,
-                  backgroundColor: OnbColors.tint,
+                  foregroundColor: OnbColors.doneText,
+                  backgroundColor: OnbColors.doneTint,
                   shape: const StadiumBorder(),
-                  minimumSize: const Size(60, 32),
+                  minimumSize: const Size(0, 26),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  textStyle: const TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w700),
                 ),
-                child: Text(open ? 'Hide' : 'View'),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(open ? 'Hide' : 'View'),
+                    const SizedBox(width: 4),
+                    Icon(open ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 12),
+                  ],
+                ),
               ),
             ),
           ],
@@ -622,3 +657,14 @@ Future<void> showJourneySheet(BuildContext context, List<JourneyStage> stages, S
     ),
   ),
 );
+
+/// A2's type, as the artboard sets it.
+abstract final class _A2Text {
+  static const eyebrow = TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.primary);
+  static const day = TextStyle(fontFamily: 'Sora', fontSize: 26, height: 1.1, fontWeight: FontWeight.w800, letterSpacing: -0.52, color: OnbColors.text);
+  static const listTitle = TextStyle(fontFamily: 'Sora', fontSize: 16, fontWeight: FontWeight.w700, color: OnbColors.text);
+  static const listMeta = TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.text2);
+  static const upNextEyebrow = TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 1.1, color: OnbColors.brandBorder);
+  static const upNextTitle = TextStyle(fontFamily: 'Sora', fontSize: 18, height: 1.2, fontWeight: FontWeight.w700, color: Colors.white);
+  static const upNextMeta = TextStyle(fontFamily: 'Sora', fontSize: 12, color: OnbColors.tint);
+}

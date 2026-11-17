@@ -753,6 +753,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // Every copy on this phone goes with them — dashboard and feed — and a
     // load still in flight cannot put one back.
     await DashboardCache.clearAll();
+    HttpOnboardingApi.forgetKept();
     // The server forgets the device, then the session, before the phone
     // does, so pushes for this account stop landing here and the token dies
     // now. The device first: unregistering needs the token that logout

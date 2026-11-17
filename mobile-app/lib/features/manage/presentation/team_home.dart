@@ -433,6 +433,8 @@ class _MyTeamViewState extends State<_MyTeamView> {
             ),
           )
         else
+          // The joiners are the device's copy: say so above the tree.
+          if (tree != null && tree.offline) const Padding(padding: EdgeInsets.only(bottom: 8), child: JoinersOfflineNote()),
           ..._teamTree(
             members: filtered,
             openTeam: _openTeam,

@@ -204,14 +204,27 @@ class _TaskCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              OnbAvatar(name: manager, size: 36),
+              // The manager's initial on the brand blue, as drawn.
+              Container(
+                width: 40,
+                height: 40,
+                decoration: const BoxDecoration(color: OnbColors.primary, shape: BoxShape.circle),
+                alignment: Alignment.center,
+                child: Text(
+                  OnbAvatar.initials(manager).substring(0, 1),
+                  style: const TextStyle(fontFamily: 'Sora', fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+                ),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('FROM YOUR MANAGER', style: OnbText.eyebrow),
-                    Text([manager, ?task.assignedByDesignation].join(' · '), style: OnbText.label),
+                    const Text(
+                      'FROM YOUR MANAGER',
+                      style: TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.primary),
+                    ),
+                    Text([manager, ?task.assignedByDesignation].join(' · '), style: OnbText.bodyStrong),
                   ],
                 ),
               ),
@@ -219,8 +232,11 @@ class _TaskCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          Text(task.title, style: OnbText.h1),
-          const SizedBox(height: 4),
+          Text(
+            task.title,
+            style: const TextStyle(fontFamily: 'Sora', fontSize: 24, height: 1.15, fontWeight: FontWeight.w800, letterSpacing: -0.48, color: OnbColors.text),
+          ),
+          const SizedBox(height: 10),
           Text(
             [
               if (due != null) 'Due ${onbDay(due)}',
@@ -230,10 +246,51 @@ class _TaskCard extends StatelessWidget {
           ),
           if (task.note != null) ...[
             const SizedBox(height: 12),
-            Text('“${task.note}”', style: OnbText.body.copyWith(fontStyle: FontStyle.italic)),
+            // The manager's note in a grey bubble.
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(color: OnbColors.screen, borderRadius: BorderRadius.circular(16)),
+              child: Text('“${task.note}”', style: OnbText.body.copyWith(color: OnbColors.text, fontSize: 15, height: 1.5)),
+            ),
           ],
+          // Each link as a row: its site, and Open.
           for (final link in task.links)
-            OnbLink(label: '🔗 $link', onTap: () => openExternalLink(context, link)),
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Material(
+                color: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: OnbColors.line)),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () => openExternalLink(context, link),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(color: OnbColors.tint, borderRadius: BorderRadius.circular(10)),
+                          alignment: Alignment.center,
+                          child: const Text('🔗', style: TextStyle(fontSize: 16)),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            Uri.tryParse(link)?.host.isNotEmpty == true ? Uri.parse(link).host : link,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontFamily: 'Sora', fontSize: 13, fontWeight: FontWeight.w600, color: OnbColors.text),
+                          ),
+                        ),
+                        const Text('Open', style: TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.primary)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
