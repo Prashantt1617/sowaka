@@ -810,32 +810,54 @@ export async function reassignManager(journeyId: string, managerUserId: string |
 export async function moveJourneysToManager(org: string, fromUserId: string, toUserId: string, now = new Date()): Promise<string[]> {
   if (!toUserId || toUserId === fromUserId) return [];
   const list = await journeys().find({ org, kind: 'onboarding', managerUserId: fromUserId, closedAt: { $exists: false } }, { projection: { _id: 0, id: 1 } }).toArray();
-  for (const { id } of list) {
-    await journeys().updateOne({ id }, { $set: { managerUserId: toUserId, updatedAt: now } });
-    await reassignManager(id, toUserId, fromUserId);
+  for (const { id } of list) await moveJourneyToManager(id, fromUserId, toUserId, now);
+  return list.map((j) => j.id);
+}
+
+/**
+ * One person's manager changed (People › Reporting manager, an import): their open journeys
+ * (onboarding and offboarding) follow, the way a leaving manager's joiners move to the successor.
+ * Returns the journeys moved.
+ */
+export async function movePersonJourneysToManager(org: string, userId: string, toUserId: string, now = new Date()): Promise<string[]> {
+  if (!org || !userId || !toUserId) return [];
+  const list = await journeys().find(
+    { org, userId, closedAt: { $exists: false }, managerUserId: { $ne: toUserId } },
+    { projection: { _id: 0, id: 1, managerUserId: 1 } },
+  ).toArray();
+  for (const j of list) await moveJourneyToManager(j.id, j.managerUserId ?? '', toUserId, now);
+  return list.map((j) => j.id);
+}
+
+/**
+ * One journey to a new manager: the journey's manager, its open manager tasks, the Day-1 meetings not
+ * yet held, the people to meet, the current offer (no new version, nothing re-sent) and letters not
+ * yet sent or signed. A sent or signed letter stays as it was.
+ */
+async function moveJourneyToManager(id: string, fromUserId: string, toUserId: string, now: Date): Promise<void> {
+  await journeys().updateOne({ id }, { $set: { managerUserId: toUserId, updatedAt: now } });
+  await reassignManager(id, toUserId, fromUserId || undefined);
+  if (fromUserId) {
     const meet = await peopleToMeet().findOne({ journeyId: id, personUserId: fromUserId, metAt: { $exists: false } }, { projection: { _id: 0, id: 1 } });
     if (meet) {
       if (await peopleToMeet().findOne({ journeyId: id, personUserId: toUserId }, { projection: { _id: 1 } })) await peopleToMeet().deleteOne({ id: meet.id });
       else await peopleToMeet().updateOne({ id: meet.id }, { $set: { personUserId: toUserId } });
     }
-    // The manager meeting on the Day-1 pass and its meeting now name the successor.
-    await syncDay1Meetings(id);
-    // The current offer names the successor too (no new version, nothing re-sent), and so do letters
-    // not sent yet; a sent or signed letter stays as it was.
-    const offer = await offers().findOne({ journeyId: id }, { projection: { _id: 0, versions: 1 } });
-    const last = (offer?.versions?.length ?? 0) - 1;
-    if (last >= 0 && offer!.versions[last]?.fields?.managerUserId === fromUserId) {
-      await offers().updateOne({ journeyId: id }, { $set: { [`versions.${last}.fields.managerUserId`]: toUserId, updatedAt: now } });
-    }
-    const successor = await users().findOne({ userId: toUserId }, { projection: { _id: 0, name: 1 } });
-    if (successor?.name) {
-      await letters().updateMany(
-        { journeyId: id, 'values.managerName': { $exists: true }, 'email.sentAt': { $exists: false }, signature: { $exists: false } },
-        { $set: { 'values.managerName': successor.name } },
-      );
-    }
   }
-  return list.map((j) => j.id);
+  // The manager meeting on the Day-1 pass and its meeting now name the new manager.
+  await syncDay1Meetings(id);
+  const offer = await offers().findOne({ journeyId: id }, { projection: { _id: 0, versions: 1 } });
+  const last = (offer?.versions?.length ?? 0) - 1;
+  if (last >= 0 && offer!.versions[last]?.fields?.managerUserId !== toUserId && offer!.versions[last]?.fields?.managerUserId !== undefined) {
+    await offers().updateOne({ journeyId: id }, { $set: { [`versions.${last}.fields.managerUserId`]: toUserId, updatedAt: now } });
+  }
+  const next = await users().findOne({ userId: toUserId }, { projection: { _id: 0, name: 1 } });
+  if (next?.name) {
+    await letters().updateMany(
+      { journeyId: id, 'values.managerName': { $exists: true }, 'email.sentAt': { $exists: false }, signature: { $exists: false } },
+      { $set: { 'values.managerName': next.name } },
+    );
+  }
 }
 
 /** After Mark joined: binds userId, resolves employee-owned tasks to the user, status 'joined', stage welcome_week1, plant sprout. */
