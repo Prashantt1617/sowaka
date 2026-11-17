@@ -21,6 +21,7 @@
  *    already taken, never below zero. A notice recovery does not lower
  *    taxable salary. Leave encashment is tax-free to ₹25 lakh, gratuity to ₹20 lakh.
  */
+import { scopedUsers, scriptForcesFeatures } from './lifecycle/scriptScope';
 import { companies, exitSettlements, payrollRuns, payslips, salaryStructures, taxDeclarations, users } from '../config/db';
 import { ExitSettlement, SettlementChange, SettlementLine, SettlementTaxWorking } from '../models/exitSettlement.model';
 import { Payslip } from '../models/payrollRun.model';
@@ -406,14 +407,14 @@ export async function markSettlementPaid(org: string, employee: User, by: { user
 
 /** Drafts for everyone whose settlement has started and has none yet (the hourly job), so the Exits page shows the amount. */
 export async function draftDueSettlements(now = new Date()): Promise<number> {
-  const due = await users().find({ 'exit.accessEndedAt': { $exists: true } }).toArray();
+  const due = await users().find({ 'exit.accessEndedAt': { $exists: true }, ...scopedUsers() }).toArray();
   let made = 0;
   for (const u of due) {
     if (!u.org || !u.exit || !settlementOpen(u.exit)) continue;
     try {
       if (await exitSettlements().findOne({ org: u.org, userId: u.userId }, { projection: { _id: 1 } })) continue;
       const company = await companies().findOne({ id: u.org }, { projection: { _id: 0, features: 1 } });
-      if (company?.features?.exits !== true) continue;
+      if (company?.features?.exits !== true && !scriptForcesFeatures(u.org)) continue;
       if (await settlementFor(u as User, now)) made++;
     } catch (error) {
       logger.error('Exit settlement: the draft could not be made', { userId: u.userId, org: u.org }, error);

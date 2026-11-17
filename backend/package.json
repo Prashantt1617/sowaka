@@ -43,6 +43,8 @@
     "lifecycle:check": "MONGODB_DB=el_journey_check NOTIFY_ORGS=el-journey-check EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/lifecycle-check.ts",
     "lifecycle:dash-check": "MONGODB_DB=el_dash_onb_check NOTIFY_ORGS=el-dash EMAIL_ORGS=el-dash AWS_S3_BUCKET= tsx src/scripts/lifecycle-dash-check.ts",
     "lifecycle:fixtures": "MONGODB_DB=el_fixtures_scratch NOTIFY_ORGS=el-fixtures EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/lifecycle-app-fixtures.ts",
+    "lifecycle:demo-seed": "tsx src/scripts/lifecycle-demo-seed.ts",
+    "lifecycle:demo-seed-check": "MONGODB_DB=el_demo_scratch AWS_S3_BUCKET= tsx src/scripts/lifecycle-demo-seed-check.ts",
     "lifecycle:timeline": "MONGODB_DB=el_timeline_scratch NOTIFY_ORGS=el-timeline EMAIL_ORGS=el-timeline AWS_S3_BUCKET= tsx src/scripts/lifecycle-timeline.ts",
     "exits:plan-check": "MONGODB_DB=exits_plan_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/exits-plan-check.ts",
     "leave-monthly-credit:check": "tsx src/scripts/leave-monthly-credit-check.ts",

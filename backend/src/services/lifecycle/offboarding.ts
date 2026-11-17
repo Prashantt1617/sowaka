@@ -40,6 +40,7 @@ import {
 import { closeJourney, completeTask, createOffboardingJourney, journeyTasksView, moveTl, reopenTask, setJourneyStatus, skipTask } from './engine';
 import type { TaskView } from './engine';
 import { orgMayEmail, sendLifecycleEmail, smtpConfigured } from './emails';
+import { scopedUsers, scriptForcesFeatures } from './scriptScope';
 import { env } from '../../config/env';
 
 /** Answers with its status and message (the routes send `{ error, message }`). */
@@ -79,6 +80,7 @@ const PAY_TABS = ['payruns', 'salarydetails'];
 /** A company with the lifecycle switched on, else 404 "Not available" (CONTRACT decision 3). */
 export async function requireLifecycleOrg(org: string | undefined): Promise<string> {
   if (!org) throw new LifecycleError(404, 'Not available');
+  if (scriptForcesFeatures(org)) return org;
   const company = await companies().findOne({ id: org }, { projection: { _id: 0, features: 1 } });
   if (company?.features?.lifecycle !== true) throw new LifecycleError(404, 'Not available');
   return org;
@@ -1455,7 +1457,7 @@ export async function runOffboardingJobs(now = new Date()) {
   const today = todayKey(now);
   // Pushes go out in the day, from 09:00 IST (as the onboarding day jobs do); the state changes run every hour.
   const pushHours = istParts(now).hour >= 9;
-  const rows = await users().find({ 'exit.offboarding.journeyId': { $exists: true } }, { projection: { _id: 0, userId: 1, org: 1, name: 1, joiningDate: 1, exit: 1 } }).toArray();
+  const rows = await users().find({ 'exit.offboarding.journeyId': { $exists: true }, ...scopedUsers() }, { projection: { _id: 0, userId: 1, org: 1, name: 1, joiningDate: 1, exit: 1 } }).toArray();
   const counts = { interviewOpened: 0, accountsClosed: 0, endOfShiftClosed: 0, settlementDue: 0, gratuityDue: 0 };
   for (const u of rows) {
     try {
@@ -1464,7 +1466,7 @@ export async function runOffboardingJobs(now = new Date()) {
       const journeyId = ob.journeyId!;
       const journey = await journeys().findOne({ id: journeyId }, { projection: { _id: 0 } });
       if (!journey || journey.status === 'closed' || !u.org) continue;
-      if (!(await companies().findOne({ id: u.org, 'features.lifecycle': true }, { projection: { _id: 1 } }))) continue;
+      if (!scriptForcesFeatures(u.org) && !(await companies().findOne({ id: u.org, 'features.lifecycle': true }, { projection: { _id: 1 } }))) continue;
       const fired = new Set(ob.fired ?? []);
       const fire = async (key: string) => {
         const res = await users().updateOne({ userId: u.userId, 'exit.offboarding.fired': { $ne: key } }, { $push: { 'exit.offboarding.fired': key } });

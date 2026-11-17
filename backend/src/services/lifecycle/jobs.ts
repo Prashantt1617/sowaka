@@ -16,6 +16,7 @@ import { companies, journeys, journeyTasks, lifecycleMeetings, users } from '../
 import type { Journey, JourneyTask, SystemTaskKey } from '../../models/lifecycle.model';
 import { logger } from '../../utils/logger';
 import { addDaysKey, companyTimeZone, localHour, probationMonthEnd, probationMonthStart, todayKey, keyOfDay } from './dueRules';
+import { scopedJourneys, scriptScope } from './scriptScope';
 import { finishTaskById, isJoined, refreshJourney, type Destination, setJourneyStatus, taskLate, tasksOf, tell, totalProbationMonths } from './engine';
 
 type Job = (now: Date) => Promise<unknown>;
@@ -56,8 +57,9 @@ export interface JobsResult { fired: string[]; reminded: number; meetings: numbe
  */
 export async function runLifecycleJobs(now = new Date(), opts: { full?: boolean; orgs?: string[] } = {}): Promise<JobsResult> {
   const result: JobsResult = { fired: [], reminded: 0, meetings: 0 };
-  const filter: Record<string, unknown> = { 'features.lifecycle': true };
-  if (opts.orgs) filter.id = { $in: opts.orgs };
+  const scope = scriptScope();
+  const filter: Record<string, unknown> = scope ? { id: scope.org } : { 'features.lifecycle': true };
+  if (opts.orgs) filter.id = { $in: scope ? opts.orgs.filter((o) => o === scope.org) : opts.orgs };
   const orgs = (await companies().find(filter, { projection: { _id: 0, id: 1, name: 1 } }).toArray());
   const hourKey = now.toISOString().slice(0, 13);
   const full = opts.full ?? hourKey !== lastFullHour;
@@ -70,7 +72,8 @@ export async function runLifecycleJobs(now = new Date(), opts: { full?: boolean;
       logger.error('Lifecycle jobs failed for a company', { org: company.id }, error);
     }
   }
-  for (const [name, job] of extraJobs) {
+  // Other parts' jobs are not scoped: a script's scope runs none of them.
+  for (const [name, job] of scope ? [] : extraJobs) {
     try { await job(now); } catch (error) { logger.error(`Lifecycle job failed: ${name}`, {}, error); }
   }
   return result;
@@ -79,7 +82,7 @@ export async function runLifecycleJobs(now = new Date(), opts: { full?: boolean;
 /** 30 minutes before a meeting: a push to the joiner and the others in it. */
 async function meetingReminders(org: string, now: Date): Promise<number> {
   const rows = await lifecycleMeetings().find({
-    org, remindedAt: { $exists: false }, met: { $ne: 'yes' },
+    org, remindedAt: { $exists: false }, met: { $ne: 'yes' }, ...scopedJourneys('journeyId'),
     startsAt: { $gt: now, $lte: new Date(now.getTime() + MEETING_LEAD_MS) },
   }, { projection: { _id: 0 } }).toArray();
   let sent = 0;
@@ -104,7 +107,7 @@ async function orgJobs(org: string, companyName: string, now: Date, result: Jobs
   const today = todayKey(now, tz);
   const dayJobsOn = localHour(now, tz) >= DAY_JOB_HOUR;
   const list = await journeys().find(
-    { org, kind: 'onboarding', closedAt: { $exists: false }, status: { $nin: ['draft', 'declined', 'expired', 'not_joining'] } },
+    { org, kind: 'onboarding', closedAt: { $exists: false }, status: { $nin: ['draft', 'declined', 'expired', 'not_joining'] }, ...scopedJourneys() },
     { projection: { _id: 0, id: 1 } },
   ).toArray();
   for (const { id } of list) {

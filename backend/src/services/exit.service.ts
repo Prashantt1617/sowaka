@@ -22,6 +22,7 @@ import { CLEARANCE_TEAM_OF, DEFAULT_EXIT_CLEARANCE, DEFAULT_EXIT_NOTICE, DEFAULT
 import { ExitSettlement } from '../models/exitSettlement.model';
 import { approveSettlement, changeSettlementLine, draftDueSettlements, exitNoticeSettings, markSettlementPaid, reopenSettlement, settlementFor, settlementOpen, settlementView } from './exitSettlement.service';
 import { notifyUsers } from './notification.service';
+import { scopedUsers } from './lifecycle/scriptScope';
 import { logger } from '../utils/logger';
 
 /** An AdminError, so the error handler answers with its status and message. */
@@ -386,7 +387,7 @@ async function moveTeam(org: string, leaverUserId: string, now: Date) {
 export async function tellTeamsAhead(now = new Date()) {
   const today = todayIst(now);
   const due = await users()
-    .find({ 'exit.newManagerUserId': { $exists: true }, 'exit.teamMove': 'day_after', 'exit.teamMovedAt': { $exists: false }, 'exit.teamToldAt': { $exists: false }, 'exit.accessEndedAt': { $exists: false } }, { projection: { _id: 0, userId: 1, org: 1, name: 1, exit: 1 } })
+    .find({ 'exit.newManagerUserId': { $exists: true }, 'exit.teamMove': 'day_after', 'exit.teamMovedAt': { $exists: false }, 'exit.teamToldAt': { $exists: false }, 'exit.accessEndedAt': { $exists: false }, ...scopedUsers() }, { projection: { _id: 0, userId: 1, org: 1, name: 1, exit: 1 } })
     .toArray();
   let told = 0;
   for (const leaver of due) {
@@ -417,7 +418,7 @@ export async function tellTeamsAhead(now = new Date()) {
 /** The hourly job: everyone whose last working day is before today (IST) and still has access, loses it. */
 export async function closeDueExits(now = new Date()) {
   const due = await users()
-    .find({ exit: { $exists: true }, 'exit.accessEndedAt': { $exists: false }, 'exit.lastWorkingDay': { $lt: todayIst(now) } }, { projection: { _id: 0, userId: 1, org: 1 } })
+    .find({ exit: { $exists: true }, 'exit.accessEndedAt': { $exists: false }, 'exit.lastWorkingDay': { $lt: todayIst(now) }, ...scopedUsers() }, { projection: { _id: 0, userId: 1, org: 1 } })
     .toArray();
   let closed = 0;
   for (const u of due) {

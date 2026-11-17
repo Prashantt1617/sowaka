@@ -20,6 +20,7 @@ import type {
 } from '../../models/lifecycle.model';
 import { logger } from '../../utils/logger';
 import { notifyUsers } from '../notification.service';
+import { scriptForcesFeatures } from './scriptScope';
 import {
   addDaysKey, companyTimeZone, dateKeyOf, dayDate, daysBetween, humanDay, isDateKey, keyOfDay, monthsOfRule,
   probationMonthEnd, probationMonthOn, probationMonthStart, resolveRuleWith, todayKey, workCalendar,
@@ -38,6 +39,7 @@ const featureCache = new Map<string, { at: number; on: boolean }>();
 /** `companies.features.lifecycle`, kept for half a minute. */
 export async function lifecycleEnabled(org: string | undefined): Promise<boolean> {
   if (!org) return false;
+  if (scriptForcesFeatures(org)) return true;
   const kept = featureCache.get(org);
   if (kept && Date.now() - kept.at < FEATURE_TTL_MS) return kept.on;
   const company = await companies().findOne({ id: org }, { projection: { _id: 0, features: 1 } });

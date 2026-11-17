@@ -18,6 +18,7 @@ import { LifecycleOfferError } from './files';
 import { maybeSendLettersReady, portalLetters, SIGNED_KINDS } from './letters';
 import { CLOSED_STATUSES, mediaPath } from './portalAuth';
 import { addWorkingDaysKey, workCalendar } from './dueRules';
+import { scopedJourneys, scriptScope } from './scriptScope';
 
 type PathKey = 'offer' | 'docs' | 'about' | 'meet' | 'letter' | 'pass';
 type StepState = 'done' | 'current' | 'todo' | 'locked';
@@ -343,14 +344,15 @@ const PRE_JOIN_PORTAL: string[] = ['finalised', 'active', 'docs_approved'];
  * notification-scheduler's runHourlyJobs.
  */
 export async function runPortalJobs(now = new Date()): Promise<{ expired: number; mails: number }> {
-  const orgs = (await companies().find({ 'features.lifecycle': true }, { projection: { _id: 0, id: 1 } }).toArray()).map((c) => c.id);
+  const scope = scriptScope();
+  const orgs = scope ? [scope.org] : (await companies().find({ 'features.lifecycle': true }, { projection: { _id: 0, id: 1 } }).toArray()).map((c) => c.id);
   if (!orgs.length) return { expired: 0, mails: 0 };
   const today = istDate(now);
   let expired = 0;
   let sent = 0;
 
   // Valid-till passed with the offer unaccepted (stops once accepted).
-  for (const offer of await offers().find({ org: { $in: orgs }, versions: { $elemMatch: { status: 'sent', 'fields.validTill': { $lt: today } } } }).toArray()) {
+  for (const offer of await offers().find({ org: { $in: orgs }, ...scopedJourneys('journeyId'), versions: { $elemMatch: { status: 'sent', 'fields.validTill': { $lt: today } } } }).toArray()) {
     for (const v of offer.versions.filter((x) => x.status === 'sent' && x.fields.validTill < today)) {
       await offers().updateOne({ id: offer.id, 'versions.version': v.version, 'versions.status': 'sent' }, { $set: { 'versions.$.status': 'expired', updatedAt: now } });
       expired += 1;
@@ -361,7 +363,7 @@ export async function runPortalJobs(now = new Date()): Promise<{ expired: number
 
   const hour = istHour(now);
   if (hour < 9 || hour >= 20) return { expired, mails: 0 };
-  const open = await journeys().find({ org: { $in: orgs }, kind: 'onboarding', status: { $in: ['accepted', 'finalised', 'active', 'docs_approved'] as const } }).toArray();
+  const open = await journeys().find({ org: { $in: orgs }, ...scopedJourneys(), kind: 'onboarding', status: { $in: ['accepted', 'finalised', 'active', 'docs_approved'] as const } }).toArray();
   const companyNames = new Map<string, string>();
   const nameFor = async (org: string) => {
     if (!companyNames.has(org)) companyNames.set(org, companyDisplayName(await companyOf(org), org));
