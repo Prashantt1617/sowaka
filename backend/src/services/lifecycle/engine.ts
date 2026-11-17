@@ -393,7 +393,9 @@ export function deriveJourney(j: Journey, tasks: JourneyTask[], now: Date, extra
     else if (d >= 7) plantStage = 2;
     else plantStage = 1;
   }
-  const water = joined ? 3 : (['upload_documents', 'about_you', 'sign_letters'] as SystemTaskKey[]).filter((k) => keyDone(live, k)).length;
+  // Letters signed on Day 1 (the template's switch) are not a pre-boarding step: Meet us waters the seed instead.
+  const lettersOnDay1 = j.templateSnapshot.settings.signLettersOnDay1 === true;
+  const water = joined ? 3 : (['upload_documents', 'about_you', lettersOnDay1 ? 'meet_us' : 'sign_letters'] as SystemTaskKey[]).filter((k) => keyDone(live, k)).length;
   const closedCycles = new Set(
     live.filter((t) => t.systemKey === 'monthly_review' && t.status === 'done' && t.month)
       .map((t) => t.month!)
@@ -413,7 +415,7 @@ export function deriveJourney(j: Journey, tasks: JourneyTask[], now: Date, extra
     if (j.status === 'draft' || j.status === 'offer_sent') column = 'offer_sent';
     else if (j.status === 'accepted') column = 'accepted';
     else if (keyDone(live, 'sign_letters')) column = 'ready_to_join';
-    else if (j.status === 'docs_approved' || keyDone(live, 'review_documents')) column = 'letters';
+    else if (j.status === 'docs_approved' || keyDone(live, 'review_documents')) column = lettersOnDay1 ? 'ready_to_join' : 'letters';
     else column = 'documents';
   } else if (d < 7 && !confirmed) {
     tab = 'first_week';

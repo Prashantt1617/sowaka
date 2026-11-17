@@ -40,6 +40,7 @@ import {
 import { closeJourney, completeTask, createOffboardingJourney, journeyTasksView, moveTl, reopenTask, setJourneyStatus, skipTask } from './engine';
 import type { TaskView } from './engine';
 import { orgMayEmail, sendLifecycleEmail, smtpConfigured } from './emails';
+import { noticeDaysFor } from './templates';
 import { env } from '../../config/env';
 
 /** Answers with its status and message (the routes send `{ error, message }`). */
@@ -139,13 +140,8 @@ export async function defaultOffboardingTemplate(org: string) {
   return lifecycleTemplates().findOne({ org, kind: 'offboarding', isDefault: true, active: { $ne: false } }, { projection: { _id: 0 } });
 }
 
-/** Days of notice for a resignation: the default offboarding template, else the company's Exit settings, else 30. */
-export async function noticeDaysFor(org: string): Promise<number> {
-  const template = await defaultOffboardingTemplate(org);
-  if (typeof template?.settings?.noticeDays === 'number') return template.settings.noticeDays;
-  const company = await companies().findOne({ id: org }, { projection: { _id: 0, exitNoticeDays: 1 } });
-  return typeof company?.exitNoticeDays === 'number' ? company.exitNoticeDays : 30;
-}
+/** Days of notice for a resignation: the default offboarding template, else the company's Exit settings, else 30 (templates.ts). */
+export { noticeDaysFor };
 
 /** Whether the app shows the Off-boarding page: the template's list when it has one, else on except for terminations and abscondings. */
 export function appPageDefault(type: OffboardingExitType, appPageFor?: OffboardingExitType[]): boolean {
@@ -1187,7 +1183,8 @@ export async function myOffboarding(userId: string, now = new Date()) {
   const resignedOn = resignation ? keyOfInstant(resignation.submittedAt) : e.noticeFrom ?? null;
   const managerUserId = journey?.managerUserId ?? user.managerUserId;
   const managerName = managerUserId ? (await users().findOne({ userId: managerUserId }, { projection: { _id: 0, name: 1 } }))?.name : undefined;
-  const summary = handoverSummary(items, ob, tasks);
+  // The checklist's shared / done steps are the manager's tasks: read them from every task, as R8b does.
+  const summary = handoverSummary(items, ob, await journeyTasksView(journeyId, 'hr'));
   const acceptedAt = journey?.anchors.exit_accepted ?? journey?.createdAt ?? null;
   return {
     tl: e.lastWorkingDay,
@@ -1490,8 +1487,12 @@ export async function runOffboardingJobs(now = new Date()) {
         counts.settlementDue++;
       }
       const joined = keyOfInstant(u.joiningDate ?? null);
-      if (pushHours && today >= addDays(e.lastWorkingDay, 30) && joined && serviceYears(joined, e.lastWorkingDay).completed >= 5 && !fired.has('gratuity_due') && (await fire('gratuity_due'))) {
-        await tellOffboarding(await clearanceStaff(u.org), 'lifecycle_gratuity_due', 'lifecycle_clearance', `Gratuity due: ${u.name}`, `Gratuity is due within 30 days of the last day (${shortDay(e.lastWorkingDay)}).`, { userId: u.userId });
+      // The template's gratuity day (its task's due date, Tl + gratuityDays), as the board shows it.
+      const gratuityTask = await journeyTasks().findOne({ journeyId, systemKey: 'gratuity' }, { projection: { _id: 0, dueAt: 1 } });
+      const gratuityDue = keyOfInstant(gratuityTask?.dueAt ?? null) ?? addDays(e.lastWorkingDay, 30);
+      if (pushHours && today >= gratuityDue && joined && serviceYears(joined, e.lastWorkingDay).completed >= 5 && !fired.has('gratuity_due') && (await fire('gratuity_due'))) {
+        const days = daysFromTo(e.lastWorkingDay, gratuityDue);
+        await tellOffboarding(await clearanceStaff(u.org), 'lifecycle_gratuity_due', 'lifecycle_clearance', `Gratuity due: ${u.name}`, `Gratuity is due within ${days} ${days === 1 ? 'day' : 'days'} of the last day (${shortDay(e.lastWorkingDay)}).`, { userId: u.userId });
         counts.gratuityDue++;
       }
     } catch (error) {

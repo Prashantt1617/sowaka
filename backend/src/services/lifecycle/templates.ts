@@ -63,6 +63,17 @@ export async function ensureDefaultTemplates(org: string): Promise<void> {
   }
 }
 
+/**
+ * Days of notice (a resignation's, and an offer's default): the default offboarding template's,
+ * else the company's Exit settings, else 30. The template wins whenever it sets one.
+ */
+export async function noticeDaysFor(org: string): Promise<number> {
+  const template = await lifecycleTemplates().findOne({ org, kind: 'offboarding', isDefault: true, active: { $ne: false } }, { projection: { _id: 0, settings: 1 } });
+  if (typeof template?.settings?.noticeDays === 'number') return template.settings.noticeDays;
+  const company = await companies().findOne({ id: org }, { projection: { _id: 0, exitNoticeDays: 1 } });
+  return typeof company?.exitNoticeDays === 'number' ? company.exitNoticeDays : 30;
+}
+
 export async function defaultTemplate(org: string, kind: LifecycleKind): Promise<LifecycleTemplate> {
   await ensureDefaultTemplates(org);
   const doc = await lifecycleTemplates().findOne({ org, kind, isDefault: true });
@@ -114,6 +125,11 @@ export async function createTemplate(org: string, input: Record<string, unknown>
     if (from.kind !== kind) throw new LifecycleError(400, 'Copy from a template of the same kind');
     doc.settings = structuredClone(from.settings);
     doc.tasks = structuredClone(from.tasks);
+  } else if (kind === 'offboarding') {
+    // As Standard does (ensureDefaultTemplates): a new template starts from the company's notice
+    // (Payroll › Exit settings), not the seed's 60 days.
+    const company = await companies().findOne({ id: org }, { projection: { _id: 0, exitNoticeDays: 1 } });
+    if (typeof company?.exitNoticeDays === 'number' && company.exitNoticeDays > 0) doc.settings.noticeDays = company.exitNoticeDays;
   }
   await lifecycleTemplates().insertOne({ ...doc });
   return doc;
@@ -163,9 +179,30 @@ function cleanSettings(kind: LifecycleKind, input: unknown, current: LifecycleTe
   return out;
 }
 
-/** The offboarding settings are the editor's way of setting these rules; the task rules are what run. */
+/**
+ * Where "Sign the appointment letter and NDA" sits. On the portal (the seed): pre-boarding, due
+ * Tj − 2, after HR's review. "Sign on Day 1" (6Zs: "moves it to week 1 in the app"): week 1 in
+ * the app, opening and due on Tj, waiting on nothing on the portal.
+ */
+const SIGN_ON_PORTAL: Pick<TemplateTask, 'phase' | 'surface' | 'opensRule' | 'dueRule' | 'after'> = {
+  phase: 'pre_boarding', surface: 'portal', opensRule: null, dueRule: { anchor: 'tj', offset: -2, unit: 'days' }, after: { key: 'review_documents' },
+};
+const SIGN_ON_DAY1: Pick<TemplateTask, 'phase' | 'surface' | 'opensRule' | 'dueRule'> = {
+  phase: 'first_week', surface: 'app', opensRule: { anchor: 'tj', offset: 0, unit: 'days' }, dueRule: { anchor: 'tj', offset: 0, unit: 'days' },
+};
+
+/** The settings are the editor's way of setting these rules; the task rules are what run (so every surface reads the same task). */
 function applySettingsToTasks(kind: LifecycleKind, settings: LifecycleTemplateSettings, tasks: TemplateTask[]): TemplateTask[] {
-  if (kind !== 'offboarding') return tasks;
+  if (kind === 'onboarding') {
+    return tasks.map((task) => {
+      if (task.systemKey !== 'sign_letters') return task;
+      if (settings.signLettersOnDay1 === true) {
+        const { after: _after, ...rest } = task;
+        return { ...rest, ...SIGN_ON_DAY1 };
+      }
+      return task.phase === 'first_week' ? { ...task, ...SIGN_ON_PORTAL } : task;
+    });
+  }
   return tasks.map((task) => {
     switch (task.systemKey) {
       case 'exit_interview':

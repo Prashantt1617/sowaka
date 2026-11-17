@@ -193,7 +193,8 @@ const DOER: Partial<Record<JourneyTask['ownerRole'], string>> = { hr: 'HR', it: 
 /** A task as the joiner's list shows it: the app's own copy (never HR's helper on a seeded task), read-only when someone else does it. */
 function joinerTaskView(t: JourneyTask, j: Journey, names: Map<string, string>, now: Date): TaskView & { readOnly?: boolean; doneBy?: string } {
   const view = taskView(t, j, names, now);
-  const copy = t.systemKey ? APP_COPY[t.systemKey]?.employee : t.helper;
+  // Letters signed on Day 1 (the template's switch): no longer on the portal.
+  const copy = t.systemKey === 'sign_letters' && t.phase === 'first_week' ? 'With HR on your first day' : t.systemKey ? APP_COPY[t.systemKey]?.employee : t.helper;
   const { helper: _hrHelper, ...rest } = view;
   const readOnly = !visibleTo('employee', t);
   return { ...rest, ...(copy ? { helper: copy } : {}), ...(readOnly ? { readOnly: true, doneBy: DOER[t.ownerRole] ?? 'Someone else' } : {}) };
