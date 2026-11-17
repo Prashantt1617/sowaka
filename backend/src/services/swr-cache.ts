@@ -31,8 +31,15 @@ const MAX_ENTRIES = 2_000;
 
 type Entry = { at: number; value?: unknown; pending?: Promise<unknown> };
 const kept = new Map<string, Entry>();
-/** Bumped by `forgetSwr`, so a refresh that began before a change does not put the old answer back. */
+/**
+ * Bumped by a forget or drop, so a refresh that began before a change does not put the old answer back:
+ * per org (a forget of everything) and per org and kind (a drop of some kinds), so dropping one kind
+ * never throws away a refresh of another (Suwi's company bundle patched while the Time office lists drop).
+ */
 const generation = new Map<string, number>();
+const kindOf = (key: string) => key.split('\u0000')[1];
+const genOf = (org: string, kind: string) => (generation.get(org) ?? 0) + (generation.get(`${org}\u0000${kind}`) ?? 0);
+const bump = (genKey: string) => generation.set(genKey, (generation.get(genKey) ?? 0) + 1);
 
 const keyOf = (org: string, kind: SwrKind, params: unknown) => `${org}\u0000${kind}\u0000${JSON.stringify(params ?? null)}`;
 
@@ -44,11 +51,11 @@ function makeRoom(): void {
 }
 
 function start<T>(org: string, key: string, load: () => Promise<T>): Promise<T> {
-  const gen = generation.get(org) ?? 0;
+  const gen = genOf(org, kindOf(key));
   const entry = kept.get(key) ?? { at: 0 };
   const pending = load().then(
     (value) => {
-      if ((generation.get(org) ?? 0) === gen) {
+      if (genOf(org, kindOf(key)) === gen) {
         makeRoom();
         kept.set(key, { at: Date.now(), value });
       } else if (kept.get(key)?.pending === pending) {
@@ -92,6 +99,23 @@ export function peekSwr<T>(org: string, kind: SwrKind, params: unknown): T | und
   return hit?.value !== undefined && Date.now() - hit.at < MAX_STALE_MS ? (hit.value as T) : undefined;
 }
 
+/** A load or refresh under way for this org, kind and params, if any (a reader that would otherwise read for itself can wait on it). */
+export function pendingSwr<T>(org: string, kind: SwrKind, params: unknown): Promise<T> | undefined {
+  return kept.get(keyOf(org, kind, params))?.pending as Promise<T> | undefined;
+}
+
+/** Every usable kept answer of this kind for one org, with the params it was kept under. */
+export function keptOfKind<T>(org: string, kind: SwrKind): { params: unknown; value: T }[] {
+  const prefix = `${org}\u0000${kind}\u0000`;
+  const now = Date.now();
+  const out: { params: unknown; value: T }[] = [];
+  for (const [key, entry] of kept) {
+    if (!key.startsWith(prefix) || entry.value === undefined || now - entry.at >= MAX_STALE_MS) continue;
+    out.push({ params: JSON.parse(key.slice(prefix.length)), value: entry.value as T });
+  }
+  return out;
+}
+
 /** Work this one out again now and keep it (the warm-up's way in); readers keep the old answer meanwhile. */
 export function refreshSwr<T>(org: string, kind: SwrKind, params: unknown, load: () => Promise<T>): Promise<T> {
   const key = keyOf(org, kind, params);
@@ -119,7 +143,7 @@ export function dropSwr(org: string | null, kinds: SwrKind[]): void {
   }
   if (org !== null) orgs.add(org);
   for (const o of orgs) {
-    generation.set(o, (generation.get(o) ?? 0) + 1);
+    for (const k of kinds) bump(`${o}\u0000${k}`);
     const prefixes = kinds.map((k) => `${o}\u0000${k}\u0000`);
     for (const key of kept.keys()) if (prefixes.some((p) => key.startsWith(p))) kept.delete(key);
   }
@@ -128,7 +152,21 @@ export function dropSwr(org: string | null, kinds: SwrKind[]): void {
 /** Drop an org's kept answers (of these kinds, or all), so the next read reflects a change at once. */
 export function forgetSwr(org: string, ...kinds: SwrKind[]): void {
   for (const listener of forgetListeners) listener(org);
-  generation.set(org, (generation.get(org) ?? 0) + 1);
+  if (kinds.length) for (const k of kinds) bump(`${org}\u0000${k}`);
+  else bump(org);
   const prefixes = kinds.length ? kinds.map((k) => `${org}\u0000${k}\u0000`) : [`${org}\u0000`];
   for (const key of kept.keys()) if (prefixes.some((p) => key.startsWith(p))) kept.delete(key);
+}
+
+/**
+ * `forgetSwr(org)` for every kind but these: for a change whose own write hook looks after them
+ * (a leave or correction decided: readCache patches Suwi's company bundle rather than dropping it).
+ */
+export function forgetSwrExcept(org: string, except: SwrKind[]): void {
+  for (const listener of forgetListeners) listener(org);
+  const prefix = `${org}\u0000`;
+  const kinds = new Set<string>();
+  for (const key of kept.keys()) if (key.startsWith(prefix) && !except.includes(kindOf(key) as SwrKind)) kinds.add(kindOf(key));
+  for (const k of kinds) bump(`${org}\u0000${k}`);
+  for (const key of [...kept.keys()]) if (key.startsWith(prefix) && kinds.has(kindOf(key))) kept.delete(key);
 }

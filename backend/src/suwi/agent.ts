@@ -8,6 +8,7 @@ import { companies } from '../config/db';
 import { asLlmTool, contextFor, SUWI_AREAS, SuwiArea, SuwiContext, SuwiLink, SuwiTable, SuwiTool, toolByName, toolAllowed, toolsFor } from './tools';
 import { instantAnswer } from './instant';
 import { keepAttention, planFor, preparedAttention, runPlan } from './planner';
+import { asksForChange, routeAndWrite } from './orchestrator';
 import { hashOf, keptGet, keptSet, normalQuestion, suwiVersion } from './kept';
 import { callModel, ContentBlock, costUsd, LlmMessage, SuwiLlmError, SUWI_MODEL } from './llm';
 import { auditCol, LEVEL_LABEL, settingsFor, spentThisMonthUsd } from './store';
@@ -16,7 +17,8 @@ import { User } from '../models/user.model';
 import './registry';
 import { describeSheet, lastSheet, parseSheet, rememberSheet } from './sheet';
 
-const MAX_ROUNDS = 8;
+/** The full loop (changes, files, sheets) gets this many model rounds; everything else takes at most two steps (orchestrator.ts). */
+const MAX_ROUNDS = 5;
 const MAX_RESULT_CHARS = 14_000;
 
 export interface SuwiAnswer {
@@ -28,11 +30,13 @@ export interface SuwiAnswer {
   /** Lists the panel draws as tables under the text (from the tools' data, never written by the model). */
   tables?: SuwiTable[];
   /** How it was answered: from the kept data with no model, the model, a kept answer to the same question, the planner (its checks + one short write), or an answer prepared ahead. */
-  path?: 'instant' | 'model' | 'cache' | 'planner' | 'prepared';
+  path?: SuwiPath;
 }
 
+export type SuwiPath = 'instant' | 'model' | 'cache' | 'planner' | 'prepared' | 'router';
+
 /** What the audit row records about how long a question took. */
-interface Timing { path: 'instant' | 'model' | 'cache' | 'planner' | 'prepared'; totalMs: number; firstTextMs?: number; rounds?: { ms: number; input: number; output: number }[]; live?: boolean; writer?: string }
+interface Timing { path: SuwiPath; totalMs: number; firstTextMs?: number; rounds?: { ms: number; input: number; output: number; model?: string; step?: string }[]; live?: boolean; writer?: string; mode?: string }
 
 /** A kept answer lives this long; one that read today's attendance (punches change it with no write hook) a minute. */
 const ANSWER_TTL_S = 10 * 60;
@@ -167,6 +171,7 @@ export async function askSuwi(
   input: { question?: unknown; page?: unknown; history?: unknown; attachments?: unknown },
   onProgress?: (checking: string) => void,
   onPartial?: (textSoFar: string) => void,
+  opts: { prepare?: boolean } = {},
 ): Promise<SuwiAnswer> {
   const started = Date.now();
   const attachment = attachmentOf(input.attachments);
@@ -184,18 +189,23 @@ export async function askSuwi(
   const today = istToday();
   const cacheKey = version ? `ans:${user.org}:${version}:${hashOf(user.userId, normalQuestion(question), page, today)}` : '';
   if (cacheKey) {
-    const kept = await keptGet<SuwiAnswer>(cacheKey);
+    const kept = await keptGet<SuwiAnswer & { prepared?: boolean }>(cacheKey);
+    if (kept && opts.prepare) return { ...kept, proposals: [] };
     if (kept && (await settingsFor(user.org!)).enabled) {
-      await auditCol().insertOne({ org: user.org!, userId: user.userId, kind: 'question', at: new Date(), page, question, answer: kept.text.slice(0, 50_000), status: 'answered', tools: [], model: SUWI_MODEL, costUsd: 0, timing: { path: 'cache', totalMs: Date.now() - started } } as never).catch(() => undefined);
-      return { ...kept, path: 'cache', proposals: [] };
+      // Made ahead by the warm-up (prepared.ts) or kept from an earlier ask: either way no model call now.
+      const path: SuwiPath = kept.prepared ? 'prepared' : 'cache';
+      await auditCol().insertOne({ org: user.org!, userId: user.userId, kind: 'question', at: new Date(), page, question, answer: kept.text.slice(0, 50_000), status: 'answered', tools: [], model: SUWI_MODEL, costUsd: 0, timing: { path, totalMs: Date.now() - started } } as never).catch(() => undefined);
+      const { prepared: _p, ...answerOnly } = kept;
+      return { ...answerOnly, path, proposals: [] };
     }
   }
   // Every question is kept, with what Suwi answered and whether it worked; a failure too.
   try {
-    const { answer: done, live } = await answer(user, question, page, attachment, input, started, onProgress, onPartial);
-    if (cacheKey && !done.proposals.length) await keptSet(cacheKey, done, live ? LIVE_ANSWER_TTL_S : ANSWER_TTL_S);
+    const { answer: done, live } = await answer(user, question, page, attachment, input, started, onProgress, onPartial, Boolean(opts.prepare));
+    if (cacheKey && !done.proposals.length) await keptSet(cacheKey, opts.prepare ? { ...done, prepared: true } : done, live ? LIVE_ANSWER_TTL_S : ANSWER_TTL_S);
     return done;
   } catch (e) {
+    if (opts.prepare) throw e;
     await auditCol().insertOne({
       org: user.org!, userId: user.userId, kind: 'question', at: new Date(), page, question, status: 'failed',
       error: (e as Error).message?.slice(0, 1000) || 'Something went wrong',
@@ -211,7 +221,12 @@ async function answer(
   started: number,
   onProgress?: (checking: string) => void,
   onPartial?: (textSoFar: string) => void,
+  prepare = false,
 ): Promise<{ answer: SuwiAnswer; live: boolean }> {
+  // An answer made ahead (prepared.ts) isn't a question anyone asked: only its cost is recorded, as 'prepared'.
+  const record = (row: Record<string, unknown>) => (prepare
+    ? (Number(row.costUsd) > 0 ? auditCol().insertOne({ org: user.org!, userId: user.userId, kind: 'prepared', at: new Date(), page: 'prepared', question: `Prepared: ${question}`, model: row.model, costUsd: row.costUsd } as never) : Promise.resolve())
+    : auditCol().insertOne(row as never));
   const settings = await settingsFor(user.org!);
   if (!settings.enabled) throw new SuwiLlmError(403, 'Suwi is turned off for this company. An admin can turn it on in Settings → Suwi.');
   const spent = await spentThisMonthUsd(user.org!);
@@ -228,7 +243,7 @@ async function answer(
     const quick = await instantAnswer(ctx, question).catch(() => null);
     if (quick) {
       const timing: Timing = { path: 'instant', totalMs: Date.now() - started, live: quick.live };
-      await auditCol().insertOne({
+      await record({
         org: ctx.org, userId: ctx.userId, kind: 'question', at: new Date(), page, question, answer: quick.text, status: 'answered',
         tools: quick.checked.map((label) => ({ name: `instant:${quick.kind}`, label, ms: timing.totalMs, ok: true })), model: 'none', costUsd: 0, timing,
       } as never);
@@ -249,19 +264,16 @@ async function answer(
       const timing: Timing = {
         path, totalMs: Date.now() - started, live: done.live,
         ...(firstTextMs !== undefined ? { firstTextMs } : {}),
-        ...(!prepared && done.writer ? { rounds: [{ ms: done.writer.ms, input: done.writer.input, output: done.writer.output }], writer: done.writer.model } : {}),
+        ...(!prepared && done.writer ? { rounds: [{ ms: done.writer.ms, input: done.writer.input, output: done.writer.output, model: done.writer.model, step: 'writer' }], writer: done.writer.model } : {}),
       };
-      await auditCol().insertOne({
+      await record({
         org: ctx.org, userId: ctx.userId, kind: 'question', at: new Date(), page, question, answer: done.text.slice(0, 50_000), status: 'answered',
         tools: prepared ? [] : done.tools, model: done.writer?.model ?? 'none', costUsd: prepared ? 0 : done.costUsd, timing,
-      } as never);
+      });
       return { answer: { text: done.text, checked: done.checked, links: done.links, proposals: [], costUsd: prepared ? 0 : done.costUsd, ...(done.tables.length ? { tables: done.tables } : {}), path }, live: done.live };
     }
   }
   const company = await companies().findOne({ id: ctx.org });
-  // A stable order keeps the tool list identical between questions, so it caches; only the areas the
-  // question is about are offered (relevantTools), so the model reads a fraction of the list.
-  const tools = relevantTools(toolsFor(ctx), question, page).sort((a, b) => a.name.localeCompare(b.name));
   // Earlier turns of this chat, text only (the panel keeps them).
   const history: LlmMessage[] = Array.isArray(input.history)
     ? (input.history as { role?: unknown; text?: unknown }[]).slice(-8)
@@ -269,6 +281,23 @@ async function answer(
         .map((h) => ({ role: h.role as 'user' | 'assistant', content: String(h.text).slice(0, 4000) }))
     : [];
   while (history.length && history[0].role !== 'user') history.shift();
+  // Everything else that isn't a change, a file or a sheet: two steps (orchestrator.ts): the small model picks
+  // the lookups, they run side by side, one writer answers, streamed. A change goes on to the full loop below.
+  const sheetWork = Boolean(ctx.sheet) || page.startsWith('bulk');
+  if (!attachment && !sheetWork && process.env.SUWI_ROUTER !== '0' && !asksForChange(ctx, question)) {
+    const routed = await routeAndWrite(ctx, { question, page, companyName: company?.name ?? ctx.org, history, started, onProgress, onPartial }).catch(() => null);
+    if (routed) {
+      const timing: Timing = { path: 'router', totalMs: Date.now() - started, ...(routed.firstTextMs !== undefined ? { firstTextMs: routed.firstTextMs } : {}), rounds: routed.rounds, live: routed.live, writer: routed.writer, mode: routed.mode };
+      await record({
+        org: ctx.org, userId: ctx.userId, kind: 'question', at: new Date(), page, question, answer: routed.text.slice(0, 50_000), status: 'answered',
+        tools: routed.tools, model: routed.writer, costUsd: routed.costUsd, tokens: routed.tokens, timing,
+      });
+      return { answer: { text: routed.text, checked: routed.checked, links: routed.links, proposals: [], costUsd: routed.costUsd, ...(routed.tables.length ? { tables: routed.tables } : {}), path: 'router' }, live: routed.live };
+    }
+  }
+  // A stable order keeps the tool list identical between questions, so it caches; only the areas the
+  // question is about are offered (relevantTools), so the model reads a fraction of the list.
+  const tools = relevantTools(toolsFor(ctx), question, page).sort((a, b) => a.name.localeCompare(b.name));
   // The file goes with this message only: an image for the model to see, a spreadsheet as its rows.
   // A people sheet is read on the server, so the model sees its first rows only; Bulk assign reads them all.
   const tableLines = attachment?.table?.split('\n') ?? [];
@@ -291,7 +320,7 @@ async function answer(
   let incomplete = false;
   const tables: SuwiTable[] = [];
   let live = false;
-  const rounds: { ms: number; input: number; output: number }[] = [];
+  const rounds: { ms: number; input: number; output: number; model?: string; step?: string }[] = [];
   let firstTextMs: number | undefined;
   const onText = (soFar: string) => {
     if (firstTextMs === undefined && soFar.trim()) firstTextMs = Date.now() - started;
@@ -302,7 +331,7 @@ async function answer(
     const roundStarted = Date.now();
     // Once the lists are on screen as tables, the answer is a sentence or two: no room to write them out.
     const reply = await callModel({ system: instructions(ctx, company?.name ?? ctx.org, page, { spentUsd: spent, monthlyUsd: settings.monthlyBudgetUsd }), tools: tools.map(asLlmTool), messages, onText, ...(tables.length ? { maxTokens: 400 } : {}) });
-    rounds.push({ ms: Date.now() - roundStarted, input: reply.usage.input_tokens ?? 0, output: reply.usage.output_tokens ?? 0 });
+    rounds.push({ ms: Date.now() - roundStarted, input: reply.usage.input_tokens ?? 0, output: reply.usage.output_tokens ?? 0, model: reply.model || SUWI_MODEL, step: 'model' });
     total += costUsd(reply.model || SUWI_MODEL, reply.usage);
     tokens.input += reply.usage.input_tokens ?? 0; tokens.output += reply.usage.output_tokens ?? 0;
     tokens.cacheRead += reply.usage.cache_read_input_tokens ?? 0; tokens.cacheWrite += reply.usage.cache_creation_input_tokens ?? 0;
@@ -346,7 +375,7 @@ async function answer(
   const lastOf = new Map(prepared.map((p) => [`${p.kind}|${p.title}`, p.id]));
   const proposals = prepared.filter((p) => lastOf.get(`${p.kind}|${p.title}`) === p.id);
   await Promise.all(prepared.filter((p) => !proposals.includes(p)).map((p) => cancelProposal(ctx.userId, ctx.org, p.id)));
-  await auditCol().insertOne({
+  await record({
     org: ctx.org, userId: ctx.userId, kind: 'question', at: new Date(), page, question,
     answer: (text || "I couldn't find an answer to that.").slice(0, 50_000),
     status: incomplete ? 'incomplete' : 'answered',
@@ -354,6 +383,6 @@ async function answer(
     ...(attachment ? { attachment: { name: attachment.name, kind: attachment.image ? 'image' : 'spreadsheet' } } : {}),
     tools: toolLog, model: SUWI_MODEL, costUsd: total, tokens,
     timing: { path: 'model', totalMs: Date.now() - started, ...(firstTextMs !== undefined ? { firstTextMs } : {}), rounds, live } satisfies Timing,
-  } as never);
+  });
   return { answer: { text: text || "I couldn't find an answer to that.", checked, links: links.slice(0, 6), proposals, costUsd: total, ...(tables.length ? { tables } : {}), path: 'model' }, live };
 }

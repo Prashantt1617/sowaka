@@ -17,6 +17,9 @@ import { OvertimeRequest, compOffDaysOf } from '../models/overtime.model';
 import { LEAVE_KEY_PATTERN, LEAVE_TYPE_KEYS, LeaveTypeKey, LeaveTypeRule, isUnpaidLeaveType, leaveTypeLabel, monthsCredited, processYearEnd } from '../models/shift.model';
 import { carriedFromRuns as carriedFromYearEndRuns } from './leave-year-end.service';
 import { requestViewer, requestViewerWithPhoto } from '../middleware/request-viewer';
+import { requestUserOrg } from './request-user';
+import { patchAttendanceReport } from './attendance-report.service';
+import { forgetSwrExcept } from './swr-cache';
 
 const maxLeaveDays = 30;
 const decisionStatuses = new Set<LeaveStatus>(['approved', 'declined']);
@@ -300,14 +303,24 @@ export async function getMyLeaves(userId: string): Promise<LeaveView[]> {
  * shows what the database now says. Never fails the change it follows.
  */
 function leaveChanged(userId: string): void {
-  void (async () => {
-    const org = (await users().findOne({ userId }, { projection: { _id: 0, org: 1 } }))?.org;
-    if (!org) return;
-    const [{ invalidateAttendanceReport }, { forgetSwr }] = await Promise.all([import('./attendance-report.service'), import('./swr-cache')]);
-    invalidateAttendanceReport(org);
-    forgetSwr(org);
-  })().catch(() => undefined);
+  leaveChangedNow(userId).catch(() => undefined);
 }
+
+/**
+ * The work of `leaveChanged`. The company is the signed-in person's when known (no lookup), so the
+ * report patch is registered before the response goes out and the next read waits for it.
+ */
+async function leaveChangedNow(userId: string): Promise<void> {
+  const org = requestUserOrg() ?? (await users().findOne({ userId }, { projection: { _id: 0, org: 1 } }))?.org;
+  if (!org) return;
+  // The kept attendance reports re-graded for this person alone (their month, a few KB), not dropped.
+  patchAttendanceReport(org, [userId]);
+  // Not Suwi's company bundle: every leave change comes through a request route, whose write hook
+  // patches it (lifecycle/readCache.ts); dropping it here, a moment later, would undo the patch.
+  forgetSwrExcept(org, ['suwi-org-data']);
+}
+/** For checks: the same, awaited. */
+export const __leaveChangedForCheck = leaveChangedNow;
 
 /** The fields of a person a leave view shows. */
 const LEAVE_VIEW_EMPLOYEE = {
@@ -329,7 +342,8 @@ export function getMyLeaveBalance(userId: string, year = new Date().getUTCFullYe
 async function leaveBalanceOf(userId: string, year: number, asOf: Date) {
   // The signed-in person, as requireAuth read them, when it is them.
   const viewer = requestViewer(userId);
-  const employeeP: Promise<User | null> = viewer ? Promise.resolve(viewer as User) : users().findOne({ userId });
+  // Not the old inline photo, the enrolled face or the document list: none is read here, and they can be megabytes.
+  const employeeP: Promise<User | null> = viewer ? Promise.resolve(viewer as User) : users().findOne({ userId }, { projection: { _id: 0, profilePhotoUrl: 0, faceId: 0, documents: 0 } }) as Promise<User | null>;
   if (!Number.isInteger(year) || year < 2000 || year > 2100) {
     if (!(await employeeP)) throw new LeaveError(404, 'Employee not found');
     throw new LeaveError(400, 'Invalid balance year');
@@ -1063,12 +1077,14 @@ export async function adminCancelLeave(adminUserId: string, leaveIdInput: string
 }
 
 /** Org-wide list of every leave, for the HR dashboard. */
-export async function listAllLeavesForAdmin(adminUserId: string): Promise<(LeaveView & { unpaid?: true })[]> {
+export async function listAllLeavesForAdmin(adminUserId: string, opts: { status?: string } = {}): Promise<(LeaveView & { unpaid?: true })[]> {
   // The roster and its leaves in one round trip, each person trimmed to what
   // the card shows.
   const { employees, rows } = await orgUsersWithRows(adminUserId, leaves(), {
     onlyWithRows: true,
     userFields: ['userId', 'org', 'name', 'email', 'department', 'designation', 'profilePhotoKey', 'profilePhotoUrl'],
+    // Only these statuses, filtered in the database (Suwi's pending lists), when asked.
+    ...(opts.status ? { rowMatch: { status: opts.status } } : {}),
   });
   if (employees.length === 0) return [];
   const employeeById = new Map(employees.map((e) => [e.userId, e]));

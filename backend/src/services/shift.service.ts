@@ -1042,10 +1042,14 @@ export async function policyForUser(
 ): Promise<ShiftPolicyRules & { shiftName: string | null }> {
   const memo = policyMemo.getStore();
   if (!memo) return resolvePolicyForUser(userId, asOf);
-  const key = `${userId}|${asOf}`;
-  let found = memo.get(key);
+  return memoOnce(memo, `${userId}|${asOf}`, () => resolvePolicyForUser(userId, asOf));
+}
+
+/** Inside a memo scope: `read()` once per key, shared by everyone in the scope (a failure is not kept). */
+function memoOnce<T>(memo: Map<string, Promise<unknown>>, key: string, read: () => Promise<T>): Promise<T> {
+  let found = memo.get(key) as Promise<T> | undefined;
   if (!found) {
-    found = resolvePolicyForUser(userId, asOf);
+    found = read();
     memo.set(key, found);
     found.catch(() => memo.delete(key));
   }
@@ -1060,7 +1064,7 @@ export async function policyForUser(
  * call, and the shared object must only be read, never changed, by code run
  * inside it.
  */
-const policyMemo = new AsyncLocalStorage<Map<string, Promise<ResolvedShiftPolicy>>>();
+const policyMemo = new AsyncLocalStorage<Map<string, Promise<unknown>>>();
 export function withPolicyMemo<T>(work: () => Promise<T>): Promise<T> {
   return policyMemo.getStore() ? work() : policyMemo.run(new Map(), work);
 }
@@ -1076,12 +1080,18 @@ async function resolvePolicyForUser(userId: string, asOf: string): Promise<Resol
   // everything goes in one trip: their history, the org policy and the org's
   // templates (a handful), picked from in memory exactly as the queries below
   // pick them. Every self-service screen comes through here.
-  const knownOrg = requestUserFor(userId)?.org;
+  //
+  // Inside a memo scope (Suwi's leave checks over a company's waiting pile, a balance) the same goes
+  // for anyone: their org is looked up once, and the org's policy and templates once per scope, not
+  // once per person and date (the default template, whole, per check was most of those reads).
+  const memo = policyMemo.getStore();
+  const knownOrg = requestUserFor(userId)?.org
+    ?? (memo ? (await memoOnce(memo, `org-of|${userId}`, () => users().findOne({ userId }, { projection: { _id: 0, org: 1 } })))?.org : undefined);
   if (knownOrg) {
     const [history, orgPolicy, templates] = await Promise.all([
       assignedTemplateOn(userId, asOf),
-      getOrgShiftPolicy(knownOrg),
-      shiftTemplates().find({ org: knownOrg }).toArray(),
+      memo ? memoOnce(memo, `org-policy|${knownOrg}`, () => getOrgShiftPolicy(knownOrg)) : getOrgShiftPolicy(knownOrg),
+      memo ? memoOnce(memo, `org-templates|${knownOrg}`, () => shiftTemplates().find({ org: knownOrg }).toArray()) : shiftTemplates().find({ org: knownOrg }).toArray(),
     ]);
     const live = (t: ShiftTemplate) => t.active === true && t.deletedAt === undefined;
     const lists = (t: ShiftTemplate) =>

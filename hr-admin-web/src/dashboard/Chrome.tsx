@@ -142,7 +142,7 @@ export const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'TAX UPLOADS', items: TAX_UPLOADS },
   { title: 'CLAIMS', items: CLAIMS },
   { title: 'ENGAGEMENT', items: ENGAGEMENT },
-  { title: 'SUWI', items: [{ key: 'suwi', label: 'Settings & activity' }] },
+  { title: 'SUWI', items: [{ key: 'suwi', label: 'Settings & activity' }, { key: 'suwitimings', label: 'Response times' }] },
 ];
 const SOON: Partial<Record<View, boolean>> = {};
 
