@@ -97,8 +97,10 @@ export const env = {
    */
   isLocal: DEV_ENVIRONMENTS.has(process.env.NODE_ENV ?? ''),
   port: Number(process.env.PORT ?? 4000),
-  corsOrigins: [...new Set([...defaultCorsOrigins, ...configuredCorsOrigins, ...(portalBaseUrl ? [portalBaseUrl] : [])])],
+  // A per-company portal address ({org} pattern) is covered by the dashboard domain rule, not listed here.
+  corsOrigins: [...new Set([...defaultCorsOrigins, ...configuredCorsOrigins, ...(portalBaseUrl && !portalBaseUrl.includes('{org}') ? [portalBaseUrl] : [])])],
   portalBaseUrl,
+  dashboardDomain,
   /**
    * Signs the portal's candidate sessions (JWT, aud 'portal'). Unset, a key is
    * derived from the Mongo connection string, as Scribble tickets do; set it in

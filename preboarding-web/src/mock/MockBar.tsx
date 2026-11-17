@@ -16,13 +16,13 @@ export default function MockBar() {
         <nav className="mockbar__panel" aria-label="Mock states">
           <p className="eyebrow">Home states</p>
           {SCENARIOS.map((s) => (
-            <a key={s} href={`/?mock=${s}`}>
+            <a key={s} href={`${import.meta.env.BASE_URL}?mock=${s}`}>
               {s}
             </a>
           ))}
           <p className="eyebrow">Offer links</p>
           {OFFER_TOKENS.map((t) => (
-            <a key={t} href={`/o/${t}`}>
+            <a key={t} href={`${import.meta.env.BASE_URL}o/${t}`}>
               /o/{t}
             </a>
           ))}

@@ -701,6 +701,24 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   const noTab = await call(lifecycleOfferRouter as never, 'GET', '/letter-templates', itSession);
   ok('the onboarding tab opens letter templates; offboarding-only staff would too', noTab.status === 200);
 
+  // ─── The portal on each company's own address (<org>.getsowaka.com/onboarding) ───
+  {
+    const { companyOfRequest } = await import('../routes/portal.routes');
+    const { env: liveEnv } = await import('../config/env');
+    const { portalLink } = await import('../services/lifecycle/emails');
+    const reqFrom = (origin?: string, referer?: string) => ({ header: (n: string) => (n.toLowerCase() === 'origin' ? origin : n.toLowerCase() === 'referer' ? referer : undefined) }) as never;
+    ok('a company address names its company', companyOfRequest(reqFrom('https://convrse.getsowaka.com')) === 'convrse');
+    ok('the referer counts when there is no origin', companyOfRequest(reqFrom(undefined, 'https://acmt.getsowaka.com/onboarding/o/x')) === 'acmt');
+    ok('shared addresses (join, go) name no company', companyOfRequest(reqFrom('https://join.getsowaka.com')) === null && companyOfRequest(reqFrom('https://go.getsowaka.com')) === null);
+    ok('anything off the product domain names no company', companyOfRequest(reqFrom('http://localhost:5181')) === null && companyOfRequest(reqFrom('https://evil.example.com')) === null);
+    const saved = liveEnv.portalBaseUrl;
+    (liveEnv as { portalBaseUrl: string }).portalBaseUrl = 'https://{org}.getsowaka.com/onboarding';
+    const link = portalLink('/sign-in', ORG);
+    ok('emails link to the company\'s own portal address', link.startsWith(`https://${ORG}.getsowaka.com/onboarding/sign-in?c=`), link);
+    ok('a link with no company falls back to the shared join address', portalLink('/') === 'https://join.getsowaka.com/onboarding/');
+    (liveEnv as { portalBaseUrl: string }).portalBaseUrl = saved;
+  }
+
   // Clean the scratch uploads this run wrote.
   const { rm } = await import('node:fs/promises');
   const path = await import('node:path');

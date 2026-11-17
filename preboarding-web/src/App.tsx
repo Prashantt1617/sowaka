@@ -49,7 +49,7 @@ function useClientFromLink() {
 export function App() {
   useClientFromLink();
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '') || undefined}>
       <a className="skip-link" href="#main">
         Skip to content
       </a>

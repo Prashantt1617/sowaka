@@ -84,7 +84,7 @@ export async function nudgeTask(org: string, journeyId: string, taskId: string, 
     const first = (j.candidate?.name ?? '').trim().split(/\s+/)[0] || 'there';
     const hasPortal = !!(await candidateAccounts().findOne({ journeyId }, { projection: { _id: 1 } }));
     const body = `Hi ${first},\n\nA quick reminder from ${hr.name} at ${companyName}: “${task.title}” is still waiting on you${due ? `, due ${due}` : ''}.\n\n${hasPortal ? 'It only takes a few minutes on your joining portal.' : 'Use the link in the offer email we sent you. If you can’t find it, just reply to this email.'}`;
-    await sendLifecycleEmail(org, target.email!, `Reminder: ${task.title}`, mails.letter(companyName, body, hasPortal ? portalLink('/') : null));
+    await sendLifecycleEmail(org, target.email!, `Reminder: ${task.title}`, mails.letter(companyName, body, hasPortal ? portalLink('/', org) : null));
     to = j.candidate?.name ?? target.email!;
   } else if (target.who === 'joiner') {
     await tell([target.userId], {
