@@ -1,7 +1,7 @@
 {
   "enabled": true,
   "onboarding": {
-    "journeyId": "8db67472-d473-4f79-82b8-52723e66d2b0",
+    "journeyId": "1d0dac3f-5842-4582-a630-118df054acc2",
     "stage": "settling_in",
     "dayLabel": "Week 2",
     "plant": {
@@ -15,6 +15,6 @@
       "done": 0,
       "total": 8
     },
-    "subtitle": "Week 2 · check-in opens Tue 1 Dec"
+    "subtitle": "Week 2 · check-in opens Wed 2 Dec"
   }
 }

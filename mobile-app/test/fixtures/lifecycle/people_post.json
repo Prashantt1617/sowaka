@@ -1,16 +1,16 @@
 {
   "people": [
     {
-      "id": "b85273d8-5c38-4f79-ae42-cd2ff226dd78",
+      "id": "592118e1-9330-49fa-a257-c4130fd4e33e",
       "userId": "p1",
       "name": "Kiran Shah",
       "designation": "Designer",
       "role": "your buddy",
       "why": "Your buddy for the first month",
-      "metAt": "2026-11-16T18:22:56.991Z"
+      "metAt": "2026-11-17T04:55:48.076Z"
     },
     {
-      "id": "be32d432-0ffc-4d47-b3c9-9a0cd874d0d2",
+      "id": "f9582703-e669-4d18-b54c-2c3016706e68",
       "userId": "p2",
       "name": "Tara Bose",
       "designation": "Researcher"

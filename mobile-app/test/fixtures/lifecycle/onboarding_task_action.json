@@ -1,6 +1,6 @@
 {
   "task": {
-    "id": "4ece48c7-2a40-4807-9098-8e224a0b19bf",
+    "id": "387b19fb-a489-4238-baab-da832207da37",
     "systemKey": "app_tour",
     "phase": "first_week",
     "title": "Take the Sowaka tour",
@@ -11,10 +11,10 @@
     "surface": "app",
     "mustDo": false,
     "status": "done",
-    "opensAt": "2026-11-10T00:00:00.000Z",
-    "dueAt": "2026-11-13T00:00:00.000Z",
-    "dueLabel": "Fri 13 Nov",
-    "doneAt": "2026-11-16T18:22:56.915Z",
+    "opensAt": "2026-11-11T00:00:00.000Z",
+    "dueAt": "2026-11-14T00:00:00.000Z",
+    "dueLabel": "Sat 14 Nov",
+    "doneAt": "2026-11-17T04:55:47.961Z",
     "doneByName": "Isha Verma",
     "late": false
   }

@@ -19,7 +19,7 @@
   ],
   "taxRegime": {
     "regime": "new",
-    "at": "2026-11-16T18:22:56.930Z"
+    "at": "2026-11-17T04:55:47.983Z"
   },
   "policiesAck": {
     "versions": [
@@ -32,10 +32,10 @@
         "version": "2026-09-15T00:00:00.000Z"
       }
     ],
-    "at": "2026-11-16T18:22:56.923Z",
+    "at": "2026-11-17T04:55:47.973Z",
     "device": "Fixture/1.0"
   },
-  "policiesAckAt": "2026-11-16T18:22:56.923Z",
+  "policiesAckAt": "2026-11-17T04:55:47.973Z",
   "steps": {
     "policies": true,
     "tax": true,
@@ -53,6 +53,6 @@
     "Meet every designer"
   ],
   "probationMonths": 6,
-  "goalsLockOn": "2026-11-17",
+  "goalsLockOn": "2026-11-18",
   "taxSavedToPayroll": false
 }

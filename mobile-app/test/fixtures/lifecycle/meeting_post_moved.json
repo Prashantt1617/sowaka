@@ -1,8 +1,8 @@
 {
   "id": "fx-meeting",
   "title": "Meet your manager",
-  "startsAt": "2026-11-17T20:22:56.629Z",
-  "endsAt": "2026-11-17T20:52:56.629Z",
+  "startsAt": "2026-11-18T06:55:47.564Z",
+  "endsAt": "2026-11-18T07:25:47.564Z",
   "place": "Room 4B",
   "canConfirm": true,
   "attendees": [
@@ -27,6 +27,6 @@
   "mustDo": true,
   "systemKey": "meet_manager",
   "met": "moved",
-  "newTime": "2026-11-17T20:22:56.629Z",
-  "taskId": "22fb7a16-a271-4124-8f01-85288a83311c"
+  "newTime": "2026-11-18T06:55:47.564Z",
+  "taskId": "dfecc505-a1b7-4cc0-a655-01d536db25eb"
 }

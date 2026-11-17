@@ -1,23 +1,23 @@
 {
   "success": true,
   "resignation": {
-    "id": "92fec123-e0d9-45fd-be3e-a3d6ddacc6f8",
+    "id": "a905f6a2-147f-4235-834b-071ec29b52ee",
     "userId": "wanda",
     "managerUserId": "mgr",
     "managerName": "Meera Iyer",
     "reason": "Personal",
     "note": "",
-    "submittedAt": "2026-11-16T18:22:56.629Z",
+    "submittedAt": "2026-11-17T04:55:47.564Z",
     "noticeDays": 30,
-    "lastDayByNotice": "2026-12-16",
+    "lastDayByNotice": "2026-12-17",
     "status": "withdrawn",
     "manager": null,
     "hrAcceptedAt": null,
     "hrAcceptedByName": null,
     "agreedLastDay": null,
-    "withdrawnAt": "2026-11-16T18:22:56.629Z",
+    "withdrawnAt": "2026-11-17T04:55:47.564Z",
     "journeyId": null,
-    "tl": "2026-12-16",
+    "tl": "2026-12-17",
     "daysLeft": null
   }
 }

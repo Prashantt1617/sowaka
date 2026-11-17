@@ -6,8 +6,8 @@
       "title": "Isha Verma said hello",
       "body": "Isha Verma posted their intro on Connect. Say hi 👋",
       "data": {
-        "journeyId": "4153eb32-f82c-47d2-8060-fdc8701756ff",
-        "postId": "9de4a469-e864-4ec1-8fcf-72d389ef5df5",
+        "journeyId": "0a44b86c-e14f-4f15-94f1-ed1a13dec40a",
+        "postId": "0209ef94-3a20-43db-a88d-b8aeb6b2d82b",
         "destination": "lifecycle_joiner"
       }
     },
@@ -15,10 +15,10 @@
       "userId": "isha",
       "scenario": "lifecycle_starter_task",
       "title": "Meera Iyer gave you a starter task",
-      "body": "Redesign the leave request screen · Due Wed 18 Nov",
+      "body": "Redesign the leave request screen · Due Thu 19 Nov",
       "data": {
-        "journeyId": "4153eb32-f82c-47d2-8060-fdc8701756ff",
-        "starterTaskId": "adffca6b-0e76-4ed4-8cdc-040fe611f004",
+        "journeyId": "0a44b86c-e14f-4f15-94f1-ed1a13dec40a",
+        "starterTaskId": "a82bdc8a-0b98-4761-819e-8964e86b3d64",
         "destination": "lifecycle_starter_task"
       }
     },
@@ -28,8 +28,8 @@
       "title": "Isha Verma finished a task",
       "body": "Redesign the leave request screen",
       "data": {
-        "journeyId": "4153eb32-f82c-47d2-8060-fdc8701756ff",
-        "starterTaskId": "adffca6b-0e76-4ed4-8cdc-040fe611f004",
+        "journeyId": "0a44b86c-e14f-4f15-94f1-ed1a13dec40a",
+        "starterTaskId": "a82bdc8a-0b98-4761-819e-8964e86b3d64",
         "destination": "lifecycle_starter_task_done"
       }
     },
@@ -39,8 +39,8 @@
       "title": "Meera Iyer replied",
       "body": "Nice start!",
       "data": {
-        "journeyId": "4153eb32-f82c-47d2-8060-fdc8701756ff",
-        "starterTaskId": "adffca6b-0e76-4ed4-8cdc-040fe611f004",
+        "journeyId": "0a44b86c-e14f-4f15-94f1-ed1a13dec40a",
+        "starterTaskId": "a82bdc8a-0b98-4761-819e-8964e86b3d64",
         "destination": "lifecycle_starter_task"
       }
     },
@@ -50,8 +50,8 @@
       "title": "Meera Iyer shared notes from your 1:1",
       "body": "Tap to read and reply",
       "data": {
-        "journeyId": "4153eb32-f82c-47d2-8060-fdc8701756ff",
-        "noteId": "0d7a0ef8-8c06-4f21-ba4f-9da6648020ca",
+        "journeyId": "0a44b86c-e14f-4f15-94f1-ed1a13dec40a",
+        "noteId": "835e4d55-3667-476c-be60-476df3ecb11c",
         "destination": "lifecycle_notes"
       }
     },
@@ -61,8 +61,8 @@
       "title": "Isha Verma replied",
       "body": "Thanks, Meera!",
       "data": {
-        "journeyId": "4153eb32-f82c-47d2-8060-fdc8701756ff",
-        "noteId": "0d7a0ef8-8c06-4f21-ba4f-9da6648020ca",
+        "journeyId": "0a44b86c-e14f-4f15-94f1-ed1a13dec40a",
+        "noteId": "835e4d55-3667-476c-be60-476df3ecb11c",
         "destination": "lifecycle_joiner"
       }
     },
@@ -72,7 +72,7 @@
       "title": "Meet your manager moved",
       "body": "New time: Wed 18 Nov",
       "data": {
-        "journeyId": "4153eb32-f82c-47d2-8060-fdc8701756ff",
+        "journeyId": "0a44b86c-e14f-4f15-94f1-ed1a13dec40a",
         "meetingId": "fx-meeting",
         "destination": "lifecycle_joiner"
       }
@@ -83,8 +83,8 @@
       "title": "Meera Iyer welcomed you on Connect",
       "body": "Please welcome Isha to the design team!",
       "data": {
-        "journeyId": "4153eb32-f82c-47d2-8060-fdc8701756ff",
-        "postId": "7dc8626d-7988-47b1-9f59-60c37a4e7ebe",
+        "journeyId": "0a44b86c-e14f-4f15-94f1-ed1a13dec40a",
+        "postId": "6ee7cb6f-3758-48fb-b70a-2715faa61307",
         "destination": "lifecycle_onboarding"
       }
     },
@@ -94,7 +94,7 @@
       "title": "Check-in sent",
       "body": "Ishita Kaur sent their month-1 check-in.",
       "data": {
-        "journeyId": "df042e4b-57c5-4872-baf3-22c15ae8696a",
+        "journeyId": "b3abdad2-8b20-4a5e-8247-acc23505f99f",
         "month": "1",
         "destination": "lifecycle_probation_review"
       }
@@ -105,7 +105,7 @@
       "title": "Month 1 review",
       "body": "Meera Iyer reviewed your month 1.",
       "data": {
-        "journeyId": "df042e4b-57c5-4872-baf3-22c15ae8696a",
+        "journeyId": "b3abdad2-8b20-4a5e-8247-acc23505f99f",
         "month": "1",
         "destination": "lifecycle_probation"
       }
@@ -116,7 +116,7 @@
       "title": "Probation decision",
       "body": "Ishita Kaur is confirmed.",
       "data": {
-        "journeyId": "df042e4b-57c5-4872-baf3-22c15ae8696a",
+        "journeyId": "b3abdad2-8b20-4a5e-8247-acc23505f99f",
         "destination": "lifecycle_joiner"
       }
     },
@@ -124,10 +124,10 @@
       "userId": "mgr",
       "scenario": "lifecycle_resignation",
       "title": "Resignation · Ravi Menon",
-      "body": "Ravi has resigned. Last day by notice: Wed 16 Dec. Open Team › Requests.",
+      "body": "Ravi has resigned. Last day by notice: Thu 17 Dec. Open Team › Requests.",
       "data": {
         "type": "lifecycle_resignation",
-        "resignationId": "e22f00e9-f395-4e4d-a2cc-9ce105a0c94f",
+        "resignationId": "680ccb82-6ce5-48c4-8496-09962637d3c4",
         "userId": "ravi"
       }
     },
@@ -135,10 +135,10 @@
       "userId": "mgr",
       "scenario": "lifecycle_resignation",
       "title": "Resignation · Wanda Pillai",
-      "body": "Wanda has resigned. Last day by notice: Wed 16 Dec. Open Team › Requests.",
+      "body": "Wanda has resigned. Last day by notice: Thu 17 Dec. Open Team › Requests.",
       "data": {
         "type": "lifecycle_resignation",
-        "resignationId": "92fec123-e0d9-45fd-be3e-a3d6ddacc6f8",
+        "resignationId": "a905f6a2-147f-4235-834b-071ec29b52ee",
         "userId": "wanda"
       }
     },
@@ -149,7 +149,7 @@
       "body": "Wanda Pillai is staying.",
       "data": {
         "type": "lifecycle_resignation",
-        "resignationId": "92fec123-e0d9-45fd-be3e-a3d6ddacc6f8",
+        "resignationId": "a905f6a2-147f-4235-834b-071ec29b52ee",
         "userId": "wanda"
       }
     },
@@ -157,21 +157,21 @@
       "userId": "ravi",
       "scenario": "lifecycle_offboarding_open",
       "title": "Your resignation is accepted",
-      "body": "Your last working day is Fri 20 Nov 2026. Before you go is in Action › Off-boarding.",
+      "body": "Your last working day is Sat 21 Nov 2026. Before you go is in Action › Off-boarding.",
       "data": {
         "type": "lifecycle_offboarding",
-        "journeyId": "8addf28a-0196-460b-921b-4cf0bb3ce44c"
+        "journeyId": "d3709a57-c5e1-43b1-a8d4-36b15527a605"
       }
     },
     {
       "userId": "mgr",
       "scenario": "lifecycle_handover_checklist",
       "title": "Handover for Ravi",
-      "body": "Ravi's last day is Fri 20 Nov. Add the handover checklist and a note for Ravi.",
+      "body": "Ravi's last day is Sat 21 Nov. Add the handover checklist and a note for Ravi.",
       "data": {
         "type": "lifecycle_offboarding",
         "userId": "ravi",
-        "journeyId": "8addf28a-0196-460b-921b-4cf0bb3ce44c"
+        "journeyId": "d3709a57-c5e1-43b1-a8d4-36b15527a605"
       }
     },
     {
