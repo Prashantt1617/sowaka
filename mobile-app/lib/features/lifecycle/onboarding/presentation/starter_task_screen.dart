@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../profile/profile_launcher.dart';
 import '../../../shared/app_toast.dart';
 import '../data/onboarding_api.dart';
 import '../data/onboarding_models.dart';
@@ -153,6 +154,14 @@ class _StarterTaskScreenState extends State<StarterTaskScreen> {
               controller: _note,
               hint: 'Add a note or a link for $manager (optional)',
             ),
+            if (task.assignedByUserId != null && canOpenPersonProfile) ...[
+              const SizedBox(height: 8),
+              OnbLink(
+                key: const ValueKey('starter-ask'),
+                label: 'Ask $manager a question',
+                onTap: () => openPersonProfile(task.assignedByUserId!),
+              ),
+            ],
           ],
         ],
       ),

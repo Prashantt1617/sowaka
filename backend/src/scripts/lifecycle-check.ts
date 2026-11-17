@@ -296,7 +296,9 @@ async function main() {
   const tv = (id: string, extra: Record<string, unknown>) => ({ id, phase: 'first_week', title: id, ownerRole: 'employee', kind: 'form', surface: 'app', mustDo: false, status: 'todo', dueAt: null, late: false, ...extra }) as TaskView;
   const open = [tv('later', { dueAt: '2026-12-09T00:00:00.000Z' }), tv('soon', { dueAt: '2026-12-04T00:00:00.000Z' }), tv('must', { mustDo: true, dueAt: '2026-12-08T00:00:00.000Z' }), tv('back', { status: 'sent_back', dueAt: '2026-12-04T00:00:00.000Z' })];
   const meeting = (mins: number) => ({ id: 'm', title: 'Meet your manager', startsAt: new Date(now.getTime() + mins * 60_000), journeyTaskId: 'mtask', attendeeUserIds: [] }) as unknown as Meeting;
-  eq('A meeting starting within 2 hours comes first', app.pickUpNext(open, [meeting(90)], now).meeting?.id, 'm');
+  eq('A meeting starting within 2 hours comes first', app.pickUpNext([...open, tv('mtask', { kind: 'meeting' })], [meeting(90)], now).meeting?.id, 'm');
+  eq('…not one whose task is already done', app.pickUpNext(open, [meeting(90)], now).view?.id, 'must');
+  eq('A read-only row (someone else does it) is never Up next', app.pickUpNext([{ ...tv('hr', { mustDo: true }), readOnly: true } as TaskView], [], now).view, undefined);
   eq('…not one 3 hours away: must-do first', app.pickUpNext(open, [meeting(180)], now).view?.id, 'must');
   eq('Then the soonest due, not started before sent back', app.pickUpNext(open.filter((v) => !v.mustDo), [], now).view?.id, 'soon');
 
@@ -318,7 +320,18 @@ async function main() {
   eq('GET /lifecycle/me: the tile shows, Week 1', [meNow.enabled, (meNow as { onboarding?: { tileVisible: boolean; dayLabel: string } }).onboarding?.tileVisible, (meNow as { onboarding?: { dayLabel: string } }).onboarding?.dayLabel], [true, true, 'Week 1']);
   const home = await app.onboardingHome(ISHA);
   ok('Home: Up next is the must-do due soonest (Meet your manager, from Day 1), Day-7 survey is open today', home.upNext?.systemKey === 'meet_manager' && home.today.some((v) => v.systemKey === 'day7_survey' && v.status === 'todo'), home.upNext);
-  ok('Home: no HR or manager-only task shows to the joiner', home.today.every((v) => v.ownerRole === 'employee' || v.ownerRole === 'manager_employee'));
+  type Row = TaskView & { readOnly?: boolean; doneBy?: string; meeting?: { startsAt: string; place?: string; with?: string; canConfirm?: boolean } };
+  const rows = [...home.today, ...home.done, ...home.later] as Row[];
+  ok('Home: someone else’s task shows only as a read-only row', rows.every((v) => v.ownerRole === 'employee' || v.ownerRole === 'manager_employee' || v.readOnly));
+  const day1 = ['welcome_induction', 'vision_culture', 'laptop_setup', 'meet_team'];
+  eq('Day 1 lists every item: induction, vision, laptop and Meet your team, read-only, with who does them',
+    day1.map((k) => { const r = rows.find((v) => v.systemKey === k); return r ? [r.readOnly, r.doneBy] : null; }),
+    [[true, 'HR'], [true, 'HR'], [true, 'IT'], [true, 'Your manager']]);
+  const expectTotal = (await engine.tasksOf(J2.id)).filter((t) => t.phase === 'first_week' && t.status !== 'cancelled' && t.ownerRole !== 'automatic' && (['employee', 'manager_employee'].includes(t.ownerRole) || engine.joinerSeesReadOnly(t))).length;
+  eq('…and they count toward the day (one count for the tile, the home and the profile card)', [home.progress.total, ((await app.lifecycleMe(ISHA)) as { onboarding?: { progress?: { total: number } } }).onboarding?.progress?.total], [expectTotal, expectTotal]);
+  eq('The joiner cannot tick someone else’s task', (await refusal(async () => app.actOnOwnTask(ISHA, byKey(t2, 'welcome_induction').id, { action: 'done' }))).status, 404);
+  ok('Joiner rows show app copy, never the template’s developer helper', !rows.some((v) => /push|Timed item|say hi|HR sees|Manager assigns/i.test(v.helper ?? '')) && rows.find((v) => v.systemKey === 'register_face')?.helper === '2 min · needed to punch in', rows.map((v) => v.helper));
+  ok('A date-only due date is sent as a day, never a meeting time: no meeting row without its meeting', rows.filter((v) => v.kind === 'meeting' && !v.meeting).every((v) => !v.dueAt || v.dueAt.endsWith('T00:00:00.000Z')));
   eq('Product-driven tasks are done from their screens', (await refusal(async () => app.actOnOwnTask(ISHA, byKey(t2, 'intro_post').id, { action: 'done' }))).status, 409);
   eq('A must-do cannot be skipped', (await refusal(async () => app.actOnOwnTask(ISHA, byKey(t2, 'meet_manager').id, { action: 'skip' }))).status, 409);
   eq('The tour can be ticked', (await app.actOnOwnTask(ISHA, byKey(t2, 'app_tour').id, { action: 'done' })).task.status, 'done');
@@ -346,6 +359,9 @@ async function main() {
   ok('Intro post: a real Connect post in the new-joiner style by the joiner', post?.type === 'new_joinee' && post.author.userId === 'isha' && (post.body as { introPost?: boolean }).introPost === true);
   eq('…intro task done, the manager asked to say hi', [byKey(await engine.tasksOf(J2.id), 'intro_post').status, await tellCount('mgr', 'lifecycle_intro_post')], ['done', 1]);
   eq('Posting twice is refused', (await refusal(async () => app.postIntro(ISHA))).status, 409);
+  eq('The preview’s bubble is the posted text (a full stop after the line)', [(post?.body as { message?: string }).message, app.introMessage('Hello!')], ['Hey everyone! Designer who sketches on trains. Excited to meet you all 🙌', 'Hey everyone! Hello! Excited to meet you all 🙌']);
+  const introNow = await app.introView(ISHA) as { likes?: number; commentCount?: number };
+  eq('Posted: the intro shows its likes and comments', [introNow.likes, introNow.commentCount], [0, 0]);
 
   await app.saveSetup(MGR, J2.id, { people: [{ userId: 'p1', why: 'Your buddy' }, { userId: 'p2' }], buddyUserId: 'p1', welcomeNote: { kind: 'text', text: 'Welcome!' }, goals: ['Ship the leave redesign'] });
   eq('Set-up: people, buddy, note and goals saved; set-up and goals tasks done', [(await app.peopleView(ISHA)).people.length, byKey(await engine.tasksOf(J2.id), 'manager_setup').status, byKey(await engine.tasksOf(J2.id), 'probation_goals').status], [2, 'done', 'done']);
@@ -379,18 +395,34 @@ async function main() {
   await app.sendSurvey(ISHA, { answers: { q1: 4, q2: 'mostly', q3: 5, q4: 'More coffee' } });
   eq('Sent once; twice refused', [byKey(await engine.tasksOf(J2.id), 'day7_survey').status, (await refusal(async () => app.sendSurvey(ISHA, { answers: { q1: 4, q2: 'yes', q3: 5 } }))).status], ['done', 409]);
 
-  section('Survey privacy: the manager sees a team summary only with 3+ answers, never a name');
+  section('Survey privacy: per kind, 3+ different people, never a name');
   let mj = await app.joinerForManager(MGR, J2.id);
   ok('One answer: no summary', mj.surveySummary === undefined);
+  // One person answering Day 7, M3 and M6 unlocks nothing (people, not responses; kinds never merged).
+  await surveyResponses().insertMany([
+    { id: 's-p3-m3', org: ORG, kind: 'm3', userId: 'isha', managerUserId: 'mgr', answers: { q1: 5, q2: 'yes', q3: 5, q4: null }, createdAt: now },
+    { id: 's-p3-m6', org: ORG, kind: 'm6', userId: 'isha', managerUserId: 'mgr', answers: { q1: 5, q2: 'yes', q3: 5, q4: null }, createdAt: now },
+  ] as never[]);
+  mj = await app.joinerForManager(MGR, J2.id);
+  ok('One person across Day 7, M3 and M6: still no summary', mj.surveySummary === undefined && !('surveySummaries' in mj), mj.surveySummary);
   await surveyResponses().insertOne({ id: 's2', org: ORG, kind: 'day7', userId: 'p3', managerUserId: 'mgr', answers: { q1: 2, q2: 'no', q3: 3, q4: null }, createdAt: now } as never);
+  await surveyResponses().insertOne({ id: 's2b', org: ORG, kind: 'day7', userId: 'p3', managerUserId: 'mgr', answers: { q1: 2, q2: 'no', q3: 3, q4: null }, createdAt: now } as never);
   mj = await app.joinerForManager(MGR, J2.id);
-  ok('Two answers: still none', mj.surveySummary === undefined);
-  await surveyResponses().insertOne({ id: 's3', org: ORG, kind: 'm3', userId: 'p4', managerUserId: 'mgr', answers: { q1: 3, q2: 'yes', q3: 4, q4: null }, createdAt: now } as never);
+  ok('Two people (one of them twice): still none', mj.surveySummary === undefined);
+  await surveyResponses().insertOne({ id: 's3', org: ORG, kind: 'day7', userId: 'p4', managerUserId: 'mgr', answers: { q1: 3, q2: 'yes', q3: 4, q4: null }, createdAt: now } as never);
   mj = await app.joinerForManager(MGR, J2.id);
-  eq('Three answers: count and average only', mj.surveySummary, { count: 3, avg: 3 });
-  ok('The summary carries no names or answers', !/Isha|q4|More coffee|userId/.test(JSON.stringify(mj.surveySummary)));
+  eq('Three different people on Day 7: that kind only, count and average of people', [mj.surveySummary, mj.surveySummaries], [{ kind: 'day7', count: 3, avg: 3 }, [{ kind: 'day7', count: 3, avg: 3 }]]);
+  ok('The summary carries no names or answers', !/Isha|q4|More coffee|userId/.test(JSON.stringify(mj.surveySummaries)));
   const hrSurveys = await board.surveyAnswers(ORG, 'day7');
   ok('HR sees every answer with the name', hrSurveys.responses.some((x) => x.name === 'Isha Verma' && x.answers.q4 === 'More coffee'));
+
+  section('M2: the manager’s welcome post');
+  const welcome = await app.postWelcome(MGR, J2.id, { text: 'Please welcome Isha to the design team!' });
+  const wpost = await connectPosts().findOne({ id: welcome.welcomePost.connectPostId });
+  ok('A new-joiner post on Connect by the manager, about the joiner', wpost?.type === 'new_joinee' && wpost.author.userId === 'mgr' && (wpost.body as { personUserId?: string; welcomePost?: boolean; managerNote?: string }).personUserId === 'isha' && (wpost.body as { welcomePost?: boolean }).welcomePost === true);
+  eq('Once per joiner', (await refusal(async () => app.postWelcome(MGR, J2.id, { text: 'Again' }))).status, 409);
+  eq('M2 no longer offers it', (await app.joinerForManager(MGR, J2.id)).welcomePost.canPost, false);
+  eq('The joiner is told', await tellCount('isha', 'lifecycle_welcome_post'), 1);
 
   section('Manager access');
   const joiners = await app.joinersForManager(MGR);
@@ -400,6 +432,14 @@ async function main() {
   const J3 = await joinAt('Rohan Pillai', 'rohan', -8);
   eq('Goals lock at Tj + 7', (await refusal(async () => app.saveSetup(MGR, J3.id, { goals: ['Late goal'] }))).status, 409);
   ok('Rohan is Week 2 on the probation tab', (await engine.loadJourney(J3.id)).boardTab === 'probation');
+  const ROHAN = me('rohan', 'Rohan Pillai');
+  const rh = await app.onboardingHome(ROHAN);
+  eq('A8: the server says “Week 1, done!” is due, with its stats', [rh.showWeekDone, typeof rh.weekDoneStats.tasksDone], [true, 'number']);
+  await app.markWeekDoneSeen(ROHAN);
+  eq('…and once seen it never shows again (on any device)', (await app.onboardingHome(ROHAN)).showWeekDone, false);
+  const rohanMe = await app.lifecycleMe(ROHAN) as { onboarding?: { subtitle?: string } };
+  ok('The Action tile’s subtitle follows the stage after week 1', /^Week 2 · /.test(rohanMe.onboarding?.subtitle ?? ''), rohanMe.onboarding);
+  ok('…and counts steps in week 1', /^\d+ of \d+ steps done$/.test(((await app.lifecycleMe(ISHA)) as { onboarding?: { subtitle?: string } }).onboarding?.subtitle ?? ''));
 
   // ───────────────────────────────────────────────────────── board
   section('The HR board');
@@ -428,6 +468,11 @@ async function main() {
   const mv = await app.meetingFor(ISHA, (await lifecycleMeetings().findOne({ journeyId: J2.id }))!.id);
   eq('Meeting: attendees with roles, what to expect, must-do', [mv.attendees.map((a) => a.role), mv.expect.length, mv.mustDo, mv.systemKey], [['joiner', 'manager'], 3, true, 'meet_manager']);
   ok('The home links the meeting to its task', (await app.onboardingHome(ISHA)).today.some((v) => v.systemKey === 'meet_manager' && (v as { meetingId?: string }).meetingId === mv.id));
+  type MeetingRow = TaskView & { meeting?: { id: string; startsAt: string; place?: string; with?: string; canConfirm?: boolean } };
+  const homeRow = ((await app.onboardingHome(ISHA)).today as MeetingRow[]).find((v) => v.systemKey === 'meet_manager');
+  eq('Every meeting row carries its meeting (time, the room kept beside the person)', [homeRow?.meeting?.id, homeRow?.meeting?.startsAt, homeRow?.meeting?.place, homeRow?.meeting?.with, homeRow?.meeting?.canConfirm], [mv.id, at(J2.tj!, '11:00').toISOString(), 'Room 4B', 'Neha', true]);
+  const mgrRow = ((await app.joinerForManager(MGR, J2.id)).tasks as MeetingRow[]).find((v) => v.systemKey === 'meet_manager');
+  eq('…on the manager’s M2 too, phrased for them', [mgrRow?.meeting?.id, mgrRow?.title], [mv.id, 'Meet Isha']);
   ok('The Day-1 agenda becomes a meeting tied to “Meet your manager”', meetings.length === 1 && meetings[0].journeyTaskId === byKey(await engine.tasksOf(J2.id), 'meet_manager').id && meetings[0].attendeeUserIds.includes('mgr'));
   eq('The template can change only on a draft', (await refusal(async () => board.updateJourneyByHr(ORG, J2.id, { templateId: faculty.id }))).status, 409);
   await board.updateJourneyByHr(ORG, J1b.id, { templateId: faculty.id });
@@ -440,15 +485,24 @@ async function main() {
   let j4 = await engine.loadJourney(J4.id);
   ok('Final month: column Final month, Decide, bud', j4.boardColumn === 'final_month' && j4.flags!.includes('decide') && j4.plant?.stage === 4, [j4.boardColumn, j4.flags, j4.plant]);
   const SAMEER = me('sameer', 'Sameer Khan');
+  const discussion = byKey(await engine.tasksOf(J4.id), 'confirmation_discussion', 6);
+  const m2Sameer = await app.joinerForManager(MGR, J4.id);
+  eq('M2: the Confirmation discussion shows to the manager without a Done', [(m2Sameer.tasks as Array<TaskView & { canMarkDone?: boolean }>).find((t) => t.id === discussion.id)?.canMarkDone, discussion.status], [false, 'todo']);
+  eq('…and the server refuses the manager ticking it (HR records the decision)', (await refusal(async () => app.managerTaskDone(MGR, J4.id, discussion.id, { action: 'done' }))).status, 403);
+  eq('…so HR’s decision window stays open', byKey(await engine.tasksOf(J4.id), 'confirmation_discussion', 6).status, 'todo');
   eq('The joiner rates a month 1–4', (await refusal(async () => app.checkinForMe(SAMEER, 1, { text: 'x', rating: 5 }))).status, 400);
   eq('The month-6 check-in is not open yet', (await refusal(async () => app.checkinForMe(SAMEER, 6, { text: 'Going well', rating: 4 }))).status, 409);
   await app.managerProbationMonth(MGR, J4.id, 1, { goals: ['Ship the first feature'] });
-  await app.checkinForMe(SAMEER, 1, { text: 'Month one went fine', rating: 4 });
-  const p1 = await app.managerProbationMonth(MGR, J4.id, 1, { checkin: { text: 'Agreed', rating: 4 } });
+  eq('A self-rating per goal: one per goal', (await refusal(async () => app.checkinForMe(SAMEER, 1, { win: 'x', rating: 4, goalRatings: [4, 5] }))).status, 400);
+  await app.checkinForMe(SAMEER, 1, { rating: 4, goalRatings: [4], win: 'Shipped the first feature', ask: 'Access to analytics' });
+  const p1 = await app.managerProbationMonth(MGR, J4.id, 1, { checkin: { text: 'Agreed', rating: 4, goalRatings: [3] } });
   const m1 = p1.months.find((m) => m.monthNo === 1)!;
   eq('Both check-ins in: month-1 check-in done, goals locked', [byKey(await engine.tasksOf(J4.id), 'monthly_checkin', 1).status, !!m1.lockedAt], ['done', true]);
   eq('Locked goals refuse edits', (await refusal(async () => app.managerProbationMonth(MGR, J4.id, 1, { goals: ['Another'] }))).status, 409);
-  await app.managerProbationMonth(MGR, J4.id, 1, { review: { text: 'Great start', nextGoals: ['Own the weekly report'] } });
+  eq('PB1/PB2 stored: per-goal ratings both sides, the win and the ask', [m1.checkinEmployee?.goalRatings, m1.checkinEmployee?.win, m1.checkinEmployee?.ask, m1.checkinManager?.goalRatings, m1.checkinEmployee?.text], [[4], 'Shipped the first feature', 'Access to analytics', [3], 'A win: Shipped the first feature\nWould help: Access to analytics']);
+  eq('One-tap feedback is one of the four chips', (await refusal(async () => app.managerProbationMonth(MGR, J4.id, 1, { review: { feedback: ['Meh'] } }))).status, 400);
+  const reviewed = await app.managerProbationMonth(MGR, J4.id, 1, { review: { feedback: ['Great start'], askAck: true, nextGoals: ['Own the weekly report'] } });
+  eq('The review: chips and “On it” stored, next month’s goals set from it', [reviewed.months[0].review?.feedback, reviewed.months[0].review?.askAck, reviewed.months[1].goals], [['Great start'], true, [{ text: 'Own the weekly report' }]]);
   j4 = await engine.loadJourney(J4.id);
   eq('Review closes the cycle: review done, next month’s goals set, a leaf', [byKey(await engine.tasksOf(J4.id), 'monthly_review', 1).status, byKey(await engine.tasksOf(J4.id), 'monthly_goals', 2).status, j4.plant?.leaves], ['done', 'done', 1]);
   ok('The joiner does not see the manager’s check-in text', !JSON.stringify(await app.probationForMe(SAMEER)).includes('Agreed'));
@@ -465,18 +519,25 @@ async function main() {
 
   const J5 = await joinAt('Ishita Kaur', 'ishita', rules.daysBetween(TODAY, finalTj));
   const ISHITA = me('ishita', 'Ishita Kaur');
-  const conf = await probation.recordDecision(J5.id, HR, { outcome: 'confirm', salary: 1_600_000, designation: 'Senior designer', reportingToUserId: 'mgr' });
+  const { kpiTemplates, kpiParameters } = db;
+  const kp = await kpiParameters().insertOne({ org: ORG, title: 'Design quality', description: '', createdAt: now, updatedAt: now } as never);
+  const kt = await kpiTemplates().insertOne({ org: ORG, name: 'Design IC', description: '', parameterIds: [String(kp.insertedId)], locations: [], designations: [], departments: [], managerUserIds: [], createdAt: now, updatedAt: now } as never);
+  const conf = await probation.recordDecision(J5.id, HR, { outcome: 'confirm', salary: 1_600_000, designation: 'Senior designer', reportingToUserId: 'mgr', kpiTemplateId: String(kt.insertedId) });
   let j5 = await engine.loadJourney(J5.id);
   eq('Confirm: status confirmed, column Confirmed, bloom, flag Confirmed', [conf.outcome, j5.status, j5.boardColumn, j5.plant?.stage, j5.flags!.includes('confirmed')], ['confirm', 'confirmed', 'confirmed', 5, true]);
   eq('No reveal before the letter is sent', (await app.revealForMe(ISHITA)).ready, false);
   await board.actOnTaskByHr(ORG, J5.id, byKey(await engine.tasksOf(J5.id), 'confirmation_letter').id, { action: 'done' }, HR);
   const rv = await app.revealForMe(ISHITA) as Record<string, unknown>;
-  eq('Letter sent: the reveal shows the outcome, title, CTC (to them) and manager', [rv.ready, rv.outcome, rv.designation, rv.salary, rv.reportsTo], [true, 'confirm', 'Senior designer', 1_600_000, 'Neha Rao']);
+  eq('Letter sent: the reveal shows the outcome, title, CTC (to them), manager and KPIs', [rv.ready, rv.outcome, rv.designation, rv.salary, rv.reportsTo, rv.kpis], [true, 'confirm', 'Senior designer', 1_600_000, 'Neha Rao', { name: 'Design IC', items: ['Design quality'] }]);
   const mgrView = await app.joinerForManager(MGR, J5.id);
   ok('The manager’s view: probation months and the decision, never the salary', mgrView.probation.months.length === 6 && mgrView.probation.decision?.outcome === 'confirm' && !JSON.stringify(mgrView).includes('1600000'));
   eq('Not seen yet', rv.seen, false);
   await jobs.runLifecycleJobs(at(TODAY), { full: true, orgs: [ORG] });
   await jobs.runLifecycleJobs(at(TODAY), { full: true, orgs: [ORG] });
+  const p4 = byKey(await engine.tasksOf(J4.id), 'people_to_meet');
+  eq('End of month 1: People to meet closes (skipped, no leaf), the unmet stay listed', [p4.status, p4.note, (await engine.loadJourney(J4.id)).plant?.leaves], ['skipped', 'Closed at the end of month 1', 1]);
+  eq('…and the joiner sees it closed', (await app.peopleView(SAMEER)).closed, true);
+  eq('M0: a probation joiner’s next event', (await app.joinersForManager(MGR)).joiners.find((x) => x.journeyId === J4.id)?.nextEvent?.split(' ')[0], 'Check-in');
   eq('The reveal push went once, to the reveal', [await tellCount('ishita', 'lifecycle_reveal_ready'), (await notifications().findOne({ userId: 'ishita', scenario: 'lifecycle_reveal_ready' }))?.data?.destination], [1, 'lifecycle_reveal']);
   await app.revealSeenForMe(ISHITA);
   j5 = await engine.loadJourney(J5.id);

@@ -83,6 +83,14 @@ class _JoinerScreenState extends State<JoinerScreen> {
     if (saved == true && mounted) await _load();
   }
 
+  Future<void> _welcome(JoinerDetail detail) async {
+    final sent = await showWelcomePostSheet(context, _shell, widget.journeyId, detail.joiner.firstName);
+    if (sent == true && mounted) {
+      showAppToast(context, 'Posted on Connect');
+      await _load();
+    }
+  }
+
   Future<void> _markDone(TaskView task) async {
     setState(() => _busyTasks.add(task.id));
     try {
@@ -111,7 +119,9 @@ class _JoinerScreenState extends State<JoinerScreen> {
     final now = _shell.now();
     final joiner = detail.joiner;
     final first = joiner.firstName;
-    final mine = orderTaskList(detail.managerTasks.where((t) => !t.isClosed).toList());
+    // "Your tasks this week": open ones, and locked ones only when they open within the week.
+    bool soon(TaskView t) => !t.isLocked || (t.opensAt != null && calendarDaysBetween(now, t.opensAt!) <= 7);
+    final mine = orderTaskList(detail.managerTasks.where((t) => !t.isClosed && soon(t)).toList());
     final mineDone = detail.managerTasks.where((t) => t.isDone).toList();
     final theirs = detail.joinerTasks;
     final theirsDone = theirs.where((t) => t.isDone).length;
@@ -152,15 +162,18 @@ class _JoinerScreenState extends State<JoinerScreen> {
               ),
               if (joiner.stage == 'welcome_week1' && joiner.tj != null) ...[
                 const SizedBox(height: 14),
+                // The server's stages (Months 2–5, or Month 2 for a 3-month probation).
                 JourneyBar(
-                  stages: const [
-                    JourneyStage(key: 'pre_boarding', label: 'Pre-boarding', state: 'done'),
-                    JourneyStage(key: 'welcome_week1', label: 'Week 1', state: 'current'),
-                    JourneyStage(key: 'settling_in', label: 'Month 1', state: 'todo'),
-                    JourneyStage(key: 'growing_gains', label: 'Months 2–5', state: 'todo'),
-                    JourneyStage(key: 'final_month', label: 'Final month', state: 'todo'),
-                    JourneyStage(key: 'confirmed', label: 'Confirmed', state: 'todo'),
-                  ],
+                  stages: detail.journey.isNotEmpty
+                      ? detail.journey
+                      : const [
+                          JourneyStage(key: 'pre_boarding', label: 'Pre-boarding', state: 'done'),
+                          JourneyStage(key: 'welcome_week1', label: 'Week 1', state: 'current'),
+                          JourneyStage(key: 'settling_in', label: 'Month 1', state: 'todo'),
+                          JourneyStage(key: 'growing_gains', label: 'Months 2–5', state: 'todo'),
+                          JourneyStage(key: 'final_month', label: 'Final month', state: 'todo'),
+                          JourneyStage(key: 'confirmed', label: 'Confirmed', state: 'todo'),
+                        ],
                   currentFill: week1Fill(tj: joiner.tj!, today: now),
                   dayLabel: joiner.dayLabelOn(now),
                 ),
@@ -171,7 +184,7 @@ class _JoinerScreenState extends State<JoinerScreen> {
         const SizedBox(height: 20),
         const Text('Your tasks', style: OnbText.h1),
         const SizedBox(height: 10),
-        if (mine.isEmpty) const Text('Nothing waiting on you.', style: OnbText.body),
+        if (mine.isEmpty && !detail.welcomeCanPost) const Text('Nothing waiting on you.', style: OnbText.body),
         for (final task in mine)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -179,13 +192,28 @@ class _JoinerScreenState extends State<JoinerScreen> {
               key: ValueKey('mgr-task-${task.id}'),
               emoji: taskEmoji(task),
               title: task.title,
-              meta: [taskMeta(task, now), if (task.mustDo) 'must-do'].join(' · '),
+              meta: [taskMeta(task, now, forManager: true), if (task.mustDo) 'must-do'].join(' · '),
               late: task.late,
               trailing: _pill(detail, task),
             ),
           ),
-        if (mineDone.isNotEmpty)
-          Text('Done: ${mineDone.map((t) => t.title).join(' · ')}', style: OnbText.label),
+        // M2 "🎉 Post a welcome · Shows on the Connect feed · Write", once per joiner.
+        if (detail.welcomeCanPost)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: OnbTaskRow(
+              key: const ValueKey('mgr-welcome'),
+              emoji: '🎉',
+              title: 'Post a welcome',
+              meta: 'Shows on the Connect feed',
+              trailing: _Pill(key: const ValueKey('welcome-write'), label: 'Write', onTap: () => _welcome(detail)),
+            ),
+          ),
+        if (mineDone.isNotEmpty || detail.welcomePostedAt != null)
+          Text(
+            'Done: ${[...mineDone.map((t) => t.title), if (detail.welcomePostedAt != null) 'Welcome posted'].join(' · ')}',
+            style: OnbText.label,
+          ),
         const SizedBox(height: 20),
         Row(
           children: [
@@ -320,19 +348,27 @@ class _JoinerScreenState extends State<JoinerScreen> {
         Text('$theirsDone of ${theirs.length} done', style: OnbText.label),
         const SizedBox(height: 4),
         Text(
-          late == 0 ? 'On track.' : '$late ${late == 1 ? 'task is' : 'tasks are'} late.',
+          [
+            late == 0 ? 'On track.' : '$late ${late == 1 ? 'task is' : 'tasks are'} late.',
+            if (detail.joinerNextDue case final next? when next.dueAt != null)
+              '${next.title} ${next.title.endsWith('s') ? 'are' : 'is'} due ${onbDay(next.dueAt!)}.',
+          ].join(' '),
+          key: const ValueKey('joiner-on-track'),
           style: OnbText.bodyStrong.copyWith(color: late == 0 ? OnbColors.doneText : OnbColors.waterText),
         ),
-        if (detail.surveyCount != null && detail.surveyCount! >= 3) ...[
-          const SizedBox(height: 20),
-          OnbCard(
-            child: Text(
-              'Your team’s first-week survey: ${detail.surveyCount} answers'
-              '${detail.surveyAvg == null ? '' : ', ${detail.surveyAvg!.toStringAsFixed(1)} out of 5 on average'}. Names are never shown.',
-              style: OnbText.body,
+        // One summary per survey kind, only once 3+ different people answered it (the server's rule).
+        for (final survey in detail.surveys)
+          if (survey.count >= 3) ...[
+            const SizedBox(height: 12),
+            OnbCard(
+              key: ValueKey('survey-${survey.kind}'),
+              child: Text(
+                'Your team’s ${surveyKindName(survey.kind)}: ${survey.count} people answered'
+                '${survey.avg == null ? '' : ', ${survey.avg!.toStringAsFixed(1)} out of 5 on average'}. Names are never shown.',
+                style: OnbText.body,
+              ),
             ),
-          ),
-        ],
+          ],
       ],
     );
   }
@@ -371,20 +407,33 @@ class _JoinerScreenState extends State<JoinerScreen> {
         );
     }
     final start = task.startsAt;
-    if (start != null) {
+    if (start != null && !task.isDone) {
       final minutes = start.difference(now).inMinutes;
       final link = task.meeting?.link;
       if (minutes <= 10 && minutes >= -60 && link != null) {
-        return _Pill(label: 'Join', filled: true, onTap: () => openExternalLink(context, link));
+        return _Pill(key: ValueKey('join-${task.id}'), label: 'Join', filled: true, onTap: () => openExternalLink(context, link));
       }
-      if (minutes > 10) return _Pill(label: onbTime(start), onTap: null);
+      if (minutes > 10) {
+        return _Pill(label: calendarDaysBetween(now, start) == 0 ? onbTime(start) : onbDay(start), onTap: null);
+      }
     }
-    return _Pill(label: 'Done', onTap: () => _markDone(task));
+    // HR's decision (the Confirmation discussion) and anything HR records: no Done here.
+    if (!managerMayTick(task)) {
+      return OnbTag(task.ownerRole == 'hr_manager' || task.ownerRole == 'hr' ? 'With HR' : 'Later', tone: OnbTone.locked);
+    }
+    return _Pill(key: ValueKey('done-${task.id}'), label: 'Done', onTap: () => _markDone(task));
   }
 }
 
+/// The survey's name on M2.
+String surveyKindName(String kind) => switch (kind) {
+  'm3' => 'month-3 pulse survey',
+  'm6' => 'month-6 pulse survey',
+  _ => 'first-week survey',
+};
+
 class _Pill extends StatelessWidget {
-  const _Pill({required this.label, required this.onTap, this.filled = false});
+  const _Pill({super.key, required this.label, required this.onTap, this.filled = false});
 
   final String label;
   final VoidCallback? onTap;
@@ -661,6 +710,77 @@ class _NoteSheetState extends State<_NoteSheet> {
           label: 'Save notes',
           busy: _busy,
           onTap: _text.text.trim().isEmpty ? null : _save,
+        ),
+      ],
+    ),
+  );
+}
+
+// ─── M2 · Post a welcome ────────────────────────────────────────────────────
+
+/// "Post a welcome": the manager's own welcome for the joiner, posted to
+/// Connect on the joiner's new-joiner card. Once per joiner. True once posted.
+Future<bool?> showWelcomePostSheet(BuildContext context, OnboardingShell shell, String journeyId, String firstName) =>
+    showOnbSheet<bool>(context, builder: (_) => _WelcomeSheet(shell: shell, journeyId: journeyId, firstName: firstName));
+
+class _WelcomeSheet extends StatefulWidget {
+  const _WelcomeSheet({required this.shell, required this.journeyId, required this.firstName});
+
+  final OnboardingShell shell;
+  final String journeyId;
+  final String firstName;
+
+  @override
+  State<_WelcomeSheet> createState() => _WelcomeSheetState();
+}
+
+class _WelcomeSheetState extends State<_WelcomeSheet> {
+  late final _text = TextEditingController(
+    text: 'Please welcome ${widget.firstName} to the team! Say hi and help them feel at home.',
+  );
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  Future<void> _post() async {
+    setState(() => _busy = true);
+    try {
+      await widget.shell.api.postWelcome(widget.journeyId, _text.text.trim());
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showAppToast(context, onboardingErrorText(error));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Welcome ${widget.firstName}', style: OnbText.h1),
+        const SizedBox(height: 4),
+        Text('Shows on the Connect feed, on ${widget.firstName}’s new-joiner card. You can post it once.', style: OnbText.label),
+        const SizedBox(height: 14),
+        OnbTextArea(
+          fieldKey: const ValueKey('welcome-text'),
+          controller: _text,
+          hint: 'Say hello to ${widget.firstName}…',
+          minLines: 3,
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 16),
+        OnbPrimaryButton(
+          key: const ValueKey('welcome-post'),
+          label: 'Post to Connect',
+          busy: _busy,
+          onTap: _text.text.trim().isEmpty || _text.text.trim().length > 500 ? null : _post,
         ),
       ],
     ),

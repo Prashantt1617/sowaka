@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../profile/profile_launcher.dart';
 import '../../../shared/app_toast.dart';
 import '../data/onboarding_api.dart';
 import '../data/onboarding_models.dart';
@@ -147,7 +148,11 @@ class _Week1ReelsScreenState extends State<Week1ReelsScreen> {
             child: OnbCard(
               radius: 16,
               padding: const EdgeInsets.all(12),
-              onTap: policy.url == null ? null : () => openExternalLink(context, policy.url!),
+              onTap: policy.url != null
+                  ? () => openExternalLink(context, policy.url!)
+                  : policy.body != null
+                  ? () => showPolicySheet(context, policy)
+                  : null,
               child: Row(
                 children: [
                   const OnbIconTile('📄', size: 36),
@@ -156,10 +161,7 @@ class _Week1ReelsScreenState extends State<Week1ReelsScreen> {
                   if (read)
                     const OnbTag('Read', tone: OnbTone.done, icon: Icons.check_rounded)
                   else
-                    Text(
-                      policy.readMinutes == null ? 'v${policy.version}' : '${policy.readMinutes} min read',
-                      style: OnbText.label,
-                    ),
+                    Text(policyMeta(policy), style: OnbText.label),
                 ],
               ),
             ),
@@ -308,6 +310,14 @@ class _Week1ReelsScreenState extends State<Week1ReelsScreen> {
           ].join(' '),
           style: OnbText.label,
         ),
+        if (data.managerUserId != null && canOpenPersonProfile) ...[
+          const SizedBox(height: 8),
+          OnbLink(
+            key: const ValueKey('ask-manager'),
+            label: 'Ask ${data.managerName?.split(' ').first ?? 'your manager'} a question',
+            onTap: () => openPersonProfile(data.managerUserId!),
+          ),
+        ],
       ],
     );
   }
@@ -425,3 +435,37 @@ class _BankEditSheetState extends State<_BankEditSheet> {
     ),
   );
 }
+
+/// A policy row's meta: how long it takes to read, else when it last
+/// changed; never the raw version stamp.
+String policyMeta(PolicyItem policy) {
+  if (policy.readMinutes != null) return '${policy.readMinutes} min read';
+  if (policy.updatedOn != null) return 'Updated ${onbDay(policy.updatedOn!)}';
+  return 'Read';
+}
+
+/// A policy's text, read in the app.
+Future<void> showPolicySheet(BuildContext context, PolicyItem policy) => showOnbSheet<void>(
+  context,
+  builder: (context) => SingleChildScrollView(
+    padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(policy.title, style: OnbText.h1),
+        if (policy.updatedOn != null || policy.readMinutes != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            [
+              if (policy.readMinutes != null) '${policy.readMinutes} min read',
+              if (policy.updatedOn != null) 'Updated ${onbDay(policy.updatedOn!)}',
+            ].join(' · '),
+            style: OnbText.label,
+          ),
+        ],
+        const SizedBox(height: 14),
+        Text(policy.body ?? policy.summary ?? '', style: OnbText.body),
+      ],
+    ),
+  ),
+);

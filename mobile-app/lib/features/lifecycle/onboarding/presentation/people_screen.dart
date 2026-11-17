@@ -24,6 +24,9 @@ class PeopleToMeetScreen extends StatefulWidget {
 
 class _PeopleToMeetScreenState extends State<PeopleToMeetScreen> {
   List<PersonToMeet>? _people;
+  DateTime? _meetBy;
+  bool _closed = false;
+  String? _managerName;
   String? _error;
   int _at = 0;
   bool _busy = false;
@@ -38,10 +41,15 @@ class _PeopleToMeetScreenState extends State<PeopleToMeetScreen> {
 
   Future<void> _load() async {
     try {
-      final people = await _shell.api.fetchPeople();
+      final view = await _shell.api.fetchPeopleView();
+      final people = view.people;
       if (!mounted) return;
       setState(() {
         _people = people;
+        // The server's day, so it holds when this opens from a push too.
+        _meetBy = view.meetBy;
+        _closed = view.closed;
+        _managerName = view.managerName;
         _error = null;
         final first = people.indexWhere((p) => !p.met);
         _at = first < 0 ? 0 : first;
@@ -116,6 +124,7 @@ class _PeopleToMeetScreenState extends State<PeopleToMeetScreen> {
     }
     if (allMet) return _done(people.length);
     final person = people[_at];
+    final meetBy = _meetBy ?? widget.dueAt;
     return OnbScaffold(
       shell: _shell,
       title: 'People to meet',
@@ -123,9 +132,17 @@ class _PeopleToMeetScreenState extends State<PeopleToMeetScreen> {
         padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
         children: [
           Text(
-            widget.dueAt == null ? 'Meet them this month' : 'Meet them by ${onbDay(widget.dueAt!)}',
+            _closed
+                ? 'People to meet closed'
+                : meetBy == null
+                ? 'Meet them this month'
+                : 'Meet them by ${onbDay(meetBy)}',
             style: OnbText.h1,
           ),
+          if (_closed) ...[
+            const SizedBox(height: 2),
+            const Text('It closed at the end of month 1. You can still say hi to the ones you didn’t meet.', style: OnbText.label),
+          ],
           const SizedBox(height: 2),
           Text('$met of ${people.length} met', key: const ValueKey('people-count'), style: OnbText.label),
           const SizedBox(height: 14),
@@ -176,7 +193,7 @@ class _PeopleToMeetScreenState extends State<PeopleToMeetScreen> {
                   OnbAvatar(name: person.name, photoUrl: person.photoUrl, size: 64),
                   const SizedBox(height: 12),
                   Text(person.name, style: OnbText.display),
-                  Text([person.designation, person.role].nonNulls.join(' · '), style: OnbText.label),
+                  Text([person.designation, meetingRoleLabel(person.role)].nonNulls.join(' · '), style: OnbText.label),
                   if (person.why != null) ...[
                     const SizedBox(height: 16),
                     const Text('WHY MEET', style: OnbText.eyebrow),
@@ -198,6 +215,9 @@ class _PeopleToMeetScreenState extends State<PeopleToMeetScreen> {
                   if (person.met) ...[
                     const SizedBox(height: 8),
                     const OnbTag('Met', tone: OnbTone.done, icon: Icons.check_rounded),
+                  ] else if (_closed) ...[
+                    const SizedBox(height: 8),
+                    const OnbTag('Not met', tone: OnbTone.locked, key: ValueKey('not-met')),
                   ],
                 ],
               ),
@@ -205,7 +225,7 @@ class _PeopleToMeetScreenState extends State<PeopleToMeetScreen> {
           ),
         ],
       ),
-      footer: person.met
+      footer: person.met || _closed
           ? null
           : OnbFooter(
               children: [
@@ -242,8 +262,8 @@ class _PeopleToMeetScreenState extends State<PeopleToMeetScreen> {
         const SizedBox(height: 6),
         const Text('You’ve met everyone', style: OnbText.display, textAlign: TextAlign.center),
         const SizedBox(height: 8),
-        const Text(
-          'Your plant grew a leaf. Your manager can see you’ve made the rounds.',
+        Text(
+          'Your plant grew a leaf. ${_managerName?.split(' ').first ?? 'Your manager'} can see you’ve made the rounds.',
           style: OnbText.body,
           textAlign: TextAlign.center,
         ),

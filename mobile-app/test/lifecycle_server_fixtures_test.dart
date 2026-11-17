@@ -141,7 +141,20 @@ void main() {
       expect(up.meeting!.expect, isNotEmpty);
       expect(up.meeting!.place, 'Room 4B');
       expect(home.today.length, (raw['today'] as List).length);
-      expect(home.today.every((t) => t.forEmployee), isTrue, reason: 'only the joiner’s own rows');
+      expect(home.today.every((t) => t.forEmployee || t.readOnly), isTrue, reason: 'the joiner’s own rows, and others’ only read-only');
+      // Day 1's items others do: listed, read-only, with who does them.
+      final others = {for (final t in home.all.where((t) => t.readOnly)) t.systemKey: t.doneBy};
+      expect(others, {'welcome_induction': 'HR', 'vision_culture': 'HR', 'meet_team': 'Your manager', 'laptop_setup': 'IT'});
+      // Every meeting row carries its meeting; a date-only due day is never a clock time.
+      final mm = home.today.firstWhere((t) => t.systemKey == 'meet_manager');
+      expect(mm.meeting?.id, 'fx-meeting');
+      for (final t in home.all.where((t) => t.meeting == null)) {
+        expect(t.startsAt, isNull, reason: '${t.title}: no meeting, no time (never 5:30 AM)');
+        if (t.dueAt != null) expect([t.dueAt!.hour, t.dueAt!.minute], [0, 0]);
+      }
+      // App copy, not the template's developer helper.
+      expect(home.all.map((t) => t.helper ?? ''), everyElement(isNot(matches(RegExp('push|Timed item|say hi|HR sees')))));
+      expect(home.progress.total, raw['progress']['total'], reason: 'the server’s count: one source with the tile');
       expect(home.later.every((t) => t.isLocked), isTrue);
       expect(home.done.every((t) => t.isDone), isTrue);
       expect(home.journey.map((s) => s.key), ['pre_boarding', 'welcome_week1', 'settling_in', 'growing_gains', 'final_month', 'ready_to_perform']);
@@ -300,6 +313,67 @@ void main() {
   });
 
   // ─────────────────────────────────────────────────────────────── the manager's joiners
+  group('onboarding: the audit’s gaps, on real output', () {
+    test('“Week 1, done!” comes from the server, with its stats; seen is stored there', () async {
+      final raw = fixture('home_week_done');
+      final home = await onboardingApi(FixtureServer([('GET', '/lifecycle/onboarding', 'home_week_done')]), id: 'rohan').fetchHome();
+      expect(home.showWeekDone, isTrue);
+      expect(home.weekDoneStats?.tasksDone, raw['weekDoneStats']['tasksDone']);
+      final server = FixtureServer([('POST', '/lifecycle/onboarding/week-done/seen', 'week_done_seen')]);
+      await onboardingApi(server, id: 'rohan').markWeekDoneSeen();
+      expect(server.calls, ['POST /lifecycle/onboarding/week-done/seen']);
+    });
+
+    test('people to meet: the meet-by day, open, the buddy named as such', () async {
+      final v = await onboardingApi(FixtureServer([('GET', '/lifecycle/onboarding/people', 'people_get')])).fetchPeopleView();
+      expect(v.meetBy, isNotNull);
+      expect(v.closed, isFalse);
+      expect(v.people.firstWhere((p) => p.userId == 'p1').role, 'your buddy');
+    });
+
+    test('after week 1 the tile’s subtitle follows the stage', () async {
+      final me = await onboardingApi(FixtureServer([('GET', '/lifecycle/me', 'me_settling_in')]), id: 'rohan').fetchMe();
+      expect(onboardingTileSubtitle(me), fixture('me_settling_in')['onboarding']['subtitle']);
+      expect(onboardingTileSubtitle(me), startsWith('Week 2 · '));
+    });
+
+    test('M2: meeting rows carry their meeting, manager wording, HR’s decision never tickable', () async {
+      final d = await onboardingApi(FixtureServer([('GET', '/lifecycle/manager/joiners/', 'manager_joiner')]), id: 'mgr', name: 'Meera Iyer').fetchJoiner('j');
+      final meet = d.tasks.firstWhere((t) => t.systemKey == 'meet_manager');
+      expect(meet.title, 'Meet Isha');
+      expect(meet.meeting?.id, 'fx-meeting');
+      expect(meet.startsAt, isNotNull);
+      expect(d.tasks.firstWhere((t) => t.systemKey == 'meet_team').title, 'Introduce Isha to the team');
+      final decision = d.tasks.firstWhere((t) => t.systemKey == 'confirmation_discussion');
+      expect([decision.canMarkDone, onb.managerMayTick(decision)], [false, false]);
+      expect(d.journey.map((s) => s.label), contains('Months 2–5'));
+      expect(d.welcomeCanPost, isTrue);
+      final after = await onboardingApi(FixtureServer([('GET', '/lifecycle/manager/joiners/', 'manager_joiner_after_welcome')]), id: 'mgr').fetchJoiner('j');
+      expect([after.welcomeCanPost, after.welcomePostedAt != null], [false, true]);
+      final server = FixtureServer([('POST', '/lifecycle/manager/joiners/', 'manager_welcome_post')]);
+      await onboardingApi(server, id: 'mgr').postWelcome('j', 'Welcome!');
+      expect(server.calls.single, endsWith('/welcome'));
+    });
+
+    test('PB1/PB2 on the new shape: per-goal ratings, the win and ask, chips, next goals', () async {
+      final months = onb.ProbationView.fromJson(fixture('manager_probation_review')).months;
+      final m1 = months.firstWhere((m) => m.monthNo == 1);
+      expect(m1.checkinEmployee!.goalRatings, [4, 5]);
+      expect([m1.checkinEmployee!.win, m1.checkinEmployee!.ask], ['Shipped the onboarding flow', 'Access to analytics']);
+      expect(m1.checkinManager!.goalRatings, [4, 4]);
+      expect([m1.reviewFeedback, m1.askAck], [['Great start', 'Keep going'], true]);
+      expect(months.firstWhere((m) => m.monthNo == 2).goals, ['Pair with two teams']);
+      final mine = onb.ProbationView.fromJson(fixture('probation_checkin_put')).months.firstWhere((m) => m.monthNo == 1);
+      expect(mine.checkinManager, isNull, reason: 'the joiner never sees the manager’s side');
+    });
+
+    test('the reveal: their own CTC (to them), and the manager never sees it', () async {
+      final r = await onboardingApi(FixtureServer([('GET', '/lifecycle/onboarding/reveal', 'reveal_ready')]), id: 'ishita').fetchReveal();
+      expect(r.salary, 1600000);
+      expect(jsonEncode(fixture('manager_joiner_probation')).contains('1600000'), isFalse);
+    });
+  });
+
   group('onboarding: the manager', () {
     test('New joiners: the card', () async {
       final joiners = await onboardingApi(FixtureServer([('GET', '/lifecycle/manager/joiners', 'manager_joiners')]), id: 'mgr', name: 'Meera Iyer').fetchJoiners();

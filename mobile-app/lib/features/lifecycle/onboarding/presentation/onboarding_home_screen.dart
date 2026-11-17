@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/onboarding_api.dart';
 import '../data/onboarding_models.dart';
@@ -66,20 +65,16 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
     }
   }
 
-  /// A8 shows once, on the first open after week 1 is done.
+  /// A8 shows once, on the first open after Tj + 7: the server says when
+  /// (`showWeekDone`) and is told it was seen, so it never shows again on
+  /// this or any other device.
   Future<void> _maybeShowWeekDone(OnboardingHome home) async {
-    if (_weekDoneChecked) return;
+    if (_weekDoneChecked || !home.showWeekDone) return;
     _weekDoneChecked = true;
-    final weekDone =
-        home.stage == 'settling_in' && home.all.every((t) => t.systemKey != 'week1_done' || t.isDone);
-    if (!weekDone || home.journeyId.isEmpty) return;
-    final key = 'lifecycle.weekDoneSeen.${home.journeyId}';
     try {
-      final prefs = await SharedPreferences.getInstance();
-      if (prefs.getBool(key) == true) return;
-      await prefs.setBool(key, true);
+      await _shell.api.markWeekDoneSeen();
     } catch (_) {
-      return;
+      // Shown anyway; the next open asks the server again.
     }
     if (!mounted) return;
     await Navigator.of(context).push<void>(
@@ -112,23 +107,43 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
   Widget _body(OnboardingHome home) {
     final now = _shell.now();
     final upNext = home.upNext ?? pickUpNext([...home.today, ...home.later], now);
-    final hasStarter = _starterTasks.isNotEmpty;
-    final open = orderTaskList([
+    // Each thing once: the 1:1 notes and the starter tasks have rows of their
+    // own below (from their own reads), so the server's rows for them are not
+    // drawn again, and whatever is Up next is not repeated in the list.
+    final starterIds = {for (final t in _starterTasks) t.id};
+    bool drawnElsewhere(TaskView t) =>
+        t.id == upNext?.id ||
+        (_notes.isNotEmpty && t.systemKey == 'one_on_one_notes' && t.id == 'notes') ||
+        (t.systemKey == 'starter_task' && starterIds.contains(t.id));
+    final openStarters = [for (final t in _starterTasks) if (!t.done && t.id != upNext?.id) t];
+    final dayLabel = home.dayLabelOn(now);
+    final day1 = dayLabel == 'Day 1';
+    final allOpen = orderTaskList([
       for (final task in home.today)
-        if (task.id != upNext?.id && !task.isDone && !(hasStarter && task.systemKey == 'starter_task')) task,
+        if (!drawnElsewhere(task) && !task.isDone) task,
     ]);
+    // On Day 1 "Today" is the day's items (its meetings, what is due today);
+    // the rest of the week waits under This week, so the day fits above the nav.
+    bool isToday(TaskView t) {
+      final at = t.startsAt ?? t.dueAt;
+      return at == null || calendarDaysBetween(now, at) <= 0;
+    }
+    final open = day1 ? allOpen.where(isToday).toList() : allOpen;
+    final thisWeek = day1 ? allOpen.where((t) => !isToday(t)).toList() : const <TaskView>[];
     final later = orderTaskList([
       for (final task in home.later)
-        if (task.id != upNext?.id && !task.isDone && !(hasStarter && task.systemKey == 'starter_task')) task,
+        if (!drawnElsewhere(task) && !task.isDone) task,
     ]);
-    final done = [...home.done, ...home.today.where((t) => t.isDone)];
-    final dayLabel = home.dayLabelOn(now);
-    final listTitle = dayLabel == 'Day 1'
+    final done = [
+      for (final t in [...home.done, ...home.today.where((t) => t.isDone)])
+        if (!(_notes.isNotEmpty && t.id == 'notes')) t,
+    ];
+    final listTitle = day1
         ? 'Today'
         : home.stage == 'welcome_week1'
         ? 'This week'
         : 'This month';
-    final total = open.length + done.length + (upNext == null ? 0 : 1) + _starterTasks.where((t) => !t.done).length;
+    final total = open.length + done.length + (upNext == null ? 0 : 1) + openStarters.length;
     final unseenNotes = _notes.where((n) => !n.seen).length;
     final latestNote = _notes.isEmpty ? null : _notes.first;
     final manager = home.managerName ?? _starterTasks.map((t) => t.assignedByName).nonNulls.firstOrNull;
@@ -159,7 +174,7 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
           ),
           const SizedBox(height: 8),
         ],
-        for (final task in _starterTasks)
+        for (final task in openStarters)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: OnbTaskRow(
@@ -168,9 +183,8 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
               title: 'Starter task from ${task.assignedByName ?? manager ?? 'your manager'}',
               meta: [
                 task.title,
-                if (task.done) 'Done' else if (task.dueAt != null) 'due ${onbRelativeDay(task.dueAt!, now)}',
+                if (task.dueAt != null) 'due ${onbRelativeDay(task.dueAt!, now).toLowerCase() == 'today' ? 'today' : onbDay(task.dueAt!)}',
               ].join(' · '),
-              done: task.done,
               onTap: () => _openPage(StarterTaskScreen(shell: _shell, taskId: task.id, initial: task)),
             ),
           ),
@@ -195,11 +209,21 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
             padding: const EdgeInsets.only(bottom: 8),
             child: OnbTaskRow.task(task, now, onTap: () => _open(task)),
           ),
-        if (open.isEmpty && _starterTasks.every((t) => t.done) && upNext == null)
+        if (open.isEmpty && openStarters.isEmpty && upNext == null && thisWeek.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Text('Nothing left for now. Nice work.', style: OnbText.body),
           ),
+        if (thisWeek.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text('THIS WEEK', style: OnbText.eyebrow),
+          const SizedBox(height: 8),
+          for (final task in thisWeek)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: OnbTaskRow.task(task, now, onTap: () => _open(task)),
+            ),
+        ],
         if (later.isNotEmpty) ...[
           const SizedBox(height: 12),
           Text('LATER', style: OnbText.eyebrow),
@@ -279,7 +303,7 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
             const SizedBox(height: 16),
             JourneyBar(
               stages: journey,
-              currentFill: home.stage == 'welcome_week1' && home.tj != null ? week1Fill(tj: home.tj!, today: now) : 0.5,
+              currentFill: stageFill(stage: home.stage, tj: home.tj, today: now, months: _probationMonths(journey)),
               dayLabel: dayLabel,
             ),
             const SizedBox(height: 10),
@@ -293,6 +317,41 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
         ],
       ),
     );
+  }
+}
+
+/// How many probation months the journey's stages span (Months 2–5 → 6).
+int _probationMonths(List<JourneyStage> stages) {
+  for (final stage in stages) {
+    final m = RegExp(r'Months 2–(\d+)').firstMatch(stage.label);
+    if (m != null) return int.parse(m.group(1)!) + 1;
+    if (stage.label == 'Month 2') return 3;
+  }
+  return 6;
+}
+
+/// How far into the current stage the joiner is, for the bar's fill: a
+/// seventh a day in week 1; through month 1 by days; through months 2 to
+/// the one before last by months; halfway otherwise.
+double stageFill({String? stage, DateTime? tj, required DateTime today, int months = 6}) {
+  if (tj == null) return 0.5;
+  final joined = dateOnly(tj);
+  switch (stage) {
+    case 'welcome_week1':
+      return week1Fill(tj: tj, today: today);
+    case 'settling_in':
+      final end = addMonths(joined, 1);
+      final total = calendarDaysBetween(joined.add(const Duration(days: 7)), end);
+      return total <= 0 ? 0.5 : (calendarDaysBetween(joined.add(const Duration(days: 7)), today) / total).clamp(0.05, 1.0);
+    case 'growing_gains':
+      final span = (months - 2).clamp(1, 12);
+      var month = 1;
+      while (!dateOnly(today).isBefore(addMonths(joined, month))) {
+        month++;
+      }
+      return ((month - 1) / span).clamp(0.05, 1.0);
+    default:
+      return 0.5;
   }
 }
 

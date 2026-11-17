@@ -1,18 +1,21 @@
 {
   "people": [
     {
-      "id": "a52e51cb-ab77-44c3-89a3-ba8bb577590b",
+      "id": "592118e1-9330-49fa-a257-c4130fd4e33e",
       "userId": "p1",
       "name": "Kiran Shah",
       "designation": "Designer",
+      "role": "your buddy",
       "why": "Your buddy for the first month"
     },
     {
-      "id": "a4f2c2f2-a746-4fa1-a0d8-dd18d0919487",
+      "id": "f9582703-e669-4d18-b54c-2c3016706e68",
       "userId": "p2",
       "name": "Tara Bose",
       "designation": "Researcher"
     }
   ],
-  "meetBy": "2026-12-10"
+  "meetBy": "2026-12-10",
+  "closed": false,
+  "managerName": "Meera Iyer"
 }

@@ -149,11 +149,20 @@ class _MonthCard extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text('${index + 1}. $goal', style: OnbText.body.copyWith(color: OnbColors.text)),
               ),
-          if (month.review != null) ...[
+          if (month.reviewed) ...[
             const SizedBox(height: 10),
             const Text('REVIEW', style: OnbText.eyebrow),
             const SizedBox(height: 4),
-            Text(month.review!, style: OnbText.body),
+            if (month.reviewFeedback.isNotEmpty)
+              Wrap(spacing: 6, runSpacing: 6, children: [for (final f in month.reviewFeedback) OnbTag(f, tone: OnbTone.count)]),
+            if (month.review != null && month.review!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(month.review!, style: OnbText.body),
+            ],
+            if (month.askAck && month.checkinEmployee?.ask != null) ...[
+              const SizedBox(height: 4),
+              Text('“${month.checkinEmployee!.ask}” · ${managerName ?? 'Your manager'} is on it', style: OnbText.label),
+            ],
           ],
           if (current && !checkedIn && month.goals.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -169,8 +178,9 @@ class _MonthCard extends StatelessWidget {
   }
 }
 
-/// PB1 · the month-end check-in as reels: how the month went, a win, and
-/// something that would help; ends in "+1 leaf".
+/// PB1 · the month-end check-in as reels (3Rb v2 "Month 2 check-in"): one
+/// reel per goal ("How did it go?", 1–5), then how the month felt, then one
+/// win and one ask; ends in "+1 leaf".
 class CheckinReelScreen extends StatefulWidget {
   const CheckinReelScreen({super.key, required this.shell, required this.month, this.managerName});
 
@@ -180,7 +190,10 @@ class CheckinReelScreen extends StatefulWidget {
 
   static const feelings = [('😣', 'Rough'), ('😐', 'Okay'), ('🙂', 'Good'), ('🤩', 'Great')];
 
-  /// The check-in as the server stores it: one text, the rating 1–4.
+  /// A goal's 1–5, as the v2 reel words it.
+  static const goalScale = ['Not yet', 'Getting there', 'On track', 'Strong', 'Nailed it'];
+
+  /// The check-in's words as the server stores them beside the win and ask.
   static String checkinText({required String win, required String ask}) => [
     if (win.trim().isNotEmpty) 'A win: ${win.trim()}',
     if (ask.trim().isNotEmpty) 'Would help: ${ask.trim()}',
@@ -193,10 +206,17 @@ class CheckinReelScreen extends StatefulWidget {
 class _CheckinReelScreenState extends State<CheckinReelScreen> {
   int _step = 0;
   int? _feeling;
+  late final List<int?> _goalRatings = List<int?>.filled(widget.month.goals.length, null);
   final _win = TextEditingController();
   final _ask = TextEditingController();
   bool _busy = false;
   bool _sent = false;
+
+  List<String> get _goals => widget.month.goals;
+  int get _steps => _goals.length + 2;
+  bool get _onGoal => _step < _goals.length;
+  bool get _onFeeling => _step == _goals.length;
+  bool get _last => _step == _steps - 1;
 
   @override
   void dispose() {
@@ -212,6 +232,9 @@ class _CheckinReelScreenState extends State<CheckinReelScreen> {
         widget.month.monthNo,
         CheckinReelScreen.checkinText(win: _win.text, ask: _ask.text),
         rating: _feeling,
+        goalRatings: _goals.isEmpty ? null : [for (final r in _goalRatings) r ?? 0],
+        win: _win.text,
+        ask: _ask.text,
       );
       if (mounted) setState(() => _sent = true);
     } catch (error) {
@@ -244,23 +267,26 @@ class _CheckinReelScreenState extends State<CheckinReelScreen> {
         footer: OnbFooter(children: [OnbPrimaryButton(label: 'Back to my journey', onTap: () => Navigator.of(context).pop())]),
       );
     }
-    final ready = switch (_step) {
-      0 => _feeling != null,
-      1 => _win.text.trim().isNotEmpty,
-      _ => true,
-    };
+    final ready = _onGoal
+        ? _goalRatings[_step] != null
+        : _onFeeling
+        ? _feeling != null
+        : _win.text.trim().isNotEmpty;
     return OnbScaffold(
       shell: widget.shell,
       title: title,
       showNav: false,
       body: Column(
         children: [
-          Padding(padding: const EdgeInsets.fromLTRB(16, 14, 16, 0), child: OnbStoryBar(count: 3, current: _step)),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 14, 16, 0), child: OnbStoryBar(count: _steps, current: _step)),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
               children: [
-                Text('STEP ${_step + 1} OF 3', style: OnbText.eyebrow),
+                Text(
+                  _onGoal ? 'GOAL ${_step + 1} OF ${_goals.length}' : 'STEP ${_step + 1} OF $_steps',
+                  style: OnbText.eyebrow,
+                ),
                 const SizedBox(height: 8),
                 OnbRise(key: ValueKey('checkin-step-$_step'), child: _stepBody()),
               ],
@@ -272,68 +298,85 @@ class _CheckinReelScreenState extends State<CheckinReelScreen> {
         children: [
           OnbPrimaryButton(
             key: const ValueKey('checkin-next'),
-            label: _step == 2 ? 'Send check-in' : 'Next',
+            label: _last ? 'Send check-in' : 'Next',
             busy: _busy,
-            onTap: !ready ? null : (_step == 2 ? _send : () => setState(() => _step++)),
+            onTap: !ready ? null : (_last ? _send : () => setState(() => _step++)),
           ),
         ],
       ),
     );
   }
 
-  Widget _stepBody() => switch (_step) {
-    0 => Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('This month felt…', style: OnbText.display),
-        if (widget.month.goals.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          for (final goal in widget.month.goals) Text('• $goal', style: OnbText.label),
+  Widget _stepBody() {
+    if (_onGoal) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(_goals[_step], style: OnbText.display),
+          const SizedBox(height: 4),
+          const Text('How did it go?', style: OnbText.label),
+          const SizedBox(height: 16),
+          for (final (index, label) in CheckinReelScreen.goalScale.indexed)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: ChoiceChip(
+                key: ValueKey('goal-$_step-rating-${index + 1}'),
+                label: Text('${index + 1} · $label'),
+                selected: _goalRatings[_step] == index + 1,
+                onSelected: (_) => setState(() => _goalRatings[_step] = index + 1),
+              ),
+            ),
         ],
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            for (final (index, (emoji, label)) in CheckinReelScreen.feelings.indexed)
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 3),
-                  child: OnbChoiceCardCompact(
-                    key: ValueKey('feeling-${index + 1}'),
-                    emoji: emoji,
-                    label: label,
-                    selected: _feeling == index + 1,
-                    onTap: () => setState(() => _feeling = index + 1),
+      );
+    }
+    if (_onFeeling) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('This month felt…', style: OnbText.display),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              for (final (index, (emoji, label)) in CheckinReelScreen.feelings.indexed)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    child: OnbChoiceCardCompact(
+                      key: ValueKey('feeling-${index + 1}'),
+                      emoji: emoji,
+                      label: label,
+                      selected: _feeling == index + 1,
+                      onTap: () => setState(() => _feeling = index + 1),
+                    ),
                   ),
                 ),
-              ),
-          ],
-        ),
-      ],
-    ),
-    1 => Column(
+            ],
+          ),
+        ],
+      );
+    }
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('One win you’re proud of', style: OnbText.display),
+        const Text('One win. One ask.', style: OnbText.display),
         const SizedBox(height: 16),
+        const Text('A win you’re proud of', style: OnbText.bodyStrong),
+        const SizedBox(height: 6),
         OnbTextArea(
           fieldKey: const ValueKey('checkin-win'),
           controller: _win,
           hint: 'Shipped the first version of…',
           onChanged: (_) => setState(() {}),
         ),
-      ],
-    ),
-    _ => Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Something that would help', style: OnbText.display),
-        const SizedBox(height: 4),
+        const SizedBox(height: 14),
+        const Text('Something that would help', style: OnbText.bodyStrong),
+        const SizedBox(height: 2),
         const Text('Tools, time, people, clarity… Optional.', style: OnbText.label),
-        const SizedBox(height: 16),
+        const SizedBox(height: 6),
         OnbTextArea(fieldKey: const ValueKey('checkin-ask'), controller: _ask, hint: 'Optional'),
       ],
-    ),
-  };
+    );
+  }
 }
 
 /// An emoji-and-word tile for a one-tap rating.
@@ -484,6 +527,18 @@ class _RevealScreenState extends State<RevealScreen> {
             Text(line, style: OnbText.body, textAlign: TextAlign.center),
             const SizedBox(height: 16),
             if (reveal.designation != null) _RevealCard(label: 'NEW TITLE', value: reveal.designation!),
+            // Their own new CTC: the server sends it to the joiner only (3Rb A5 "NEW CTC").
+            if (reveal.salary != null)
+              _RevealCard(key: const ValueKey('reveal-ctc'), label: 'NEW CTC', value: '${formatRupees(reveal.salary!)} a year'),
+            if (reveal.kpis.isNotEmpty || reveal.kpiName != null)
+              _RevealCard(
+                key: const ValueKey('reveal-kpis'),
+                label: 'NEW KPIs',
+                value: reveal.kpis.isEmpty
+                    ? reveal.kpiName!
+                    : '${reveal.kpis.length} ${reveal.kpis.length == 1 ? 'goal' : 'goals'}${reveal.kpiName == null ? '' : ' · ${reveal.kpiName}'}',
+                detail: reveal.kpis.isEmpty ? null : reveal.kpis.join(' · '),
+              ),
             if (reveal.reportsTo != null) _RevealCard(label: 'REPORTS TO', value: reveal.reportsTo!),
           ],
         ],
@@ -498,10 +553,11 @@ class _RevealScreenState extends State<RevealScreen> {
 }
 
 class _RevealCard extends StatelessWidget {
-  const _RevealCard({required this.label, required this.value});
+  const _RevealCard({super.key, required this.label, required this.value, this.detail});
 
   final String label;
   final String value;
+  final String? detail;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -514,6 +570,7 @@ class _RevealCard extends StatelessWidget {
             Text(label, style: OnbText.eyebrow),
             const SizedBox(height: 4),
             Text(value, style: OnbText.h1),
+            if (detail != null) ...[const SizedBox(height: 4), Text(detail!, style: OnbText.label)],
           ],
         ),
       ),

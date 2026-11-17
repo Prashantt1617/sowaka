@@ -234,6 +234,8 @@ export interface Journey {
   bankPfRequest?: BankPfChangeRequest;
   /** When the joiner first saw "Week 1, done!" (A8). */
   week1DoneSeenAt?: Date;
+  /** The manager's welcome post on Connect for the joiner (M2 "Post a welcome"), once per joiner. */
+  managerWelcome?: { text: string; postedAt: Date; connectPostId?: string };
   /** Timed jobs already fired for this journey (each key once). */
   firedJobs?: string[];
   /** Kept by refreshJourney for lists and counts; the board recomputes them on read. */
@@ -491,6 +493,8 @@ export interface Meeting {
   met?: 'yes' | 'moved';
   newTime?: Date;
   remindedAt?: Date;
+  /** Who it is with, as the Day-1 agenda line names them ("Neha R.", "the founders"). */
+  with?: string;
 }
 
 export interface Week1Reels {
@@ -528,9 +532,12 @@ export interface ProbationMonth {
   goals: Array<{ text: string }>;
   goalsSetAt?: Date;
   lockedAt?: Date;
-  checkinEmployee?: { text: string; rating?: number; at: Date };
-  checkinManager?: { text: string; rating?: number; at: Date };
-  review?: { text: string; at: Date };
+  /** The joiner's side (PB1): how the month felt 1–4, a 1–5 self-rating per goal (in goal order), one win, one ask. */
+  checkinEmployee?: { text: string; rating?: number; goalRatings?: number[]; win?: string; ask?: string; at: Date };
+  /** The manager's side: their 1–5 rating and a 1–5 rating per goal. */
+  checkinManager?: { text: string; rating?: number; goalRatings?: number[]; at: Date };
+  /** PB2: the review, one-tap feedback chips, and "On it" for what the joiner asked. */
+  review?: { text: string; feedback?: string[]; askAck?: boolean; at: Date };
 }
 
 export interface ConfirmationDecision {

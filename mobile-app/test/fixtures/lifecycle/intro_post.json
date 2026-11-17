@@ -4,9 +4,13 @@
     "Chai over coffee",
     "Weekend trekker"
   ],
-  "postedAt": "2026-11-17T03:47:05.914Z",
-  "connectPostId": "be28a1d3-473c-4f9b-b66f-f71ef9412b5d",
+  "postedAt": "2026-11-17T04:55:48.029Z",
+  "connectPostId": "0209ef94-3a20-43db-a88d-b8aeb6b2d82b",
   "name": "Isha Verma",
   "designation": "Product Designer",
-  "department": "Design"
+  "department": "Design",
+  "message": "Hey everyone! Designer who sketches on trains. Excited to meet you all 🙌",
+  "likes": 0,
+  "commentCount": 0,
+  "comments": []
 }

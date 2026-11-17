@@ -3,12 +3,18 @@
     {
       "id": "leave",
       "title": "Leave policy",
-      "version": "2026-10-01T00:00:00.000Z"
+      "version": "2026-10-01T00:00:00.000Z",
+      "updatedOn": "2026-10-01",
+      "readMinutes": 1,
+      "body": "Take leave."
     },
     {
       "id": "conduct",
       "title": "Code of conduct",
-      "version": "2026-09-15T00:00:00.000Z"
+      "version": "2026-09-15T00:00:00.000Z",
+      "updatedOn": "2026-09-15",
+      "readMinutes": 1,
+      "body": "Be kind."
     }
   ],
   "policiesAck": {
@@ -22,10 +28,10 @@
         "version": "2026-09-15T00:00:00.000Z"
       }
     ],
-    "at": "2026-11-17T03:47:05.854Z",
+    "at": "2026-11-17T04:55:47.973Z",
     "device": "Fixture/1.0"
   },
-  "policiesAckAt": "2026-11-17T03:47:05.854Z",
+  "policiesAckAt": "2026-11-17T04:55:47.973Z",
   "steps": {
     "policies": true,
     "tax": false,
@@ -33,6 +39,7 @@
     "goals": false
   },
   "managerName": "Meera Iyer",
+  "managerUserId": "mgr",
   "bank": {
     "masked": ""
   },

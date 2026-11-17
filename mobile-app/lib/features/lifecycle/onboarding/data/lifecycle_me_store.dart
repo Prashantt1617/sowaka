@@ -39,10 +39,14 @@ class LifecycleMeStore extends ValueNotifier<LifecycleMe> {
   void clear() => value = LifecycleMe.off;
 }
 
-/// The Action tile's subtitle: "2 of 9 steps done", else the day and stage.
+/// The Action tile's subtitle, following the stage (6Zs §5.3 A1): the
+/// server's words ("2 of 9 steps done" in week 1, then the next probation
+/// step), else the steps counted, else the day and stage.
 String onboardingTileSubtitle(LifecycleMe me) {
   final onboarding = me.onboarding;
   if (onboarding == null) return '';
+  final said = onboarding.subtitle;
+  if (said != null) return said;
   final progress = onboarding.progress;
   if (progress != null) return '${progress.done} of ${progress.total} steps done';
   final day = onboarding.dayLabel;

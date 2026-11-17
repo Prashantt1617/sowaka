@@ -16,7 +16,7 @@ import { companies, journeys, journeyTasks, lifecycleMeetings, users } from '../
 import type { Journey, JourneyTask, SystemTaskKey } from '../../models/lifecycle.model';
 import { logger } from '../../utils/logger';
 import { addDaysKey, companyTimeZone, localHour, probationMonthEnd, probationMonthStart, todayKey, keyOfDay } from './dueRules';
-import { isJoined, refreshJourney, type Destination, setJourneyStatus, taskLate, tasksOf, tell, totalProbationMonths } from './engine';
+import { finishTaskById, isJoined, refreshJourney, type Destination, setJourneyStatus, taskLate, tasksOf, tell, totalProbationMonths } from './engine';
 
 type Job = (now: Date) => Promise<unknown>;
 const extraJobs = new Map<string, Job>();
@@ -145,7 +145,21 @@ async function journeyDayJobs(j: Journey, tasks: JourneyTask[], today: string, c
     await fire('tj3_intro_nudge', addDaysKey(tj, 3), () => tell([j.userId], { scenario: 'lifecycle_intro_nudge', destination: 'lifecycle_intro', title: 'Say hello to your team', body: 'Your intro post takes 2 minutes', data }));
   }
   if (!done(tasks, 'week1_reels')) {
-    await fire('tj5_week1_due', addDaysKey(tj, 5), () => tell([j.userId], { scenario: 'lifecycle_week1_due', destination: 'lifecycle_week1', title: 'Your week-1 tasks are due today', body: 'Policies, tax regime, bank and PF, probation goals', data }));
+    // "Your week-1 tasks are due today · 2 of 4 left" (6Zs A12).
+    const w = j.week1 ?? {};
+    const left = 4 - [w.policies, w.taxRegime, w.bankPf, w.goalsReadAt].filter(Boolean).length;
+    await fire('tj5_week1_due', addDaysKey(tj, 5), () => tell([j.userId], { scenario: 'lifecycle_week1_due', destination: 'lifecycle_week1', title: 'Your week-1 tasks are due today', body: `${left} of 4 left · policies, tax regime, bank and PF, goals`, data }));
+  }
+  // End of month 1: People to meet closes. Whoever was not met stays on the list as "Not met"; no leaf.
+  const peopleTask = tasks.find((t) => t.systemKey === 'people_to_meet' && (t.status === 'todo' || t.status === 'sent_back'));
+  if (peopleTask && today > probationMonthEnd(tj, 1) && (await claim(j.id, 'm1_people_closed'))) {
+    result.fired.push(`${j.id}:m1_people_closed`);
+    try {
+      await finishTaskById(j.id, peopleTask.id, 'skip', { name: 'Automatic' }, 'Closed at the end of month 1');
+    } catch (error) {
+      // A template that made it a must-do keeps it open (it then shows late, as before).
+      logger.info('People to meet left open at the end of month 1', { journeyId: j.id, reason: (error as Error).message });
+    }
   }
   if (!done(tasks, 'day7_survey')) {
     await fire('tj6_survey_open', addDaysKey(tj, 6), () => tell([j.userId], { scenario: 'lifecycle_survey_open', destination: 'lifecycle_survey', title: 'How was your first week?', body: '4 quick questions', data }));
@@ -178,9 +192,14 @@ async function journeyDayJobs(j: Journey, tasks: JourneyTask[], today: string, c
       await fire(`m${m}_pulse`, probationMonthStart(tj, m), () => tell([j.userId], { scenario: 'lifecycle_survey_open', destination: 'lifecycle_survey', title: `Month-${m} pulse survey`, body: '4 quick questions', data }));
     }
   }
-  await fire(`final_${total}`, probationMonthStart(tj, total), () => tell([j.managerUserId], {
-    scenario: 'lifecycle_confirmation_window', destination: 'lifecycle_joiner', title: `Final month for ${first}`, body: 'Talk to HR about confirming or extending their probation', data,
-  }));
+  await fire(`final_${total}`, probationMonthStart(tj, total), async () => {
+    await tell([j.managerUserId], {
+      scenario: 'lifecycle_confirmation_window', destination: 'lifecycle_joiner', title: `Final month for ${first}`, body: 'Talk to HR about confirming or extending their probation', data,
+    });
+    // HR records the decision: their HR contact is told too (the board also flags Decide).
+    const hr = (await users().findOne({ userId: j.userId }, { projection: { _id: 0, hrPrimaryUserId: 1 } }))?.hrPrimaryUserId;
+    await tell([hr], { scenario: 'lifecycle_confirmation_window_hr', title: `Decide on ${name}'s probation`, body: 'Their final month has started: confirm, extend or not confirm on the Onboarding board.', data });
+  });
 }
 
 const JOINER_SCREENS: Partial<Record<SystemTaskKey, Destination>> = {

@@ -141,7 +141,7 @@ class _MeetingScreenState extends State<MeetingScreen> {
     final start = meeting.newTime ?? meeting.startsAt;
     final end = meeting.newTime == null ? meeting.endsAt : null;
     final viewer = _shell.api.viewerId;
-    final people = meeting.attendees.where((p) => p.userId != viewer).toList();
+    final people = meeting.attendees.where((p) => p.userId != viewer && p.role != 'joiner').toList();
     final firstName = people.isEmpty ? null : people.first.name.split(' ').first;
     final expect = meeting.expect.isNotEmpty ? meeting.expect : _defaultExpect(meeting.systemKey ?? widget.task?.systemKey);
     return ListView(
@@ -162,6 +162,10 @@ class _MeetingScreenState extends State<MeetingScreen> {
               if (meeting.place != null || meeting.link != null) ...[
                 const Divider(height: 24, color: OnbColors.line),
                 _Fact(label: 'WHERE', value: meeting.place ?? 'Online'),
+                if (meeting.withWho != null && people.isEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text('With ${meeting.withWho}', style: OnbText.label),
+                ],
                 if (meeting.link != null)
                   OnbLink(label: 'Join the call', icon: Icons.videocam_outlined, onTap: () => openExternalLink(context, meeting.link!)),
               ],
@@ -177,7 +181,7 @@ class _MeetingScreenState extends State<MeetingScreen> {
                         children: [
                           Text(person.name, style: OnbText.bodyStrong),
                           Text(
-                            [person.designation, person.role].nonNulls.join(' · '),
+                            [person.designation, meetingRoleLabel(person.role)].nonNulls.join(' · '),
                             style: OnbText.label,
                           ),
                         ],
@@ -212,7 +216,17 @@ class _MeetingScreenState extends State<MeetingScreen> {
         ],
         if (_started(meeting)) ...[
           const SizedBox(height: 18),
-          _didYouMeet(meeting, firstName),
+          if (meeting.canConfirm)
+            _didYouMeet(meeting, firstName)
+          else
+            OnbCard(
+              key: const ValueKey('meeting-not-yours'),
+              color: OnbColors.screen,
+              child: Text(
+                '${widget.task?.doneBy ?? 'HR'} marks this one done. Nothing for you to tick.',
+                style: OnbText.body,
+              ),
+            ),
         ],
       ],
     );

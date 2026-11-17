@@ -3,7 +3,7 @@ import { requireAuth } from '../middleware/auth.middleware';
 import {
   actOnMeeting, actOnNote, actOnOwnTask, actOnPerson, addNote, assignStarterTask, checkinForMe, introView, joinerForManager,
   joinersForManager, lifecycleMe, managerProbationMonth, managerTaskDone, markWeekDoneSeen, meetingFor, notesForJoiner,
-  onboardingHome, peopleView, postIntro, probationForMe, replyToStarterTask, revealForMe, revealSeenForMe, saveIntro, saveSetup,
+  onboardingHome, peopleView, postIntro, postWelcome, probationForMe, replyToStarterTask, revealForMe, revealSeenForMe, saveIntro, saveSetup,
   saveWeek1Step, sendSurvey, starterDone, starterTasksForJoiner, surveyView, week1View,
 } from '../services/lifecycle/appOnboarding';
 import { LifecycleError } from '../services/lifecycle/engine';
@@ -64,5 +64,6 @@ lifecycleAppRouter.put('/manager/joiners/:journeyId/setup', lifecycleHandler(asy
 lifecycleAppRouter.post('/manager/joiners/:journeyId/starter-tasks', lifecycleHandler(async (req) => assignStarterTask(me(req), param(req, 'journeyId'), body(req)), 201));
 lifecycleAppRouter.post('/manager/starter-tasks/:id/reply', lifecycleHandler(async (req) => replyToStarterTask(me(req), param(req, 'id'), body(req))));
 lifecycleAppRouter.post('/manager/joiners/:journeyId/notes', lifecycleHandler(async (req) => addNote(me(req), param(req, 'journeyId'), body(req)), 201));
+lifecycleAppRouter.post('/manager/joiners/:journeyId/welcome', lifecycleHandler(async (req) => postWelcome(me(req), param(req, 'journeyId'), body(req)), 201));
 lifecycleAppRouter.post('/manager/joiners/:journeyId/tasks/:taskId', lifecycleHandler(async (req) => managerTaskDone(me(req), param(req, 'journeyId'), param(req, 'taskId'), body(req))));
 lifecycleAppRouter.put('/manager/joiners/:journeyId/probation/:month', lifecycleHandler(async (req) => managerProbationMonth(me(req), param(req, 'journeyId'), Number(param(req, 'month')), body(req))));

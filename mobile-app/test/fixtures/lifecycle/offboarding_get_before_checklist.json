@@ -6,11 +6,11 @@
   "acceptedOn": "2026-11-17",
   "resignedOn": "2026-11-17",
   "managerName": "Meera Iyer",
-  "acceptedAt": "2026-11-17T03:47:06.310Z",
+  "acceptedAt": "2026-11-17T04:55:48.610Z",
   "noticeFrom": "2026-11-17",
   "tasks": [
     {
-      "id": "16335491-3a33-4461-97f1-a2a63c96a6c1",
+      "id": "9e19ad9d-f94b-47ab-ae26-469a2b0c0dc3",
       "systemKey": "send_resignation",
       "phase": "resignation",
       "title": "Send resignation",
@@ -24,12 +24,12 @@
       "opensAt": null,
       "dueAt": null,
       "dueLabel": "Any time",
-      "doneAt": "2026-11-17T03:47:06.310Z",
+      "doneAt": "2026-11-17T04:55:48.610Z",
       "doneByName": "Automatic",
       "late": false
     },
     {
-      "id": "4358b1c5-fee1-41f1-b67b-85c4c4a64e68",
+      "id": "44b3b700-ea50-4210-9fcb-4dcc46d49f96",
       "systemKey": "upload_handover",
       "phase": "notice_period",
       "title": "Upload handover items",
@@ -46,7 +46,7 @@
       "late": false
     },
     {
-      "id": "735fc128-1191-4efa-bb5d-8f0b317fbd6a",
+      "id": "df8cc367-6073-4c7d-befd-a357a912fee8",
       "systemKey": "exit_interview",
       "phase": "notice_period",
       "title": "Exit interview",
@@ -63,7 +63,7 @@
       "late": false
     },
     {
-      "id": "9a9b6e2f-e4ea-4694-a0a2-ef3435d25734",
+      "id": "def9065c-fb67-429c-a019-6c1f61cbeba1",
       "systemKey": "save_documents",
       "phase": "notice_period",
       "title": "Save your documents",

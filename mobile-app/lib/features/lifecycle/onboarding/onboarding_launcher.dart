@@ -189,6 +189,8 @@ bool openOnboardingDestination(BuildContext context, Map<String, dynamic> data) 
       journeyId: journeyId,
       month: month,
     ),
+    // A manager's push without a month: their joiner's page, never the joiner's own home.
+    'lifecycle_probation_review' when journeyId != null => JoinerScreen(shell: shell, journeyId: journeyId),
     _ => null,
   };
   page ??= OnboardingHomeScreen(shell: shell);

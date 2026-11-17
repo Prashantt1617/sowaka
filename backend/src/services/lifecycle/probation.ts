@@ -6,7 +6,8 @@
  * comes from Documents; the reveal shows in the app once it is sent.
  */
 import { randomUUID } from 'node:crypto';
-import { journeyTasks, journeys, probationMonths, users } from '../../config/db';
+import { ObjectId } from 'mongodb';
+import { journeyTasks, journeys, kpiParameters, kpiTemplates, probationMonths, users } from '../../config/db';
 import type { ConfirmationDecision, Journey, JourneyTask, ProbationMonth, SystemTaskKey } from '../../models/lifecycle.model';
 import { companyTimeZone, humanDay, keyOfDay, probationMonthEnd, probationMonthStart, todayKey } from './dueRules';
 import {
@@ -87,6 +88,20 @@ export function cleanGoals(value: unknown, max = 5): string[] {
   return value.map((g, i) => cleanText(typeof g === 'object' && g ? (g as { text?: unknown }).text : g, 200, `Goal ${i + 1}`));
 }
 
+/** One 1–5 rating per goal, in goal order (a null keeps a goal unrated). */
+function cleanGoalRatings(value: unknown, goals: number): number[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value) || value.length > Math.max(goals, 0)) throw new LifecycleError(400, `goalRatings is one 1–5 rating per goal (${goals})`);
+  return value.map((v, i) => {
+    if (v === null) return 0;
+    if (!Number.isInteger(v) || Number(v) < 1 || Number(v) > 5) throw new LifecycleError(400, `Goal ${i + 1}: a rating is 1 to 5`);
+    return Number(v);
+  });
+}
+
+/** One-tap feedback on the review (PB2). */
+export const REVIEW_FEEDBACK = ['Great start', 'Keep going', 'Let’s talk', 'Proud of you'] as const;
+
 async function monthRow(j: Journey, monthNo: number): Promise<ProbationMonth> {
   if (!Number.isInteger(monthNo) || monthNo < 1 || monthNo > totalProbationMonths(j)) throw new LifecycleError(404, 'No such probation month');
   const months = await ensureMonths(j);
@@ -119,13 +134,20 @@ export async function updateMonthByManager(journeyId: string, manager: { userId:
     requireOpen(checkinTask, `The month-${monthNo} check-in`);
     const c = (body.checkin ?? {}) as Record<string, unknown>;
     const rating = cleanRating(c.rating);
-    set.checkinManager = { text: cleanText(c.text, 2000, 'The check-in'), ...(rating ? { rating } : {}), at: now };
+    const goalRatings = cleanGoalRatings(c.goalRatings, (set.goals ?? row.goals).length);
+    // Rating each goal is a check-in on its own; the words are then optional.
+    set.checkinManager = { text: cleanText(c.text, 2000, 'The check-in', !goalRatings?.some(Boolean) && !rating), ...(rating ? { rating } : {}), ...(goalRatings ? { goalRatings } : {}), at: now };
   }
   if (body.review !== undefined) {
     const reviewTask = monthTask(tasks, 'monthly_review', monthNo);
     if (reviewTask && reviewTask.status === 'locked') throw new LifecycleError(409, `Review month ${monthNo} after the check-in`);
     const r = (body.review ?? {}) as Record<string, unknown>;
-    set.review = { text: cleanText(r.text, 2000, 'The review'), at: now };
+    const feedback = Array.isArray(r.feedback) ? [...new Set(r.feedback.map(String))] : [];
+    if (feedback.some((f) => !(REVIEW_FEEDBACK as readonly string[]).includes(f))) throw new LifecycleError(400, `feedback is any of: ${REVIEW_FEEDBACK.join(', ')}`);
+    set.review = {
+      text: cleanText(r.text, 2000, 'The review', !feedback.length),
+      ...(feedback.length ? { feedback } : {}), ...(r.askAck === true ? { askAck: true } : {}), at: now,
+    };
     await finishMonthTask(reviewTask, manager);
     if (Array.isArray(r.nextGoals) && monthNo < totalProbationMonths(j)) {
       const next = await monthRow(j, monthNo + 1);
@@ -148,7 +170,15 @@ export async function checkinByJoiner(journeyId: string, joiner: { userId: strin
   const tasks = await tasksOf(journeyId);
   requireOpen(monthTask(tasks, 'monthly_checkin', monthNo), `The month-${monthNo} check-in`);
   const rating = cleanRating(body.rating, 4);
-  const set: Partial<ProbationMonth> = { checkinEmployee: { text: cleanText(body.text, 2000, 'The check-in'), ...(rating ? { rating } : {}), at: new Date() } };
+  const goalRatings = cleanGoalRatings(body.goalRatings, row.goals.length);
+  const win = cleanText(body.win, 1000, 'The win', false);
+  const ask = cleanText(body.ask, 1000, 'What would help', false);
+  // The words: as sent, else made from the win and the ask (older apps send only `text`).
+  const said = typeof body.text === 'string' && body.text.trim() ? body.text : [win && `A win: ${win}`, ask && `Would help: ${ask}`].filter(Boolean).join('\n');
+  const set: Partial<ProbationMonth> = { checkinEmployee: {
+    text: cleanText(said, 2000, 'The check-in'), ...(rating ? { rating } : {}), ...(goalRatings ? { goalRatings } : {}),
+    ...(win ? { win } : {}), ...(ask ? { ask } : {}), at: new Date(),
+  } };
   await saveMonth(j, row, set, tasks, joiner);
   if (j.managerUserId) await tell([j.managerUserId], { scenario: 'lifecycle_checkin_sent', destination: 'lifecycle_probation_review', title: 'Check-in sent', body: `${joiner.name} sent their month-${monthNo} check-in.`, data: { journeyId, month: String(monthNo) } });
   return probationForJoiner(journeyId);
@@ -236,6 +266,7 @@ export async function revealFor(journeyId: string) {
   const letterSent = tasks.some((t) => t.systemKey === 'confirmation_letter' && t.status === 'done') || !!decision?.letterId;
   if (!decision || !letterSent) return { ready: false };
   const manager = decision.reportingToUserId ? (await users().findOne({ userId: decision.reportingToUserId }, { projection: { _id: 0, name: 1 } }))?.name : undefined;
+  const kpis = decision.kpiTemplateId ? await kpisOf(j.org, decision.kpiTemplateId) : undefined;
   return {
     ready: true,
     outcome: decision.outcome,
@@ -244,10 +275,22 @@ export async function revealFor(journeyId: string) {
     // Their own new CTC, to them only (never to the manager).
     ...(decision.salary ? { salary: decision.salary } : {}),
     ...(manager ? { reportsTo: manager } : {}),
+    ...(kpis ? { kpis } : {}),
     ...(decision.letterId ? { letterId: decision.letterId } : {}),
     ...(decision.revealedAt ? { revealedAt: decision.revealedAt } : {}),
     decidedOn: todayKey(decision.decidedAt, companyTimeZone(j.org)),
   };
+}
+
+/** The KPI template the decision names: its name and its parameters, in order (NEW KPIs on the reveal). */
+async function kpisOf(org: string, templateId: string): Promise<{ name: string; items: string[] } | undefined> {
+  if (!ObjectId.isValid(templateId)) return undefined;
+  const template = await kpiTemplates().findOne({ _id: new ObjectId(templateId), org }, { projection: { _id: 0, name: 1, parameterIds: 1 } });
+  if (!template) return undefined;
+  const ids = (template.parameterIds ?? []).filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
+  const params = ids.length ? await kpiParameters().find({ _id: { $in: ids } }, { projection: { _id: 1, title: 1 } }).toArray() : [];
+  const title = new Map(params.map((p) => [String(p._id), (p as { title?: string }).title ?? '']));
+  return { name: template.name, items: (template.parameterIds ?? []).map((id) => title.get(id) ?? '').filter(Boolean) };
 }
 
 export async function markRevealSeen(journeyId: string, joiner: { userId: string; name: string }) {

@@ -15,9 +15,11 @@ class WeekDoneScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tasksDone = home.done.length + home.today.where((t) => t.isDone).length;
+    // The server's count when it sends one (the week's tasks, people met, leaves).
+    final stats = home.weekDoneStats;
+    final tasksDone = stats?.tasksDone ?? home.done.length + home.today.where((t) => t.isDone).length;
     final peopleTask = home.all.where((t) => t.systemKey == 'people_to_meet').firstOrNull;
-    final people = peopleMet ?? peopleTask?.progress?.done;
+    final people = peopleMet ?? stats?.peopleMet ?? peopleTask?.progress?.done;
     final goalsOn = home.tj == null ? null : dateOnly(home.tj!).add(const Duration(days: 7));
     final manager = home.managerName ?? 'Your manager';
     return OnbScaffold(
@@ -36,7 +38,7 @@ class WeekDoneScreen extends StatelessWidget {
                 const SizedBox(height: 6),
                 const Text('Your plant is now a seedling', style: OnbText.body, textAlign: TextAlign.center),
                 const SizedBox(height: 18),
-                Plant(stage: 2, size: 150, leaves: home.plant.leaves),
+                Plant(stage: 2, size: 150, leaves: home.plant.leaves, droop: home.plant.droop),
               ],
             ),
           ),
@@ -47,7 +49,7 @@ class WeekDoneScreen extends StatelessWidget {
               const SizedBox(width: 10),
               _Stat(value: people == null ? '–' : '$people', label: 'people met'),
               const SizedBox(width: 10),
-              _Stat(value: '+${home.plant.leaves}', label: 'leaves grown'),
+              _Stat(value: '+${stats?.leaves ?? home.plant.leaves}', label: 'leaves grown'),
             ],
           ),
           const SizedBox(height: 22),

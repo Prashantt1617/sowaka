@@ -1,13 +1,13 @@
 {
   "success": true,
   "resignation": {
-    "id": "6f198214-303e-4d7a-a761-b624a0decf08",
+    "id": "680ccb82-6ce5-48c4-8496-09962637d3c4",
     "userId": "ravi",
     "managerUserId": "mgr",
     "managerName": "Meera Iyer",
     "reason": "Better opportunity",
     "note": "Thank you for three great years.",
-    "submittedAt": "2026-11-17T03:47:05.526Z",
+    "submittedAt": "2026-11-17T04:55:47.564Z",
     "noticeDays": 30,
     "lastDayByNotice": "2026-12-17",
     "status": "accepted",
@@ -15,14 +15,14 @@
       "action": "release_early",
       "date": "2026-11-21",
       "note": "Fine by me",
-      "at": "2026-11-17T03:47:05.526Z",
+      "at": "2026-11-17T04:55:47.564Z",
       "byName": "Meera Iyer"
     },
-    "hrAcceptedAt": "2026-11-17T03:47:05.526Z",
+    "hrAcceptedAt": "2026-11-17T04:55:47.564Z",
     "hrAcceptedByName": "Hema Rao",
     "agreedLastDay": "2026-11-21",
     "withdrawnAt": null,
-    "journeyId": "4bfc5d77-563b-48ba-bbfe-83ae44d99e46",
+    "journeyId": "d3709a57-c5e1-43b1-a8d4-36b15527a605",
     "tl": "2026-11-21",
     "daysLeft": 4
   },

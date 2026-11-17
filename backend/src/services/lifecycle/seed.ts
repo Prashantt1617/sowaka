@@ -125,6 +125,48 @@ const OFFBOARDING_ROWS: Row[] = [
   { key: 'delete_face_data', phase: 'after_exit', title: 'Delete face data', helper: 'Data privacy: remove the face registration within 30 days of the exit', owner: 'hr', kind: 'system', surface: 'backend', opens: tl(0), due: tl(30), recommended: 'From the earlier task library (data privacy): face data is deleted within 30 days of the exit.' },
 ];
 
+/**
+ * What the app says on a seeded task's row, apart from the template's helper (which is HR's
+ * note on how the step works, e.g. "Timed item; push 30 min before"). `employee` is the joiner's
+ * meta line (6Zs §5.3 A2: "Any time · 2 min · needed to punch in"); `manager` and `managerTitle`
+ * are M2's (§5.4: "Meet Kabir", "Introduce Kabir to the team"). `{name}` is the joiner's first
+ * name. A task with no line here shows no helper in the app; HR's own tasks keep theirs.
+ */
+export interface AppCopy { employee?: string; manager?: string; managerTitle?: string }
+
+export const APP_COPY: Partial<Record<SystemTaskKey, AppCopy>> = {
+  // Pre-boarding steps still open when they join (the portal's, carried into the app).
+  upload_documents: { employee: 'On your joining portal' },
+  about_you: { employee: 'Emergency contact and PF · 2 min' },
+  meet_us: { employee: 'Short videos from the team' },
+  sign_letters: { employee: 'Read and sign on your joining portal' },
+  manager_setup: { manager: 'People to meet, a buddy and a welcome note', managerTitle: 'Set up {name}' },
+  assign_buddy: { manager: 'A teammate for small questions', managerTitle: 'Pick a buddy for {name}' },
+  // First week.
+  welcome_induction: { employee: 'With HR · your first morning' },
+  meet_manager: { employee: 'Your first 1:1', manager: 'Your first 1:1', managerTitle: 'Meet {name}' },
+  vision_culture: { employee: 'A session for your batch' },
+  meet_team: { employee: 'Your manager introduces you', manager: 'Introduce them to the people they’ll work with', managerTitle: 'Introduce {name} to the team' },
+  laptop_setup: { employee: 'IT hands over your laptop and logins' },
+  register_face: { employee: '2 min · needed to punch in' },
+  app_tour: { employee: '5 min' },
+  week1_reels: { employee: 'Policies, tax regime, bank and PF, your goals' },
+  intro_post: { employee: 'Say hello on Connect · 2 min' },
+  people_to_meet: { employee: 'People your manager picked for you' },
+  starter_task: { manager: 'Something small for their first week', managerTitle: 'Give {name} a starter task' },
+  one_on_one_notes: { manager: 'After you meet', managerTitle: 'Add notes from your 1:1' },
+  probation_goals: { manager: 'Editable until week 1 ends', managerTitle: 'Set {name}’s probation goals' },
+  day7_survey: { employee: '4 quick questions' },
+  check_logins: { employee: 'Email, the app and your tools open' },
+  // Probation.
+  monthly_goals: { manager: 'At the start of the month', managerTitle: 'Set {name}’s goals' },
+  monthly_checkin: { employee: 'How the month went, with your manager', manager: 'Your side of the month-end check-in', managerTitle: 'Check in with {name}' },
+  monthly_review: { manager: 'Closes the month and sets next month’s goals', managerTitle: 'Review {name}’s month' },
+  pulse_survey: { employee: '4 quick questions' },
+  confirmation_discussion: { manager: 'HR records the decision in the dashboard', managerTitle: 'Talk to HR about confirming {name}' },
+  manager_30day_note: { manager: 'A short note on their first month', managerTitle: 'Write a 30-day note for {name}' },
+};
+
 function toTasks(prefix: string, rows: Row[]): TemplateTask[] {
   return rows.map((row, index) => ({
     id: `${prefix}-${row.key.replaceAll('_', '-')}`,

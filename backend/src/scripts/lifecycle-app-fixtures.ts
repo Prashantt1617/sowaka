@@ -160,22 +160,41 @@ async function main() {
 
   await save('manager_joiners', await app.joinersForManager(MGR));
   await save('manager_joiner', await app.joinerForManager(MGR, J.id));
-  const managerTask = (await engine.tasksOf(J.id)).find((t) => ['manager', 'manager_employee', 'hr_manager'].includes(t.ownerRole) && !!t.systemKey
+  // A task the manager ticks on M2 (never HR's decision: hr_manager tasks are refused).
+  const managerTask = (await engine.tasksOf(J.id)).find((t) => ['manager', 'manager_employee'].includes(t.ownerRole) && !!t.systemKey
     && !['starter_task', 'one_on_one_notes', 'probation_goals', 'monthly_goals', 'monthly_checkin', 'monthly_review', 'manager_setup', 'assign_buddy'].includes(t.systemKey)
     && (t.status === 'todo' || t.status === 'sent_back'));
   if (managerTask) await save('manager_task_done', await app.managerTaskDone(MGR, J.id, managerTask.id, { action: 'done' }));
   await save('manager_probation_month', await app.managerProbationMonth(MGR, J.id, 1, { goals: ['Ship the leave redesign', 'Run one crit'] }));
+  await save('manager_welcome_post', await app.postWelcome(MGR, J.id, { text: 'Please welcome Isha to the design team!' }));
+  await save('manager_joiner_after_welcome', await app.joinerForManager(MGR, J.id));
 
   // The rest of the week-1 reels: the manager's goals are in, so the last reel reads them.
   await app.saveWeek1Step(ISHA, { step: 'bank_pf', value: { confirm: true } });
   await save('week1_done', await app.saveWeek1Step(ISHA, { step: 'goals', value: { read: true } }));
   await save('me_joiner_after_week1', await app.lifecycleMe(ISHA));
 
+  // ─────────────────────────────────────────────────────────────── a joiner past week 1 ("Week 1, done!" from the server)
+  console.log('week 1 done');
+  await joinAt('Rohan Pillai', 'rohan', -8);
+  const ROHAN = me('rohan', 'Rohan Pillai');
+  const rohanHome = await app.onboardingHome(ROHAN);
+  ok('Rohan: the server says Week 1, done! is due', rohanHome.showWeekDone === true);
+  await save('home_week_done', rohanHome);
+  await save('week_done_seen', await app.markWeekDoneSeen(ROHAN));
+  await save('me_settling_in', await app.lifecycleMe(ROHAN));
+
   // ─────────────────────────────────────────────────────────────── a second joiner, confirmed (the reveal)
   console.log('the reveal');
   const finalTj = rules.addDaysKey(rules.addMonthsKey(TODAY, -5), -3);
   const J5 = await joinAt('Ishita Kaur', 'ishita', rules.daysBetween(TODAY, finalTj));
   const ISHITA = me('ishita', 'Ishita Kaur');
+  // The month-1 check-in and review on the new shape (per-goal ratings, win/ask, chips, next goals).
+  await app.managerProbationMonth(MGR, J5.id, 1, { goals: ['Ship the first feature', 'Own the weekly report'] });
+  await save('probation_checkin_put', await app.checkinForMe(ISHITA, 1, { rating: 3, goalRatings: [4, 5], win: 'Shipped the onboarding flow', ask: 'Access to analytics' }));
+  await app.managerProbationMonth(MGR, J5.id, 1, { checkin: { text: 'Good month', rating: 4, goalRatings: [4, 4] } });
+  await save('manager_probation_review', await app.managerProbationMonth(MGR, J5.id, 1, { review: { text: 'Great start', feedback: ['Great start', 'Keep going'], askAck: true, nextGoals: ['Pair with two teams'] } }));
+  await save('manager_joiner_probation', await app.joinerForManager(MGR, J5.id));
   await probation.recordDecision(J5.id, HR, { outcome: 'confirm', salary: 1_600_000, designation: 'Senior Product Designer', reportingToUserId: 'mgr' });
   await board.actOnTaskByHr(ORG, J5.id, byKey(await engine.tasksOf(J5.id), 'confirmation_letter').id, { action: 'done' }, HR);
   await save('probation_final_month', await app.probationForMe(ISHITA));
