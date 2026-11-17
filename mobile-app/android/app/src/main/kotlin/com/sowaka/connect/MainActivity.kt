@@ -88,7 +88,8 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     @Suppress("DEPRECATION")
-    override fun startActivityForResult(intent: Intent?, requestCode: Int, options: Bundle?) {
+    // FlutterFragmentActivity (ComponentActivity) declares the intent non-null here.
+    override fun startActivityForResult(intent: Intent, requestCode: Int, options: Bundle?) {
         selfLaunched = true
         super.startActivityForResult(intent, requestCode, options)
     }
