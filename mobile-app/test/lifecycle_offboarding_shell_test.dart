@@ -14,6 +14,7 @@ import 'package:mobile_app/features/manager/bloc/manager_bloc.dart';
 import 'package:mobile_app/features/manager/data/manager_api_service.dart';
 import 'package:mobile_app/features/manager/data/manager_models.dart';
 import 'package:mobile_app/features/manager/presentation/manager_screen.dart';
+import 'package:mobile_app/services/notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'lifecycle_offboarding_fake.dart';
@@ -268,6 +269,138 @@ void main() {
       // The badge beside Requests counts it.
       expect(find.text('1'), findsWidgets);
       expect(find.text('Currently you have no request'), findsNothing);
+      await finish(tester, bloc);
+    },
+  );
+
+  // ─────────────────────────────────────────────── pushes, and reading again
+
+  /// A tapped push, as the inbox or the system tray hands it over.
+  Future<void> openPush(WidgetTester tester, Map<String, dynamic> data) async {
+    AppNotificationService.instance.openDestination(data);
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+  }
+
+  testWidgets('a resignation push opens Team › Requests on its card', (
+    tester,
+  ) async {
+    (FakeLifecycle()..managerResignations.add(reportResignation())).install();
+    final bloc = await pumpShell(
+      tester,
+      managerSession,
+      managerTeam,
+      width: 480,
+    );
+    expect(bloc.state.tab, isNot(ManagerTab.manage));
+    await openPush(tester, {
+      'type': 'lifecycle_resignation',
+      'destination': 'lifecycle_resignation_request',
+      'resignationId': 'res-1',
+      'userId': 'ravi',
+    });
+    expect(bloc.state.tab, ManagerTab.manage);
+    expect(bloc.state.teamSection, TeamSection.requests);
+    expect(
+      find.byKey(const ValueKey('resignation-request-res-1')),
+      findsOneWidget,
+    );
+    await finish(tester, bloc);
+  });
+
+  testWidgets(
+    'a handover push opens the report\'s Resignation tab (R8b); an older push without a destination too',
+    (tester) async {
+      final fake = FakeLifecycle()..onNotice();
+      fake.managerResignations.add({
+        ...fake.resignation!,
+        'name': 'Ravi Menon',
+      });
+      fake.install();
+      final bloc = await pumpShell(
+        tester,
+        managerSession,
+        managerTeam,
+        width: 480,
+      );
+      await openPush(tester, {
+        'type': 'lifecycle_offboarding',
+        'destination': 'lifecycle_leaver',
+        'userId': 'ravi',
+        'journeyId': 'journey-1',
+      });
+      expect(find.byKey(const ValueKey('manager-leaver-tab')), findsOneWidget);
+      expect(find.text('Handover checklist'), findsOneWidget);
+      await finish(tester, bloc);
+    },
+  );
+
+  testWidgets(
+    'the leaver: HR accepted opens the Resignation tab; the checklist push opens the handover; the interview push the interview',
+    (tester) async {
+      (FakeLifecycle()..onNotice()).install();
+      final bloc = await pumpShell(tester, leaverSession, leaverTeam);
+      await openPush(tester, {
+        'type': 'lifecycle_offboarding',
+        'destination': 'lifecycle_resignation',
+        'journeyId': 'journey-1',
+        'resignationId': 'res-1',
+      });
+      expect(find.byKey(const ValueKey('profile-screen')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('resignation-tab-notice')),
+        findsOneWidget,
+      );
+
+      await openPush(tester, {
+        'type': 'lifecycle_offboarding',
+        'destination': 'lifecycle_handover',
+        'journeyId': 'journey-1',
+      });
+      expect(bloc.state.tab, ManagerTab.quick);
+      expect(find.byKey(const ValueKey('handover-screen')), findsOneWidget);
+
+      await openPush(tester, {
+        'type': 'lifecycle_offboarding',
+        'destination': 'lifecycle_exit_interview',
+        'journeyId': 'journey-1',
+      });
+      expect(
+        find.byKey(const ValueKey('exit-interview-locked')),
+        findsOneWidget,
+      );
+      await finish(tester, bloc);
+    },
+  );
+
+  testWidgets(
+    'back in front, the app reads again: a new resignation shows in Requests without a restart',
+    (tester) async {
+      final fake = FakeLifecycle()..install();
+      final bloc = await pumpShell(
+        tester,
+        managerSession,
+        managerTeam,
+        width: 480,
+      );
+      bloc
+        ..add(const ChangeManagerTab(ManagerTab.manage))
+        ..add(const ShowTeamSection(TeamSection.requests));
+      await tester.pumpAndSettle(const Duration(seconds: 1));
+      expect(find.text('Resignation · Ravi Menon'), findsNothing);
+
+      fake.managerResignations.add(reportResignation());
+      for (final state in [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+      }
+      await tester.pumpAndSettle(const Duration(seconds: 1));
+      expect(find.text('Resignation · Ravi Menon'), findsOneWidget);
       await finish(tester, bloc);
     },
   );

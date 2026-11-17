@@ -25,7 +25,8 @@ import path from 'node:path';
 import { companies, exitSettlements, handoverItems, journeyTasks, journeys, lifecycleFiles, lifecycleTemplates, payslips, resignations, surveyResponses, users } from '../../config/db';
 import { payrollPeriodHolding } from '../payroll-inputs.service';
 import { AdminError } from '../admin.service';
-import { clearanceOf, exitView, readInterview, recordExit, tickClearanceItem } from '../exit.service';
+import { clearanceOf, endAccess, exitView, readInterview, recordExit, tickClearanceItem } from '../exit.service';
+import { policyForUser } from '../shift.service';
 import { serviceYears, settlementFor } from '../exitSettlement.service';
 import { notifyUsers } from '../notification.service';
 import { istParts } from '../notification-time';
@@ -181,6 +182,33 @@ async function tell(userIds: (string | undefined)[], scenario: string, title: st
   }
 }
 
+/**
+ * Where the app opens an offboarding push (`data.destination`; mobile-app
+ * lib/features/lifecycle/offboarding/offboarding_launcher.dart), beside the onboarding ones (engine.ts):
+ * - `lifecycle_resignation_request` the manager's Team › Requests, on that resignation's card (`resignationId`, `userId`)
+ * - `lifecycle_resignation` the leaver's own Resignation tab (R2a / R2b)
+ * - `lifecycle_offboarding` Action › Off-boarding (R3); `lifecycle_handover` R3 with the handover (R3b) open
+ * - `lifecycle_exit_interview` the exit interview (R5)
+ * - `lifecycle_leaver` the manager's Resignation tab on the leaver's profile (R8b; `userId`)
+ * - `lifecycle_clearance` the dashboard's Offboarding board: nothing to open in the app
+ */
+export type OffboardingDestination =
+  | 'lifecycle_resignation_request' | 'lifecycle_resignation' | 'lifecycle_offboarding' | 'lifecycle_handover'
+  | 'lifecycle_exit_interview' | 'lifecycle_leaver' | 'lifecycle_clearance';
+
+/** Every offboarding push: `{ scenario, title, body, data: { type, destination, …ids } }` (all data values strings). */
+export async function tellOffboarding(
+  userIds: (string | undefined)[], scenario: `lifecycle_${string}`, destination: OffboardingDestination, title: string, body: string,
+  data: Record<string, string | undefined> = {}, type: 'lifecycle_offboarding' | 'lifecycle_resignation' = 'lifecycle_offboarding',
+) {
+  const clean = Object.fromEntries(Object.entries(data).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1] !== ''));
+  try {
+    await notifyUsers(userIds.filter((x): x is string => !!x), { scenario, title, body, data: { type, destination, ...clean } });
+  } catch (error) {
+    logger.warn('Offboarding: a notification could not be sent', { scenario, reason: error instanceof Error ? error.message : String(error) });
+  }
+}
+
 /** The IT, Admin and Finance staff of a company: everyone limited to the offboarding tab without People (only one team's, when asked). */
 async function clearanceStaff(org: string, team?: Exclude<ClearanceTeam, 'manager'>): Promise<string[]> {
   const rows = await users().find({ org, dashboardAccess: true, dashboardAdmin: { $ne: true }, dashboardTabs: 'offboarding', lifecycleStatus: { $nin: ['offboarded', 'terminated'] } }, { projection: { _id: 0, userId: 1, dashboardTabs: 1, clearanceTeam: 1, department: 1 } }).toArray();
@@ -244,17 +272,19 @@ export async function beginOffboarding(hr: Actor, employee: User, input: BeginIn
   await completeTask(journey.id, 'tell_clearance_teams', by);
   if (showAppPage) await completeTask(journey.id, 'offboarding_page', by);
   await syncGratuityTask(journey.id, employee.joiningDate, input.lastWorkingDay);
+  // The quiet door: someone leaving during onboarding or probation gets no plant, no probation pushes, no reveal.
+  await closeOnboardingForExit(employee.userId, input.exitType);
 
   const first = firstName(employee.name);
   const managerId = input.managerUserId ?? after?.managerUserId ?? employee.managerUserId;
   if (showAppPage && after?.lifecycleStatus === 'notice') {
-    await tell([employee.userId], 'lifecycle_offboarding_open', input.resignationId ? 'Your resignation is accepted' : 'Your last day is set',
-      `Your last working day is ${longDay(input.lastWorkingDay)}. Before you go is in Action › Off-boarding.`, { journeyId: journey.id });
+    await tellOffboarding([employee.userId], 'lifecycle_offboarding_open', 'lifecycle_resignation', input.resignationId ? 'Your resignation is accepted' : 'Your last day is set',
+      `Your last working day is ${longDay(input.lastWorkingDay)}. See what to do before you go.`, { journeyId: journey.id, resignationId: input.resignationId });
   }
   if (input.tellManagerNow && managerId && managerId !== employee.userId) {
-    await tell([managerId], 'lifecycle_handover_checklist', `Handover for ${first}`, `${first}'s last day is ${shortDay(input.lastWorkingDay)}. Add the handover checklist and a note for ${first}.`, { userId: employee.userId, journeyId: journey.id });
+    await tellOffboarding([managerId], 'lifecycle_handover_checklist', 'lifecycle_leaver', `Handover for ${first}`, `${first}'s last day is ${shortDay(input.lastWorkingDay)}. Add the handover checklist and a note for ${first}.`, { userId: employee.userId, journeyId: journey.id });
   }
-  await tell(await clearanceStaff(org), 'lifecycle_clearance', `Clearance: ${employee.name}`, `Last day ${shortDay(input.lastWorkingDay)}. Your clearance item is on the Offboarding board.`, { userId: employee.userId });
+  await tellOffboarding(await clearanceStaff(org), 'lifecycle_clearance', 'lifecycle_clearance', `Clearance: ${employee.name}`, `Last day ${shortDay(input.lastWorkingDay)}. Your clearance item is on the Offboarding board.`, { userId: employee.userId });
   return { journeyId: journey.id, exit };
 }
 
@@ -280,6 +310,26 @@ export async function syncGratuityTask(journeyId: string, joined: Date | undefin
   } else if (task.status === 'skipped' && NOT_ELIGIBLE.test(task.note ?? '')) {
     await reopenTask(journeyId, 'gratuity', '');
   }
+}
+
+/**
+ * An exit closes the person's onboarding journey, if one is still open (they resigned during probation, or
+ * HR started their exit then): its open tasks are cancelled and the jobs, the Onboarding tile and tab, the
+ * plant and the probation pushes stop. The status is kept (joined, moved to the app, confirmed but not yet
+ * revealed) with the reason, so the onboarding board's history still says how far it got.
+ */
+export async function closeOnboardingForExit(userId: string, exitType: OffboardingExitType): Promise<string[]> {
+  const open = await journeys().find({ userId, kind: 'onboarding', closedAt: { $exists: false } }, { projection: { _id: 0, id: 1, status: 1 } }).toArray();
+  const closed: string[] = [];
+  for (const j of open) {
+    try {
+      await closeJourney(j.id, j.status as Journey['status'], `Closed: ${EXIT_TYPE_LABEL[exitType].toLowerCase()} recorded before onboarding ended`);
+      closed.push(j.id);
+    } catch (error) {
+      logger.warn('Offboarding: the onboarding journey could not be closed', { journeyId: j.id, reason: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return closed;
 }
 
 // ———————————————————————————————————————————————— the board
@@ -940,8 +990,8 @@ export async function changeLastDay(actorUserId: string, employeeUserId: string,
   if (e.offboarding?.resignationId) await resignations().updateOne({ id: e.offboarding.resignationId }, { $set: { agreedLastDay: lastWorkingDay } });
   if (lastWorkingDay !== e.lastWorkingDay) {
     const first = firstName(user.name);
-    if (e.offboarding?.showAppPage) await tell([employeeUserId], 'lifecycle_last_day_changed', 'Your last day has moved', `Your last working day is now ${longDay(lastWorkingDay)}.`, {});
-    await tell([user.managerUserId], 'lifecycle_last_day_changed', `${first}'s last day has moved`, `${first}'s last working day is now ${longDay(lastWorkingDay)}.`, { userId: employeeUserId });
+    if (e.offboarding?.showAppPage) await tellOffboarding([employeeUserId], 'lifecycle_last_day_changed', 'lifecycle_resignation', 'Your last day has moved', `Your last working day is now ${longDay(lastWorkingDay)}.`, { journeyId: e.offboarding.journeyId });
+    await tellOffboarding([user.managerUserId], 'lifecycle_last_day_changed', 'lifecycle_leaver', `${first}'s last day has moved`, `${first}'s last working day is now ${longDay(lastWorkingDay)}.`, { userId: employeeUserId, journeyId: e.offboarding?.journeyId });
   }
   return offboardingDetail(actorUserId, employeeUserId, now);
 }
@@ -995,7 +1045,7 @@ export async function setAppPage(actorUserId: string, employeeUserId: string, bo
   const on = body.showAppPage === true;
   await users().updateOne({ userId: employeeUserId, org: actor.org }, { $set: { 'exit.offboarding.showAppPage': on, updatedAt: now } });
   if (on && user.exit.offboarding.journeyId) await completeTask(user.exit.offboarding.journeyId, 'offboarding_page', { userId: actor.userId, name: actor.name });
-  if (on && !user.exit.offboarding.showAppPage && !user.exit.accessEndedAt) await tell([employeeUserId], 'lifecycle_offboarding_open', 'Your last day is set', `Your last working day is ${longDay(user.exit.lastWorkingDay)}. Before you go is in Action › Off-boarding.`, {});
+  if (on && !user.exit.offboarding.showAppPage && !user.exit.accessEndedAt) await tellOffboarding([employeeUserId], 'lifecycle_offboarding_open', 'lifecycle_resignation', 'Your last day is set', `Your last working day is ${longDay(user.exit.lastWorkingDay)}. See what to do before you go.`, { journeyId: user.exit.offboarding.journeyId });
   return offboardingDetail(actorUserId, employeeUserId, now);
 }
 
@@ -1189,7 +1239,7 @@ export async function uploadHandover(userId: string, itemId: string, input: { fi
   if (all.every((h) => !!h.upload)) await completeTask(journeyId, 'upload_handover', { userId, name: user.name });
   const journey = await journeys().findOne({ id: journeyId }, { projection: { _id: 0, managerUserId: 1 } });
   const first = firstName(user.name);
-  await tell([journey?.managerUserId ?? user.managerUserId], 'lifecycle_handover_uploaded', `${first} uploaded a handover item`, `${item.title} · ${all.filter((h) => !!h.upload).length} of ${all.length} uploaded.`, { userId });
+  await tellOffboarding([journey?.managerUserId ?? user.managerUserId], 'lifecycle_handover_uploaded', 'lifecycle_leaver', `${first} uploaded a handover item`, `${item.title} · ${all.filter((h) => !!h.upload).length} of ${all.length} uploaded.`, { userId, journeyId, itemId: item.id });
   return { item: handoverView({ ...item, upload }) };
 }
 
@@ -1353,7 +1403,7 @@ export async function setHandoverChecklist(managerUserId: string, leaverUserId: 
   if (note !== undefined) await users().updateOne({ userId: leaver.userId, org: leaver.org }, { $set: { 'exit.offboarding.handoverNote': note, 'exit.offboarding.handoverNoteAt': now } });
   if (titles.length) await completeTask(journeyId, 'handover_checklist', { userId: managerUserId, name: manager.name });
   if (added.length && leaver.exit.offboarding?.showAppPage) {
-    await tell([leaver.userId], 'lifecycle_handover_shared', `Handover checklist from ${firstName(manager.name)}`, `${titles.length} ${titles.length === 1 ? 'item' : 'items'} to share before your last day. Open Action › Off-boarding.`, {});
+    await tellOffboarding([leaver.userId], 'lifecycle_handover_shared', 'lifecycle_handover', `Handover checklist from ${firstName(manager.name)}`, `${titles.length} ${titles.length === 1 ? 'item' : 'items'} to share before your last day.`, { journeyId });
   }
   return managerLeaver(managerUserId, leaverUserId, now);
 }
@@ -1371,6 +1421,31 @@ export async function markHandoverDone(managerUserId: string, leaverUserId: stri
 // ———————————————————————————————————————————————— timed jobs
 
 /**
+ * "On the last day, end of shift" (the template's `accountCloses: 'tl_end_of_shift'`): on Tl, once the
+ * person's shift has ended (their shift policy's end time, IST), access ends then rather than at the
+ * live job's Tl + 1. A shift that ends after midnight is left to that job (it ends on Tl + 1 anyway),
+ * and so is every exit whose template says the day after (the default). An exit whose rules keep
+ * access (`access: 'never'`) is left alone by endAccess itself.
+ */
+export async function closesAtEndOfShift(userId: string, tl: string, journey: Pick<Journey, 'templateSnapshot'> | null, now: Date): Promise<boolean> {
+  if (journey?.templateSnapshot?.settings?.accountCloses !== 'tl_end_of_shift') return false;
+  const p = istParts(now);
+  if (p.dateKey !== tl) return false;
+  let start = '09:00';
+  let end = '18:00';
+  try {
+    const policy = await policyForUser(userId, tl);
+    start = policy.startTime || start;
+    end = policy.endTime || end;
+  } catch (error) {
+    logger.warn('Offboarding: no shift for the end-of-shift close; 18:00 is used', { userId, reason: error instanceof Error ? error.message : String(error) });
+  }
+  const minutes = (hhmm: string) => { const [h, m] = hhmm.split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+  if (minutes(end) <= minutes(start)) return false;
+  return p.hour * 60 + p.minute >= minutes(end);
+}
+
+/**
  * Every hour, after closeDueExits (which ends access the day after Tl; not repeated here). Once each:
  * Tl − n the exit interview opens (push); access ended → the Close account task is done; Tl + 2
  * working days the settlement-due flag (journey status settlement_due); Tl + 30 gratuity due, when
@@ -1381,10 +1456,10 @@ export async function runOffboardingJobs(now = new Date()) {
   // Pushes go out in the day, from 09:00 IST (as the onboarding day jobs do); the state changes run every hour.
   const pushHours = istParts(now).hour >= 9;
   const rows = await users().find({ 'exit.offboarding.journeyId': { $exists: true } }, { projection: { _id: 0, userId: 1, org: 1, name: 1, joiningDate: 1, exit: 1 } }).toArray();
-  const counts = { interviewOpened: 0, accountsClosed: 0, settlementDue: 0, gratuityDue: 0 };
+  const counts = { interviewOpened: 0, accountsClosed: 0, endOfShiftClosed: 0, settlementDue: 0, gratuityDue: 0 };
   for (const u of rows) {
     try {
-      const e = u.exit!;
+      let e = u.exit!;
       const ob = e.offboarding!;
       const journeyId = ob.journeyId!;
       const journey = await journeys().findOne({ id: journeyId }, { projection: { _id: 0 } });
@@ -1395,9 +1470,13 @@ export async function runOffboardingJobs(now = new Date()) {
         const res = await users().updateOne({ userId: u.userId, 'exit.offboarding.fired': { $ne: key } }, { $push: { 'exit.offboarding.fired': key } });
         return res.modifiedCount === 1;
       };
+      if (!e.accessEndedAt && (await closesAtEndOfShift(u.userId, e.lastWorkingDay, journey, now)) && (await endAccess(u.userId, now))) {
+        counts.endOfShiftClosed++;
+        e = (await users().findOne({ userId: u.userId }, { projection: { _id: 0, exit: 1 } }))?.exit ?? e;
+      }
       const opens = interviewOpensKey(e, journey);
       if (pushHours && opens && opens <= today && today <= e.lastWorkingDay && !e.interview && !e.accessEndedAt && !fired.has('interview_open') && (await fire('interview_open'))) {
-        await tell([u.userId], 'lifecycle_exit_interview_open', 'Your exit interview is open', 'Five short questions, all optional. Your answers go to HR only.', { journeyId });
+        await tellOffboarding([u.userId], 'lifecycle_exit_interview_open', 'lifecycle_exit_interview', 'Your exit interview is open', 'Five short questions, all optional. Your answers go to HR only.', { journeyId });
         counts.interviewOpened++;
       }
       if (e.accessEndedAt) {
@@ -1412,7 +1491,7 @@ export async function runOffboardingJobs(now = new Date()) {
       }
       const joined = keyOfInstant(u.joiningDate ?? null);
       if (pushHours && today >= addDays(e.lastWorkingDay, 30) && joined && serviceYears(joined, e.lastWorkingDay).completed >= 5 && !fired.has('gratuity_due') && (await fire('gratuity_due'))) {
-        await tell(await clearanceStaff(u.org), 'lifecycle_gratuity_due', `Gratuity due: ${u.name}`, `Gratuity is due within 30 days of the last day (${shortDay(e.lastWorkingDay)}).`, { userId: u.userId });
+        await tellOffboarding(await clearanceStaff(u.org), 'lifecycle_gratuity_due', 'lifecycle_clearance', `Gratuity due: ${u.name}`, `Gratuity is due within 30 days of the last day (${shortDay(e.lastWorkingDay)}).`, { userId: u.userId });
         counts.gratuityDue++;
       }
     } catch (error) {

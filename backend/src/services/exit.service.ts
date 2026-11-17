@@ -331,9 +331,10 @@ export async function endAccessNow(adminUserId: string, employeeUserId: string, 
 
 /**
  * Access ends: status Left, saved sessions and device tokens deleted, the cached auth user
- * forgotten so the very next request is refused. Safe to run twice.
+ * forgotten so the very next request is refused. Safe to run twice. (Exported for the
+ * offboarding template's "On the last day, end of shift", lifecycle/offboarding.ts.)
  */
-async function endAccess(employeeUserId: string, now: Date) {
+export async function endAccess(employeeUserId: string, now: Date) {
   const user = await users().findOne({ userId: employeeUserId }, { projection: { _id: 0, org: 1, exit: 1 } });
   if (!user?.exit || user.exit.accessEndedAt || user.exit.rules?.access === 'never') return false;
   await users().updateOne(

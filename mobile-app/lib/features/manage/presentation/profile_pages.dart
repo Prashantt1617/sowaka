@@ -251,7 +251,7 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
       });
     }
     _offboarding.addListener(_offboardingChanged);
-    unawaited(_offboarding.ensureLoaded());
+    unawaited(_offboarding.revalidate());
   }
 
   @override
@@ -468,8 +468,7 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
                   inViewerChain: member.inViewerChain,
                   viewerCanManage: widget.canManage,
                   hasDocuments: member.documents.isNotEmpty,
-                  hasResignation:
-                      _offboarding.resignationOf(member.userId) != null,
+                  hasResignation: _offboarding.hasLeaverTab(member.userId),
                 ))
         if (tab != ProfileTab.posts || posts != null) tab,
     ], widget.openOn);
@@ -635,13 +634,23 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
                 ].where((value) => value.isNotEmpty).join(' • '),
                 recognition: _nonEmpty(member.recognitionLabel),
               ),
-              tabs: [for (final tab in tabs) tab.label],
+              tabs: [
+                for (final tab in tabs)
+                  tab == ProfileTab.resignation &&
+                          _offboarding.resignationOf(member.userId) == null
+                      ? 'Exit'
+                      : tab.label,
+              ],
               counts: [
                 for (final tab in tabs)
                   tab == ProfileTab.posts ? posts?.total : null,
               ],
               selected: selected,
               onChanged: (index) => setState(() => _tab = tabs[index]),
+              // The Resignation tab reads again on a pull (R8b).
+              onRefresh: tabs[selected] == ProfileTab.resignation
+                  ? _offboarding.refresh
+                  : null,
               children: content,
             ),
           ),
@@ -811,10 +820,14 @@ class _ProfileScrollFrame extends StatelessWidget {
     required this.selected,
     required this.onChanged,
     required this.children,
+    this.onRefresh,
   });
 
   final Widget hero;
   final List<String> tabs;
+
+  /// A pull to refresh, for the tabs that read from the server as they show.
+  final Future<void> Function()? onRefresh;
 
   /// A count to wear beside each tab's label, in the tabs' order; null (or
   /// missing) for none.
@@ -833,7 +846,20 @@ class _ProfileScrollFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Always the same tree, so switching tabs keeps the scroll where it is;
+    // the pull only answers on a tab that has one.
+    final refresh = onRefresh;
+    return RefreshIndicator(
+      onRefresh: refresh ?? () async {},
+      notificationPredicate: (notification) =>
+          refresh != null && notification.depth == 0,
+      child: _scroll(context, refresh != null),
+    );
+  }
+
+  Widget _scroll(BuildContext context, bool pullable) {
     return CustomScrollView(
+      physics: pullable ? const AlwaysScrollableScrollPhysics() : null,
       slivers: [
         SliverToBoxAdapter(
           child: _column(
@@ -1156,10 +1182,14 @@ class _ProfileScreen extends StatefulWidget {
     required this.onOpenComposer,
     required this.onProfilePhotoUpdated,
     this.openOn,
+    this.onOpenDocuments,
   });
 
   /// The tab to open on, from where the profile was opened ([openingTabFor]).
   final ProfileTab? openOn;
+
+  /// "Save your documents" on the Resignation tab: Action › Payroll.
+  final VoidCallback? onOpenDocuments;
   final AuthSession session;
   final ManagerDashboard dashboard;
   final ManagerBloc bloc;
@@ -1199,7 +1229,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
   void initState() {
     super.initState();
     _offboarding.addListener(_offboardingChanged);
-    unawaited(_offboarding.ensureLoaded());
+    unawaited(_offboarding.revalidate());
     final session = widget.session;
     final enabled = session.user.enabledTabs;
     // A company whose app is Help alone has no tabs to show them in.
@@ -1529,7 +1559,12 @@ class _ProfileScreenState extends State<_ProfileScreen> {
           onSent: () => setState(() => _tab = ProfileTab.resignation),
         ),
       ],
-      ProfileTab.resignation => [OwnResignationTab(store: _offboarding)],
+      ProfileTab.resignation => [
+        OwnResignationTab(
+          store: _offboarding,
+          onOpenDocuments: widget.onOpenDocuments,
+        ),
+      ],
       // Their manager, them and the people they lead — the Team tab's own
       // team without the peers.
       ProfileTab.orgChart => [
@@ -1595,13 +1630,22 @@ class _ProfileScreenState extends State<_ProfileScreen> {
             child: worksHere
                 ? _ProfileScrollFrame(
                     hero: hero,
-                    tabs: [for (final tab in tabs) tab.label],
+                    tabs: [
+                      for (final tab in tabs)
+                        tab == ProfileTab.resignation
+                            ? _offboarding.resignationTabLabel
+                            : tab.label,
+                    ],
                     counts: [
                       for (final tab in tabs)
                         tab == ProfileTab.posts ? posts?.total : null,
                     ],
                     selected: selected,
                     onChanged: (index) => setState(() => _tab = tabs[index]),
+                    // The Resignation tab reads again on a pull (R2a / R2b).
+                    onRefresh: tabs[selected] == ProfileTab.resignation
+                        ? _offboarding.refresh
+                        : null,
                     children: content,
                   )
                 : SingleChildScrollView(

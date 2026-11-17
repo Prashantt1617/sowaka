@@ -14,20 +14,19 @@ import { randomUUID } from 'node:crypto';
 import { resignations, users } from '../../config/db';
 import type { Resignation } from '../../models/lifecycle.model';
 import {
-  LifecycleError, addDays, appUser, beginOffboarding, dashboardActor, daysFromTo, firstName, isDateKey, keyOfInstant, longDay, noticeDaysFor, requireHr, resignationView, shortDay, todayKey,
+  LifecycleError, addDays, appUser, beginOffboarding, dashboardActor, daysFromTo, firstName, isDateKey, keyOfInstant, longDay, noticeDaysFor, requireHr, resignationView, shortDay,
+  tellOffboarding, todayKey,
 } from './offboarding';
+import type { OffboardingDestination } from './offboarding';
 import { completeTask } from './engine';
-import { notifyUsers } from '../notification.service';
-import { logger } from '../../utils/logger';
 
 /** What the app offers as the reason (R1); any short reason is accepted. */
 export const RESIGNATION_REASONS = ['Better opportunity', 'Growth', 'Pay', 'Manager', 'Work-life balance', 'Higher studies', 'Relocation', 'Personal', 'Other'];
 const OPEN: Resignation['status'][] = ['with_manager', 'with_hr'];
 
-async function tell(userIds: (string | undefined)[], scenario: string, title: string, body: string, data: Record<string, string>) {
-  try { await notifyUsers(userIds.filter((x): x is string => !!x), { scenario, title, body, data: { type: 'lifecycle_resignation', ...data } }); }
-  catch (error) { logger.warn('Resignation: a notification could not be sent', { scenario, reason: error instanceof Error ? error.message : String(error) }); }
-}
+/** A resignation's push: `data.type` lifecycle_resignation, with where the app opens it and the ids. */
+const tell = (userIds: (string | undefined)[], scenario: `lifecycle_${string}`, destination: OffboardingDestination, title: string, body: string, data: Record<string, string>) =>
+  tellOffboarding(userIds, scenario, destination, title, body, data, 'lifecycle_resignation');
 
 const managerNameOf = async (id: string | undefined) => (id ? (await users().findOne({ userId: id }, { projection: { _id: 0, name: 1 } }))?.name : undefined);
 
@@ -62,7 +61,7 @@ export async function resign(userId: string, body: Record<string, unknown>, now 
   };
   await resignations().insertOne({ ...r });
   const first = firstName(user.name);
-  if (managerUserId) await tell([managerUserId], 'lifecycle_resignation', `Resignation · ${user.name}`, `${first} has resigned. Last day by notice: ${shortDay(r.lastDayByNotice)}. Open Team › Requests.`, { resignationId: r.id, userId });
+  if (managerUserId) await tell([managerUserId], 'lifecycle_resignation', 'lifecycle_resignation_request', `Resignation · ${user.name}`, `${first} has resigned. Last day by notice: ${shortDay(r.lastDayByNotice)}. Open Team › Requests.`, { resignationId: r.id, userId });
   return { resignation: resignationView(r, await managerNameOf(managerUserId), now) };
 }
 
@@ -76,7 +75,7 @@ export async function withdrawResignation(userId: string, now = new Date()) {
   }
   const done = await resignations().updateOne({ id: r.id, status: { $in: OPEN } }, { $set: { status: 'withdrawn', withdrawnAt: now } });
   if (!done.modifiedCount) throw new LifecycleError(409, 'HR has accepted your resignation. Talk to HR to change it.');
-  await tell([r.managerUserId], 'lifecycle_resignation_withdrawn', `${firstName(user.name)} withdrew their resignation`, `${user.name} is staying.`, { resignationId: r.id, userId });
+  await tell([r.managerUserId], 'lifecycle_resignation_withdrawn', 'lifecycle_resignation_request', `${firstName(user.name)} withdrew their resignation`, `${user.name} is staying.`, { resignationId: r.id, userId });
   return { resignation: resignationView({ ...r, status: 'withdrawn', withdrawnAt: now }, await managerNameOf(r.managerUserId), now) };
 }
 
@@ -127,6 +126,12 @@ export async function managerResignationAction(managerUserId: string, resignatio
   const managerAct = { action: action as 'accept' | 'change_day' | 'release_early', ...(date ? { date } : {}), ...(note ? { note } : {}), at: now, byName: manager.name };
   const done = await resignations().updateOne({ id: r.id, status: { $in: OPEN } }, { $set: { manager: managerAct, status: 'with_hr' } });
   if (!done.modifiedCount) throw new LifecycleError(409, 'HR has already accepted it');
+  // The leaver's tab moves on to "With HR" (R2a); the push takes them there.
+  const mFirst = firstName(manager.name);
+  const said = action === 'accept' ? `${mFirst} accepted it.`
+    : action === 'change_day' ? `${mFirst} agreed ${shortDay(date!)} as your last day.`
+      : `${mFirst} agreed to release you on ${shortDay(date!)}.`;
+  await tell([r.userId], 'lifecycle_resignation_with_hr', 'lifecycle_resignation', 'Your resignation is with HR', `${said} HR confirms your last day next.`, { resignationId: r.id });
   return { resignation: resignationView({ ...r, manager: managerAct, status: 'with_hr' }, manager.name, now) };
 }
 

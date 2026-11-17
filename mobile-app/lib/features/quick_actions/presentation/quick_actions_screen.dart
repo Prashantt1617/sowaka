@@ -74,6 +74,14 @@ class QuickActionsController extends ChangeNotifier {
   /// correction of their own.
   void openCalendar() => _state?._open(_QuickPage.calendar);
 
+  /// Payroll, for "Save your documents" (payslips and Form 16) elsewhere.
+  void openPayroll() => _state?._open(_QuickPage.payroll);
+
+  /// Action › Off-boarding (R3), for a push about it; [section] `handover`
+  /// or `exit_interview` opens that screen over it.
+  void openOffboarding({String? section}) =>
+      _state?._openOffboarding(section: section);
+
   void _attach(_QuickActionsScreenState state) {
     _state = state;
     // A fresh tab starts on its home, so what Back may do has changed; told
@@ -759,7 +767,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     _reimbursementDescription.addListener(_onReimbursementFieldChanged);
     _leaveReason.addListener(_onLeaveFieldChanged);
     _offboarding.addListener(_onOffboardingChanged);
-    unawaited(_offboarding.ensureLoaded());
+    unawaited(_offboarding.revalidate());
     LifecycleMeStore.instance.addListener(_onLifecycleChanged);
   }
 
@@ -779,12 +787,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   /// R3, with the shell's header and tabs; "Save your documents" comes back
   /// here and opens Payroll, where the payslips and Form 16 are.
-  void _openOffboarding() {
+  void _openOffboarding({String? section}) {
     unawaited(
       Navigator.of(context).push<void>(
         MaterialPageRoute(
           builder: (_) => OffboardingPage(
             store: _offboarding,
+            openSection: section,
             chrome: OffboardingChrome(
               header: AppHomeHeader(
                 profileAction: widget.profileAction,

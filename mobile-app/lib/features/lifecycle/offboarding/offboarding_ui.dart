@@ -55,6 +55,7 @@ class OffScaffold extends StatelessWidget {
     this.bottomNav,
     this.bottom,
     this.onBack,
+    this.onRefresh,
   });
 
   final String title;
@@ -62,6 +63,9 @@ class OffScaffold extends StatelessWidget {
   final bool close;
   final Widget? header;
   final Widget? bottomNav;
+
+  /// A pull to refresh over the scrolling content.
+  final Future<void> Function()? onRefresh;
 
   /// Pinned under the scrolling content (the one primary button).
   final Widget? bottom;
@@ -78,10 +82,20 @@ class OffScaffold extends StatelessWidget {
           const SafeArea(bottom: false, child: SizedBox.shrink()),
         OffTopBar(title: title, close: close, onBack: onBack),
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
-            children: children,
-          ),
+          child: switch (onRefresh) {
+            final refresh? => RefreshIndicator(
+              onRefresh: refresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+                children: children,
+              ),
+            ),
+            null => ListView(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+              children: children,
+            ),
+          },
         ),
         if (bottom case final bottom?)
           SafeArea(

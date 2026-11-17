@@ -1,0 +1,125 @@
+{
+  "success": true,
+  "tl": "2026-12-07",
+  "daysLeft": 20,
+  "exitType": "retirement",
+  "acceptedOn": "2026-11-17",
+  "resignedOn": "2026-11-17",
+  "managerName": "Meera Iyer",
+  "acceptedAt": "2026-11-17T03:47:06.445Z",
+  "noticeFrom": "2026-11-17",
+  "tasks": [
+    {
+      "id": "de754e0c-bddd-44d9-aace-fce55f5669a1",
+      "systemKey": "send_resignation",
+      "phase": "resignation",
+      "title": "Send resignation",
+      "helper": "Profile › Work detail › Resign. Reason (required) and an optional note. No last-day picker",
+      "ownerRole": "employee",
+      "ownerName": "Tara Bose",
+      "kind": "form",
+      "surface": "app",
+      "mustDo": true,
+      "status": "skipped",
+      "opensAt": null,
+      "dueAt": null,
+      "dueLabel": "Any time",
+      "doneAt": "2026-11-17T03:47:06.445Z",
+      "doneByName": "Automatic",
+      "late": false
+    },
+    {
+      "id": "f5d1db36-0306-4806-8525-066d121922f8",
+      "systemKey": "upload_handover",
+      "phase": "notice_period",
+      "title": "Upload handover items",
+      "helper": "File or link against each checklist item",
+      "ownerRole": "employee",
+      "ownerName": "Tara Bose",
+      "kind": "upload",
+      "surface": "app",
+      "mustDo": true,
+      "status": "locked",
+      "opensAt": null,
+      "dueAt": "2026-11-30T00:00:00.000Z",
+      "dueLabel": "Mon 30 Nov",
+      "late": false
+    },
+    {
+      "id": "733f9efe-ec0f-41c5-bba3-c9cd4320c681",
+      "systemKey": "exit_interview",
+      "phase": "notice_period",
+      "title": "Exit interview",
+      "helper": "Optional, 5 questions. Answers go to HR only and show anonymised in Exit insights",
+      "ownerRole": "employee",
+      "ownerName": "Tara Bose",
+      "kind": "survey",
+      "surface": "app",
+      "mustDo": false,
+      "status": "locked",
+      "opensAt": "2026-12-02T00:00:00.000Z",
+      "dueAt": "2026-12-07T00:00:00.000Z",
+      "dueLabel": "Mon 7 Dec",
+      "late": false
+    },
+    {
+      "id": "2b503e9f-da6d-4351-9c74-49467c51bba8",
+      "systemKey": "save_documents",
+      "phase": "notice_period",
+      "title": "Save your documents",
+      "helper": "Payslips and Form 16, before access ends",
+      "ownerRole": "employee",
+      "ownerName": "Tara Bose",
+      "kind": "ack",
+      "surface": "app",
+      "mustDo": false,
+      "status": "todo",
+      "opensAt": "2026-11-17T00:00:00.000Z",
+      "dueAt": "2026-12-07T00:00:00.000Z",
+      "dueLabel": "Mon 7 Dec",
+      "late": false
+    }
+  ],
+  "handover": [],
+  "handoverNote": null,
+  "handoverDue": "2026-11-30",
+  "handoverDueAt": "2026-11-30T00:00:00.000Z",
+  "handoverAddedAt": null,
+  "handoverDone": false,
+  "handoverDoneAt": null,
+  "returnAssets": {
+    "done": false,
+    "items": [
+      {
+        "label": "Laptop and accessories returned",
+        "done": false
+      },
+      {
+        "label": "ID card and access cards returned",
+        "done": false
+      }
+    ]
+  },
+  "interview": {
+    "applies": true,
+    "opensAt": "2026-12-02",
+    "open": false,
+    "sent": false
+  },
+  "documents": [
+    {
+      "kind": "payslip",
+      "label": "Payslips",
+      "url": "/payslips/mine"
+    },
+    {
+      "kind": "form16",
+      "label": "Form 16",
+      "url": "/payroll/form16"
+    }
+  ],
+  "settlement": {
+    "by": "email",
+    "after": "2026-12-07"
+  }
+}

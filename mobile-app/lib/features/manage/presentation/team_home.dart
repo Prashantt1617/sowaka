@@ -28,7 +28,7 @@ class _TeamHomeState extends State<_TeamHome> {
   @override
   void initState() {
     super.initState();
-    unawaited(_offboarding.ensureLoaded());
+    unawaited(_offboarding.revalidate());
   }
 
   @override
@@ -1207,14 +1207,32 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
   );
 
   void _offboardingChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {
+      // A push about a resignation: its card shows under "All", unfiltered.
+      if (_offboarding.focusResignationId != null) {
+        if (_mode != _RequestViewMode.oldestFirst) {
+          _mode = _RequestViewMode.newestFirst;
+        }
+        _query = '';
+      }
+    });
   }
 
   @override
   void initState() {
     super.initState();
     _offboarding.addListener(_offboardingChanged);
-    unawaited(_offboarding.ensureLoaded());
+    if (_offboarding.focusResignationId != null) {
+      _mode = _RequestViewMode.newestFirst;
+    }
+    unawaited(_offboarding.revalidate());
+  }
+
+  /// A pull: the requests and the resignations, both read again.
+  Future<void> _pullToRefresh() async {
+    widget.bloc.refreshRequestsNow();
+    await _offboarding.refresh();
   }
 
   @override
@@ -1504,58 +1522,62 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
 
     return ColoredBox(
       color: const Color(0xFFF7F7F9),
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Team Requests',
-                style: TextStyle(
-                  color: Color(0xFF222222),
-                  fontWeight: FontWeight.w600,
-                  fontSize: 20,
-                  letterSpacing: 0.4,
+      child: RefreshIndicator(
+        onRefresh: _pullToRefresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Team Requests',
+                  style: TextStyle(
+                    color: Color(0xFF222222),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 20,
+                    letterSpacing: 0.4,
+                  ),
                 ),
-              ),
-              _ViewByButton(
-                mode: _mode,
-                onChanged: (mode) => setState(() => _mode = mode),
-              ),
-            ],
-          ),
+                _ViewByButton(
+                  mode: _mode,
+                  onChanged: (mode) => setState(() => _mode = mode),
+                ),
+              ],
+            ),
 
-          const SizedBox(height: 14),
-          _FeedbackSearchField(
-            query: _query,
-            onChanged: (value) => setState(() => _query = value),
-            onClear: () => setState(() => _query = ''),
-            hint: 'Search employee',
-          ),
-          const SizedBox(height: 14),
-          // Resignations are not leave, overtime or corrections: they show
-          // under "All" only.
-          if (_mode == _RequestViewMode.newestFirst ||
-              _mode == _RequestViewMode.oldestFirst)
-            ManagerResignationRequests(store: _offboarding, query: _query),
-          if (filtered.isEmpty && !_showsResignations)
-            _RequestsEmptyState(
-              title: entries.isEmpty
-                  ? 'Currently you have no request'
-                  : 'No matching requests',
-              body: entries.isEmpty
-                  ? 'This is where all your team’s open request would be actionable.'
-                  : _query.isNotEmpty
-                  ? 'No requests match "$_query".'
-                  : 'No requests match this filter.',
-            )
-          else
-            for (final entry in filtered) ...[
-              entry.$4,
-              const SizedBox(height: 12),
-            ],
-        ],
+            const SizedBox(height: 14),
+            _FeedbackSearchField(
+              query: _query,
+              onChanged: (value) => setState(() => _query = value),
+              onClear: () => setState(() => _query = ''),
+              hint: 'Search employee',
+            ),
+            const SizedBox(height: 14),
+            // Resignations are not leave, overtime or corrections: they show
+            // under "All" only.
+            if (_mode == _RequestViewMode.newestFirst ||
+                _mode == _RequestViewMode.oldestFirst)
+              ManagerResignationRequests(store: _offboarding, query: _query),
+            if (filtered.isEmpty && !_showsResignations)
+              _RequestsEmptyState(
+                title: entries.isEmpty
+                    ? 'Currently you have no request'
+                    : 'No matching requests',
+                body: entries.isEmpty
+                    ? 'This is where all your team’s open request would be actionable.'
+                    : _query.isNotEmpty
+                    ? 'No requests match "$_query".'
+                    : 'No requests match this filter.',
+              )
+            else
+              for (final entry in filtered) ...[
+                entry.$4,
+                const SizedBox(height: 12),
+              ],
+          ],
+        ),
       ),
     );
   }

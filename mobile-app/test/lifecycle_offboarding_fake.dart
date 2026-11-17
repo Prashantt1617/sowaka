@@ -109,6 +109,19 @@ class FakeLifecycle {
   /// The manager's reports' resignations.
   final managerResignations = <Map<String, dynamic>>[];
 
+  /// The manager's reports with an exit under way (`/manager/leavers`).
+  final managerLeavers = <Map<String, dynamic>>[];
+
+  /// As the real server: a leaver's view needs an exit, so before HR accepts
+  /// `GET /manager/leavers/:id` answers 404 "No exit for this person".
+  bool leaverNeedsExit = false;
+
+  /// An exit HR started (no resignation): its type on the page.
+  String? exitType;
+
+  /// The reasons `GET /lifecycle/resignation` offers (none by default).
+  List<String>? reasons;
+
   final calls = <String>[];
   final bodies = <String, Object?>{};
 
@@ -143,6 +156,7 @@ class FakeLifecycle {
     if (r == null && tl == null) return null;
     return {
       'status': r?['status'] ?? 'accepted',
+      if (tl != null) 'journeyId': 'journey-1',
       'resignationId': ?r?['id'],
       'tl': ?tl,
       'pageVisible': pageVisible,
@@ -152,6 +166,10 @@ class FakeLifecycle {
   Map<String, dynamic> get page => {
     'tl': tl,
     'daysLeft': 17,
+    'exitType': ?exitType,
+    // An exit HR started has no resignation to read these from.
+    if (exitType != null) 'acceptedAt': '2026-11-04T05:00:00.000Z',
+    if (exitType != null) 'noticeFrom': '2026-11-04',
     'managerName': 'Meera Iyer',
     'tasks': [
       task(
@@ -202,7 +220,14 @@ class FakeLifecycle {
 
   Map<String, dynamic> leaver(String userId) => {
     'resignation': resignation,
-    'status': resignation?['status'],
+    'status': exitType != null
+        ? {
+            'exitType': exitType,
+            'tl': tl,
+            'daysLeft': 17,
+            'acceptedOn': '2026-11-04',
+          }
+        : resignation?['status'],
     'tl': tl,
     'daysLeft': 17,
     'acceptedAt': resignation?['hrAcceptedAt'],
@@ -262,6 +287,7 @@ class FakeLifecycle {
           'noticeDays': 60,
           'lastDayByNotice': '2026-12-31',
           'canResign': canResign,
+          'reasons': ?reasons,
         });
       case ('POST', '/lifecycle/resignation'):
         final input = body as Map<String, dynamic>;
@@ -293,6 +319,17 @@ class FakeLifecycle {
         return json({'ok': true});
       case ('GET', '/lifecycle/manager/resignations'):
         return json({'resignations': managerResignations});
+      case ('GET', '/lifecycle/manager/leavers'):
+        return json({'leavers': managerLeavers});
+    }
+    final fileMatch = RegExp(
+      r'^/lifecycle/offboarding/handover/([^/]+)/file$',
+    ).firstMatch(path);
+    if (fileMatch != null && method == 'GET') {
+      final item = _item(fileMatch.group(1)!);
+      return item['upload'] == null
+          ? json({'error': 'No file on this item'}, 404)
+          : json({'url': 'https://files.example.test/${item['id']}'});
     }
     if (handoverMatch != null) {
       final item = _item(handoverMatch.group(1)!);
@@ -331,6 +368,11 @@ class FakeLifecycle {
     }
     if (leaverMatch != null) {
       if (method == 'GET' && leaverMatch.group(2) == null) {
+        if (leaverNeedsExit &&
+            resignation?['status'] != 'accepted' &&
+            exitType == null) {
+          return json({'error': 'No exit for this person'}, 404);
+        }
         return json(leaver(leaverMatch.group(1)!));
       }
       if (method == 'PUT' && leaverMatch.group(2) == '/handover') {

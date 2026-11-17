@@ -34,6 +34,11 @@ List<OffStep> resignationSteps(ResignationView resignation) {
     'release_early' => 'Early release',
     _ => action!.at == null ? 'Accepted' : 'Accepted ${shortDay(action.at!)}',
   };
+  // Someone with no manager sends it straight to HR: no manager step.
+  final hasManager =
+      resignation.managerName != null ||
+      resignation.manager != null ||
+      resignation.withManager;
   return [
     OffStep(
       'Sent',
@@ -42,11 +47,12 @@ List<OffStep> resignationSteps(ResignationView resignation) {
           ? null
           : shortDay(resignation.submittedAt!),
     ),
-    OffStep(
-      manager,
-      resignation.withManager ? OffStepState.current : OffStepState.done,
-      sub: managerSub,
-    ),
+    if (hasManager)
+      OffStep(
+        manager,
+        resignation.withManager ? OffStepState.current : OffStepState.done,
+        sub: managerSub,
+      ),
     OffStep(
       'HR',
       resignation.withManager
@@ -110,19 +116,15 @@ class _OwnResignationTabState extends State<OwnResignationTab> {
     super.dispose();
   }
 
-  /// HR accepting while the tab is open brings the before-you-go list.
-  void _storeChanged() {
-    if (_page == null) _loadPage();
-  }
+  /// HR accepting while the tab is open brings the before-you-go list, and
+  /// every later read (a push, a pull, the app back in front) refreshes it.
+  void _storeChanged() => _loadPage();
 
   Future<void> _loadPage() async {
-    final resignation = widget.store.resignation;
-    if (_loadingPage ||
-        resignation == null ||
-        !resignation.accepted ||
-        !widget.store.showsOffboardingPage) {
-      return;
-    }
+    final store = widget.store;
+    final onNotice =
+        store.resignation?.accepted == true || store.exitWithoutResignation;
+    if (_loadingPage || !onNotice || !store.showsOffboardingPage) return;
     _loadingPage = true;
     try {
       final page = await widget.store.api.fetchOffboarding();
@@ -163,7 +165,11 @@ class _OwnResignationTabState extends State<OwnResignationTab> {
     listenable: widget.store,
     builder: (context, _) {
       final resignation = widget.store.resignation;
-      if (resignation == null) return const SizedBox.shrink();
+      if (resignation == null) {
+        return widget.store.exitWithoutResignation
+            ? _exitOnNotice(context)
+            : const SizedBox.shrink();
+      }
       return resignation.accepted
           ? _onNotice(context, resignation)
           : _beforeAccepted(resignation);
@@ -228,6 +234,50 @@ class _OwnResignationTabState extends State<OwnResignationTab> {
       const SizedBox(height: 16),
     ],
   );
+
+  /// R2b for an exit HR started (retirement, end of contract): the same
+  /// countdown and list, with no resignation behind it.
+  Widget _exitOnNotice(BuildContext context) {
+    final page = _page;
+    final items = page == null
+        ? const <BeforeYouGoItem>[]
+        : beforeYouGoItems(
+            context,
+            store: widget.store,
+            data: page,
+            managerFirst: firstName(page.managerName),
+            onChanged: _loadPage,
+            onOpenDocuments: widget.onOpenDocuments,
+            withSettlement: true,
+          );
+    final tl = page?.tl ?? widget.store.me.offboarding?.tl;
+    return Column(
+      key: const ValueKey('resignation-tab-exit'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        OffNoticeCard(
+          lastDay: tl,
+          acceptedAt: page?.acceptedAt,
+          noticeFrom: page?.noticeFrom,
+          daysLeft: page?.daysLeft,
+          today: widget.today,
+        ),
+        if (items.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          BeforeYouGoCard(items: items),
+        ],
+        if (page != null && tl != null) ...[
+          const SizedBox(height: 12),
+          OffDetailRows([
+            if (page.exitType case final type?) ('Exit', exitTypeLabel(type)),
+            ('Last working day', fullDay(tl)),
+          ]),
+        ],
+        const OffPrivacyLine(resignationPrivacy),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
 
   /// R2b: the countdown lives here, never on My Team.
   Widget _onNotice(BuildContext context, ResignationView resignation) {
@@ -298,38 +348,71 @@ class _ManagerLeaverTabState extends State<ManagerLeaverTab> {
   String? _error;
   bool _saving = false;
   bool _markingDone = false;
+  bool _loading = false;
   final _newItem = TextEditingController();
   final _note = TextEditingController();
   String _savedNote = '';
 
   String get _first => firstName(widget.name) ?? widget.name;
 
+  /// The report's resignation while it is still with the manager or HR:
+  /// there is no exit yet, so the tab is drawn from it alone.
+  ResignationView? get _open {
+    final r = widget.store.resignationOf(widget.userId);
+    return r != null && !r.accepted ? r : null;
+  }
+
   @override
   void initState() {
     super.initState();
     _note.addListener(() => setState(() {}));
+    widget.store.addListener(_storeChanged);
     _load();
   }
 
   @override
   void dispose() {
+    widget.store.removeListener(_storeChanged);
     _newItem.dispose();
     _note.dispose();
     super.dispose();
   }
 
+  /// The store read again (a push, a pull, the app back in front): HR may
+  /// have accepted, or the leaver uploaded.
+  void _storeChanged() {
+    if (!mounted) return;
+    if (_open != null) {
+      setState(() {});
+      return;
+    }
+    _load();
+  }
+
   Future<void> _load() async {
+    // Before HR accepts there is no exit to ask about (the server says
+    // "No exit for this person"): the resignation says where it stands.
+    if (_open != null) {
+      if (_error != null) setState(() => _error = null);
+      return;
+    }
+    if (_loading) return;
+    _loading = true;
     try {
       final view = await widget.store.api.fetchLeaver(widget.userId);
       if (!mounted) return;
       setState(() {
         _view = view;
         _error = null;
-        _savedNote = view.handover.note ?? '';
-        _note.text = _savedNote;
+        final saved = view.handover.note ?? '';
+        // A note being written is kept; an untouched one follows the server.
+        if (_note.text.trim() == _savedNote.trim()) _note.text = saved;
+        _savedNote = saved;
       });
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
+    } finally {
+      _loading = false;
     }
   }
 
@@ -396,6 +479,7 @@ class _ManagerLeaverTabState extends State<ManagerLeaverTab> {
 
   @override
   Widget build(BuildContext context) {
+    if (_open case final open?) return _beforeAccepted(open);
     final view = _view;
     if (view == null) {
       return OffLoadState(
@@ -414,15 +498,20 @@ class _ManagerLeaverTabState extends State<ManagerLeaverTab> {
       key: const ValueKey('manager-leaver-tab'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (view.onNotice)
+        if (view.onNotice) ...[
           OffNoticeCard(
             lastDay: view.tl ?? resignation?.lastDay,
             acceptedAt: view.acceptedAt,
             noticeFrom: resignation?.submittedAt,
             daysLeft: view.daysLeft,
             today: widget.today,
-          )
-        else if (resignation != null)
+          ),
+          // An exit HR started has no resignation: say what it is.
+          if (resignation == null && view.exitType != null) ...[
+            const SizedBox(height: 12),
+            OffDetailRows([('Exit', exitTypeLabel(view.exitType))]),
+          ],
+        ] else if (resignation != null)
           OffCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -507,6 +596,85 @@ class _ManagerLeaverTabState extends State<ManagerLeaverTab> {
                   busy: _markingDone,
                   onPressed: view.handover.items.isEmpty ? null : _markDone,
                 ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  /// R8b before HR accepts: where the resignation stands, what comes next,
+  /// and what {first} wrote. No checklist yet: there is no exit to hang it on.
+  Widget _beforeAccepted(ResignationView r) {
+    final action = r.manager;
+    final next = r.withManager
+        ? 'It is with you. Accept it, agree another last day or release '
+              '$_first early from Team › Requests; HR then confirms the last day.'
+        : 'With HR to confirm $_first\'s last day.';
+    return Column(
+      key: const ValueKey('manager-leaver-tab'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        OffCard(
+          key: const ValueKey('manager-leaver-before-accepted'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Expanded(child: OffOverline('Where it stands')),
+                  OffStatusPill(resignationStatusLabel(r)),
+                ],
+              ),
+              const SizedBox(height: 16),
+              OffStepper(resignationSteps(r)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        OffCard(
+          key: const ValueKey('manager-leaver-next'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'What comes next',
+                style: offText(15, weight: FontWeight.w600),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                next,
+                style: offText(13, color: OffColors.secondary, height: 19),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Once HR accepts, you add the handover checklist for $_first here.',
+                style: offText(13, color: OffColors.secondary, height: 19),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        OffDetailRows([
+          if (r.submittedAt case final sent?) ('Sent on', fullDay(sent)),
+          if (r.lastDayByNotice case final day?)
+            ('Last day by notice', fullDay(day)),
+          if (action case final a?
+              when a.action == 'change_day' && a.date != null)
+            ('You agreed', fullDay(a.date!)),
+          if (action case final a?
+              when a.action == 'release_early' && a.date != null)
+            ('Release on', fullDay(a.date!)),
+          ('Reason', r.reason),
+        ]),
+        if (r.note case final note?) ...[
+          const SizedBox(height: 12),
+          OffCard(
+            color: OffColors.inset,
+            child: Text('“$note”', style: offText(13, height: 19)),
+          ),
+        ],
+        const OffPrivacyLine(
+          'This tab is private. Only you and HR can see it.',
+        ),
         const SizedBox(height: 16),
       ],
     );
@@ -598,16 +766,41 @@ class _ManagerLeaverTabState extends State<ManagerLeaverTab> {
                             height: 20,
                           ),
                         ),
-                        Text(
-                          item.upload == null
-                              ? 'Waiting for $_first'
-                              : [
-                                  item.upload!.label,
-                                  if (item.upload!.at case final at?)
+                        if (item.upload case final upload?)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                HandoverUploadChip(
+                                  key: ValueKey(
+                                    'manager-handover-open-${item.id}',
+                                  ),
+                                  upload: upload,
+                                  onTap: () => openHandoverUpload(
+                                    context,
+                                    widget.store.api,
+                                    item,
+                                  ),
+                                ),
+                                if (upload.at case final at?)
+                                  Text(
                                     'Uploaded ${shortDay(at)}',
-                                ].join(' · '),
-                          style: offText(12, color: OffColors.secondary),
-                        ),
+                                    style: offText(
+                                      12,
+                                      color: OffColors.secondary,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          )
+                        else
+                          Text(
+                            'Waiting for $_first',
+                            style: offText(12, color: OffColors.secondary),
+                          ),
                       ],
                     ),
                   ),

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../shared/app_toast.dart';
 import 'offboarding_dates.dart';
 import 'offboarding_models.dart';
+import 'offboarding_page.dart' show OffboardingChrome;
 import 'offboarding_store.dart';
 import 'offboarding_ui.dart';
 
@@ -29,11 +30,15 @@ class ExitInterviewScreen extends StatefulWidget {
     required this.store,
     required this.interview,
     this.managerFirst,
+    this.chrome = const OffboardingChrome(),
   });
 
   final OffboardingStore store;
   final ExitInterviewState interview;
   final String? managerFirst;
+
+  /// The shell's header and tabs, as R3 wears them.
+  final OffboardingChrome chrome;
 
   @override
   State<ExitInterviewScreen> createState() => _ExitInterviewScreenState();
@@ -92,6 +97,8 @@ class _ExitInterviewScreenState extends State<ExitInterviewScreen> {
       return OffScaffold(
         key: const ValueKey('exit-interview-sent'),
         title: 'Exit interview',
+        header: widget.chrome.header,
+        bottomNav: widget.chrome.bottomNav,
         children: [
           OffCard(
             child: Column(
@@ -114,6 +121,8 @@ class _ExitInterviewScreenState extends State<ExitInterviewScreen> {
       return OffScaffold(
         key: const ValueKey('exit-interview-locked'),
         title: 'Exit interview',
+        header: widget.chrome.header,
+        bottomNav: widget.chrome.bottomNav,
         children: [
           OffCard(
             child: Column(
@@ -137,6 +146,8 @@ class _ExitInterviewScreenState extends State<ExitInterviewScreen> {
     return OffScaffold(
       key: const ValueKey('exit-interview'),
       title: 'Exit interview',
+      header: widget.chrome.header,
+      bottomNav: widget.chrome.bottomNav,
       bottom: OffPrimaryButton(
         key: const ValueKey('exit-interview-send'),
         label: 'Send to HR',

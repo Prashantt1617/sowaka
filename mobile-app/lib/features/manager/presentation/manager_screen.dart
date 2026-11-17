@@ -59,9 +59,11 @@ import '../../lifecycle/offboarding/offboarding.dart'
     show
         ManagerLeaverTab,
         ManagerResignationRequests,
+        OffboardingRoutes,
         OffboardingStore,
         OwnResignationTab,
-        ResignEntryRow;
+        ResignEntryRow,
+        openOffboardingDestination;
 import '../../face_id/face_check_screen.dart' show FaceCheckOutcome;
 import '../../face_id/face_setup_screen.dart';
 import '../../lifecycle/onboarding/data/onboarding_api.dart';
@@ -130,6 +132,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
   late AuthSession _session;
   StreamSubscription<Map<String, dynamic>>? _notificationSubscription;
   StreamSubscription<Map<String, dynamic>>? _receivedSubscription;
+  StreamSubscription<ManagerTab>? _tabWatch;
   AppLifecycleListener? _lifecycle;
 
   @override
@@ -176,8 +179,20 @@ class _ManagerScreenState extends State<ManagerScreen> {
         NotificationBadge.arrived();
         final type = '${data['type'] ?? ''}';
         if (type.isNotEmpty) _bloc.refreshRequestsNow(type);
+        // A resignation, HR accepting, a handover: the screens about leaving
+        // read again, so what the push says is already there when it is opened.
+        if (OffboardingStore.isOffboardingPush(data)) {
+          unawaited(OffboardingStore.of(_session).refresh());
+        }
       },
     );
+    // The Team and Action tabs stay built; coming back to one reads what may
+    // have moved on since (a report resigning, HR accepting).
+    _tabWatch = _bloc.stream.map((state) => state.tab).distinct().listen((tab) {
+      if (tab == ManagerTab.manage || tab == ManagerTab.quick) {
+        unawaited(OffboardingStore.of(_session).revalidate());
+      }
+    });
     // The bell's dot: anything unread since the inbox was last opened, read
     // now and again whenever the app comes back to the front.
     unawaited(NotificationBadge.refresh(_session));
@@ -188,6 +203,9 @@ class _ManagerScreenState extends State<ManagerScreen> {
         _bloc.setInBackground(false);
         unawaited(NotificationBadge.refresh(_session));
         unawaited(LifecycleMeStore.instance.refresh(HttpOnboardingApi(session: _session)));
+        // Back to the front: what HR or the manager did meanwhile shows.
+        final offboarding = OffboardingStore.of(_session);
+        if (offboarding.loaded) unawaited(offboarding.refresh());
       },
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -228,6 +246,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
     if (_ownsBloc) _bloc.dispose();
     _notificationSubscription?.cancel();
     _receivedSubscription?.cancel();
+    _tabWatch?.cancel();
     _lifecycle?.dispose();
     // The feed's bloc, kept by the controller for the session, goes with it.
     _connectComposerController.dispose();
@@ -500,6 +519,11 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // Onboarding's own (meetings, starter tasks, shared notes, nudges, a
     // joiner for their manager): their screens open over the shell.
     if (openOnboardingDestination(context, data)) return;
+    // Offboarding's (a resignation, HR accepting, the handover, the exit
+    // interview): the tab or page it is about, once the store has read it.
+    if (openOffboardingDestination(data, OffboardingStore.of(_session), _offboardingRoutes)) {
+      return;
+    }
     switch (destination) {
       case 'connect_post':
       case 'connect_comment':
@@ -566,6 +590,32 @@ class _ManagerScreenState extends State<ManagerScreen> {
         _bloc.add(const ChangeManagerTab(ManagerTab.connect));
     }
   }
+
+  /// Where an offboarding push opens, in this shell.
+  late final OffboardingRoutes _offboardingRoutes = OffboardingRoutes(
+    openRequests: (resignationId) {
+      if (!mounted) return;
+      OffboardingStore.of(_session).focusResignation(resignationId);
+      _openTeamRequests();
+    },
+    openOwnResignation: () {
+      if (mounted) _openProfile(on: ProfileTab.resignation);
+    },
+    openOffboarding: ({section}) {
+      if (!mounted) return;
+      _bloc.add(const ChangeManagerTab(ManagerTab.quick));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _quickActionsController.openOffboarding(section: section);
+      });
+    },
+    openLeaver: (userId) {
+      if (!mounted) return;
+      _bloc.add(const ChangeManagerTab(ManagerTab.manage));
+      if (_teamMember(userId) != null) {
+        _openTeamMember(userId, ProfileEntry.elsewhere, on: ProfileTab.resignation);
+      }
+    },
+  );
 
   void _openGameChallenge(String gameKey, String challengeId) {
     final hook = widget.onOpenGameChallenge;
@@ -662,10 +712,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
   /// fetched as the colleague view ([colleagueProfileTabs]). False only when
   /// there is nobody to open. Registered as [openPersonProfile], so other
   /// libraries reach it without importing the shell.
-  bool _openTeamMember(String userId, ProfileEntry from) {
+  bool _openTeamMember(String userId, ProfileEntry from, {ProfileTab? on}) {
     final dashboard = _bloc.state.dashboard;
     if (!mounted || userId.isEmpty || dashboard == null) return false;
-    final openOn = openingTabFor(from);
+    final openOn = on ?? openingTabFor(from);
     if (userId == _session.user.id) {
       Navigator.of(context).popUntil((route) => route.isFirst);
       _openProfile(on: openOn);
@@ -882,6 +932,15 @@ class _ManagerScreenState extends State<ManagerScreen> {
                       onOpenComposer: _connectComposerController.openComposer,
                       onNotifications: () => _openNotifications(context),
                       onProfilePhotoUpdated: _updateProfilePhoto,
+                      // "Save your documents" on the Resignation tab (R2b):
+                      // Action › Payroll, where the payslips and Form 16 are.
+                      onOpenDocuments: () {
+                        _closeProfile();
+                        _bloc.add(const ChangeManagerTab(ManagerTab.quick));
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) _quickActionsController.openPayroll();
+                        });
+                      },
                     ),
                 ],
               ),

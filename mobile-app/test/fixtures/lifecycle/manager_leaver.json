@@ -9,43 +9,43 @@
   "status": {
     "exitType": "resignation",
     "exitTypeLabel": "Resignation",
-    "acceptedOn": "2026-11-16",
-    "tl": "2026-11-20",
+    "acceptedOn": "2026-11-17",
+    "tl": "2026-11-21",
     "daysLeft": 4
   },
-  "tl": "2026-11-20",
+  "tl": "2026-11-21",
   "daysLeft": 4,
-  "acceptedAt": "2026-11-16T17:26:02.210Z",
+  "acceptedAt": "2026-11-17T03:47:06.310Z",
   "resignation": {
-    "id": "9920db70-b815-4905-becd-3d5229390a01",
+    "id": "6f198214-303e-4d7a-a761-b624a0decf08",
     "userId": "ravi",
     "managerUserId": "mgr",
     "managerName": "Meera Iyer",
     "reason": "Better opportunity",
     "note": "Thank you for three great years.",
-    "submittedAt": "2026-11-16T17:26:01.552Z",
+    "submittedAt": "2026-11-17T03:47:05.526Z",
     "noticeDays": 30,
-    "lastDayByNotice": "2026-12-16",
+    "lastDayByNotice": "2026-12-17",
     "status": "accepted",
     "manager": {
       "action": "release_early",
-      "date": "2026-11-20",
+      "date": "2026-11-21",
       "note": "Fine by me",
-      "at": "2026-11-16T17:26:01.552Z",
+      "at": "2026-11-17T03:47:05.526Z",
       "byName": "Meera Iyer"
     },
-    "hrAcceptedAt": "2026-11-16T17:26:01.552Z",
+    "hrAcceptedAt": "2026-11-17T03:47:05.526Z",
     "hrAcceptedByName": "Hema Rao",
-    "agreedLastDay": "2026-11-20",
+    "agreedLastDay": "2026-11-21",
     "withdrawnAt": null,
-    "journeyId": "eb544344-23d4-4e0c-a964-9ce01db84acd",
-    "tl": "2026-11-20",
+    "journeyId": "4bfc5d77-563b-48ba-bbfe-83ae44d99e46",
+    "tl": "2026-11-21",
     "daysLeft": 4
   },
   "handover": {
     "items": [
       {
-        "id": "5df8a1ff-2c72-46df-99d8-ec8b81826b71",
+        "id": "c3725391-3d3c-464c-810b-790a67303a6c",
         "title": "Design system file",
         "done": false,
         "doneAt": null,
@@ -53,11 +53,11 @@
           "kind": "link",
           "name": "docs.example/design-system",
           "url": "https://docs.example/design-system",
-          "at": "2026-11-16T17:26:01.552Z"
+          "at": "2026-11-17T03:47:05.526Z"
         }
       },
       {
-        "id": "ed103ad4-6399-4f0c-8af3-22608e1a33e7",
+        "id": "6e912b69-ae3e-4d17-b4bf-162a6dd27c85",
         "title": "Open projects",
         "done": false,
         "doneAt": null,
@@ -65,11 +65,11 @@
           "kind": "link",
           "name": "docs.example/projects",
           "url": "https://docs.example/projects",
-          "at": "2026-11-16T17:26:01.552Z"
+          "at": "2026-11-17T03:47:05.526Z"
         }
       },
       {
-        "id": "6d9a6bfc-7a3f-4d0a-9cbf-c164703a294b",
+        "id": "197cdc8c-7e98-4c20-9ab5-387cb1de5f95",
         "title": "Vendor list",
         "done": false,
         "doneAt": null,
@@ -77,14 +77,14 @@
       }
     ],
     "note": "Please share by Friday.",
-    "addedAt": "2026-11-16T17:26:02.255Z",
-    "dueAt": "2026-11-13T00:00:00.000Z",
+    "addedAt": "2026-11-17T03:47:06.375Z",
+    "dueAt": "2026-11-14T00:00:00.000Z",
     "done": false,
     "doneAt": null
   },
   "tasks": [
     {
-      "id": "1f2962e0-f81b-48b2-8a07-70e27092415c",
+      "id": "16335491-3a33-4461-97f1-a2a63c96a6c1",
       "systemKey": "send_resignation",
       "phase": "resignation",
       "title": "Send resignation",
@@ -98,12 +98,12 @@
       "opensAt": null,
       "dueAt": null,
       "dueLabel": "Any time",
-      "doneAt": "2026-11-16T17:26:02.210Z",
+      "doneAt": "2026-11-17T03:47:06.310Z",
       "doneByName": "Automatic",
       "late": false
     },
     {
-      "id": "59f9c03b-52eb-4828-832c-875b1a97d534",
+      "id": "b3557082-5d92-493b-b368-ea35a32c481a",
       "systemKey": "manager_resignation_action",
       "phase": "resignation",
       "title": "Accept, change last day or release early",
@@ -117,12 +117,12 @@
       "opensAt": null,
       "dueAt": null,
       "dueLabel": "Shown on the HR board",
-      "doneAt": "2026-11-16T17:26:02.210Z",
+      "doneAt": "2026-11-17T03:47:06.310Z",
       "doneByName": "Automatic",
       "late": false
     },
     {
-      "id": "aeb1ba62-703c-4408-9a0c-c48a5ba0ebe4",
+      "id": "49420276-6ec4-402c-9944-4743f61553ef",
       "systemKey": "handover_checklist",
       "phase": "when_accepted",
       "title": "Handover checklist and note",
@@ -133,15 +133,15 @@
       "surface": "app",
       "mustDo": true,
       "status": "done",
-      "opensAt": "2026-11-16T00:00:00.000Z",
-      "dueAt": "2026-11-19T00:00:00.000Z",
-      "dueLabel": "Thu 19 Nov",
-      "doneAt": "2026-11-16T17:26:02.255Z",
+      "opensAt": "2026-11-17T00:00:00.000Z",
+      "dueAt": "2026-11-20T00:00:00.000Z",
+      "dueLabel": "Fri 20 Nov",
+      "doneAt": "2026-11-17T03:47:06.375Z",
       "doneByName": "Meera Iyer",
       "late": false
     },
     {
-      "id": "81fb68a8-d116-40f9-92d2-63eef5354042",
+      "id": "4358b1c5-fee1-41f1-b67b-85c4c4a64e68",
       "systemKey": "upload_handover",
       "phase": "notice_period",
       "title": "Upload handover items",
@@ -153,12 +153,12 @@
       "mustDo": true,
       "status": "todo",
       "opensAt": null,
-      "dueAt": "2026-11-13T00:00:00.000Z",
-      "dueLabel": "Fri 13 Nov",
+      "dueAt": "2026-11-14T00:00:00.000Z",
+      "dueLabel": "Sat 14 Nov",
       "late": true
     },
     {
-      "id": "3d1009d7-590f-4520-b0c3-ea099786490f",
+      "id": "735fc128-1191-4efa-bb5d-8f0b317fbd6a",
       "systemKey": "exit_interview",
       "phase": "notice_period",
       "title": "Exit interview",
@@ -169,13 +169,13 @@
       "surface": "app",
       "mustDo": false,
       "status": "todo",
-      "opensAt": "2026-11-15T00:00:00.000Z",
-      "dueAt": "2026-11-20T00:00:00.000Z",
-      "dueLabel": "Fri 20 Nov",
+      "opensAt": "2026-11-16T00:00:00.000Z",
+      "dueAt": "2026-11-21T00:00:00.000Z",
+      "dueLabel": "Sat 21 Nov",
       "late": false
     },
     {
-      "id": "7d9b536c-143f-4a40-91e1-ecc7497bed42",
+      "id": "9a9b6e2f-e4ea-4694-a0a2-ef3435d25734",
       "systemKey": "save_documents",
       "phase": "notice_period",
       "title": "Save your documents",
@@ -186,13 +186,13 @@
       "surface": "app",
       "mustDo": false,
       "status": "todo",
-      "opensAt": "2026-11-16T00:00:00.000Z",
-      "dueAt": "2026-11-20T00:00:00.000Z",
-      "dueLabel": "Fri 20 Nov",
+      "opensAt": "2026-11-17T00:00:00.000Z",
+      "dueAt": "2026-11-21T00:00:00.000Z",
+      "dueLabel": "Sat 21 Nov",
       "late": false
     },
     {
-      "id": "a8714476-9880-42e1-ac7b-2d67439fc492",
+      "id": "b18e4bea-01f2-4e88-be9d-b4f0e8ed2a48",
       "systemKey": "mark_handover_done",
       "phase": "last_day",
       "title": "Mark handover done",
@@ -203,9 +203,9 @@
       "surface": "app",
       "mustDo": false,
       "status": "locked",
-      "opensAt": "2026-11-20T00:00:00.000Z",
-      "dueAt": "2026-11-20T00:00:00.000Z",
-      "dueLabel": "Fri 20 Nov",
+      "opensAt": "2026-11-21T00:00:00.000Z",
+      "dueAt": "2026-11-21T00:00:00.000Z",
+      "dueLabel": "Sat 21 Nov",
       "late": false
     }
   ],
