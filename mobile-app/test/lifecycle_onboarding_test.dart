@@ -672,6 +672,58 @@ void main() {
       expect(find.text('4 to do today'), findsOneWidget);
     });
 
+    testWidgets('on the Team tab\'s tree (M0) the section only hands the joiners over', (tester) async {
+      final store = LifecycleMeStore()..value = const LifecycleMe(enabled: true);
+      final api = FakeOnboardingApi()
+        ..joiners = const [
+          JoinerSummary(journeyId: 'j2', name: 'Riya Joshi', userId: 'riya', stage: 'probation', dayLabel: 'Week 6'),
+          JoinerSummary(journeyId: 'j1', name: 'Kabir Mehta', userId: 'kabir', stage: 'welcome_week1', dayLabel: 'Day 1', todayCount: 4),
+        ];
+      await pumpPage(tester, Scaffold(body: ListView(children: [NewJoinersSection(shell: shellFor(api, DateTime(2026, 12, 1, 9)), store: store, inTree: true)])));
+      // The Team tab draws them on its Direct Reports tree; nothing here.
+      expect(find.byKey(const ValueKey('new-joiners')), findsNothing);
+      expect(find.text('Kabir Mehta'), findsNothing);
+      final tree = NewJoinersSection.tree.value;
+      expect(tree, isNotNull);
+      expect(tree!.joiners.map((j) => j.name), ['Kabir Mehta', 'Riya Joshi'], reason: 'most urgent first');
+      expect(NewJoinersSection.joinerUserIds.value, {'kabir', 'riya'});
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(NewJoinersSection.tree.value, isNull, reason: 'gone with the tab');
+    });
+
+    testWidgets('the Direct Reports filter pills: All n · New joiners n, black when on', (tester) async {
+      await pumpPage(tester, const Scaffold(body: Center(child: JoinersFilterPills(allCount: 4, joinersCount: 2))));
+      expect(find.text('All 4'), findsOneWidget);
+      expect(find.text('New joiners 2'), findsOneWidget);
+      expect(NewJoinersSection.joinersOnly.value, isFalse);
+      await tester.tap(find.byKey(const ValueKey('filter-joiners')));
+      await tester.pump();
+      expect(NewJoinersSection.joinersOnly.value, isTrue);
+      final on = tester.widget<Material>(find.descendant(of: find.byKey(const ValueKey('filter-joiners')), matching: find.byType(Material)));
+      expect(on.color, OnbColors.text);
+      await tester.tap(find.byKey(const ValueKey('filter-all')));
+      await tester.pump();
+      expect(NewJoinersSection.joinersOnly.value, isFalse);
+    });
+
+    testWidgets('a joiner card in probation: the week in blue, what is next in green (M0 Riya)', (tester) async {
+      await pumpPage(
+        tester,
+        Scaffold(
+          body: JoinerCard(
+            joiner: const JoinerSummary(journeyId: 'j2', name: 'Riya Joshi', designation: 'UX Writer', stage: 'probation', dayLabel: 'Week 6', nextEvent: 'Check-in Fri'),
+            now: DateTime(2026, 12, 1),
+            onTap: () {},
+          ),
+        ),
+      );
+      expect(find.text('🌱 Week 6'), findsOneWidget);
+      expect(find.text('Check-in Fri'), findsOneWidget);
+      expect(find.text('🌱 Week 6 · Check-in Fri'), findsNothing);
+      expect(find.byKey(const ValueKey('joiner-plant-badge')), findsOneWidget);
+      expect(find.bySemanticsLabel('Riya Joshi, UX Writer, Week 6, Check-in Fri'), findsOneWidget);
+    });
+
     testWidgets('no joiners → no section', (tester) async {
       final store = LifecycleMeStore()..value = const LifecycleMe(enabled: true);
       final api = FakeOnboardingApi();

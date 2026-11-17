@@ -1261,10 +1261,14 @@ void _shellHooks() {
     final bloc = await _boot(tester, _manager, _managerTeam);
     await _tab(tester, bloc, ManagerTab.manage);
     await shot('M0', 'team-tab');
-    final joiners = find.byKey(const ValueKey('new-joiners'));
-    if (joiners.evaluate().isNotEmpty) {
-      await _scrollTo(tester, joiners);
-      await shot('M0', 'new-joiners-section', full: false);
+    // M0b: the New joiners pill on the Direct Reports heading; only joiners
+    // stay on the tree.
+    final pill = find.byKey(const ValueKey('filter-joiners'));
+    if (pill.evaluate().isNotEmpty) {
+      await _scrollTo(tester, pill);
+      await _tap(tester, pill);
+      await shot('M0b', 'new-joiners-filter');
+      await _tap(tester, find.byKey(const ValueKey('filter-all')));
     }
   });
 

@@ -359,24 +359,33 @@ class _MyTeamViewState extends State<_MyTeamView> {
     super.initState();
     NewJoinersSection.joinerUserIds.addListener(_onJoiners);
     NewJoinersSection.joinersOnly.addListener(_onJoiners);
+    NewJoinersSection.tree.addListener(_onJoiners);
   }
 
   @override
   void dispose() {
     NewJoinersSection.joinerUserIds.removeListener(_onJoiners);
     NewJoinersSection.joinersOnly.removeListener(_onJoiners);
+    NewJoinersSection.tree.removeListener(_onJoiners);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
-    // Joiners are drawn first, as joiner cards, by the New joiners section;
-    // they are not listed a second time below (unless searching).
-    final joiners = widget.canManage && _query.isEmpty
+    final showJoiners = widget.canManage && _query.isEmpty;
+    // M0 (artboard AppTeams): with one department of reports, the joiners
+    // are the first cards on the Direct Reports tree and the filter pills sit
+    // on that heading. With several departments they keep their own section
+    // above the team cards.
+    final inTree = _ledTeams(data.team).length <= 1;
+    final tree = showJoiners && inTree ? NewJoinersSection.tree.value : null;
+    // Joiners are drawn as joiner cards; they are not listed a second time
+    // as plain rows (unless searching).
+    final joiners = showJoiners
         ? NewJoinersSection.joinerUserIds.value
         : const <String>{};
-    final joinersOnly = joiners.isNotEmpty && NewJoinersSection.joinersOnly.value;
+    final joinersOnly = (joiners.isNotEmpty || tree != null) && NewJoinersSection.joinersOnly.value;
     final filtered = _query.isEmpty
         ? data.team.where((member) => member.isSelf || !joiners.contains(member.userId)).toList()
         : data.team
@@ -398,11 +407,14 @@ class _MyTeamViewState extends State<_MyTeamView> {
         const SizedBox(height: 12),
         // M0: a manager's reports in onboarding or probation, first; no
         // joiners (or the lifecycle off) and it is not there at all.
-        if (widget.canManage && _query.isEmpty)
-          NewJoinersSection(allCount: data.team.where((m) => m.reportsToViewer).length),
+        if (showJoiners)
+          NewJoinersSection(
+            allCount: _directReportCount(data.team, tree),
+            inTree: inTree,
+          ),
         // The viewer is part of the team the server sends, so there is no
         // separate card for them any more — their row simply says "(You)".
-        if (joinersOnly)
+        if (joinersOnly && tree == null)
           const SizedBox.shrink()
         else if (filtered.isEmpty)
           Padding(
@@ -426,6 +438,21 @@ class _MyTeamViewState extends State<_MyTeamView> {
             openTeam: _openTeam,
             onToggle: _toggleTeam,
             searching: _query.isNotEmpty,
+            directReportsTrailing: tree == null
+                ? null
+                : JoinersFilterPills(
+                    allCount: _directReportCount(data.team, tree),
+                    joinersCount: tree.joiners.length,
+                  ),
+            leadingReports: [
+              for (final joiner in tree?.joiners ?? const <JoinerSummary>[])
+                JoinerCard(
+                  joiner: joiner,
+                  now: tree!.now,
+                  onTap: () => tree.open(joiner),
+                ),
+            ],
+            onlyLeadingReports: joinersOnly && tree != null,
             row: (member) => _TeamMemberRow(
               member: member,
               canManage: widget.canManage,
@@ -439,6 +466,17 @@ class _MyTeamViewState extends State<_MyTeamView> {
       ],
     );
   }
+}
+
+/// "All n": everyone who reports to the viewer, and the joiners not yet in
+/// the team list (still pre-boarding, so no account yet).
+int _directReportCount(List<TeamMember> team, JoinersInTree? tree) {
+  final reports = team.where((m) => m.reportsToViewer && !m.isSelf).toList();
+  final ids = {for (final m in reports) m.userId};
+  final notListed = (tree?.joiners ?? const <JoinerSummary>[])
+      .where((j) => j.userId == null || !ids.contains(j.userId))
+      .length;
+  return reports.length + notListed;
 }
 
 // ── One person's team, as the Team tab draws it ──────────────────────────────
@@ -547,15 +585,18 @@ List<_TeamDepartmentGroup> _ledTeams(List<TeamMember> members) {
 Widget _teamHeading(String title, {_TeamSizing sizing = _TeamSizing.teamTab}) =>
     Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontFamily: 'Sora',
-          color: const Color(0xFF222222),
-          fontSize: sizing.name,
-          height: sizing.nameHeight / sizing.name,
-          fontWeight: FontWeight.w700,
-        ),
+      child: _teamHeadingText(title, sizing: sizing),
+    );
+
+Widget _teamHeadingText(String title, {_TeamSizing sizing = _TeamSizing.teamTab}) =>
+    Text(
+      title,
+      style: TextStyle(
+        fontFamily: 'Sora',
+        color: const Color(0xFF222222),
+        fontSize: sizing.name,
+        height: sizing.nameHeight / sizing.name,
+        fontWeight: FontWeight.w700,
       ),
     );
 
@@ -576,12 +617,16 @@ List<Widget> _teamTree({
   bool searching = false,
   String coreTitle = 'My Team',
   _TeamSizing sizing = _TeamSizing.teamTab,
+  Widget? directReportsTrailing,
+  List<Widget> leadingReports = const [],
+  bool onlyLeadingReports = false,
 }) {
   final led = _ledTeams(members);
   final self = members.where((member) => member.isSelf).firstOrNull;
   // Level 1: nobody reports to them, so their team is one flat list —
-  // their manager, them, their peers (node 2488:90748).
-  if (led.isEmpty) {
+  // their manager, them, their peers (node 2488:90748). Joiners still
+  // pre-boarding are reports too: they make it a Direct Reports tree.
+  if (led.isEmpty && leadingReports.isEmpty) {
     return [
       _teamHeading(coreTitle, sizing: sizing),
       for (final member in _coreTeam(members))
@@ -594,7 +639,9 @@ List<Widget> _teamTree({
     // people they lead. Someone with no manager has no such card; their
     // own card heads the page instead (node 2503:92534).
     if (_coreOthers(members).isEmpty) ...[
-      if (self != null) ...[row(self), const SizedBox(height: 16)],
+      // With one department their own card already heads the Direct
+      // Reports tree below; drawing it here too showed "(You)" twice.
+      if (self != null && led.length > 1) ...[row(self), const SizedBox(height: 16)],
     ] else ...[
       if (openTeam == coreTitle || searching)
         _OpenTeamBox(
@@ -635,13 +682,30 @@ List<Widget> _teamTree({
       // One department: a plain "Direct Reports" list — their own
       // card off the tree, their reports on it, always shown in full
       // rather than behind a card to open (node 2488:91055).
-      ...led.expand(
-        (group) => [
-          _teamHeading('Direct Reports', sizing: sizing),
-          if (self != null) row(self),
-          _DirectReportsTree(members: group.members, row: row),
-        ],
-      ),
+      ...[
+        if (directReportsTrailing == null)
+          _teamHeading('Direct Reports', sizing: sizing)
+        else
+          // M0: the filter pills on the heading's right.
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                Expanded(child: _teamHeadingText('Direct Reports', sizing: sizing)),
+                directReportsTrailing,
+              ],
+            ),
+          ),
+        if (self != null) row(self),
+        _DirectReportsTree(
+          children: [
+            ...leadingReports,
+            if (!onlyLeadingReports)
+              for (final member in led.firstOrNull?.members ?? const <TeamMember>[])
+                row(member),
+          ],
+        ),
+      ],
   ];
 }
 
@@ -2207,12 +2271,11 @@ class _TeamDepartmentGroup {
 /// Used only when every one of your reports shares a single department; more
 /// than one and they are grouped into team cards instead (_TeamStack).
 class _DirectReportsTree extends StatelessWidget {
-  const _DirectReportsTree({required this.members, required this.row});
+  const _DirectReportsTree({required this.children});
 
-  final List<TeamMember> members;
-
-  /// Draws one person: the Team tab's row, or a profile's.
-  final Widget Function(TeamMember member) row;
+  /// One card per person, top to bottom: the Team tab's rows (joiners
+  /// first), or a profile's.
+  final List<Widget> children;
 
   /// 28 to the cards, 16 above the first, 12 between them (node 3459:61996:
   /// pl-[28px] pt-[16px] gap-[12px]).
@@ -2227,7 +2290,7 @@ class _DirectReportsTree extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final (index, member) in members.indexed)
+          for (final (index, child) in children.indexed)
             IntrinsicHeight(
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2235,8 +2298,8 @@ class _DirectReportsTree extends StatelessWidget {
                   CustomPaint(
                     painter: _BranchLinePainter(
                       first: index == 0,
-                      last: index == members.length - 1,
-                      gap: index == members.length - 1 ? 0 : _gap,
+                      last: index == children.length - 1,
+                      gap: index == children.length - 1 ? 0 : _gap,
                       leadIn: _leadIn,
                     ),
                     child: const SizedBox(width: _indent),
@@ -2244,9 +2307,9 @@ class _DirectReportsTree extends StatelessWidget {
                   Expanded(
                     child: Padding(
                       padding: EdgeInsets.only(
-                        bottom: index == members.length - 1 ? 0 : _gap,
+                        bottom: index == children.length - 1 ? 0 : _gap,
                       ),
-                      child: row(member),
+                      child: child,
                     ),
                   ),
                 ],

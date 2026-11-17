@@ -67,6 +67,7 @@ import '../../lifecycle/offboarding/offboarding.dart'
 import '../../face_id/face_check_screen.dart' show FaceCheckOutcome;
 import '../../face_id/face_setup_screen.dart';
 import '../../lifecycle/onboarding/data/onboarding_api.dart';
+import '../../lifecycle/onboarding/data/onboarding_models.dart';
 import '../../lifecycle/onboarding/onboarding_launcher.dart';
 import '../../lifecycle/onboarding/presentation/manager/new_joiners_section.dart';
 import '../../lifecycle/onboarding/presentation/profile_onboarding_card.dart';
