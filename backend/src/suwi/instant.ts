@@ -34,7 +34,7 @@ const fmt = (iso: string) => { const [y, m, d] = iso.split('-').map(Number); ret
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** Anything that makes a question more than a plain lookup: those go to the model. */
-const MORE = /\b(this|last|past|next) (week|month|year)|\bweek|\bmonth|\btimes\b|more than|at least|or more|\d+\s*\+|\bdepartment|\bteam\b|\bmanager|\bbetween\b|\bsince\b|\bfrom\b|\btrend|\bwhy\b|\bcompare|\baverage|\bweekday|\bmonday|\btuesday|\bwednesday|\bthursday|\bfriday|\bsaturday|\bsunday|\bexcept\b|\band not\b|\bbut not\b|\bnot on leave|\bpattern|\boften|\bmost\b(?! recent)|\bpercent|\bratio|\bremind|\bapprove|\bdecline|\breject|\bsafe\b|\boverdue|\bescalat|\bdraft|\bwrite|\bsend\b|\bemail|\bmessage/;
+const MORE = /\b(this|last|past|next) (week|month|year)|\bweek|\bmonth|\btimes\b|more than|at least|or more|\d+\s*\+|\bdepartment|\bteam\b|\bmanager|\bbetween\b|\bsince\b|\bfrom\b|\btrend|\bwhy\b|\bcompare|\baverage|\bweekday|\bmonday|\btuesday|\bwednesday|\bthursday|\bfriday|\bsaturday|\bsunday|\bexcept\b|\band not\b|\bbut not\b|\bnot on leave|\bpattern|\boften|\bmost\b(?! recent)|\bpercent|\bratio|\bremind|\bapprove|\bdecline|\breject|\bsafe\b|\boverdue|\bescalat|\bdraft|\bwrite|\bsend\b|\bemail|\bmessage|\bnext \d+|\bdays?\b|\bupcoming\b|\bcoming up\b/;
 const ASKS = /^(who|which|list|show|tell|give|anyone|is anyone|are there|how many|what|whats|what's|any)\b/;
 
 /** The date a question is about: today unless it names one; null when it names one we can't read. */

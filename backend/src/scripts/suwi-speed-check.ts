@@ -22,6 +22,10 @@ process.env.GEMINI_API_KEY = 'stub-key';
 const REDIS = Boolean(process.env.REDIS_URL);
 
 const STUB_ROUND_MS = Number(process.env.STUB_ROUND_MS ?? 900);
+/** The small model writing a short answer with thinking at its least: quicker than a full round. */
+const STUB_SMALL_MS = Number(process.env.STUB_SMALL_MS ?? 600);
+/** Every model call the stub saw: which model, and whether it was offered tools. */
+const stubCalls: { model: string; tools: boolean }[] = [];
 const PROD_BYTES_PER_S = 100 * 1024;
 
 type Call = { name: string; input: Record<string, unknown> };
@@ -44,10 +48,11 @@ globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
   }
   if (!String(url).includes('api.anthropic.com')) return realFetch(url as string, init);
-  const body = JSON.parse(String(init?.body ?? '{}')) as { messages: { role: string }[] };
+  const body = JSON.parse(String(init?.body ?? '{}')) as { messages: { role: string }[]; model?: string; tools?: unknown[] };
+  stubCalls.push({ model: String(body.model ?? ''), tools: Boolean(body.tools?.length) });
   const round = body.messages.filter((m) => m.role === 'assistant').length;
   const step = plan[Math.min(round, plan.length - 1)];
-  await new Promise((r) => setTimeout(r, STUB_ROUND_MS));
+  await new Promise((r) => setTimeout(r, /haiku|lite/.test(String(body.model)) ? STUB_SMALL_MS : STUB_ROUND_MS));
   const content = 'tools' in step
     ? step.tools.map((t, i) => ({ type: 'tool_use', id: `${t.name}-${round}-${i}`, name: t.name, input: t.input }))
     : [{ type: 'text', text: step.text }];
@@ -298,6 +303,105 @@ async function main() {
     ok('Gemini streaming hands over the text as it arrives', partials.join(' / ') === 'Two people  / Two people are on leave.', partials.join(' / '));
     const st = sr.content.filter((b) => b.type === 'text').map((b) => (b as { text: string }).text).join('');
     ok('the streamed reply is whole, thought hidden, signatures kept', st === 'Two people are on leave.' && (sr.raw as { thoughtSignature?: string }[]).some((p) => p.thoughtSignature === 'sig1') && sr.usage.output_tokens === 6, `${st} ${JSON.stringify(sr.raw)}`);
+  }
+
+  // —— Round three: the planner, prepared answers, the small writer, kept tools, boot warm ——
+  if (process.env.SUWI_TESTS !== '0') {
+    console.log('');
+    const planner = await import('../suwi/planner');
+    const { SUWI_SMALL_MODEL } = await import('../suwi/digest');
+    const { toolByName } = await import('../suwi/tools');
+    const { instantAnswer } = await import('../suwi/instant');
+    const { orgSuwiData } = await import('../suwi/orgData');
+    const { adminDecideLeave } = await import('../services/leave.service');
+    const ctx = contextFor(hr as never, settings.levels, today);
+    const fire = (method: string, path: string) => new Promise<void>((resolve) => {
+      const req = { method, path, auth: { user: { org: ORG } } };
+      const res = { end: () => { resolve(); return res; } };
+      readCache.forgetReadsOnWrite(req as never, res as never, () => { (res as { end: () => unknown }).end(); });
+    });
+    const lastAudit = async (q: string) => raw.collection('suwi_audit').find({ org: ORG, question: q }).sort({ at: -1 }).limit(1).next() as Promise<{ timing?: { path: string; totalMs: number; rounds?: unknown[]; writer?: string } } | null>;
+    process.env.SUWI_INSTANT = '1';
+    const Q = 'What needs my attention today?';
+    const FIVE: Call[] = [AS(day), { name: 'review_requests', input: {} }, { name: 'claims_to_check', input: {} }, { name: 'missing_details', input: {} }, { name: 'payroll_run_check', input: {} }];
+
+    // Before (as prod's audit shows): the model picks the five checks, then writes. No Redis, so no answer cache.
+    kept.setSuwiRedisOff(true);
+    await orgSuwiData(ORG, today, seed.HR, true);
+    process.env.SUWI_PLANNER = '0';
+    plan = [{ tools: FIVE }, { text: 'Three requests are overdue and two people are absent today.' }];
+    let t0 = Date.now(); await askSuwi(hr as never, { question: Q, page: 'overview' }); const beforeMs = Date.now() - t0;
+    process.env.SUWI_PLANNER = '1';
+
+    // The planner: one model call, the small model, no tools offered.
+    await fire('PATCH', '/admin/leaves/x/decision'); // a fresh data version: nothing prepared yet
+    await orgSuwiData(ORG, today, seed.HR, true);
+    stubCalls.length = 0;
+    plan = [{ text: 'Three requests are overdue and two people are absent today.' }];
+    t0 = Date.now(); const a1 = await askSuwi(hr as never, { question: Q, page: 'overview' }); const plannerMs = Date.now() - t0;
+    ok('"What needs my attention today?" takes the planner path', a1.path === 'planner', `${a1.path}`);
+    ok('the planner makes exactly one model call: the small model, no tools offered', stubCalls.length === 1 && !stubCalls[0].tools && stubCalls[0].model === SUWI_SMALL_MODEL, JSON.stringify(stubCalls));
+    const pa = await lastAudit(Q);
+    ok('the planner records its path, one writer round and the writer model', pa?.timing?.path === 'planner' && (pa.timing.rounds?.length ?? 0) === 1 && Boolean(pa.timing.writer), JSON.stringify(pa?.timing));
+
+    // Asked again (another page, so not the answer cache): served prepared.
+    stubCalls.length = 0;
+    t0 = Date.now(); const a2 = await askSuwi(hr as never, { question: Q, page: 'punchlog' }); const preparedMs = Date.now() - t0;
+    ok('asked again it is served prepared, under 100 ms, with no model call', a2.path === 'prepared' && preparedMs < 100 && stubCalls.length === 0, `${a2.path}, ${preparedMs} ms, ${stubCalls.length} calls`);
+
+    // A leave approval: the prepared answer isn't used again.
+    await adminDecideLeave(seed.HR, String(pendingLeave[1]._id), { decision: 'approved' });
+    await fire('PATCH', '/admin/leaves/x/decision');
+    stubCalls.length = 0;
+    const a3 = await askSuwi(hr as never, { question: Q, page: 'employees' });
+    ok('after a leave approval the prepared answer is made again, not reused', a3.path === 'planner' && stubCalls.length === 1, `${a3.path}, ${stubCalls.length} calls`);
+
+    // Prepared ahead, off the request path (the warm-up's way), for a second person.
+    plan = [{ text: 'Prepared ahead.' }];
+    const made = await planner.prepareAttention(hr2 as never, today);
+    stubCalls.length = 0;
+    t0 = Date.now(); const a4 = await askSuwi(hr2 as never, { question: Q, page: 'overview' }); const aheadMs = Date.now() - t0;
+    ok('an answer prepared ahead is served under 100 ms with no model call', made && a4.path === 'prepared' && aheadMs < 100 && stubCalls.length === 0 && a4.text === 'Prepared ahead.', `${made}, ${a4.path}, ${aheadMs} ms`);
+
+    // The writer unavailable: the plain lines, still an answer.
+    await fire('PATCH', '/admin/leaves/x/decision');
+    const realF = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => (String(url).includes('api.anthropic.com') ? new Response('down', { status: 400 }) : realF(url as string, init))) as typeof fetch;
+    const a5 = await askSuwi(hr as never, { question: Q, page: 'leave' });
+    globalThis.fetch = realF;
+    ok('with the writer unavailable the attention answer falls back to plain lines', a5.path === 'planner' && /attention|waiting|Today|Nothing/.test(a5.text), a5.text.slice(0, 120));
+
+    // A period question: the planner, no model at all; the table equals the tool's rows.
+    stubCalls.length = 0;
+    const from = `${today.slice(0, 7)}-01`;
+    const pq = await askSuwi(hr as never, { question: 'Who was late 3 or more times this month?', page: 'attendance' });
+    const tool = (await toolByName('attendance_summary')!.run(ctx, { from, to: today, status: 'late', minLate: 3, limit: 200 })) as { data: { rows?: { name: string }[] } };
+    ok('"late 3 or more times this month" is answered by the planner with no model call', pq.path === 'planner' && stubCalls.length === 0, `${pq.path}, ${stubCalls.length} calls`);
+    ok('its table lists exactly the tool\'s people', (pq.tables?.[0]?.rows.length ?? 0) === (tool.data.rows?.length ?? 0) && (pq.tables?.[0]?.rows ?? []).map((r) => r[0]).sort().join('|') === (tool.data.rows ?? []).map((r) => r.name).sort().join('|'), `${pq.tables?.[0]?.rows.length} vs ${tool.data.rows?.length}`);
+    ok('questions with more in them are not planned', planner.planFor(ctx, 'Which department was late most this month?') === null && planner.planFor(ctx, 'Draft a note to people who were late this week') === null);
+    ok('"on leave in the next 7 days" is no longer answered as today (goes to the model)', (await instantAnswer(ctx, 'Who is on leave in the next 7 days?')) === null);
+
+    // missing_details and claims_to_check from the kept bundle equal the full read.
+    await orgSuwiData(ORG, today, seed.HR, true);
+    const mdKept = (await toolByName('missing_details')!.run(ctx, { limit: 200 })) as { data: { matching: number; countsByTask: Record<string, number> } };
+    const ccKept = (await toolByName('claims_to_check')!.run(ctx, { bills: 'none' })) as { data: { pending: number; needsALook: { count: number } } };
+    readCache.enableLifecycleReadCache(false);
+    const mdFull = (await toolByName('missing_details')!.run(ctx, { limit: 200 })) as { data: { matching: number; countsByTask: Record<string, number> } };
+    const ccFull = (await toolByName('claims_to_check')!.run(ctx, { bills: 'none' })) as { data: { pending: number; needsALook: { count: number } } };
+    readCache.enableLifecycleReadCache(true);
+    ok('missing_details from the kept bundle matches the full read', mdKept.data.matching === mdFull.data.matching && JSON.stringify(mdKept.data.countsByTask) === JSON.stringify(mdFull.data.countsByTask), `${mdKept.data.matching} vs ${mdFull.data.matching}`);
+    ok('claims_to_check from the kept bundle matches the full read', ccKept.data.pending === ccFull.data.pending && ccKept.data.needsALook.count === ccFull.data.needsALook.count, `${JSON.stringify(ccKept.data.pending)} vs ${JSON.stringify(ccFull.data.pending)}`);
+
+    console.log(`\n"${Q}" (stub ${STUB_ROUND_MS} ms per full round, ${STUB_SMALL_MS} ms small writer): before ${beforeMs} ms · planner ${plannerMs} ms · prepared ${preparedMs} ms · prepared ahead ${aheadMs} ms`);
+    kept.setSuwiRedisOff(false);
+
+    // Boot: the shared inputs and notices warm before the first look.
+    const warm = await import('../services/lifecycle/warm');
+    readCache.forgetLifecycleReads(null);
+    plan = [{ text: 'Warm at boot.' }];
+    await warm.warmSuwiAtBoot();
+    t0 = Date.now(); await suwiNotices(ctx); const bootNoticeMs = Date.now() - t0;
+    ok('after the boot warm the first notices come from memory', bootNoticeMs < 50, `${bootNoticeMs} ms`);
   }
 
   await raw.command({ profile: 0 } as never);

@@ -7,6 +7,7 @@
 import { companies } from '../config/db';
 import { asLlmTool, contextFor, SUWI_AREAS, SuwiArea, SuwiContext, SuwiLink, SuwiTable, SuwiTool, toolByName, toolAllowed, toolsFor } from './tools';
 import { instantAnswer } from './instant';
+import { keepAttention, planFor, preparedAttention, runPlan } from './planner';
 import { hashOf, keptGet, keptSet, normalQuestion, suwiVersion } from './kept';
 import { callModel, ContentBlock, costUsd, LlmMessage, SuwiLlmError, SUWI_MODEL } from './llm';
 import { auditCol, LEVEL_LABEL, settingsFor, spentThisMonthUsd } from './store';
@@ -26,12 +27,12 @@ export interface SuwiAnswer {
   costUsd: number;
   /** Lists the panel draws as tables under the text (from the tools' data, never written by the model). */
   tables?: SuwiTable[];
-  /** How it was answered: from the kept data with no model, the model, or a kept answer to the same question. */
-  path?: 'instant' | 'model' | 'cache';
+  /** How it was answered: from the kept data with no model, the model, a kept answer to the same question, the planner (its checks + one short write), or an answer prepared ahead. */
+  path?: 'instant' | 'model' | 'cache' | 'planner' | 'prepared';
 }
 
 /** What the audit row records about how long a question took. */
-interface Timing { path: 'instant' | 'model' | 'cache'; totalMs: number; firstTextMs?: number; rounds?: { ms: number; input: number; output: number }[]; live?: boolean }
+interface Timing { path: 'instant' | 'model' | 'cache' | 'planner' | 'prepared'; totalMs: number; firstTextMs?: number; rounds?: { ms: number; input: number; output: number }[]; live?: boolean; writer?: string }
 
 /** A kept answer lives this long; one that read today's attendance (punches change it with no write hook) a minute. */
 const ANSWER_TTL_S = 10 * 60;
@@ -232,6 +233,29 @@ async function answer(
         tools: quick.checked.map((label) => ({ name: `instant:${quick.kind}`, label, ms: timing.totalMs, ok: true })), model: 'none', costUsd: 0, timing,
       } as never);
       return { answer: { text: quick.text, checked: quick.checked, links: quick.links.slice(0, 6), proposals: [], costUsd: 0, tables: quick.tables, path: 'instant' }, live: quick.live };
+    }
+  }
+  // Questions the planner knows (planner.ts): no "which tools?" round. "What needs my attention" is usually
+  // prepared already for this person; else its checks run side by side and the small model writes once.
+  const followUp = Array.isArray(input.history) && input.history.length > 0;
+  if (!attachment && !followUp && process.env.SUWI_PLANNER !== '0') {
+    const plan = planFor(ctx, question);
+    if (plan) {
+      const prepared = plan.intent === 'attention' ? await preparedAttention(ctx) : null;
+      let firstTextMs: number | undefined;
+      const done = prepared ?? await runPlan(ctx, plan, onProgress, (soFar) => { if (firstTextMs === undefined && soFar.trim()) firstTextMs = Date.now() - started; onPartial?.(soFar); }, { spentUsd: spent, budgetUsd: settings.monthlyBudgetUsd });
+      if (!prepared && plan.intent === 'attention') await keepAttention(ctx, done);
+      const path = prepared ? 'prepared' : 'planner';
+      const timing: Timing = {
+        path, totalMs: Date.now() - started, live: done.live,
+        ...(firstTextMs !== undefined ? { firstTextMs } : {}),
+        ...(!prepared && done.writer ? { rounds: [{ ms: done.writer.ms, input: done.writer.input, output: done.writer.output }], writer: done.writer.model } : {}),
+      };
+      await auditCol().insertOne({
+        org: ctx.org, userId: ctx.userId, kind: 'question', at: new Date(), page, question, answer: done.text.slice(0, 50_000), status: 'answered',
+        tools: prepared ? [] : done.tools, model: done.writer?.model ?? 'none', costUsd: prepared ? 0 : done.costUsd, timing,
+      } as never);
+      return { answer: { text: done.text, checked: done.checked, links: done.links, proposals: [], costUsd: prepared ? 0 : done.costUsd, ...(done.tables.length ? { tables: done.tables } : {}), path }, live: done.live };
     }
   }
   const company = await companies().findOne({ id: ctx.org });

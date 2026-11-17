@@ -55,11 +55,24 @@ export async function suwiVersion(org: string): Promise<string | null> {
   } catch (e) { return quietFail(e); }
 }
 
+/**
+ * This process's own count of changes per company (and `_all`), kept beside Redis's: the prepared
+ * answers in memory (planner.ts) key on it, so they too miss after a change when Redis is down.
+ */
+const localVersion = new Map<string, number>();
+
 /** A change Suwi must not answer from before: the next read of every kept copy misses. */
 export async function bumpSuwiVersion(org: string | null): Promise<void> {
+  localVersion.set(org || ALL, (localVersion.get(org || ALL) ?? 0) + 1);
   const r = redis();
   if (!r) return;
   try { await r.incr(`${PREFIX}ver:${org || ALL}`); } catch (e) { quietFail(e); }
+}
+
+/** The company's data version for keys that must work with or without Redis: Redis's when there is one, plus this process's. */
+export async function suwiDataVersion(org: string): Promise<string> {
+  const shared = await suwiVersion(org);
+  return `${shared ?? 'n'}|${localVersion.get(org) ?? 0}.${localVersion.get(ALL) ?? 0}`;
 }
 
 export async function keptGet<T>(key: string): Promise<T | null> {

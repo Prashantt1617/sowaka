@@ -26,7 +26,10 @@ defineTools({
   },
   api: { method: 'GET', path: '/admin/employees/tasks' },
   async run(ctx, i) {
-    const r = await peopleTasks(ctx.userId);
+    // From the company's kept copy when there is one (about 2 s on the throttled database otherwise).
+    const { keptOrgSuwiDataAsync, tasksForViewer } = await import('../orgData');
+    const kept = await keptOrgSuwiDataAsync(ctx.org, ctx.today, ctx.userId).catch(() => null);
+    const r = tasksForViewer(kept?.tasksFull, ctx.payroll) ?? await peopleTasks(ctx.userId);
     const task = TASKS.includes(str(i.task) as TaskKey) ? (str(i.task) as TaskKey) : null;
     const dep = norm(i.department), t = norm(i.text);
     const rows = r.people.filter((p) => (!task || p.tasks.some((x) => x.key === task)) && (!dep || norm(p.department).includes(dep)) && (!t || norm(`${p.name} ${p.employeeId}`).includes(t)));
