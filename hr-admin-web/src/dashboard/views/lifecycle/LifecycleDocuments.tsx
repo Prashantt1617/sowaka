@@ -10,10 +10,10 @@ import { canOpen, canSeePay } from '../../access';
 import { DrawerShell, CloseButton } from '../../drawers/shell';
 import { LoadError, PageActions, SkeletonLines, Spinner, StatusTabs } from '../../ui';
 import {
-  createLetter, getBoard, getJourney, getMergeValues, getSalaryBreakup, isNotAvailable, listLetterTemplates, listLetters, saveLetterDraft, sendLetter, sendOffer,
+  createLetter, getJoinerPicks, getJourney, getMergeValues, getSalaryBreakup, isNotAvailable, listLetterTemplates, listLetters, saveLetterDraft, sendLetter, sendOffer,
   uploadLetterAttachment, uploadLetterPdf, uploadOfferPdf,
 } from '../../../services/lifecycle';
-import type { AttachmentKind, BoardCard, BoardTab, LetterAttachment, LetterEmail, LetterKind, LetterTemplateDTO, LetterView, SalaryBreakup } from '../../../services/lifecycle';
+import type { AttachmentKind, BoardTab, JoinerPick, LetterAttachment, LetterEmail, LetterKind, LetterTemplateDTO, LetterView, SalaryBreakup } from '../../../services/lifecycle';
 import { htmlToPdfBlob } from '../../pdf';
 import { BlobPreview, FilePreview, Field, NotSwitchedOn, Pick, Switch } from './shared';
 import { DOCS_OPEN_KEY, LETTER_TEMPLATE_OPEN_KEY, areaStyle, errText, firstName, inputStyle, readHandoff, shortDay } from './format';
@@ -51,16 +51,21 @@ export function LifecycleDocuments() {
     } catch { return null; }
   });
   const [kind, setKind] = useState<LetterKind>(handoff?.kind && LETTER_KINDS.includes(handoff.kind) ? handoff.kind : 'offer');
-  const [cards, setCards] = useState<Record<BoardTab, BoardCard[]> | null>(null);
+  const [cards, setCards] = useState<Record<BoardTab, JoinerPick[]> | null>(null);
   const [off, setOff] = useState(false);
   const [personKey, setPersonKey] = useState(handoff?.journeyId ? `j:${handoff.journeyId}` : handoff?.userId ? `u:${handoff.userId}` : '');
 
   // Everyone on the onboarding board, for the joiner letters.
   useEffect(() => {
     let live = true;
-    const tabs: BoardTab[] = ['pre_boarding', 'first_week', 'probation'];
-    Promise.all(tabs.map((tab) => getBoard({ tab })))
-      .then((boards) => { if (live) setCards(Object.fromEntries(boards.map((b, i) => [tabs[i], b.columns.flatMap((c) => c.cards)])) as Record<BoardTab, BoardCard[]>); })
+    // One light call (who and where on the board), not the three full boards.
+    getJoinerPicks()
+      .then((joiners) => {
+        if (!live) return;
+        const byTab: Record<BoardTab, JoinerPick[]> = { pre_boarding: [], first_week: [], probation: [] };
+        for (const j of joiners) byTab[j.tab]?.push(j);
+        setCards(byTab);
+      })
       .catch((e) => { if (!live) return; if (isNotAvailable(e)) setOff(true); else setCards({ pre_boarding: [], first_week: [], probation: [] }); });
     return () => { live = false; };
   }, []);

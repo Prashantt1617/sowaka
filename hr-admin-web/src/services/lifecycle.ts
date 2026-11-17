@@ -371,6 +371,9 @@ export const deleteTemplate = (id: string) => api<unknown>(`${L}/templates/${id}
 // Board and journeys
 export const getBoard = (p: { tab: BoardTab; q?: string; filter?: BoardFilter; from?: string; to?: string }) =>
   api<BoardDTO>(`${L}/board${qs(p)}`);
+/** Everyone on the onboarding board, light: the Documents page's joiner picker. */
+export interface JoinerPick { journeyId: string; name: string; designation?: string; dayLabel: string; tab: BoardTab }
+export const getJoinerPicks = () => api<{ joiners: JoinerPick[] }>(`${L}/joiners`).then((r) => r.joiners);
 /** Offers that ended before joining: the board's Closed view (declined, expired, not joining). */
 export interface ClosedJourneyRow {
   journeyId: string; name: string; designation?: string; department?: string;
