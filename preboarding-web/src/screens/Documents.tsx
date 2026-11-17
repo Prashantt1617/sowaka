@@ -12,8 +12,10 @@ import { useMe } from '../session';
 const MAX_BYTES = 10 * 1024 * 1024;
 const TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
 const ACCEPT = '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png';
+/** The server keeps at most 4 files per document (already sent ones count). */
+export const MAX_FILES_PER_DOCUMENT = 4;
 
-/** Reel copy for the documents HR's default template lists (3Rb §5 · 8, W8). The server's title/hint win. */
+/** Reel copy for the documents HR's default template lists (3Rb §5 · 8, W8); the server sends the same for these, and its own words for any other. */
 const DOC_COPY: Record<string, { title: string; hint: string; meta: string }> = {
   id_proof: { title: 'Upload your PAN and Aadhaar', hint: 'Both sides, in good light, with no glare.', meta: 'PAN and Aadhaar, both sides' },
   address_proof: { title: 'Upload an address proof', hint: 'A utility bill, rent agreement or passport page.', meta: 'Utility bill, rent agreement or passport' },
@@ -29,6 +31,8 @@ function copyFor(d: CandidateDocumentView) {
     title: d.title ?? c?.title ?? `Upload your ${d.label.charAt(0).toLowerCase()}${d.label.slice(1)}`,
     hint: d.hint ?? c?.hint ?? '',
     meta: c?.meta ?? d.hint ?? '',
+    // "ID PROOF · PLEASE REDO", not the whole label ("ID PROOF (PAN AND AADHAAR)").
+    tag: d.tag ?? d.label.replace(/\s*\([^)]*\)\s*$/, ''),
   };
 }
 
@@ -54,8 +58,8 @@ function StatusPill({ status }: { status: CandidateDocumentView['status'] }) {
   return <span className={`tag tag--${kind}`}>{text}</span>;
 }
 
-/** Picked-but-not-sent files + the two inputs (camera / file). */
-function usePicker() {
+/** Picked-but-not-sent files + the two inputs (camera / file). `room`: how many more this document takes. */
+function usePicker(room: number) {
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState<string>();
   const add = (list: FileList | File[] | null) => {
@@ -68,8 +72,16 @@ function usePicker() {
         return;
       }
     }
-    setError(undefined);
-    setFiles((cur) => [...cur, ...arr].slice(0, 6));
+    const left = Math.max(0, room - files.length);
+    if (arr.length > left) {
+      setError(
+        left === 0
+          ? `This document already has ${MAX_FILES_PER_DOCUMENT} files. Remove one to add another.`
+          : `Up to ${MAX_FILES_PER_DOCUMENT} files per document: you can add ${left} more.`,
+      );
+      if (left === 0) return;
+    } else setError(undefined);
+    setFiles((cur) => [...cur, ...arr].slice(0, Math.max(0, room)));
   };
   const clear = () => {
     setFiles([]);
@@ -152,13 +164,13 @@ function DocsReels({ docs, update, header }: { docs: CandidateDocumentView[]; up
   const total = docs.length;
   const firstOpen = docs.findIndex((d) => !sentOrDone(d));
   const [i, setI] = useState(firstOpen === -1 ? total : firstOpen);
-  const picker = usePicker();
   const [progress, setProgress] = useState<number>();
   const [busy, setBusy] = useState(false);
   const camId = useId();
   const fileId = useId();
   const h1 = useFocusHeading<HTMLHeadingElement>(i);
   const sent = docs.filter(sentOrDone).length;
+  const picker = usePicker(MAX_FILES_PER_DOCUMENT - (docs[i]?.files.length ?? 0));
 
   useEffect(() => picker.clear(), [i]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -243,7 +255,7 @@ function DocsReels({ docs, update, header }: { docs: CandidateDocumentView[]; up
       </p>
       <section className="reel rise" key={doc.id} aria-labelledby={`doc-${doc.id}`}>
         <p className={`eyebrow ${doc.status === 'sent_back' ? 'eyebrow--orange' : ''}`}>
-          {doc.label.toUpperCase()}
+          {c.tag.toUpperCase()}
           {doc.status === 'sent_back' ? ' · PLEASE REDO' : ''}
         </p>
         <h1 id={`doc-${doc.id}`} className="display" ref={h1} tabIndex={-1}>
@@ -326,7 +338,7 @@ function DocsWeb({
 }) {
   const firstOpen = docs.find((d) => !sentOrDone(d)) ?? docs[0];
   const [sel, setSel] = useState(firstOpen?.id);
-  const picker = usePicker();
+  const picker = usePicker(MAX_FILES_PER_DOCUMENT - (docs.find((d) => d.id === sel)?.files.length ?? 0));
   const [progress, setProgress] = useState<number>();
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
@@ -397,7 +409,7 @@ function DocsWeb({
             const c = copyFor(d);
             const meta =
               d.status === 'sent_back'
-                ? 'HR asked for a new copy'
+                ? 'HR asked for a clearer copy'
                 : d.status === 'in_review'
                   ? d.uploadedAt
                     ? `Uploaded ${fmtWeekday(d.uploadedAt)}`

@@ -1,10 +1,15 @@
 import type { PortalPass } from '../api/types';
 import { addDays } from './format';
 
-/** "Ask HR": a reply to the offer email. One subject everywhere so HR keeps one thread. */
+/**
+ * "Ask HR" subjects (6Zs §12 #20): a reply to the offer email on the offer
+ * screens (P3, the closed links); "Question about my joining" once signed in
+ * (home tiles, Meet us); none on the header's help.
+ */
 export function offerSubject(companyName: string): string {
   return `Re: Your offer from ${companyName}`;
 }
+export const JOINING_SUBJECT = 'Question about my joining';
 
 export function mailto(email: string, subject?: string): string {
   return `mailto:${email}${subject ? `?subject=${encodeURIComponent(subject)}` : ''}`;

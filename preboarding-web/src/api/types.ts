@@ -68,6 +68,8 @@ export interface PortalOfferView {
   /** not in CONTRACT: the dates on the W4 steps ("You accepted · Sun 30 Nov"). */
   acceptedAt?: string;
   finalisedAt?: string;
+  /** not in CONTRACT: P4 "Accepted version · 3 pages". */
+  pdfPages?: number;
 }
 
 export interface TaskView {
@@ -104,7 +106,7 @@ export interface PortalHome {
   tj: string;
   daysToGo: number;
   plant: PlantState;
-  path: Array<{ key: PathKey; label: string; state: PathState }>;
+  path: Array<{ key: PathKey; label: string; state: PathState; due?: string }>;
   upNext?: { key: PathKey; title: string; due?: string; /** not in CONTRACT */ helper?: string };
   tasks: TaskView[];
   batch: { count: number; names: string[] };
@@ -117,6 +119,23 @@ export interface PortalHome {
   reportingTime?: string;
   /** not in CONTRACT: "Open until Mon 8 Dec" on the joined view (Tj + 7 or end of month 1). */
   portalOpenUntil?: string;
+  /** not in CONTRACT: P7a's request waiting on HR (home says so instead of "Can't join on …?"). */
+  pendingDateRequest?: { requestedTj: string };
+  /** not in CONTRACT: which closed screen (view 'closed'). */
+  closedState?: string;
+}
+
+/** not in CONTRACT: what sign-in answers (403, beside `error`) when the candidate's portal is closed. */
+export interface ClosedSignIn {
+  state: 'declined' | 'expired' | 'not_joining' | 'moved_to_app';
+  company: Company;
+  hrContact: HrContact;
+}
+
+/** not in CONTRACT: GET /portal/client/:token, the client a mail's link names (`?c=`). */
+export interface PortalClient {
+  company: Company;
+  hrContact?: HrContact;
 }
 
 export interface DocumentFile {
@@ -136,7 +155,8 @@ export interface CandidateDocumentView {
   uploadedAt?: string;
   reviewedAt?: string;
   files: DocumentFile[];
-  /** not in CONTRACT: reel title and hint ("Upload your PAN and Aadhaar" · "Both sides, in good light…"). */
+  /** not in CONTRACT: reel tag, title and hint ("ID proof" · "Upload your PAN and Aadhaar" · "Both sides, in good light…"). */
+  tag?: string;
   title?: string;
   hint?: string;
   dueAt?: string;
@@ -171,9 +191,10 @@ export interface PortalLetter {
   kind: LetterKind;
   state: LetterState;
   pdfUrl: string;
-  /** not in CONTRACT: display title ("Appointment letter") and file name. */
+  /** not in CONTRACT: display title ("Appointment letter"), file name and page count. */
   title?: string;
   fileName?: string;
+  pages?: number;
 }
 
 export type PortalPass = Day1Pass & {

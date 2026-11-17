@@ -5,7 +5,7 @@ import { portal } from './api/portal';
 import type { PortalHome } from './api/types';
 import { rememberClient, type Bell, type HeaderProps } from './components/Shell';
 import { Spinner, ErrorNote } from './components/ui';
-import { offerSubject } from './lib/links';
+import { JOINING_SUBJECT } from './lib/links';
 import { fmtWeekday } from './lib/format';
 
 interface SessionCtx {
@@ -67,7 +67,7 @@ export function SignedIn() {
 
   const value = useMemo<SessionCtx | null>(() => {
     if (!me) return null;
-    const subject = offerSubject(me.company.name);
+    const subject = JOINING_SUBJECT;
     const bell = bellFor(me);
     return {
       me,

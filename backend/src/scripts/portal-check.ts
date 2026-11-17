@@ -41,6 +41,25 @@ const section = (name: string) => console.log(`\n${name}`);
 const PDF = (text = 'offer') => Buffer.from(`%PDF-1.4\n% ${text}\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n`);
 const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Buffer.from('JFIF fake image bytes')]);
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('fake png body')]);
+/** A real PDF (pdf-lib), for the checks that load or stamp it. */
+async function realPdf(title: string, pages = 2): Promise<Buffer> {
+  const { PDFDocument, StandardFonts } = await import('pdf-lib');
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  for (let i = 1; i <= pages; i += 1) doc.addPage([595, 842]).drawText(`${title} · page ${i}`, { x: 56, y: 760, size: 14, font });
+  return Buffer.from(await doc.save());
+}
+/** The text drawn on a page of a PDF, decoded from its content stream (pdf-lib writes standard-font text as hex strings). */
+async function pageText(pdf: Buffer, pageIndex: number): Promise<string> {
+  const { PDFDocument, PDFRawStream, PDFArray, decodePDFRawStream } = await import('pdf-lib');
+  const doc = await PDFDocument.load(pdf);
+  const page = doc.getPages()[pageIndex < 0 ? doc.getPageCount() + pageIndex : pageIndex];
+  const contents = page.node.Contents();
+  const streams = contents instanceof PDFArray ? contents.asArray().map((ref) => doc.context.lookup(ref)) : [contents];
+  let raw = '';
+  for (const stream of streams) if (stream instanceof PDFRawStream) raw += Buffer.from(decodePDFRawStream(stream).decode()).toString('latin1');
+  return raw.replace(/<([0-9A-Fa-f]+)>/g, (_m, hex: string) => Buffer.from(hex, 'hex').toString('latin1'));
+}
 /** 10:00 IST on a day. */
 const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
 
@@ -53,7 +72,8 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   await db.closeDb();
   await db.connectDb();
 
-  const { addDays, istDate, lifecycleOutbox, clearLifecycleOutbox, formatDay } = await import('../services/lifecycle/emails');
+  const emails = await import('../services/lifecycle/emails');
+  const { addDays, istDate, lifecycleOutbox, clearLifecycleOutbox, formatDay } = emails;
   const offersSvc = await import('../services/lifecycle/offers');
   const docsSvc = await import('../services/lifecycle/documents');
   const lettersSvc = await import('../services/lifecycle/letters');
@@ -149,17 +169,23 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   ok('a made-up token is not found', (await refusal(() => offersSvc.openOfferLink('x'.repeat(43), '1.1.1.1'))).status === 404);
 
   section('Offer: revise before acceptance, old link replaced');
-  offer = await offersSvc.reviseOffer(HR, A, { ctc: 1450000 });
-  ok('revising a sent offer makes v2 with the changed field', offer.version === 2 && offer.status === 'draft' && JSON.stringify(offer.changedFields) === '["ctc"]', offer);
-  ok('v1 is replaced', offer.versions[0].status === 'replaced');
-  ok('the old link says replaced, without terms or PDF', (link = await offersSvc.openOfferLink(token1, '1.1.1.1')).state === 'replaced' && link.pdfUrl === null && !('ctc' in link.fields));
-  ok('the old link cannot accept', (await refusal(() => offersSvc.acceptOffer(token1, { ip: '1.1.1.1' }))).status === 409);
-  ok('a revision with nothing changed is refused', (await refusal(() => offersSvc.reviseOffer(HR, A, { ctc: 1450000 }))).message.length > 0);
-  await offersSvc.uploadOfferPdf(HR, A, { originalname: 'Offer letter v2.pdf', buffer: PDF('v2') });
+  offer = await offersSvc.reviseOffer(HR, A, { ctc: 1450000, designation: 'Senior Product Designer' });
+  ok('revising a sent offer makes v2 with the changed fields', offer.version === 2 && offer.status === 'draft' && JSON.stringify(offer.changedFields) === '["designation","ctc"]', offer);
+  ok('a saved revision leaves v1 as sent (nothing has gone to the candidate)', offer.versions[0].status === 'sent');
+  ok('…so the old link still opens v1 with its terms', (link = await offersSvc.openOfferLink(token1, '1.1.1.1')).state === 'offer' && link.version === 1 && link.fields.ctc === 1400000 && link.pdfUrl !== null, link);
+  ok('…and the journey keeps v1’s terms until HR sends v2', (await db.journeys().findOne({ id: A }))?.designation === 'Product Designer');
+  offer = await offersSvc.reviseOffer(HR, A, { designation: 'Product Designer' });
+  ok('editing the draft again keeps only the real changes', offer.version === 2 && JSON.stringify(offer.changedFields) === '["ctc"]', offer.changedFields);
+  await offersSvc.uploadOfferPdf(HR, A, { originalname: 'Offer letter v2.pdf', buffer: await realPdf('Offer v2', 3) });
   await offersSvc.sendOffer(HR, A, {});
   const token2 = tokenIn(lastMail(KABIR)!.html);
+  ok('sent: v1 is replaced', (await offersSvc.offerView(A))!.versions[0].status === 'replaced');
+  ok('the old link says replaced, without terms or PDF', (link = await offersSvc.openOfferLink(token1, '1.1.1.1')).state === 'replaced' && link.pdfUrl === null && !('ctc' in link.fields));
+  ok('the old link cannot accept', (await refusal(() => offersSvc.acceptOffer(token1, { ip: '1.1.1.1' }))).status === 409);
   link = await offersSvc.openOfferLink(token2, '1.1.1.1');
   ok('the new link opens v2 with its changed fields', link.state === 'offer' && link.version === 2 && link.changedFields?.[0] === 'ctc' && link.fields.ctc === 1450000);
+  ok('the link counts the PDF’s pages (P4 "Accepted version · 3 pages")', link.pdfPages === 3, link.pdfPages);
+  ok('the Up-next helper names the changes in plain words, without the reply-by date', portalSvc.changesLine(['tj', 'ctc', 'validTill']) === 'Joining date and salary changed' && portalSvc.changesLine(['validTill']) === undefined);
   ok('the default email body names the role and the reply-by date', lastMail(KABIR)!.html.includes('Product Designer') && lastMail(KABIR)!.html.includes(formatDay(addDays(today, 7))));
 
   section('Offer: accept (latest only), finalise');
@@ -178,6 +204,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   ok('the journey is finalised', (await db.journeys().findOne({ id: A }))?.status === 'finalised');
   ok('finalising twice is refused', (await refusal(() => offersSvc.finaliseOffer(HR, A))).status === 409);
   link = await offersSvc.openOfferLink(token2, '1.1.1.1');
+  ok('the login email’s sign-in link carries the client (logo and HR on a fresh device)', loginMail.html.includes(`/sign-in?c=${emails.clientToken(ORG)}`), loginMail.html);
   ok('the link now says "all set" with the masked email and both dates', link.state === 'finalised' && link.loginEmailMasked === 'ka***@example.com' && Boolean(link.acceptedAt && link.finalisedAt));
 
   // ─── Sign-in ──────────────────────────────────────────────────────────────
@@ -194,8 +221,8 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   clearLifecycleOutbox();
   ok('forgot for an unknown email says ok and sends nothing', (await auth.forgotPassword('nobody@example.com', '7.7.7.7')).ok && lifecycleOutbox().length === 0);
   await auth.forgotPassword(KABIR, '7.7.7.7');
-  const resetToken = decodeURIComponent(/reset\?token=([^"&]+)/.exec(lastMail(KABIR)?.html ?? '')?.[1] ?? '');
-  ok('forgot for the candidate emails a reset link', resetToken.length > 30);
+  const resetToken = /\/reset\/([A-Za-z0-9_-]+)/.exec(lastMail(KABIR)?.html ?? '')?.[1] ?? '';
+  ok('forgot for the candidate emails a reset link on the portal’s route (/reset/:token)', resetToken.length > 30 && lastMail(KABIR)!.html.includes(`http://localhost:5181/reset/${resetToken}?c=`) && !lastMail(KABIR)!.html.includes('reset?token='), lastMail(KABIR)?.html);
   ok('a new password under 8 characters is refused', (await refusal(() => auth.resetPassword(resetToken, 'short'))).status === 400);
   ok('8 characters of any kind is enough (the portal’s rule)', auth.checkNewPassword('abcdefgh') === 'abcdefgh');
   await auth.resetPassword(resetToken, 'NewPassword9');
@@ -230,9 +257,9 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   ok('alg "none" is refused', auth.verifyPortalToken(`${Buffer.from('{"alg":"none","typ":"JWT"}').toString('base64url')}.${portalToken.split('.')[1]}.`) === null);
 
   type Mock = { status: number; body: unknown; next: boolean; headers: Record<string, string> };
-  const call = (router: { handle: (req: unknown, res: unknown, next: (err?: unknown) => void) => void } | ((req: never, res: never, next: (e?: unknown) => void) => unknown), method: string, url: string, bearer?: string, payload: unknown = {}): Promise<Mock> =>
+  const call = (router: { handle: (req: unknown, res: unknown, next: (err?: unknown) => void) => void } | ((req: never, res: never, next: (e?: unknown) => void) => unknown), method: string, url: string, bearer?: string, payload: unknown = {}, extraHeaders: Record<string, string> = {}): Promise<Mock> =>
     new Promise((resolve) => {
-      const headers: Record<string, string> = bearer ? { authorization: `Bearer ${bearer}` } : {};
+      const headers: Record<string, string> = { ...(bearer ? { authorization: `Bearer ${bearer}` } : {}), ...extraHeaders };
       const out: Mock = { status: 200, body: undefined, next: false, headers: {} };
       const req = { method, url, originalUrl: url, path: url.split('?')[0], headers, header: (n: string) => headers[n.toLowerCase()], body: payload, query: {}, params: {}, socket: { remoteAddress: '127.0.0.1' }, requestId: 'check' };
       const res = {
@@ -252,6 +279,10 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   const meViaRoute = await call(portalRouter as never, 'GET', '/me', portalToken);
   ok('GET /portal/me answers a portal token', meViaRoute.status === 200 && (meViaRoute.body as { status?: string })?.status === 'active', meViaRoute);
   ok('the dashboard routes refuse a portal token', (await call(lifecycleOfferRouter as never, 'GET', '/letters', portalToken)).status === 401);
+  const client = await call(portalRouter as never, 'GET', `/client/${emails.clientToken(ORG)}`);
+  ok('GET /portal/client/:token names the client and its HR (no session needed)', client.status === 200 && (client.body as { company?: { name?: string }; hrContact?: { email?: string } })?.company?.name === 'Sowaka Test' && (client.body as { hrContact?: { email?: string } }).hrContact?.email === 'hr@sowaka.test', client);
+  const forgedClient = `${Buffer.from(OTHER).toString('base64url')}.${emails.clientToken(ORG).split('.')[1]}`;
+  ok('…and a made-up or re-pointed client token is not found', (await call(portalRouter as never, 'GET', `/client/${forgedClient}`)).status === 404 && (await call(portalRouter as never, 'GET', '/client/abc.def')).status === 404);
 
   // ─── Home ─────────────────────────────────────────────────────────────────
   section('Portal home');
@@ -283,7 +314,21 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   ok('Meet us items carry a tag and a subtitle', items.every((i) => i.tag && i.subtitle));
   await db.journeys().updateOne({ id: A }, { $set: { 'meetUs.managerNote': { kind: 'text', text: 'Your portfolio made us rethink our own onboarding.' } } });
   const withNote = await portalSvc.meetItems((await db.journeys().findOne({ id: A }))!);
-  ok('the manager’s note names its author and role', withNote[0].id === 'manager_note' && withNote[0].authorName === 'Neha Rao' && withNote[0].authorRole === 'Design lead · your manager', withNote[0]);
+  ok('the manager’s note names its author and role once (the portal adds "· your manager")', withNote[0].id === 'manager_note' && withNote[0].authorName === 'Neha Rao' && withNote[0].authorRole === 'Design lead', withNote[0]);
+  // A video note: a signed media link, because <video src> cannot send the portal's Bearer token.
+  const clip = Buffer.from('fake mp4 bytes for the manager video note');
+  const clipFile = await files.storeFile(ORG, A, { name: 'Hello from Neha.mp4', contentType: 'video/mp4', bytes: clip }, 'manager');
+  await db.journeys().updateOne({ id: A }, { $set: { 'meetUs.managerNote': { kind: 'video', fileId: clipFile.id } } });
+  const videoNote = (await portalSvc.meetItems((await db.journeys().findOne({ id: A }))!))[0];
+  ok('the video note’s url is a signed /portal/media link, not the Bearer-only /portal/files', /^\/portal\/media\/[\w-]+\.[\w-]+$/.test(videoNote.videoUrl ?? ''), videoNote.videoUrl);
+  const mediaPath = (videoNote.videoUrl ?? '').replace(/^\/portal/, '');
+  const media = await call(portalRouter as never, 'GET', mediaPath);
+  ok('GET /portal/media/:token plays without a session', media.status === 200 && Buffer.isBuffer(media.body) && (media.body as Buffer).equals(clip) && media.headers['Content-Type'] === 'video/mp4' && media.headers['Accept-Ranges'] === 'bytes', { status: media.status, headers: media.headers });
+  const ranged = await call(portalRouter as never, 'GET', mediaPath, undefined, {}, { range: 'bytes=0-3' });
+  ok('…and serves byte ranges (Safari asks for them before it plays)', ranged.status === 206 && (ranged.body as Buffer).toString() === 'fake' && ranged.headers['Content-Range'] === `bytes 0-3/${clip.length}`, { status: ranged.status, headers: ranged.headers });
+  ok('…a tampered media link is not found', (await call(portalRouter as never, 'GET', `${mediaPath.slice(0, -3)}xyz`)).status === 404);
+  ok('…an expired one neither', auth.verifyMediaToken(auth.mediaPath(A, clipFile.id, new Date(Date.now() - 13 * 3_600_000)).split('/').pop()!) === null);
+  ok('…and a link only opens its own journey’s file', (await call(portalRouter as never, 'GET', auth.mediaPath('another-journey', clipFile.id).replace(/^\/portal/, ''))).status === 404);
   await db.journeys().updateOne({ id: A }, { $unset: { 'meetUs.managerNote': '' } });
   ok('an unknown item is refused', (await refusal(() => portalSvc.markMeetSeen(journeyA, 'nope'))).status === 404);
   await portalSvc.markMeetSeen(journeyA, 'company_video');
@@ -295,16 +340,20 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   journeyA = (await db.journeys().findOne({ id: A }))!;
   let docs = await portalSvc.portalDocuments(journeyA);
   ok('the list comes from the template', JSON.stringify(docs.map((d) => d.docKey)) === '["id_proof","address","photo"]', docs.map((d) => d.docKey));
-  ok('each document carries its reel title, hint and due date', JSON.stringify(docs.map((d) => d.title)) === JSON.stringify(['Upload your ID proof', 'Upload your address proof', 'Upload your passport photo']) && docs.every((d) => d.dueAt === addDays(tj, -5)) && docs[0].hint === 'Both sides, in good light, with no glare.' && docs[2].hint === 'Plain background, face clearly visible.', docs.map((d) => [d.title, d.hint, d.dueAt]));
+  ok('each document carries its reel tag, title, hint and due date', JSON.stringify(docs.map((d) => [d.tag, d.title])) === JSON.stringify([['ID proof', 'Upload your ID proof'], ['Address proof', 'Upload an address proof'], ['Passport photo', 'Upload your passport photo']]) && docs.every((d) => d.dueAt === addDays(tj, -5)) && docs[0].hint === 'Both sides, in good light, with no glare.' && docs[2].hint === 'Plain background, face clearly visible.', docs.map((d) => [d.title, d.hint, d.dueAt]));
   const idDoc = docs.find((d) => d.docKey === 'id_proof')!;
   const addrDoc = docs.find((d) => d.docKey === 'address')!;
   ok('a text file named .pdf is refused (bytes, not the name)', (await refusal(() => docsSvc.uploadDocumentFiles(journeyA, idDoc.id, [{ originalname: 'id.pdf', buffer: Buffer.from('hello, not a pdf') }]))).status === 400);
   ok('over 10 MB is refused', (await refusal(() => docsSvc.uploadDocumentFiles(journeyA, idDoc.id, [{ originalname: 'big.pdf', buffer: Buffer.concat([PDF(), Buffer.alloc(10 * 1024 * 1024)]) }]))).status === 413);
   ok('a mixed batch stores nothing when one file is bad', (await refusal(() => docsSvc.uploadDocumentFiles(journeyA, idDoc.id, [{ originalname: 'a.jpg', buffer: JPG }, { originalname: 'b.gif', buffer: Buffer.from('GIF89a') }]))).status === 400
     && (await db.candidateDocuments().findOne({ id: idDoc.id }))!.fileIds.length === 0);
-  await docsSvc.uploadDocumentFiles(journeyA, idDoc.id, [{ originalname: 'aadhaar.jpg', buffer: JPG }, { originalname: 'pan.png', buffer: PNG }]);
+  // Multer hands over a browser's UTF-8 file name read as latin1 ("Aadhaar – front.jpg" as "Aadhaar â\u0080\u0093 front.jpg").
+  const misread = (name: string) => Buffer.from(name, 'utf8').toString('latin1');
+  await docsSvc.uploadDocumentFiles(journeyA, idDoc.id, [{ originalname: misread('Aadhaar – front.jpg'), buffer: JPG }, { originalname: 'pan.png', buffer: PNG }]);
   let idRow = (await db.candidateDocuments().findOne({ id: idDoc.id }))!;
   const idFile = (await db.lifecycleFiles().findOne({ id: idRow.fileIds[0] }))!;
+  ok('a non-ASCII file name is stored as the candidate named it, not mojibake', idFile.name === 'Aadhaar – front.jpg', idFile.name);
+  ok('uploadName leaves real names alone (Résumé, an en dash already decoded, plain ASCII)', files.uploadName('Résumé.pdf') === 'Résumé.pdf' && files.uploadName('Letter – Neel.pdf') === 'Letter – Neel.pdf' && files.uploadName('bill.pdf') === 'bill.pdf' && files.uploadName(misread('Appointment letter – Neel Kapoor.pdf')) === 'Appointment letter – Neel Kapoor.pdf');
   ok('uploaded: in review with two files, typed from their bytes', idRow.status === 'in_review' && idRow.fileIds.length === 2 && idFile.contentType === 'image/jpeg' && idFile.uploadedBy === 'candidate');
   ok('stored under .local-uploads (no S3 here)', idFile.objectKey.startsWith(`lifecycle/${ORG}/${A}/`) && (await files.readFileBytes(idFile)).equals(JPG));
   ok('the dashboard serves the file to its own org', (await files.fileForOrg(ORG, idFile.id)).id === idFile.id);
@@ -315,6 +364,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   ok('sent back with the note; the candidate is emailed', idRow.status === 'sent_back' && idRow.hrNote?.includes('cut off') && Boolean(lastMail(KABIR)?.html.includes('cut off')));
   home = await portalSvc.portalHome((await db.journeys().findOne({ id: A }))!);
   ok('Up next leads with the sent-back document', home.upNext?.key === 'docs' && home.upNext.title === 'Re-upload your ID proof', home.upNext);
+  ok('the path keeps Docs current while a document is sent back', home.path.find((p) => p.key === 'docs')?.state === 'current', home.path);
   docs = await portalSvc.portalDocuments((await db.journeys().findOne({ id: A }))!);
   ok('the sent-back document is listed first', docs[0].id === idDoc.id);
   journeyA = (await db.journeys().findOne({ id: A }))!;
@@ -333,6 +383,18 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   const letterRows = await db.letters().find({ journeyId: A }).toArray();
   ok('appointment letter and NDA drafted from the accepted offer', letterRows.length === 2 && letterRows.every((l) => l.values.ctc === '₹14,50,000' && l.values.managerName === 'Neha Rao' && l.values.ctcWords === 'Rupees fourteen lakh fifty thousand only'), letterRows.map((l) => l.values.ctc));
   ok('without PDFs they stay locked on the portal', (await lettersSvc.portalLetters(journeyA)).every((l) => l.state === 'locked'));
+  home = await portalSvc.portalHome(journeyA);
+  ok('every required document approved: Docs done', home.path.find((p) => p.key === 'docs')?.state === 'done', home.path);
+  const photoDoc = docs.find((d) => d.docKey === 'photo')!;
+  await docsSvc.uploadDocumentFiles(journeyA, photoDoc.id, [{ originalname: 'me.jpg', buffer: JPG }]);
+  await docsSvc.reviewDocument(HR, photoDoc.id, { decision: 'send_back', note: 'Please use a plain background.' });
+  home = await portalSvc.portalHome((await db.journeys().findOne({ id: A }))!);
+  ok('an optional document sent back: Docs is not done, it is the current step again', home.path.find((p) => p.key === 'docs')?.state === 'current' && home.upNext?.key === 'docs', home.path);
+  await docsSvc.uploadDocumentFiles((await db.journeys().findOne({ id: A }))!, photoDoc.id, [{ originalname: 'me-plain.jpg', buffer: JPG }]);
+  await docsSvc.reviewDocument(HR, photoDoc.id, { decision: 'approve' });
+  journeyA = (await db.journeys().findOne({ id: A }))!;
+  ok('…and done again once it is approved', (await portalSvc.portalHome(journeyA)).path.find((p) => p.key === 'docs')?.state === 'done');
+  ok('approving the optional one later does not draft the letters twice', (await db.letters().countDocuments({ journeyId: A })) === 2);
 
   // ─── Letters ──────────────────────────────────────────────────────────────
   section('Letters: templates, merge, PDF, open, sign');
@@ -354,14 +416,18 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   ok('POST /letters for an unsigned appointment letter updates the same row', again.id === appt.id && again.values.employeeId === 'SWT-101' && (await db.letters().countDocuments({ journeyId: A })) === 2);
   ok('a letter PDF must be a PDF', (await refusal(() => lettersSvc.uploadLetterPdf(HR, appt.id, { buffer: JPG }))).status === 400);
   clearLifecycleOutbox();
-  await lettersSvc.uploadLetterPdf(HR, appt.id, { originalname: 'Appointment letter.pdf', buffer: PDF('appointment') });
+  const apptPdf = await realPdf('Appointment letter', 2);
+  await lettersSvc.uploadLetterPdf(HR, appt.id, { originalname: misread('Appointment letter – Kabir Mehta.pdf'), buffer: apptPdf });
   ok('one letter with a PDF is not "ready" yet (no mail)', mailsTo(KABIR).length === 0);
+  home = await portalSvc.portalHome((await db.journeys().findOne({ id: A }))!);
+  ok('one of two letters ready: home waits for both (no letter_ready yet)', home.view !== 'letter_ready' && home.path.find((p) => p.key === 'letter')?.state === 'locked', home.view);
   await lettersSvc.uploadLetterPdf(HR, nda.id, { originalname: 'NDA.pdf', buffer: PDF('nda') });
   ok('both PDFs: "letters ready" emailed once', mailsTo(KABIR).filter((m) => m.subject.includes('ready to sign')).length === 1);
   ok('the catch-up job does not send it twice', !(await lettersSvc.maybeSendLettersReady(A)));
   journeyA = (await db.journeys().findOne({ id: A }))!;
   let pl = await lettersSvc.portalLetters(journeyA);
-  ok('both letters ready on the portal, with their file names', pl.every((l) => l.state === 'ready' && l.pdfUrl?.startsWith('/portal/letters/')) && pl.map((l) => l.fileName).join() === 'Appointment letter.pdf,NDA.pdf', pl);
+  ok('both letters ready on the portal, with HR’s file names in UTF-8 (no mojibake)', pl.every((l) => l.state === 'ready' && l.pdfUrl?.startsWith('/portal/letters/')) && pl.map((l) => l.fileName).join() === 'Appointment letter – Kabir Mehta.pdf,NDA.pdf', pl.map((l) => l.fileName));
+  ok('the appointment letter says its page count before it is opened', pl.find((l) => l.kind === 'appointment')?.pages === 2 && pl.find((l) => l.kind === 'nda')?.pages === undefined, pl.map((l) => l.pages));
   home = await portalSvc.portalHome(journeyA);
   ok('home view letter_ready; the path’s Sign step is current', home.view === 'letter_ready' && home.path.find((p) => p.key === 'letter')?.state === 'current', home);
   ok('signing before opening the PDF is refused', (await refusal(() => lettersSvc.signLetter(journeyA, appt.id, { method: 'type', typedName: 'Kabir Mehta' }, { ip: '1.2.3.4' }))).status === 409);
@@ -371,9 +437,18 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   pl = await lettersSvc.signLetter(journeyA, appt.id, { method: 'type', typedName: 'Kabir Mehta' }, { ip: '1.2.3.4', userAgent: 'Check browser' });
   const signedAppt = (await db.letters().findOne({ id: appt.id }))!;
   ok('typed signature stored with time, IP and device', signedAppt.signature?.method === 'type' && signedAppt.signature.ip === '1.2.3.4' && signedAppt.signature.device === 'Check browser' && signedAppt.signature.signedAt instanceof Date);
-  let pdfLibThere = true;
-  try { require.resolve('pdf-lib'); } catch { pdfLibThere = false; }
-  ok(pdfLibThere ? 'pdf-lib present: the signed PDF is stored' : 'pdf-lib absent: signature kept with the original PDF (no signed copy)', pdfLibThere ? Boolean(signedAppt.signedPdfFileId) : !signedAppt.signedPdfFileId);
+  ok('the signed PDF is stored (pdf-lib)', Boolean(signedAppt.signedPdfFileId), signedAppt);
+  const signedFile = (await db.lifecycleFiles().findOne({ id: signedAppt.signedPdfFileId }))!;
+  const signedBytes = await files.readFileBytes(signedFile);
+  const { PDFDocument } = await import('pdf-lib');
+  const signedDoc = await PDFDocument.load(signedBytes);
+  ok('the signed copy is a PDF with the record page added (2 + 1 pages), named after the original', signedDoc.getPageCount() === 3 && signedFile.name === 'Appointment letter – Kabir Mehta (signed).pdf' && signedFile.uploadedBy === 'system', { pages: signedDoc.getPageCount(), name: signedFile.name });
+  const recordText = await pageText(signedBytes, -1);
+  ok('its last page is the signature record: name, method, IP and device', recordText.includes(lettersSvc.SIGNATURE_RECORD_TITLE) && recordText.includes('Kabir Mehta') && recordText.includes('Typed name (Kabir Mehta)') && recordText.includes('1.2.3.4') && recordText.includes('Check browser'), recordText.slice(0, 400));
+  const stampedText = await pageText(signedBytes, 1);
+  ok('the signature itself is on the letter’s last page', stampedText.includes('Signed by Kabir Mehta') && stampedText.includes('Appointment letter · page 2'), stampedText.slice(0, 400));
+  ok('the PDF’s metadata says it is signed, with the reference', (signedDoc.getKeywords() ?? '').includes('signed') && (signedDoc.getKeywords() ?? '').includes(appt.refNo), signedDoc.getKeywords());
+  ok('the portal serves the signed copy of the appointment letter', (await lettersSvc.letterPdfForPortal(journeyA, appt.id)).bytes.equals(signedBytes));
   ok('signing twice is refused', (await refusal(() => lettersSvc.signLetter(journeyA, appt.id, { method: 'type', typedName: 'Kabir Mehta' }, { ip: '1.2.3.4' }))).status === 409);
   ok('a drawn signature must be an image', (await refusal(async () => { await lettersSvc.openLetter(journeyA, nda.id); return lettersSvc.signLetter(journeyA, nda.id, { method: 'draw', imageDataUrl: `data:image/png;base64,${Buffer.from('not png').toString('base64')}` }, { ip: '1.2.3.4' }); })).status === 400);
   lettersSvc.setPdfStamper({ async stamp(pdf) { return Buffer.concat([pdf, Buffer.from('%stamped')]); } });
@@ -383,7 +458,10 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   ok('drawn signature: image stored, stamped PDF stored', Boolean(signedNda.signature?.imageFileId) && Boolean(signedNda.signedPdfFileId));
   ok('the portal serves the signed copy', (await lettersSvc.letterPdfForPortal(journeyA, nda.id)).bytes.toString().endsWith('%stamped'));
   ok('both signed: sign_letters done', (await db.journeyTasks().findOne({ journeyId: A, systemKey: 'sign_letters' }))?.status === 'done');
-  ok(pdfLibThere ? 'pdf-lib stamper runs' : 'the pdf-lib stamper says it cannot stamp (null) without the package', pdfLibThere ? true : (await lettersSvc.pdfLibStamper.stamp(PDF(), { name: 'x', method: 'type', typedName: 'x', signedAt: new Date(), refNo: 'r' })) === null);
+  const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  const drawn = await lettersSvc.pdfLibStamper.stamp(await realPdf('Drawn', 1), { name: 'Kabir Mehta', method: 'draw', image: { bytes: tinyPng, type: 'image/png' }, signedAt: new Date(), ip: '1.2.3.4', refNo: 'NDA/2026/001' });
+  ok('the pdf-lib stamper also takes a drawn (PNG) signature', Boolean(drawn) && (await PDFDocument.load(drawn!)).getPageCount() === 2);
+  ok('a file that is not a real PDF cannot be stamped (the signature record still stands)', (await lettersSvc.pdfLibStamper.stamp(PDF(), { name: 'x', method: 'type', typedName: 'x', signedAt: new Date(), refNo: 'r' }).catch(() => null)) === null);
   const lettersView = await lettersSvc.journeyLettersView(A);
   ok('the HR side panel sees both signed', lettersView.every((l) => l.state === 'signed' && l.signedAt));
 
@@ -422,18 +500,24 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   ok('approved: Tj moved and the offer revised (v3, Tj changed)', decided.status === 'approved' && journeyA.tj === newTj && offer.version === 3 && JSON.stringify(offer.changedFields) === '["tj"]' && offer.fields.tj === newTj, offer);
   ok('open due dates moved with Tj (mark joined, due Tj)', istDate((await db.journeyTasks().findOne({ journeyId: A, systemKey: 'mark_joined' }))!.dueAt!) === newTj);
   ok('done tasks keep their dates', istDate((await db.journeyTasks().findOne({ journeyId: A, systemKey: 'upload_documents' }))!.dueAt!) === addDays(tj, -5));
-  ok('the journey is back to accepted (HR finalises again)', journeyA.status === 'accepted');
   ok('the candidate is emailed the outcome', Boolean(lastMail(KABIR)?.subject.includes('new joining date')));
+  // v3 is only a draft: nothing about the offer changes for the candidate until HR sends it.
+  ok('approval alone keeps the journey where it was (docs approved)', journeyA.status === 'docs_approved', journeyA.status);
   home = await portalSvc.portalHome(journeyA);
-  ok('home: offer_updated with the banner naming Tj', home.view === 'offer_updated' && home.banner?.changedFields?.[0] === 'tj' && home.upNext?.title === 'Review your updated offer', home);
-  ok('the token still opens the portal while the offer is updated', (await auth.journeyForPortalToken(`Bearer ${portalToken}`)).id === A);
-  ok('finalise waits for the candidate to accept v3', (await refusal(() => offersSvc.finaliseOffer(HR, A))).status === 409);
-  ok('signed in, before HR sends v3 the session shows the replaced v2', (await offersSvc.portalOfferForJourney(journeyA)).state === 'replaced');
+  ok('home before HR sends v3: no "HR updated your offer", the new Tj shown', home.view !== 'offer_updated' && !home.banner && home.tj === newTj && home.path.find((p) => p.key === 'offer')?.state === 'done', { view: home.view, banner: home.banner, tj: home.tj });
+  ok('signed in, before HR sends v3 the session still shows v2, accepted and finalised', (await offersSvc.portalOfferForJourney(journeyA)).state === 'finalised' && (await offersSvc.portalOfferForJourney(journeyA)).version === 2);
+  ok('…and v2’s link is not replaced yet', (await offersSvc.openOfferLink(token2, '1.1.1.1')).state === 'finalised');
+  ok('there is nothing to finalise before v3 is sent and accepted', (await refusal(() => offersSvc.finaliseOffer(HR, A))).status === 409);
   await offersSvc.uploadOfferPdf(HR, A, { buffer: PDF('v3') });
   await offersSvc.sendOffer(HR, A, {});
   const token3 = tokenIn(lastMail(KABIR)!.html);
   ok('v2’s link is replaced now', (await offersSvc.openOfferLink(token2, '1.1.1.1')).state === 'replaced');
   journeyA = (await db.journeys().findOne({ id: A }))!;
+  ok('sent: the journey is back to accepted (HR finalises again)', journeyA.status === 'accepted', journeyA.status);
+  home = await portalSvc.portalHome(journeyA);
+  ok('home: offer_updated with the banner naming Tj', home.view === 'offer_updated' && home.banner?.changedFields?.[0] === 'tj' && home.upNext?.title === 'Review your updated offer' && home.upNext.helper === 'Joining date changed', home);
+  ok('the token still opens the portal while the offer is updated', (await auth.journeyForPortalToken(`Bearer ${portalToken}`)).id === A);
+  ok('finalise waits for the candidate to accept v3', (await refusal(() => offersSvc.finaliseOffer(HR, A))).status === 409);
   const meOffer = await offersSvc.portalOfferForJourney(journeyA);
   ok('GET /portal/me/offer: v3 with its changes and the session PDF path', meOffer.state === 'offer' && meOffer.version === 3 && meOffer.changedFields?.[0] === 'tj' && meOffer.pdfUrl === '/portal/me/offer/pdf', meOffer);
   ok('GET /portal/me/offer/pdf serves v3', (await offersSvc.portalOfferPdfForJourney(journeyA)).bytes.toString().includes('v3'));
@@ -475,6 +559,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   home = await portalSvc.portalHome(journeyA);
   ok('home view joined with the work email, no path', home.view === 'joined' && home.workEmail === 'kabir.mehta@sowaka.test' && home.path.length === 0 && home.upNext?.key === 'app');
   ok('joined home: open until Tj + 7, the reporting time', home.portalOpenUntil === addDays(newTj, 7) && home.reportingTime === '09:30', home);
+  ok('during week 1 the offer link says "all set" (sign in), not "Week 1 is done"', (await offersSvc.openOfferLink(token3, '1.1.1.1')).state === 'finalised');
   ok('marking joined twice is refused', (await refusal(() => offersSvc.markJoined(HR, A, { workEmail: 'k2@sowaka.test' }, at10(newTj)))).status === 409);
 
   // ─── Branches ─────────────────────────────────────────────────────────────
@@ -510,6 +595,13 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   await portalSvc.runPortalJobs(at10(addDays(today, 1)));
   ok('an accepted offer no longer expires', (await db.journeys().findOne({ id: accepted.journeyId }))?.status === 'accepted');
 
+  const G = await make('Gita Gill', 'gita.check@example.com');
+  await offersSvc.reviseOffer(HR, G.journeyId, { ctc: 1500000 });
+  ok('while HR drafts a revision the candidate can still accept the offer they were sent', (await offersSvc.acceptOffer(G.token, { ip: '1.1.1.1' })).state === 'accepted' && (await db.journeys().findOne({ id: G.journeyId }))?.status === 'accepted');
+  await offersSvc.uploadOfferPdf(HR, G.journeyId, { buffer: PDF('g2') });
+  await offersSvc.sendOffer(HR, G.journeyId, {});
+  ok('…and once HR sends it, the accepted v1 is replaced and the candidate accepts again', (await offersSvc.openOfferLink(G.token, '1.1.1.1')).state === 'replaced' && (await db.journeys().findOne({ id: G.journeyId }))?.status === 'offer_sent');
+
   const D = await make('Divya Das', 'divya.check@example.com');
   ok('not joining needs an accepted offer', (await refusal(() => offersSvc.markNotJoining(HR, D.journeyId))).status === 409);
   await offersSvc.acceptOffer(D.token, { ip: '1.1.1.1' });
@@ -521,7 +613,12 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   const dJourney = (await db.journeys().findOne({ id: D.journeyId }))!;
   ok('not joining: closed, open tasks cancelled', dJourney.status === 'not_joining' && (await db.journeyTasks().countDocuments({ journeyId: D.journeyId, status: { $in: ['todo', 'locked'] } })) === 0);
   ok('the link says not joining', (await offersSvc.openOfferLink(D.token, '1.1.1.1')).state === 'not_joining');
-  ok('sign-in is refused: portal closed', (await refusal(() => auth.signIn('divya.check@example.com', dPassword, '4.4.4.4'))).status === 403);
+  const closedTry = await refusal(() => auth.signIn('divya.check@example.com', dPassword, '4.4.4.4'));
+  ok('sign-in is refused: portal closed', closedTry.status === 403);
+  const closedViaRoute = await call(portalRouter as never, 'POST', '/auth/sign-in', undefined, { email: 'divya.check@example.com', password: dPassword });
+  const closedBody = closedViaRoute.body as { error?: string; closed?: { state?: string; company?: { name?: string }; hrContact?: { email?: string } } };
+  ok('…with the closed screen to show (PX: not joining), the client and HR', closedViaRoute.status === 403 && closedBody.error === 'This portal is closed' && closedBody.closed?.state === 'not_joining' && closedBody.closed.company?.name === 'Sowaka Test' && closedBody.closed.hrContact?.email === 'hr@sowaka.test', closedViaRoute.body);
+  ok('…but a wrong password on a closed portal says nothing about it', !('closed' in ((await call(portalRouter as never, 'POST', '/auth/sign-in', undefined, { email: 'divya.check@example.com', password: 'Wrong-pass9' })).body as object)));
   const dHome = await portalSvc.portalHome(await auth.journeyForPortalToken(`Bearer ${dToken}`));
   ok('an old session sees the closed screen', dHome.view === 'closed' && dHome.closedState === 'not_joining');
   const dDocs = await docsSvc.journeyDocumentsView(D.journeyId);

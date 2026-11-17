@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { portal, type OfferSource } from '../api/portal';
-import { ApiError, getSession } from '../api/client';
+import { ApiError, getSession, mediaUrl } from '../api/client';
 import type { PortalOfferView } from '../api/types';
 import { Page, rememberClient } from '../components/Shell';
 import { Icon } from '../components/Icon';
@@ -36,6 +36,34 @@ function OfferFlow({ src, letter, base }: { src: OfferSource; letter: boolean; b
     }, setError);
   }, [src]);
   useEffect(load, [load]);
+
+  // Accepted, waiting for HR (P4 / W4): notice HR's finalise without a reload. A quiet
+  // check every 30 s while the tab is visible, and when the candidate comes back to it
+  // (at most every 10 s: the offer link is rate-limited per IP, 60 calls in 15 minutes).
+  const waiting = view?.state === 'accepted';
+  useEffect(() => {
+    if (!waiting) return;
+    let live = true;
+    let last = Date.now();
+    const check = () => {
+      if (document.visibilityState !== 'visible' || Date.now() - last < 10_000) return;
+      last = Date.now();
+      portal.offer(src).then(
+        (v) => live && v.state !== 'accepted' && setView(v),
+        () => undefined,
+      );
+    };
+    const timer = window.setInterval(check, 30_000);
+    const onVisible = () => document.visibilityState === 'visible' && check();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', check);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', check);
+    };
+  }, [waiting, src]);
 
   if (error)
     return (
@@ -185,8 +213,9 @@ function OfferBanner({ view }: { view: PortalOfferView }) {
       <p className="eyebrow">
         Updated offer · {n} {n === 1 ? 'change' : 'changes'}
       </p>
+      {/* The PDF HR uploads does not mark the changed fields, so the banner names them instead of promising orange marks. */}
       <p className="body">
-        {what ? `${what} changed, marked in orange. ` : ''}Reply by {fmtShort(view.validTill)}.
+        {what ? `${what} changed. ` : ''}Reply by {fmtShort(view.validTill)}.
       </p>
     </div>
   );
@@ -304,7 +333,7 @@ function VideoCard({ url, company, sub }: { url: string; company: string; sub: s
       <div className="video-card__frame">
         <video
           ref={ref}
-          src={url}
+          src={mediaUrl(url)}
           preload="metadata"
           controls={playing}
           playsInline
@@ -382,7 +411,9 @@ function Accepted({ view, src, signedIn }: { view: PortalOfferView; src: OfferSo
       </span>
       <span className="file-card__text">
         <span className="body-strong">Your offer letter</span>
-        <span className="label">{wide ? 'Accepted version · open or download' : 'Accepted version · tap to open'}</span>
+        <span className="label">
+          {['Accepted version', view.pdfPages ? `${view.pdfPages} ${view.pdfPages === 1 ? 'page' : 'pages'}` : '', wide ? 'open or download' : 'tap to open'].filter(Boolean).join(' · ')}
+        </span>
       </span>
       <Icon name="arrow" />
     </button>
@@ -409,7 +440,8 @@ function Accepted({ view, src, signedIn }: { view: PortalOfferView; src: OfferSo
         <section className={`accepted-hero ${confirmed ? 'is-confirmed' : ''} rise`}>
           <span className="accepted-hero__tick pop" aria-hidden="true">
             <Icon name="check" size={34} />
-            {confirmed && <span className="accepted-hero__badge">HR</span>}
+            {/* 6Zs P4 draws the HR badge while waiting too (HR is who confirms next). */}
+            <span className="accepted-hero__badge">HR</span>
           </span>
           <h1 className="display" ref={h1} tabIndex={-1}>
             {title}

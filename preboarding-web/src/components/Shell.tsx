@@ -4,25 +4,46 @@ import type { Company, HrContact } from '../api/types';
 import { Icon } from './Icon';
 import { AskHrSheet, IconButton } from './ui';
 import { fmtWeekday, initials } from '../lib/format';
-import { mailto, offerSubject } from '../lib/links';
+import { mailto } from '../lib/links';
 
 const LAST_CLIENT = 'sowaka.portal.client';
+const CLIENT_EVENT = 'portal:client';
 
-/** The offer link remembers the client so sign-in / forgot / reset can show its logo. */
+/**
+ * The offer link, the signed-in home and a mail's `?c=` link remember the client,
+ * so sign-in / forgot / reset can show its logo and HR. (Kept in memory too, for
+ * browsers that block storage.)
+ */
+let memoryClient: { company?: Company; hr?: HrContact } = {};
 export function rememberClient(company: Company, hr?: HrContact) {
+  const prev = lastClient();
+  const next = { company, hr: hr ?? (prev.company?.name === company.name ? prev.hr : undefined) };
+  memoryClient = next;
   try {
-    localStorage.setItem(LAST_CLIENT, JSON.stringify({ company, hr }));
+    localStorage.setItem(LAST_CLIENT, JSON.stringify(next));
   } catch {
     /* storage blocked */
   }
+  window.dispatchEvent(new CustomEvent(CLIENT_EVENT));
+}
+
+/** lastClient(), kept current when a `?c=` link resolves after the page has drawn. */
+export function useLastClient(): { company?: Company; hr?: HrContact } {
+  const [client, setClient] = useState(lastClient);
+  useEffect(() => {
+    const on = () => setClient(lastClient());
+    window.addEventListener(CLIENT_EVENT, on);
+    return () => window.removeEventListener(CLIENT_EVENT, on);
+  }, []);
+  return client;
 }
 
 export function lastClient(): { company?: Company; hr?: HrContact } {
   try {
     const raw = localStorage.getItem(LAST_CLIENT);
-    return raw ? (JSON.parse(raw) as { company?: Company; hr?: HrContact }) : {};
+    return raw ? (JSON.parse(raw) as { company?: Company; hr?: HrContact }) : memoryClient;
   } catch {
-    return {};
+    return memoryClient;
   }
 }
 
@@ -64,7 +85,7 @@ export function Header({ company, hr, tone = 'light', back, close, help, bell, j
   const navigate = useNavigate();
   const [askOpen, setAskOpen] = useState(false);
   const navCls = navOnWide ? '' : 'narrow-only';
-  const subject = offerSubject(company?.name ?? 'your company');
+  // 6Zs §12 #20: the header's Email HR / help carry no subject (P3 and the home tiles do).
   return (
     <header className={`portal-header portal-header--${tone}`}>
       <div className="portal-header__inner">
@@ -81,7 +102,7 @@ export function Header({ company, hr, tone = 'light', back, close, help, bell, j
         </div>
         <div className="portal-header__right">
           {hr && (
-            <a className="header-link wide-only" href={mailto(hr.email, subject)}>
+            <a className="header-link wide-only" href={mailto(hr.email)}>
               Email HR
             </a>
           )}
@@ -101,7 +122,7 @@ export function Header({ company, hr, tone = 'light', back, close, help, bell, j
           {close && <IconButton icon="close" label="Close" onClick={() => navigate(close)} className={navCls} />}
         </div>
       </div>
-      {hr && <AskHrSheet open={askOpen} onClose={() => setAskOpen(false)} name={hr.name} email={hr.email} subject={subject} />}
+      {hr && <AskHrSheet open={askOpen} onClose={() => setAskOpen(false)} name={hr.name} email={hr.email} />}
     </header>
   );
 }

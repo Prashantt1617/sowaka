@@ -1,10 +1,13 @@
 import { useId, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { ApiError } from '../api/client';
 import { portal } from '../api/portal';
-import { Page, lastClient } from '../components/Shell';
+import type { ClosedSignIn } from '../api/types';
+import { Page, useLastClient } from '../components/Shell';
 import { Icon } from '../components/Icon';
 import { BottomBar, Eyebrow, Field, PrimaryButton } from '../components/ui';
 import { useFocusHeading, useWide } from '../lib/hooks';
+import { ClosedScreen } from './Closed';
 
 function PasswordInput({ id, value, onChange, autoComplete }: { id: string; value: string; onChange: (v: string) => void; autoComplete: string }) {
   const [show, setShow] = useState(false);
@@ -35,7 +38,9 @@ export function SignIn() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string>();
+  const [closed, setClosed] = useState<ClosedSignIn>();
   const [busy, setBusy] = useState(false);
+  const client = useLastClient();
   const emailId = useId();
   const pwId = useId();
   const h1 = useFocusHeading<HTMLHeadingElement>('sign-in');
@@ -49,12 +54,19 @@ export function SignIn() {
       await portal.signIn(email.trim(), password);
       navigate(from && from !== '/sign-in' ? from : '/', { replace: true });
     } catch (err) {
-      setError((err as Error).message);
+      // The right password on a closed portal: the closed screen (P16 / PX / P3b / P3c), not an error line.
+      const info = err instanceof ApiError ? (err.details?.closed as ClosedSignIn | undefined) : undefined;
+      if (info?.state) setClosed(info);
+      else setError((err as Error).message);
     } finally {
       setBusy(false);
     }
   };
 
+  if (closed) return <ClosedScreen state={closed.state} company={closed.company} hr={closed.hrContact} />;
+
+  // 6Zs P6: "Header: light, help" (the help sheet needs the client's HR, known from the offer link or the mail's link).
+  const header = { ...client, help: true };
   const form = (
     <form className="form" onSubmit={submit} noValidate={false} aria-describedby={error ? 'signin-err' : undefined}>
       <h1 className="display" ref={h1} tabIndex={-1}>
@@ -90,7 +102,7 @@ export function SignIn() {
 
   if (wide)
     return (
-      <Page header={lastClient()} layout="wide">
+      <Page header={header} layout="wide">
         <div className="two-col two-col--even signin-web">
           <section className="signin-web__intro card">
             <h2 className="display">Your joining portal</h2>
@@ -111,7 +123,7 @@ export function SignIn() {
       </Page>
     );
   return (
-    <Page header={lastClient()} layout="narrow" bg="white">
+    <Page header={header} layout="narrow" bg="white">
       {form}
     </Page>
   );
@@ -123,6 +135,7 @@ export function Forgot() {
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const client = useLastClient();
   const id = useId();
   const h1 = useFocusHeading<HTMLHeadingElement>(sent);
   const submit = async (e: FormEvent) => {
@@ -139,7 +152,7 @@ export function Forgot() {
     }
   };
   return (
-    <Page header={{ ...lastClient(), back: '/sign-in' }} layout="narrow" bg="white">
+    <Page header={{ ...client, help: true, back: '/sign-in' }} layout="narrow" bg="white">
       {sent ? (
         <section className="closed" role="status">
           <span className="closed__icon" aria-hidden="true">
@@ -189,6 +202,7 @@ export function Reset() {
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const client = useLastClient();
   const id1 = useId();
   const id2 = useId();
   const h1 = useFocusHeading<HTMLHeadingElement>(done);
@@ -209,7 +223,7 @@ export function Reset() {
     }
   };
   return (
-    <Page header={lastClient()} layout="narrow" bg="white">
+    <Page header={{ ...client, help: true }} layout="narrow" bg="white">
       {done ? (
         <section className="closed" role="status">
           <span className="closed__icon closed__icon--declined" aria-hidden="true">

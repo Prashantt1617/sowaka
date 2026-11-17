@@ -5,6 +5,7 @@ import type {
   DateRequestReason,
   DateRequestView,
   MeetItem,
+  PortalClient,
   PortalHome,
   PortalLetter,
   PortalOfferView,
@@ -46,6 +47,8 @@ export const portal = {
   reset: (token: string, password: string) =>
     request<{ ok: true }>('/portal/auth/reset', { method: 'POST', auth: false, body: { token, password } }),
   signOut: () => setSession(null),
+  /** The client a mail's link names (`?c=`): its logo and HR, for sign-in on a fresh device. */
+  client: (token: string) => request<PortalClient>(`/portal/client/${enc(token)}`, { auth: false }),
 
   // ── Signed in ─────────────────────────────────────────────────────────
   me: () => request<PortalHome>('/portal/me'),

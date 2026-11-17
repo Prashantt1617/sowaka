@@ -9,6 +9,7 @@
     "dev:mock": "VITE_MOCK=1 vite --port 5181 --strictPort",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
+    "check": "../node_modules/.bin/tsx scripts/home-check.ts",
     "preview": "vite preview --port 5181"
   },
   "dependencies": {

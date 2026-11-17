@@ -6,7 +6,9 @@
  * Pick a state with ?mock=<scenario> on any signed-in page (kept for the tab):
  *   tasks_open · offer_updated · letter_ready · pass_unlocked · joined · moved_to_app · not_joining
  * Offer links: /o/demo · /o/demo-v2 · /o/accepted · /o/finalised · /o/declined · /o/expired · /o/replaced · /o/not-joining
- * Sign in with any email; password "wrong" shows the error, "locked" the 15-minute lock.
+ * Sign in with any email; password "wrong" shows the error, "locked" the 15-minute lock,
+ * "closed" the P16 screen of a portal that has closed, "not-joining" PX.
+ * An accepted offer link (/o/accepted) turns finalised 20 s later, so the page's quiet refresh shows.
  */
 import { ApiError } from '../api/client';
 import type {
@@ -75,6 +77,8 @@ interface Db {
   meet: MeetItem[];
   letters: PortalLetter[];
   offers: Record<string, OfferState>;
+  pendingDate?: string;
+  acceptedAt: Record<string, number>;
 }
 let current: Scenario | null = null;
 let db: Db;
@@ -105,7 +109,7 @@ function docs(all: 'mixed' | 'approved'): CandidateDocumentView[] {
 function resetDb(s: Scenario) {
   current = s;
   const tj = tjFor(s);
-  db = { scenario: s, tj, documents: [], about: {}, meet: [], letters: [], offers: {} };
+  db = { scenario: s, tj, documents: [], about: {}, meet: [], letters: [], offers: {}, acceptedAt: {} };
   const after = s !== 'tasks_open' && s !== 'offer_updated';
   db.documents = docs(after ? 'approved' : 'mixed');
   db.about = {
@@ -149,8 +153,8 @@ function resetDb(s: Scenario) {
   ];
   const lState: PortalLetter['state'] = s === 'letter_ready' ? 'ready' : s === 'pass_unlocked' || s === 'joined' ? 'signed' : 'locked';
   db.letters = [
-    { id: 'l1', kind: 'appointment', state: lState, pdfUrl: '/portal/letters/l1/pdf' },
-    { id: 'l2', kind: 'nda', state: lState, pdfUrl: '/portal/letters/l2/pdf' },
+    { id: 'l1', kind: 'appointment', state: lState, pdfUrl: '/portal/letters/l1/pdf', pages: 4 },
+    { id: 'l2', kind: 'nda', state: lState, pdfUrl: '/portal/letters/l2/pdf', pages: 2 },
   ];
 }
 
@@ -265,11 +269,17 @@ function me(): PortalHome {
     upNext,
     tasks,
     banner: s === 'offer_updated' ? { kind: 'offer_updated', changedFields: ['tj', 'ctc'] } : undefined,
+    pendingDateRequest: db.pendingDate ? { requestedTj: db.pendingDate } : undefined,
   };
 }
 
 function offerView(token: string, session = false): PortalOfferView {
   const v2 = token === 'demo-v2' || session;
+  // /o/accepted: HR "finalises" 20 s after the page first asks, so the waiting page's quiet refresh can be seen.
+  if (token === 'accepted' || db.offers[token] === 'accepted') {
+    db.acceptedAt[token] ??= Date.now();
+    if (Date.now() - db.acceptedAt[token] > 20_000) db.offers[token] = 'finalised';
+  }
   const state: OfferState =
     db.offers[token] ??
     (({ demo: 'offer', 'demo-v2': 'offer', accepted: 'accepted', finalised: 'finalised', declined: 'declined', expired: 'expired', replaced: 'replaced', 'not-joining': 'not_joining' } as Record<string, OfferState>)[
@@ -302,6 +312,7 @@ function offerView(token: string, session = false): PortalOfferView {
     loginEmailMasked: 'ka***@gmail.example',
     acceptedAt: state === 'accepted' || state === 'finalised' ? addDays(today(), -1) : undefined,
     finalisedAt: state === 'finalised' ? today() : undefined,
+    pdfPages: 3,
   };
 }
 
@@ -412,8 +423,12 @@ export async function handleMock(method: string, path: string, body: unknown, au
     const { password } = body as { email: string; password: string };
     if (password === 'wrong') throw new ApiError(401, 'That email and password don’t match. 4 tries left.');
     if (password === 'locked') throw new ApiError(403, 'Too many wrong tries. Try again in 15 minutes, or reset your password.');
+    if (password === 'closed' || password === 'not-joining') {
+      throw new ApiError(403, 'This portal is closed', { closed: { state: password === 'closed' ? 'moved_to_app' : 'not_joining', company: COMPANY, hrContact: HR } });
+    }
     return { token: 'mock-session' };
   }
+  if (p.startsWith('/portal/client/')) return { company: COMPANY, hrContact: HR };
   if (p === '/portal/auth/forgot' || p === '/portal/auth/reset') return { ok: true };
 
   if (!auth) throw new ApiError(401, 'Please sign in');
@@ -503,6 +518,7 @@ export async function handleMock(method: string, path: string, body: unknown, au
 
   if (p === '/portal/date-request') {
     const b = body as { requestedTj: string; reason: string; note?: string };
+    db.pendingDate = b.requestedTj;
     return { request: { id: 'r1', ...b, status: 'pending', createdAt: new Date().toISOString() } };
   }
   if (p === '/portal/activity') return { ok: true };

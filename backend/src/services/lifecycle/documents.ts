@@ -118,7 +118,7 @@ export async function reviewDocument(
     if (journey.candidate?.personalEmail) {
       const company = await companyOf(journey.org);
       await sendLifecycleEmail(journey.org, journey.candidate.personalEmail, `Please upload your ${doc.label} again`,
-        mails.documentSentBack(companyDisplayName(company, journey.org), journey.candidate.name, doc.label, note));
+        mails.documentSentBack(companyDisplayName(company, journey.org), journey.candidate.name, doc.label, note, journey.org));
     }
   } else {
     await candidateDocuments().updateOne({ id: doc.id }, { $set: { status: 'approved', reviewedAt: now, reviewedByName: hr.name }, $unset: { hrNote: '' } });

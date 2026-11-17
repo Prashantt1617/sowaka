@@ -10,7 +10,8 @@ import multer from 'multer';
 import { journeys } from '../config/db';
 import type { Journey } from '../models/lifecycle.model';
 import { removeDocumentFile, uploadDocumentFiles } from '../services/lifecycle/documents';
-import { contentDisposition, fileForJourney, readFileBytes } from '../services/lifecycle/files';
+import { companyDisplayName, companyOf, lifecycleEnabled, orgOfClientToken } from '../services/lifecycle/emails';
+import { contentDisposition, fileForJourney, LifecycleOfferError, readFileBytes, UTF8_FILE_NAMES } from '../services/lifecycle/files';
 import { letterPdfForPortal, openLetter, portalLetters, signLetter } from '../services/lifecycle/letters';
 import {
   acceptOffer, acceptOfferForJourney, createDateRequest, offerLinkPdf, openOfferLink, portalOfferForJourney, portalOfferPdfForJourney,
@@ -18,7 +19,7 @@ import {
 import {
   aboutYouView, markMeetSeen, meetItems, portalDocuments, portalHome, portalPass, portalPassIcs, saveAboutYou,
 } from '../services/lifecycle/portal';
-import { CLOSED_STATUSES, forgotPassword, journeyForPortalToken, resetPassword, signIn } from '../services/lifecycle/portalAuth';
+import { CLOSED_STATUSES, forgotPassword, journeyForPortalToken, resetPassword, signIn, verifyMediaToken } from '../services/lifecycle/portalAuth';
 import { sendLifecycleError } from './lifecycle-offer.routes';
 
 /**
@@ -61,7 +62,7 @@ async function requirePortal(req: Request, res: Response, next: NextFunction) {
   }
 }
 
-const docsUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 4 } }).array('files', 4);
+const docsUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 4 }, ...UTF8_FILE_NAMES }).array('files', 4);
 const files = (req: Request, res: Response, next: NextFunction) => docsUpload(req, res, (error) => (error ? sendLifecycleError(error, res, next) : next()));
 const body = (req: Request) => (req.body ?? {}) as Record<string, unknown>;
 const param = (req: Request, name: string) => String(req.params[name] ?? '');
@@ -84,6 +85,57 @@ r.post('/offer/:token/accept', handle(async (req) => acceptOffer(param(req, 'tok
 r.post('/auth/sign-in', handle(async (req) => signIn(body(req).email, body(req).password, clientIp(req))));
 r.post('/auth/forgot', handle(async (req) => forgotPassword(body(req).email, clientIp(req))));
 r.post('/auth/reset', handle(async (req) => resetPassword(body(req).token, body(req).password)));
+
+/**
+ * The client a mail's link names (`?c=`): its logo and HR contact, for sign-in,
+ * forgot and reset on a device that never opened the offer link.
+ */
+r.get('/client/:token', handle(async (req) => {
+  const org = orgOfClientToken(param(req, 'token'));
+  if (!org || !(await lifecycleEnabled(org))) throw new LifecycleOfferError(404, 'Not found');
+  const company = await companyOf(org);
+  const email = company?.profile?.replyToEmail?.trim() || company?.profile?.primaryContactEmail?.trim() || '';
+  return {
+    company: { name: companyDisplayName(company, org), ...(company?.lifecyclePortal?.logoUrl ? { logoUrl: company.lifecyclePortal.logoUrl } : {}) },
+    ...(email ? { hrContact: { name: company?.profile?.senderName?.trim() || 'HR', email } } : {}),
+  };
+}));
+
+/**
+ * A signed media link (`/portal/media/<token>`, from GET /portal/meet): a
+ * `<video src>` cannot send the Bearer token, so the link itself is the
+ * permission (one file of one journey, 12 hours). Serves byte ranges, which
+ * Safari needs to play a video at all.
+ */
+r.get('/media/:token', handle(async (req, res) => {
+  const claims = verifyMediaToken(param(req, 'token'));
+  if (!claims) throw new LifecycleOfferError(404, 'File not found');
+  const journey = await journeys().findOne({ id: claims.journeyId }, { projection: { _id: 0, org: 1, kind: 1 } });
+  if (!journey || journey.kind !== 'onboarding' || !(await lifecycleEnabled(journey.org))) throw new LifecycleOfferError(404, 'File not found');
+  const file = await fileForJourney(claims.journeyId, claims.fileId);
+  const bytes = await readFileBytes(file);
+  res.setHeader('Content-Type', file.contentType);
+  res.setHeader('Content-Disposition', contentDisposition(file.name, false));
+  res.setHeader('Accept-Ranges', 'bytes');
+  const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.header('range') ?? ''));
+  if (range && (range[1] || range[2])) {
+    const size = bytes.length;
+    let start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+    let end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (!range[1]) end = size - 1;
+    if (start >= size || start > end) {
+      res.setHeader('Content-Range', `bytes */${size}`);
+      res.status(416).send(Buffer.alloc(0));
+      return undefined;
+    }
+    start = Math.max(0, start);
+    res.setHeader('Content-Range', `bytes ${start}-${end}/${size}`);
+    res.status(206).send(bytes.subarray(start, end + 1));
+    return undefined;
+  }
+  res.send(bytes);
+  return undefined;
+}));
 
 // ─── Signed in ──────────────────────────────────────────────────────────────
 r.get('/me', requirePortal, handle(async (_req, res) => portalHome(journeyOf(res))));
