@@ -10,6 +10,7 @@ import { closeDueExits } from './exit.service';
 import { runPortalJobs } from './lifecycle/portal';
 import { runOffboardingJobs } from './lifecycle/offboarding';
 import { runLifecycleJobs } from './lifecycle/jobs';
+import { forgetLifecycleReads } from './lifecycle/readCache';
 import { runContestNotifications } from './contest-notifications.service';
 
 /**
@@ -40,6 +41,8 @@ export async function runHourlyJobs(now = new Date()): Promise<void> {
   await run('runPortalJobs', () => runPortalJobs(now));
   // Offboarding: exit interview opens, settlement due, gratuity due (once each; access itself is closeDueExits').
   await run('runOffboardingJobs', () => runOffboardingJobs(now));
+  // Those three change exits, journeys and tasks without a request: the kept boards go too.
+  forgetLifecycleReads(null);
   if (hour === 10) {
     await run('sendNewJoinerNotifications', () => sendNewJoinerNotifications(now));
     // Cycle open, the Friday reminder and the last day, to managers only.

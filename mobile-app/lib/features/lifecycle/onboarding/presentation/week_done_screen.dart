@@ -27,22 +27,36 @@ class WeekDoneScreen extends StatelessWidget {
       title: 'Onboarding',
       showNav: false,
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
+          // The moment, on its green card, as drawn.
           OnbRise(
-            child: Column(
-              children: [
-                const Text('WELCOME STAGE COMPLETE', style: OnbText.eyebrow, textAlign: TextAlign.center),
-                const SizedBox(height: 10),
-                Text('Week 1, done!', style: OnbText.displayXl(40), textAlign: TextAlign.center),
-                const SizedBox(height: 6),
-                const Text('Your plant is now a seedling', style: OnbText.body, textAlign: TextAlign.center),
-                const SizedBox(height: 18),
-                Plant(stage: 2, size: 150, leaves: home.plant.leaves, droop: home.plant.droop),
-              ],
+            child: Container(
+              key: const ValueKey('week-done-hero'),
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+              decoration: BoxDecoration(color: OnbColors.doneTint, borderRadius: BorderRadius.circular(28)),
+              child: Column(
+                children: [
+                  const Text(
+                    'WELCOME STAGE COMPLETE',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.doneText),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Week 1, done!',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontFamily: 'Sora', fontSize: 40, height: 1.05, fontWeight: FontWeight.w800, letterSpacing: -1.2, color: OnbColors.text),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('Your plant is now a seedling', textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Sora', fontSize: 14, color: OnbColors.text2)),
+                  const SizedBox(height: 40),
+                  Plant(stage: 2, size: 150, leaves: home.plant.leaves, droop: home.plant.droop),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 14),
           Row(
             children: [
               _Stat(value: '$tasksDone', label: 'tasks done'),
@@ -52,16 +66,19 @@ class WeekDoneScreen extends StatelessWidget {
               _Stat(value: '+${stats?.leaves ?? home.plant.leaves}', label: 'leaves grown'),
             ],
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 14),
           OnbCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('NEXT STAGE · SETTLING IN', style: OnbText.eyebrow),
+                const Text(
+                  'NEXT STAGE · SETTLING IN',
+                  style: TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.primary),
+                ),
                 const SizedBox(height: 6),
                 Text(
                   goalsOn == null ? 'Your month-1 goals arrive soon' : 'Your month-1 goals arrive ${onbDay(goalsOn)}',
-                  style: OnbText.bodyStrong,
+                  style: const TextStyle(fontFamily: 'Sora', fontSize: 16, fontWeight: FontWeight.w700, color: OnbColors.text),
                 ),
                 const SizedBox(height: 4),
                 Text('$manager sets them. You’ll check in at the end of the month.', style: OnbText.label),
@@ -86,12 +103,16 @@ class _Stat extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Expanded(
     child: OnbCard(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(value, style: OnbText.displayXl(28)),
-          const SizedBox(height: 2),
-          Text(label, style: OnbText.label, textAlign: TextAlign.center),
+          Text(
+            value,
+            style: const TextStyle(fontFamily: 'Sora', fontSize: 26, height: 1.1, fontWeight: FontWeight.w800, color: OnbColors.primary),
+          ),
+          const SizedBox(height: 4),
+          Text(label, style: OnbText.label.copyWith(color: OnbColors.text2)),
         ],
       ),
     ),

@@ -29,9 +29,10 @@ import {
   addDays, companyDisplayName, companyOf, formatDay, hrContactFor, isDay, istDate, lifecycleEnabled, mails, portalLink, sendLifecycleEmail,
 } from './emails';
 import type { LifecycleAttachment } from './emails';
-import { closeJourney, completeTask, createOnboardingJourney, moveTj, onJoined, reopenTask, setJourneyStatus } from './engine';
+import { closeJourney, completeTask, createOnboardingJourney, moveTj, onJoined, reopenTask, setJourneyStatus, syncProbationTasks } from './engine';
 import { checkUpload, LifecycleOfferError, pdfPageCount, readFileBytes, storeFile } from './files';
 import { regenerateAppointmentLetters, outdateChangedLetters } from './letters';
+import { noticeDaysFor } from './templates';
 import { CLOSED_STATUSES, createCandidateAccount, LIMITS, newLinkToken, rateLimit, sha256 } from './portalAuth';
 
 /** The dashboard user acting, as the routes resolve them. `seesPay`: may see and set CTC. */
@@ -161,10 +162,10 @@ function changed(a: OfferFields, b: OfferFields): Array<keyof OfferFields> {
 }
 
 async function fieldDefaults(org: string, journey?: Journey): Promise<{ probationMonths: number; noticeDays: number }> {
-  const company = await companyOf(org);
   return {
     probationMonths: journey?.templateSnapshot.settings.probationMonths ?? 6,
-    noticeDays: company?.exitNoticeDays ?? 30,
+    // The notice a resignation gets: the default offboarding template's, else the company's Exit settings.
+    noticeDays: await noticeDaysFor(org),
   };
 }
 
@@ -269,6 +270,7 @@ export async function createOffer(hr: HrActor, input: { candidate?: { name?: unk
   };
   await offers().insertOne({ ...offer });
   await setJourneyStatus(journey.id, 'draft', { offerId: offer.id });
+  await applyOfferProbation(journey.id, fields.probationMonths);
   return { journeyId: journey.id, offer: (await offerView(journey.id))! };
 }
 
@@ -303,12 +305,26 @@ export async function reviseOffer(hr: HrActor | null, journeyId: string, input: 
   return (await offerView(journeyId))!;
 }
 
-/** The journey takes an offer's terms: role, team, place, manager, and Tj (moving every open due date). */
+/** The journey takes an offer's terms: role, team, place, manager, Tj (moving every open due date) and the probation. */
 async function applyOfferTerms(journey: Journey, fields: OfferFields, now: Date): Promise<void> {
   const set: Partial<Journey> = { designation: fields.designation, department: fields.department, location: fields.location, managerUserId: fields.managerUserId };
   await journeys().updateOne({ id: journey.id }, { $set: { ...set, updatedAt: now } });
   const tj = (await journeys().findOne({ id: journey.id }, { projection: { _id: 0, tj: 1 } }))?.tj;
   if (fields.tj !== tj) await moveTj(journey.id, fields.tj);
+  await applyOfferProbation(journey.id, fields.probationMonths);
+}
+
+/**
+ * The offer states the probation (the template's unless HR changed it on the form): the journey
+ * takes it from the start, with its month tasks, so the board, the panel, the portal and the app
+ * say the same length before joining as Mark joined (`onJoined`) does after. Same range as there.
+ */
+async function applyOfferProbation(journeyId: string, months: number | undefined): Promise<void> {
+  if (!Number.isInteger(months) || months! < 1 || months! > 12) return;
+  const j = await journeys().findOne({ id: journeyId }, { projection: { _id: 0, probation: 1, userId: 1 } });
+  if (!j || j.userId || j.probation?.months === months) return;
+  await journeys().updateOne({ id: journeyId }, { $set: { 'probation.months': months } });
+  await syncProbationTasks(journeyId);
 }
 
 /**

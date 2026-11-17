@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -6,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../../../services/api_client.dart';
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
+import '../../manager/data/dashboard_cache.dart';
 import '../../shared/network_status.dart';
 import 'offboarding_models.dart';
 
@@ -44,6 +46,61 @@ class OffboardingApi {
   final AuthSession session;
   final String _baseUrl;
   final http.Client _client;
+
+  // ── The device's copy (DashboardCache, as the onboarding and dashboard do) ──
+  //
+  // Every GET that answers is kept by path, per person; [fromDevice] replays
+  // a read against those replies through the same parsing.
+
+  static final Map<String, Map<String, Map<String, dynamic>>> _keptByUser = {};
+  static final Map<String, Future<void>> _loadingKept = {};
+  static final Set<String> _pendingWrite = {};
+  static const _replayKey = #offboardingReplay;
+
+  String get _cacheKey => 'lifecycle-off-${session.user.id}';
+
+  /// [read] answered from the device's last replies, never the network; null
+  /// when a reply it needs was never kept.
+  Future<T?> fromDevice<T>(Future<T> Function(OffboardingApi api) read) async {
+    final user = session.user.id;
+    if (user.isEmpty) return null;
+    if (!_keptByUser.containsKey(user)) {
+      await (_loadingKept[user] ??= DashboardCache.read(_cacheKey).then((replies) {
+        _keptByUser.putIfAbsent(user, () => replies ?? {});
+      }));
+    }
+    try {
+      return await runZoned(() => read(this), zoneValues: {_replayKey: true});
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _keep(String path, Map<String, dynamic>? json, DateTime startedAt) {
+    final user = session.user.id;
+    if (user.isEmpty || !DashboardCache.writeAllowed(startedAt)) return;
+    final kept = _keptByUser[user] ??= {};
+    if (json == null) {
+      if (kept.remove(path) == null) return;
+    } else {
+      kept[path] = json;
+    }
+    // One write for the replies that land together (no timer left behind).
+    if (_pendingWrite.add(user)) {
+      final key = _cacheKey;
+      scheduleMicrotask(() {
+        _pendingWrite.remove(user);
+        unawaited(DashboardCache.write(key, Map.of(kept), startedAt: startedAt));
+      });
+    }
+  }
+
+  /// Signed out: the copies in memory go (the files go with DashboardCache.clearAll).
+  static void forgetKept() {
+    _pendingWrite.clear();
+    _keptByUser.clear();
+    _loadingKept.clear();
+  }
 
   // ── The person leaving ────────────────────────────────────────────────
 
@@ -250,6 +307,28 @@ class OffboardingApi {
       value is Map ? value.cast<String, dynamic>() : const <String, dynamic>{};
 
   Future<Map<String, dynamic>> _send(
+    String method,
+    String path, [
+    Map<String, dynamic>? body,
+  ]) async {
+    if (Zone.current[_replayKey] == true) {
+      final byPath = _keptByUser[session.user.id];
+      final kept = method == 'GET' && byPath != null ? byPath[path] : null;
+      if (kept == null) throw const OffboardingApiException('Not kept on this device');
+      return Map<String, dynamic>.from(kept);
+    }
+    final startedAt = DateTime.now();
+    try {
+      final json = await _sendLive(method, path, body);
+      if (method == 'GET') _keep(path, json, startedAt);
+      return json;
+    } on OffboardingApiException catch (error) {
+      if (method == 'GET' && error.statusCode == 404) _keep(path, null, startedAt);
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> _sendLive(
     String method,
     String path, [
     Map<String, dynamic>? body,

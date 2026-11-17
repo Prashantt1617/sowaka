@@ -29,13 +29,24 @@ class _NotesScreenState extends State<NotesScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(_load());
+    unawaited(_first());
   }
 
   @override
   void dispose() {
     _reply.dispose();
     super.dispose();
+  }
+
+  /// Last time's answer from the device at once; the live read replaces it.
+  Future<void> _first() async {
+    final kept = await _shell.api.fromDevice((api) => api.fetchNotes());
+    if (kept != null && mounted && _notes == null) {
+      setState(() {
+        _notes = kept;
+      });
+    }
+    await _load();
   }
 
   Future<void> _load() async {
@@ -161,11 +172,11 @@ class _NotesScreenState extends State<NotesScreen> {
                     ),
                   )
                 else
-                  OnbPrimaryButton(
+                  // A quiet second choice under the reply, as drawn.
+                  OnbSecondaryButton(
                     key: const ValueKey('notes-got-it'),
                     label: 'Got it',
-                    busy: _busy,
-                    onTap: () async {
+                    onTap: _busy ? null : () async {
                       for (final note in notes.where((n) => !n.seen)) {
                         await _act(note, 'seen');
                       }
@@ -192,19 +203,31 @@ class _NoteCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              OnbAvatar(name: author, size: 32),
-              const SizedBox(width: 10),
-              Expanded(
+              Container(
+                width: 40,
+                height: 40,
+                decoration: const BoxDecoration(color: OnbColors.primary, shape: BoxShape.circle),
+                alignment: Alignment.center,
                 child: Text(
-                  [author, if (at != null) 'Shared ${onbDayTime(at)}'].join(' · '),
-                  style: OnbText.label,
+                  OnbAvatar.initials(author).substring(0, 1),
+                  style: const TextStyle(fontFamily: 'Sora', fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(author, style: OnbText.bodyStrong.copyWith(fontSize: 15, fontWeight: FontWeight.w700)),
+                    if (at != null) Text('Shared ${onbDayTime(at)}', style: OnbText.label.copyWith(fontSize: 13)),
+                  ],
                 ),
               ),
               if (!note.seen) const OnbTag('New', tone: OnbTone.count),
             ],
           ),
           const SizedBox(height: 10),
-          Text(note.text, style: OnbText.body.copyWith(color: OnbColors.text)),
+          Text(note.text, style: OnbText.body.copyWith(color: OnbColors.text, fontSize: 15, height: 1.5)),
           for (final reply in note.replies.where((r) => !r.mine)) ...[
             const SizedBox(height: 8),
             Text('${reply.byName ?? author}: ${reply.text}', style: OnbText.label),

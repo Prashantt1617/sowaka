@@ -101,6 +101,12 @@ async function call(handler: (req: Request, res: Response, next: (error?: unknow
     check(`${label}: no photo is null`, photo('mgr') === null, photo('mgr'));
     check(`${label}: the approver is named`, workspace.approverName === 'Bina Boss', workspace.approverName);
   }
+  // A report on notice carries a large exit record; the roster leaves it on the server, and the row is the same.
+  const before = await getManagerWorkspace('mgr');
+  await users().updateOne({ userId: 'c' }, { $set: { exit: { lastWorkingDay: '2026-12-31', kind: 'resignation', clearance: Array.from({ length: 40 }, (_, i) => ({ id: `cl${i}`, label: 'x'.repeat(200) })) } } as never });
+  const after = await getManagerWorkspace('mgr');
+  check('a report with an exit record: the same team, row for row', JSON.stringify(after.team) === JSON.stringify(before.team), after.team.find((m) => m.userId === 'c'));
+  await users().updateOne({ userId: 'c' }, { $unset: { exit: '' } });
 
   // --- the bell's unread count, as the inbox counts it
   const note = (id: string, extra: Record<string, unknown> = {}) => ({

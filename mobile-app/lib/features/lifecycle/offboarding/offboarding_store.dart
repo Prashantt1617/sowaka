@@ -30,7 +30,10 @@ class OffboardingStore extends ChangeNotifier {
 
   /// Forgets every session's store (sign-out, tests).
   @visibleForTesting
-  static void reset() => _bySession.clear();
+  static void reset() {
+    _bySession.clear();
+    OffboardingApi.forgetKept();
+  }
 
   /// How long a load is taken as current when a screen opens ([revalidate]).
   static const freshFor = Duration(seconds: 20);
@@ -169,6 +172,17 @@ class OffboardingStore extends ChangeNotifier {
   }
 
   Future<void> _load() async {
+    // The last copy from the device first: the tabs, tiles and Requests show
+    // at once, and the live read below corrects them.
+    if (!_loaded) {
+      final kept = await api.fromDevice((a) => _readFrom(a, keep: false));
+      if (kept != null && !_loaded) {
+        _apply(kept);
+        _loaded = true;
+        _readAhead = true;
+        notifyListeners();
+      }
+    }
     do {
       _again = false;
       await _read();
@@ -180,42 +194,68 @@ class OffboardingStore extends ChangeNotifier {
   }
 
   Future<void> _read() async {
-    try {
-      _me = await api.fetchMe();
-    } catch (_) {
-      _me = LifecycleMe.off;
-    }
-    if (_me.enabled) {
-      await Future.wait([
-        () async {
-          try {
-            _resignation = await api.fetchResignation();
-          } catch (_) {
-            _resignation = ResignationState.none;
-          }
-        }(),
-        () async {
-          try {
-            _managerResignations = await api.fetchManagerResignations();
-          } catch (_) {
-            _managerResignations = const [];
-          }
-        }(),
-        () async {
-          try {
-            _managerLeavers = await api.fetchManagerLeavers();
-          } catch (_) {
-            _managerLeavers = const [];
-          }
-        }(),
-      ]);
-      unawaited(_rememberForClosedAccount());
-    } else {
-      _resignation = ResignationState.none;
-      _managerResignations = const [];
-      _managerLeavers = const [];
-    }
+    _apply(await _readFrom(api, keep: true));
+    if (_me.enabled) unawaited(_rememberForClosedAccount());
   }
+
+  void _apply(_Read r) {
+    _me = r.me;
+    _resignation = r.resignation;
+    _managerResignations = r.managerResignations;
+    _managerLeavers = r.managerLeavers;
+  }
+
+  /// Everything at once: `/lifecycle/me`, the resignation and the manager's
+  /// lists together (not one after the other), and each known leaver's tab
+  /// read alongside the lists, so opening it is instant. Off → nothing shows.
+  Future<_Read> _readFrom(OffboardingApi a, {required bool keep}) async {
+    Future<T> safe<T>(Future<T> Function() f, T fallback) async {
+      try {
+        return await f();
+      } catch (_) {
+        return fallback;
+      }
+    }
+
+    // A replay (keep false) must fail when /me was never kept, so nothing is painted from nothing.
+    final meFuture = keep ? safe(a.fetchMe, LifecycleMe.off) : a.fetchMe();
+    Future<ResignationState> resignation() => safe(a.fetchResignation, ResignationState.none);
+    Future<List<ResignationView>> resignations() => safe(a.fetchManagerResignations, const <ResignationView>[]);
+    Future<List<LeaverSummary>> leavers() => safe(a.fetchManagerLeavers, const <LeaverSummary>[]);
+    // On last time (the device copy or the previous read): the lists go out
+    // with /lifecycle/me, not after it. Off (a company without it): only /me.
+    final wasOn = !keep || _me.enabled;
+    final early = wasOn ? (resignation(), resignations(), leavers()) : null;
+    if (keep && _readAhead) {
+      _readAhead = false;
+      for (final leaver in _managerLeavers) {
+        unawaited(leaverView(leaver.userId).then<void>((_) {}, onError: (Object _) {}));
+      }
+    }
+    final me = await meFuture;
+    if (!me.enabled) {
+      return (me: me, resignation: ResignationState.none, managerResignations: const <ResignationView>[], managerLeavers: const <LeaverSummary>[]);
+    }
+    final (r, rs, ls) = early ?? (resignation(), resignations(), leavers());
+    return (me: me, resignation: await r, managerResignations: await rs, managerLeavers: await ls);
+  }
+
+  /// The cold start, painted from the device: each known leaver's tab is read
+  /// alongside the lists (once), so opening it is instant.
+  bool _readAhead = false;
+
+  final Map<String, Future<LeaverView>> _readAheads = {};
+
+  /// Reads a report's leaver tab ahead (cold start), for the tab to pick up.
+  Future<LeaverView> leaverView(String userId) => _readAheads[userId] = api.fetchLeaver(userId);
+
+  /// The tab's first read: the one already on its way (read ahead with the
+  /// lists), else a fresh one. Taken once, so a later read is never older
+  /// than a save before it.
+  Future<LeaverView> firstLeaverRead(String userId) => _readAheads.remove(userId) ?? api.fetchLeaver(userId);
+
+  /// The tab as the device last had it, without the network.
+  Future<LeaverView?> keptLeaverView(String userId) => api.fromDevice((a) => a.fetchLeaver(userId));
 
   /// Whether a push (as it arrives or is opened) is about leaving: a
   /// resignation, the off-boarding, a handover, the exit interview.
@@ -326,3 +366,10 @@ Future<AccountClosedInfo?> accountClosedFor({
   if (!inactive || email == null) return null;
   return AccountClosedHints.read(email);
 }
+
+typedef _Read = ({
+  LifecycleMe me,
+  ResignationState resignation,
+  List<ResignationView> managerResignations,
+  List<LeaverSummary> managerLeavers,
+});

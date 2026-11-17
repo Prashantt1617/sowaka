@@ -116,53 +116,130 @@ class _StarterReviewScreenState extends State<StarterReviewScreen> {
       shell: _shell,
       title: name,
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
-          OnbCard(
-            color: OnbColors.doneTint,
-            borderColor: OnbColors.doneTint,
+          // "Kabir marked it done · Wed 3 Dec, 6:10 PM · 2 days early".
+          Container(
+            key: const ValueKey('starter-done-banner'),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(color: OnbColors.doneTint, borderRadius: BorderRadius.circular(16)),
             child: Row(
               children: [
-                const Icon(Icons.check_circle_rounded, color: OnbColors.doneText),
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: const BoxDecoration(color: OnbColors.green, shape: BoxShape.circle),
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.check_rounded, size: 18, color: Colors.white),
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(task.done ? '$first marked it done' : 'Not done yet', style: OnbText.bodyStrong.copyWith(color: OnbColors.doneText)),
-                      if (when.isNotEmpty) Text(when, key: const ValueKey('starter-timing'), style: OnbText.label),
+                      Text(task.done ? '$first marked it done' : 'Not done yet', style: OnbText.bodyStrong),
+                      if (when.isNotEmpty)
+                        Text(when, key: const ValueKey('starter-timing'), style: OnbText.label.copyWith(color: OnbColors.text2)),
                     ],
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          const Text('STARTER TASK', style: OnbText.eyebrow),
-          const SizedBox(height: 4),
-          Text(task.title, style: OnbText.h1),
-          if (task.doneNote != null) ...[
-            const SizedBox(height: 14),
-            OnbCard(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  OnbAvatar(name: name, size: 32),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text(task.doneNote!, style: OnbText.body)),
-                ],
-              ),
+          const SizedBox(height: 14),
+          // The task, the joiner's note as a message, and what they linked.
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: OnbColors.line),
             ),
-          ],
-          for (final link in RegExp(r'https?://\S+').allMatches(task.doneNote ?? '').map((m) => m.group(0)!))
-            OnbLink(label: '🔗 $link', onTap: () => openExternalLink(context, link)),
-          const SizedBox(height: 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'STARTER TASK',
+                  style: TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.9, color: OnbColors.text3),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  task.title,
+                  style: const TextStyle(fontFamily: 'Sora', fontSize: 20, height: 1.25, fontWeight: FontWeight.w800, letterSpacing: -0.2, color: OnbColors.text),
+                ),
+                if (task.doneNote != null) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      OnbAvatar(name: name, size: 36),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: const BoxDecoration(
+                            color: OnbColors.screen,
+                            borderRadius: BorderRadius.only(
+                              topLeft: Radius.circular(4),
+                              topRight: Radius.circular(16),
+                              bottomLeft: Radius.circular(16),
+                              bottomRight: Radius.circular(16),
+                            ),
+                          ),
+                          child: Text(task.doneNote!, style: OnbText.body.copyWith(color: OnbColors.text, height: 1.5)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                for (final link in {
+                  ...RegExp(r'https?://\S+').allMatches(task.doneNote ?? '').map((m) => m.group(0)!),
+                })
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Material(
+                      color: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: OnbColors.line)),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () => openExternalLink(context, link),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(color: OnbColors.tint, borderRadius: BorderRadius.circular(10)),
+                                alignment: Alignment.center,
+                                child: const Text('🔗', style: TextStyle(fontSize: 16)),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  Uri.tryParse(link)?.host ?? link,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontFamily: 'Sora', fontSize: 13, fontWeight: FontWeight.w600, color: OnbColors.text),
+                                ),
+                              ),
+                              const Text('Open', style: TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.primary)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
           if (task.managerReply != null) ...[
             const Text('YOUR REPLY', style: OnbText.eyebrow),
             const SizedBox(height: 6),
             Text(task.managerReply!, style: OnbText.body),
           ] else ...[
-            Text('Reply to $first', style: OnbText.bodyStrong),
+            Text('Reply to $first', style: OnbText.bodyStrong.copyWith(fontSize: 13)),
             const SizedBox(height: 6),
             OnbTextArea(
               fieldKey: const ValueKey('starter-reply'),

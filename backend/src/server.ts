@@ -17,9 +17,12 @@ import { startCareScheduler, stopCareScheduler } from './services/care.service';
 import { startGameChallengeSweeper, stopGameChallengeSweeper } from './services/game-challenge.service';
 import { startCupRunner, stopCupRunner } from './services/cup.service';
 import { startEngagementWarmup, stopEngagementWarmup } from './services/engagement-warmup.service';
+import { enableLifecycleReadCache } from './services/lifecycle/readCache';
 
 async function start(): Promise<void> {
   await connectDb();
+  // Lifecycle boards and Suwi notices from memory, dropped on every write (lifecycle/readCache.ts).
+  enableLifecycleReadCache();
   logger.info('Connected to MongoDB', { database: env.mongoDbName });
   startConnectScheduler();
   startNotificationScheduler();

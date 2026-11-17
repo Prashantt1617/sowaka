@@ -1005,29 +1005,45 @@ void _managerScreens() {
     final shell = _shell(_manager, _fixtureMorning);
     await _push(tester, JoinerScreen(shell: shell, journeyId: journeyId));
     await shot('M2', '');
-    // M2a: the starter task sheet.
-    await _tap(tester, find.byKey(const ValueKey('assign-starter')));
+    // The done tasks, opened under their row.
+    await _tap(tester, find.byKey(const ValueKey('mgr-done-toggle')));
+    await shot('M2', 'done-open');
+    // M2a: the starter task sheet (from "Assign", or M3's "Give another task").
+    final m2 = tester.element(find.byType(JoinerScreen));
+    unawaited(showStarterTaskSheet(m2, shell, journeyId, 'Isha'));
+    await _settle(tester);
     await tester.enterText(find.byKey(const ValueKey('starter-title')), 'Audit the leave flow for accessibility');
     await tester.pump();
     await _tap(tester, find.byKey(const ValueKey('due-friday')), scroll: false);
     FocusManager.instance.primaryFocus?.unfocus();
     await _settle(tester, rounds: 2);
-    await shot('M2', 'starter-task-sheet', full: false);
+    await shot('M2a', 'starter-task-sheet', full: false);
     Navigator.of(tester.element(find.byKey(const ValueKey('starter-title')))).pop();
     await _settle(tester);
-    // M2b: the 1:1 note sheet.
-    await _tap(tester, find.byKey(const ValueKey('add-note')));
+    // M2b: the 1:1 note sheet, shared.
+    unawaited(showOneOnOneNoteSheet(m2, shell, journeyId, 'Isha'));
+    await _settle(tester);
     await tester.enterText(find.byKey(const ValueKey('note-text')), 'Settling in well. Wants to sit in on user interviews. Pair with Kiran on the design system this week.');
+    await _tap(tester, find.byKey(const ValueKey('note-share')), scroll: false);
     FocusManager.instance.primaryFocus?.unfocus();
     await _settle(tester, rounds: 2);
-    await shot('M2', 'note-sheet', full: false);
+    await shot('M2b', 'note-sheet', full: false);
     Navigator.of(tester.element(find.byKey(const ValueKey('note-text')))).pop();
     await _settle(tester);
-    // The set-up page.
-    await _tap(tester, find.byKey(const ValueKey('open-setup')));
+    // The set-up page (from its task's Set up / Edit).
+    await _push(tester, JoinerSetupScreen(shell: shell, journeyId: journeyId, detail: JoinerDetail.fromJson(detail)));
     await shot('M2', 'setup');
     await _tap(tester, find.byKey(const ValueKey('setup-add-person')));
     await shot('M2', 'setup-people-picker', full: false);
+  });
+
+  _scenario('M2 day 1 as drawn', (tester, shot) async {
+    // The artboard's moment: Day 1 morning, the meeting about to start, nothing done yet.
+    final detail = _managerJoinerDay1();
+    final journeyId = (detail['joiner'] as Map)['journeyId'] as String;
+    _server.on('GET', r'/lifecycle/manager/joiners/[^/]+$', detail);
+    await _push(tester, JoinerScreen(shell: _shell(_manager, _day1Morning), journeyId: journeyId));
+    await shot('M2', 'day1');
   });
 
   _scenario('M2 set-up after the goals lock', (tester, shot) async {
@@ -1261,10 +1277,14 @@ void _shellHooks() {
     final bloc = await _boot(tester, _manager, _managerTeam);
     await _tab(tester, bloc, ManagerTab.manage);
     await shot('M0', 'team-tab');
-    final joiners = find.byKey(const ValueKey('new-joiners'));
-    if (joiners.evaluate().isNotEmpty) {
-      await _scrollTo(tester, joiners);
-      await shot('M0', 'new-joiners-section', full: false);
+    // M0b: the New joiners pill on the Direct Reports heading; only joiners
+    // stay on the tree.
+    final pill = find.byKey(const ValueKey('filter-joiners'));
+    if (pill.evaluate().isNotEmpty) {
+      await _scrollTo(tester, pill);
+      await _tap(tester, pill);
+      await shot('M0b', 'new-joiners-filter');
+      await _tap(tester, find.byKey(const ValueKey('filter-all')));
     }
   });
 
@@ -1528,6 +1548,47 @@ Map<String, dynamic> _managerJoiner({bool withCheckin = false, bool reply = true
   }
   return detail;
 }
+
+/// M2 on the joiner's Day 1, as the artboard draws it: the 1:1 about to
+/// start, the team intro at 4 PM, the welcome, the starter task and the 1:1
+/// notes still to do, nothing of the manager's done yet.
+Map<String, dynamic> _managerJoinerDay1() {
+  final detail = fx('manager_joiner');
+  final joiner = (detail['joiner'] as Map).cast<String, dynamic>()
+    ..['dayLabel'] = 'Day 1'
+    ..['plant'] = {'stage': 1, 'water': 3, 'leaves': 0, 'droop': false};
+  detail['joiner'] = joiner;
+  String iso(DateTime d) => d.toUtc().toIso8601String();
+  final friday = _at(4, 0);
+  for (final task in _list(detail['tasks'])) {
+    task['late'] = false;
+    switch (task['systemKey']) {
+      case 'meet_manager':
+        task['status'] = 'todo';
+        task['meeting'] = {...(task['meeting'] as Map), 'startsAt': iso(_at(0, 11)), 'endsAt': iso(_at(0, 11, 30)), 'link': 'https://meet.example/kabir'}..remove('met')..remove('newTime');
+      case 'meet_team':
+        task['status'] = 'todo';
+        task['kind'] = 'meeting';
+        task['meeting'] = {'id': 'fx-team', 'title': 'Meet the team', 'startsAt': iso(_at(0, 16)), 'endsAt': iso(_at(0, 16, 30)), 'place': 'Design bay'};
+      case 'starter_task':
+        task['status'] = 'todo';
+        task['dueAt'] = iso(friday);
+      case 'one_on_one_notes':
+        task['status'] = 'todo';
+      case 'monthly_goals' || 'probation_goals':
+        task['status'] = 'locked';
+      default:
+        if (task['ownerRole'] == 'employee' && task['phase'] == 'first_week') task['status'] = 'todo';
+    }
+  }
+  detail['starterTasks'] = [];
+  detail['notes'] = [];
+  detail['welcomePost'] = {'canPost': true};
+  detail['joinerNextDue'] = {'title': 'Week-1 tasks', 'dueAt': iso(_at(6, 0)).substring(0, 10)};
+  return detail;
+}
+
+DateTime get _day1Morning => _at(0, 10, 55);
 
 /// Payroll for the leaver: November held, October paid.
 void _payrollRoutes() {

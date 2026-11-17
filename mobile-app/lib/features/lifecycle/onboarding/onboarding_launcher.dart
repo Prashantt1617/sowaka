@@ -57,8 +57,9 @@ Future<void> openOnboardingHome(BuildContext context, {OnboardingShell? shell}) 
     _push(context, (s) => OnboardingHomeScreen(shell: s), shell: shell);
 
 /// M2, a joiner's week as their manager sees it.
-Future<void> openJoiner(BuildContext context, String journeyId, {OnboardingShell? shell}) =>
-    _push(context, (s) => JoinerScreen(shell: s, journeyId: journeyId), shell: shell);
+/// [summary]: the Team tab's row, so M2's card paints at once.
+Future<void> openJoiner(BuildContext context, String journeyId, {OnboardingShell? shell, JoinerSummary? summary}) =>
+    _push(context, (s) => JoinerScreen(shell: s, journeyId: journeyId, summary: summary), shell: shell);
 
 /// Opens a task from the joiner's home or Up next on the screen that does it.
 /// Back lands where it came from; the caller reads its list again after.

@@ -124,6 +124,8 @@ const RULES: Rule[] = [
   { path: /^\/admin\/lifecycle\/templates/, read: ['lifecycle_templates', 'onboarding', 'offboarding'], write: ['lifecycle_templates'] },
   { path: /^\/admin\/lifecycle\/(letter-templates|letters)/, read: ['lifecycle_documents', 'onboarding', 'offboarding'], write: ['lifecycle_documents', 'onboarding', 'offboarding'] },
   { path: /^\/admin\/lifecycle\/files/, read: ['onboarding', 'offboarding', 'lifecycle_documents'] },
+  // The Documents page's joiner picker (light: no cards, tasks or pay).
+  { path: /^\/admin\/lifecycle\/joiners/, read: ['lifecycle_documents', 'onboarding'] },
   { path: /^\/admin\/lifecycle\/exit-insights/, read: ['exit_insights'], write: ['exit_insights'] },
   { path: /^\/admin\/lifecycle\/(offboarding|resignations)/, read: ['offboarding'], write: ['offboarding'] },
   // The onboarding board, journeys, offers, candidate documents, date requests, surveys.

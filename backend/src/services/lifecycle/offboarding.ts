@@ -19,6 +19,7 @@
  * resignation, the journey's tasks, the handover and the settlement; nothing
  * about a column is stored.
  */
+import { cachedLifecycle, refreshLifecycle } from './readCache';
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -42,6 +43,7 @@ import {
 import { closeJourney, completeTask, createOffboardingJourney, journeyTasksView, moveTl, refreshJourney, reopenTask, setJourneyStatus, skipTask } from './engine';
 import type { TaskView } from './engine';
 import { orgMayEmail, sendLifecycleEmail, smtpConfigured } from './emails';
+import { noticeDaysFor } from './templates';
 import { env } from '../../config/env';
 
 /** Answers with its status and message (the routes send `{ error, message }`). */
@@ -144,13 +146,8 @@ export async function defaultOffboardingTemplate(org: string) {
   return lifecycleTemplates().findOne({ org, kind: 'offboarding', isDefault: true, active: { $ne: false } }, { projection: { _id: 0 } });
 }
 
-/** Days of notice for a resignation: the default offboarding template, else the company's Exit settings, else 30. */
-export async function noticeDaysFor(org: string): Promise<number> {
-  const template = await defaultOffboardingTemplate(org);
-  if (typeof template?.settings?.noticeDays === 'number') return template.settings.noticeDays;
-  const company = await companies().findOne({ id: org }, { projection: { _id: 0, exitNoticeDays: 1 } });
-  return typeof company?.exitNoticeDays === 'number' ? company.exitNoticeDays : 30;
-}
+/** Days of notice for a resignation: the default offboarding template, else the company's Exit settings, else 30 (templates.ts). */
+export { noticeDaysFor };
 
 /** Whether the app shows the Off-boarding page: the template's list when it has one, else on except for terminations and abscondings. */
 export function appPageDefault(type: OffboardingExitType, appPageFor?: OffboardingExitType[]): boolean {
@@ -561,12 +558,16 @@ export function interviewOpensKey(e: UserExit, journey: Journey | null): string 
 const BOARD_USER = { _id: 0, userId: 1, name: 1, employeeId: 1, designation: 1, department: 1, managerUserId: 1, joiningDate: 1, lifecycleStatus: 1, exit: 1, personalEmail: 1 } as const;
 
 /** Everything the board and the drawer read for a set of exits, in a few queries. */
-async function contexts(org: string, people: Array<BoardUser & { exit: UserExit }>): Promise<ExitCtx[]> {
+/** A journey without its template's task list, and tasks without their long texts: what a board card reads. */
+const SLIM_JOURNEY = { _id: 0, 'templateSnapshot.tasks': 0 } as const;
+const SLIM_TASK = { _id: 0, org: 0, helper: 0, note: 0, doneByName: 0, doneByUserId: 0, dueChangedAt: 0, remindedAt: 0 } as const;
+
+async function contexts(org: string, people: Array<BoardUser & { exit: UserExit }>, slim = false): Promise<ExitCtx[]> {
   const journeyIds = people.map((u) => u.exit.offboarding?.journeyId).filter((x): x is string => !!x);
   const resignationIds = people.map((u) => u.exit.offboarding?.resignationId).filter((x): x is string => !!x);
   const [js, ts, hs, ss, rs, managers] = await Promise.all([
-    journeyIds.length ? journeys().find({ id: { $in: journeyIds } }, { projection: { _id: 0 } }).toArray() : [],
-    journeyIds.length ? journeyTasks().find({ journeyId: { $in: journeyIds } }, { projection: { _id: 0 } }).toArray() : [],
+    journeyIds.length ? journeys().find({ id: { $in: journeyIds } }, { projection: slim ? SLIM_JOURNEY : { _id: 0 } }).toArray() : [],
+    journeyIds.length ? journeyTasks().find({ journeyId: { $in: journeyIds } }, { projection: slim ? SLIM_TASK : { _id: 0 } }).toArray() : [],
     journeyIds.length ? handoverItems().find({ journeyId: { $in: journeyIds } }, { projection: { _id: 0 } }).toArray() : [],
     exitSettlements().find({ org, userId: { $in: people.map((u) => u.userId) } }, { projection: { _id: 0, userId: 1, status: 1, payablePaise: 1, approvedAt: 1, paidAt: 1, 'lines.key': 1, 'lines.amountPaise': 1, 'lines.estimated': 1, 'lines.period': 1 } }).toArray(),
     resignationIds.length ? resignations().find({ id: { $in: resignationIds } }, { projection: { _id: 0 } }).toArray() : [],
@@ -607,11 +608,11 @@ function forTeam(card: BoardCard, ctx: ExitCtx, team: Exclude<ClearanceTeam, 'ma
 export interface BoardQuery { tab?: string; q?: string; from?: string; to?: string }
 
 /** GET /admin/lifecycle/offboarding/board: one tab's columns, every tab's count, and how many wait on HR. */
-export async function offboardingBoard(actorUserId: string, query: BoardQuery = {}, now = new Date()) {
+export async function offboardingBoard(actorUserId: string, query: BoardQuery = {}, now = new Date(), opts: { fresh?: boolean; full?: boolean } = {}) {
   const actor = await dashboardActor(actorUserId);
   const tab: BoardTab = query.tab === 'notice' || query.tab === 'exit' ? query.tab : 'resignations';
   const today = todayKey(now);
-  const cards = await allCards(actor, today);
+  const cards = await allCards(actor, today, opts);
   const q = (query.q ?? '').trim().toLowerCase();
   const from = isDateKey(query.from) ? query.from : null;
   const to = isDateKey(query.to) ? query.to : null;
@@ -631,14 +632,44 @@ export async function offboardingBoard(actorUserId: string, query: BoardQuery = 
   };
 }
 
-async function allCards(actor: Actor, today: string): Promise<BoardCard[]> {
-  const org = actor.org;
+/** What the offboarding board and its count are built from, read in one go. */
+interface OffBoardData {
+  open: Resignation[];
+  people: Array<Pick<User, 'userId' | 'name' | 'employeeId' | 'designation' | 'department' | 'exit'>>;
+  managers: Array<Pick<User, 'userId' | 'name'>>;
+  ctxs: ExitCtx[];
+}
+
+async function loadOffBoardData(org: string, full = false): Promise<OffBoardData> {
   const [open, leavers] = await Promise.all([
     resignations().find({ org, status: { $in: ['with_manager', 'with_hr'] } }, { projection: { _id: 0 } }).toArray(),
     users().find({ org, exit: { $exists: true } }, { projection: BOARD_USER }).toArray(),
   ]);
-  const people = await users().find({ userId: { $in: open.map((r) => r.userId) } }, { projection: { _id: 0, userId: 1, name: 1, employeeId: 1, designation: 1, department: 1, exit: 1 } }).toArray();
-  const managers = await users().find({ userId: { $in: open.map((r) => r.managerUserId).filter((x): x is string => !!x) } }, { projection: { _id: 0, userId: 1, name: 1 } }).toArray();
+  const [people, managers, ctxs] = await Promise.all([
+    users().find({ userId: { $in: open.map((r) => r.userId) } }, { projection: { _id: 0, userId: 1, name: 1, employeeId: 1, designation: 1, department: 1, exit: 1 } }).toArray(),
+    users().find({ userId: { $in: open.map((r) => r.managerUserId).filter((x): x is string => !!x) } }, { projection: { _id: 0, userId: 1, name: 1 } }).toArray(),
+    contexts(org, leavers as Array<BoardUser & { exit: UserExit }>, !full),
+  ]);
+  return { open: open as Resignation[], people, managers, ctxs };
+}
+
+/**
+ * The offboarding board's raw data for an org, kept in memory and shared by the three tabs and the
+ * count (readCache: dropped on every write). `fresh` skips the kept copy; `full` reads whole documents
+ * (both for the speed check).
+ */
+export function offBoardData(org: string, opts: { fresh?: boolean; full?: boolean } = {}): Promise<OffBoardData> {
+  if (opts.fresh || opts.full) return loadOffBoardData(org, opts.full);
+  return cachedLifecycle(org, 'off-board-data', null, () => loadOffBoardData(org));
+}
+
+/** The kept offboarding data worked out again now (the warm-up). */
+export function refreshOffBoardData(org: string): Promise<OffBoardData> {
+  return refreshLifecycle(org, 'off-board-data', null, () => loadOffBoardData(org));
+}
+
+async function allCards(actor: Actor, today: string, opts: { fresh?: boolean; full?: boolean } = {}): Promise<BoardCard[]> {
+  const { open, people, managers, ctxs } = await offBoardData(actor.org, opts);
   const out: BoardCard[] = [];
   if (actor.viewer.kind === 'hr') {
     for (const r of open) {
@@ -647,7 +678,6 @@ async function allCards(actor: Actor, today: string): Promise<BoardCard[]> {
       out.push(toCard(`r:${r.id}`, cardBase(p), deriveResignation(r, managers.find((m) => m.userId === r.managerUserId)?.name, p.name, today)));
     }
   }
-  const ctxs = await contexts(org, leavers as Array<BoardUser & { exit: UserExit }>);
   for (const ctx of ctxs) {
     const card = toCard(ctx.user.userId, cardBase(ctx.user), deriveExit(ctx, today));
     if (actor.viewer.kind === 'hr') {
@@ -752,10 +782,10 @@ export async function sendNudge(actorUserId: string, employeeUserId: string, bod
 }
 
 /** GET /admin/lifecycle/offboarding/count — the sidebar's red badge: cards that need you, and late ones. */
-export async function offboardingCount(actorUserId: string, now = new Date()) {
+export async function offboardingCount(actorUserId: string, now = new Date(), opts: { fresh?: boolean; full?: boolean } = {}) {
   const actor = await dashboardActor(actorUserId);
   const today = todayKey(now);
-  const cards = (await allCards(actor, today)).filter((c) => c.column !== 'closed');
+  const cards = (await allCards(actor, today, opts)).filter((c) => c.column !== 'closed');
   const needs = (c: BoardCard) => (actor.viewer.kind === 'hr' ? c.waitingOnHr : c.flag?.key !== 'all_clear');
   const needsYou = cards.filter(needs).length;
   const late = cards.filter((c) => c.late && !needs(c)).length;
@@ -1245,8 +1275,9 @@ export async function myOffboarding(userId: string, now = new Date()) {
   const resignedOn = resignation ? keyOfInstant(resignation.submittedAt) : e.noticeFrom ?? null;
   const managerUserId = journey?.managerUserId ?? user.managerUserId;
   const managerName = managerUserId ? (await users().findOne({ userId: managerUserId }, { projection: { _id: 0, name: 1 } }))?.name : undefined;
-  const markedDone = await journeyTasks().findOne({ journeyId, systemKey: 'mark_handover_done', status: 'done' }, { projection: { _id: 0, doneAt: 1 } });
-  const summary = handoverSummary(items, ob, tasks, markedDone);
+  // The checklist's shared / done steps are the manager's tasks: read them from every task (covers both
+  // 'handover done' and when the checklist was shared), as the manager's R8b does.
+  const summary = handoverSummary(items, ob, await journeyTasksView(journeyId, 'hr'));
   const acceptedAt = journey?.anchors.exit_accepted ?? journey?.createdAt ?? null;
   return {
     tl: e.lastWorkingDay,
@@ -1564,8 +1595,12 @@ export async function runOffboardingJobs(now = new Date()) {
         counts.settlementDue++;
       }
       const joined = keyOfInstant(u.joiningDate ?? null);
-      if (pushHours && today >= addDays(e.lastWorkingDay, 30) && joined && serviceYears(joined, e.lastWorkingDay).completed >= 5 && !fired.has('gratuity_due') && (await fire('gratuity_due'))) {
-        await tellOffboarding(await clearanceStaff(u.org), 'lifecycle_gratuity_due', 'lifecycle_clearance', `Gratuity due: ${u.name}`, `Gratuity is due within 30 days of the last day (${shortDay(e.lastWorkingDay)}).`, { userId: u.userId });
+      // The template's gratuity day (its task's due date, Tl + gratuityDays), as the board shows it.
+      const gratuityTask = await journeyTasks().findOne({ journeyId, systemKey: 'gratuity' }, { projection: { _id: 0, dueAt: 1 } });
+      const gratuityDue = keyOfInstant(gratuityTask?.dueAt ?? null) ?? addDays(e.lastWorkingDay, 30);
+      if (pushHours && today >= gratuityDue && joined && serviceYears(joined, e.lastWorkingDay).completed >= 5 && !fired.has('gratuity_due') && (await fire('gratuity_due'))) {
+        const days = daysFromTo(e.lastWorkingDay, gratuityDue);
+        await tellOffboarding(await clearanceStaff(u.org), 'lifecycle_gratuity_due', 'lifecycle_clearance', `Gratuity due: ${u.name}`, `Gratuity is due within ${days} ${days === 1 ? 'day' : 'days'} of the last day (${shortDay(e.lastWorkingDay)}).`, { userId: u.userId });
         counts.gratuityDue++;
       }
     } catch (error) {

@@ -5,6 +5,7 @@
  * a task, a bank/PF change).
  */
 import { randomUUID } from 'node:crypto';
+import { cachedLifecycle, refreshLifecycle } from './readCache';
 import { dateChangeRequests, journeys, journeyTasks, offers, surveyResponses, users } from '../../config/db';
 import type {
   Day1Pass, Journey, JourneyFlag, JourneyTask, OnboardingBoardColumn, OnboardingBoardTab, OwnerRole, SurveyKind,
@@ -145,17 +146,28 @@ export function progressOf(tasks: JourneyTask[], tab: OnboardingBoardTab): { don
   return { done: phase.filter((t) => t.status === 'done' || t.status === 'skipped').length, total: phase.length };
 }
 
-async function boardJourneys(org: string, now: Date): Promise<Journey[]> {
+/**
+ * The board's journeys: only the fields a card, its flags and the counts read. The template
+ * snapshot's task list (the bulk of a journey) is left out: the board needs only its settings.
+ * `full` reads whole journeys (the speed check compares the two, so the slim read never changes a card).
+ */
+const BOARD_JOURNEY_PROJECTION = {
+  _id: 0, id: 1, org: 1, kind: 1, userId: 1, candidate: 1, managerUserId: 1, buddyUserId: 1, templateId: 1, status: 1, stage: 1, tj: 1, tl: 1,
+  anchors: 1, designation: 1, department: 1, location: 1, plant: 1, probation: 1, lastActivityAt: 1, createdAt: 1, createdByUserId: 1, updatedAt: 1,
+  closedAt: 1, 'templateSnapshot.settings': 1, 'templateSnapshot.name': 1,
+} as const;
+async function boardJourneys(org: string, now: Date, full = false): Promise<Journey[]> {
   const since = new Date(now.getTime() - CONFIRMED_DAYS * 86_400_000);
   const rows = await journeys().find({
     org, kind: 'onboarding', closedAt: { $exists: false },
     $or: [{ status: { $ne: 'confirmed' } }, { 'probation.decision.decidedAt': { $gte: since } }],
-  }, { projection: { _id: 0, templateSnapshot: 1, id: 1, org: 1, kind: 1, userId: 1, candidate: 1, managerUserId: 1, buddyUserId: 1, templateId: 1, status: 1, stage: 1, tj: 1, anchors: 1, designation: 1, department: 1, location: 1, plant: 1, probation: 1, lastActivityAt: 1, createdAt: 1, createdByUserId: 1, updatedAt: 1 } }).toArray();
+  }, { projection: full ? { _id: 0 } : BOARD_JOURNEY_PROJECTION }).toArray();
   return rows as Journey[];
 }
 
 async function validTills(ids: string[]): Promise<Map<string, string>> {
-  const rows = await offers().find({ journeyId: { $in: ids } }, { projection: { _id: 0, journeyId: 1, versions: 1 } }).toArray();
+  // Only each version's valid-till: the last one is the current offer.
+  const rows = await offers().find({ journeyId: { $in: ids } }, { projection: { _id: 0, journeyId: 1, 'versions.fields.validTill': 1 } }).toArray();
   const out = new Map<string, string>();
   for (const row of rows) {
     const till = row.versions?.at(-1)?.fields?.validTill;
@@ -164,8 +176,26 @@ async function validTills(ids: string[]): Promise<Map<string, string>> {
   return out;
 }
 
-export async function groupTasks(ids: string[]): Promise<Map<string, JourneyTask[]>> {
-  const rows = await journeyTasks().find({ journeyId: { $in: ids } }, { projection: { _id: 0 } }).sort({ order: 1, month: 1 }).toArray();
+/**
+ * A board's view of a task. Every task counts toward progress and the stage, but only an active one
+ * (to do, in review, sent back) is ever shown, named, dated or nudged on a card, so a finished task
+ * or one not yet opened (most of a probation journey) comes as its status alone: the whole board
+ * then moves a fraction of the bytes over the database link.
+ */
+const ifOpen = (field: string) => ({ $cond: [{ $in: ['$status', ACTIVE_STATUSES] }, `$${field}`, '$$REMOVE'] });
+const BOARD_TASK_STAGES = [
+  { $sort: { order: 1, month: 1 } },
+  { $project: {
+    _id: 0, journeyId: 1, systemKey: 1, phase: 1, status: 1, ownerRole: 1, month: 1, order: 1, mustDo: 1, surface: 1,
+    id: ifOpen('id'), title: ifOpen('title'), ownerUserId: ifOpen('ownerUserId'), dueAt: ifOpen('dueAt'), opensAt: ifOpen('opensAt'),
+    kind: ifOpen('kind'), templateTaskId: ifOpen('templateTaskId'),
+  } },
+];
+
+export async function groupTasks(ids: string[], slim = false): Promise<Map<string, JourneyTask[]>> {
+  const rows = slim
+    ? await journeyTasks().aggregate<JourneyTask>([{ $match: { journeyId: { $in: ids } } }, ...BOARD_TASK_STAGES]).toArray()
+    : await journeyTasks().find({ journeyId: { $in: ids } }, { projection: { _id: 0 } }).sort({ order: 1, month: 1 }).toArray();
   const out = new Map<string, JourneyTask[]>();
   for (const row of rows) {
     const list = out.get(row.journeyId) ?? [];
@@ -217,7 +247,41 @@ const urgency = (card: BoardCard) => {
   return i.length ? Math.min(...i) : URGENCY.length;
 };
 
-export async function onboardingBoard(org: string, viewerUserId: string, query: Record<string, unknown>, now = new Date()) {
+/** What the board, its counts and the joiner picker are built from, read in one go. */
+interface BoardData {
+  all: Journey[];
+  tasksBy: Map<string, JourneyTask[]>;
+  tills: Map<string, string>;
+  folks: Map<string, { name: string; designation?: string; department?: string; profilePhotoKey?: string }>;
+  names: Map<string, string>;
+}
+
+async function loadBoardData(org: string, now: Date, full = false): Promise<BoardData> {
+  const all = await boardJourneys(org, now, full);
+  const ids = all.map((j) => j.id);
+  const [tasksBy, tills, folks] = await Promise.all([
+    groupTasks(ids, !full), validTills(ids), people(all.flatMap((j) => [j.userId, j.managerUserId])),
+  ]);
+  const names = await namesOf([...all.flatMap((j) => [j.managerUserId, j.buddyUserId, j.userId]), ...[...tasksBy.values()].flat().map((t) => t.ownerUserId)]);
+  return { all, tasksBy, tills, folks, names };
+}
+
+/**
+ * The board's raw data for an org, kept in memory (readCache: dropped on every write, refreshed
+ * behind the reader after a minute). `opts.fresh` skips the kept copy; `opts.full` also reads whole
+ * documents (both for the speed check).
+ */
+export function boardData(org: string, now = new Date(), opts: { fresh?: boolean; full?: boolean } = {}): Promise<BoardData> {
+  if (opts.fresh || opts.full) return loadBoardData(org, now, opts.full);
+  return cachedLifecycle(org, 'lc-board-data', null, () => loadBoardData(org, now));
+}
+
+/** The kept board data worked out again now (the warm-up). */
+export function refreshBoardData(org: string, now = new Date()): Promise<BoardData> {
+  return refreshLifecycle(org, 'lc-board-data', null, () => loadBoardData(org, now));
+}
+
+export async function onboardingBoard(org: string, viewerUserId: string, query: Record<string, unknown>, now = new Date(), opts: { fresh?: boolean; full?: boolean } = {}) {
   const tab = (TABS.includes(query.tab as OnboardingBoardTab) ? query.tab : 'pre_boarding') as OnboardingBoardTab;
   const filter = query.filter ? String(query.filter) : '';
   if (filter && !FILTERS.includes(filter as QuickFilter)) throw new LifecycleError(400, `filter is one of ${FILTERS.join(', ')}`);
@@ -226,11 +290,7 @@ export async function onboardingBoard(org: string, viewerUserId: string, query: 
   if ((from && !isDateKey(from)) || (to && !isDateKey(to))) throw new LifecycleError(400, 'from and to are YYYY-MM-DD');
   const q = String(query.q ?? '').trim().toLowerCase();
 
-  const all = await boardJourneys(org, now);
-  const ids = all.map((j) => j.id);
-  const [tasksBy, tills] = await Promise.all([groupTasks(ids), validTills(ids)]);
-  const folks = await people(all.flatMap((j) => [j.userId, j.managerUserId]));
-  const names = await namesOf([...all.flatMap((j) => [j.managerUserId, j.buddyUserId, j.userId]), ...[...tasksBy.values()].flat().map((t) => t.ownerUserId)]);
+  const { all, tasksBy, tills, folks, names } = await boardData(org, now, opts);
 
   const counts: Record<OnboardingBoardTab, number> = { pre_boarding: 0, first_week: 0, probation: 0 };
   const columns = BOARD_COLUMNS[tab].map((c) => ({ ...c, cards: [] as BoardCard[] }));
@@ -257,6 +317,25 @@ export async function onboardingBoard(org: string, viewerUserId: string, query: 
   return { tab, columns, counts };
 }
 
+/** One joiner for a picker (Documents): who, and where they are on the board. */
+export interface JoinerPick { journeyId: string; name: string; designation?: string; dayLabel: string; tab: OnboardingBoardTab }
+
+/**
+ * Everyone on the onboarding board, light: the Documents page's joiner picker. Built from the same
+ * kept data as the board (so it is fast and agrees with it), with no cards, tasks or photos.
+ */
+export async function boardJoiners(org: string, now = new Date()): Promise<{ joiners: JoinerPick[] }> {
+  const { all, tasksBy, tills, folks } = await boardData(org, now);
+  const joiners = all.map((j) => {
+    const derived = deriveJourney(j, tasksBy.get(j.id) ?? [], now, { offerValidTill: tills.get(j.id) });
+    const who = j.userId ? folks.get(j.userId) : undefined;
+    const designation = j.designation ?? who?.designation;
+    return { journeyId: j.id, name: who?.name ?? j.candidate?.name ?? '—', ...(designation ? { designation } : {}), dayLabel: derived.dayLabel, tab: derived.tab };
+  });
+  joiners.sort((a, b) => a.name.localeCompare(b.name));
+  return { joiners };
+}
+
 async function requireOnboarding(org: string, journeyId: string): Promise<Journey> {
   const j = await loadJourney(journeyId);
   if (j.org !== org) throw new LifecycleError(404, 'Journey not found');
@@ -267,10 +346,8 @@ async function requireOnboarding(org: string, journeyId: string): Promise<Journe
  * The sidebar's Onboarding badge: joiners on the board that need HR now
  * (Needs you) or are late, each counted once.
  */
-export async function onboardingCounts(org: string, now = new Date()) {
-  const all = await boardJourneys(org, now);
-  const ids = all.map((j) => j.id);
-  const [tasksBy, tills] = await Promise.all([groupTasks(ids), validTills(ids)]);
+export async function onboardingCounts(org: string, now = new Date(), opts: { fresh?: boolean; full?: boolean } = {}) {
+  const { all, tasksBy, tills } = await boardData(org, now, opts);
   let needsYou = 0; let late = 0; let badge = 0;
   for (const j of all) {
     const { flags } = deriveJourney(j, tasksBy.get(j.id) ?? [], now, { offerValidTill: tills.get(j.id) });
@@ -287,14 +364,14 @@ export async function onboardingCounts(org: string, now = new Date()) {
  * salary are left out; without HR's view the documents come as status only
  * (no files) and the About-you and bank/PF details are left out.
  */
-export async function journeyPanel(org: string, journeyId: string, now = new Date(), viewer: PanelViewer = FULL_VIEW) {
-  const j = await requireOnboarding(org, journeyId);
+export async function journeyPanel(org: string, journeyId: string, now = new Date(), viewer: PanelViewer = FULL_VIEW, loaded?: Journey) {
+  // The route has usually read the journey already (its access check): no second read of it.
+  const j = loaded && loaded.id === journeyId && loaded.org === org ? loaded : await requireOnboarding(org, journeyId);
   if (j.kind !== 'onboarding') throw new LifecycleError(404, 'Journey not found');
-  const tasks = await tasksOf(journeyId);
-  const tills = await validTills([journeyId]);
-  const derived = deriveJourney(j, tasks, now, { offerValidTill: tills.get(journeyId) });
-  const names = await namesOf([j.managerUserId, j.buddyUserId, j.userId, ...tasks.map((t) => t.ownerUserId)]);
-  const [documents, letters, offer, dateRequests, probation, batch] = await Promise.all([
+  // Every read that needs only the journey, at once.
+  const [tasks, tills, documents, letters, offer, dateRequests, probation, batch] = await Promise.all([
+    tasksOf(journeyId),
+    validTills([journeyId]),
     journeyDocumentsView(journeyId).then((docs) => (viewer.seesDocuments ? docs : docs.map(documentStatusOnly))),
     journeyLettersView(journeyId),
     offerView(journeyId, { hidePay: !viewer.seesPay }),
@@ -302,6 +379,8 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
     probationOf(journeyId),
     batchOf(j),
   ]);
+  const derived = deriveJourney(j, tasks, now, { offerValidTill: tills.get(journeyId) });
+  const names = await namesOf([j.managerUserId, j.buddyUserId, j.userId, ...tasks.map((t) => t.ownerUserId)]);
   const journey = {
     ...journeyForViewer(sanitiseJourney(j), viewer),
     ...(j.managerUserId && names.get(j.managerUserId) ? { managerName: names.get(j.managerUserId) } : {}),
@@ -310,8 +389,7 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
     stage: derived.stage, plant: derived.plant,
     waitingOn: waitingOnOf(j, tasks, names, now, 10), progress: progressOf(tasks, derived.tab),
   };
-  await markNudged(journey.waitingOn, now);
-  const nudged = await nudgedToday(tasks.map((t) => t.id), now);
+  const [, nudged] = await Promise.all([markNudged(journey.waitingOn, now), nudgedToday(tasks.map((t) => t.id), now)]);
   const views = tasks.map((t) => ({ ...taskView(t, j, names, now), canNudge: !('reason' in nudgeTarget(j, t)), ...(nudged.has(t.id) ? { nudgedToday: true } : {}) }));
   const probationView = viewer.seesPay ? probation : { ...probation, decision: decisionWithoutPay(probation.decision) };
   return { journey, tasks: views, documents, letters, offer, dateRequests, probation: probationView, batch, viewer };

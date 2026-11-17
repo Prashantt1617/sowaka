@@ -122,6 +122,8 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   }
   let ticks = 0;
   /** One scheduler hour, exactly as notification-scheduler runs it: the hourly jobs, then the five-minute tick. */
+  /** Once a day: M0's slim read gives the same rows as reading every task (set once the manager exists). */
+  let compareJoinerList: ((at: Date) => Promise<void>) | null = null;
   async function tick(at: Date) {
     setNow(at);
     ticks += 1;
@@ -130,6 +132,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
     await off.runOffboardingJobs(at);
     await jobs.runLifecycleJobs(at);
     drainMail();
+    if (compareJoinerList && new RealDate(at.getTime() + 5.5 * HOUR).getUTCHours() === 9) await compareJoinerList(at);
   }
   type Pace = 'hourly' | 'sparse';
   const SPARSE_HOURS = new Set([0, 9, 13, 21]);
@@ -306,6 +309,15 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   const HRME = { userId: 'hr', name: 'Hema HR' };
   const HRO = { ...HRME, org: ORG };
   const MGR = { userId: 'mgr', name: 'Neha Rao', org: ORG };
+  let listDays = 0, listMismatch = 0;
+  compareJoinerList = async (at) => {
+    listDays += 1;
+    const [slim, full] = await Promise.all([app.joinersForManager(MGR, at), app.joinersForManager(MGR, at, { fullTasks: true })]);
+    if (JSON.stringify(slim) !== JSON.stringify(full)) {
+      listMismatch += 1;
+      if (listMismatch <= 3) ok(`M0 slim read = full read on ${at.toISOString().slice(0, 10)}`, false, { slim, full });
+    }
+  };
   ok('the scratch company is the only one with the lifecycle on', (await companies().countDocuments({ 'features.lifecycle': true })) === 1);
   const cal = await rules.workCalendar(ORG);
   ok('Saturday and Sunday off; the two holidays are off', !rules.isWorkingDay('2027-03-06', cal) && !rules.isWorkingDay('2027-03-07', cal) && !rules.isWorkingDay(HOLIDAY_1, cal) && !rules.isWorkingDay(HOLIDAY_2, cal) && rules.isWorkingDay('2027-03-04', cal));
@@ -1019,6 +1031,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   ok(`no email sent twice (${allMail.length} emails)`, dupMail.length === 0, dupMail.slice(0, 5));
   const night = allPushes.filter((p) => { const h = Number(istTime(p.at).slice(0, 2)); return (h < 8 || h >= 21) && !/^exit_team|lifecycle_due_changed/.test(p.scenario); });
   eq('no timed push went out at night (21:00–08:00 IST)', night.map((p) => `${p.scenario}>${nameOf(p.userId)} ${istKey(p.at)} ${istTime(p.at)}`), []);
+  ok(`M0 slim read matched the full read every day (${listDays} days)`, listDays > 30 && listMismatch === 0, { listDays, listMismatch });
   ok('no product warnings about failed notifications', !productWarnings.some((w) => /could not be sent|failed/i.test(w)), productWarnings.slice(0, 3));
 
   say(`\n${ticks} scheduler ticks, ${allPushes.length} pushes, ${allMail.length} emails`);

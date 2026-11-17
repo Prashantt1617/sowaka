@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 
 import '../../../../services/api_client.dart';
 import '../../../../services/api_config.dart';
 import '../../../auth/data/auth_models.dart';
+import '../../../manager/data/dashboard_cache.dart';
 import '../../../shared/network_status.dart';
 import 'onboarding_models.dart';
 
@@ -39,6 +41,11 @@ String onboardingErrorText(Object error) =>
 abstract class OnboardingApi {
   /// The signed-in person, for "mine" on replies.
   String? get viewerId;
+
+  /// [read] answered from this person's last replies on the device, never
+  /// the network: what the screen showed last time, to paint at once while
+  /// the live read runs. Null when a reply it needs was never kept.
+  Future<T?> fromDevice<T>(Future<T> Function(OnboardingApi api) read);
 
   // Joiner
   Future<LifecycleMe> fetchMe();
@@ -121,6 +128,74 @@ class HttpOnboardingApi implements OnboardingApi {
 
   @override
   String? get viewerId => session.user.id.isEmpty ? null : session.user.id;
+
+  // ── The device's copy (DashboardCache, as the manager dashboard keeps its own) ──
+  //
+  // Every lifecycle GET that answers is kept by path, per person, in memory
+  // and on the device; [fromDevice] replays a read against those replies, so
+  // the same parsing runs on them as on a live reply.
+
+  static final Map<String, Map<String, Map<String, dynamic>>> _keptByUser = {};
+  static final Map<String, Future<void>> _loading = {};
+  static final Set<String> _pendingWrite = {};
+  static final Map<String, DateTime> _writeStartedAt = {};
+  static const _replayKey = #onboardingReplay;
+
+  String get _cacheKey => 'lifecycle-${session.user.id}';
+
+  Future<Map<String, Map<String, dynamic>>> _kept() async {
+    final user = session.user.id;
+    final held = _keptByUser[user];
+    if (held != null) return held;
+    await (_loading[user] ??= DashboardCache.read(_cacheKey).then((replies) {
+      _keptByUser.putIfAbsent(user, () => replies ?? {});
+    }));
+    return _keptByUser[user] ??= {};
+  }
+
+  void _keep(String path, Map<String, dynamic>? json, DateTime startedAt) {
+    if (!DashboardCache.writeAllowed(startedAt)) return;
+    final user = session.user.id;
+    if (user.isEmpty) return;
+    final kept = _keptByUser[user] ??= {};
+    if (json == null) {
+      if (kept.remove(path) == null) return;
+    } else {
+      kept[path] = json;
+    }
+    // One write for the replies that land together (no timer left behind).
+    final first = _writeStartedAt[user];
+    _writeStartedAt[user] = first == null || startedAt.isBefore(first) ? startedAt : first;
+    if (_pendingWrite.add(user)) {
+      final key = _cacheKey;
+      scheduleMicrotask(() {
+        _pendingWrite.remove(user);
+        final began = _writeStartedAt.remove(user) ?? startedAt;
+        unawaited(DashboardCache.write(key, Map.of(kept), startedAt: began));
+      });
+    }
+  }
+
+  @override
+  Future<T?> fromDevice<T>(Future<T> Function(OnboardingApi api) read) async {
+    if (session.user.id.isEmpty) return null;
+    await _kept();
+    try {
+      return await runZoned(() => read(this), zoneValues: {_replayKey: true});
+    } catch (error) {
+      if (error is! _NotKept) debugPrint('Kept lifecycle reply not usable: $error');
+      return null;
+    }
+  }
+
+  /// Signed out, or someone else signed in: the copies in memory go (the
+  /// files go with [DashboardCache.clearAll]).
+  static void forgetKept() {
+    _pendingWrite.clear();
+    _writeStartedAt.clear();
+    _keptByUser.clear();
+    _loading.clear();
+  }
 
   // ── Joiner ────────────────────────────────────────────────────────────────
 
@@ -441,6 +516,20 @@ class HttpOnboardingApi implements OnboardingApi {
   // ── Transport ─────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> _json(String method, String path, {Map<String, dynamic>? body}) async {
+    if (Zone.current[_replayKey] == true) {
+      if (method != 'GET') throw const _NotKept();
+      final kept = _keptByUser[session.user.id]?[path];
+      if (kept == null) throw const _NotKept();
+      return Map<String, dynamic>.from(kept);
+    }
+    final startedAt = DateTime.now();
+    final json = await _live(method, path, body: body);
+    if (method == 'GET') _keep(path, json, startedAt);
+    return json;
+  }
+
+  Future<Map<String, dynamic>> _live(String method, String path, {Map<String, dynamic>? body}) async {
+    final startedAt = DateTime.now();
     final request = http.Request(method, Uri.parse('$_baseUrl$path'))
       ..headers.addAll({'Authorization': 'Bearer ${session.token}', 'Content-Type': 'application/json'});
     if (body != null) request.body = jsonEncode(body);
@@ -464,6 +553,8 @@ class HttpOnboardingApi implements OnboardingApi {
         (s) => s.isNotEmpty,
         orElse: () => '',
       );
+      // Off for the company, or gone: the device's copy of it goes too.
+      if (method == 'GET' && status == 404) _keep(path, null, startedAt);
       throw OnboardingApiException(
         switch (status) {
           404 when said.isEmpty || said.startsWith('Route not found') => OnboardingApiException.notAvailable,
@@ -484,4 +575,9 @@ class HttpOnboardingApi implements OnboardingApi {
       _ => OnboardingApiException.failed,
     });
   }
+}
+
+/// A replayed read needed a reply the device never kept.
+class _NotKept implements Exception {
+  const _NotKept();
 }
