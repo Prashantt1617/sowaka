@@ -1,4 +1,5 @@
 import { peopleTasks } from '../services/peopleTasks.service';
+import { correctionsForAdmin, feedbackForAdmin, leavesForAdmin, overtimeForAdmin } from '../services/timeOfficeLists';
 import { getMyLeaveBalance } from '../services/leave.service';
 import { users } from '../config/db';
 import { closeCase, endAccessNow, exitDetail, exitSettings, listExits, recordExit, saveInterview, setClearance, setExitSettings, settlementAction, withdrawExit } from '../services/exit.service';
@@ -10,7 +11,6 @@ import { listDashboardAccesses, setDashboardAccess } from '../services/dashboard
 import {
   AttendanceError,
   adminDecideRegularization,
-  listAllRegularizationsForAdmin,
   listOutOfLocationForAdmin,
 } from '../services/attendance.service';
 import { deleteOffice, listOffices, officeView, saveOffice } from '../services/geofence.service';
@@ -19,8 +19,8 @@ import { payCycleForAdmin, PunchLogError, punchLogForAdmin } from '../services/p
 import { cachedSwr } from '../services/swr-cache';
 import { PayrollInputsError } from '../services/payroll-inputs.service';
 import { hasAllDashboardTabs } from '../middleware/admin.middleware';
-import { adminCancelLeave, adminDecideLeave, decideLeaveCancellation, listAllLeavesForAdmin } from '../services/leave.service';
-import { adminDecideOvertime, listAllOvertimeForAdmin } from '../services/overtime.service';
+import { adminCancelLeave, adminDecideLeave, decideLeaveCancellation } from '../services/leave.service';
+import { adminDecideOvertime } from '../services/overtime.service';
 import {
   adminDecideReimbursement,
   listAllReimbursementsForAdmin,
@@ -32,7 +32,6 @@ import {
   createEmployeeForAdmin,
   removeEmployeeDocument,
   listAllEmployeesForAdmin,
-  listAllFeedbackForAdmin,
   setOvertimeEligibilityForAdmin,
   updateEmployeeDetailsForAdmin,
   deleteEmployeeForAdmin,
@@ -48,7 +47,7 @@ function adminUserId(req: Request): string {
 // ---- Org-wide lists (rule 5) ----
 export async function listLeaves(req: Request, res: Response, next: NextFunction) {
   try {
-    res.status(200).json({ success: true, leaves: await listAllLeavesForAdmin(adminUserId(req)) });
+    res.status(200).json({ success: true, leaves: await leavesForAdmin(adminUserId(req)) });
   } catch (error) {
     next(error);
   }
@@ -58,7 +57,7 @@ export async function listOvertime(req: Request, res: Response, next: NextFuncti
   try {
     res
       .status(200)
-      .json({ success: true, overtime: await listAllOvertimeForAdmin(adminUserId(req)) });
+      .json({ success: true, overtime: await overtimeForAdmin(adminUserId(req)) });
   } catch (error) {
     next(error);
   }
@@ -162,7 +161,7 @@ export async function listRegularizations(req: Request, res: Response, next: Nex
   try {
     res.status(200).json({
       success: true,
-      regularizations: await listAllRegularizationsForAdmin(adminUserId(req)),
+      regularizations: await correctionsForAdmin(adminUserId(req)),
     });
   } catch (error) {
     next(error);
@@ -173,7 +172,7 @@ export async function listFeedback(req: Request, res: Response, next: NextFuncti
   try {
     res
       .status(200)
-      .json({ success: true, feedback: await listAllFeedbackForAdmin(adminUserId(req)) });
+      .json({ success: true, feedback: await feedbackForAdmin(adminUserId(req)) });
   } catch (error) {
     next(error);
   }

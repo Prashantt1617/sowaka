@@ -20,7 +20,9 @@ export type SwrKind = 'ool'
   // Suwi's company-wide inputs (suwi/orgData.ts): the waiting requests and today's lists, shared by every viewer.
   | 'suwi-org-data'
   // The manager workspace's company roster (manager.service.ts workspaceRoster).
-  | 'mgr-roster';
+  | 'mgr-roster'
+  // Time office lists (timeOfficeLists.ts): corrections, leave requests, overtime, feedback.
+  | 'adm-regs' | 'adm-leaves' | 'adm-overtime' | 'adm-feedback';
 
 const FRESH_MS = 60_000;
 const MAX_STALE_MS = 15 * 60_000;

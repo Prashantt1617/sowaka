@@ -1,3 +1,4 @@
+import { forgetCorrectionsListOf } from './timeOfficeDrop';
 import { createHash, randomBytes } from 'node:crypto';
 import sharp from 'sharp';
 import {
@@ -670,6 +671,7 @@ export async function requestFaceFallback(
         throw new FaceIdError(409, 'A request for today is already with your manager');
       }
       await attendanceRegularizations().updateOne({ _id: pending._id }, { $set: { punchOut: at, faceCheckOut: note } });
+      void forgetCorrectionsListOf(userId);
       return { id: pending._id.toHexString(), workDate, requestedAt: at.toISOString(), title: 'Punch-out without face check', note: pending.note ?? '' };
     }
     if (!today?.punchIn) throw new FaceIdError(409, 'Punch in before punching out');
@@ -703,6 +705,7 @@ export async function requestFaceFallback(
     createdAt: at,
   };
   const result = await attendanceRegularizations().insertOne(row);
+  void forgetCorrectionsListOf(userId);
   await notifyCorrectionSubmitted({ employeeUserId: userId, requestId: String(result.insertedId), workDate, reason: reasonText })
     .catch((error) => logger.error('Face fallback notification failed', { userId }, error));
   return {

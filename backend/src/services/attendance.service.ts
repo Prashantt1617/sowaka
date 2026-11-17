@@ -1,3 +1,4 @@
+import { forgetCorrectionsListOf } from './timeOfficeDrop';
 import { ObjectId, type WithId } from 'mongodb';
 import { attendanceRecords, attendanceRegularizations, companies, offices, users } from '../config/db';
 import { forgetSwr } from './swr-cache';
@@ -323,6 +324,7 @@ async function writePunch(
       if (pending) {
         if (pending.punchOut) throw new AttendanceError(409, 'Already punched out today');
         await attendanceRegularizations().updateOne({ _id: pending._id }, { $set: { punchOut: now } });
+        void forgetCorrectionsListOf(userId);
         return {
           workDate,
           punchOut: now.toISOString(),
@@ -422,6 +424,7 @@ async function requestOutOfLocation(
     note: '', status: 'pending', createdAt: note.at,
   };
   const result = await attendanceRegularizations().insertOne(row);
+  void forgetCorrectionsListOf(userId);
   void location;
   // The employee and their approver hear once the request is saved, after the
   // punch has answered: finding the approver and their rules is a few round
