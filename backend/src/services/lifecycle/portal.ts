@@ -13,7 +13,7 @@ import { journeyDocumentsView } from './documents';
 import {
   addDays, companyDisplayName, companyOf, daysBetween, fireOnce, formatDay, hrContactFor, istDate, istHour, mails, sendLifecycleEmail,
 } from './emails';
-import { closeJourney, completeTask, isManagerMeeting, journeyTasksView, type TaskView } from './engine';
+import { closeJourney, completeTask, isManagerMeeting, journeyTasksView, meetingWithName, type TaskView } from './engine';
 import { LifecycleOfferError } from './files';
 import { maybeSendLettersReady, portalLetters, SIGNED_KINDS } from './letters';
 import { CLOSED_STATUSES, mediaPath } from './portalAuth';
@@ -194,7 +194,7 @@ export async function portalPass(journey: Journey, now = new Date()): Promise<Po
   return {
     ...pass,
     // The manager meeting names the current manager (the line HR typed goes stale when the manager changes).
-    ...(pass.agenda ? { agenda: pass.agenda.map((a) => (isManagerMeeting(a) && manager?.name ? { ...a, with: manager.name } : a)) } : {}),
+    ...(pass.agenda ? { agenda: pass.agenda.map((a) => { const w = meetingWithName(isManagerMeeting(a), a.with, manager?.name); return w ? { ...a, with: w } : a; }) } : {}),
     date: journey.day1Pass?.date ?? journey.tj,
     candidateName: journey.candidate?.name ?? '', designation: journey.designation, department: journey.department,
     ...(manager ? { managerName: manager.name } : {}), ...(buddy ? { buddyName: buddy.name } : {}),
