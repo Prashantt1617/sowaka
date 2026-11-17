@@ -12,10 +12,11 @@ async function main() {
   await connectDb();
   const rows = await getDb().collection('suwi_audit').find({ kind: 'question', ...(org ? { org } : {}) }).sort({ at: -1 }).limit(count).toArray();
   for (const r of rows) {
-    const t = r.timing as { path?: string; totalMs?: number; firstTextMs?: number; rounds?: { ms: number; input: number; output: number }[] } | undefined;
+    const t = r.timing as { path?: string; totalMs?: number; firstTextMs?: number; rounds?: { ms: number; input: number; output: number; model?: string; step?: string }[] } | undefined;
     const tools = ((r.tools ?? []) as { name: string; ms: number }[]).map((x) => `${x.name} ${x.ms}ms`).join(', ');
-    const rounds = (t?.rounds ?? []).map((x) => `${x.ms}ms (${x.input} in/${x.output} out)`).join(' + ');
-    console.log(`${new Date(r.at).toISOString().slice(0, 19)} ${r.org} | ${t?.path ?? 'old'} | total ${t?.totalMs ?? '?'} ms${t?.firstTextMs !== undefined ? `, first words ${t.firstTextMs} ms` : ''} | "${String(r.question ?? '').slice(0, 60)}"${rounds ? ` | rounds ${rounds}` : ''}${tools ? ` | tools ${tools}` : ''}`);
+    const rounds = (t?.rounds ?? []).map((x) => `${x.step ? `${x.step} ` : ''}${x.ms}ms${x.model ? ` ${x.model}` : ''} (${x.input} in/${x.output} out)`).join(' + ');
+    const ist = new Date(new Date(r.at).getTime() + 330 * 60_000).toISOString().slice(0, 19).replace('T', ' ');
+    console.log(`${ist} IST ${r.org} | ${t?.path ?? 'old'} | total ${t?.totalMs ?? '?'} ms${t?.firstTextMs !== undefined ? `, first words ${t.firstTextMs} ms` : ''} | "${String(r.question ?? '').replace(/\s+/g, ' ').slice(0, 60)}"${rounds ? ` | rounds ${rounds}` : ''}${tools ? ` | tools ${tools}` : ''}`);
   }
   process.exit(0);
 }

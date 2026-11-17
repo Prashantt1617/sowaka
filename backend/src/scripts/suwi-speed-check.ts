@@ -16,6 +16,8 @@
  * "on prod" adds them at the throttled link's ~100 KB/s.
  */
 process.env.SUWI_PROVIDER = 'claude';
+// This check covers the instant, cache, planner and full-loop paths; the two-step router has its own (suwi-orchestration-check.ts).
+process.env.SUWI_ROUTER = '0';
 process.env.ANTHROPIC_API_KEY = 'stub-key';
 process.env.GEMINI_API_KEY = 'stub-key';
 // A local Redis for the kept copies and the answer cache (REDIS_URL from the caller, else none: those checks are skipped).

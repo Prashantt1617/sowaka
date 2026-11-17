@@ -40,6 +40,8 @@ export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boo
   if (view === 'bulkassign') return BULK_VIEWS.some((v) => canOpen(user, v));
   // FBP bill types: the same reimbursement types API, for whoever had it on FBP splits or has Reimbursement Types.
   // Suwi is for everyone with dashboard access; what it can reach is decided per question.
+  // Response times read every question in the company: dashboard admins only (as GET /suwi/timings).
+  if (view === 'suwitimings') return user.dashboardAdmin === true;
   if (view === 'suwi') return true;
   // Investment proofs and Statutory & tax settings go with payroll access, as the server decides it: Payroll Runs or Salary details.
   if (view === 'investmentproofs' || view === 'payrollconfig') return canOpen(user, 'payruns') || canOpen(user, SALARY_DETAILS);

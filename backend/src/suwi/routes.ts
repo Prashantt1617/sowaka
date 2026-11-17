@@ -84,16 +84,44 @@ suwiRouter.get('/ask/:id', (req, res) => {
  * How long the last questions took (dashboard admins only): total, time to the first words, each
  * model round, each tool, and how it was answered (instant, model, or a kept answer).
  */
+/**
+ * How long each Suwi question took (dashboard admins, this company only): newest first, in pages of up
+ * to 200 (`before` = the last row's `at`). Filters: `path` (instant, cache, prepared, planner, router,
+ * model), `slowMs` (only answers that took at least this long), `userId`, `q` (words in the question).
+ */
 suwiRouter.get('/timings', async (req, res, next) => {
   try {
     const u = me(req);
     if (u.dashboardAdmin !== true) { res.status(403).json({ success: false, message: 'Only a dashboard admin can see Suwi timings' }); return; }
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
-    const rows = await auditCol().find({ org: u.org, kind: 'question' } as never).sort({ at: -1 }).limit(limit).toArray();
-    res.json({ success: true, timings: rows.map((r) => {
-      const t = (r as { timing?: { path?: string; totalMs?: number; firstTextMs?: number; rounds?: unknown[] } }).timing;
-      return { at: r.at.toISOString(), question: String(r.question ?? '').slice(0, 120), status: r.status ?? null, path: t?.path ?? null, totalMs: t?.totalMs ?? null, firstTextMs: t?.firstTextMs ?? null, rounds: t?.rounds ?? null, tools: (r.tools ?? []).map((x) => ({ name: x.name, ms: x.ms })), tokens: (r as { tokens?: unknown }).tokens ?? null };
-    }) });
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+    const filter: Record<string, unknown> = { org: u.org, kind: 'question' };
+    const before = typeof req.query.before === 'string' ? new Date(req.query.before) : null;
+    if (before && !Number.isNaN(before.getTime())) filter.at = { $lt: before };
+    const path = typeof req.query.path === 'string' ? req.query.path : '';
+    if (path) filter['timing.path'] = path === 'old' ? { $exists: false } : path;
+    const slowMs = Number(req.query.slowMs);
+    if (Number.isFinite(slowMs) && slowMs > 0) filter['timing.totalMs'] = { $gte: slowMs };
+    if (typeof req.query.userId === 'string' && req.query.userId) filter.userId = req.query.userId;
+    if (typeof req.query.q === 'string' && req.query.q.trim()) filter.question = { $regex: req.query.q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').slice(0, 80), $options: 'i' };
+    const rows = await auditCol().find(filter as never).sort({ at: -1 }).limit(limit + 1).toArray();
+    const page = rows.slice(0, limit);
+    const ids = [...new Set(page.map((r) => r.userId).filter(Boolean))];
+    const names = new Map((await users().find({ org: u.org, userId: { $in: ids } } as never).project({ _id: 0, userId: 1, name: 1 }).toArray()).map((x) => [x.userId as string, x.name as string]));
+    res.json({
+      success: true,
+      next: rows.length > limit ? page[page.length - 1].at.toISOString() : null,
+      timings: page.map((r) => {
+        const t = (r as { timing?: { path?: string; totalMs?: number; firstTextMs?: number; rounds?: unknown[]; writer?: string; mode?: string; live?: boolean } }).timing;
+        return {
+          at: r.at.toISOString(), userId: r.userId, user: names.get(r.userId) ?? null, page: (r as { page?: string }).page ?? null,
+          question: String(r.question ?? '').slice(0, 200), status: r.status ?? null,
+          path: t?.path ?? null, totalMs: t?.totalMs ?? null, firstTextMs: t?.firstTextMs ?? null, rounds: t?.rounds ?? null,
+          writer: t?.writer ?? null, mode: t?.mode ?? null, live: t?.live ?? null,
+          tools: (r.tools ?? []).map((x) => ({ name: x.name, label: x.label, ms: x.ms, ok: x.ok !== false, ...((x as { timedOut?: boolean }).timedOut ? { timedOut: true } : {}), ...((x as { memo?: boolean }).memo ? { memo: true } : {}) })),
+          tokens: (r as { tokens?: unknown }).tokens ?? null, costUsd: (r as { costUsd?: number }).costUsd ?? null,
+        };
+      }),
+    });
   } catch (e) { fail(res, e, next); }
 });
 

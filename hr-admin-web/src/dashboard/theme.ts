@@ -71,7 +71,8 @@ export type View =
   | 'placements'
   | 'placementclients'
   | 'placementcustomers'
-  | 'suwi';
+  | 'suwi'
+  | 'suwitimings';
 
 /** A leave type as the lists show it: 'Casual', 'Comp-off', or a type HR added, 'Emergency'. */
 export type LeaveType = string;
@@ -229,6 +230,7 @@ export const TITLES: Record<View, [string, string]> = {
   placementclients: ['Clients', 'Placements · the companies hiring'],
   placementcustomers: ['Candidates', 'Placements · the candidates being placed'],
   suwi: ['Suwi', 'Your HR assistant · what it may do, and what it did'],
+  suwitimings: ['Suwi response times', 'How long each question took, and where the time went'],
 };
 
 export type Placeholder = {

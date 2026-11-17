@@ -19,6 +19,7 @@ import { suwiNotices } from '../../suwi/notices';
 import { orgSuwiData, patchedRecently, readerFor } from '../../suwi/orgData';
 import { istToday } from '../../suwi/digest';
 import { prepareRecent, recentSuwiUsers } from '../../suwi/planner';
+import { prepareFrequent } from '../../suwi/prepared';
 import { logger } from '../../utils/logger';
 
 export async function warmLifecycle(org: string, isStopping: () => boolean = () => false): Promise<Record<string, number | string>> {
@@ -52,6 +53,8 @@ export async function warmLifecycle(org: string, isStopping: () => boolean = () 
     await peopleBundle(org);
     const recent = (await recentSuwiUsers(org, 3)).map((u) => contextFor(u, settings.levels, today));
     await prerunTools(org, recent, toolsFor, isStopping);
+    // And the questions each of them keeps asking (suwi/prepared.ts), so those are instant too.
+    await prepareFrequent(org, isStopping);
   }]);
   for (const [name, run] of steps) {
     if (isStopping()) break;
@@ -95,6 +98,7 @@ export async function warmSuwiAtBoot(isStopping: () => boolean = () => false): P
       await peopleBundle(org);
       const recent = (await recentSuwiUsers(org, 3)).map((u) => contextFor(u, settings.levels, today));
       await prerunTools(org, recent, toolsFor, isStopping);
+      await prepareFrequent(org, isStopping);
     } catch (error) {
       logger.warn('Suwi boot warm failed for a company', { org, error: (error as Error).message });
     }
