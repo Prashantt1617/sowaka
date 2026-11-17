@@ -130,6 +130,9 @@ export const KIND_OF: Record<OffboardingExitType, ExitKind> = { resignation: 're
 const KIND_LABEL: Record<ExitKind, string> = { resigned: 'Resignation', retired: 'Retirement', terminated: 'Termination', absconded: 'Absconding', other: 'Other' };
 const TYPE_OF_KIND: Partial<Record<ExitKind, OffboardingExitType>> = { resigned: 'resignation', retired: 'retirement', terminated: 'termination', absconded: 'absconding' };
 export const NOTICE_HANDLING: OffboardingNoticeHandling[] = ['served', 'not_applicable', 'waived', 'recovered', 'paid_in_lieu'];
+export const NOTICE_HANDLING_LABEL: Record<OffboardingNoticeHandling, string> = {
+  served: 'Served in full', not_applicable: 'Not applicable', waived: 'Waived by the company', recovered: 'Shortfall recovered from settlement', paid_in_lieu: 'Paid in lieu of notice',
+};
 
 export const exitTypeOf = (e: UserExit): OffboardingExitType | null => e.offboarding?.exitType ?? TYPE_OF_KIND[e.kind] ?? null;
 export const exitTypeLabel = (e: UserExit) => (e.offboarding ? EXIT_TYPE_LABEL[e.offboarding.exitType] : KIND_LABEL[e.kind]);
@@ -159,6 +162,8 @@ export function rulesForNotice(type: OffboardingExitType, handling: OffboardingN
     case 'waived': return { noticePay: 'none', noticeRecovery: 'none' };
     case 'recovered': return { noticeRecovery: type === 'absconding' ? 'whole_notice' : 'days_not_served' };
     case 'paid_in_lieu': return { noticePay: 'pay', noticeRecovery: 'none' };
+    // No notice to serve (an absconding with nothing to recover, a retirement): no notice pay, nothing recovered.
+    case 'not_applicable': return { noticePay: 'none', noticeRecovery: 'none' };
     default: return undefined;
   }
 }
@@ -863,6 +868,9 @@ export async function offboardingDetail(actorUserId: string, employeeUserId: str
   details.push({ label: 'Last day', value: longDay(e.lastWorkingDay) }, { label: 'Manager', value: ctx.managerName ?? '—' });
   if (hr) {
     if (e.noticeDays != null) details.push({ label: 'Notice period', value: `${e.noticeDays} days` });
+    // What HR chose for the notice at the start, and HR's own note (never shown to the employee or the manager).
+    if (ob?.noticeHandling) details.push({ label: 'Notice', value: NOTICE_HANDLING_LABEL[ob.noticeHandling] ?? ob.noticeHandling });
+    if (e.note) details.push({ label: 'HR note', value: e.note });
     if (ctx.journey) details.push({ label: 'Template', value: ctx.journey.templateSnapshot?.name ?? 'Standard' });
     if (ctx.handover.length) details.push({ label: 'Handover', value: `${uploaded} of ${ctx.handover.length} uploaded` });
     details.push({ label: 'Exit interview', value: !interview.applies ? (e.interview ? 'Filled by HR' : 'Not part of this exit') : interview.sent ? 'Sent' : interview.open ? 'Opened, not sent' : `Opens ${shortDay(opens!)}` });

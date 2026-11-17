@@ -5,9 +5,10 @@
 // clearance n of 4, the salary status and a personal email. The first three stop the send until
 // they pass, unless HR says why it goes anyway (the server keeps the reason). Save draft keeps the
 // email; the lines are kept on the settlement as they change.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar, Card, LoadError, PageActions, Pill, SkeletonForm } from '../../../ui';
+import { usePageHead } from '../../../pageHead';
 import { btn, btnClass, note as noteBox } from '../../../ds';
 import { IconDownload, IconPlus } from '../../../icons';
 import { useStore } from '../../../store';
@@ -41,6 +42,8 @@ export function SettlementSend({ userId, onBack }: { userId: string; onBack: () 
   const [data, setData] = useState<ExitDetailDTO | null>(null);
   const [checks, setChecks] = useState<SettlementChecksDTO | null>(null);
   const [drawer, setDrawer] = useState<DrawerDTO | null>(null);
+  // HRSettlement: "Final settlement · <name>" is the page's own title, with the way back beside it.
+  usePageHead({ title: data?.exit.name ? `Final settlement · ${data.exit.name}` : 'Final settlement', eyebrow: 'Employee lifecycle · Offboarding', onBack, backLabel: 'Back to offboarding' });
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState('');
@@ -86,9 +89,8 @@ export function SettlementSend({ userId, onBack }: { userId: string; onBack: () 
   const footer: StatementFooter | undefined = checks ? { issuedOn: todayKey(), payBy: checks.dueOn, hrEmail: checks.hrEmail || undefined } : undefined;
   const previewHtml = useMemo(() => (data?.settlement && footer ? settlementHtml(data.exit, data.settlement, data.company, footer) : ''), [data, footer?.payBy, footer?.hrEmail]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const top = <div className="pd-prof-top"><button type="button" onClick={onBack} className="pd-btn ghost sm" style={{ marginLeft: -12 }}>← Back to offboarding</button></div>;
-  if (error) return <div>{top}<section className="pd-card"><LoadError text={error} onRetry={() => setAttempt((n) => n + 1)} /></section></div>;
-  if (!data || !checks) return <div>{top}<section className="pd-card"><SkeletonForm fields={8} /></section></div>;
+  if (error) return <div><section className="pd-card"><LoadError text={error} onRetry={() => setAttempt((n) => n + 1)} /></section></div>;
+  if (!data || !checks) return <div><section className="pd-card"><SkeletonForm fields={8} /></section></div>;
 
   const { exit, settlement, company } = data;
   const name = firstName(exit.name);
@@ -149,12 +151,11 @@ export function SettlementSend({ userId, onBack }: { userId: string; onBack: () 
           {busy === 'email' ? 'Sending…' : settlement?.status === 'draft' ? 'Approve and email PDF' : emailed ? 'Email the PDF again' : 'Email PDF'}
         </button>
       </PageActions>
-      {top}
       <section className="pd-card pd-phead">
         <div className="ph-id">
           <Avatar name={exit.name} size={52} font={21} />
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="pn"><h1>Final settlement · {exit.name}</h1>{emailed && <Pill label={`Emailed ${longDay(istKey(emailed.at))}`} tone={{ bg: 'var(--ok-bg)', fg: 'var(--ok)' }} />}</div>
+            <div className="pn"><h2>{exit.name}</h2>{emailed && <Pill label={`Emailed ${longDay(istKey(emailed.at))}`} tone={{ bg: 'var(--ok-bg)', fg: 'var(--ok)' }} />}</div>
             <span className="sub">Figures come from payroll and clearance. Check them, then email the statement to {name} as a PDF. It is not shown in the app.{checks.draft ? ` Draft saved ${longDay(istKey(checks.draft.savedAt))}${checks.draft.byName ? ` by ${checks.draft.byName}` : ''}.` : ''}</span>
           </div>
         </div>
@@ -189,7 +190,7 @@ export function SettlementSend({ userId, onBack }: { userId: string; onBack: () 
         </Card>
       </div>
 
-      <div className="ob-two" style={{ alignItems: 'start' }}>
+      <div className="ob-two settle" style={{ alignItems: 'start' }}>
         <section className="pd-card" style={{ minWidth: 0 }}>
           <div className="pd-card-h"><h3>Statement</h3></div>
           {!settlement && <div style={noteBox}>{exit.caseOpen ? `${name} stopped coming: the settlement starts once the case is closed (People › ${exit.name} › Exit).` : `The settlement starts the day after ${name}'s last day (${longDay(exit.lastWorkingDay)}).`}</div>}
@@ -207,7 +208,7 @@ export function SettlementSend({ userId, onBack }: { userId: string; onBack: () 
           </div>
           {settlement && previewHtml ? (
             <>
-              <iframe title="Settlement PDF preview" sandbox="" srcDoc={previewHtml} style={{ width: '100%', height: 640, border: '1px solid var(--line)', borderRadius: 12, background: '#fff' }} />
+              <ScaledPage html={previewHtml} />
               <div style={{ marginTop: 10 }}>
                 <button type="button" onClick={() => void downloadSettlementPdf(exit, settlement, company, footer).catch((e) => s.flash(e instanceof Error ? e.message : 'Could not make the PDF', 'error'))} className={btnClass()} style={btn()}><IconDownload stroke="currentColor" /> Download</button>
               </div>
@@ -269,5 +270,27 @@ function AddLineDialog({ lines, busy, onClose, onSave }: { lines: SettlementLine
       </div>
     </div>,
     document.body,
+  );
+}
+
+/** The PDF page at its real width, scaled down to fit the card: the whole page shows, nothing is cut off. */
+function ScaledPage({ html }: { html: string }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const PAGE_W = 856; // the statement's 800px page and its padding
+  const PAGE_H = 1120;
+  const scale = width ? Math.min(1, width / PAGE_W) : 1;
+  return (
+    <div ref={box} style={{ width: '100%', height: Math.round(PAGE_H * scale), overflow: 'hidden', border: '1px solid var(--line)', borderRadius: 12, background: '#fff' }}>
+      <iframe title="Settlement PDF preview" sandbox="" srcDoc={html}
+        style={{ width: PAGE_W, height: PAGE_H, border: 0, display: 'block', transform: `scale(${scale})`, transformOrigin: '0 0' }} />
+    </div>
   );
 }

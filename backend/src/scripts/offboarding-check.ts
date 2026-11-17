@@ -21,7 +21,7 @@ import { runLifecycleJobs } from '../services/lifecycle/jobs';
 import {
   addDays, addWorkingDays, appHandoverFile, changeLastDay, clearanceTeamOf, closeOffboarding, closeOnboardingForExit, closesAtEndOfShift, emailSettlement, managerLeaver,
   managerLeavers, markHandoverDone, myOffboarding, offboardingBoard, offboardingCount, offboardingDetail, offboardingTaskDone, removeHandoverUpload, runOffboardingJobs,
-  saveSettlementDraft, sendExitInterview, sendNudge, setAppPage, setClearanceTeam, setHandoverChecklist, setOffboardingClearance, settlementChecks, startExit, todayKey,
+  rulesForNotice, saveSettlementDraft, sendExitInterview, sendNudge, setAppPage, setClearanceTeam, setHandoverChecklist, setOffboardingClearance, settlementChecks, startExit, todayKey,
   uploadHandover,
 } from '../services/lifecycle/offboarding';
 import { acceptResignation, managerResignationAction, managerResignations, myResignation, resign, withdrawResignation } from '../services/lifecycle/resignations';
@@ -392,6 +392,16 @@ const keyOf = (d: string | null | undefined) => (d ? todayKey(new Date(d)) : nul
   const lalAfter = await journeys().findOne({ id: lalOnb.id });
   ok('an HR-started exit closes it too', !!lalAfter?.closedAt && /end of contract/.test(lalAfter.closedReason ?? ''), lalAfter?.closedReason);
   ok('closeOnboardingForExit is safe to run again', (await closeOnboardingForExit('wanda', 'resignation')).length === 0);
+
+  // The drawer shows HR's note and the notice choice; "Not applicable" is its own rule (nothing paid, nothing recovered).
+  ok('the drawer shows the HR note and the notice choice', term.details.some((d) => d.label === 'HR note' && d.value === 'Policy breach') && term.details.some((d) => d.label === 'Notice' && d.value === 'Paid in lieu of notice'), term.details);
+  await users().insertOne(person('abby', { name: 'Abhay Absent', employeeId: 'OC-AB', department: 'Sales' }) as never);
+  const abs = await startExit('hr', 'abby', { exitType: 'absconding', lastWorkingDay: addDays(T, -3), noticeHandling: 'not_applicable', hrNote: 'No contact since the 12th' }, now);
+  const abby = await users().findOne({ userId: 'abby' });
+  ok('absconding with notice "Not applicable": stored, and nothing recovered or paid', abby?.exit?.offboarding?.noticeHandling === 'not_applicable' && abby.exit.rules?.noticeRecovery === 'none' && abby.exit.rules?.noticePay === 'none', abby?.exit);
+  ok('…the drawer says "Notice: Not applicable" and shows the note', abs.details.some((d) => d.label === 'Notice' && d.value === 'Not applicable') && abs.details.some((d) => d.label === 'HR note' && d.value === 'No contact since the 12th'), abs.details);
+  ok('rulesForNotice: Not applicable is no pay, no recovery', JSON.stringify(rulesForNotice('absconding', 'not_applicable')) === JSON.stringify({ noticePay: 'none', noticeRecovery: 'none' }));
+  ok('…Served in full keeps the company rules', rulesForNotice('resignation', 'served') === undefined);
 
   // The template says the account closes on the last day, at the end of the shift (S4).
   await journeys().updateOne({ id: wAcc.journeyId }, { $set: { 'templateSnapshot.settings.accountCloses': 'tl_end_of_shift' } });
