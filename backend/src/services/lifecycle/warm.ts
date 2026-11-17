@@ -17,6 +17,8 @@ import { contextFor } from '../../suwi/tools';
 import { suwiNotices } from '../../suwi/notices';
 import { orgSuwiData, readerFor } from '../../suwi/orgData';
 import { istToday } from '../../suwi/digest';
+import { prepareRecent, recentSuwiUsers } from '../../suwi/planner';
+import { logger } from '../../utils/logger';
 
 export async function warmLifecycle(org: string, isStopping: () => boolean = () => false): Promise<Record<string, number | string>> {
   const took: Record<string, number | string> = {};
@@ -40,6 +42,9 @@ export async function warmLifecycle(org: string, isStopping: () => boolean = () 
       { org, dashboardAccess: true, lifecycleStatus: { $nin: ['offboarded', 'terminated'] }, hiddenFromDirectory: { $ne: true }, $or: [{ dashboardAdmin: true }, { dashboardTabs: { $exists: false } }] },
     );
     if (viewer) await suwiNotices(contextFor(viewer, settings.levels, today), true);
+    // "What needs my attention today?" made ahead for the people who use Suwi (planner.ts): once per
+    // data version, at most once a minute each, so asking it is usually instant.
+    await prepareRecent(org, today, isStopping);
   }]);
   for (const [name, run] of steps) {
     if (isStopping()) break;
@@ -56,3 +61,33 @@ setLifecycleRewarm(async (org) => {
   const who = await listReaderFor(org);
   if (who) await warmTimeOfficeLists(org, who);
 });
+
+/**
+ * Right after the server starts: every company with Suwi on gets its shared inputs (from Redis when its
+ * data version has a copy, so in milliseconds; else read once), its recent Suwi users' notices and their
+ * prepared attention answers, before the first of them asks. Before, the first look after a deploy
+ * paid the whole read (5–13 s). One company at a time; errors only logged.
+ */
+export async function warmSuwiAtBoot(isStopping: () => boolean = () => false): Promise<void> {
+  const started = Date.now();
+  const today = istToday();
+  let orgs = 0;
+  for (const { id: org } of await companies().find({}, { projection: { _id: 0, id: 1 } }).toArray()) {
+    if (!org || isStopping()) continue;
+    try {
+      const settings = await settingsFor(org);
+      if (!settings.enabled) continue;
+      orgs++;
+      // Not `fresh`: the Redis copy for this version answers at once when there is one.
+      if ((await readerFor(org, '')).userId) await orgSuwiData(org, today, '');
+      for (const u of await recentSuwiUsers(org)) {
+        if (isStopping()) break;
+        await suwiNotices(contextFor(u, settings.levels, today)).catch(() => undefined);
+      }
+      await prepareRecent(org, today, isStopping);
+    } catch (error) {
+      logger.warn('Suwi boot warm failed for a company', { org, error: (error as Error).message });
+    }
+  }
+  logger.info('Suwi warmed at boot', { orgs, ms: Date.now() - started });
+}

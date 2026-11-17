@@ -57,7 +57,7 @@ export function costUsd(model: string, u: LlmUsage): number {
  * the other providers call it once with the whole text), so the panel can show the first words
  * while the rest comes.
  */
-export async function callModel(input: { model?: string; system: string; tools?: LlmTool[]; messages: LlmMessage[]; maxTokens?: number; onText?: (soFar: string) => void }): Promise<LlmReply> {
+export async function callModel(input: { model?: string; system: string; tools?: LlmTool[]; messages: LlmMessage[]; maxTokens?: number; onText?: (soFar: string) => void; thinking?: string }): Promise<LlmReply> {
   const reply = await (SUWI_PROVIDER === 'gemini' ? callGemini(input) : SUWI_PROVIDER === 'openai' ? callOpenAI(input) : callClaude(input));
   if (input.onText && SUWI_PROVIDER !== 'gemini') {
     const text = reply.content.filter((b): b is Extract<ContentBlock, { type: 'text' }> => b.type === 'text').map((b) => b.text).join('\n');
@@ -128,7 +128,7 @@ function geminiSchema(s: unknown): unknown {
   return out;
 }
 
-async function callGemini(input: { model?: string; system: string; tools?: LlmTool[]; messages: LlmMessage[]; maxTokens?: number; onText?: (soFar: string) => void }): Promise<LlmReply> {
+async function callGemini(input: { model?: string; system: string; tools?: LlmTool[]; messages: LlmMessage[]; maxTokens?: number; onText?: (soFar: string) => void; thinking?: string }): Promise<LlmReply> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new SuwiLlmError(503, 'Suwi is not set up on this server yet (no GEMINI_API_KEY)');
   const model = input.model ?? SUWI_MODEL;
@@ -162,13 +162,16 @@ async function callGemini(input: { model?: string; system: string; tools?: LlmTo
     contents,
     ...(tools.length ? { tools: [{ functionDeclarations: tools.map((t) => ({ name: t.name, description: t.description, parameters: geminiSchema(t.input_schema) })) }] } : {}),
     // Thinking tokens count as output on Gemini, so leave room beyond the answer itself.
-    generationConfig: { maxOutputTokens: (input.maxTokens ?? 1500) + 2500, ...thinkingConfig() },
+    // A call that names its own thinking level (the fast writer asks for the least) uses that; 'off' sends none.
+    generationConfig: { maxOutputTokens: (input.maxTokens ?? 1500) + (input.thinking === 'off' || input.thinking === 'minimal' ? 200 : 2500), ...(input.thinking !== undefined ? (input.thinking === 'off' ? {} : { thinkingConfig: { thinkingLevel: input.thinking } }) : thinkingConfig()) },
   };
   const base = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}`;
   let res: GeminiReply;
   try {
     res = input.onText ? await streamGemini(`${base}:streamGenerateContent?alt=sse`, key, body, input.onText) : await post(`${base}:generateContent`, { 'x-goog-api-key': key }, body) as GeminiReply;
   } catch (e) {
+    // A call that named its own level and was refused: once more with none (only this call).
+    if (input.thinking !== undefined && input.thinking !== 'off' && /thinking|\(400:/i.test((e as Error).message)) return callGemini({ ...input, thinking: 'off' });
     // A model that doesn't take the thinking setting: once more without it, and never again.
     if (!thinkingRefused && /thinking|\(400:/i.test((e as Error).message) && 'thinkingConfig' in body.generationConfig) {
       thinkingRefused = true;

@@ -12,7 +12,7 @@ export type SuwiProposal = {
 };
 /** A list Suwi shows as a table under its answer (drawn from the data, not written by the model). */
 export type SuwiTable = { title: string; columns: string[]; rows: (string | number)[][] };
-export type SuwiAnswer = { text: string; checked: string[]; links: SuwiLink[]; proposals: SuwiProposal[]; costUsd: number; tables?: SuwiTable[]; path?: 'instant' | 'model' | 'cache' };
+export type SuwiAnswer = { text: string; checked: string[]; links: SuwiLink[]; proposals: SuwiProposal[]; costUsd: number; tables?: SuwiTable[]; path?: 'instant' | 'model' | 'cache' | 'planner' | 'prepared' };
 export type SuwiHistoryTurn = { role: 'user' | 'assistant'; text: string };
 
 /**

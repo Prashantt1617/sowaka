@@ -48,6 +48,10 @@ export interface OrgSuwiData {
    * (HR's turn). Worked out once per company, so review_requests needs no reads of its own.
    */
   approvers?: Record<string, { managerUserId?: string; managerName?: string }>;
+  /** People › Tasks whole, as the reader saw it (missing_details answers from it; salary and bank are taken out for a viewer without payroll). */
+  tasksFull?: Awaited<ReturnType<typeof peopleTasks>> | null;
+  /** The pending claims whole (claims_to_check runs its checks over them with no read of its own). */
+  claimsPendingFull?: Awaited<ReturnType<typeof listAllReimbursementsForAdmin>> | null;
   /** Who the lists were read as (a dashboard admin of the company), for the record. */
   readerUserId: string;
   at: string;
@@ -99,6 +103,8 @@ export async function loadOrgSuwiData(org: string, today: string, fallbackUserId
     relayScheduled,
     engagementPostsRecent,
     ...(approvers ? { approvers } : {}),
+    tasksFull: tasks,
+    claimsPendingFull: (claims as Awaited<ReturnType<typeof listAllReimbursementsForAdmin>> | null)?.filter((c) => c.status === 'pending') ?? null,
     readerUserId: reader.userId,
     at: new Date().toISOString(),
   };
@@ -181,4 +187,14 @@ const ROUTE_OF: Record<PendingRow['type'], string> = {
 export function pendingFor(user: { dashboardAdmin?: boolean; dashboardTabs?: string[] }, rows: PendingRow[]): PendingRow[] {
   const may = new Map(Object.entries(ROUTE_OF).map(([t, route]) => [t, mayRead(user, route)]));
   return rows.filter((r) => may.get(r.type));
+}
+
+/** People › Tasks as this viewer sees it, from the kept copy: salary and bank tasks only with payroll access (as peopleTasks itself does). Null when the copy can't stand in. */
+export function tasksForViewer(full: OrgSuwiData['tasksFull'], payroll: boolean): Awaited<ReturnType<typeof peopleTasks>> | null {
+  if (!full) return null;
+  // A copy read without payroll can't answer a viewer who has it (the salary and bank tasks were never worked out).
+  if (payroll && !full.payroll) return null;
+  if (payroll) return full;
+  const people = full.people.map((p) => ({ ...p, tasks: p.tasks.filter((t) => t.key !== 'salary' && t.key !== 'bank') })).filter((p) => p.tasks.length);
+  return { ...full, payroll: false, people };
 }

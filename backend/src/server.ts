@@ -33,6 +33,9 @@ async function start(): Promise<void> {
   startCupRunner();
   // Works out each company's Engagement pages ahead of HR, every four minutes.
   startEngagementWarmup();
+  // Suwi's inputs, notices and prepared answers straight away (warm.ts), so the first question after a
+  // deploy doesn't pay the whole read; a moment after start so Redis is connected and boot isn't slowed.
+  setTimeout(() => { void import('./services/lifecycle/warm').then((m) => m.warmSuwiAtBoot()).catch(() => undefined); }, 2_000).unref();
 
 
 logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v1.cloudfront.net'})

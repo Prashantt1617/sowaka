@@ -34,9 +34,10 @@ export interface CheckedClaim {
  * fetches each receipt to catch the same file on two claims (no model cost);
  * 'read' also reads the bills not yet read (a model call each, capped).
  */
-export async function checkedPending(ctx: SuwiContext, bills: 'none' | 'hash' | 'read' = 'none', maxReads = 10): Promise<CheckedClaim[]> {
+export async function checkedPending(ctx: SuwiContext, bills: 'none' | 'hash' | 'read' = 'none', maxReads = 10, keptPending?: Awaited<ReturnType<typeof listAllReimbursementsForAdmin>> | null): Promise<CheckedClaim[]> {
   const [all, types, heads] = await Promise.all([
-    listAllReimbursementsForAdmin(ctx.userId),
+    // The company's kept pending claims when given (orgData.ts): the same list, no read of its own.
+    keptPending ?? listAllReimbursementsForAdmin(ctx.userId),
     typesForOrg(ctx.org),
     payHeads().find({ org: ctx.org, category: 'reimbursement' }, { projection: { _id: 0, code: 1, name: 1, maxClaimablePaise: 1 } }).toArray(),
   ]);
@@ -148,7 +149,9 @@ defineTools(
     api: { method: 'GET', path: '/admin/reimbursements' },
     async run(ctx, i) {
       const mode = (['none', 'hash', 'read'] as const).find((m) => m === i.bills) ?? 'hash';
-      const rows = await checkedPending(ctx, mode, num(i.maxReads, 10, 0, 20));
+      const { keptOrgSuwiDataAsync } = await import('../orgData');
+      const kept = await keptOrgSuwiDataAsync(ctx.org, ctx.today, ctx.userId).catch(() => null);
+      const rows = await checkedPending(ctx, mode, num(i.maxReads, 10, 0, 20), kept?.claimsPendingFull);
       const limit = num(i.limit, 25, 1, 200);
       const clean = rows.filter((r) => !r.checks.length);
       const check = rows.filter((r) => r.checks.length);
