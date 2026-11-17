@@ -964,7 +964,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   await exitSettlements().updateOne({ org: ORG, userId: 'ravi' }, { $set: { status: 'approved', approvedAt: new Date() } });
   newMail();
   const pdfB64 = Buffer.from('%PDF-1.4\n'.padEnd(400, '0')).toString('base64');
-  await off.emailSettlement('hr', 'ravi', { pdfBase64: pdfB64, to: 'ravi.menon@example.com' });
+  await off.emailSettlement('hr', 'ravi', { pdfBase64: pdfB64, to: 'ravi.menon@example.com', overrideReason: 'No payroll run in the timeline: the final salary is on the statement' });
   expectMail('the settlement PDF to the personal email, once', ['settlement>ravi']);
   oc = await offCard('ravi');
   eq('board: Settlement sent; gratuity to pay (Finance), 6 years', [oc?.column, oc?.owner, oc?.nextStep], ['settlement_sent', 'finance', 'Gratuity to pay']);
