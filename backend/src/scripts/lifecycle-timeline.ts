@@ -450,16 +450,18 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   await advanceTo(T('2027-03-11', '12:00'));
   const revised = await offersSvc.reviseOffer(HR, B, { ctc: 1_450_000, tj: TJ_B, validTill: '2027-03-18' });
   eq('v2 with the changed fields', [revised.version, revised.changedFields], [2, ['ctc', 'tj', 'validTill']]);
+  // A revision is HR's draft until sent: the candidate's link and the journey only change on send.
+  eq('saved, not sent: the old link still works', (await offersSvc.openOfferLink(tokenB1, '1.1.1.1')).state, 'finalised');
+  await offersSvc.uploadOfferPdf(HR, B, { buffer: PDF('Bina v2') });
+  await offersSvc.sendOffer(HR, B, {});
+  const tokenB2 = tokenIn(lastMailTo(BINA)!.html);
+  expectMail('the revised offer goes to Bina', ['offer>bina']);
   eq('the old link says replaced', (await offersSvc.openOfferLink(tokenB1, '1.1.1.1')).state, 'replaced');
   eq('the journey is back to accepted, Tj moved', [(await journey(B)).status, (await journey(B)).tj], ['accepted', TJ_B]);
   await doneTasksStayed('Bina’s Tj moved a week', B, bDoneBefore, ['send_offer', 'accept_offer', 'finalise_offer']);
   const bOpenAfter = await openDue(B);
   eq('open Tj tasks moved a week (documents, mark joined)', [bOpenAfter.get('upload_documents'), bOpenAfter.get('mark_joined')], [rules.addDaysKey(bOpenBefore.get('upload_documents')!, 7), TJ_B]);
   eq('the laptop request (done) kept its date', dayOf((await task(B, 'device_request')).dueAt), '2027-03-17');
-  await offersSvc.uploadOfferPdf(HR, B, { buffer: PDF('Bina v2') });
-  await offersSvc.sendOffer(HR, B, {});
-  const tokenB2 = tokenIn(lastMailTo(BINA)!.html);
-  expectMail('the revised offer goes to Bina', ['offer>bina']);
   home = await portalHome(B);
   eq('Bina’s portal: offer updated, the banner names salary and joining date', [home.view, home.banner?.changedFields, home.upNext?.title], ['offer_updated', ['ctc', 'tj', 'validTill'], 'Review your updated offer']);
   ok('the new link opens v2; the old one cannot accept', (await offersSvc.openOfferLink(tokenB2, '1.1.1.1')).version === 2 && (await refusal(() => offersSvc.acceptOffer(tokenB1, { ip: '1.1.1.1' }))).status === 409);
@@ -866,9 +868,11 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   const eOpenAfter = await openDue(OE);
   eq('the exit and the journey move to Fri 30 Jul', [(await users().findOne({ userId: 'esha' }))?.exit?.lastWorkingDay, (await journey(OE)).tl], [TL_E, TL_E]);
   eq('every open Tl task moved (handover Tl − 7, finance Tl − 2, return assets Tl, settlement Tl + 2 working days, gratuity Tl + 30)',
-    ['upload_handover', 'finance_clearance', 'return_assets', 'final_settlement', 'gratuity'].map((k) => eOpenAfter.get(k)),
-    ['2027-07-23', '2027-07-28', TL_E, '2027-08-03', '2027-08-29']);
-  ok('…they had the old Tl before', eOpen.get('final_settlement') === '2027-08-13' && eOpen.get('gratuity') === '2027-09-10', [eOpen.get('final_settlement'), eOpen.get('gratuity')]);
+    ['upload_handover', 'finance_clearance', 'return_assets', 'final_settlement'].map((k) => eOpenAfter.get(k)),
+    ['2027-07-23', '2027-07-28', TL_E, '2027-08-03']);
+  ok('…they had the old Tl before', eOpen.get('final_settlement') === '2027-08-13', [eOpen.get('final_settlement')]);
+  // Under five completed years, "Gratuity, if eligible" is skipped on its own (it has no open date to move).
+  ok('gratuity: skipped, not eligible', !eOpenAfter.has('gratuity') || eOpenAfter.get('gratuity') === null, eOpenAfter.get('gratuity'));
   await doneTasksStayed('Esha’s early release', OE, eDone);
   const opensE = await task(OE, 'exit_interview');
   eq('the exit interview now opens Tl − 5', dayOf(opensE.opensAt), '2027-07-25');

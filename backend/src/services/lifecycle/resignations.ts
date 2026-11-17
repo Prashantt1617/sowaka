@@ -127,11 +127,7 @@ export async function managerResignationAction(managerUserId: string, resignatio
   const done = await resignations().updateOne({ id: r.id, status: { $in: OPEN } }, { $set: { manager: managerAct, status: 'with_hr' } });
   if (!done.modifiedCount) throw new LifecycleError(409, 'HR has already accepted it');
   // The leaver's tab moves on to "With HR" (R2a); the push takes them there.
-  const mFirst = firstName(manager.name);
-  const said = action === 'accept' ? `${mFirst} accepted it.`
-    : action === 'change_day' ? `${mFirst} agreed ${shortDay(date!)} as your last day.`
-      : `${mFirst} agreed to release you on ${shortDay(date!)}.`;
-  await tell([r.userId], 'lifecycle_resignation_with_hr', 'lifecycle_resignation', 'Your resignation is with HR', `${said} HR confirms your last day next.`, { resignationId: r.id });
+  // "Manager acted": the leaver's Resignation tab updates (6Zs §1.3 §5, Who gets told); no push.
   return { resignation: resignationView({ ...r, manager: managerAct, status: 'with_hr' }, manager.name, now) };
 }
 
