@@ -26,6 +26,7 @@ import { approversFor } from '../services/request-notifications.service';
 import { approvalRulesFor, hrMayDecide, leaveRulesFor, withPolicyMemo } from '../services/shift.service';
 import { getMyLeaveBalance } from '../services/leave.service';
 import { typesForOrg } from '../services/reimbursement-type.service';
+import { peopleWith } from './toolCache';
 
 export const OVERDUE_DAYS = 7;
 
@@ -42,7 +43,6 @@ export interface Insight {
   name: string;
 }
 
-const ACTIVE = { lifecycleStatus: { $nin: ['offboarded', 'terminated'] } } as const;
 const isoDay = (d: Date | number | string | undefined) => (d == null ? '' : new Date(d).toISOString().slice(0, 10));
 export const daysBetween = (fromIso: string, toIso: string) => Math.max(0, Math.round((Date.parse(`${toIso}T00:00:00Z`) - Date.parse(`${fromIso}T00:00:00Z`)) / 86_400_000));
 export const daysWaiting = (createdAt: Date | number | string | undefined, today: string) => daysBetween(isoDay(createdAt) || today, today);
@@ -187,7 +187,13 @@ async function leaveBalanceCheckIn(leave: Leave & { _id?: ObjectId }, employee: 
 /** A colleague in the same department (or, without one, under the same manager) off on overlapping dates. */
 async function teamClashCheck(employee: User, start: string, end: string): Promise<Check> {
   const scope = employee.department ? { department: employee.department } : employee.managerUserId ? { managerUserId: employee.managerUserId } : null;
-  const team = scope ? await users().find({ org: employee.org, ...scope, userId: { $ne: employee.userId }, ...ACTIVE } as never, { projection: { _id: 0, userId: 1, name: 1 } }).toArray() : [];
+  // From the kept roster (toolCache's people bundle: in memory, and not re-read after a request write),
+  // filtered as the query did: same company, active, same department (or manager), not them.
+  const team = scope && employee.org
+    ? (await peopleWith<{ userId: string; name: string; department?: string; managerUserId?: string }>(employee.org, ['userId', 'name', 'department', 'managerUserId']))
+      .filter((p) => p.userId !== employee.userId && ('department' in scope ? p.department === scope.department : p.managerUserId === scope.managerUserId))
+      .map((p) => ({ userId: p.userId, name: p.name }))
+    : [];
   const teamLabel = employee.department ?? 'the same team';
   if (!team.length) return { ok: true, text: `No one else is in ${teamLabel}, so there is no clash to check.` };
   const overlapping = await leaves().find({ userId: { $in: team.map((p) => p.userId) }, status: { $in: ['approved', 'pending'] }, startDate: { $lte: new Date(`${end}T00:00:00Z`) }, endDate: { $gte: new Date(`${start}T00:00:00Z`) } }).toArray();

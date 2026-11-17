@@ -13,9 +13,10 @@ import { refreshWorkspaceRoster } from '../manager.service';
 import { lifecycleReadCacheOn, setLifecycleRewarm } from './readCache';
 import { listReaderFor, warmTimeOfficeLists } from '../timeOfficeLists';
 import { settingsFor } from '../../suwi/store';
-import { contextFor } from '../../suwi/tools';
+import { contextFor, toolsFor } from '../../suwi/tools';
+import { peopleBundle, prerunTools } from '../../suwi/toolCache';
 import { suwiNotices } from '../../suwi/notices';
-import { orgSuwiData, readerFor } from '../../suwi/orgData';
+import { orgSuwiData, patchedRecently, readerFor } from '../../suwi/orgData';
 import { istToday } from '../../suwi/digest';
 import { prepareRecent, recentSuwiUsers } from '../../suwi/planner';
 import { logger } from '../../utils/logger';
@@ -37,7 +38,8 @@ export async function warmLifecycle(org: string, isStopping: () => boolean = () 
     // then one viewer's notices, which are now a quick filter over them.
     const today = istToday();
     // Only with someone to read the lists as: a company with no full-access dashboard user is left to its first viewer.
-    if ((await readerFor(org, '')).userId) await orgSuwiData(org, today, '', true);
+    // Not read whole again right after a request write patched it (orgData.ts): the patch is current.
+    if ((await readerFor(org, '')).userId) await orgSuwiData(org, today, '', !patchedRecently(org));
     const viewer = await users().findOne(
       { org, dashboardAccess: true, lifecycleStatus: { $nin: ['offboarded', 'terminated'] }, hiddenFromDirectory: { $ne: true }, $or: [{ dashboardAdmin: true }, { dashboardTabs: { $exists: false } }] },
     );
@@ -45,6 +47,11 @@ export async function warmLifecycle(org: string, isStopping: () => boolean = () 
     // "What needs my attention today?" made ahead for the people who use Suwi (planner.ts): once per
     // data version, at most once a minute each, so asking it is usually instant.
     await prepareRecent(org, today, isStopping);
+    // The people bundle every people tool reads, then the heavier no-input tools asked ahead as the
+    // people who use Suwi (toolCache.ts): once per data version, at most every five minutes.
+    await peopleBundle(org);
+    const recent = (await recentSuwiUsers(org, 3)).map((u) => contextFor(u, settings.levels, today));
+    await prerunTools(org, recent, toolsFor, isStopping);
   }]);
   for (const [name, run] of steps) {
     if (isStopping()) break;
@@ -85,6 +92,9 @@ export async function warmSuwiAtBoot(isStopping: () => boolean = () => false): P
         await suwiNotices(contextFor(u, settings.levels, today)).catch(() => undefined);
       }
       await prepareRecent(org, today, isStopping);
+      await peopleBundle(org);
+      const recent = (await recentSuwiUsers(org, 3)).map((u) => contextFor(u, settings.levels, today));
+      await prerunTools(org, recent, toolsFor, isStopping);
     } catch (error) {
       logger.warn('Suwi boot warm failed for a company', { org, error: (error as Error).message });
     }

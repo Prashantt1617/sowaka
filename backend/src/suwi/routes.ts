@@ -98,7 +98,12 @@ suwiRouter.get('/timings', async (req, res, next) => {
 });
 
 suwiRouter.post('/actions/:id/confirm', async (req, res, next) => {
-  try { res.json({ success: true, action: await confirmProposal(me(req).userId, me(req).org!, String(req.params.id), req.body?.typed) }); } catch (e) { fail(res, e, next); }
+  try {
+    const action = await confirmProposal(me(req).userId, me(req).org!, String(req.params.id), req.body?.typed);
+    // Deciding claims changes only the waiting requests: the write hook patches Suwi's company bundle instead of reading it all again.
+    if (action.kind === 'approve_claims') res.locals.suwiRequestsOnly = true;
+    res.json({ success: true, action });
+  } catch (e) { fail(res, e, next); }
 });
 suwiRouter.post('/actions/:id/cancel', async (req, res, next) => {
   try { res.json({ success: true, ...(await cancelProposal(me(req).userId, me(req).org!, String(req.params.id))) }); } catch (e) { fail(res, e, next); }

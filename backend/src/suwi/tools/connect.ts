@@ -12,6 +12,7 @@ import { listCompanyHolidays } from '../../services/holiday.service';
 import { pointEvents } from '../../services/points-ledger.service';
 import { listEvents as listRelayEvents } from '../../services/relay-import.service';
 import { defineTools, monthOf, num, str, SuwiContext } from '../tools';
+import { peopleWith } from '../toolCache';
 import { defineExecutor, propose } from '../proposals';
 
 /** Wellbeing-style rates (how engaged a group is) are only shown for groups this big. */
@@ -35,9 +36,8 @@ export const monthName = (month: string) => `${MONTHS[Number(month.slice(5, 7)) 
 
 export type RosterPerson = Pick<User, 'userId' | 'name' | 'department' | 'location' | 'branch' | 'birthday' | 'joiningDate' | 'managerUserId' | 'designation'>;
 export async function activeRoster(org: string): Promise<RosterPerson[]> {
-  return users().find({ org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } } as never, {
-    projection: { _id: 0, userId: 1, name: 1, department: 1, location: 1, branch: 1, birthday: 1, joiningDate: 1, managerUserId: 1, designation: 1 },
-  }).toArray();
+  // The company's people bundle (toolCache.ts): read once per data version, not once per tool call.
+  return peopleWith<RosterPerson>(org, ['userId', 'name', 'department', 'location', 'branch', 'birthday', 'joiningDate', 'managerUserId', 'designation']);
 }
 export const officeOf = (p: RosterPerson) => (p.location ?? p.branch ?? '').trim() || '(no office set)';
 export const teamOf = (p: RosterPerson) => (p.department ?? '').trim() || '(no department set)';

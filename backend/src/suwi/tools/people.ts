@@ -6,6 +6,7 @@
 import { shiftTemplates, users } from '../../config/db';
 import { User } from '../../models/user.model';
 import { defineTools, num, str, SuwiContext } from '../tools';
+import { peopleWith } from '../toolCache';
 
 export const ACTIVE = { lifecycleStatus: { $nin: ['offboarded', 'terminated'] } } as const;
 export const norm = (s: unknown) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -17,8 +18,10 @@ const PROJECTION = { _id: 0, userId: 1, name: 1, employeeId: 1, email: 1, design
 
 /** Everyone on the active roll of the asker's company. */
 export async function roster(ctx: SuwiContext): Promise<Person[]> {
-  return users().find({ org: ctx.org, ...ACTIVE } as never, { projection: PROJECTION }).toArray() as Promise<Person[]>;
+  // The company's people bundle (toolCache.ts): read once per data version, not once per tool call.
+  return peopleWith<Person>(ctx.org, PEOPLE_FIELDS);
 }
+const PEOPLE_FIELDS = Object.keys(PROJECTION).filter((k) => k !== '_id');
 
 /** The chain of managers above a person, nearest first, as names; stops at a loop. */
 export function orgPathOf(userId: string, byId: Map<string, Person>): string[] {

@@ -1,7 +1,7 @@
 import { forgetCorrectionsListOf } from './timeOfficeDrop';
 import { ObjectId, type WithId } from 'mongodb';
 import { attendanceRecords, attendanceRegularizations, companies, offices, users } from '../config/db';
-import { forgetSwr } from './swr-cache';
+import { forgetSwrExcept } from './swr-cache';
 import { PunchLocation } from '../models/office.model';
 import { User } from '../models/user.model';
 import { locateForPunch, officeView, placeLabel, punchLocationFrom } from './geofence.service';
@@ -825,13 +825,15 @@ export async function getManagerRegularizations(managerUserId: string) {
  * is waiting on anyone", so this is scoped by org rather than by approver.
  * Pending first, then newest, because the queue is the reason to open it.
  */
-export async function listAllRegularizationsForAdmin(adminUserId: string) {
+export async function listAllRegularizationsForAdmin(adminUserId: string, opts: { status?: string } = {}) {
   // The roster and its requests in one round trip, and of the roster only
   // what the rows name: the whole company's records, inline photos and all,
   // were most of this page's wait. Everyone is kept, not only those with a
   // request, since a row names its manager too.
   const { employees, rows } = await orgUsersWithRows(adminUserId, attendanceRegularizations(), {
     userFields: ['userId', 'name', 'employeeId'],
+    // Only these statuses, filtered in the database (Suwi's pending lists), when asked.
+    ...(opts.status ? { rowMatch: { status: opts.status } } : {}),
   });
   if (employees.length === 0) return [];
   const byUserId = new Map(employees.map((employee) => [employee.userId, employee]));
@@ -849,7 +851,8 @@ export async function listAllRegularizationsForAdmin(adminUserId: string) {
 /** Drop the kept Punch log / out-of-location answers of this person's company (swr-cache). */
 async function forgetTimeOfficeFor(userId: string): Promise<void> {
   const org = (await users().findOne({ userId }, { projection: { _id: 0, org: 1 } }))?.org;
-  if (org) forgetSwr(org);
+  // Not Suwi's company bundle: the decision's write hook patches it (lifecycle/readCache.ts).
+  if (org) forgetSwrExcept(org, ['suwi-org-data']);
 }
 
 export async function decideRegularization(

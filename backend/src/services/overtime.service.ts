@@ -307,7 +307,7 @@ function labelOf(duration: OvertimeDuration): string {
 }
 
 /** Org-wide list of every overtime request, for the HR dashboard. */
-export async function listAllOvertimeForAdmin(adminUserId: string) {
+export async function listAllOvertimeForAdmin(adminUserId: string, opts: { status?: string } = {}) {
   // One round trip for the lot: the roster with its requests and each
   // person's shift assignments, beside the org's policy and templates. The
   // full-day threshold is then resolved in memory, as `policiesForPeople`
@@ -318,6 +318,8 @@ export async function listAllOvertimeForAdmin(adminUserId: string) {
     orgUsersWithRows(adminUserId, overtimeRequests(), {
       onlyWithRows: true,
       userFields: ['userId', 'org', 'name', 'department', 'designation', 'profilePhotoKey', 'profilePhotoUrl'],
+      // Only these statuses, filtered in the database (Suwi's pending lists), when asked.
+      ...(opts.status ? { rowMatch: { status: opts.status } } : {}),
       alsoLookup: [
         {
           $lookup: {

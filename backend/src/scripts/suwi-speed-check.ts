@@ -80,7 +80,8 @@ async function main() {
   const readCache = await import('../services/lifecycle/readCache');
   const { ObjectId } = await import('mongodb');
 
-  await seed.seedSpeedOrg(50, 30);
+  // Convrse-sized when asked (SUWI_CHECK_PEOPLE=230); 50 keeps the routine run quick.
+  await seed.seedSpeedOrg(Number(process.env.SUWI_CHECK_PEOPLE ?? 50), 30);
   const raw = db.getDb();
   if (!/scratch/.test(raw.databaseName)) throw new Error(`refusing to run against ${raw.databaseName}`);
   const ORG = seed.ORG;
@@ -402,6 +403,296 @@ async function main() {
     await warm.warmSuwiAtBoot();
     t0 = Date.now(); await suwiNotices(ctx); const bootNoticeMs = Date.now() - t0;
     ok('after the boot warm the first notices come from memory', bootNoticeMs < 50, `${bootNoticeMs} ms`);
+  }
+
+  // ── Every tool kept (toolCache.ts): cold vs warm, same answer, invalidation ──
+  {
+    const { toolByName, toolsFor } = await import('../suwi/tools');
+    const tc = await import('../suwi/toolCache');
+    const ctx = contextFor(hr as never, settings.levels, today);
+    const someone = (await db.users().findOne({ userId: people[5].userId }, { projection: { _id: 0, userId: 1, name: 1 } }))!;
+    // Every read-only tool HR may use, with an input that works: none for the no-input tools, a person for the person tools.
+    const personInput: Record<string, Record<string, unknown>> = {
+      search_people: { text: String(someone.name).split(' ')[0] }, person_details: { person: someone.userId }, leave_balance: { userId: someone.userId },
+      person_attendance: { userId: someone.userId }, person_policy_summary: { userId: someone.userId }, claims_by_person: { userId: someone.userId },
+      payslip_explain: { userId: someone.userId }, kpi_trend: { userId: someone.userId }, review_material: { userId: someone.userId },
+    };
+    const readTools = toolsFor(ctx).filter((t) => !t.acts);
+    const strip = (v: unknown) => JSON.stringify(v, (k, x) => (/^(generatedAt|at|asOf|now|checkedAt|ms)$/.test(k) ? undefined : x));
+    const rows: string[] = [];
+    let slowWarm = 0; let differ = 0; let ran = 0;
+    for (const t of readTools) {
+      const required = (t.input_schema as { required?: string[] }).required ?? [];
+      const input = personInput[t.name] ?? (required.length ? null : {});
+      if (!input) continue;
+      readCache.forgetLifecycleReads(ORG);
+      let started = new Date(); let t0 = Date.now(); let coldOut: unknown;
+      try { coldOut = await t.run(ctx, input); } catch (e) { rows.push(`${t.name}: error ${(e as Error).message.slice(0, 60)}`); continue; }
+      const coldMs = Date.now() - t0; const bytes = await bytesSince(started);
+      started = new Date(); t0 = Date.now();
+      const warmOut = await t.run(ctx, input);
+      const warmMs = Date.now() - t0;
+      ran++;
+      if (warmMs >= 100) slowWarm++;
+      // The same answer fresh: cache off for one run.
+      tc.setSuwiToolCache(false);
+      const freshOut = await t.run(ctx, input).catch(() => null);
+      tc.setSuwiToolCache(null);
+      if (strip(warmOut) !== strip(freshOut)) { differ++; rows.push(`${t.name}: kept answer differs from a fresh one`); }
+      rows.push(`${t.name.padEnd(30)} cold ${String(coldMs).padStart(5)} ms ${String(Math.round(bytes / 1024)).padStart(5)} KB · est. prod ${String(Math.round(coldMs + (bytes / PROD_BYTES_PER_S) * 1000)).padStart(6)} ms · warm ${warmMs} ms`);
+      void coldOut;
+    }
+    console.log(`\nEvery read-only tool (HR, ${people.length} people):\n${rows.join('\n')}`);
+    ok(`every read-only tool answers warm in under 100 ms (${ran} tools)`, ran > 20 && slowWarm === 0, `${slowWarm} slow, ${ran} ran`);
+    ok('a kept tool answer equals a fresh one', differ === 0, `${differ} differ`);
+
+    // A change the write hook sees: a new person shows on the next search, the bundle re-read.
+    const fire = (method: string, path: string) => new Promise<void>((resolve) => {
+      const req = { method, path, auth: { user: { org: ORG } } };
+      const res = { end: () => { resolve(); return res; } };
+      readCache.forgetReadsOnWrite(req as never, res as never, () => { (res as { end: () => unknown }).end(); });
+    });
+    await toolByName('search_people')!.run(ctx, { text: 'Zebedee' });
+    await db.users().insertOne({ userId: 'speed-new-person', org: ORG, name: 'Zebedee Quark', email: 'zq@speed.test', lifecycleStatus: 'active', department: 'Design' } as never);
+    const stale = await toolByName('search_people')!.run(ctx, { text: 'Zebedee' }) as { data: unknown };
+    await fire('PATCH', '/admin/employees/speed-new-person');
+    const freshSearch = await toolByName('search_people')!.run(ctx, { text: 'Zebedee' }) as { data: unknown };
+    ok('a person added shows on the next search after the change (bundle and tool answer re-read)', JSON.stringify(freshSearch.data).includes('Zebedee') && !JSON.stringify(stale.data).includes('Zebedee'), `${JSON.stringify(stale.data).slice(0, 80)} → ${JSON.stringify(freshSearch.data).slice(0, 80)}`);
+    const rosterNow = await tc.peopleBundle(ORG);
+    ok('the people bundle has the new person after the change', rosterNow.some((p) => p.userId === 'speed-new-person'));
+
+    // People with different access never share a kept tool answer: the key is per person.
+    const missBefore = tc.toolCacheStats.miss;
+    await toolByName('headcount')!.run(contextFor(hr2 as never, settings.levels, today), {});
+    ok('another person\'s first call is worked out for them, not served from HR\'s', tc.toolCacheStats.miss === missBefore + 1);
+
+    // Changes are never kept: a prepare_* tool runs every time.
+    const acts = [...toolsFor(ctx)].filter((t) => t.acts);
+    ok('tools that prepare a change are not wrapped by the cache', acts.length > 0 && acts.every((t) => !String(t.run).includes('cachedToolRun')), acts.map((t) => t.name).join(','));
+
+    // Redis down: tools still answer (memory only).
+    kept.setSuwiRedisOff(true);
+    readCache.forgetLifecycleReads(ORG);
+    const down = await toolByName('headcount')!.run(ctx, {}).then(() => true, () => false);
+    kept.setSuwiRedisOff(false);
+    ok('with Redis down the tools still answer', down);
+
+    // A restart: memory gone, the Redis copy answers.
+    if (REDIS) {
+      await toolByName('shift_templates')!.run(ctx, {});
+      const r0 = tc.toolCacheStats.redis;
+      (tc as unknown as { __clearMemoryForCheck?: () => void }).__clearMemoryForCheck?.();
+      await toolByName('shift_templates')!.run(ctx, {});
+      ok('after a restart (memory cleared) a kept tool answer comes from Redis', tc.toolCacheStats.redis === r0 + 1);
+    }
+
+    // The warm-up asks the no-input tools ahead for recent Suwi users.
+    readCache.forgetLifecycleReads(ORG);
+    tc.__resetPrerunForCheck();
+    const ranAhead = await tc.prerunTools(ORG, [ctx], toolsFor);
+    const t0 = Date.now(); await toolByName('review_progress')?.run(ctx, {}).catch(() => undefined); const afterAheadMs = Date.now() - t0;
+    ok('tools asked ahead answer the next call from memory', ranAhead > 10 && afterAheadMs < 100, `${ranAhead} ran ahead, then ${afterAheadMs} ms`);
+  }
+
+  // ── A request write patches the company bundle (orgData.ts) instead of dropping it ──
+  {
+    const { toolByName } = await import('../suwi/tools');
+    const od = await import('../suwi/orgData');
+    const ctx = contextFor(hr as never, settings.levels, today);
+    const byNs = async (from: Date) => {
+      const rows = await raw.collection('system.profile').find({ ts: { $gt: from }, ns: { $not: /system\.profile/ } }).project({ ns: 1, responseLength: 1 }).toArray();
+      const m = new Map<string, number>();
+      for (const r of rows) m.set(String(r.ns).split('.').slice(1).join('.'), (m.get(String(r.ns).split('.').slice(1).join('.')) ?? 0) + (Number(r.responseLength) || 0));
+      return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([ns, b]) => `${ns} ${Math.round(b / 1024)} KB`).join(', ');
+    };
+    const fire = (method: string, path: string) => new Promise<void>((resolve) => {
+      const req = { method, path, auth: { user: { org: ORG } } };
+      const res = { end: () => { resolve(); return res; } };
+      readCache.forgetReadsOnWrite(req as never, res as never, () => { (res as { end: () => unknown }).end(); });
+    });
+    // Stable JSON without the time it was read: the patched bundle and a whole read must match exactly.
+    const stable = (v: unknown): string => JSON.stringify(v, (k, x) => (k === 'at' ? undefined : x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x));
+    const est = (ms: number, bytes: number) => Math.round(ms + (bytes / PROD_BYTES_PER_S) * 1000);
+    const dump = async (from: Date, label: string) => {
+      if (!process.env.SUWI_DUMP) return;
+      const all = await raw.collection('system.profile').find({ ts: { $gt: from }, ns: { $not: /system\.profile/ } }).toArray();
+      const by = new Map<string, [number, number]>();
+      for (const r of all) { const k = `${String(r.ns).split('.').slice(1).join('.')} ${r.op} ${Object.keys(r.command?.filter ?? {}).join(',') || (r.command?.pipeline ? 'pipeline:' + JSON.stringify(r.command.pipeline[0]).slice(0, 60) : '')}`; const v = by.get(k) ?? [0, 0]; by.set(k, [v[0] + 1, v[1] + (Number(r.responseLength) || 0)]); }
+      console.log(`  [${label}]\n` + [...by.entries()].sort((a, b) => b[1][1] - a[1][1]).slice(0, 12).map(([k, [n, b]]) => `    ${k}: ${n}× ${Math.round(b / 1024)} KB`).join('\n'));
+    };
+    // Measured alone: the debounced rebuild after earlier writes would read beside the patch (it is checked below).
+    readCache.setLifecycleRewarm(null);
+    await new Promise((r) => setTimeout(r, 3500));
+
+    // The whole bundle, once, as the warm-up keeps it.
+    let started = new Date(); let t0 = Date.now();
+    await od.orgSuwiData(ORG, today, seed.HR, true);
+    const wholeMs = Date.now() - t0; const wholeBytes = await bytesSince(started);
+    console.log(`\nCompany bundle read whole: ${wholeMs} ms, ${Math.round(wholeBytes / 1024)} KB (est. prod ${est(wholeMs, wholeBytes)} ms) [${await byNs(started)}]`);
+
+    const leaveIds = pendingLeave.map((l) => l._id);
+    const regs = await raw.collection('attendance_regularizations').find({ status: 'pending' }).project({ _id: 1 }).toArray();
+    const someone = people[30];
+    const events: { name: string; method: string; path: string; change: () => Promise<unknown>; expect: (rows: { type: string; id: string }[]) => boolean }[] = [
+      { name: 'leave approved', method: 'PATCH', path: `/admin/leaves/${leaveIds[0]}/decision`, change: () => db.leaves().updateOne({ _id: leaveIds[0] } as never, { $set: { status: 'approved', decidedAt: new Date() } }), expect: (r) => !r.some((x) => x.id === leaveIds[0].toHexString()) },
+      { name: 'leave declined', method: 'PATCH', path: `/leaves/${leaveIds[1]}/decision`, change: () => db.leaves().updateOne({ _id: leaveIds[1] } as never, { $set: { status: 'declined', decidedAt: new Date() } }), expect: (r) => !r.some((x) => x.id === leaveIds[1].toHexString()) },
+      { name: 'leave cancelled', method: 'POST', path: `/leaves/${leaveIds[2]}/cancel`, change: () => db.leaves().updateOne({ _id: leaveIds[2] } as never, { $set: { status: 'cancelled' } }), expect: (r) => !r.some((x) => x.id === leaveIds[2].toHexString()) },
+      { name: 'leave requested', method: 'POST', path: '/leaves', change: () => db.leaves().insertOne({ _id: new ObjectId('6650000000000000000000aa'), org: ORG, userId: someone.userId, type: 'casual', startDate: new Date(`${addDays(today, 20)}T00:00:00Z`), endDate: new Date(`${addDays(today, 20)}T00:00:00Z`), reason: 'trip', status: 'pending', halfDay: false, createdAt: Date.now() } as never), expect: (r) => r.some((x) => x.id === '6650000000000000000000aa') },
+      { name: 'correction approved', method: 'PATCH', path: `/admin/regularizations/${regs[0]._id}/decision`, change: () => raw.collection('attendance_regularizations').updateOne({ _id: regs[0]._id }, { $set: { status: 'approved' } }), expect: (r) => !r.some((x) => x.id === String(regs[0]._id)) },
+      { name: 'correction requested', method: 'POST', path: '/attendance/regularizations', change: () => raw.collection('attendance_regularizations').insertOne({ _id: new ObjectId('6650000000000000000000bb'), userId: someone.userId, managerUserId: someone.managerUserId ?? seed.HR, workDate: addDays(today, -1), requestedDayType: 'full_day', note: 'missed', status: 'pending', createdAt: new Date() }), expect: (r) => r.some((x) => x.id === '6650000000000000000000bb') },
+      { name: 'overtime requested', method: 'POST', path: '/overtime', change: () => db.overtimeRequests().insertOne({ _id: new ObjectId('6650000000000000000000cc'), userId: someone.userId, managerUserId: someone.managerUserId ?? seed.HR, workDate: new Date(`${addDays(today, -1)}T00:00:00Z`), startTime: new Date(), endTime: new Date(), hours: 4, duration: 'half_day', status: 'pending', createdAt: new Date() } as never), expect: (r) => r.some((x) => x.id === '6650000000000000000000cc') },
+      { name: 'claim submitted', method: 'POST', path: '/reimbursements', change: () => db.reimbursementClaims().insertOne({ _id: new ObjectId('6650000000000000000000dd'), userId: someone.userId, managerUserId: someone.managerUserId ?? seed.HR, expenseDate: new Date(`${addDays(today, -1)}T00:00:00Z`), amount: 450, category: 'travel', status: 'pending', createdAt: new Date() } as never), expect: (r) => r.some((x) => x.id === '6650000000000000000000dd') },
+      { name: 'claim declined', method: 'PATCH', path: '/admin/reimbursements/6650000000000000000000dd/decision', change: () => db.reimbursementClaims().updateOne({ _id: new ObjectId('6650000000000000000000dd') } as never, { $set: { status: 'declined' } }), expect: (r) => !r.some((x) => x.id === '6650000000000000000000dd') },
+    ];
+    const lines: string[] = [];
+    let same = 0; let shown = 0; let slow = 0; let patchKb = 0;
+    for (const e of events) {
+      await e.change();
+      started = new Date(); t0 = Date.now();
+      await fire(e.method, e.path);
+      // The next reader (any tool) waits for the patch, never for a whole read of its own.
+      const patched = await od.keptOrgSuwiDataAsync(ORG, today, seed.HR);
+      const ms = Date.now() - t0; const bytes = await bytesSince(started);
+      patchKb = Math.max(patchKb, bytes / 1024);
+      if (est(ms, bytes) > 1000) slow++;
+      if (patched && e.expect(patched.pending ?? [])) shown++;
+      const whole = await od.loadOrgSuwiData(ORG, today, seed.HR);
+      if (patched && stable(patched) === stable(whole)) same++;
+      else lines.push(`      ${e.name}: patched ≠ whole\n        ${stable(patched).slice(0, 300)}\n        ${stable(whole).slice(0, 300)}`);
+      if (e === events[0]) await dump(started, `patch: ${e.name}`);
+      lines.push(`  ${e.name.padEnd(22)} patch ${String(ms).padStart(4)} ms ${String(Math.round(bytes / 1024)).padStart(4)} KB · est. prod ${est(ms, bytes)} ms`);
+    }
+    console.log(`\nRequest writes, the bundle patched (vs whole ${Math.round(wholeBytes / 1024)} KB):\n${lines.join('\n')}`);
+    ok(`after each request write the next read has the change (${events.length} kinds)`, shown === events.length, `${shown}/${events.length}`);
+    ok('the patched bundle equals a whole read after every kind of request write', same === events.length, `${same}/${events.length}`);
+    // Target 0.3 s; today the pending lists still read the users list (~40 KB), so 1 s is the bar until they read the kept people list.
+    ok('a patch reads less than the whole bundle and is under 1 s on prod', slow === 0 && patchKb < wholeBytes / 1024, `${slow} slow, ${Math.round(patchKb)} KB vs ${Math.round(wholeBytes / 1024)} KB`);
+
+    // A write the patch doesn't know (a shift template change) still drops the bundle whole.
+    await fire('POST', '/admin/shift-templates');
+    ok('any other write drops the bundle (no patch)', !(await import('../services/swr-cache')).peekSwr(ORG, 'suwi-org-data', { today }) && !(await import('../services/swr-cache')).pendingSwr(ORG, 'suwi-org-data', { today }));
+    await od.orgSuwiData(ORG, today, seed.HR, true);
+
+    // The attendance report patched for one person after a leave change (attendance-report.service).
+    {
+      const arsP = await import('../services/attendance-report.service');
+      const ls = await import('../services/leave.service');
+      const range = { from: addDays(today, -10), to: today };
+      const who = people[50].userId;
+      const leaveId = new ObjectId('6650000000000000000000ee');
+      const day = addDays(today, -3);
+      const steps: [string, () => Promise<unknown>][] = [
+        ['approved', () => db.leaves().insertOne({ _id: leaveId, org: ORG, userId: who, type: 'casual', startDate: new Date(`${day}T00:00:00Z`), endDate: new Date(`${day}T00:00:00Z`), reason: 'x', status: 'approved', halfDay: false, days: 1, createdAt: Date.now() } as never)],
+        ['cancelled', () => db.leaves().updateOne({ _id: leaveId } as never, { $set: { status: 'cancelled' } })],
+        ['half day approved', () => db.leaves().updateOne({ _id: leaveId } as never, { $set: { status: 'approved', halfDay: true } })],
+        ['declined', () => db.leaves().updateOne({ _id: leaveId } as never, { $set: { status: 'declined' } })],
+      ];
+      const r0 = await arsP.attendanceReport(seed.HR, range, { refresh: true });
+      let equal = 0; let changedShown = 0; const rows: string[] = []; let maxKb = 0;
+      let prevDay = JSON.stringify(r0.days.find((d) => d[0] === who && d[1] === day) ?? r0.offDays.find((d) => d[0] === who && d[1] === day));
+      for (const [label, change] of steps) {
+        await change();
+        started = new Date(); t0 = Date.now();
+        await (ls as unknown as { __leaveChangedForCheck: (u: string) => Promise<void> }).__leaveChangedForCheck(who);
+        const patched = await arsP.attendanceReport(seed.HR, range);
+        const ms = Date.now() - t0; const bytes = await bytesSince(started);
+        maxKb = Math.max(maxKb, bytes / 1024);
+        const whole = await arsP.attendanceReport(seed.HR, range, { refresh: true });
+        if (stable(patched) === stable(whole)) equal++; else rows.push(`      ${label}: patched report ≠ whole`);
+        const nowDay = JSON.stringify(patched.days.find((d) => d[0] === who && d[1] === day) ?? patched.offDays.find((d) => d[0] === who && d[1] === day));
+        if (nowDay !== prevDay) changedShown++;
+        prevDay = nowDay;
+        rows.push(`  leave ${label.padEnd(18)} report patch ${String(ms).padStart(4)} ms ${String(Math.round(bytes / 1024)).padStart(4)} KB · est. prod ${est(ms, bytes)} ms`);
+      }
+      const wholeStart = new Date(); const wt0 = Date.now();
+      arsP.invalidateAttendanceReport(ORG);
+      await arsP.attendanceReport(seed.HR, range);
+      console.log(`\nAttendance report, ${range.from}..${range.to} (whole: ${Date.now() - wt0} ms, ${Math.round((await bytesSince(wholeStart)) / 1024)} KB):\n${rows.join('\n')}`);
+      ok('a patched attendance report equals a whole read after each leave change', equal === steps.length, `${equal}/${steps.length}`);
+      ok('the patched report shows each change on that day', changedShown === steps.length, `${changedShown}/${steps.length}`);
+      ok('a report patch reads a few KB', maxKb < 20, `${Math.round(maxKb)} KB`);
+    }
+
+    // The four tools the coordinator named: the first call right after a request write (a leave decided,
+    // which also drops or patches the attendance report as leave.service's leaveChanged does; a claim
+    // made, which touches no attendance), then cold (everything dropped).
+    const ars = await import('../services/attendance-report.service');
+    const leaveService = await import('../services/leave.service');
+    const four = ['review_requests', 'pending_requests', 'shift_gaps', 'team_attendance_patterns'];
+    const firstRows: string[] = [];
+    const afterWrite: Record<string, number> = {};
+    let flip = 0;
+    for (const name of four) {
+      for (const kind of ['leave decided', 'claim made'] as const) {
+        await toolByName(name)!.run(ctx, {});
+        if (kind === 'leave decided') {
+          flip++;
+          await db.leaves().updateOne({ _id: new ObjectId('6650000000000000000000aa') } as never, { $set: { status: flip % 2 ? 'approved' : 'pending' } });
+          await (leaveService as unknown as { __leaveChangedForCheck: (u: string) => Promise<void> }).__leaveChangedForCheck(someone.userId);
+          await fire('PATCH', '/admin/leaves/6650000000000000000000aa/decision');
+        } else {
+          await db.reimbursementClaims().insertOne({ userId: people[40].userId, managerUserId: seed.HR, expenseDate: new Date(`${addDays(today, -2)}T00:00:00Z`), amount: 100 + flip, category: 'travel', status: 'pending', createdAt: new Date() } as never);
+          await fire('POST', '/reimbursements');
+        }
+        started = new Date(); t0 = Date.now();
+        await toolByName(name)!.run(ctx, {});
+        const ms = Date.now() - t0; const bytes = await bytesSince(started);
+        afterWrite[`${name}|${kind}`] = est(ms, bytes);
+        await dump(started, `${name} after ${kind}`);
+        firstRows.push(`  ${name.padEnd(26)} after ${kind.padEnd(13)} ${String(ms).padStart(5)} ms ${String(Math.round(bytes / 1024)).padStart(4)} KB · est. prod ${String(est(ms, bytes)).padStart(5)} ms [${await byNs(started)}]`);
+      }
+      // Cold: everything dropped (the bundle, the report and its setup), no patch.
+      readCache.forgetLifecycleReads(ORG);
+      ars.invalidateAttendanceSetup(ORG);
+      started = new Date(); t0 = Date.now();
+      await toolByName(name)!.run(ctx, {});
+      const cms = Date.now() - t0; const cbytes = await bytesSince(started);
+      await dump(started, `${name} cold`);
+      firstRows.push(`  ${''.padEnd(26)} cold (all dropped)  ${String(cms).padStart(5)} ms ${String(Math.round(cbytes / 1024)).padStart(4)} KB · est. prod ${String(est(cms, cbytes)).padStart(5)} ms [${await byNs(started)}]`);
+      await od.orgSuwiData(ORG, today, seed.HR, true);
+    }
+    const reviewAfterWrite = Math.max(afterWrite['review_requests|leave decided'], afterWrite['review_requests|claim made']);
+    console.log(`\nFirst calls:\n${firstRows.join('\n')}`);
+    // Target 0.3 s (was 4.4 s before the patch); 1 s until the pending lists read the kept people list.
+    ok('review_requests right after a request write is under 1 s on prod', reviewAfterWrite < 1000, `${reviewAfterWrite} ms`);
+
+    // A request write leaves the people bundle kept (the people version); a person's change re-reads it.
+    const tc = await import('../suwi/toolCache');
+    const pb0 = await tc.peopleBundle(ORG);
+    await fire('POST', '/leaves');
+    const pb1 = await tc.peopleBundle(ORG);
+    await fire('PATCH', '/admin/employees/speed-new-person');
+    const pb2 = await tc.peopleBundle(ORG);
+    ok('a request write keeps the people bundle; a person\'s change re-reads it', pb1 === pb0 && pb2 !== pb0);
+
+    // Dropping other kinds (a leave's Time office lists) never throws away a bundle refresh under way.
+    const swr = await import('../services/swr-cache');
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const inflight = swr.refreshSwr(ORG, 'suwi-org-data', { today }, async () => { await gate; return { marker: 1 }; });
+    swr.forgetSwrExcept(ORG, ['suwi-org-data']);
+    swr.dropSwr(ORG, ['adm-leaves']);
+    release(); await inflight;
+    ok('a bundle refresh under way survives drops of other kinds', (swr.peekSwr(ORG, 'suwi-org-data', { today }) as { marker?: number } | undefined)?.marker === 1);
+    await od.orgSuwiData(ORG, today, seed.HR, true);
+
+    // The debounced rebuild (3 s after a change) brings the bundle and review_requests back without a reader.
+    const warmMod = await import('../services/lifecycle/warm');
+    readCache.setLifecycleRewarm(async (org) => { await warmMod.warmLifecycle(org); });
+    const settle = async () => {
+      await new Promise((r) => setTimeout(r, 3_300));
+      for (let i = 0; i < 100 && !swr.peekSwr(ORG, 'suwi-org-data', { today }); i++) await new Promise((r) => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 1_500));
+    };
+    for (const [label, method, path] of [['a request write', 'POST', '/leaves'], ['any other write', 'POST', '/admin/shift-templates']] as const) {
+      await fire(method, path);
+      await settle();
+      const hits = tc.toolCacheStats.memory + tc.toolCacheStats.redis;
+      t0 = Date.now();
+      await toolByName('review_requests')!.run(ctx, {});
+      const ms = Date.now() - t0;
+      ok(`after ${label}, the rebuild has review_requests ready (${ms} ms)`, ms < 100 && tc.toolCacheStats.memory + tc.toolCacheStats.redis > hits, `${ms} ms`);
+    }
   }
 
   await raw.command({ profile: 0 } as never);
