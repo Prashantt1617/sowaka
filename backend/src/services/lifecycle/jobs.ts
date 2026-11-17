@@ -12,6 +12,7 @@
  * candidate emails to theirs: either can add its job to the same tick with
  * `registerLifecycleJob`.
  */
+import { forgetLifecycleReads } from './readCache';
 import { companies, journeys, journeyTasks, lifecycleMeetings, users } from '../../config/db';
 import type { Journey, JourneyTask, SystemTaskKey } from '../../models/lifecycle.model';
 import { logger } from '../../utils/logger';
@@ -73,6 +74,9 @@ export async function runLifecycleJobs(now = new Date(), opts: { full?: boolean;
   for (const [name, job] of extraJobs) {
     try { await job(now); } catch (error) { logger.error(`Lifecycle job failed: ${name}`, {}, error); }
   }
+  // The day jobs change journeys and tasks without a request: the kept boards go too. The
+  // five-minute part (meeting reminders) changes nothing a board shows, so it leaves them.
+  if (full || extraJobs.size) forgetLifecycleReads(null);
   return result;
 }
 

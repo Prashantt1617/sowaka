@@ -28,6 +28,7 @@ import { attendanceReport } from './attendance-report.service';
 import { listOutOfLocationForAdmin } from './attendance.service';
 import { payCycleForAdmin, warmPunchLog } from './punch-log.service';
 import { refreshSwr } from './swr-cache';
+import { warmLifecycle } from './lifecycle/warm';
 
 const ROUND_MS = 4 * 60_000;
 /** After the server starts, so boot is not slowed by it. */
@@ -151,7 +152,7 @@ async function round(): Promise<void> {
   for (const [i, org] of orgs.entries()) {
     if (stopping) break;
     if (i > 0) await pause(BETWEEN_ORGS_MS);
-    perOrg[org] = { ...(await warmOrg(org)), ...(await warmTimeOffice(org)) };
+    perOrg[org] = { ...(await warmOrg(org)), ...(await warmTimeOffice(org)), ...(await warmLifecycle(org, () => stopping)) };
   }
   logger.info('Engagement warm-up', { orgs: orgs.length, ms: Date.now() - t0, perOrg });
 }

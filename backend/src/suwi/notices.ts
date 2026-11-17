@@ -4,6 +4,7 @@
  * matters, and the question to ask Suwi to see the detail. Only areas this
  * person can open are looked at, with the same tab rules as the API.
  */
+import { cachedLifecycle, refreshLifecycle } from '../services/lifecycle/readCache';
 import { connectPosts, relayEvents, reimbursementTypes } from '../config/db';
 import { tabsForRequest } from '../models/dashboard-tabs';
 import { hasAllDashboardTabs } from '../middleware/admin.middleware';
@@ -49,18 +50,15 @@ async function quietly<T>(work: () => Promise<T>): Promise<T | null> {
   try { return await work(); } catch { return null; }
 }
 
-const CACHE = new Map<string, { at: number; notices: SuwiNotice[] }>();
-const CACHE_MS = 3 * 60_000;
-
-/** The notices for this person, computed at most every three minutes. */
+/**
+ * The notices for this person, kept in memory (lifecycle/readCache: served at once and refreshed
+ * behind the reader after a minute, dropped on every write, so a decided request leaves the count
+ * at once). `fresh` works them out now and keeps them.
+ */
 export async function suwiNotices(ctx: SuwiContext, fresh = false): Promise<SuwiNotice[]> {
-  const key = `${ctx.org}|${ctx.userId}|${ctx.payroll}|${ctx.today}`;
-  const hit = CACHE.get(key);
-  if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return hit.notices;
-  const notices = await computeNotices(ctx);
-  CACHE.set(key, { at: Date.now(), notices });
-  if (CACHE.size > 500) CACHE.delete(CACHE.keys().next().value!);
-  return notices;
+  const params = { userId: ctx.userId, payroll: ctx.payroll, today: ctx.today };
+  if (fresh) return refreshLifecycle(ctx.org, 'suwi-notices', params, () => computeNotices(ctx));
+  return cachedLifecycle(ctx.org, 'suwi-notices', params, () => computeNotices(ctx));
 }
 
 async function computeNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {

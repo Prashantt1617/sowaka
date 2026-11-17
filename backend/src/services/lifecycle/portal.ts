@@ -228,7 +228,17 @@ export async function portalPassIcs(journey: Journey, now = new Date()): Promise
 export async function portalHome(journey: Journey, now = new Date()): Promise<PortalHome> {
   const status = String(journey.status);
   const today = istDate(now);
-  const company = await companyOf(journey.org);
+  // Every read the page needs, started together: each needs only the journey (closed and joined pages need fewer).
+  const quiet = <T>(p: Promise<T>) => { p.catch(() => undefined); return p; };
+  const isOpen = !CLOSED_STATUSES.has(status);
+  const pre = isOpen && status !== 'joined';
+  const companyRead = companyOf(journey.org);
+  const tasksRead = isOpen ? quiet(journeyTasksView(journey.id, 'employee')) : null;
+  const offerRead = pre ? quiet(offers().findOne({ journeyId: journey.id })) : null;
+  const docsRead = pre ? quiet(journeyDocumentsView(journey.id)) : null;
+  const meetRead = pre ? quiet(meetItems(journey)) : null;
+  const lettersRead = pre && journey.templateSnapshot.settings.signLettersOnDay1 !== true ? quiet(portalLetters(journey)) : null;
+  const company = await companyRead;
   const base = {
     status, candidateName: journey.candidate?.name ?? '',
     company: { name: companyDisplayName(company, journey.org), ...(company?.lifecyclePortal?.logoUrl ? { logoUrl: company.lifecyclePortal.logoUrl } : {}) },
@@ -242,7 +252,7 @@ export async function portalHome(journey: Journey, now = new Date()): Promise<Po
   if (CLOSED_STATUSES.has(status)) {
     return { ...base, view: 'closed', closedState: status, plant: plantOf(0), path: [], tasks: [], batch: { count: 0, names: [] } };
   }
-  const tasks = await journeyTasksView(journey.id, 'employee');
+  const tasks = await (tasksRead ?? journeyTasksView(journey.id, 'employee'));
   if (status === 'joined') {
     const week1 = tasks.filter((t) => t.phase === 'first_week');
     return {
@@ -252,21 +262,21 @@ export async function portalHome(journey: Journey, now = new Date()): Promise<Po
     };
   }
 
-  const offer = await offers().findOne({ journeyId: journey.id });
+  const offer = await (offerRead ?? offers().findOne({ journeyId: journey.id }));
   // A revision HR has only saved is not the candidate's yet: home changes when it is sent.
   const latest = sentVersion(offer?.versions);
   const offerDone = latest?.status === 'accepted';
-  const docs = await journeyDocumentsView(journey.id);
+  const docs = await (docsRead ?? journeyDocumentsView(journey.id));
   const required = docs.filter((d) => d.required);
   const sentBack = docs.find((d) => d.status === 'sent_back');
   // Done only when every required document is approved and nothing is waiting to be uploaded again (an optional one included).
   const docsDone = required.length > 0 && required.every((d) => d.status === 'approved') && !sentBack;
   const about = aboutYouOf(journey);
   const aboutDone = Boolean(about.emergencyContact && about.pf);
-  const meet = await meetItems(journey);
+  const meet = await (meetRead ?? meetItems(journey));
   const meetDone = meet.length > 0 ? meet.every((i) => i.seen) : true;
   const onDay1 = journey.templateSnapshot.settings.signLettersOnDay1 === true;
-  const portalLetterList = onDay1 ? [] : await portalLetters(journey);
+  const portalLetterList = onDay1 ? [] : await (lettersRead ?? portalLetters(journey));
   const lettersDone = portalLetterList.length > 0 && portalLetterList.every((l) => l.state === 'signed');
   const lettersReady = portalLetterList.some((l) => l.state === 'ready' || l.state === 'opened');
   const passUnlocked = passOpen(journey, now);

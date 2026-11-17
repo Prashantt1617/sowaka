@@ -128,6 +128,10 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
   await db.connectDb();
   const { companies, users, holidays, journeys, journeyTasks, authSessions, exitSettlements, notifications } = db;
   const { app } = await import('../app');
+  // The boards and Suwi's notices are served from memory as on the server (lifecycle/readCache.ts):
+  // every check below that reads a board after an action is also a check that the action was seen.
+  const readCache = await import('../services/lifecycle/readCache');
+  readCache.enableLifecycleReadCache();
   const { lifecycleOutbox, clearLifecycleOutbox } = await import('../services/lifecycle/emails');
   const rules = await import('../services/lifecycle/dueRules');
   const jobs = await import('../services/lifecycle/jobs');
@@ -1124,6 +1128,8 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
     }
     const approved = await call('hr', 'POST', '/admin/employees/ravi/exit/settlement/approve', { clearanceOverrideReason: 'Consistency test' });
     if (approved.status !== 200) await exitSettlements().updateOne({ org: ORG, userId: 'ravi' }, { $set: { status: 'approved', approvedAt: new Date() } });
+    // Written straight to the database above (not through the API): the kept boards would not know.
+    readCache.forgetLifecycleReads(ORG);
     settlement = await exitSettlements().findOne({ org: ORG, userId: 'ravi' });
     const exitDetail = await get('hr', '/admin/employees/ravi/exit');
     const drawerS = (await get('hr', '/admin/lifecycle/offboarding/ravi')).settlement;
@@ -1163,6 +1169,76 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
     agree('closed: the board and the drawer', { board: (await offCard('hr', 'ravi'))?.column, drawer: closedDrawer.card.column });
     eq('the manager’s lists let go of Ravi', [(await get('mgr', '/lifecycle/manager/leavers')).leavers.some((l: Json) => l.userId === 'ravi'), (await get('mgr', '/lifecycle/manager/resignations')).resignations.some((r: Json) => r.userId === 'ravi')], [false, false]);
     ok('no job or service errors logged (offboarding)', productErrors.length === 0, productErrors.slice(0, 3));
+  }
+
+  // ═════════════════════════════════════════════════════════════ 4 · KEPT READS
+  {
+    current = 'across';
+    heading('4 · Kept reads: the boards and Suwi\u2019s notices come from memory, and every write is seen by the next read');
+    const boardSvc = await import('../services/lifecycle/board');
+    const notices = await import('../suwi/notices');
+    const tools = await import('../suwi/tools');
+    const hrUser = await users().findOne({ userId: 'hr' });
+    const today = istKey(new Date());
+    const ctx = () => tools.contextFor(hrUser as never, {} as never, today);
+    const cardsOf = (b: Json) => (b.columns as Json[]).flatMap((c) => c.cards as Json[]);
+    const offCards = async () => (await Promise.all(['resignations', 'notice', 'exit'].map((tab) => get('hr', `/admin/lifecycle/offboarding/board?tab=${tab}`)))).flatMap(cardsOf);
+
+    // Kept: the same data comes back until something is written.
+    await get('hr', '/admin/lifecycle/board?tab=pre_boarding');
+    ok('the onboarding board data is kept between reads', (await boardSvc.boardData(ORG)) === (await boardSvc.boardData(ORG)));
+    await get('hr', '/admin/lifecycle/offboarding/board?tab=notice');
+    ok('the offboarding board data is kept between reads', (await off.offBoardData(ORG)) === (await off.offBoardData(ORG)));
+    const n1 = await notices.suwiNotices(ctx());
+    ok('Suwi\u2019s notices are kept between reads', n1 === (await notices.suwiNotices(ctx())));
+
+    // An offer made through the API: the board, the counts, the Documents picker and Suwi see it at once.
+    const before = await get('hr', '/admin/lifecycle/board?tab=pre_boarding');
+    const countsBefore = await get('hr', '/admin/lifecycle/counts');
+    const pickBefore = await get('hr', '/admin/lifecycle/joiners');
+    const made = await send('hr', 'POST', '/admin/lifecycle/offers', {
+      candidate: { name: 'Kavi Cache', personalEmail: 'kavi.cache@example.com' },
+      fields: { designation: 'Designer', department: 'Design', location: 'Bengaluru', ctc: 1_000_000, tj: addDays(today, 35), managerUserId: 'mgr', probationMonths: 3, noticeDays: 30, validTill: addDays(today, 10), employeeType: 'full_time' },
+    });
+    const K = made.journeyId as string;
+    const after = await get('hr', '/admin/lifecycle/board?tab=pre_boarding');
+    eq('a new draft offer is on the board at the next read', [cardsOf(before).some((c) => c.journeyId === K), cardsOf(after).some((c) => c.journeyId === K), after.counts.pre_boarding - before.counts.pre_boarding], [false, true, 1]);
+    const countsAfter = await get('hr', '/admin/lifecycle/counts');
+    eq('the sidebar count moves with it (a draft waits on HR)', countsAfter.onboarding.needsYou - countsBefore.onboarding.needsYou, 1);
+    const pickAfter = await get('hr', '/admin/lifecycle/joiners');
+    eq('the Documents page\u2019s joiner picker has it too', [pickBefore.joiners.some((j: Json) => j.journeyId === K), pickAfter.joiners.some((j: Json) => j.journeyId === K)], [false, true]);
+    ok('Suwi\u2019s notices are worked out again after the write', (await notices.suwiNotices(ctx())) !== n1);
+
+    // Edited through the API: the card changes at the next read.
+    eq('the card names the offer\u2019s manager', cardsOf(await get('hr', '/admin/lifecycle/board?tab=pre_boarding')).find((c) => c.journeyId === K)?.managerName, 'Neha Rao');
+    await send('hr', 'PUT', `/admin/lifecycle/journeys/${K}`, { managerUserId: 'hr' });
+    const edited = cardsOf(await get('hr', '/admin/lifecycle/board?tab=pre_boarding')).find((c) => c.journeyId === K);
+    eq('an edit (a new manager) shows on the card at the next read', edited?.managerName, 'Hema HR');
+
+    // An exit started through the API: the offboarding board and its count see it at once.
+    await users().insertOne({ userId: 'cachey', name: 'Cara Cache', email: 'cachey@el-consistency.test', org: ORG, lifecycleStatus: 'active', role: 'employee', employeeId: 'ELC-C', department: 'Design', designation: 'Designer', managerUserId: 'mgr', joiningDate: new Date('2022-01-03T00:00:00Z') } as never);
+    eq('before: not on the offboarding board', (await offCards()).some((c) => c.userId === 'cachey'), false);
+    const keptOff = await off.offBoardData(ORG);
+    await send('hr', 'POST', '/admin/lifecycle/offboarding/cachey/start', { exitType: 'retirement', lastWorkingDay: addDays(today, 40), noticeHandling: 'served', tellManagerNow: true });
+    eq('an exit started through the API is on the offboarding board at the next read', (await offCards()).some((c) => c.userId === 'cachey'), true);
+    ok('the offboarding board and its count are worked out from the new data', (await off.offBoardData(ORG)) !== keptOff && (await get('hr', '/admin/lifecycle/offboarding/count')).count !== undefined);
+
+    // The slim reads (no template task list, no long task texts) give exactly the boards whole documents give.
+    for (const tab of ['pre_boarding', 'first_week', 'probation'] as const) {
+      const at = new Date();
+      eq(`slim read = full read: onboarding board, ${tab}`, JSON.stringify(await boardSvc.onboardingBoard(ORG, 'hr', { tab }, at, { fresh: true })), JSON.stringify(await boardSvc.onboardingBoard(ORG, 'hr', { tab }, at, { full: true })));
+    }
+    eq('slim read = full read: onboarding counts', JSON.stringify(await boardSvc.onboardingCounts(ORG, new Date(), { fresh: true })), JSON.stringify(await boardSvc.onboardingCounts(ORG, new Date(), { full: true })));
+    for (const tab of ['resignations', 'notice', 'exit']) {
+      const at = new Date();
+      eq(`slim read = full read: offboarding board, ${tab}`, JSON.stringify(await off.offboardingBoard('hr', { tab }, at, { fresh: true })), JSON.stringify(await off.offboardingBoard('hr', { tab }, at, { full: true })));
+    }
+    eq('slim read = full read: offboarding count', JSON.stringify(await off.offboardingCount('hr', new Date(), { fresh: true })), JSON.stringify(await off.offboardingCount('hr', new Date(), { full: true })));
+
+    // A day job (no request) changes a journey: the next read sees it.
+    const jobsBefore = await boardSvc.boardData(ORG);
+    await jobs.runLifecycleJobs(new Date(), { full: true });
+    ok('a full run of the lifecycle jobs drops the kept board data', (await boardSvc.boardData(ORG)) !== jobsBefore);
   }
 
   // ═════════════════════════════════════════════════════════════ the end
