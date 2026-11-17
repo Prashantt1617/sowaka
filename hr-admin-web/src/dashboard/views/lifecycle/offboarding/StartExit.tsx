@@ -5,6 +5,7 @@
 // an absconding. Resignations sent from the app start on their own.
 import { useEffect, useMemo, useState } from 'react';
 import { Card, PageActions } from '../../../ui';
+import { usePageHead } from '../../../pageHead';
 import { btn, btnClass } from '../../../ds';
 import { useStore } from '../../../store';
 import { api } from '../../../../services/http';
@@ -77,6 +78,8 @@ export function StartExit({ onBack, onStarted }: { onBack: () => void; onStarted
     }
   };
 
+  // HRExitStart: the page names itself, with the way back beside the title and Cancel / Start exit on the right.
+  usePageHead({ title: 'Start an exit', eyebrow: 'Employee lifecycle · Offboarding', onBack, backLabel: 'Back to offboarding' });
   const plan: { when: string; what: string; owner: OwnerRole }[] = [
     { when: 'On start', what: 'Handover checklist', owner: 'manager' },
     { when: 'On start', what: 'IT, Admin and Finance told', owner: 'automatic' },
@@ -93,7 +96,6 @@ export function StartExit({ onBack, onStarted }: { onBack: () => void; onStarted
         <button type="button" onClick={onBack} className={btnClass()} style={btn()}>Cancel</button>
         <button type="button" id="ob-start-exit" disabled={!ready || busy} onClick={() => void start()} className={btnClass('primary')} style={btn('primary')}>{busy ? 'Starting…' : 'Start exit'}</button>
       </PageActions>
-      <div className="pd-prof-top"><button type="button" onClick={onBack} className="pd-btn ghost sm" style={{ marginLeft: -12 }}>← Back to offboarding</button></div>
       <p className="pd-lead" style={{ marginBottom: 16 }}>For exits HR starts: retirement, end of contract, termination, or a resignation that came by email. Resignations sent from the app start on their own.</p>
       <div className="ob-two">
         <Card padded>

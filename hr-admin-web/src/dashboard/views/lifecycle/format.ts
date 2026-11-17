@@ -1,7 +1,7 @@
 // The employee lifecycle's helpers: dates as the boards word them, owner and
 // flag labels, phase names, due rules in words, and the shared field styles.
 import type { CSSProperties } from 'react';
-import type { ConfirmationDecision, DueRule, JourneyFlag, LifecycleKind, LifecyclePhase, OwnerRole } from '../../../services/lifecycle';
+import type { ConfirmationDecision, DueRule, JourneyFlag, LifecycleKind, LifecyclePhase, OfferFields, OwnerRole } from '../../../services/lifecycle';
 
 // —— Dates ———————————————————————————————————————————————————————————————
 
@@ -183,3 +183,13 @@ export function readHandoff(key: string): string | null {
     return v;
   } catch { return null; }
 }
+
+/** The offer form's field names, one place for the form and for "Changed in this version". */
+export const OFFER_FIELD_LABEL: Record<keyof OfferFields, string> = {
+  designation: 'Designation', department: 'Department', location: 'Work location', managerUserId: 'Reporting manager',
+  tj: 'Joining date', validTill: 'Offer valid till', ctc: 'Yearly CTC', employeeType: 'Employment type',
+  probationMonths: 'Probation', noticeDays: 'Notice period', responsibilities: 'Responsibilities',
+};
+/** "Yearly CTC, Offer valid till" for a revision's changed fields (an unknown key shows as it is). */
+export const changedFieldsText = (keys: readonly string[]) =>
+  keys.map((k) => OFFER_FIELD_LABEL[k as keyof OfferFields] ?? k).join(', ');

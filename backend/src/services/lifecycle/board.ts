@@ -99,16 +99,37 @@ async function markNudged(waiting: WaitingOn[], now: Date): Promise<void> {
 
 const TAB_PHASE: Record<OnboardingBoardTab, JourneyTask['phase']> = { pre_boarding: 'pre_boarding', first_week: 'first_week', probation: 'probation' };
 
-/** Who the journey waits on: open tasks, late first, then must-do, then by due date. */
-export function waitingOnOf(j: Journey, tasks: JourneyTask[], names: Map<string, string>, now: Date, limit = 3): WaitingOn[] {
+/**
+ * Whether an open task is something the journey waits on: must-do or dated ones, and
+ * sending an unsent offer (it has no date, yet nothing moves until HR sends it).
+ * Optional undated things (asking for another joining day) wait on nobody.
+ */
+export function waitedOn(t: Pick<JourneyTask, 'mustDo' | 'dueAt' | 'systemKey'>): boolean {
+  return t.mustDo || !!t.dueAt || t.systemKey === 'send_offer';
+}
+
+/** On the probation tab a card leads with its stage's own step (H1c), not an old leftover from week 1. */
+const STAGE_STEP: Partial<Record<OnboardingBoardColumn, NonNullable<JourneyTask['systemKey']>>> = {
+  final_month: 'confirmation_discussion', confirmed: 'confirmation_letter',
+};
+
+/**
+ * Who the journey waits on: open tasks, late first, then must-do, then by due date.
+ * With `stage` (a probation card), the stage's step comes first, then the rest of the
+ * probation month's tasks, and only then leftovers from earlier phases.
+ */
+export function waitingOnOf(j: Journey, tasks: JourneyTask[], names: Map<string, string>, now: Date, limit = 3, stage?: { tab: OnboardingBoardTab; column: OnboardingBoardColumn }): WaitingOn[] {
   const today = todayKey(now, companyTimeZone(j.org));
   const open = tasks.filter((t) => ACTIVE_STATUSES.includes(t.status) && isCounted(t))
     // An upload in review waits on HR's review, not on the joiner.
     .filter((t) => !(t.status === 'in_review' && t.ownerRole === 'employee'))
     // Optional things with no date (asking for another joining day) are nobody's to wait on.
-    .filter((t) => t.mustDo || !!t.dueAt);
+    .filter(waitedOn);
   const due = (t: JourneyTask) => (t.dueAt ? keyOfDay(t.dueAt) : '9999-12-31');
-  open.sort((a, b) => Number(taskLate(b, today)) - Number(taskLate(a, today)) || Number(b.mustDo) - Number(a.mustDo) || due(a).localeCompare(due(b)) || a.order - b.order);
+  const probation = stage?.tab === 'probation';
+  const step = probation ? STAGE_STEP[stage!.column] : undefined;
+  const lead = (t: JourneyTask) => (!probation ? 0 : t.systemKey && t.systemKey === step ? 2 : t.phase === 'probation' ? 1 : 0);
+  open.sort((a, b) => lead(b) - lead(a) || Number(taskLate(b, today)) - Number(taskLate(a, today)) || Number(b.mustDo) - Number(a.mustDo) || due(a).localeCompare(due(b)) || a.order - b.order);
   return open.slice(0, limit).map((t) => {
     const ownerName = t.ownerUserId ? names.get(t.ownerUserId) : t.ownerRole === 'employee' ? j.candidate?.name : undefined;
     return {
@@ -170,7 +191,7 @@ function cardFor(j: Journey, tasks: JourneyTask[], derived: Derived, names: Map<
     ...((j.department ?? who?.department) ? { department: j.department ?? who?.department } : {}),
     ...(managerName ? { managerName } : {}), ...(photoUrl ? { photoUrl } : {}), ...(j.tj ? { tj: j.tj } : {}),
     dayLabel: derived.dayLabel, status: j.status, statusLabel: derived.statusLabel, column: derived.column, flags: derived.flags,
-    waitingOn: waitingOnOf(j, tasks, names, now), progress: progressOf(tasks, derived.tab), plant: derived.plant,
+    waitingOn: waitingOnOf(j, tasks, names, now, 3, { tab: derived.tab, column: derived.column }), progress: progressOf(tasks, derived.tab), plant: derived.plant,
     ...(derived.quietDays !== undefined ? { quietDays: derived.quietDays } : {}),
     ...(derived.expiresInDays !== undefined ? { expiresInDays: derived.expiresInDays } : {}),
   };
@@ -462,3 +483,34 @@ export async function decideBankPfRequest(org: string, journeyId: string, body: 
 }
 
 export { isJoined };
+
+const CLOSED_LIST_STATUSES = ['declined', 'expired', 'not_joining'] as const;
+export interface ClosedJourneyRow {
+  journeyId: string; name: string; designation?: string; department?: string;
+  status: (typeof CLOSED_LIST_STATUSES)[number]; closedAt?: string; closedReason?: string; tj?: string;
+}
+
+/**
+ * Offers that ended before joining (declined, expired, not joining): off the board, so
+ * the board's Closed view lists them here, newest first. Only the fields a row needs.
+ */
+export async function closedJourneys(org: string, query: Record<string, unknown>): Promise<{ journeys: ClosedJourneyRow[] }> {
+  const q = String(query.q ?? '').trim().slice(0, 80);
+  const filter: Record<string, unknown> = { org, kind: 'onboarding', status: { $in: [...CLOSED_LIST_STATUSES] } };
+  if (q) {
+    const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    filter.$or = [{ 'candidate.name': re }, { designation: re }, { department: re }];
+  }
+  const rows = await journeys().find(filter, {
+    projection: { _id: 0, id: 1, 'candidate.name': 1, designation: 1, department: 1, status: 1, closedAt: 1, closedReason: 1, tj: 1, updatedAt: 1 },
+  }).sort({ closedAt: -1, updatedAt: -1 }).limit(200).toArray();
+  return {
+    journeys: rows.map((j) => ({
+      journeyId: String(j.id), name: String(j.candidate?.name ?? 'Joiner'),
+      ...(j.designation ? { designation: String(j.designation) } : {}), ...(j.department ? { department: String(j.department) } : {}),
+      status: j.status as ClosedJourneyRow['status'],
+      ...(j.closedAt ? { closedAt: new Date(j.closedAt as Date).toISOString() } : {}),
+      ...(j.closedReason ? { closedReason: String(j.closedReason) } : {}), ...(j.tj ? { tj: String(j.tj) } : {}),
+    })),
+  };
+}

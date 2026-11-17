@@ -147,6 +147,13 @@ export interface TaskView {
   nudgedToday?: boolean;
 }
 
+/** The Day-1 tasks an agenda line can stand for (one line each). */
+export const AGENDA_TASK_KEYS = ['welcome_induction', 'meet_manager', 'meet_team', 'vision_culture'] as const;
+export type AgendaTaskKey = (typeof AGENDA_TASK_KEYS)[number];
+export const AGENDA_TASK_LABEL: Record<AgendaTaskKey, string> = {
+  welcome_induction: 'Welcome and induction', meet_manager: 'Meet your manager', meet_team: 'Meet your team', vision_culture: 'Company vision and culture',
+};
+
 export interface CandidateDetails { name: string; personalEmail: string; phone?: string; workEmail?: string }
 
 export interface Day1Pass {
@@ -158,7 +165,8 @@ export interface Day1Pass {
   askFor?: { name: string; phone?: string };
   hrContact?: { name: string; email?: string; phone?: string };
   bring?: string[];
-  agenda?: Array<{ time: string; title: string; with?: string }>;
+  /** `id`: the line's own (its meeting follows it). `taskKey`: the Day-1 task HR says it is; null none; absent on lines saved before (the server guesses once from the title). */
+  agenda?: Array<{ id?: string; time: string; title: string; with?: string; taskKey?: AgendaTaskKey | null }>;
 }
 
 export interface ConfirmationDecision {
@@ -371,6 +379,12 @@ export const deleteTemplate = (id: string) => api<unknown>(`${L}/templates/${id}
 // Board and journeys
 export const getBoard = (p: { tab: BoardTab; q?: string; filter?: BoardFilter; from?: string; to?: string }) =>
   api<BoardDTO>(`${L}/board${qs(p)}`);
+/** Offers that ended before joining: the board's Closed view (declined, expired, not joining). */
+export interface ClosedJourneyRow {
+  journeyId: string; name: string; designation?: string; department?: string;
+  status: 'declined' | 'expired' | 'not_joining'; closedAt?: string; closedReason?: string; tj?: string;
+}
+export const getClosedJourneys = (q?: string) => api<{ journeys: ClosedJourneyRow[] }>(`${L}/closed${qs({ q })}`).then((r) => r.journeys);
 export const getJourney = (id: string) => api<JourneyDetail>(`${L}/journeys/${id}`);
 export const journeyTaskAction = (id: string, taskId: string, action: 'done' | 'reopen' | 'skip', note?: string) =>
   api<{ task: TaskView }>(`${L}/journeys/${id}/tasks/${taskId}`, json('POST', { action, ...(note ? { note } : {}) })).then((r) => r.task);

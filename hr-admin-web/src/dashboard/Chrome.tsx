@@ -19,6 +19,7 @@ import { applyThemeMode, readThemeMode } from './themeMode';
 import { SuwiOrb } from './suwi/SuwiPanel';
 import { useSuwiNotices } from './suwi/SuwiNoticed';
 import { PAGE_ACTIONS_ID } from './ds';
+import { usePageHeadOverride } from './pageHead';
 import { BULK_VIEWS, SETUP_VIEWS } from './setupGroups';
 import { useLifecycleOn } from './lifecycleSwitch';
 import { TEAM_NAME, useOffboardingCount } from './views/lifecycle/offboarding/badge';
@@ -501,11 +502,14 @@ function ThemeSwitch() {
 
 export function Topbar() {
   const { view, setView, user, signOut, suwiOpen, setSuwiOpen } = useStore();
-  const [title, fixedMeta] = TITLES[view];
+  const head = usePageHeadOverride();
+  const [viewTitle, fixedMeta] = TITLES[view];
+  // A sub-page (Start an exit, Final settlement) names itself and brings its own way back.
+  const title = head?.title ?? viewTitle;
   // A company with Suwi turned off sees no Ask Suwi button (Settings › Suwi can turn it on).
   const suwiOff = useSuwiNotices().enabled === false;
   // The overview's line is today's date, in India time like the rest of the dashboard.
-  const meta = view === 'overview'
+  const meta = head?.eyebrow ? head.eyebrow : view === 'overview'
     ? `${new Date().toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'Asia/Kolkata' })}, ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })}`
     : fixedMeta;
   const displayName = user?.name ?? 'HR Admin';
@@ -579,7 +583,13 @@ export function Topbar() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {/* A page opened from Setup or Bulk assign has its way back beside the title. */}
-            {((SETUP_VIEWS.includes(view) && canOpen(user, 'setup')) || (BULK_VIEWS.includes(view) && canOpen(user, 'bulkassign'))) && (
+            {head?.onBack && (
+              <button type="button" onClick={head.onBack} aria-label={head.backLabel ?? 'Back'} title={head.backLabel ?? 'Back'}
+                style={{ width: 34, height: 34, borderRadius: '50%', border: '1px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="m15 6-6 6 6 6" /></svg>
+              </button>
+            )}
+            {!head?.onBack && ((SETUP_VIEWS.includes(view) && canOpen(user, 'setup')) || (BULK_VIEWS.includes(view) && canOpen(user, 'bulkassign'))) && (
               <button type="button" onClick={() => setView(BULK_VIEWS.includes(view) ? 'bulkassign' : 'setup')} aria-label={BULK_VIEWS.includes(view) ? 'Back to Bulk assign' : 'Back to Setup'} title={BULK_VIEWS.includes(view) ? 'Back to Bulk assign' : 'Back to Setup'}
                 style={{ width: 34, height: 34, borderRadius: '50%', border: '1px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="m15 6-6 6 6 6" /></svg>

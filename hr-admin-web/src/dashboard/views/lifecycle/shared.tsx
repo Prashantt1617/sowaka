@@ -19,7 +19,8 @@ export function OwnerChip({ role, name, you }: { role: OwnerRole; name?: string;
   const t = OWNER_TONE[role] ?? OWNER_TONE.automatic;
   const label = you && (role === 'hr' || role === 'hr_manager') ? `${OWNER_LABEL[role]} · you` : name ? `${OWNER_LABEL[role]} (${name})` : OWNER_LABEL[role];
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', maxWidth: '100%', fontSize: 11.5, fontWeight: 500, lineHeight: 1.5, padding: '2px 9px', borderRadius: 999, background: t.bg, color: t.fg, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+    // inline-block (not flex) so a long name ends in an ellipsis; minWidth 0 lets it shrink inside a flex row.
+    <span title={label} style={{ display: 'inline-block', verticalAlign: 'middle', maxWidth: '100%', minWidth: 0, fontSize: 11.5, fontWeight: 500, lineHeight: 1.5, padding: '2px 9px', borderRadius: 999, background: t.bg, color: t.fg, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
       {label}
     </span>
   );
