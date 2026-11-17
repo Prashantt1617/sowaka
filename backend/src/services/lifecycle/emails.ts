@@ -16,6 +16,7 @@ import { env } from '../../config/env';
 import type { Company } from '../../models/company.model';
 import type { Journey } from '../../models/lifecycle.model';
 import { logger } from '../../utils/logger';
+import { scriptForcesFeatures } from './scriptScope';
 
 export interface LifecycleAttachment { filename: string; content: Buffer; contentType: string }
 export interface OutboxEntry {
@@ -38,7 +39,20 @@ export function clearLifecycleOutbox(): void { outbox.length = 0; }
 
 /** The EMAIL_ORGS rule, for an org rather than a user row: `*` lifts it, otherwise the org must be listed. */
 export function orgMayEmail(org: string): boolean {
+  // An interceptor stands in for delivery (nothing leaves the process), so the rule has nothing to guard.
+  if (interceptor) return true;
   return env.emailOrgs.length === 0 || env.emailOrgs.includes(org);
+}
+
+type Interceptor = (entry: OutboxEntry) => void;
+let interceptor: Interceptor | null = null;
+/**
+ * Scripts only (the demo seed, which runs where SMTP is configured): while set, every lifecycle
+ * mail is handed to this instead of SMTP and never sent; the caller's action carries on as if it
+ * had been delivered. `null` restores normal sending.
+ */
+export function interceptLifecycleEmails(handler: Interceptor | null): void {
+  interceptor = handler;
 }
 
 /** Whether a mail can really go out: SMTP set up. Without it (development) mails are only logged and kept in the outbox. */
@@ -66,6 +80,10 @@ export async function sendLifecycleEmail(
   const cc = [...new Set((opts.cc ?? []).map((a) => a.trim().toLowerCase()).filter((a) => a && a !== recipient && /^\S+@\S+\.\S+$/.test(a)))];
   const allowed = orgMayEmail(org) && /^\S+@\S+\.\S+$/.test(recipient);
   const entry: OutboxEntry = { org, to: recipient, cc, subject, html, attachments, sent: false, suppressed: !allowed, at: new Date() };
+  if (interceptor) {
+    interceptor(entry);
+    return true;
+  }
   if (env.nodeEnv !== 'production') {
     outbox.push(entry);
     if (outbox.length > OUTBOX_MAX) outbox.splice(0, outbox.length - OUTBOX_MAX);
@@ -166,6 +184,7 @@ export function companyAddress(company: Company | null): string {
 }
 export async function lifecycleEnabled(org: string | undefined): Promise<boolean> {
   if (!org) return false;
+  if (scriptForcesFeatures(org)) return true;
   const company = await companies().findOne({ id: org }, { projection: { _id: 0, features: 1 } });
   return company?.features?.lifecycle === true;
 }
