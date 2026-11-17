@@ -213,3 +213,5 @@ async function main() {
   process.exit(failures ? 1 : 0);
 }
 main().catch((e) => { console.error(e); process.exit(1); });
+
+export {};
