@@ -75,13 +75,17 @@ export const KIND_INFO: Record<NotificationKind, { label: string; when: string; 
  * row) says otherwise. `other` is exactly the push as it was before looks.
  */
 export const SOWAKA_DEFAULT_LOOKS: Record<NotificationKind, KindLook> = {
-  contest_posted: { enabled: true, sound: 'chime', ownPicture: true, pictureKey: null },
-  contest_closing: { enabled: true, sound: 'tick', ownPicture: true, pictureKey: null },
-  contest_results: { enabled: true, sound: 'fanfare', ownPicture: true, pictureKey: null },
-  cup_lobby: { enabled: true, sound: 'bell', ownPicture: true, pictureKey: null },
-  cup_match_open: { enabled: true, sound: 'whoosh', ownPicture: true, pictureKey: null },
-  cup_betting_open: { enabled: true, sound: 'pop', ownPicture: true, pictureKey: null },
-  cup_champion: { enabled: true, sound: 'fanfare', ownPicture: true, pictureKey: null },
+  // Off until a company (or the Sowaka-wide row) switches a kind on in Setup ›
+  // Notification sounds and pictures: off, the push goes out exactly as before
+  // (no picture, the default sound), and the new closing / results pushes are
+  // not sent. The sound and picture below are what switching it on starts from.
+  contest_posted: { enabled: false, sound: 'chime', ownPicture: true, pictureKey: null },
+  contest_closing: { enabled: false, sound: 'tick', ownPicture: true, pictureKey: null },
+  contest_results: { enabled: false, sound: 'fanfare', ownPicture: true, pictureKey: null },
+  cup_lobby: { enabled: false, sound: 'bell', ownPicture: true, pictureKey: null },
+  cup_match_open: { enabled: false, sound: 'whoosh', ownPicture: true, pictureKey: null },
+  cup_betting_open: { enabled: false, sound: 'pop', ownPicture: true, pictureKey: null },
+  cup_champion: { enabled: false, sound: 'fanfare', ownPicture: true, pictureKey: null },
   other: { enabled: true, sound: null, ownPicture: false, pictureKey: null },
 };
 

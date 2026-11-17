@@ -31,6 +31,8 @@ import {
   chooseImage,
   deviceVariant,
   forgetNotificationLooks,
+  lookForPush,
+  setNotificationLook,
   kindOfScenario,
   mergeSounds,
   parseWav,
@@ -39,6 +41,7 @@ import {
   soundKeyFrom,
   type PushContent,
 } from '../services/notification-look.service';
+import { NOTIFICATION_KINDS } from '../models/notification-look.model';
 import { capturePushesForCheck, cleanSoundTags, notifyUsers } from '../services/notification.service';
 
 const DB_NAME = 'notif_look_check';
@@ -135,6 +138,14 @@ const content = (over: Partial<PushContent> = {}): PushContent => ({
     await connectDb();
     capturePushesForCheck(sender);
 
+    // Off until switched on: a live company's pushes do not change on deploy.
+    console.log('off by default');
+    check('every contest and cup kind is off by default', Object.entries(SOWAKA_DEFAULT_LOOKS).every(([kind, look]) => (kind === 'other') === look.enabled));
+    check('…so a contest push has no picture and the plain sound', !(await lookForPush(ORG, 'contest_posted', 'connect/x.jpg')).imageUrl && !(await lookForPush(ORG, 'contest_posted')).sound);
+    check('…and closing / results are not switched on', !(await lookForPush(ORG, 'contest_closing')).look.enabled && !(await lookForPush(ORG, 'contest_results')).look.enabled);
+    // From here on, as Sowaka switching every kind on for all companies (the Sowaka-wide row).
+    await setNotificationLook('*', 'hr', Object.fromEntries(NOTIFICATION_KINDS.filter((k) => k !== 'other').map((k) => [k, { ...SOWAKA_DEFAULT_LOOKS[k], enabled: true }])));
+
     // ------------------------------------------------------------ pure
     console.log('kinds');
     check('a caption contest posted is contest_posted', kindOfScenario('post_published_caption_challenge') === 'contest_posted');
@@ -167,7 +178,7 @@ const content = (over: Partial<PushContent> = {}): PushContent => ({
     check('a new key is added', merged.some((s) => s.key === 'drum' && s.version === 1));
 
     console.log('payload per platform');
-    const look = SOWAKA_DEFAULT_LOOKS.contest_closing; // tick, own picture
+    const look = { ...SOWAKA_DEFAULT_LOOKS.contest_closing, enabled: true }; // tick, own picture (switched on)
     const tick = builtIns.find((s) => s.key === 'tick')!;
     const variantHas = deviceVariant(look, tick, { token: 'a', platform: 'android', sounds: ['tick@1'] });
     check('a phone with the sound gets its channel and file', variantHas.channelId === 'snd_tick_v1' && variantHas.apnsSound === 'tick.caf', variantHas);

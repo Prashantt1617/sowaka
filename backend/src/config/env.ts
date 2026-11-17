@@ -20,7 +20,8 @@ const defaultCorsOrigins = [
 ];
 
 /** The pre-boarding portal (candidates, before they are employees): links in lifecycle emails, and a CORS origin. */
-const portalBaseUrl = (process.env.PORTAL_BASE_URL ?? 'http://localhost:5181').trim().replace(/\/+$/, '');
+// Unset on a server it stays empty: no localhost origin in a live CORS list (local runs default to the dev portal).
+const portalBaseUrl = (process.env.PORTAL_BASE_URL ?? (DEV_ENVIRONMENTS.has(process.env.NODE_ENV ?? '') ? 'http://localhost:5181' : '')).trim().replace(/\/+$/, '');
 
 const configuredCorsOrigins = (process.env.CORS_ORIGIN ?? '')
   .split(',')

@@ -20,6 +20,7 @@ import type { ConnectPost } from '../models/connect.model';
 import { CONTEST_TYPES, contestName } from './engagement-contests.service';
 import { postAudience, plural, postPicture as contestPicture } from './connect-notifications.service';
 import { notifiesOrg, notifyUsers } from './notification.service';
+import { lookForPush } from './notification-look.service';
 import { logger } from '../utils/logger';
 
 const HOUR_MS = 60 * 60_000;
@@ -120,6 +121,8 @@ async function sendClosing(post: ConnectPost, now: Date) {
   // Posted inside the last two hours: the "posted" push already said when it closes.
   if (closesAt.getTime() - new Date(post.publishedAt).getTime() <= CLOSING_LEAD_MS) return false;
   if (!notifiesOrg(post.org)) return false;
+  // New with notification looks: sent only where the company has this kind switched on.
+  if (!(await lookForPush(post.org, 'contest_closing')).look.enabled) return false;
   if (!(await claimNotificationOnce(`contest_closing:${post.id}`, now))) return false;
   const entered = new Set((post.captionEntries ?? []).map((entry) => entry.userId));
   const audience = (await postAudience(post))
@@ -137,6 +140,7 @@ async function sendClosing(post: ConnectPost, now: Date) {
 
 async function sendResults(post: ConnectPost, now: Date) {
   if (!notifiesOrg(post.org)) return false;
+  if (!(await lookForPush(post.org, 'contest_results')).look.enabled) return false;
   const copy = resultsCopy(post);
   if (!(await claimNotificationOnce(`contest_results:${post.id}`, now))) return false;
   if (!copy) return true;
