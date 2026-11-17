@@ -52,15 +52,18 @@ class OrgBranding {
   /// header built before sign-in changes face the moment the org is known.
   static final ValueNotifier<OrgBranding> current = ValueNotifier(sowaka);
 
+  /// Sowaka's own face, and every company without a brand of its own here:
+  /// a new company gets Sowaka's splash, icon and header logo until a build
+  /// adds theirs to [_known].
   static const sowaka = OrgBranding(
     org: '',
     wordmark: 'sowaka',
     tagline: 'Your workplace, connected.',
+    homeLogoAsset: 'assets/images/sowaka_header_logo.png',
   );
 
   static const _known = <String, OrgBranding>{
-    // Sowaka's own company: Sowaka's splash and icon, its own badge in the
-    // header where an unbranded org shows the Convrse logo.
+    // Sowaka's own company (Sowaka Test): Sowaka's splash, icon and header logo.
     'sowaka': OrgBranding(
       org: 'sowaka',
       wordmark: 'sowaka',

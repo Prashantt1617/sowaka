@@ -198,7 +198,8 @@ export async function notifyPostPublished(post: ConnectPost): Promise<number> {
   if (CONTESTS.has(post.type)) {
     const closesAt = post.body.closesAt ? new Date(String(post.body.closesAt)) : null;
     const copy: Copy = {
-      title: `New contest: ${titleOf(post)}`,
+      // The title HR gave the contest, as they typed it.
+      title: String(post.body.title ?? '').trim() || titleOf(post),
       body: closesAt && !Number.isNaN(closesAt.getTime()) ? `Enter by ${shortDate(closesAt)}` : 'Join in',
     };
     return send(audience.map((user) => ({ user, copy })), scenario, data, post.author.userId ?? '', postPicture(post));
