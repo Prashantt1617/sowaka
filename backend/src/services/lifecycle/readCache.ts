@@ -21,7 +21,9 @@
 import type { NextFunction, Request, Response } from 'express';
 import { cachedSwr, dropSwr, refreshSwr, type SwrKind } from '../swr-cache';
 
-export const LIFECYCLE_READ_KINDS: SwrKind[] = ['lc-board-data', 'off-board-data', 'suwi-notices', 'suwi-org-data', 'mgr-roster'];
+/** Time office lists (timeOfficeLists.ts): dropped by the same writes as the boards. */
+export const TIME_OFFICE_LIST_KINDS: SwrKind[] = ['adm-regs', 'adm-leaves', 'adm-overtime', 'adm-feedback'];
+export const LIFECYCLE_READ_KINDS: SwrKind[] = ['lc-board-data', 'off-board-data', 'suwi-notices', 'suwi-org-data', 'mgr-roster', ...TIME_OFFICE_LIST_KINDS];
 const SUWI_KINDS: SwrKind[] = ['suwi-notices', 'suwi-org-data'];
 
 /**
@@ -48,6 +50,15 @@ export function forgetLifecycleReads(org: string | null): void {
  * began before a later write is not kept (swr-cache's generation), so nothing stale is ever served.
  * The work itself is the warm-up's (warm.ts registers it, which keeps this file free of imports).
  */
+/**
+ * Drop only a company's kept Time office lists: for changes that don't come through a dropping
+ * route (a punch outside the office opens a correction request; a later punch-out completes it).
+ */
+export function forgetTimeOfficeListReads(org: string): void {
+  dropSwr(org, TIME_OFFICE_LIST_KINDS);
+  scheduleRewarm(org);
+}
+
 const REWARM_MS = 3_000;
 const rewarmTimers = new Map<string, NodeJS.Timeout>();
 let rewarm: ((org: string) => Promise<unknown>) | null = null;

@@ -11,6 +11,7 @@ import { refreshBoardData } from './board';
 import { refreshOffBoardData } from './offboarding';
 import { refreshWorkspaceRoster } from '../manager.service';
 import { lifecycleReadCacheOn, setLifecycleRewarm } from './readCache';
+import { listReaderFor, warmTimeOfficeLists } from '../timeOfficeLists';
 import { settingsFor } from '../../suwi/store';
 import { contextFor } from '../../suwi/tools';
 import { suwiNotices } from '../../suwi/notices';
@@ -49,4 +50,9 @@ export async function warmLifecycle(org: string, isStopping: () => boolean = () 
 }
 
 // A company's kept answers dropped by a change are rebuilt shortly after (readCache.scheduleRewarm).
-setLifecycleRewarm((org) => warmLifecycle(org));
+setLifecycleRewarm(async (org) => {
+  await warmLifecycle(org);
+  // The Time office lists the same change may have dropped (timeOfficeLists.ts).
+  const who = await listReaderFor(org);
+  if (who) await warmTimeOfficeLists(org, who);
+});

@@ -29,6 +29,7 @@ import { listOutOfLocationForAdmin } from './attendance.service';
 import { payCycleForAdmin, warmPunchLog } from './punch-log.service';
 import { refreshSwr } from './swr-cache';
 import { warmLifecycle } from './lifecycle/warm';
+import { warmTimeOfficeLists } from './timeOfficeLists';
 
 const ROUND_MS = 4 * 60_000;
 /** After the server starts, so boot is not slowed by it. */
@@ -132,6 +133,8 @@ export async function warmTimeOffice(org: string): Promise<Record<string, number
     steps.push([`report-${name}`, () => attendanceReport(who, r, { refresh: true })]);
   }
   steps.push(['ool-month', () => refreshSwr(org, 'ool', month, () => listOutOfLocationForAdmin(who, month.from, month.to))]);
+  // Corrections, Leave requests, Overtime and Feedback (timeOfficeLists.ts), read as the same viewer.
+  steps.push(['lists', () => warmTimeOfficeLists(org, who, () => stopping)]);
   for (const [name, ask] of steps) {
     if (stopping) break;
     const t0 = Date.now();
