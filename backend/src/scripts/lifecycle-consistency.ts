@@ -791,7 +791,8 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
   current = 'template';
   const closedHome = await call('portal', 'GET', '/portal/me');
   const signInNow = await call(null, 'POST', '/portal/auth/sign-in', { email: KABIR, password: passA });
-  ok('the portal closed the day the template says (a month after Tj): sign-in refused, home says closed', signInNow.status === 403 && (closedHome.status !== 200 || closedHome.body.view === 'closed'), { signIn: signInNow.status, home: closedHome.status === 200 ? closedHome.body.view : closedHome.status });
+  // The right password on a closed portal answers 200 with the closed screen and no session (a wrong one stays 401).
+  ok('the portal closed the day the template says (a month after Tj): sign-in shows the closed screen, no session, home says closed', signInNow.status === 200 && !!signInNow.body?.closed && !signInNow.body?.token && (closedHome.status !== 200 || closedHome.body.view === 'closed'), { signIn: signInNow.status, closed: !!signInNow.body?.closed, token: !!signInNow.body?.token, home: closedHome.status === 200 ? closedHome.body.view : closedHome.status });
   current = 'same_truth';
   v = await onboardingViews(A, { joiner: joinerId });
   compareOnboarding('month 2', v, { joined: true });
@@ -818,6 +819,8 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
   heading('1 · Confirmed, the letter, the reveal');
   await send('hr', 'POST', `/admin/lifecycle/journeys/${A}/decision`, { outcome: 'confirm', salary: 1_600_000, designation: 'Senior Product Designer', reportingToUserId: 'mgr' });
   const letterTask = (await get('hr', `/admin/lifecycle/journeys/${A}`)).tasks.find((t: Json) => t.systemKey === 'confirmation_letter');
+  // The letter task can only be ticked once the confirmation letter has been sent from Documents (the reveal opens with it).
+  await db.getDb().collection('lifecycle_letters').insertOne({ id: 'L-kabir-confirm', org: ORG, journeyId: A, kind: 'confirmation', templateId: 't', refNo: 'CL-1', values: {}, createdAt: new Date(), email: { to: 'kabir@example.com', subject: 'Confirmed', body: 'x', sentAt: new Date() } } as never);
   await send('hr', 'POST', `/admin/lifecycle/journeys/${A}/tasks/${letterTask.id}`, { action: 'done', note: 'Letter sent' });
   await advanceTo(T('2027-06-01', '13:30'), 'hourly');
   v = await onboardingViews(A, { joiner: joinerId });
