@@ -159,7 +159,10 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
 
   // The one thing to do next, as the board's card names it.
   let primary: { label: string; go: () => void } | null = null;
+  // A revision (or an approved new joining date) stays HR's draft until sent: the candidate still sees the last version they got.
+  const revisionWaiting = Boolean(offer && offer.status === 'draft' && offer.version > 1);
   if (closed) primary = { label: 'Reopen', go: () => setDialog({ kind: 'status', action: 'reopen' }) };
+  else if (revisionWaiting && pay) primary = { label: 'Send revised offer', go: () => setDialog({ kind: 'offer', mode: 'send', start: 'letter' }) };
   else if (status === 'draft') primary = { label: 'Send offer', go: () => setDialog({ kind: 'offer', mode: 'send', start: offer?.pdfFileId ? 'email' : 'letter' }) };
   else if (status === 'offer_sent') primary = { label: 'Resend offer email', go: () => setDialog({ kind: 'offer', mode: 'send', start: offer?.pdfFileId ? 'email' : 'letter' }) };
   else if (status === 'accepted') primary = { label: 'Finalise', go: () => setDialog({ kind: 'finalise' }) };
@@ -268,6 +271,11 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
         <Section title={`Offer · version ${offer.version}`} aside={offer.pdfFileId ? <button type="button" className="pd-btn sm" onClick={() => setDialog({ kind: 'file', id: offer.pdfFileId!, name: `Offer letter – ${name}.pdf` })}>View PDF</button> : undefined}>
           <Facts rows={offerFacts} />
           {offer.changedFields && offer.changedFields.length > 0 && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 8 }}>Changed in this version: {offer.changedFields.join(', ')}</div>}
+          {revisionWaiting && (
+            <div className="pd-note" style={{ marginTop: 8, color: 'var(--warn)' }}>
+              Saved as a draft. {name.split(' ')[0]} still sees version {offer.version - 1} until you send this one.
+            </div>
+          )}
           {offer.versions.length > 1 && (
             <div style={{ marginTop: 10, display: 'grid', gap: 4, fontSize: 12.5, color: 'var(--ink-2)' }}>
               {offer.versions.slice().reverse().map((v) => (
