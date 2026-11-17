@@ -17,6 +17,8 @@
 export type SwrKind = 'ool'
   // Employee lifecycle and Suwi (lifecycle/readCache.ts): dropped on every write, see there.
   | 'lc-board-data' | 'off-board-data' | 'suwi-notices'
+  // Suwi's company-wide inputs (suwi/orgData.ts): the waiting requests and today's lists, shared by every viewer.
+  | 'suwi-org-data'
   // The manager workspace's company roster (manager.service.ts workspaceRoster).
   | 'mgr-roster';
 

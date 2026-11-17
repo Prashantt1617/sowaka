@@ -3,8 +3,8 @@
  * engagement warm-up's round (engagement-warmup.service.ts: one company at a time,
  * a page at a time, skipped while the last round runs), so HR's first open is
  * served from memory: the manager home's roster for every company; the boards only for companies
- * with the lifecycle on; Suwi's notices for
- * the one dashboard user the Time office warm-up also uses, when Suwi is on.
+ * with the lifecycle on; when Suwi is on, its company-wide inputs (shared by every viewer's notices
+ * and its pending_requests tool) and one dashboard user's notices.
  */
 import { companies, users } from '../../config/db';
 import { refreshBoardData } from './board';
@@ -14,6 +14,7 @@ import { lifecycleReadCacheOn } from './readCache';
 import { settingsFor } from '../../suwi/store';
 import { contextFor } from '../../suwi/tools';
 import { suwiNotices } from '../../suwi/notices';
+import { orgSuwiData, readerFor } from '../../suwi/orgData';
 import { istToday } from '../../suwi/digest';
 
 export async function warmLifecycle(org: string, isStopping: () => boolean = () => false): Promise<Record<string, number | string>> {
@@ -29,10 +30,15 @@ export async function warmLifecycle(org: string, isStopping: () => boolean = () 
   steps.push(['suwi-notices', async () => {
     const settings = await settingsFor(org);
     if (!settings.enabled) return;
+    // The company's shared inputs first (every viewer's notices and Suwi's pending_requests read them),
+    // then one viewer's notices, which are now a quick filter over them.
+    const today = istToday();
+    // Only with someone to read the lists as: a company with no full-access dashboard user is left to its first viewer.
+    if ((await readerFor(org, '')).userId) await orgSuwiData(org, today, '', true);
     const viewer = await users().findOne(
       { org, dashboardAccess: true, lifecycleStatus: { $nin: ['offboarded', 'terminated'] }, hiddenFromDirectory: { $ne: true }, $or: [{ dashboardAdmin: true }, { dashboardTabs: { $exists: false } }] },
     );
-    if (viewer) await suwiNotices(contextFor(viewer, settings.levels, istToday()), true);
+    if (viewer) await suwiNotices(contextFor(viewer, settings.levels, today), true);
   }]);
   for (const [name, run] of steps) {
     if (isStopping()) break;

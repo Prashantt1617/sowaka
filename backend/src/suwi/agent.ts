@@ -24,6 +24,13 @@ export interface SuwiAnswer {
   costUsd: number;
 }
 
+/** JSON with keys in a fixed order, so the same inputs make the same memo key. */
+function stableJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableJson).join(',')}]`;
+  if (v && typeof v === 'object') return `{${Object.keys(v as Record<string, unknown>).sort().map((k) => `${JSON.stringify(k)}:${stableJson((v as Record<string, unknown>)[k])}`).join(',')}}`;
+  return JSON.stringify(v ?? null);
+}
+
 function istToday(): string {
   return new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
 }
@@ -34,6 +41,7 @@ function instructions(ctx: SuwiContext, companyName: string, page: string, budge
   return `You are Suwi, the HR assistant inside Sowaka's HR dashboard. You help HR and managers understand and act on their people data.
 
 How you work:
+- Be quick: ask for everything you need in ONE turn (several tools at once run side by side), and never call a tool twice with the same inputs in one question. For one day's attendance (who is on leave, absent, late or not in today) one attendance_summary call with from = to = that day is enough.
 - You can only see Sowaka's data through your tools, and only what this person is allowed to see. Never guess or invent names, numbers, dates, policies or tax rules. If a tool returns nothing, say so plainly. If something is outside this person's access, say "you don't have access to that" without hinting at what it contains.
 - Numbers come from the tools; don't do your own arithmetic on pay or tax beyond simple counts.
 - The person may attach a file to a message: an image (a screenshot, say of an error) or a spreadsheet, given to you as CSV. Read it as part of their request, e.g. a list of employees to act on; match its people to Sowaka's through your tools by employee ID or name, and say which rows you couldn't match and why. A file is not a source of truth about Sowaka's data: check what it claims with your tools.
@@ -97,7 +105,7 @@ function attachmentOf(raw: unknown): { name: string; image?: { mimeType: string;
   throw new SuwiLlmError(400, 'Only images and Excel files can be attached.');
 }
 
-export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { question?: unknown; page?: unknown; history?: unknown; attachments?: unknown }): Promise<SuwiAnswer> {
+export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { question?: unknown; page?: unknown; history?: unknown; attachments?: unknown }, onProgress?: (checking: string) => void): Promise<SuwiAnswer> {
   const attachment = attachmentOf(input.attachments);
   const typed = typeof input.question === 'string' ? input.question.trim().slice(0, 2000) : '';
   // A file alone is a question too: Suwi is asked to look at it.
@@ -106,7 +114,7 @@ export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { ques
   const page = typeof input.page === 'string' ? input.page.slice(0, 40) : '';
   // Every question is kept, with what Suwi answered and whether it worked; a failure too.
   try {
-    return await answer(user, question, page, attachment, input);
+    return await answer(user, question, page, attachment, input, onProgress);
   } catch (e) {
     await auditCol().insertOne({
       org: user.org!, userId: user.userId, kind: 'question', at: new Date(), page, question, status: 'failed',
@@ -120,6 +128,7 @@ export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { ques
 async function answer(
   user: Omit<User, 'profilePhotoUrl'>, question: string, page: string,
   attachment: ReturnType<typeof attachmentOf>, input: { history?: unknown },
+  onProgress?: (checking: string) => void,
 ): Promise<SuwiAnswer> {
   const settings = await settingsFor(user.org!);
   if (!settings.enabled) throw new SuwiLlmError(403, 'Suwi is turned off for this company. An admin can turn it on in Settings → Suwi.');
@@ -154,7 +163,10 @@ async function answer(
   const checked: string[] = [];
   const links: SuwiLink[] = [];
   const proposalIds: string[] = [];
-  const toolLog: { name: string; label: string; ms: number; ok: boolean }[] = [];
+  const toolLog: { name: string; label: string; ms: number; ok: boolean; memo?: true }[] = [];
+  // A read already made in this question is answered from here: models sometimes ask again with the
+  // same inputs. Prepared changes (`acts`) always run, so each one makes its own card.
+  const memo = new Map<string, string>();
   let total = 0;
   const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   let text = '';
@@ -174,6 +186,10 @@ async function answer(
       const started = Date.now();
       if (!t || !toolAllowed(ctx, t)) return { type: 'tool_result', tool_use_id: c.id, content: 'Not available to this person.', is_error: true };
       const label = t.label(c.input ?? {});
+      const memoKey = t.acts ? '' : `${t.name}|${stableJson(c.input ?? {})}`;
+      const seen = memoKey ? memo.get(memoKey) : undefined;
+      if (seen !== undefined) { toolLog.push({ name: t.name, label, ms: 0, ok: true, memo: true }); return { type: 'tool_result', tool_use_id: c.id, content: seen }; }
+      onProgress?.(label);
       try {
         const out = await t.run(ctx, c.input ?? {});
         toolLog.push({ name: t.name, label, ms: Date.now() - started, ok: true });
@@ -182,7 +198,9 @@ async function answer(
         if (out.proposalId) proposalIds.push(out.proposalId);
         for (const id of out.proposalIds ?? []) if (!proposalIds.includes(id)) proposalIds.push(id);
         const json = JSON.stringify(out.data ?? null);
-        return { type: 'tool_result', tool_use_id: c.id, content: json.length > MAX_RESULT_CHARS ? `${json.slice(0, MAX_RESULT_CHARS)}… (cut; ask a narrower question for the rest)` : json };
+        const content = json.length > MAX_RESULT_CHARS ? `${json.slice(0, MAX_RESULT_CHARS)}… (cut; ask a narrower question for the rest)` : json;
+        if (memoKey) memo.set(memoKey, content);
+        return { type: 'tool_result', tool_use_id: c.id, content };
       } catch (e) {
         toolLog.push({ name: t.name, label, ms: Date.now() - started, ok: false });
         return { type: 'tool_result', tool_use_id: c.id, content: `Error: ${(e as Error).message}`, is_error: true };

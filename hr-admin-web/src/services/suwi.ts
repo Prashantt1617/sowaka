@@ -15,22 +15,25 @@ export type SuwiHistoryTurn = { role: 'user' | 'assistant'; text: string };
 
 /**
  * A slow answer comes back as a ticket (`pending`); the answer is then fetched
- * every 2 s until it is ready, for up to 5 minutes. The signal keeps each check
+ * every second until it is ready, for up to 5 minutes; meanwhile `onChecking` hears what Suwi is
+ * looking at ("Attendance for 17 Nov"), for the panel to show. The signal keeps each check
  * out of the 20-second GET cache in http.ts.
  */
 /** A file sent with a question: an image as base64, or a spreadsheet already read into CSV text. */
 export type SuwiAttachment =
   | { kind: 'image'; name: string; mimeType: 'image/png' | 'image/jpeg'; data: string }
   | { kind: 'table'; name: string; text: string };
-export async function askSuwi(question: string, page: string, history: SuwiHistoryTurn[], attachment?: SuwiAttachment): Promise<SuwiAnswer> {
-  type Reply = { answer?: SuwiAnswer; pending?: string };
+export async function askSuwi(question: string, page: string, history: SuwiHistoryTurn[], attachment?: SuwiAttachment, onChecking?: (what: string) => void): Promise<SuwiAnswer> {
+  type Reply = { answer?: SuwiAnswer; pending?: string; checking?: string };
   const first = await api<Reply>('/suwi/ask', { method: 'POST', body: { question, page, history, ...(attachment ? { attachments: [attachment] } : {}) } });
   if (first.answer) return first.answer;
+  if (first.checking) onChecking?.(first.checking);
   const until = Date.now() + 5 * 60_000;
   while (first.pending && Date.now() < until) {
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 1000));
     const next = await api<Reply>(`/suwi/ask/${encodeURIComponent(first.pending)}`, { signal: new AbortController().signal });
     if (next.answer) return next.answer;
+    if (next.checking) onChecking?.(next.checking);
   }
   throw new Error('Suwi is taking too long to answer. Try again in a moment.');
 }

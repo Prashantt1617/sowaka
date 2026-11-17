@@ -34,9 +34,14 @@ const fail = (res: Response, e: unknown, next: NextFunction) => {
  * cut it (CloudFront gives up on an answer after 60 s); a quick question is
  * answered in one go, as before. Tickets live in this process for 10 minutes.
  */
-type AskJob = { userId: string; at: number; answer?: unknown; error?: unknown };
+type AskJob = { userId: string; at: number; answer?: unknown; error?: unknown; checking?: string };
 const askJobs = new Map<string, AskJob>();
-const FIRST_WAIT_MS = 20_000;
+/**
+ * A few seconds, not twenty: a slower answer gets its ticket early so the panel can show what Suwi is
+ * checking ("Attendance for 17 Nov") while it works, instead of a bare spinner. The model's reply is
+ * not streamed (llm.ts makes one request per round), so progress is per tool, not per word.
+ */
+const FIRST_WAIT_MS = 3_000;
 const JOB_TTL_MS = 10 * 60_000;
 const failed = (e: unknown) => {
   const code = (e as { statusCode?: number }).statusCode;
@@ -46,7 +51,7 @@ const failed = (e: unknown) => {
 suwiRouter.post('/ask', async (req, res, next) => {
   const u = me(req);
   const job: AskJob = { userId: u.userId, at: Date.now() };
-  const run = askSuwi(u, req.body ?? {}).then(
+  const run = askSuwi(u, req.body ?? {}, (checking) => { job.checking = checking; }).then(
     (answer) => { job.answer = answer; },
     (e: unknown) => { job.error = e; },
   );
@@ -63,7 +68,7 @@ suwiRouter.post('/ask', async (req, res, next) => {
   askJobs.set(id, job);
   // Logged here, since nobody may come back for it.
   void run.then(() => { if (job.error !== undefined && !(job.error as { statusCode?: number }).statusCode) logger.error('Suwi answer failed', { userId: u.userId }, job.error); });
-  res.status(202).json({ success: true, pending: id });
+  res.status(202).json({ success: true, pending: id, ...(job.checking ? { checking: job.checking } : {}) });
 });
 
 suwiRouter.get('/ask/:id', (req, res) => {
@@ -72,7 +77,7 @@ suwiRouter.get('/ask/:id', (req, res) => {
   if (!job || job.userId !== me(req).userId) { res.status(404).json({ success: false, message: 'That answer is no longer here. Ask again.' }); return; }
   if (job.answer !== undefined) { askJobs.delete(id); res.json({ success: true, answer: job.answer }); return; }
   if (job.error !== undefined) { askJobs.delete(id); const f = failed(job.error); res.status(f.status).json({ success: false, message: f.message }); return; }
-  res.json({ success: true, pending: id });
+  res.json({ success: true, pending: id, ...(job.checking ? { checking: job.checking } : {}) });
 });
 
 suwiRouter.post('/actions/:id/confirm', async (req, res, next) => {
