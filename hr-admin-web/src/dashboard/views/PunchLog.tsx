@@ -198,51 +198,57 @@ export function PunchLog() {
   const departments = useMemo(() => [...new Set(rows.map((r) => r.department || 'Team'))].sort(), [rows]);
   const reasons = useMemo(() => [...new Set([...offered, ...rows.filter((r) => r.ool).map((r) => r.outside?.reason || 'Out of location')])].sort(), [rows, offered]);
 
-  const shown = useMemo(() => {
-    let out = rows;
-    if (where === 'office') out = out.filter((r) => !r.ool);
-    if (where === 'ool') out = out.filter((r) => r.ool);
-    if (where === 'waiting') out = [...out.filter((r) => r.counted === 'waiting' || r.counted === 'corr'), ...noPunchCorr];
+  // Every filter except Punch type (the tiles' own choice): the numbers, the chart and the list all
+  // read this same set, so an applied filter changes the counts exactly as it changes the rows.
+  const fitsBase = (r: Row) => {
     // Remark: the reason given for an out-of-office punch.
-    if (reason !== 'all') out = out.filter((r) => r.ool && (r.outside?.reason || 'Out of location') === reason);
-    if (counted !== 'all') out = out.filter((r) => (counted === 'late' ? r.counted === 'late' || r.counted === 'lateopen' : counted === 'present' ? r.counted === 'present' || r.counted === 'open' : r.counted === counted));
-    if (dept !== 'all') out = out.filter((r) => (r.department || 'Team') === dept);
+    if (reason !== 'all' && !(r.ool && (r.outside?.reason || 'Out of location') === reason)) return false;
+    if (counted !== 'all' && !(counted === 'late' ? r.counted === 'late' || r.counted === 'lateopen' : counted === 'present' ? r.counted === 'present' || r.counted === 'open' : r.counted === counted)) return false;
+    if (dept !== 'all' && (r.department || 'Team') !== dept) return false;
     const q = search.trim().toLowerCase();
-    if (q) out = out.filter((r) => r.name.toLowerCase().includes(q) || r.employeeCode.toLowerCase().includes(q) || (r.ool && r.where.toLowerCase().includes(q)));
-    return out;
-  }, [rows, noPunchCorr, where, reason, counted, dept, search]);
+    if (q && !(r.name.toLowerCase().includes(q) || r.employeeCode.toLowerCase().includes(q) || (r.ool && r.where.toLowerCase().includes(q)))) return false;
+    return true;
+  };
+  const base = useMemo(() => rows.filter(fitsBase), [rows, reason, counted, dept, search]); // eslint-disable-line react-hooks/exhaustive-deps
+  const baseNoPunch = useMemo(() => noPunchCorr.filter(fitsBase), [noPunchCorr, reason, counted, dept, search]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shown = useMemo(() => {
+    if (where === 'office') return base.filter((r) => !r.ool);
+    if (where === 'ool') return base.filter((r) => r.ool);
+    if (where === 'waiting') return [...base.filter((r) => r.counted === 'waiting' || r.counted === 'corr'), ...baseNoPunch];
+    return base;
+  }, [base, baseNoPunch, where]);
   const paged = usePaged(shown, `${where}|${reason}|${counted}|${dept}|${search}|${rows.length}|${noPunchCorr.length}`);
 
   const chartDays = chartDaysOf(range);
   const series = useMemo(() => {
     const ix = new Map(chartDays.map((d, i) => [d, i]));
     const office = chartDays.map(() => 0), away = chartDays.map(() => 0);
-    for (const r of rows) {
+    for (const r of base) {
       const i = ix.get(r.workDate);
       if (i === undefined || !r.punchIn && !r.outside) continue;
       (r.ool ? away : office)[i]++;
     }
     return [{ label: 'In office', color: OFFICE_FILL, values: office }, { label: 'Out of location', color: OOL_FILL, values: away }];
-  }, [rows, chartDays.join()]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [base, chartDays.join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = useMemo(() => {
-    const people = new Set(rows.filter((r) => r.punchIn || r.outside).map((r) => r.userId)).size;
-    const ool = rows.filter((r) => r.ool);
+    const people = new Set(base.filter((r) => r.punchIn || r.outside).map((r) => r.userId)).size;
+    const ool = base.filter((r) => r.ool);
     // Exactly what Waiting for approval lists: each request once (an out-of-location one is not a correction too).
-    const waitingCorr = rows.filter((r) => r.counted === 'corr').length + noPunchCorr.length;
-    const punched = rows.filter((r) => r.punchIn || r.outside);
+    const waitingCorr = base.filter((r) => r.counted === 'corr').length + baseNoPunch.length;
+    const punched = base.filter((r) => r.punchIn || r.outside);
     // Out of location by the reason given ("11 WFH · 2 client visit"), the commonest first.
     const why = new Map<string, number>();
     for (const r of ool) { const k = r.outside?.reason || 'Away from every office'; why.set(k, (why.get(k) ?? 0) + 1); }
     return {
-      people, days: rows.length, personDays: punched.length, office: rows.length - ool.length, ool: ool.length,
+      people, days: base.length, personDays: punched.length, office: base.length - ool.length, ool: ool.length,
       oolPresent: ool.filter((r) => !r.waiting).length, oolWaiting: ool.filter((r) => r.waiting).length, waitingCorr,
-      late: rows.filter((r) => r.counted === 'late' || r.counted === 'lateopen').length,
-      early: rows.filter((r) => r.counted === 'early').length,
-      half: rows.filter((r) => r.counted === 'half').length,
+      late: base.filter((r) => r.counted === 'late' || r.counted === 'lateopen').length,
+      early: base.filter((r) => r.counted === 'early').length,
+      half: base.filter((r) => r.counted === 'half').length,
       reasons: [...why.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, n]) => `${n} ${k}`).join(' · '),
     };
-  }, [rows, noPunchCorr]);
+  }, [base, baseNoPunch]);
 
   const exportRows = () =>
     downloadCsv<Row>(
@@ -300,18 +306,45 @@ export function PunchLog() {
 
           {error && <LoadError compact text={error} onRetry={() => setAttempt((n) => n + 1)} />}
 
+          {/* Search and filters first: the numbers, the chart and the list below all follow them. */}
+          {!waitingForDates && (
+            <div>
+            <div style={toolbar}>
+              <div style={{ flex: 1, minWidth: 240, display: 'flex' }}>
+                <SearchInput value={search} onChange={setSearch} placeholder="Search employee or remark…" width="100%" />
+              </div>
+              <FiltersButton open={filters.open} active={filters.active} onClick={filters.toggle} />
+              <button onClick={exportRows} disabled={shown.length === 0} className={btnClass()} style={btn()}>
+                <IconDownload stroke="currentColor" /> Export
+              </button>
+            </div>
+            {filters.open && (
+              <FiltersPanel active={filters.active} dirty={filters.dirty} onApply={filters.apply} onClear={filters.clear}>
+                <LabeledSelect label="Punch type" value={filters.draft.where} onChange={(v) => filters.set('where', v)}
+                  options={[['all', 'All punches'], ['office', 'In office'], ['ool', 'Out of office'], ['waiting', 'Waiting for approval']]} />
+                {reasons.length > 0 && (
+                  <LabeledSelect label="Remark" value={filters.draft.reason} onChange={(v) => filters.set('reason', v)} options={[['all', 'All remarks'], ...reasons.map((x): [string, string] => [x, x])]} />
+                )}
+                <LabeledSelect label="Counted as" value={filters.draft.counted} onChange={(v) => filters.set('counted', v)}
+                  options={[['all', 'Any'], ['present', 'Present'], ['late', 'Late'], ['early', 'Left early'], ['half', 'Half day']]} />
+                <LabeledSelect label="Department" value={filters.draft.dept} onChange={(v) => filters.set('dept', v)} options={[['all', 'All departments'], ...departments.map((d): [string, string] => [d, d])]} />
+              </FiltersPanel>
+            )}
+            </div>
+          )}
+
           {!waitingForDates && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-              {/* Every punch, where they were made, and what still waits on a decision; each tile filters the list. */}
+              {/* Every punch matching the filters above, where they were made, and what still waits on a decision; each tile narrows the list and keeps the filters. */}
               <StatTile state={state} label="Total punches" value={stats.days} sub={`${stats.people} ${stats.people === 1 ? 'person' : 'people'}`}
-                onPick={() => { setWhere('all'); setReason('all'); }} picked={where === 'all'} />
+                onPick={() => setWhere('all')} picked={where === 'all'} />
               <StatTile state={state} label={<><Dot color={OFFICE_FILL} />In office punches</>} value={stats.office} sub="At an office or on its device"
-                onPick={() => { setWhere('office'); setReason('all'); }} picked={where === 'office'} color={OFFICE_COLOR} />
+                onPick={() => setWhere('office')} picked={where === 'office'} color={OFFICE_COLOR} />
               <StatTile state={state} label={<><Dot color={OOL_FILL} />Out of office punches</>} value={stats.ool} sub={stats.ool ? stats.reasons : 'None in this period'}
-                onPick={() => { setWhere('ool'); setReason('all'); }} picked={where === 'ool'} color={OOL_COLOR} />
+                onPick={() => setWhere('ool')} picked={where === 'ool'} color={OOL_COLOR} />
               <StatTile state={state} label="Punches waiting for approval" value={stats.oolWaiting + stats.waitingCorr}
                 sub={`${stats.oolWaiting} out of office · ${stats.waitingCorr} ${stats.waitingCorr === 1 ? 'correction' : 'corrections'}`} attn={stats.oolWaiting + stats.waitingCorr > 0 && where !== 'waiting'}
-                onPick={() => { setWhere('waiting'); setReason('all'); }} picked={where === 'waiting'} color="var(--attn)"
+                onPick={() => setWhere('waiting')} picked={where === 'waiting'} color="var(--attn)"
                 action={canOpen(user, 'attendance') ? <span onClick={(e) => e.stopPropagation()}><LinkButton onClick={() => s.setView('attendance')}>Open</LinkButton></span> : undefined} />
             </div>
           )}
@@ -331,28 +364,6 @@ export function PunchLog() {
 
           {!waitingForDates && (
             <div>
-              <div style={toolbar}>
-                <div style={{ flex: 1, minWidth: 240, display: 'flex' }}>
-                  <SearchInput value={search} onChange={setSearch} placeholder="Search employee or remark…" width="100%" />
-                </div>
-                <FiltersButton open={filters.open} active={filters.active} onClick={filters.toggle} />
-                <button onClick={exportRows} disabled={shown.length === 0} className={btnClass()} style={btn()}>
-                  <IconDownload stroke="currentColor" /> Export
-                </button>
-              </div>
-              {filters.open && (
-                <FiltersPanel active={filters.active} dirty={filters.dirty} onApply={filters.apply} onClear={filters.clear}>
-                  <LabeledSelect label="Punch type" value={filters.draft.where} onChange={(v) => filters.set('where', v)}
-                    options={[['all', 'All punches'], ['office', 'In office'], ['ool', 'Out of office'], ['waiting', 'Waiting for approval']]} />
-                  {reasons.length > 0 && (
-                    <LabeledSelect label="Remark" value={filters.draft.reason} onChange={(v) => filters.set('reason', v)} options={[['all', 'All remarks'], ...reasons.map((x): [string, string] => [x, x])]} />
-                  )}
-                  <LabeledSelect label="Counted as" value={filters.draft.counted} onChange={(v) => filters.set('counted', v)}
-                    options={[['all', 'Any'], ['present', 'Present'], ['late', 'Late'], ['early', 'Left early'], ['half', 'Half day']]} />
-                  <LabeledSelect label="Department" value={filters.draft.dept} onChange={(v) => filters.set('dept', v)} options={[['all', 'All departments'], ...departments.map((d): [string, string] => [d, d])]} />
-                </FiltersPanel>
-              )}
-
               <div style={{ overflowX: 'auto' }}>
                 <div style={{ minWidth: 1000 }}>
                   <div style={TH(COLS)}>

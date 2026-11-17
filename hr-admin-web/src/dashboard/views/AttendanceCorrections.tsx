@@ -86,27 +86,32 @@ export function AttendanceCorrections() {
 
   // Custom: the dates applied (kept in the store), from the period on screen when first picked.
   const range = unit === 'custom' && s.corrFrom ? periodRange('custom', s.corrFrom, s.corrTo) : stepRange(unit === 'week' ? 'week' : 'month', offset);
-  const inPeriod = useMemo(() => s.corrs.filter((r) => inDateRange(r.refISO, range.from, range.to)), [s.corrs, range.from, range.to]);
+  const inPeriodAll = useMemo(() => s.corrs.filter((r) => inDateRange(r.refISO, range.from, range.to)), [s.corrs, range.from, range.to]);
+  // Search and Correction type (every filter but Status, which the tiles pick): the tiles, the status
+  // counts, the per-person list and the list all read this same set, so the numbers follow the filters.
+  const inPeriod = useMemo(() => {
+    const q = s.corrSearch.trim().toLowerCase();
+    return inPeriodAll.filter((r) => (!q || r.name.toLowerCase().includes(q) || r.employeeCode.toLowerCase().includes(q) || r.manager.toLowerCase().includes(q)) && fitsFilter(r, filter));
+  }, [inPeriodAll, s.corrSearch, filter]);
+  // One person picked from the Employees list narrows the numbers to them too.
+  const scoped = useMemo(() => (person ? inPeriod.filter((r) => (r.submitterId || r.name) === person) : inPeriod), [inPeriod, person]);
 
   const stats = useMemo(() => ({
-    total: inPeriod.length,
-    employees: new Set(inPeriod.map((r) => r.submitterId || r.name)).size,
-    pending: inPeriod.filter((r) => r.status === 'Pending').length,
-    approved: inPeriod.filter((r) => r.status === 'Approved').length,
-    declined: inPeriod.filter((r) => r.status === 'Declined').length,
-  }), [inPeriod]);
+    total: scoped.length,
+    employees: new Set(scoped.map((r) => r.submitterId || r.name)).size,
+    pending: scoped.filter((r) => r.status === 'Pending').length,
+    approved: scoped.filter((r) => r.status === 'Approved').length,
+    declined: scoped.filter((r) => r.status === 'Declined').length,
+  }), [scoped]);
 
   const rows = useMemo(() => {
-    let out = inPeriod.slice();
-    const q = s.corrSearch.trim().toLowerCase();
-    if (q) out = out.filter((r) => r.name.toLowerCase().includes(q) || r.employeeCode.toLowerCase().includes(q) || r.manager.toLowerCase().includes(q));
-    if (person) out = out.filter((r) => (r.submitterId || r.name) === person);
+    // Search, type and the picked person are already applied (scoped).
+    let out = scoped.slice();
     if (s.corrStatus !== 'all') out = out.filter((r) => r.status === s.corrStatus);
-    out = out.filter((r) => fitsFilter(r, filter));
     // Pending that costs pay first, then other pending, then the decided; newest raised within each.
     const rank = (r: Correction) => (r.status === 'Pending' ? (affectsPay(r) ? 0 : 1) : 2);
     return out.sort((a, b) => rank(a) - rank(b) || b.ord - a.ord);
-  }, [inPeriod, s.corrSearch, s.corrStatus, filter, person]);
+  }, [scoped, s.corrStatus]);
 
   // One row per person in the period: how many corrections they raised, most first.
   const perPerson = useMemo(() => {
@@ -121,9 +126,9 @@ export function AttendanceCorrections() {
       if (affectsPay(r)) e.pay++;
       m.set(id, e);
     }
-    const q = s.corrSearch.trim().toLowerCase();
-    return [...m.values()].filter((e) => !q || e.name.toLowerCase().includes(q) || e.code.toLowerCase().includes(q)).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
-  }, [inPeriod, s.corrSearch]);
+    // Search and type are already applied (inPeriod).
+    return [...m.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  }, [inPeriod]);
   const pagedPeople = usePaged(perPerson, `${perPerson.length}|${byPerson}`);
   const paged = usePaged(rows, `${rows.length}|${rows[0]?.id ?? ''}`);
   const pendingRows = rows.filter((r) => r.status === 'Pending');
@@ -132,10 +137,10 @@ export function AttendanceCorrections() {
   const toggle = (id: string) => setSelected((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   const statusCounts = useMemo(() => {
-    const c: Partial<Record<ReqStatus | 'all', number>> = { all: inPeriod.length };
-    for (const r of inPeriod) c[r.status] = (c[r.status] ?? 0) + 1;
+    const c: Partial<Record<ReqStatus | 'all', number>> = { all: scoped.length };
+    for (const r of scoped) c[r.status] = (c[r.status] ?? 0) + 1;
     return c;
-  }, [inPeriod]);
+  }, [scoped]);
 
   const exportRows = () =>
     downloadCsv<Correction>(
@@ -184,6 +189,50 @@ export function AttendanceCorrections() {
             onUnit={(u) => { if (u === 'custom') { s.setCorrFrom(range.from); s.setCorrTo(range.to); } setUnit(u); setOffset(0); setSelected(new Set()); }} onStep={(by) => { setOffset((o) => o + by); setSelected(new Set()); }}
             hasPrev={s.corrs.some((r) => workDay(r) && workDay(r) < range.from)} hasNext={s.corrs.some((r) => workDay(r) > range.to)} />
 
+          {/* Search and filters first: the numbers and the list below both follow them. */}
+          {byPerson ? (
+            <div style={{ ...toolbar, alignItems: 'center' }}>
+              <div style={{ flex: '1 1 220px', maxWidth: 320, display: 'flex' }}>
+                <SearchInput value={s.corrSearch} onChange={s.setCorrSearch} placeholder="Search employee" width="100%" />
+              </div>
+            </div>
+          ) : (
+            <div>
+            {person && (
+              <div style={{ ...toolbar, gap: 8, fontSize: 13 }}>
+                <button type="button" onClick={() => setPerson(null)} aria-label="Show everyone again" style={{ ...chip(true), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {perPerson.find((e) => e.id === person)?.name ?? 'Employee'} <span aria-hidden>×</span>
+                </button>
+                <button type="button" onClick={() => { setPerson(null); setByPerson(true); }} className="pd-btn ghost" style={{ height: 32, fontSize: 12.5 }}>Back to employees</button>
+              </div>
+            )}
+            {/* As on the Company calendar: Status and Correction type behind a Filters button, applied together. */}
+            <div style={{ ...toolbar, alignItems: 'center' }}>
+              <div style={{ flex: '1 1 220px', maxWidth: 360, display: 'flex' }}>
+                <SearchInput value={s.corrSearch} onChange={s.setCorrSearch} placeholder="Search employee or manager" width="100%" />
+              </div>
+              <button type="button" onClick={() => { setDraft({ status: s.corrStatus, type: filter }); setFiltersOpen((o) => !o); }} aria-expanded={filtersOpen} className={btnClass()}
+                style={{ ...btn(), marginLeft: 'auto', gap: 8, background: activeFilters ? 'var(--accent-soft)' : undefined, color: activeFilters ? 'var(--accent-ink)' : undefined }}>
+                Filters{activeFilters ? ` · ${activeFilters}` : ''}
+                <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden style={{ transform: filtersOpen ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }}><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              </button>
+              <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
+                <IconDownload stroke="currentColor" /> Export
+              </button>
+            </div>
+            {filtersOpen && (
+              <div className="ar-filters compact" style={{ marginBottom: 14 }}>
+                <LabeledSelect label="Status" value={draft.status} onChange={(v) => setDraft((d) => ({ ...d, status: v as ReqStatus | 'all' }))}
+                  options={(['all', 'Pending', 'Approved', 'Declined'] as const).map((k): [string, string] => [k, `${k === 'all' ? 'All' : k}${st === 'ready' && statusCounts[k] != null ? ` · ${statusCounts[k]}` : ''}`])} />
+                <LabeledSelect label="Correction type" value={draft.type} onChange={(v) => setDraft((d) => ({ ...d, type: v as Filter }))}
+                  options={FILTERS.map(([k, label]): [string, string] => [k, label])} />
+                <button type="button" onClick={() => { s.setCorrStatus(draft.status); setFilter(draft.type); setSelected(new Set()); setFiltersOpen(false); }} className="pd-btn primary">Apply</button>
+                {activeFilters > 0 && <button type="button" onClick={() => { s.setCorrStatus('all'); setFilter('all'); setSelected(new Set()); setFiltersOpen(false); }} className="pd-btn ghost">Clear</button>}
+              </div>
+            )}
+            </div>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
             {/* Each tile filters the list below to what it counts, and brings the list into view. */}
             <StatTile state={st} label="Corrections" value={stats.total} onPick={() => pickStatus('all')} picked={!byPerson && s.corrStatus === 'all'} />
@@ -197,11 +246,6 @@ export function AttendanceCorrections() {
           <div id="corr-list" style={{ scrollMarginTop: 96 }}>
             {byPerson ? (
               <div>
-                <div style={{ ...toolbar, alignItems: 'center' }}>
-                  <div style={{ flex: '1 1 220px', maxWidth: 320, display: 'flex' }}>
-                    <SearchInput value={s.corrSearch} onChange={s.setCorrSearch} placeholder="Search employee" width="100%" />
-                  </div>
-                </div>
                 <div style={{ overflowX: 'auto' }}>
                   <div style={{ minWidth: 760 }}>
                     <div style={TH('1.8fr .8fr .8fr .8fr .8fr 1.2fr')}>
@@ -231,39 +275,6 @@ export function AttendanceCorrections() {
               </div>
             ) : (
             <>
-              {person && (
-                <div style={{ ...toolbar, gap: 8, fontSize: 13 }}>
-                  <button type="button" onClick={() => setPerson(null)} aria-label="Show everyone again" style={{ ...chip(true), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    {perPerson.find((e) => e.id === person)?.name ?? 'Employee'} <span aria-hidden>×</span>
-                  </button>
-                  <button type="button" onClick={() => { setPerson(null); setByPerson(true); }} className="pd-btn ghost" style={{ height: 32, fontSize: 12.5 }}>Back to employees</button>
-                </div>
-              )}
-              {/* As on the Company calendar: Status and Correction type behind a Filters button, applied together. */}
-              <div style={{ ...toolbar, alignItems: 'center' }}>
-                <div style={{ flex: '1 1 220px', maxWidth: 360, display: 'flex' }}>
-                  <SearchInput value={s.corrSearch} onChange={s.setCorrSearch} placeholder="Search employee or manager" width="100%" />
-                </div>
-                <button type="button" onClick={() => { setDraft({ status: s.corrStatus, type: filter }); setFiltersOpen((o) => !o); }} aria-expanded={filtersOpen} className={btnClass()}
-                  style={{ ...btn(), marginLeft: 'auto', gap: 8, background: activeFilters ? 'var(--accent-soft)' : undefined, color: activeFilters ? 'var(--accent-ink)' : undefined }}>
-                  Filters{activeFilters ? ` · ${activeFilters}` : ''}
-                  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden style={{ transform: filtersOpen ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }}><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                </button>
-                <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
-                  <IconDownload stroke="currentColor" /> Export
-                </button>
-              </div>
-              {filtersOpen && (
-                <div className="ar-filters compact" style={{ marginBottom: 14 }}>
-                  <LabeledSelect label="Status" value={draft.status} onChange={(v) => setDraft((d) => ({ ...d, status: v as ReqStatus | 'all' }))}
-                    options={(['all', 'Pending', 'Approved', 'Declined'] as const).map((k): [string, string] => [k, `${k === 'all' ? 'All' : k}${st === 'ready' && statusCounts[k] != null ? ` · ${statusCounts[k]}` : ''}`])} />
-                  <LabeledSelect label="Correction type" value={draft.type} onChange={(v) => setDraft((d) => ({ ...d, type: v as Filter }))}
-                    options={FILTERS.map(([k, label]): [string, string] => [k, label])} />
-                  <button type="button" onClick={() => { s.setCorrStatus(draft.status); setFilter(draft.type); setSelected(new Set()); setFiltersOpen(false); }} className="pd-btn primary">Apply</button>
-                  {activeFilters > 0 && <button type="button" onClick={() => { s.setCorrStatus('all'); setFilter('all'); setSelected(new Set()); setFiltersOpen(false); }} className="pd-btn ghost">Clear</button>}
-                </div>
-              )}
-
               {picked.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 14px', borderRadius: 14, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', marginBottom: 12 }}>
                   <span style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--accent-ink)' }}>{plural(picked.length, 'correction')} selected</span>

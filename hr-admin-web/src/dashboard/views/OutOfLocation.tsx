@@ -55,21 +55,23 @@ export function OutOfLocation() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list.error]);
 
-  const shown = useMemo(() => {
+  // The search (and the dates, which the server applies): the numbers and the list both read this set,
+  // so the numbers follow the filters; the status tabs then narrow the list to one of the counts.
+  const searched = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (q && !r.name.toLowerCase().includes(q) && !r.employeeCode.toLowerCase().includes(q) && !r.manager.toLowerCase().includes(q)) return false;
-      if (filter === 'present') return r.outcome === 'present';
-      if (filter === 'pending' || filter === 'approved' || filter === 'declined') return r.outcome === 'request' && r.status === filter;
-      return true;
-    });
-  }, [rows, search, filter]);
+    return q ? rows.filter((r) => r.name.toLowerCase().includes(q) || r.employeeCode.toLowerCase().includes(q) || r.manager.toLowerCase().includes(q)) : rows;
+  }, [rows, search]);
+  const shown = useMemo(() => searched.filter((r) => {
+    if (filter === 'present') return r.outcome === 'present';
+    if (filter === 'pending' || filter === 'approved' || filter === 'declined') return r.outcome === 'request' && r.status === filter;
+    return true;
+  }), [searched, filter]);
 
   const summary = {
-    total: rows.length,
-    present: rows.filter((r) => r.outcome === 'present').length,
-    pending: rows.filter((r) => r.outcome === 'request' && r.status === 'pending').length,
-    declined: rows.filter((r) => r.outcome === 'request' && r.status === 'declined').length,
+    total: searched.length,
+    present: searched.filter((r) => r.outcome === 'present').length,
+    pending: searched.filter((r) => r.outcome === 'request' && r.status === 'pending').length,
+    declined: searched.filter((r) => r.outcome === 'request' && r.status === 'declined').length,
   };
 
   const exportRows = () =>
@@ -103,13 +105,6 @@ export function OutOfLocation() {
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 20 }}>
-        <SummaryCard label="Out-of-location punches" value={<LoadingFigure state={st}>{summary.total}</LoadingFigure>} />
-        <SummaryCard label="Marked present" value={<LoadingFigure state={st}>{summary.present}</LoadingFigure>} color="var(--ok)" />
-        <SummaryCard label="Awaiting a manager" value={<LoadingFigure state={st}>{summary.pending}</LoadingFigure>} color="var(--warn)" />
-        <SummaryCard label="Rejected" value={<LoadingFigure state={st}>{summary.declined}</LoadingFigure>} color="var(--bad)" />
-      </div>
-
       <PageActions>
         <button onClick={exportRows} disabled={shown.length === 0} className={btnClass()} style={btn()}>
           <IconDownload stroke="currentColor" /> Export
@@ -117,6 +112,19 @@ export function OutOfLocation() {
       </PageActions>
 
       <Card padded>
+      {/* Search and dates first: the numbers and the list below both follow them. */}
+      <div style={toolbar}>
+        <div style={{ flex: 1, minWidth: 262, display: 'flex' }}>
+          <SearchInput value={search} onChange={setSearch} placeholder="Search employee or manager…" width="100%" />
+        </div>
+        <DateRange from={from} to={to} onFrom={setFrom} onTo={setTo} />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 20 }}>
+        <SummaryCard label="Out-of-location punches" value={<LoadingFigure state={st}>{summary.total}</LoadingFigure>} />
+        <SummaryCard label="Marked present" value={<LoadingFigure state={st}>{summary.present}</LoadingFigure>} color="var(--ok)" />
+        <SummaryCard label="Awaiting a manager" value={<LoadingFigure state={st}>{summary.pending}</LoadingFigure>} color="var(--warn)" />
+        <SummaryCard label="Rejected" value={<LoadingFigure state={st}>{summary.declined}</LoadingFigure>} color="var(--bad)" />
+      </div>
       <div style={toolbar}>
         <div style={SEG}>
           {tabs.map((t) => (
@@ -129,12 +137,6 @@ export function OutOfLocation() {
             </button>
           ))}
         </div>
-      </div>
-      <div style={toolbar}>
-        <div style={{ flex: 1, minWidth: 262, display: 'flex' }}>
-          <SearchInput value={search} onChange={setSearch} placeholder="Search employee or manager…" width="100%" />
-        </div>
-        <DateRange from={from} to={to} onFrom={setFrom} onTo={setTo} />
       </div>
 
         <div style={TH(COLS)}>
