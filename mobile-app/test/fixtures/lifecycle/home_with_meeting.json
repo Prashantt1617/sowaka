@@ -1,5 +1,5 @@
 {
-  "journeyId": "0a44b86c-e14f-4f15-94f1-ed1a13dec40a",
+  "journeyId": "ce4cafab-40a9-4200-ad7f-ec45ef0c8fcf",
   "stage": "welcome_week1",
   "stageName": "Welcome",
   "dayLabel": "Week 1",
@@ -16,7 +16,7 @@
     "total": 11
   },
   "upNext": {
-    "id": "dfecc505-a1b7-4cc0-a655-01d536db25eb",
+    "id": "28eb4fb5-5576-4414-be68-6716164cb803",
     "systemKey": "meet_manager",
     "phase": "first_week",
     "title": "Meet your manager",
@@ -35,8 +35,8 @@
     "meeting": {
       "id": "fx-meeting",
       "title": "Meet your manager",
-      "startsAt": "2026-11-17T05:15:47.564Z",
-      "endsAt": "2026-11-17T05:45:47.564Z",
+      "startsAt": "2026-11-17T05:36:26.129Z",
+      "endsAt": "2026-11-17T06:06:26.129Z",
       "place": "Room 4B",
       "canConfirm": true,
       "attendees": [
@@ -60,12 +60,12 @@
       ],
       "mustDo": true,
       "systemKey": "meet_manager",
-      "taskId": "dfecc505-a1b7-4cc0-a655-01d536db25eb"
+      "taskId": "28eb4fb5-5576-4414-be68-6716164cb803"
     }
   },
   "today": [
     {
-      "id": "6e0cd87a-976a-427c-a819-2d704ff3a83e",
+      "id": "dde1bd39-19d0-47e7-9652-90376726cbdd",
       "systemKey": "about_you",
       "phase": "pre_boarding",
       "title": "Emergency contact and PF",
@@ -82,7 +82,7 @@
       "helper": "Emergency contact and PF · 2 min"
     },
     {
-      "id": "7b954ed9-d5b0-4883-b26f-e36b94ac556f",
+      "id": "88fb4441-a289-4b21-b6b8-9540bb7dc5e9",
       "systemKey": "meet_us",
       "phase": "pre_boarding",
       "title": "Meet us videos",
@@ -99,7 +99,7 @@
       "helper": "Short videos from the team"
     },
     {
-      "id": "a56fd55e-5860-4dac-bd84-425a7a871d2f",
+      "id": "fdc380bd-72ff-45ac-9f8b-80fb21e34fa4",
       "systemKey": "welcome_induction",
       "phase": "first_week",
       "title": "Welcome and induction",
@@ -117,7 +117,7 @@
       "doneBy": "HR"
     },
     {
-      "id": "dfecc505-a1b7-4cc0-a655-01d536db25eb",
+      "id": "28eb4fb5-5576-4414-be68-6716164cb803",
       "systemKey": "meet_manager",
       "phase": "first_week",
       "title": "Meet your manager",
@@ -136,8 +136,8 @@
       "meeting": {
         "id": "fx-meeting",
         "title": "Meet your manager",
-        "startsAt": "2026-11-17T05:15:47.564Z",
-        "endsAt": "2026-11-17T05:45:47.564Z",
+        "startsAt": "2026-11-17T05:36:26.129Z",
+        "endsAt": "2026-11-17T06:06:26.129Z",
         "place": "Room 4B",
         "canConfirm": true,
         "attendees": [
@@ -161,11 +161,11 @@
         ],
         "mustDo": true,
         "systemKey": "meet_manager",
-        "taskId": "dfecc505-a1b7-4cc0-a655-01d536db25eb"
+        "taskId": "28eb4fb5-5576-4414-be68-6716164cb803"
       }
     },
     {
-      "id": "d665f92d-3cdb-4a81-b050-99cb31e49157",
+      "id": "586f9a76-0185-4a11-869c-ec6ba6bbeb76",
       "systemKey": "vision_culture",
       "phase": "first_week",
       "title": "Company vision and culture",
@@ -183,7 +183,7 @@
       "doneBy": "HR"
     },
     {
-      "id": "581b2f24-ee44-47b7-bb6a-ec0d116a3816",
+      "id": "a80160c8-41e8-4282-a06e-83b763bf0c46",
       "systemKey": "meet_team",
       "phase": "first_week",
       "title": "Meet your team",
@@ -202,7 +202,7 @@
       "doneBy": "Your manager"
     },
     {
-      "id": "39d59a19-03a2-42a2-9f73-4de1ed1814dc",
+      "id": "bda5f326-bcb7-4e41-a7dd-03ee5f248aae",
       "systemKey": "laptop_setup",
       "phase": "first_week",
       "title": "Set up laptop and login",
@@ -220,7 +220,7 @@
       "doneBy": "IT"
     },
     {
-      "id": "7222a69c-4922-41db-a5dd-fad1b5796b16",
+      "id": "59bf0fee-63e5-4b9a-9c66-ac212647f3b1",
       "systemKey": "register_face",
       "phase": "first_week",
       "title": "Register face for punch-in",
@@ -237,7 +237,7 @@
       "helper": "2 min · needed to punch in"
     },
     {
-      "id": "664766a0-c78c-4bb0-9d1f-cd541b7a82e1",
+      "id": "8da3ce29-8833-444c-b477-4c2143048c2e",
       "systemKey": "week1_reels",
       "phase": "first_week",
       "title": "Week-1 tasks",
@@ -258,7 +258,7 @@
       }
     },
     {
-      "id": "ba0209c2-d571-49e4-aba7-e99eb61cc4ae",
+      "id": "54d675fa-2b69-4dbb-a7cf-bb9359c9cd22",
       "systemKey": "day7_survey",
       "phase": "first_week",
       "title": "Day-7 survey",
@@ -275,7 +275,7 @@
       "helper": "4 quick questions"
     },
     {
-      "id": "364b6880-97a9-4158-865e-411cde7b8808",
+      "id": "00a6e110-251f-4da9-92d7-48b87976c174",
       "systemKey": "people_to_meet",
       "phase": "first_week",
       "title": "People to meet · month 1",
@@ -299,7 +299,7 @@
   ],
   "later": [
     {
-      "id": "6dba552c-9ecb-45ae-b472-ac4e02227fb8",
+      "id": "2335cfa2-c4fd-4206-acf3-f8bc30186219",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 1",
@@ -317,7 +317,7 @@
       "helper": "How the month went, with your manager"
     },
     {
-      "id": "975db399-a9e3-401e-b949-05bb3c3f21a0",
+      "id": "0264626c-0971-4eff-afda-3b10ac85ba2f",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 2",
@@ -335,7 +335,7 @@
       "helper": "How the month went, with your manager"
     },
     {
-      "id": "d18a1672-93e1-49a7-bee4-c3eada4d9448",
+      "id": "3f761b88-6467-493c-bee0-ec3ce237fd5d",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 3",
@@ -353,7 +353,7 @@
       "helper": "How the month went, with your manager"
     },
     {
-      "id": "9ea73267-7b0a-45ec-a79c-8e0e79f17a26",
+      "id": "e504ff6e-a4cc-4c28-a3b0-de0242e1855a",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 4",
@@ -371,7 +371,7 @@
       "helper": "How the month went, with your manager"
     },
     {
-      "id": "577a35ec-4aa6-46a8-8273-2e3032e5a33a",
+      "id": "c6139f81-34ab-45d9-a4b9-05c044d8ddf0",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 5",
@@ -389,7 +389,7 @@
       "helper": "How the month went, with your manager"
     },
     {
-      "id": "3400b211-db42-4927-b72d-ca402008ce25",
+      "id": "e97ca53c-5943-4bbd-8769-7dcdad2d3b08",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 6",
@@ -407,7 +407,7 @@
       "helper": "How the month went, with your manager"
     },
     {
-      "id": "cabb95ae-dc97-4774-8197-efe171fd3bf7",
+      "id": "006c08cf-87d2-4f57-9a4d-024939b4df34",
       "systemKey": "pulse_survey",
       "phase": "probation",
       "title": "Pulse survey · month 3",
@@ -424,7 +424,7 @@
       "helper": "4 quick questions"
     },
     {
-      "id": "72381ccd-00c7-4a43-8ce9-bcc7fb6d8820",
+      "id": "a0fb5cc3-bca3-4d62-8308-3121816adfdc",
       "systemKey": "pulse_survey",
       "phase": "probation",
       "title": "Pulse survey · month 6",
@@ -443,7 +443,7 @@
   ],
   "done": [
     {
-      "id": "a82bdc8a-0b98-4761-819e-8964e86b3d64",
+      "id": "06d31424-78be-4e8a-a388-93c3bcd9c80a",
       "systemKey": "starter_task",
       "phase": "first_week",
       "title": "Redesign the leave request screen",
@@ -454,15 +454,15 @@
       "surface": "app",
       "mustDo": false,
       "status": "done",
-      "opensAt": "2026-11-17T04:55:48.082Z",
+      "opensAt": "2026-11-17T05:16:26.508Z",
       "dueAt": "2026-11-19T00:00:00.000Z",
       "dueLabel": "Thu 19 Nov",
-      "doneAt": "2026-11-17T04:55:48.118Z",
+      "doneAt": "2026-11-17T05:16:26.535Z",
       "note": "First version is in the folder",
       "late": false
     },
     {
-      "id": "5b21a29c-8afd-4cd5-b96e-34103a1e22f4",
+      "id": "f7ff418c-39ae-4ef7-8f55-37fe0b59fcd0",
       "systemKey": "intro_post",
       "phase": "first_week",
       "title": "Intro post",
@@ -475,13 +475,13 @@
       "opensAt": "2026-11-11T00:00:00.000Z",
       "dueAt": "2026-11-14T00:00:00.000Z",
       "dueLabel": "Sat 14 Nov",
-      "doneAt": "2026-11-17T04:55:48.031Z",
+      "doneAt": "2026-11-17T05:16:26.473Z",
       "doneByName": "Isha Verma",
       "late": false,
       "helper": "Say hello on Connect · 2 min"
     },
     {
-      "id": "387b19fb-a489-4238-baab-da832207da37",
+      "id": "ad7490fb-5595-4145-bde7-467d02af93ac",
       "systemKey": "app_tour",
       "phase": "first_week",
       "title": "Take the Sowaka tour",
@@ -494,7 +494,7 @@
       "opensAt": "2026-11-11T00:00:00.000Z",
       "dueAt": "2026-11-14T00:00:00.000Z",
       "dueLabel": "Sat 14 Nov",
-      "doneAt": "2026-11-17T04:55:47.961Z",
+      "doneAt": "2026-11-17T05:16:26.424Z",
       "doneByName": "Isha Verma",
       "late": false,
       "helper": "5 min"
@@ -510,7 +510,7 @@
       "surface": "app",
       "mustDo": false,
       "status": "done",
-      "opensAt": "2026-11-17T04:55:48.167Z",
+      "opensAt": "2026-11-17T05:16:26.570Z",
       "dueAt": null,
       "late": false
     }
@@ -551,8 +551,8 @@
     {
       "id": "fx-meeting",
       "title": "Meet your manager",
-      "startsAt": "2026-11-17T05:15:47.564Z",
-      "endsAt": "2026-11-17T05:45:47.564Z",
+      "startsAt": "2026-11-17T05:36:26.129Z",
+      "endsAt": "2026-11-17T06:06:26.129Z",
       "place": "Room 4B",
       "canConfirm": true,
       "attendees": [
@@ -576,7 +576,7 @@
       ],
       "mustDo": true,
       "systemKey": "meet_manager",
-      "taskId": "dfecc505-a1b7-4cc0-a655-01d536db25eb"
+      "taskId": "28eb4fb5-5576-4414-be68-6716164cb803"
     }
   ],
   "showWeekDone": false,

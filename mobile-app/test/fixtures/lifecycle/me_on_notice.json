@@ -1,8 +1,8 @@
 {
   "enabled": true,
   "offboarding": {
-    "journeyId": "d3709a57-c5e1-43b1-a8d4-36b15527a605",
-    "resignationId": "680ccb82-6ce5-48c4-8496-09962637d3c4",
+    "journeyId": "46c0e901-1836-4d54-9948-45d1205abf1c",
+    "resignationId": "962b89b7-088e-4b37-8874-3b3a2d25030f",
     "status": "accepted",
     "tl": "2026-11-21",
     "pageVisible": true

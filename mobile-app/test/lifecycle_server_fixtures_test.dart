@@ -705,7 +705,8 @@ void main() {
       String where(String scenario) => '${offboarding.firstWhere((p) => p['scenario'] == scenario)['data']['destination']}';
       expect(where('lifecycle_resignation'), 'lifecycle_resignation_request');
       expect(where('lifecycle_resignation_withdrawn'), 'lifecycle_resignation_request');
-      expect(where('lifecycle_resignation_with_hr'), 'lifecycle_resignation');
+      // The manager acting sends no push (the Resignation tab updates): the spec's Who gets told.
+      expect(offboarding.any((p) => p['scenario'] == 'lifecycle_resignation_with_hr'), isFalse);
       expect(where('lifecycle_offboarding_open'), 'lifecycle_resignation');
       expect(where('lifecycle_handover_checklist'), 'lifecycle_leaver');
       expect(where('lifecycle_handover_shared'), 'lifecycle_handover');

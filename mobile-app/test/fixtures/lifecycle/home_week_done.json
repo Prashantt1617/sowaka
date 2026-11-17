@@ -1,5 +1,5 @@
 {
-  "journeyId": "1d0dac3f-5842-4582-a630-118df054acc2",
+  "journeyId": "9143a96a-9228-4c91-8ef9-74f6496dd720",
   "stage": "settling_in",
   "stageName": "Settling in",
   "dayLabel": "Week 2",
@@ -16,7 +16,7 @@
     "total": 8
   },
   "upNext": {
-    "id": "381f7f77-01ad-46d2-99df-c9410178b8e0",
+    "id": "8569777c-5e16-4e61-aa05-c6f29417d08c",
     "systemKey": "meet_manager",
     "phase": "first_week",
     "title": "Meet your manager",
@@ -34,7 +34,7 @@
   },
   "today": [
     {
-      "id": "b8b1a577-8d8a-4eb8-9731-87b245c4db37",
+      "id": "880e2b65-d815-41a9-87d9-3be9e79031b2",
       "systemKey": "about_you",
       "phase": "pre_boarding",
       "title": "Emergency contact and PF",
@@ -51,7 +51,7 @@
       "helper": "Emergency contact and PF · 2 min"
     },
     {
-      "id": "7978a2a5-a721-41c9-a025-550cfc54aa34",
+      "id": "79cecd55-85d7-4bed-8e94-4041fcfcb4fc",
       "systemKey": "meet_us",
       "phase": "pre_boarding",
       "title": "Meet us videos",
@@ -68,7 +68,7 @@
       "helper": "Short videos from the team"
     },
     {
-      "id": "85e7ffe2-1dc3-40b9-a8c8-7ac3a369741e",
+      "id": "b110d906-03a5-4035-8a57-7ed3b05ceb67",
       "systemKey": "welcome_induction",
       "phase": "first_week",
       "title": "Welcome and induction",
@@ -86,7 +86,7 @@
       "doneBy": "HR"
     },
     {
-      "id": "381f7f77-01ad-46d2-99df-c9410178b8e0",
+      "id": "8569777c-5e16-4e61-aa05-c6f29417d08c",
       "systemKey": "meet_manager",
       "phase": "first_week",
       "title": "Meet your manager",
@@ -103,7 +103,7 @@
       "helper": "Your first 1:1"
     },
     {
-      "id": "d064bac9-6aaa-43e1-9dcf-9fb7622bdfb2",
+      "id": "ee16a895-ad5d-42ac-b396-1ea813bd0f4d",
       "systemKey": "vision_culture",
       "phase": "first_week",
       "title": "Company vision and culture",
@@ -121,7 +121,7 @@
       "doneBy": "HR"
     },
     {
-      "id": "c6950c5e-059e-4883-bada-43904a549363",
+      "id": "94729944-c72d-4d20-aa44-7ed6dcc01187",
       "systemKey": "meet_team",
       "phase": "first_week",
       "title": "Meet your team",
@@ -140,7 +140,7 @@
       "doneBy": "Your manager"
     },
     {
-      "id": "2538917e-1d90-4dc6-bedd-21a291b55ecc",
+      "id": "05e23dcb-10bf-4461-872e-15a39c8164f6",
       "systemKey": "laptop_setup",
       "phase": "first_week",
       "title": "Set up laptop and login",
@@ -158,7 +158,7 @@
       "doneBy": "IT"
     },
     {
-      "id": "51bfb8ee-869d-498c-acaf-472f72d36ab1",
+      "id": "f3edd0c6-519a-445b-aaa6-72b74b7d0755",
       "systemKey": "register_face",
       "phase": "first_week",
       "title": "Register face for punch-in",
@@ -175,7 +175,7 @@
       "helper": "2 min · needed to punch in"
     },
     {
-      "id": "19920024-693e-420c-898d-ce94a8844d8a",
+      "id": "2c80a429-81ad-43f6-8ab9-8f68b6314bbe",
       "systemKey": "app_tour",
       "phase": "first_week",
       "title": "Take the Sowaka tour",
@@ -192,7 +192,7 @@
       "helper": "5 min"
     },
     {
-      "id": "f5418004-8d28-454a-9f83-a7f9ff2376b5",
+      "id": "d2c99c64-c627-447a-b695-e2a8972c5ccd",
       "systemKey": "intro_post",
       "phase": "first_week",
       "title": "Intro post",
@@ -209,7 +209,7 @@
       "helper": "Say hello on Connect · 2 min"
     },
     {
-      "id": "e6531fb8-4042-43a9-90dd-30c71f51aaa1",
+      "id": "da0d4f73-c495-4c91-93a3-e2034101b319",
       "systemKey": "week1_reels",
       "phase": "first_week",
       "title": "Week-1 tasks",
@@ -230,7 +230,7 @@
       }
     },
     {
-      "id": "0a3ec67f-17cd-4f9b-b4b9-ae2d115d3bf8",
+      "id": "c760b1b1-1651-4ee6-9605-a7c7cc767eca",
       "systemKey": "day7_survey",
       "phase": "first_week",
       "title": "Day-7 survey",
@@ -247,7 +247,7 @@
       "helper": "4 quick questions"
     },
     {
-      "id": "6b457e17-151f-4fdb-9b61-d5cc72a25cdf",
+      "id": "3011ba20-2962-41d4-8096-1e836708d8ba",
       "systemKey": "people_to_meet",
       "phase": "first_week",
       "title": "People to meet · month 1",
@@ -267,7 +267,7 @@
   ],
   "later": [
     {
-      "id": "085ff676-f504-4bce-8da1-3519a09ccedf",
+      "id": "2382c850-5d99-4a78-a47c-76c3227dee90",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 1",
@@ -285,7 +285,7 @@
       "helper": "How the month went, with your manager"
     },
     {
-      "id": "074aba6a-10ee-4eaa-81a5-59a27bf68a71",
+      "id": "09a1c88c-979c-415e-950c-d68e6f56dc0c",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 2",
@@ -303,7 +303,7 @@
       "helper": "How the month went, with your manager"
     },
     {
-      "id": "798fb450-e815-4896-bb67-389db28f76c1",
+      "id": "64957bec-ef78-4b73-b8b1-8185565dcedc",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 3",
@@ -321,7 +321,7 @@
       "helper": "How the month went, with your manager"
     },
     {
-      "id": "507ccd6a-55f9-432f-89c3-6a1e6be6251a",
+      "id": "3449869d-e21a-4267-afc0-ccffc0414a8a",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 4",
@@ -339,7 +339,7 @@
       "helper": "How the month went, with your manager"
     },
     {
-      "id": "aefcc540-2103-4f3d-9392-363d1cfff00c",
+      "id": "8d7df52f-501b-4bd1-bee5-5dd229078e73",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 5",
@@ -357,7 +357,7 @@
       "helper": "How the month went, with your manager"
     },
     {
-      "id": "9a426156-194a-4101-8139-81ac2b4d8419",
+      "id": "788ee17a-e8b8-419b-8403-cac8b20dd714",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 6",
@@ -375,7 +375,7 @@
       "helper": "How the month went, with your manager"
     },
     {
-      "id": "fff44302-4a20-4b37-83a7-acaa6c2df4b6",
+      "id": "062dab2d-3391-42bc-997b-5305703326f2",
       "systemKey": "pulse_survey",
       "phase": "probation",
       "title": "Pulse survey · month 3",
@@ -392,7 +392,7 @@
       "helper": "4 quick questions"
     },
     {
-      "id": "f59d4a03-b174-4ac6-add5-81d96103be42",
+      "id": "38dc18d2-4cb3-4f03-aaf7-df25d9c7a1f7",
       "systemKey": "pulse_survey",
       "phase": "probation",
       "title": "Pulse survey · month 6",

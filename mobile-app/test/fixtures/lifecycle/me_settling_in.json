@@ -1,7 +1,7 @@
 {
   "enabled": true,
   "onboarding": {
-    "journeyId": "1d0dac3f-5842-4582-a630-118df054acc2",
+    "journeyId": "9143a96a-9228-4c91-8ef9-74f6496dd720",
     "stage": "settling_in",
     "dayLabel": "Week 2",
     "plant": {

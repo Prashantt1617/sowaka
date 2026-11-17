@@ -431,7 +431,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   journeyA = (await db.journeys().findOne({ id: A }))!;
   let pl = await lettersSvc.portalLetters(journeyA);
   ok('both letters ready on the portal, with HR’s file names in UTF-8 (no mojibake)', pl.every((l) => l.state === 'ready' && l.pdfUrl?.startsWith('/portal/letters/')) && pl.map((l) => l.fileName).join() === 'Appointment letter – Kabir Mehta.pdf,NDA.pdf', pl.map((l) => l.fileName));
-  ok('the appointment letter says its page count before it is opened', pl.find((l) => l.kind === 'appointment')?.pages === 2 && pl.find((l) => l.kind === 'nda')?.pages === undefined, pl.map((l) => l.pages));
+  ok('the appointment letter says its page count before it is opened', pl.find((l) => l.kind === 'appointment')?.pages === 2 && pl.find((l) => l.kind === 'nda')?.pages === 1, pl.map((l) => l.pages));
   home = await portalSvc.portalHome(journeyA);
   ok('home view letter_ready; the path’s Sign step is current', home.view === 'letter_ready' && home.path.find((p) => p.key === 'letter')?.state === 'current', home);
   ok('signing before opening the PDF is refused', (await refusal(() => lettersSvc.signLetter(journeyA, appt.id, { method: 'type', typedName: 'Kabir Mehta' }, { ip: '1.2.3.4' }))).status === 409);
@@ -465,7 +465,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
   const drawn = await lettersSvc.pdfLibStamper.stamp(await realPdf('Drawn', 1), { name: 'Kabir Mehta', method: 'draw', image: { bytes: tinyPng, type: 'image/png' }, signedAt: new Date(), ip: '1.2.3.4', refNo: 'NDA/2026/001' });
   ok('the pdf-lib stamper also takes a drawn (PNG) signature', Boolean(drawn) && (await PDFDocument.load(drawn!)).getPageCount() === 2);
-  ok('a file that is not a real PDF cannot be stamped (the signature record still stands)', (await lettersSvc.pdfLibStamper.stamp(PDF(), { name: 'x', method: 'type', typedName: 'x', signedAt: new Date(), refNo: 'r' }).catch(() => null)) === null);
+  ok('a file that is not a real PDF cannot be stamped (the signature record still stands)', (await lettersSvc.pdfLibStamper.stamp(Buffer.from('%PDF-1.4\n% not really a PDF\n%%EOF\n'), { name: 'x', method: 'type', typedName: 'x', signedAt: new Date(), refNo: 'r' }).catch(() => null)) === null);
   const lettersView = await lettersSvc.journeyLettersView(A);
   ok('the HR side panel sees both signed', lettersView.every((l) => l.state === 'signed' && l.signedAt));
 

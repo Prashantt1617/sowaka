@@ -1,6 +1,6 @@
 {
   "joiner": {
-    "journeyId": "0a44b86c-e14f-4f15-94f1-ed1a13dec40a",
+    "journeyId": "ce4cafab-40a9-4200-ad7f-ec45ef0c8fcf",
     "userId": "isha",
     "name": "Isha Verma",
     "designation": "Product Designer",
@@ -29,7 +29,7 @@
   },
   "tasks": [
     {
-      "id": "89df8537-e34a-435c-aadd-ad23cf5e03d0",
+      "id": "a7635253-a5d9-4224-ab89-fb1d2aca01da",
       "systemKey": "accept_offer",
       "phase": "pre_boarding",
       "title": "Read and accept the offer",
@@ -42,13 +42,13 @@
       "opensAt": "2026-11-17T00:00:00.000Z",
       "dueAt": null,
       "dueLabel": "Offer valid till",
-      "doneAt": "2026-11-17T04:55:47.748Z",
+      "doneAt": "2026-11-17T05:16:26.260Z",
       "doneByName": "Automatic",
       "late": false,
       "canMarkDone": false
     },
     {
-      "id": "936069fb-eaaa-49c3-ad45-131bb97d49c8",
+      "id": "223da9aa-960b-4e87-a1cb-b7d7d228dd48",
       "systemKey": "portal_sign_in",
       "phase": "pre_boarding",
       "title": "Sign in to the portal",
@@ -61,13 +61,13 @@
       "opensAt": "2026-11-17T00:00:00.000Z",
       "dueAt": "2026-11-19T00:00:00.000Z",
       "dueLabel": "Thu 19 Nov",
-      "doneAt": "2026-11-17T04:55:47.769Z",
+      "doneAt": "2026-11-17T05:16:26.282Z",
       "doneByName": "Automatic",
       "late": false,
       "canMarkDone": false
     },
     {
-      "id": "cd3f48e5-c79d-4fee-b854-272e3046d9ef",
+      "id": "488759d1-be0b-4649-8dd2-68600636b044",
       "systemKey": "upload_documents",
       "phase": "pre_boarding",
       "title": "Upload documents",
@@ -80,13 +80,13 @@
       "opensAt": null,
       "dueAt": "2026-11-06T00:00:00.000Z",
       "dueLabel": "Fri 6 Nov",
-      "doneAt": "2026-11-17T04:55:47.778Z",
+      "doneAt": "2026-11-17T05:16:26.290Z",
       "doneByName": "Automatic",
       "late": false,
       "canMarkDone": false
     },
     {
-      "id": "6e0cd87a-976a-427c-a819-2d704ff3a83e",
+      "id": "dde1bd39-19d0-47e7-9652-90376726cbdd",
       "systemKey": "about_you",
       "phase": "pre_boarding",
       "title": "Emergency contact and PF",
@@ -103,7 +103,7 @@
       "canMarkDone": false
     },
     {
-      "id": "7b954ed9-d5b0-4883-b26f-e36b94ac556f",
+      "id": "88fb4441-a289-4b21-b6b8-9540bb7dc5e9",
       "systemKey": "meet_us",
       "phase": "pre_boarding",
       "title": "Meet us videos",
@@ -120,7 +120,7 @@
       "canMarkDone": false
     },
     {
-      "id": "ff5d909b-f9db-4cf0-b754-ad1bdd832f0f",
+      "id": "6545a4cb-fc7a-4982-b3a7-aebac6d16cb9",
       "systemKey": "sign_letters",
       "phase": "pre_boarding",
       "title": "Sign the appointment letter and NDA",
@@ -133,12 +133,12 @@
       "opensAt": null,
       "dueAt": "2026-11-09T00:00:00.000Z",
       "dueLabel": "Mon 9 Nov",
-      "doneAt": "2026-11-17T04:55:47.784Z",
+      "doneAt": "2026-11-17T05:16:26.297Z",
       "late": false,
       "canMarkDone": false
     },
     {
-      "id": "3bf16358-e4d1-41cd-b33f-3843cb6abca0",
+      "id": "3b64e367-e314-46fe-9d48-716f1c297bf2",
       "systemKey": "manager_setup",
       "phase": "pre_boarding",
       "title": "Set up Isha",
@@ -151,14 +151,14 @@
       "opensAt": "2026-11-17T00:00:00.000Z",
       "dueAt": "2026-11-10T00:00:00.000Z",
       "dueLabel": "Tue 10 Nov",
-      "doneAt": "2026-11-17T04:55:47.883Z",
+      "doneAt": "2026-11-17T05:16:26.367Z",
       "doneByName": "Meera Iyer",
       "late": false,
       "helper": "People to meet, a buddy and a welcome note",
       "canMarkDone": false
     },
     {
-      "id": "8f73b6cc-1cba-403b-8a60-c873eb49a7bb",
+      "id": "124e4516-aac0-4ac7-892b-79ba40da397a",
       "systemKey": "new_joining_date",
       "phase": "pre_boarding",
       "title": "Ask for a new joining date",
@@ -170,13 +170,13 @@
       "status": "skipped",
       "opensAt": null,
       "dueAt": null,
-      "doneAt": "2026-11-17T04:55:47.794Z",
+      "doneAt": "2026-11-17T05:16:26.305Z",
       "doneByName": "Automatic",
       "late": false,
       "canMarkDone": false
     },
     {
-      "id": "dfecc505-a1b7-4cc0-a655-01d536db25eb",
+      "id": "28eb4fb5-5576-4414-be68-6716164cb803",
       "systemKey": "meet_manager",
       "phase": "first_week",
       "title": "Meet Isha",
@@ -189,7 +189,7 @@
       "opensAt": "2026-11-11T00:00:00.000Z",
       "dueAt": "2026-11-11T00:00:00.000Z",
       "dueLabel": "Wed 11 Nov",
-      "doneAt": "2026-11-17T04:55:48.261Z",
+      "doneAt": "2026-11-17T05:16:26.637Z",
       "doneByName": "Meera Iyer",
       "late": false,
       "helper": "Your first 1:1",
@@ -198,8 +198,8 @@
       "meeting": {
         "id": "fx-meeting",
         "title": "Meet your manager",
-        "startsAt": "2026-11-18T06:55:47.564Z",
-        "endsAt": "2026-11-18T07:25:47.564Z",
+        "startsAt": "2026-11-18T07:16:26.129Z",
+        "endsAt": "2026-11-18T07:46:26.129Z",
         "place": "Room 4B",
         "canConfirm": true,
         "attendees": [
@@ -224,12 +224,12 @@
         "mustDo": true,
         "systemKey": "meet_manager",
         "met": "moved",
-        "newTime": "2026-11-18T06:55:47.564Z",
-        "taskId": "dfecc505-a1b7-4cc0-a655-01d536db25eb"
+        "newTime": "2026-11-18T07:16:26.129Z",
+        "taskId": "28eb4fb5-5576-4414-be68-6716164cb803"
       }
     },
     {
-      "id": "581b2f24-ee44-47b7-bb6a-ec0d116a3816",
+      "id": "a80160c8-41e8-4282-a06e-83b763bf0c46",
       "systemKey": "meet_team",
       "phase": "first_week",
       "title": "Introduce Isha to the team",
@@ -247,7 +247,7 @@
       "canMarkDone": true
     },
     {
-      "id": "7222a69c-4922-41db-a5dd-fad1b5796b16",
+      "id": "59bf0fee-63e5-4b9a-9c66-ac212647f3b1",
       "systemKey": "register_face",
       "phase": "first_week",
       "title": "Register face for punch-in",
@@ -264,7 +264,7 @@
       "canMarkDone": false
     },
     {
-      "id": "387b19fb-a489-4238-baab-da832207da37",
+      "id": "ad7490fb-5595-4145-bde7-467d02af93ac",
       "systemKey": "app_tour",
       "phase": "first_week",
       "title": "Take the Sowaka tour",
@@ -277,13 +277,13 @@
       "opensAt": "2026-11-11T00:00:00.000Z",
       "dueAt": "2026-11-14T00:00:00.000Z",
       "dueLabel": "Sat 14 Nov",
-      "doneAt": "2026-11-17T04:55:47.961Z",
+      "doneAt": "2026-11-17T05:16:26.424Z",
       "doneByName": "Isha Verma",
       "late": false,
       "canMarkDone": false
     },
     {
-      "id": "664766a0-c78c-4bb0-9d1f-cd541b7a82e1",
+      "id": "8da3ce29-8833-444c-b477-4c2143048c2e",
       "systemKey": "week1_reels",
       "phase": "first_week",
       "title": "Week-1 tasks",
@@ -300,7 +300,7 @@
       "canMarkDone": false
     },
     {
-      "id": "5b21a29c-8afd-4cd5-b96e-34103a1e22f4",
+      "id": "f7ff418c-39ae-4ef7-8f55-37fe0b59fcd0",
       "systemKey": "intro_post",
       "phase": "first_week",
       "title": "Intro post",
@@ -313,13 +313,13 @@
       "opensAt": "2026-11-11T00:00:00.000Z",
       "dueAt": "2026-11-14T00:00:00.000Z",
       "dueLabel": "Sat 14 Nov",
-      "doneAt": "2026-11-17T04:55:48.031Z",
+      "doneAt": "2026-11-17T05:16:26.473Z",
       "doneByName": "Isha Verma",
       "late": false,
       "canMarkDone": false
     },
     {
-      "id": "364b6880-97a9-4158-865e-411cde7b8808",
+      "id": "00a6e110-251f-4da9-92d7-48b87976c174",
       "systemKey": "people_to_meet",
       "phase": "first_week",
       "title": "People to meet · month 1",
@@ -337,7 +337,7 @@
       "canMarkDone": false
     },
     {
-      "id": "4ff68335-cbb4-464b-a45c-ef83bace6be9",
+      "id": "4a7ad81c-d2b4-4c56-8564-bcc8f94f0bf5",
       "systemKey": "starter_task",
       "phase": "first_week",
       "title": "Give Isha a starter task",
@@ -350,14 +350,14 @@
       "opensAt": "2026-11-11T00:00:00.000Z",
       "dueAt": "2026-11-19T00:00:00.000Z",
       "dueLabel": "Thu 19 Nov",
-      "doneAt": "2026-11-17T04:55:48.121Z",
+      "doneAt": "2026-11-17T05:16:26.537Z",
       "doneByName": "Isha Verma",
       "late": false,
       "helper": "Something small for their first week",
       "canMarkDone": false
     },
     {
-      "id": "4c12c76b-73d2-4753-a7c9-c48d56944386",
+      "id": "cf00a3d6-1c11-482a-bcbe-371da25c5284",
       "systemKey": "one_on_one_notes",
       "phase": "first_week",
       "title": "Add notes from your 1:1",
@@ -370,14 +370,14 @@
       "opensAt": null,
       "dueAt": "2026-11-18T00:00:00.000Z",
       "dueLabel": "Wed 18 Nov",
-      "doneAt": "2026-11-17T04:55:48.161Z",
+      "doneAt": "2026-11-17T05:16:26.565Z",
       "doneByName": "Meera Iyer",
       "late": false,
       "helper": "After you meet",
       "canMarkDone": false
     },
     {
-      "id": "de2d9b1f-48d0-471b-ab90-0423dc137e25",
+      "id": "ac04a16f-1e77-4899-84c1-95960c5e0007",
       "systemKey": "probation_goals",
       "phase": "first_week",
       "title": "Set Isha’s probation goals",
@@ -390,14 +390,14 @@
       "opensAt": "2026-11-11T00:00:00.000Z",
       "dueAt": "2026-11-18T00:00:00.000Z",
       "dueLabel": "Wed 18 Nov",
-      "doneAt": "2026-11-17T04:55:47.891Z",
+      "doneAt": "2026-11-17T05:16:26.375Z",
       "doneByName": "Meera Iyer",
       "late": false,
       "helper": "Editable until week 1 ends",
       "canMarkDone": false
     },
     {
-      "id": "ba0209c2-d571-49e4-aba7-e99eb61cc4ae",
+      "id": "54d675fa-2b69-4dbb-a7cf-bb9359c9cd22",
       "systemKey": "day7_survey",
       "phase": "first_week",
       "title": "Day-7 survey",
@@ -410,13 +410,13 @@
       "opensAt": "2026-11-17T00:00:00.000Z",
       "dueAt": "2026-11-18T00:00:00.000Z",
       "dueLabel": "Wed 18 Nov",
-      "doneAt": "2026-11-17T04:55:48.223Z",
+      "doneAt": "2026-11-17T05:16:26.613Z",
       "doneByName": "Isha Verma",
       "late": false,
       "canMarkDone": false
     },
     {
-      "id": "97a2c4d7-346b-4cb6-b3fe-61c61cc37d18",
+      "id": "52b52699-40a3-4354-a77c-b09723a17f56",
       "systemKey": "monthly_goals",
       "phase": "probation",
       "title": "Set Isha’s goals · month 1",
@@ -429,7 +429,7 @@
       "opensAt": "2026-11-11T00:00:00.000Z",
       "dueAt": "2026-11-11T00:00:00.000Z",
       "dueLabel": "Wed 11 Nov",
-      "doneAt": "2026-11-17T04:55:48.269Z",
+      "doneAt": "2026-11-17T05:16:26.647Z",
       "doneByName": "Meera Iyer",
       "late": false,
       "month": 1,
@@ -437,7 +437,7 @@
       "canMarkDone": false
     },
     {
-      "id": "812bb94f-c475-4cec-b436-2e0096931557",
+      "id": "e4a51c85-f0e1-481f-bbf8-0a55a4b4ad2f",
       "systemKey": "monthly_goals",
       "phase": "probation",
       "title": "Set Isha’s goals · month 2",
@@ -456,7 +456,7 @@
       "canMarkDone": false
     },
     {
-      "id": "5f9adba9-b2de-4cd3-9bd1-0642f8b8040b",
+      "id": "c100ac3b-44e2-4d5c-be7d-305598db7a4d",
       "systemKey": "monthly_goals",
       "phase": "probation",
       "title": "Set Isha’s goals · month 3",
@@ -475,7 +475,7 @@
       "canMarkDone": false
     },
     {
-      "id": "ffb7684f-bd60-45f0-a246-a26809790f8f",
+      "id": "8f670f68-2797-4988-96d9-be57af5826b7",
       "systemKey": "monthly_goals",
       "phase": "probation",
       "title": "Set Isha’s goals · month 4",
@@ -494,7 +494,7 @@
       "canMarkDone": false
     },
     {
-      "id": "8ec06c45-0de6-4f8a-8958-89fa036847ee",
+      "id": "5cdf4b4e-b9d4-41ce-91a1-72f8de0af8fd",
       "systemKey": "monthly_goals",
       "phase": "probation",
       "title": "Set Isha’s goals · month 5",
@@ -513,7 +513,7 @@
       "canMarkDone": false
     },
     {
-      "id": "698de7a0-dbea-414f-bdbd-8bed5e15e146",
+      "id": "9724eb4c-8ae6-40f9-9b98-3af7c9b7d3ec",
       "systemKey": "monthly_goals",
       "phase": "probation",
       "title": "Set Isha’s goals · month 6",
@@ -532,7 +532,7 @@
       "canMarkDone": false
     },
     {
-      "id": "6dba552c-9ecb-45ae-b472-ac4e02227fb8",
+      "id": "2335cfa2-c4fd-4206-acf3-f8bc30186219",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Check in with Isha · month 1",
@@ -551,7 +551,7 @@
       "canMarkDone": false
     },
     {
-      "id": "975db399-a9e3-401e-b949-05bb3c3f21a0",
+      "id": "0264626c-0971-4eff-afda-3b10ac85ba2f",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Check in with Isha · month 2",
@@ -570,7 +570,7 @@
       "canMarkDone": false
     },
     {
-      "id": "d18a1672-93e1-49a7-bee4-c3eada4d9448",
+      "id": "3f761b88-6467-493c-bee0-ec3ce237fd5d",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Check in with Isha · month 3",
@@ -589,7 +589,7 @@
       "canMarkDone": false
     },
     {
-      "id": "9ea73267-7b0a-45ec-a79c-8e0e79f17a26",
+      "id": "e504ff6e-a4cc-4c28-a3b0-de0242e1855a",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Check in with Isha · month 4",
@@ -608,7 +608,7 @@
       "canMarkDone": false
     },
     {
-      "id": "577a35ec-4aa6-46a8-8273-2e3032e5a33a",
+      "id": "c6139f81-34ab-45d9-a4b9-05c044d8ddf0",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Check in with Isha · month 5",
@@ -627,7 +627,7 @@
       "canMarkDone": false
     },
     {
-      "id": "3400b211-db42-4927-b72d-ca402008ce25",
+      "id": "e97ca53c-5943-4bbd-8769-7dcdad2d3b08",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Check in with Isha · month 6",
@@ -646,7 +646,7 @@
       "canMarkDone": false
     },
     {
-      "id": "8ebf486d-d79e-488a-895a-7de62fcf59cf",
+      "id": "d7d4a76f-1d7f-477c-8cfa-c5ecb6d2e002",
       "systemKey": "monthly_review",
       "phase": "probation",
       "title": "Review Isha’s month · month 1",
@@ -665,7 +665,7 @@
       "canMarkDone": false
     },
     {
-      "id": "fdf8eb2e-e017-426e-b37c-ec1555171f81",
+      "id": "6fa1ed92-ecdc-4c92-88ce-fa74478172e8",
       "systemKey": "monthly_review",
       "phase": "probation",
       "title": "Review Isha’s month · month 2",
@@ -684,7 +684,7 @@
       "canMarkDone": false
     },
     {
-      "id": "84470ccb-3011-47f6-af69-fcebd55f0073",
+      "id": "555eab1b-d68c-41e0-8329-9dd2051319ac",
       "systemKey": "monthly_review",
       "phase": "probation",
       "title": "Review Isha’s month · month 3",
@@ -703,7 +703,7 @@
       "canMarkDone": false
     },
     {
-      "id": "3188d692-995f-4575-a868-607c665d00c7",
+      "id": "024fa831-313f-4950-8d16-eb27b939f5c8",
       "systemKey": "monthly_review",
       "phase": "probation",
       "title": "Review Isha’s month · month 4",
@@ -722,7 +722,7 @@
       "canMarkDone": false
     },
     {
-      "id": "c633a12e-63c2-4cad-b992-7d5e773cdb06",
+      "id": "7bf8c572-59b3-4573-a028-8fa0755aee85",
       "systemKey": "monthly_review",
       "phase": "probation",
       "title": "Review Isha’s month · month 5",
@@ -741,7 +741,7 @@
       "canMarkDone": false
     },
     {
-      "id": "2c83ad01-2f74-41e4-a32b-ff81ee8b962f",
+      "id": "169f8cdc-000a-470c-95f6-cc452515890b",
       "systemKey": "monthly_review",
       "phase": "probation",
       "title": "Review Isha’s month · month 6",
@@ -760,7 +760,7 @@
       "canMarkDone": false
     },
     {
-      "id": "cabb95ae-dc97-4774-8197-efe171fd3bf7",
+      "id": "006c08cf-87d2-4f57-9a4d-024939b4df34",
       "systemKey": "pulse_survey",
       "phase": "probation",
       "title": "Pulse survey · month 3",
@@ -777,7 +777,7 @@
       "canMarkDone": false
     },
     {
-      "id": "72381ccd-00c7-4a43-8ce9-bcc7fb6d8820",
+      "id": "a0fb5cc3-bca3-4d62-8308-3121816adfdc",
       "systemKey": "pulse_survey",
       "phase": "probation",
       "title": "Pulse survey · month 6",
@@ -794,7 +794,7 @@
       "canMarkDone": false
     },
     {
-      "id": "0fae0caa-0b7e-4195-942e-7ee789238ebc",
+      "id": "3db19f95-91fb-4050-9c87-91e57d7fc1bd",
       "systemKey": "confirmation_discussion",
       "phase": "probation",
       "title": "Talk to HR about confirming Isha · month 6",
@@ -852,23 +852,23 @@
   },
   "welcomePost": {
     "canPost": false,
-    "postedAt": "2026-11-17T04:55:48.278Z",
+    "postedAt": "2026-11-17T05:16:26.654Z",
     "text": "Please welcome Isha to the design team!",
-    "connectPostId": "6ee7cb6f-3758-48fb-b70a-2715faa61307"
+    "connectPostId": "65160ef4-1da8-4923-b7b9-a95769476427"
   },
   "setup": {
     "people": [
       {
-        "id": "592118e1-9330-49fa-a257-c4130fd4e33e",
+        "id": "7e352abc-f89a-488f-b037-0d302072cde9",
         "userId": "p1",
         "name": "Kiran Shah",
         "designation": "Designer",
         "role": "your buddy",
         "why": "Your buddy for the first month",
-        "metAt": "2026-11-17T04:55:48.076Z"
+        "metAt": "2026-11-17T05:16:26.505Z"
       },
       {
-        "id": "f9582703-e669-4d18-b54c-2c3016706e68",
+        "id": "5055e709-9183-42b7-b0e7-6b43d54dc2a1",
         "userId": "p2",
         "name": "Tara Bose",
         "designation": "Researcher"
@@ -881,7 +881,7 @@
     "welcomeNote": {
       "kind": "text",
       "text": "Welcome aboard, Isha!",
-      "at": "2026-11-17T04:55:47.855Z"
+      "at": "2026-11-17T05:16:26.346Z"
     },
     "goals": [
       "Ship the leave redesign",
@@ -893,8 +893,8 @@
   "probation": {
     "months": [
       {
+        "journeyId": "ce4cafab-40a9-4200-ad7f-ec45ef0c8fcf",
         "monthNo": 1,
-        "journeyId": "0a44b86c-e14f-4f15-94f1-ed1a13dec40a",
         "goals": [
           {
             "text": "Ship the leave redesign"
@@ -903,58 +903,58 @@
             "text": "Run one crit"
           }
         ],
-        "id": "af8d7522-f9a2-4466-94d7-ee895424215a",
+        "id": "4f18aaa3-c7ca-49dc-8cfa-2257ce70c4b7",
         "org": "el-fixtures",
-        "goalsSetAt": "2026-11-17T04:55:48.269Z",
+        "goalsSetAt": "2026-11-17T05:16:26.647Z",
         "startsOn": "2026-11-11",
         "endsOn": "2026-12-10",
         "final": false
       },
       {
+        "journeyId": "ce4cafab-40a9-4200-ad7f-ec45ef0c8fcf",
         "monthNo": 2,
-        "journeyId": "0a44b86c-e14f-4f15-94f1-ed1a13dec40a",
         "goals": [],
-        "id": "ef634f43-559a-455c-bcd7-3e6cee2767e8",
+        "id": "ae1373c8-7dbe-4430-82b4-718e6f2d3e6e",
         "org": "el-fixtures",
         "startsOn": "2026-12-11",
         "endsOn": "2027-01-10",
         "final": false
       },
       {
+        "journeyId": "ce4cafab-40a9-4200-ad7f-ec45ef0c8fcf",
         "monthNo": 3,
-        "journeyId": "0a44b86c-e14f-4f15-94f1-ed1a13dec40a",
         "goals": [],
-        "id": "b6c776bc-98aa-4a91-b8d6-fc230b9cd947",
+        "id": "dd27c286-ffc8-467d-980a-8d3127944b8f",
         "org": "el-fixtures",
         "startsOn": "2027-01-11",
         "endsOn": "2027-02-10",
         "final": false
       },
       {
+        "journeyId": "ce4cafab-40a9-4200-ad7f-ec45ef0c8fcf",
         "monthNo": 4,
-        "journeyId": "0a44b86c-e14f-4f15-94f1-ed1a13dec40a",
         "goals": [],
-        "id": "635b9b74-1cff-4809-82ba-ed78ed8a2723",
+        "id": "3406e855-caee-4c9b-9e63-454d72fa1a00",
         "org": "el-fixtures",
         "startsOn": "2027-02-11",
         "endsOn": "2027-03-10",
         "final": false
       },
       {
+        "journeyId": "ce4cafab-40a9-4200-ad7f-ec45ef0c8fcf",
         "monthNo": 5,
-        "journeyId": "0a44b86c-e14f-4f15-94f1-ed1a13dec40a",
         "goals": [],
-        "id": "a0e2cbbd-4509-472a-b8c6-c796cc7bc0af",
+        "id": "fded1837-e765-417f-9ed5-fbb6d723f2a1",
         "org": "el-fixtures",
         "startsOn": "2027-03-11",
         "endsOn": "2027-04-10",
         "final": false
       },
       {
+        "journeyId": "ce4cafab-40a9-4200-ad7f-ec45ef0c8fcf",
         "monthNo": 6,
-        "journeyId": "0a44b86c-e14f-4f15-94f1-ed1a13dec40a",
         "goals": [],
-        "id": "d44ba007-e63f-4845-8e19-a21b43920d59",
+        "id": "f371513c-0baf-484f-acaa-aa8ee76fbd03",
         "org": "el-fixtures",
         "startsOn": "2027-04-11",
         "endsOn": "2027-05-10",
@@ -964,9 +964,9 @@
   },
   "starterTasks": [
     {
-      "id": "a82bdc8a-0b98-4761-819e-8964e86b3d64",
+      "id": "06d31424-78be-4e8a-a388-93c3bcd9c80a",
       "org": "el-fixtures",
-      "journeyId": "0a44b86c-e14f-4f15-94f1-ed1a13dec40a",
+      "journeyId": "ce4cafab-40a9-4200-ad7f-ec45ef0c8fcf",
       "title": "Redesign the leave request screen",
       "links": [
         "https://docs.example/leave"
@@ -974,8 +974,8 @@
       "note": "Start with the research notes",
       "dueAt": "2026-11-19T00:00:00.000Z",
       "assignedByUserId": "mgr",
-      "assignedAt": "2026-11-17T04:55:48.082Z",
-      "doneAt": "2026-11-17T04:55:48.118Z",
+      "assignedAt": "2026-11-17T05:16:26.508Z",
+      "doneAt": "2026-11-17T05:16:26.535Z",
       "doneNote": "First version is in the folder",
       "managerReply": "Nice start!",
       "assignedByName": "Meera Iyer"
@@ -983,30 +983,30 @@
   ],
   "notes": [
     {
-      "id": "835e4d55-3667-476c-be60-476df3ecb11c",
+      "id": "c9c2d2f8-6671-4060-842c-86bf1b28a4e4",
       "authorUserId": "mgr",
       "authorName": "Meera Iyer",
       "text": "Settling in well. Next: the design crit.",
       "shared": true,
-      "sharedAt": "2026-11-17T04:55:48.167Z",
-      "seenAt": "2026-11-17T04:55:48.174Z",
-      "createdAt": "2026-11-17T04:55:48.167Z",
+      "sharedAt": "2026-11-17T05:16:26.570Z",
+      "seenAt": "2026-11-17T05:16:26.575Z",
+      "createdAt": "2026-11-17T05:16:26.570Z",
       "replies": [
         {
           "byUserId": "isha",
           "text": "Thanks, Meera!",
-          "at": "2026-11-17T04:55:48.174Z",
+          "at": "2026-11-17T05:16:26.575Z",
           "byName": "Isha Verma"
         }
       ]
     },
     {
-      "id": "442b599f-2f0c-483c-bf61-fd52ec5515f0",
+      "id": "1f9733da-5422-49a3-8c4d-f25615f058e7",
       "authorUserId": "mgr",
       "authorName": "Meera Iyer",
       "text": "Private thoughts",
       "shared": false,
-      "createdAt": "2026-11-17T04:55:48.136Z",
+      "createdAt": "2026-11-17T05:16:26.548Z",
       "replies": []
     }
   ],
@@ -1014,8 +1014,8 @@
     {
       "id": "fx-meeting",
       "title": "Meet your manager",
-      "startsAt": "2026-11-18T06:55:47.564Z",
-      "endsAt": "2026-11-18T07:25:47.564Z",
+      "startsAt": "2026-11-18T07:16:26.129Z",
+      "endsAt": "2026-11-18T07:46:26.129Z",
       "place": "Room 4B",
       "canConfirm": true,
       "attendees": [
@@ -1040,8 +1040,8 @@
       "mustDo": true,
       "systemKey": "meet_manager",
       "met": "moved",
-      "newTime": "2026-11-18T06:55:47.564Z",
-      "taskId": "dfecc505-a1b7-4cc0-a655-01d536db25eb"
+      "newTime": "2026-11-18T07:16:26.129Z",
+      "taskId": "28eb4fb5-5576-4414-be68-6716164cb803"
     }
   ]
 }

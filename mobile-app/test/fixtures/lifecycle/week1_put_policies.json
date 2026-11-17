@@ -28,10 +28,10 @@
         "version": "2026-09-15T00:00:00.000Z"
       }
     ],
-    "at": "2026-11-17T04:55:47.973Z",
+    "at": "2026-11-17T05:16:26.433Z",
     "device": "Fixture/1.0"
   },
-  "policiesAckAt": "2026-11-17T04:55:47.973Z",
+  "policiesAckAt": "2026-11-17T05:16:26.433Z",
   "steps": {
     "policies": true,
     "tax": false,

@@ -1,6 +1,6 @@
 {
   "joiner": {
-    "journeyId": "b3abdad2-8b20-4a5e-8247-acc23505f99f",
+    "journeyId": "418c083f-0665-4a47-bc11-d3e48a92745b",
     "userId": "ishita",
     "name": "Ishita Kaur",
     "designation": "Product Designer",
@@ -29,7 +29,7 @@
   },
   "tasks": [
     {
-      "id": "764674d1-4e47-4c7b-80d3-6cc78b54cdda",
+      "id": "27cbe761-09bd-4b37-8f81-86fddbdd6b95",
       "systemKey": "accept_offer",
       "phase": "pre_boarding",
       "title": "Read and accept the offer",
@@ -42,13 +42,13 @@
       "opensAt": "2026-11-17T00:00:00.000Z",
       "dueAt": null,
       "dueLabel": "Offer valid till",
-      "doneAt": "2026-11-17T04:55:48.410Z",
+      "doneAt": "2026-11-17T05:16:26.779Z",
       "doneByName": "Automatic",
       "late": false,
       "canMarkDone": false
     },
     {
-      "id": "7629ee56-6ecf-45e3-a1b7-974cb66ce5d2",
+      "id": "955071a2-d3a3-4052-b8ea-44b6a6f89190",
       "systemKey": "portal_sign_in",
       "phase": "pre_boarding",
       "title": "Sign in to the portal",
@@ -61,13 +61,13 @@
       "opensAt": "2026-11-17T00:00:00.000Z",
       "dueAt": "2026-11-19T00:00:00.000Z",
       "dueLabel": "Thu 19 Nov",
-      "doneAt": "2026-11-17T04:55:48.423Z",
+      "doneAt": "2026-11-17T05:16:26.792Z",
       "doneByName": "Automatic",
       "late": false,
       "canMarkDone": false
     },
     {
-      "id": "ca29ea00-3f19-443f-93a7-4e42ca36a8a4",
+      "id": "56370b87-dab7-485b-97fa-a3aa00efad23",
       "systemKey": "upload_documents",
       "phase": "pre_boarding",
       "title": "Upload documents",
@@ -80,13 +80,13 @@
       "opensAt": null,
       "dueAt": "2026-06-09T00:00:00.000Z",
       "dueLabel": "Tue 9 Jun",
-      "doneAt": "2026-11-17T04:55:48.430Z",
+      "doneAt": "2026-11-17T05:16:26.798Z",
       "doneByName": "Automatic",
       "late": false,
       "canMarkDone": false
     },
     {
-      "id": "094159bd-d8be-4dbf-abfe-3642cf9cf674",
+      "id": "6b379718-9750-40a0-bd1f-52a96a3233c7",
       "systemKey": "about_you",
       "phase": "pre_boarding",
       "title": "Emergency contact and PF",
@@ -103,7 +103,7 @@
       "canMarkDone": false
     },
     {
-      "id": "99529aa1-df13-40e9-b92e-3d4ad75be3fd",
+      "id": "24a57488-1f57-4626-92ac-750af2e10b75",
       "systemKey": "meet_us",
       "phase": "pre_boarding",
       "title": "Meet us videos",
@@ -120,7 +120,7 @@
       "canMarkDone": false
     },
     {
-      "id": "12dfbda9-c25d-4428-889f-fe476f407da3",
+      "id": "6c905aae-2b50-427a-ae08-414fe5843f88",
       "systemKey": "sign_letters",
       "phase": "pre_boarding",
       "title": "Sign the appointment letter and NDA",
@@ -133,12 +133,12 @@
       "opensAt": null,
       "dueAt": "2026-06-12T00:00:00.000Z",
       "dueLabel": "Fri 12 Jun",
-      "doneAt": "2026-11-17T04:55:48.436Z",
+      "doneAt": "2026-11-17T05:16:26.804Z",
       "late": false,
       "canMarkDone": false
     },
     {
-      "id": "88790266-a5ff-4be3-84cf-e2307048e791",
+      "id": "208d310f-e473-4013-9fb5-ec7f98ae1f75",
       "systemKey": "manager_setup",
       "phase": "pre_boarding",
       "title": "Set up Ishita",
@@ -156,7 +156,7 @@
       "canMarkDone": false
     },
     {
-      "id": "a92c1b27-3471-4fb7-b5d6-1c9181f109ac",
+      "id": "49e4cbeb-2278-45fc-b277-24ba1b17ac0d",
       "systemKey": "new_joining_date",
       "phase": "pre_boarding",
       "title": "Ask for a new joining date",
@@ -168,13 +168,13 @@
       "status": "skipped",
       "opensAt": null,
       "dueAt": null,
-      "doneAt": "2026-11-17T04:55:48.442Z",
+      "doneAt": "2026-11-17T05:16:26.811Z",
       "doneByName": "Automatic",
       "late": false,
       "canMarkDone": false
     },
     {
-      "id": "08599ee0-bf36-4278-802a-0c166a79576d",
+      "id": "6d709021-0c59-4d94-8b6a-03055310e109",
       "systemKey": "meet_manager",
       "phase": "first_week",
       "title": "Meet Ishita",
@@ -192,7 +192,7 @@
       "canMarkDone": true
     },
     {
-      "id": "95af1bf0-facb-43c8-8ffe-e5d73f04d0f6",
+      "id": "8a1f918a-04af-4b11-a613-573f3ac0b31d",
       "systemKey": "meet_team",
       "phase": "first_week",
       "title": "Introduce Ishita to the team",
@@ -210,7 +210,7 @@
       "canMarkDone": true
     },
     {
-      "id": "6bee3a9f-f87f-4ca1-8cb8-b66fe201f93e",
+      "id": "e8e672ec-8eed-47d5-ae36-943896a7d666",
       "systemKey": "register_face",
       "phase": "first_week",
       "title": "Register face for punch-in",
@@ -227,7 +227,7 @@
       "canMarkDone": false
     },
     {
-      "id": "832b7348-ca2b-4005-be35-f5369ec3c428",
+      "id": "fc4631a5-b54d-40ac-abd9-b2062946d868",
       "systemKey": "app_tour",
       "phase": "first_week",
       "title": "Take the Sowaka tour",
@@ -244,7 +244,7 @@
       "canMarkDone": false
     },
     {
-      "id": "0dd2cedc-cd97-4fbc-8b2a-549597071f3c",
+      "id": "7b3d3d7d-6bea-49be-b572-b5fb7b04fa31",
       "systemKey": "week1_reels",
       "phase": "first_week",
       "title": "Week-1 tasks",
@@ -261,7 +261,7 @@
       "canMarkDone": false
     },
     {
-      "id": "760ce039-5c35-4bd9-ae5e-b2fd321f49b5",
+      "id": "961de55b-027e-4dbe-be0d-da90e9ba0945",
       "systemKey": "intro_post",
       "phase": "first_week",
       "title": "Intro post",
@@ -278,7 +278,7 @@
       "canMarkDone": false
     },
     {
-      "id": "23307182-9d22-45a8-b962-da0173b45097",
+      "id": "65d40cfe-1c44-4f68-a6e7-cff7f465b3fb",
       "systemKey": "people_to_meet",
       "phase": "first_week",
       "title": "People to meet · month 1",
@@ -296,7 +296,7 @@
       "canMarkDone": false
     },
     {
-      "id": "f4eef5a0-41d3-4960-a8d1-724de6be7816",
+      "id": "f5d7c20c-0aea-49dd-a45f-1d2242225c7e",
       "systemKey": "starter_task",
       "phase": "first_week",
       "title": "Give Ishita a starter task",
@@ -314,7 +314,7 @@
       "canMarkDone": false
     },
     {
-      "id": "8c07b897-8f24-4301-ba0c-13fc814a7dac",
+      "id": "9e1948f7-e773-4f9a-86d0-c3e8b8fa2e3d",
       "systemKey": "one_on_one_notes",
       "phase": "first_week",
       "title": "Add notes from your 1:1",
@@ -332,7 +332,7 @@
       "canMarkDone": false
     },
     {
-      "id": "5fb6c354-757a-4322-b801-787048e0bfe5",
+      "id": "4f4d8e73-b47f-413b-bfa9-e012c88edc5c",
       "systemKey": "probation_goals",
       "phase": "first_week",
       "title": "Set Ishita’s probation goals",
@@ -350,7 +350,7 @@
       "canMarkDone": false
     },
     {
-      "id": "53ca9060-6c97-4bf5-81f6-737860e7ace1",
+      "id": "c94a1ed5-a153-4450-b563-88ed6fca8b99",
       "systemKey": "day7_survey",
       "phase": "first_week",
       "title": "Day-7 survey",
@@ -367,7 +367,7 @@
       "canMarkDone": false
     },
     {
-      "id": "374872eb-dd94-49ed-b914-2250c747763d",
+      "id": "67f62a72-c1a6-41d8-b15c-cbe9c0959814",
       "systemKey": "monthly_goals",
       "phase": "probation",
       "title": "Set Ishita’s goals · month 1",
@@ -380,7 +380,7 @@
       "opensAt": "2026-06-14T00:00:00.000Z",
       "dueAt": "2026-06-14T00:00:00.000Z",
       "dueLabel": "Sun 14 Jun",
-      "doneAt": "2026-11-17T04:55:48.454Z",
+      "doneAt": "2026-11-17T05:16:26.823Z",
       "doneByName": "Meera Iyer",
       "late": false,
       "month": 1,
@@ -388,7 +388,7 @@
       "canMarkDone": false
     },
     {
-      "id": "401eb04b-9959-4a22-b1ea-0de0b288dd20",
+      "id": "ea3f455f-49f4-4cd8-9fd8-d801d5c5a809",
       "systemKey": "monthly_goals",
       "phase": "probation",
       "title": "Set Ishita’s goals · month 2",
@@ -401,7 +401,7 @@
       "opensAt": "2026-07-14T00:00:00.000Z",
       "dueAt": "2026-07-14T00:00:00.000Z",
       "dueLabel": "Tue 14 Jul",
-      "doneAt": "2026-11-17T04:55:48.484Z",
+      "doneAt": "2026-11-17T05:16:26.852Z",
       "doneByName": "Meera Iyer",
       "late": false,
       "month": 2,
@@ -409,7 +409,7 @@
       "canMarkDone": false
     },
     {
-      "id": "890efb95-dc01-4cf5-b7d6-d80cf403b01d",
+      "id": "b9da290e-d6a1-4f4e-b515-726795cdeaf6",
       "systemKey": "monthly_goals",
       "phase": "probation",
       "title": "Set Ishita’s goals · month 3",
@@ -428,7 +428,7 @@
       "canMarkDone": false
     },
     {
-      "id": "0c9b53f9-68e7-495e-861f-6382ffece25c",
+      "id": "43b91eff-6f92-4441-b43f-00c4e1dd3111",
       "systemKey": "monthly_goals",
       "phase": "probation",
       "title": "Set Ishita’s goals · month 4",
@@ -447,7 +447,7 @@
       "canMarkDone": false
     },
     {
-      "id": "118e81a9-a338-44dd-aa4e-fa3742d1b0d8",
+      "id": "3b6f877f-ab08-47f1-8879-473b7077861c",
       "systemKey": "monthly_goals",
       "phase": "probation",
       "title": "Set Ishita’s goals · month 5",
@@ -466,7 +466,7 @@
       "canMarkDone": false
     },
     {
-      "id": "1f39984a-8a69-4d9b-bc49-8c5510dc554a",
+      "id": "d4ca74c9-57e3-49c7-aa2f-0e9ae2fc27cf",
       "systemKey": "monthly_goals",
       "phase": "probation",
       "title": "Set Ishita’s goals · month 6",
@@ -485,7 +485,7 @@
       "canMarkDone": false
     },
     {
-      "id": "9995e86c-129f-4edf-aa29-8d045f93cb72",
+      "id": "ae2aaf4f-805d-457d-890b-6b1b3e246349",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Check in with Ishita · month 1",
@@ -498,7 +498,7 @@
       "opensAt": "2026-07-07T00:00:00.000Z",
       "dueAt": "2026-07-13T00:00:00.000Z",
       "dueLabel": "Mon 13 Jul",
-      "doneAt": "2026-11-17T04:55:48.474Z",
+      "doneAt": "2026-11-17T05:16:26.842Z",
       "doneByName": "Meera Iyer",
       "late": false,
       "month": 1,
@@ -506,7 +506,7 @@
       "canMarkDone": false
     },
     {
-      "id": "d34bb318-28e6-494b-860f-4cad816f68bd",
+      "id": "2f2a47c8-9b24-4b1d-980f-ce36aa0f67de",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Check in with Ishita · month 2",
@@ -525,7 +525,7 @@
       "canMarkDone": false
     },
     {
-      "id": "cb65d647-38dd-4451-bc49-3ad5183c8d42",
+      "id": "6526ff9a-2ff4-4797-8ce0-0b1d69b14aba",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Check in with Ishita · month 3",
@@ -544,7 +544,7 @@
       "canMarkDone": false
     },
     {
-      "id": "79b56c74-94c9-45ce-877a-6ad1f8814a05",
+      "id": "2e91e4eb-35cb-4fc8-864d-34f7f519b032",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Check in with Ishita · month 4",
@@ -563,7 +563,7 @@
       "canMarkDone": false
     },
     {
-      "id": "a2ecadc4-97b9-4b55-814b-0ad6ad5467e2",
+      "id": "77fbd54a-e847-4010-af94-90c082ad71f0",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Check in with Ishita · month 5",
@@ -582,7 +582,7 @@
       "canMarkDone": false
     },
     {
-      "id": "2698cb30-0e40-4af6-b21f-b28baa5005f9",
+      "id": "95f55149-8766-4e6b-b1b3-76adf75c26c4",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Check in with Ishita · month 6",
@@ -601,7 +601,7 @@
       "canMarkDone": false
     },
     {
-      "id": "fd1c6620-8508-4982-9c49-4ccf20cc6e2f",
+      "id": "ab23ac24-8ada-49cb-83ef-5fa0c809bc99",
       "systemKey": "monthly_review",
       "phase": "probation",
       "title": "Review Ishita’s month · month 1",
@@ -614,7 +614,7 @@
       "opensAt": null,
       "dueAt": "2026-07-13T00:00:00.000Z",
       "dueLabel": "Mon 13 Jul",
-      "doneAt": "2026-11-17T04:55:48.483Z",
+      "doneAt": "2026-11-17T05:16:26.851Z",
       "doneByName": "Meera Iyer",
       "late": false,
       "month": 1,
@@ -622,7 +622,7 @@
       "canMarkDone": false
     },
     {
-      "id": "e1349108-0877-40d5-99bc-71d7912c663c",
+      "id": "f591fc66-fece-47b7-9689-477fc4022fc7",
       "systemKey": "monthly_review",
       "phase": "probation",
       "title": "Review Ishita’s month · month 2",
@@ -641,7 +641,7 @@
       "canMarkDone": false
     },
     {
-      "id": "b06048b6-8f6c-4104-b426-e29e8b400583",
+      "id": "ce4a9f26-b5cb-43ae-afab-77c6e6fe8cc0",
       "systemKey": "monthly_review",
       "phase": "probation",
       "title": "Review Ishita’s month · month 3",
@@ -660,7 +660,7 @@
       "canMarkDone": false
     },
     {
-      "id": "448494a0-3430-48f3-b1c0-da1a35a57666",
+      "id": "3b016f31-6328-4ffb-806c-bc7cc9373025",
       "systemKey": "monthly_review",
       "phase": "probation",
       "title": "Review Ishita’s month · month 4",
@@ -679,7 +679,7 @@
       "canMarkDone": false
     },
     {
-      "id": "c4b20994-89c3-41c8-862c-333da928c170",
+      "id": "3124b17b-fdb3-41e6-a8d5-0c3f924ce7e2",
       "systemKey": "monthly_review",
       "phase": "probation",
       "title": "Review Ishita’s month · month 5",
@@ -698,7 +698,7 @@
       "canMarkDone": false
     },
     {
-      "id": "c5c64865-07fc-4482-ab37-0163f4643a98",
+      "id": "fef40977-1afa-4690-98ea-4e484427974a",
       "systemKey": "monthly_review",
       "phase": "probation",
       "title": "Review Ishita’s month · month 6",
@@ -717,7 +717,7 @@
       "canMarkDone": false
     },
     {
-      "id": "84573c7f-f81f-4a68-bb49-26973a24677c",
+      "id": "6ace8497-b4d5-4f23-bb1b-14575fe5d217",
       "systemKey": "pulse_survey",
       "phase": "probation",
       "title": "Pulse survey · month 3",
@@ -734,7 +734,7 @@
       "canMarkDone": false
     },
     {
-      "id": "00f32d8e-0904-4f7a-9989-d07537f4ef91",
+      "id": "e460bf63-1a5e-41ba-974f-6819109f8060",
       "systemKey": "pulse_survey",
       "phase": "probation",
       "title": "Pulse survey · month 6",
@@ -751,7 +751,7 @@
       "canMarkDone": false
     },
     {
-      "id": "cbe2a297-b90b-4d91-8b4c-f65739d0c16c",
+      "id": "dc9d97fa-9ab6-4072-84bd-1810dddfdc95",
       "systemKey": "confirmation_discussion",
       "phase": "probation",
       "title": "Talk to HR about confirming Ishita · month 6",
@@ -815,7 +815,7 @@
     "months": [
       {
         "monthNo": 1,
-        "journeyId": "b3abdad2-8b20-4a5e-8247-acc23505f99f",
+        "journeyId": "418c083f-0665-4a47-bc11-d3e48a92745b",
         "goals": [
           {
             "text": "Ship the first feature"
@@ -824,9 +824,9 @@
             "text": "Own the weekly report"
           }
         ],
-        "id": "adb499b6-cc4d-4388-a3c4-ee5177f217e2",
+        "id": "0d93e2f4-35b9-46ef-aabc-c8934b997def",
         "org": "el-fixtures",
-        "goalsSetAt": "2026-11-17T04:55:48.454Z",
+        "goalsSetAt": "2026-11-17T05:16:26.823Z",
         "checkinEmployee": {
           "text": "A win: Shipped the onboarding flow\nWould help: Access to analytics",
           "rating": 3,
@@ -836,7 +836,7 @@
           ],
           "win": "Shipped the onboarding flow",
           "ask": "Access to analytics",
-          "at": "2026-11-17T04:55:48.464Z"
+          "at": "2026-11-17T05:16:26.832Z"
         },
         "checkinManager": {
           "text": "Good month",
@@ -845,9 +845,9 @@
             4,
             4
           ],
-          "at": "2026-11-17T04:55:48.474Z"
+          "at": "2026-11-17T05:16:26.842Z"
         },
-        "lockedAt": "2026-11-17T04:55:48.474Z",
+        "lockedAt": "2026-11-17T05:16:26.842Z",
         "review": {
           "text": "Great start",
           "feedback": [
@@ -855,7 +855,7 @@
             "Keep going"
           ],
           "askAck": true,
-          "at": "2026-11-17T04:55:48.483Z"
+          "at": "2026-11-17T05:16:26.851Z"
         },
         "startsOn": "2026-06-14",
         "endsOn": "2026-07-13",
@@ -863,24 +863,24 @@
       },
       {
         "monthNo": 2,
-        "journeyId": "b3abdad2-8b20-4a5e-8247-acc23505f99f",
+        "journeyId": "418c083f-0665-4a47-bc11-d3e48a92745b",
         "goals": [
           {
             "text": "Pair with two teams"
           }
         ],
-        "id": "9e7fa208-3e54-4ece-8058-51207823e411",
+        "id": "660f36b4-666c-40b6-b025-0cd5bf88ff92",
         "org": "el-fixtures",
-        "goalsSetAt": "2026-11-17T04:55:48.483Z",
+        "goalsSetAt": "2026-11-17T05:16:26.851Z",
         "startsOn": "2026-07-14",
         "endsOn": "2026-08-13",
         "final": false
       },
       {
         "monthNo": 3,
-        "journeyId": "b3abdad2-8b20-4a5e-8247-acc23505f99f",
+        "journeyId": "418c083f-0665-4a47-bc11-d3e48a92745b",
         "goals": [],
-        "id": "35bc8aa2-0da0-412d-81a9-2ae68c12acb1",
+        "id": "2eb3c582-78b0-460d-a7b7-e57d5cec6cad",
         "org": "el-fixtures",
         "startsOn": "2026-08-14",
         "endsOn": "2026-09-13",
@@ -888,9 +888,9 @@
       },
       {
         "monthNo": 4,
-        "journeyId": "b3abdad2-8b20-4a5e-8247-acc23505f99f",
+        "journeyId": "418c083f-0665-4a47-bc11-d3e48a92745b",
         "goals": [],
-        "id": "45a01ce4-40a5-4df6-9001-c18c7f8b4c8c",
+        "id": "8b94c078-825d-44f4-a2c4-d220b0267368",
         "org": "el-fixtures",
         "startsOn": "2026-09-14",
         "endsOn": "2026-10-13",
@@ -898,9 +898,9 @@
       },
       {
         "monthNo": 5,
-        "journeyId": "b3abdad2-8b20-4a5e-8247-acc23505f99f",
+        "journeyId": "418c083f-0665-4a47-bc11-d3e48a92745b",
         "goals": [],
-        "id": "25e79a42-1e09-412f-af5a-905b1923e62b",
+        "id": "b5ceb3f3-65d1-4a54-8c0f-c45bd160a954",
         "org": "el-fixtures",
         "startsOn": "2026-10-14",
         "endsOn": "2026-11-13",
@@ -908,9 +908,9 @@
       },
       {
         "monthNo": 6,
-        "journeyId": "b3abdad2-8b20-4a5e-8247-acc23505f99f",
+        "journeyId": "418c083f-0665-4a47-bc11-d3e48a92745b",
         "goals": [],
-        "id": "a2588e65-55b5-48d9-a81c-d921de54b4f0",
+        "id": "42c2d7be-2abf-49ef-959b-587224f192d1",
         "org": "el-fixtures",
         "startsOn": "2026-11-14",
         "endsOn": "2026-12-13",

@@ -263,7 +263,7 @@ async function main() {
   ok('pushes were recorded', pushes.length > 5, pushes.length);
   const leavingPushes = pushes.filter((p) => ['lifecycle_offboarding', 'lifecycle_resignation'].includes(String((p.data as Record<string, unknown> | undefined)?.type)));
   ok('every offboarding push names where the app opens it', leavingPushes.length >= 8 && leavingPushes.every((p) => typeof p.data?.destination === 'string' && String(p.data.destination).startsWith('lifecycle_')), leavingPushes.map((p) => [p.scenario, p.data?.destination]));
-  for (const scenario of ['lifecycle_resignation', 'lifecycle_resignation_with_hr', 'lifecycle_resignation_withdrawn', 'lifecycle_offboarding_open', 'lifecycle_handover_checklist', 'lifecycle_handover_shared', 'lifecycle_handover_uploaded', 'lifecycle_exit_interview_open']) {
+  for (const scenario of ['lifecycle_resignation', 'lifecycle_resignation_withdrawn', 'lifecycle_offboarding_open', 'lifecycle_handover_checklist', 'lifecycle_handover_shared', 'lifecycle_handover_uploaded', 'lifecycle_exit_interview_open']) {
     ok(`a ${scenario} push went out`, leavingPushes.some((p) => p.scenario === scenario), leavingPushes.map((p) => p.scenario));
   }
   await save('push_payloads', { pushes });
