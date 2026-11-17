@@ -125,7 +125,17 @@ export function LeaveRequests() {
   // Custom: the dates applied (kept in the store), from the period on screen when first picked.
   const range = unit === 'custom' && s.leaveFrom ? periodRange('custom', s.leaveFrom, s.leaveTo) : stepRange(unit === 'week' ? 'week' : 'month', offset);
   const waitingForDates = false;
-  const inPeriod = useMemo(() => s.leaves.filter((l) => overlaps(l, range.from, range.to)), [s.leaves, range.from, range.to]);
+  const inPeriodAll = useMemo(() => s.leaves.filter((l) => overlaps(l, range.from, range.to)), [s.leaves, range.from, range.to]);
+  // Search, department and leave type (every filter but Status, which the tiles pick): the tiles,
+  // the status counts and the list all read this same set, so the numbers follow the filters.
+  const fitsBase = (r: Leave) => {
+    const q = s.leaveSearch.trim().toLowerCase();
+    if (q && !r.name.toLowerCase().includes(q)) return false;
+    if (s.leaveType !== 'all' && r.type !== s.leaveType) return false;
+    if (dept !== 'all' && r.team !== dept) return false;
+    return true;
+  };
+  const inPeriod = useMemo(() => inPeriodAll.filter(fitsBase), [inPeriodAll, s.leaveSearch, s.leaveType, dept]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const chartDays = chartDaysOf(range);
   const totals = useMemo(() => peopleTotals(perDay(inPeriod, chartDays)), [inPeriod, chartDays.join()]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -150,15 +160,12 @@ export function LeaveRequests() {
 
   const departments = useMemo(() => [...new Set(s.leaves.map((l) => l.team))].sort(), [s.leaves]);
   // A cancellation request waits on HR whatever its leave's dates, so its tab reads every date.
-  const cancellations = useMemo(() => s.leaves.filter((r) => r.cancelRequest?.status === 'Pending'), [s.leaves]);
+  const cancellations = useMemo(() => s.leaves.filter((r) => r.cancelRequest?.status === 'Pending' && fitsBase(r)), [s.leaves, s.leaveSearch, s.leaveType, dept]); // eslint-disable-line react-hooks/exhaustive-deps
   const rows = useMemo(() => {
+    // Search, type and department are already applied (inPeriod, cancellations).
     let out = s.leaveStatus === 'Cancellation' ? cancellations.slice() : inPeriod.slice();
-    const q = s.leaveSearch.trim().toLowerCase();
-    if (q) out = out.filter((r) => r.name.toLowerCase().includes(q));
     if (onLeave) out = out.filter((r) => r.status === 'Approved' || r.status === 'Pending');
     else if (s.leaveStatus !== 'all' && s.leaveStatus !== 'Cancellation') out = out.filter((r) => r.status === s.leaveStatus);
-    if (s.leaveType !== 'all') out = out.filter((r) => r.type === s.leaveType);
-    if (dept !== 'all') out = out.filter((r) => r.team === dept);
     const sort = s.leaveSort;
     if (sort === 'recent') out.sort((a, b) => b.ord - a.ord);
     else if (sort === 'oldest') out.sort((a, b) => a.ord - b.ord);
@@ -166,7 +173,7 @@ export function LeaveRequests() {
     else if (sort === 'name') out.sort((a, b) => a.name.localeCompare(b.name));
     else if (sort === 'days') out.sort((a, b) => b.dayN - a.dayN);
     return out;
-  }, [inPeriod, cancellations, onLeave, s.leaveSearch, s.leaveStatus, s.leaveType, s.leaveSort, dept]);
+  }, [inPeriod, cancellations, onLeave, s.leaveStatus, s.leaveSort]);
   const paged = usePaged(rows, `${rows.length}|${rows[0]?.id ?? ''}`);
 
   const statusCounts = useMemo(() => {
@@ -272,6 +279,32 @@ export function LeaveRequests() {
             custom={{ from: s.leaveFrom, to: s.leaveTo, onApply: (f, t) => { s.setLeaveFrom(f); s.setLeaveTo(t); } }}
             hasPrev={s.leaves.some((l) => startOf(l) < range.from)} hasNext={s.leaves.some((l) => endOf(l) > range.to)} />
 
+          {/* Search and filters first: the numbers and the list below both follow them. */}
+          {!waitingForDates && (
+            <div>
+            <div style={toolbar}>
+              <div style={{ flex: 1, minWidth: 240, display: 'flex' }}>
+                <SearchInput value={s.leaveSearch} onChange={s.setLeaveSearch} placeholder="Search by employee…" width="100%" />
+              </div>
+              <FiltersButton open={filters.open} active={filters.active} onClick={filters.toggle} />
+              <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
+                <IconDownload stroke="currentColor" /> Export
+              </button>
+            </div>
+            {filters.open && (
+              <FiltersPanel active={filters.active} dirty={filters.dirty} onApply={filters.apply} onClear={filters.clear}>
+                <LabeledSelect label="Status" value={filters.draft.status} onChange={(v) => filters.set('status', v)}
+                  options={(['all', 'Pending', 'Approved', 'Declined', 'Cancelled', 'Cancellation'] as const).map((k): [string, string] => [k, `${k === 'all' ? 'All' : k === 'Cancellation' ? 'Cancellation requests' : k}${st === 'ready' && statusCounts[k] != null ? ` · ${statusCounts[k]}` : ''}`])} />
+                <LabeledSelect label="Department" value={filters.draft.dept} onChange={(v) => filters.set('dept', v)} options={[['all', 'All departments'], ...departments.map((d): [string, string] => [d, d])]} />
+                {/* The types that actually appear, so one HR adds shows up here too. */}
+                <LabeledSelect label="Leave type" value={filters.draft.type} onChange={(v) => filters.set('type', v)} options={[['all', 'All types'], ...[...new Set(s.leaves.map((x) => x.type))].sort().map((t): [string, string] => [t, t])]} />
+                <LabeledSelect label="Sort" value={filters.draft.sort} onChange={(v) => filters.set('sort', v)}
+                  options={[['recent', 'Applied, newest'], ['oldest', 'Applied, oldest'], ['date', 'Leave date'], ['name', 'Name A–Z'], ['days', 'Most days']]} />
+              </FiltersPanel>
+            )}
+            </div>
+          )}
+
           {!waitingForDates && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
               {/* Each tile filters the list below to what it counts, and brings the list into view. */}
@@ -295,27 +328,6 @@ export function LeaveRequests() {
 
           {!waitingForDates && (
             <div id="leave-list" style={{ scrollMarginTop: 96 }}>
-              <div style={toolbar}>
-                <div style={{ flex: 1, minWidth: 240, display: 'flex' }}>
-                  <SearchInput value={s.leaveSearch} onChange={s.setLeaveSearch} placeholder="Search by employee…" width="100%" />
-                </div>
-                <FiltersButton open={filters.open} active={filters.active} onClick={filters.toggle} />
-                <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
-                  <IconDownload stroke="currentColor" /> Export
-                </button>
-              </div>
-              {filters.open && (
-                <FiltersPanel active={filters.active} dirty={filters.dirty} onApply={filters.apply} onClear={filters.clear}>
-                  <LabeledSelect label="Status" value={filters.draft.status} onChange={(v) => filters.set('status', v)}
-                    options={(['all', 'Pending', 'Approved', 'Declined', 'Cancelled', 'Cancellation'] as const).map((k): [string, string] => [k, `${k === 'all' ? 'All' : k === 'Cancellation' ? 'Cancellation requests' : k}${st === 'ready' && statusCounts[k] != null ? ` · ${statusCounts[k]}` : ''}`])} />
-                  <LabeledSelect label="Department" value={filters.draft.dept} onChange={(v) => filters.set('dept', v)} options={[['all', 'All departments'], ...departments.map((d): [string, string] => [d, d])]} />
-                  {/* The types that actually appear, so one HR adds shows up here too. */}
-                  <LabeledSelect label="Leave type" value={filters.draft.type} onChange={(v) => filters.set('type', v)} options={[['all', 'All types'], ...[...new Set(s.leaves.map((x) => x.type))].sort().map((t): [string, string] => [t, t])]} />
-                  <LabeledSelect label="Sort" value={filters.draft.sort} onChange={(v) => filters.set('sort', v)}
-                    options={[['recent', 'Applied, newest'], ['oldest', 'Applied, oldest'], ['date', 'Leave date'], ['name', 'Name A–Z'], ['days', 'Most days']]} />
-                </FiltersPanel>
-              )}
-
               <div style={{ overflowX: 'auto' }}>
                 <div style={{ minWidth: 980 }}>
                   <div style={TH(LEAVE_COLS)}>

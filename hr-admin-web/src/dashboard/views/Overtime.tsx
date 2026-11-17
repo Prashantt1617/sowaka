@@ -104,7 +104,12 @@ export function Overtime() {
   const range = unit === 'custom' && from ? periodRange('custom', from, to) : stepRange(unit === 'week' ? 'week' : 'month', offset);
   const waitingForDates = false;
   // By the day the overtime was worked.
-  const inPeriod = useMemo(() => s.ots.filter((r) => inDateRange(r.refISO, range.from, range.to)), [s.ots, range.from, range.to]);
+  // Search and department (every filter but Status and Given as, which the tiles pick): the tiles,
+  // the chart, the status counts and the list all read this same set, so the numbers follow the filters.
+  const inPeriod = useMemo(() => {
+    const q = s.otSearch.trim().toLowerCase();
+    return s.ots.filter((r) => inDateRange(r.refISO, range.from, range.to) && (!q || r.name.toLowerCase().includes(q)) && (dept === 'all' || r.team === dept));
+  }, [s.ots, range.from, range.to, s.otSearch, dept]);
 
   const chartDays = chartDaysOf(range);
   const totals = useMemo(() => {
@@ -143,14 +148,12 @@ export function Overtime() {
 
   const departments = useMemo(() => [...new Set(s.ots.map((r) => r.team))].sort(), [s.ots]);
   const rows = useMemo(() => {
+    // Search and department are already applied (inPeriod).
     let out = inPeriod.slice();
-    const q = s.otSearch.trim().toLowerCase();
-    if (q) out = out.filter((r) => r.name.toLowerCase().includes(q));
     if (s.otStatus !== 'all') out = out.filter((r) => r.status === s.otStatus);
-    if (dept !== 'all') out = out.filter((r) => r.team === dept);
     if (given !== 'all') out = out.filter((r) => givenAs(r)[given]);
     return out.sort((a, b) => b.ord - a.ord);
-  }, [inPeriod, s.otSearch, s.otStatus, dept, given]);
+  }, [inPeriod, s.otStatus, given]);
   const paged = usePaged(rows, `${rows.length}|${rows[0]?.id ?? ''}`);
 
   const statusCounts = useMemo(() => {
@@ -202,6 +205,29 @@ export function Overtime() {
             onUnit={(u) => { if (u === 'custom') { setFrom(range.from); setTo(range.to); } setUnit(u); setOffset(0); }} onStep={(by) => setOffset((o) => o + by)}
             hasPrev={s.ots.some((r) => workDay(r) && workDay(r) < range.from)} hasNext={s.ots.some((r) => workDay(r) > range.to)} />
 
+          {/* Search and filters first: the numbers, the chart and the list below all follow them. */}
+          {!waitingForDates && (
+            <div>
+            <div style={toolbar}>
+              <div style={{ flex: 1, minWidth: 240, display: 'flex' }}>
+                <SearchInput value={s.otSearch} onChange={s.setOtSearch} placeholder="Search by employee…" width="100%" />
+              </div>
+              <FiltersButton open={filters.open} active={filters.active} onClick={filters.toggle} />
+              <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
+                <IconDownload stroke="currentColor" /> Export
+              </button>
+            </div>
+            {filters.open && (
+              <FiltersPanel active={filters.active} dirty={filters.dirty} onApply={filters.apply} onClear={filters.clear}>
+                <LabeledSelect label="Status" value={filters.draft.status} onChange={(v) => filters.set('status', v)}
+                  options={(['all', 'Pending', 'Approved', 'Declined'] as const).map((k): [string, string] => [k, `${k === 'all' ? 'All' : k}${st === 'ready' && statusCounts[k] != null ? ` · ${statusCounts[k]}` : ''}`])} />
+                <LabeledSelect label="Department" value={filters.draft.dept} onChange={(v) => filters.set('dept', v)} options={[['all', 'All departments'], ...departments.map((d): [string, string] => [d, d])]} />
+                <LabeledSelect label="Given as" value={filters.draft.given} onChange={(v) => filters.set('given', v)} options={[['all', 'Pay and comp-off'], ['pay', 'Pay'], ['comp', 'Comp-off']]} />
+              </FiltersPanel>
+            )}
+            </div>
+          )}
+
           {!waitingForDates && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
               {/* Each tile filters the list below to what it counts, and brings the list into view. */}
@@ -240,24 +266,6 @@ export function Overtime() {
 
           {!waitingForDates && (
             <div id="ot-list" style={{ scrollMarginTop: 96 }}>
-              <div style={toolbar}>
-                <div style={{ flex: 1, minWidth: 240, display: 'flex' }}>
-                  <SearchInput value={s.otSearch} onChange={s.setOtSearch} placeholder="Search by employee…" width="100%" />
-                </div>
-                <FiltersButton open={filters.open} active={filters.active} onClick={filters.toggle} />
-                <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
-                  <IconDownload stroke="currentColor" /> Export
-                </button>
-              </div>
-              {filters.open && (
-                <FiltersPanel active={filters.active} dirty={filters.dirty} onApply={filters.apply} onClear={filters.clear}>
-                  <LabeledSelect label="Status" value={filters.draft.status} onChange={(v) => filters.set('status', v)}
-                    options={(['all', 'Pending', 'Approved', 'Declined'] as const).map((k): [string, string] => [k, `${k === 'all' ? 'All' : k}${st === 'ready' && statusCounts[k] != null ? ` · ${statusCounts[k]}` : ''}`])} />
-                  <LabeledSelect label="Department" value={filters.draft.dept} onChange={(v) => filters.set('dept', v)} options={[['all', 'All departments'], ...departments.map((d): [string, string] => [d, d])]} />
-                  <LabeledSelect label="Given as" value={filters.draft.given} onChange={(v) => filters.set('given', v)} options={[['all', 'Pay and comp-off'], ['pay', 'Pay'], ['comp', 'Comp-off']]} />
-                </FiltersPanel>
-              )}
-
               <div style={{ overflowX: 'auto' }}>
                 <div style={{ minWidth: 1040 }}>
                   <div style={TH(COLS)}>
