@@ -125,105 +125,136 @@ class _PeopleToMeetScreenState extends State<PeopleToMeetScreen> {
     if (allMet) return _done(people.length);
     final person = people[_at];
     final meetBy = _meetBy ?? widget.dueAt;
+    final look = _looks[_at % _looks.length];
     return OnbScaffold(
       shell: _shell,
       title: 'People to meet',
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
-        children: [
-          Text(
-            _closed
-                ? 'People to meet closed'
-                : meetBy == null
-                ? 'Meet them this month'
-                : 'Meet them by ${onbDay(meetBy)}',
-            style: OnbText.h1,
-          ),
-          if (_closed) ...[
-            const SizedBox(height: 2),
-            const Text('It closed at the end of month 1. You can still say hi to the ones you didn’t meet.', style: OnbText.label),
-          ],
-          const SizedBox(height: 2),
-          Text('$met of ${people.length} met', key: const ValueKey('people-count'), style: OnbText.label),
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 48,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: people.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final p = people[index];
-                return GestureDetector(
-                  onTap: () => setState(() => _at = index),
-                  child: Stack(
-                    clipBehavior: Clip.none,
+      showNav: false,
+      background: Colors.white,
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _closed
+                        ? 'People to meet closed'
+                        : meetBy == null
+                        ? 'Meet them this month'
+                        : 'Meet them by ${onbDay(meetBy)}',
+                    style: const TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.text3),
+                  ),
+                ),
+                Text(
+                  '$met of ${people.length} met',
+                  key: const ValueKey('people-count'),
+                  style: const TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w700, color: OnbColors.primary),
+                ),
+              ],
+            ),
+            if (_closed) ...[
+              const SizedBox(height: 2),
+              const Text('It closed at the end of month 1. You can still say hi to the ones you didn’t meet.', style: OnbText.label),
+            ],
+            const SizedBox(height: 14),
+            // One tile per person: met ✓ green, this one outlined, the rest grey.
+            Row(
+              children: [
+                for (var index = 0; index < people.length; index++) ...[
+                  if (index > 0) const SizedBox(width: 6),
+                  Expanded(child: _PersonTile(person: people[index], current: index == _at, onTap: () => setState(() => _at = index))),
+                ],
+              ],
+            ),
+            const SizedBox(height: 14),
+            Expanded(
+              child: OnbRise(
+                key: ValueKey('person-${person.id}'),
+                child: Container(
+                  decoration: BoxDecoration(color: look.bg, borderRadius: BorderRadius.circular(28)),
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 18),
+                  child: Column(
                     children: [
-                      OnbAvatar(
-                        name: p.name,
-                        photoUrl: p.photoUrl,
-                        size: 44,
-                        ring: index == _at ? OnbColors.primary : (p.met ? OnbColors.green : null),
-                      ),
-                      if (p.met)
-                        const Positioned(
-                          right: -2,
-                          bottom: -2,
-                          child: CircleAvatar(
-                            radius: 9,
-                            backgroundColor: OnbColors.green,
-                            child: Icon(Icons.check_rounded, size: 12, color: Colors.white),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: [
+                              person.photoUrl != null && person.photoUrl!.isNotEmpty
+                                  ? OnbAvatar(name: person.name, photoUrl: person.photoUrl, size: 104)
+                                  : Container(
+                                      width: 104,
+                                      height: 104,
+                                      decoration: BoxDecoration(color: look.avatar, shape: BoxShape.circle),
+                                      alignment: Alignment.center,
+                                      child: Text(
+                                        OnbAvatar.initials(person.name).substring(0, 1),
+                                        style: const TextStyle(fontFamily: 'Sora', fontSize: 40, fontWeight: FontWeight.w800, color: Colors.white),
+                                      ),
+                                    ),
+                              const SizedBox(height: 10),
+                              Text(
+                                person.name,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontFamily: 'Sora', fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.52, color: OnbColors.text),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                [person.designation, meetingRoleLabel(person.role)].nonNulls.join(' · '),
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontFamily: 'Sora', fontSize: 13, color: OnbColors.text2),
+                              ),
+                              if (person.why != null) ...[
+                                const SizedBox(height: 16),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'WHY MEET',
+                                        style: TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.9, color: OnbColors.primary),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(person.why!, style: const TextStyle(fontFamily: 'Sora', fontSize: 14, height: 1.5, color: OnbColors.text)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                              if (person.met) ...[
+                                const SizedBox(height: 12),
+                                const OnbTag('Met', tone: OnbTone.done, icon: Icons.check_rounded),
+                              ] else if (_closed) ...[
+                                const SizedBox(height: 12),
+                                const OnbTag('Not met', tone: OnbTone.locked, key: ValueKey('not-met')),
+                              ],
+                            ],
                           ),
                         ),
+                      ),
+                      OnbLink(
+                        label: '📅 Book 15 minutes',
+                        onTap: () => openExternalLink(
+                          context,
+                          calendarEventUri(
+                            title: 'Meet ${person.name}',
+                            start: null,
+                            details: '15 minutes with ${person.name}',
+                          ).toString(),
+                        ),
+                      ),
                     ],
                   ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 16),
-          OnbRise(
-            key: ValueKey('person-${person.id}'),
-            child: OnbCard(
-              radius: 24,
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  OnbAvatar(name: person.name, photoUrl: person.photoUrl, size: 64),
-                  const SizedBox(height: 12),
-                  Text(person.name, style: OnbText.display),
-                  Text([person.designation, meetingRoleLabel(person.role)].nonNulls.join(' · '), style: OnbText.label),
-                  if (person.why != null) ...[
-                    const SizedBox(height: 16),
-                    const Text('WHY MEET', style: OnbText.eyebrow),
-                    const SizedBox(height: 4),
-                    Text(person.why!, style: OnbText.body),
-                  ],
-                  const SizedBox(height: 12),
-                  OnbLink(
-                    label: '📅 Book 15 minutes',
-                    onTap: () => openExternalLink(
-                      context,
-                      calendarEventUri(
-                        title: 'Meet ${person.name}',
-                        start: null,
-                        details: '15 minutes with ${person.name}',
-                      ).toString(),
-                    ),
-                  ),
-                  if (person.met) ...[
-                    const SizedBox(height: 8),
-                    const OnbTag('Met', tone: OnbTone.done, icon: Icons.check_rounded),
-                  ] else if (_closed) ...[
-                    const SizedBox(height: 8),
-                    const OnbTag('Not met', tone: OnbTone.locked, key: ValueKey('not-met')),
-                  ],
-                ],
+                ),
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 14),
+          ],
+        ),
       ),
       footer: person.met || _closed
           ? null
@@ -231,7 +262,9 @@ class _PeopleToMeetScreenState extends State<PeopleToMeetScreen> {
               children: [
                 Row(
                   children: [
-                    Expanded(
+                    // "Not yet" is the smaller choice, as drawn.
+                    SizedBox(
+                      width: 108,
                       child: OnbSecondaryButton(
                         key: const ValueKey('not-yet'),
                         label: 'Not yet',
@@ -248,6 +281,16 @@ class _PeopleToMeetScreenState extends State<PeopleToMeetScreen> {
             ),
     );
   }
+
+  /// Each person's colours, in order, as the artboard paints them.
+  static const _looks = [
+    (avatar: OnbColors.primary, bg: OnbColors.tint),
+    (avatar: OnbColors.green, bg: OnbColors.doneTint),
+    (avatar: Color(0xFFFF6B6B), bg: Color(0xFFFFF0F0)),
+    (avatar: Color(0xFF8A63D2), bg: Color(0xFFF3EEFF)),
+    (avatar: Color(0xFFE39B17), bg: OnbColors.mustTint),
+    (avatar: Color(0xFF0B8A8A), bg: Color(0xFFE6F6F6)),
+  ];
 
   Widget _done(int count) => OnbScaffold(
     shell: _shell,
@@ -271,4 +314,49 @@ class _PeopleToMeetScreenState extends State<PeopleToMeetScreen> {
     ),
     footer: OnbFooter(children: [OnbPrimaryButton(label: 'Back to onboarding', onTap: () => Navigator.of(context).pop())]),
   );
+}
+
+/// A6's strip: a tile per person, ✓ on green once met, outlined while open.
+class _PersonTile extends StatelessWidget {
+  const _PersonTile({required this.person, required this.current, required this.onTap});
+
+  final PersonToMeet person;
+  final bool current;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final met = person.met;
+    final bg = met ? OnbColors.green : (current ? OnbColors.tint : OnbColors.screen);
+    final fg = met ? Colors.white : (current ? OnbColors.primary : OnbColors.icon);
+    return Semantics(
+      button: true,
+      selected: current,
+      label: '${person.name}${met ? ', met' : ''}',
+      child: ExcludeSemantics(
+        child: Material(
+          color: bg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: current && !met ? const BorderSide(color: OnbColors.primary, width: 2) : BorderSide.none,
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: onTap,
+            child: SizedBox(
+              height: 44,
+              child: Center(
+                child: met
+                    ? const Icon(Icons.check_rounded, size: 18, color: Colors.white)
+                    : Text(
+                        OnbAvatar.initials(person.name).substring(0, 1),
+                        style: TextStyle(fontFamily: 'Sora', fontSize: 13, fontWeight: FontWeight.w700, color: fg),
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -32,6 +32,8 @@ Map<String, dynamic> member({
 };
 
 void main() {
+  _topManagerTests();
+
   testWidgets('a manager sees both direct reports on the Team tab', (
     tester,
   ) async {
@@ -180,5 +182,104 @@ void main() {
       contains('Direct Reports'),
       reason: 'after the poll: $onScreenAfterPoll',
     );
+  });
+}
+
+/// The Team tab of a manager nobody is over, with [team] from the server.
+/// Returns the texts on screen; tears the bloc down before returning.
+Future<List<String>> _teamTabTexts(
+  WidgetTester tester,
+  List<Map<String, dynamic>> team,
+  String viewerId,
+) async {
+  final workspace = {
+    'success': true,
+    'team': team,
+    'recognitionCandidates': <dynamic>[],
+    'nominations': <dynamic>[],
+    'recognitionHistory': <dynamic>[],
+    'myParameters': <dynamic>[],
+    'growthHistory': <dynamic>[],
+    'holidays': <dynamic>[],
+    'myOrgChart': <dynamic>[],
+    'weekoffDays': [0],
+    'shift': <String, dynamic>{},
+    'overtimeEnabled': true,
+    'approverName': '',
+    'hasManager': false,
+    'teamLevel': 2,
+    'managerScore': 0,
+  };
+  final client = MockClient((request) async {
+    if (request.url.path.endsWith('/manager/workspace')) {
+      return http.Response(jsonEncode(workspace), 200);
+    }
+    return http.Response(
+      jsonEncode({
+        'success': true,
+        'team': <dynamic>[],
+        'leaves': <dynamic>[],
+        'overtime': <dynamic>[],
+        'regularizations': <dynamic>[],
+        'claims': <dynamic>[],
+        'types': <dynamic>[],
+        'records': <dynamic>[],
+        'balance': <String, dynamic>{},
+      }),
+      200,
+    );
+  });
+  final session = AuthSession(
+    token: 'token',
+    user: AuthUser(
+      id: viewerId,
+      email: '$viewerId@example.test',
+      name: viewerId,
+      role: 'manager',
+      company: 'ACMT',
+      org: 'acmt',
+      interests: const [],
+    ),
+  );
+  final bloc = ManagerBloc(
+    session: session,
+    service: ManagerApiService(
+      session: session,
+      baseUrl: 'https://example.test',
+      client: client,
+    ),
+  );
+  await bloc.add(const LoadManagerDashboard());
+  await tester.pumpWidget(
+    MaterialApp(home: ManagerScreen(session: session, bloc: bloc)),
+  );
+  bloc.add(const ChangeManagerTab(ManagerTab.manage));
+  await tester.pumpAndSettle(const Duration(seconds: 1));
+  final texts = tester
+      .widgetList<Text>(find.byType(Text))
+      .map((t) => t.data ?? '')
+      .where((s) => s.isNotEmpty)
+      .toList();
+  await tester.pumpWidget(const SizedBox.shrink());
+  bloc.dispose();
+  await tester.pump(const Duration(seconds: 30));
+  return texts;
+}
+
+void _topManagerTests() {
+  // M0 (artboard AppTeams): a manager with nobody over them sees their own
+  // card once, heading the Direct Reports tree. It used to be drawn above
+  // the heading as well, so "(You)" showed twice.
+  testWidgets('a top manager\'s own card shows once, on the Direct Reports tree', (
+    tester,
+  ) async {
+    final texts = await _teamTabTexts(tester, [
+      member(name: 'Meera', department: 'Design', isSelf: true),
+      member(name: 'Arjun', department: 'Design', reportsToViewer: true),
+      member(name: 'Vani', department: 'Design', reportsToViewer: true),
+    ], 'meera');
+    expect(texts.where((t) => t == 'Meera (You)').length, 1, reason: '$texts');
+    expect(texts, contains('Direct Reports'));
+    expect(texts, containsAll(['Arjun', 'Vani']));
   });
 }

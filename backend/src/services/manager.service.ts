@@ -308,6 +308,9 @@ export async function getManagerWorkspace(
         .aggregate<RosterUser>(
           [
             { $match: orgFilter },
+            // The exit record (clearance, settlement notes) is the biggest field on a
+            // leaver and nothing here reads it: left on the server, for a slow link.
+            { $unset: ['exit'] },
             {
               $set: {
                 hasInlinePhoto: { $regexMatch: { input: { $ifNull: ['$profilePhotoUrl', ''] }, regex: '^data:' } },

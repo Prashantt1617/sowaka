@@ -2,6 +2,8 @@
 /// notice), and the manager's view of a report's (R8b).
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../shared/app_toast.dart';
@@ -367,7 +369,22 @@ class _ManagerLeaverTabState extends State<ManagerLeaverTab> {
     super.initState();
     _note.addListener(() => setState(() {}));
     widget.store.addListener(_storeChanged);
-    _load();
+    // The live read starts now (or is already on its way); the device's copy paints meanwhile.
+    _load(first: true);
+    unawaited(_paintKept());
+  }
+
+  /// The tab as the device last had it, while the live read runs.
+  Future<void> _paintKept() async {
+    if (_open != null) return;
+    final kept = await widget.store.keptLeaverView(widget.userId);
+    if (kept == null || !mounted || _view != null) return;
+    setState(() {
+      _view = kept;
+      final saved = kept.handover.note ?? '';
+      if (_note.text.trim() == _savedNote.trim()) _note.text = saved;
+      _savedNote = saved;
+    });
   }
 
   @override
@@ -389,7 +406,7 @@ class _ManagerLeaverTabState extends State<ManagerLeaverTab> {
     _load();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool first = false}) async {
     // Before HR accepts there is no exit to ask about (the server says
     // "No exit for this person"): the resignation says where it stands.
     if (_open != null) {
@@ -399,7 +416,7 @@ class _ManagerLeaverTabState extends State<ManagerLeaverTab> {
     if (_loading) return;
     _loading = true;
     try {
-      final view = await widget.store.api.fetchLeaver(widget.userId);
+      final view = await (first ? widget.store.firstLeaverRead(widget.userId) : widget.store.api.fetchLeaver(widget.userId));
       if (!mounted) return;
       setState(() {
         _view = view;

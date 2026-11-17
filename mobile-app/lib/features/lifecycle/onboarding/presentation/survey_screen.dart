@@ -36,13 +36,25 @@ class _SurveyScreenState extends State<SurveyScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(_load());
+    unawaited(_first());
   }
 
   @override
   void dispose() {
     _fix.dispose();
     super.dispose();
+  }
+
+  /// Last time's answer from the device at once; the live read replaces it.
+  Future<void> _first() async {
+    final kept = await _shell.api.fromDevice((api) => api.fetchSurvey());
+    if (kept != null && mounted && _survey == null) {
+      setState(() {
+        _survey = kept;
+        _sent = kept.sent;
+      });
+    }
+    await _load();
   }
 
   Future<void> _load() async {
@@ -101,19 +113,23 @@ class _SurveyScreenState extends State<SurveyScreen> {
       shell: _shell,
       title: title,
       showNav: false,
+      background: Colors.white,
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
             child: OnbStoryBar(count: 4, current: _question),
           ),
           Expanded(
             child: ListView(
               key: ValueKey('question-$_question'),
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
               children: [
-                Text('QUESTION ${_question + 1} OF 4', style: OnbText.eyebrow),
-                const SizedBox(height: 8),
+                Text(
+                  'Question ${_question + 1} of 4',
+                  style: const TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.text3),
+                ),
+                const SizedBox(height: 4),
                 OnbRise(child: _questionBody(survey)),
               ],
             ),
@@ -146,7 +162,7 @@ class _SurveyScreenState extends State<SurveyScreen> {
     1 => Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Did you have what you needed on Day 1?', style: OnbText.display),
+        const Text('Did you have what you needed on Day 1?', style: _SurveyText.title),
         const SizedBox(height: 16),
         for (final (value, label) in SurveyScreen.choices)
           Padding(
@@ -164,7 +180,7 @@ class _SurveyScreenState extends State<SurveyScreen> {
     _ => Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('What should we fix for the next person?', style: OnbText.display),
+        const Text('What should we fix for the next person?', style: _SurveyText.title),
         const SizedBox(height: 16),
         OnbTextArea(
           fieldKey: const ValueKey('survey-fix'),
@@ -179,7 +195,7 @@ class _SurveyScreenState extends State<SurveyScreen> {
   Widget _scale(String question, int? value, ValueChanged<int> onPick) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(question, style: OnbText.display),
+      Text(question, style: _SurveyText.title),
       const SizedBox(height: 20),
       Row(
         children: [
@@ -193,22 +209,22 @@ class _SurveyScreenState extends State<SurveyScreen> {
                   key: ValueKey('scale-${index + 1}'),
                   onTap: () => onPick(index + 1),
                   child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 3),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
                     decoration: BoxDecoration(
                       color: value == index + 1 ? OnbColors.tint : Colors.white,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: value == index + 1 ? OnbColors.primary : OnbColors.line,
-                        width: value == index + 1 ? 1.5 : 1,
+                        width: value == index + 1 ? 2 : 1,
                       ),
                     ),
                     child: ExcludeSemantics(
                       child: Column(
                         children: [
-                          Text(emoji, style: const TextStyle(fontSize: 28)),
-                          const SizedBox(height: 4),
-                          Text(label, style: OnbText.label.copyWith(fontSize: 11)),
+                          Text(emoji, style: const TextStyle(fontSize: 30)),
+                          const SizedBox(height: 6),
+                          Text(label, style: OnbText.label.copyWith(fontSize: 11, color: OnbColors.text2)),
                         ],
                       ),
                     ),
@@ -245,4 +261,8 @@ class _SurveyScreenState extends State<SurveyScreen> {
     ),
     footer: OnbFooter(children: [OnbPrimaryButton(label: 'Done', onTap: () => Navigator.of(context).pop())]),
   );
+}
+
+abstract final class _SurveyText {
+  static const title = TextStyle(fontFamily: 'Sora', fontSize: 28, height: 1.1, fontWeight: FontWeight.w800, letterSpacing: -0.56, color: OnbColors.text);
 }

@@ -21,22 +21,38 @@ class LifecycleMeStore extends ValueNotifier<LifecycleMe> {
   Future<void> refresh(OnboardingApi api) => _inFlight ??= _read(api).whenComplete(() => _inFlight = null);
 
   Future<void> _read(OnboardingApi api) async {
+    // What it said last time, from the device, first: the tile, the tab and
+    // the Team tab's joiners show at once, and the live read corrects them.
+    if (!_seeded) {
+      _seeded = true;
+      final kept = await api.fromDevice(_meOf);
+      if (kept != null && !value.enabled) value = kept;
+    }
     try {
-      var me = await api.fetchMe();
-      if (me.showsOnboarding && me.onboarding!.progress == null) {
-        try {
-          final home = await api.fetchHome();
-          me = me.withProgress(home.progress);
-        } catch (_) {}
-      }
-      value = me;
+      value = await _meOf(api);
     } catch (_) {
       // Offline or a hiccup: what was there stays.
     }
   }
 
+  bool _seeded = false;
+
+  static Future<LifecycleMe> _meOf(OnboardingApi api) async {
+    var me = await api.fetchMe();
+    if (me.showsOnboarding && me.onboarding!.progress == null) {
+      try {
+        final home = await api.fetchHome();
+        me = me.withProgress(home.progress);
+      } catch (_) {}
+    }
+    return me;
+  }
+
   /// Signed out: nothing of theirs is left showing.
-  void clear() => value = LifecycleMe.off;
+  void clear() {
+    _seeded = false;
+    value = LifecycleMe.off;
+  }
 }
 
 /// The Action tile's subtitle, following the stage (6Zs §5.3 A1): the

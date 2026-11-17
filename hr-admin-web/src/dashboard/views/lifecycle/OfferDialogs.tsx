@@ -173,7 +173,19 @@ export function OfferWizard({ mode, journey, offer, start, onClose, onDone }: {
         if (def.settings.probationMonths) setFields((f) => ({ ...f, probationMonths: def.settings.probationMonths! }));
       }
     }).catch(() => setTemplates([]));
+    // The notice a resignation gets (the default offboarding template's) is the offer's notice too.
+    listTemplates('offboarding').then((t) => {
+      const days = t.find((x) => x.isDefault)?.settings.noticeDays;
+      if (typeof days === 'number') setFields((f) => ({ ...f, noticeDays: days }));
+    }).catch(() => undefined);
   }, [mode]);
+
+  // Picking another template brings its probation into the offer (HR can still change it here).
+  const pickTemplate = (id: string) => {
+    setTemplateId(id);
+    const months = templates.find((x) => x.id === id)?.settings.probationMonths;
+    if (months) setFields((f) => ({ ...f, probationMonths: months }));
+  };
 
   // The offer letter template and the values from the offer, once there is an offer.
   useEffect(() => {
@@ -301,7 +313,7 @@ export function OfferWizard({ mode, journey, offer, start, onClose, onDone }: {
               <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91" style={inputStyle} />
             </Field>
             <Field label="Onboarding template" hint="The tasks they get, from the offer to confirmation">
-              <Pick value={templateId} onChange={setTemplateId}>
+              <Pick value={templateId} onChange={pickTemplate}>
                 {templates.length === 0 && <option value="">The default</option>}
                 {templates.map((t) => <option key={t.id} value={t.id}>{t.name}{t.isDefault ? ' (default)' : ''}</option>)}
               </Pick>
