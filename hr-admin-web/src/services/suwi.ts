@@ -10,12 +10,14 @@ export type SuwiProposal = {
   /** A bulk change: each person's current and new value, and who was left out. */
   preview?: { field: string; rows: { name: string; current: string; next: string }[]; skipped: { who: string; reason: string }[] };
 };
-export type SuwiAnswer = { text: string; checked: string[]; links: SuwiLink[]; proposals: SuwiProposal[]; costUsd: number };
+/** A list Suwi shows as a table under its answer (drawn from the data, not written by the model). */
+export type SuwiTable = { title: string; columns: string[]; rows: (string | number)[][] };
+export type SuwiAnswer = { text: string; checked: string[]; links: SuwiLink[]; proposals: SuwiProposal[]; costUsd: number; tables?: SuwiTable[]; path?: 'instant' | 'model' | 'cache' };
 export type SuwiHistoryTurn = { role: 'user' | 'assistant'; text: string };
 
 /**
  * A slow answer comes back as a ticket (`pending`); the answer is then fetched
- * every second until it is ready, for up to 5 minutes; meanwhile `onChecking` hears what Suwi is
+ * every half second (with `partial`: the text written so far) until it is ready, for up to 5 minutes; meanwhile `onChecking` hears what Suwi is
  * looking at ("Attendance for 17 Nov"), for the panel to show. The signal keeps each check
  * out of the 20-second GET cache in http.ts.
  */
@@ -23,17 +25,20 @@ export type SuwiHistoryTurn = { role: 'user' | 'assistant'; text: string };
 export type SuwiAttachment =
   | { kind: 'image'; name: string; mimeType: 'image/png' | 'image/jpeg'; data: string }
   | { kind: 'table'; name: string; text: string };
-export async function askSuwi(question: string, page: string, history: SuwiHistoryTurn[], attachment?: SuwiAttachment, onChecking?: (what: string) => void): Promise<SuwiAnswer> {
-  type Reply = { answer?: SuwiAnswer; pending?: string; checking?: string };
+export async function askSuwi(question: string, page: string, history: SuwiHistoryTurn[], attachment?: SuwiAttachment, onChecking?: (what: string) => void, onPartial?: (textSoFar: string) => void): Promise<SuwiAnswer> {
+  type Reply = { answer?: SuwiAnswer; pending?: string; checking?: string; partial?: string };
   const first = await api<Reply>('/suwi/ask', { method: 'POST', body: { question, page, history, ...(attachment ? { attachments: [attachment] } : {}) } });
   if (first.answer) return first.answer;
   if (first.checking) onChecking?.(first.checking);
+  if (first.partial) onPartial?.(first.partial);
   const until = Date.now() + 5 * 60_000;
+  // Quick checks while the answer is being written, so its first words show as soon as they exist.
   while (first.pending && Date.now() < until) {
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise((r) => setTimeout(r, 500));
     const next = await api<Reply>(`/suwi/ask/${encodeURIComponent(first.pending)}`, { signal: new AbortController().signal });
     if (next.answer) return next.answer;
     if (next.checking) onChecking?.(next.checking);
+    if (next.partial) onPartial?.(next.partial);
   }
   throw new Error('Suwi is taking too long to answer. Try again in a moment.');
 }

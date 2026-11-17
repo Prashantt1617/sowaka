@@ -42,11 +42,17 @@ export interface SuwiContext {
 }
 
 export interface SuwiLink { label: string; view?: string; userId?: string; tab?: string }
+/** A list the panel draws as a table from the data itself, so the model never has to write it out. */
+export interface SuwiTable { title: string; columns: string[]; rows: (string | number)[][] }
 export interface ToolOutput {
   /** What Claude reads: small, plain JSON. */
   data: unknown;
   /** Buttons for the panel ("Open attendance report"). */
   links?: SuwiLink[];
+  /** Rows to show as tables under the answer (the model is told not to repeat them). */
+  tables?: SuwiTable[];
+  /** Read from today's attendance, which punches change without a write hook: answers using it are kept a minute only. */
+  live?: boolean;
   /** A prepared change, shown as a "What will happen" card; nothing is saved yet. */
   proposalId?: string;
   /** Several cards at once (a sheet with a different value per row: one card per value). */

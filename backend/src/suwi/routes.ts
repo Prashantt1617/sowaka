@@ -34,14 +34,14 @@ const fail = (res: Response, e: unknown, next: NextFunction) => {
  * cut it (CloudFront gives up on an answer after 60 s); a quick question is
  * answered in one go, as before. Tickets live in this process for 10 minutes.
  */
-type AskJob = { userId: string; at: number; answer?: unknown; error?: unknown; checking?: string };
+type AskJob = { userId: string; at: number; answer?: unknown; error?: unknown; checking?: string; partial?: string };
 const askJobs = new Map<string, AskJob>();
 /**
  * A few seconds, not twenty: a slower answer gets its ticket early so the panel can show what Suwi is
  * checking ("Attendance for 17 Nov") while it works, instead of a bare spinner. The model's reply is
  * not streamed (llm.ts makes one request per round), so progress is per tool, not per word.
  */
-const FIRST_WAIT_MS = 3_000;
+const FIRST_WAIT_MS = 1_200;
 const JOB_TTL_MS = 10 * 60_000;
 const failed = (e: unknown) => {
   const code = (e as { statusCode?: number }).statusCode;
@@ -51,7 +51,7 @@ const failed = (e: unknown) => {
 suwiRouter.post('/ask', async (req, res, next) => {
   const u = me(req);
   const job: AskJob = { userId: u.userId, at: Date.now() };
-  const run = askSuwi(u, req.body ?? {}, (checking) => { job.checking = checking; }).then(
+  const run = askSuwi(u, req.body ?? {}, (checking) => { job.checking = checking; }, (partial) => { job.partial = partial; }).then(
     (answer) => { job.answer = answer; },
     (e: unknown) => { job.error = e; },
   );
@@ -68,7 +68,7 @@ suwiRouter.post('/ask', async (req, res, next) => {
   askJobs.set(id, job);
   // Logged here, since nobody may come back for it.
   void run.then(() => { if (job.error !== undefined && !(job.error as { statusCode?: number }).statusCode) logger.error('Suwi answer failed', { userId: u.userId }, job.error); });
-  res.status(202).json({ success: true, pending: id, ...(job.checking ? { checking: job.checking } : {}) });
+  res.status(202).json({ success: true, pending: id, ...(job.checking ? { checking: job.checking } : {}), ...(job.partial ? { partial: job.partial } : {}) });
 });
 
 suwiRouter.get('/ask/:id', (req, res) => {
@@ -77,7 +77,24 @@ suwiRouter.get('/ask/:id', (req, res) => {
   if (!job || job.userId !== me(req).userId) { res.status(404).json({ success: false, message: 'That answer is no longer here. Ask again.' }); return; }
   if (job.answer !== undefined) { askJobs.delete(id); res.json({ success: true, answer: job.answer }); return; }
   if (job.error !== undefined) { askJobs.delete(id); const f = failed(job.error); res.status(f.status).json({ success: false, message: f.message }); return; }
-  res.json({ success: true, pending: id, ...(job.checking ? { checking: job.checking } : {}) });
+  res.json({ success: true, pending: id, ...(job.checking ? { checking: job.checking } : {}), ...(job.partial ? { partial: job.partial } : {}) });
+});
+
+/**
+ * How long the last questions took (dashboard admins only): total, time to the first words, each
+ * model round, each tool, and how it was answered (instant, model, or a kept answer).
+ */
+suwiRouter.get('/timings', async (req, res, next) => {
+  try {
+    const u = me(req);
+    if (u.dashboardAdmin !== true) { res.status(403).json({ success: false, message: 'Only a dashboard admin can see Suwi timings' }); return; }
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+    const rows = await auditCol().find({ org: u.org, kind: 'question' } as never).sort({ at: -1 }).limit(limit).toArray();
+    res.json({ success: true, timings: rows.map((r) => {
+      const t = (r as { timing?: { path?: string; totalMs?: number; firstTextMs?: number; rounds?: unknown[] } }).timing;
+      return { at: r.at.toISOString(), question: String(r.question ?? '').slice(0, 120), status: r.status ?? null, path: t?.path ?? null, totalMs: t?.totalMs ?? null, firstTextMs: t?.firstTextMs ?? null, rounds: t?.rounds ?? null, tools: (r.tools ?? []).map((x) => ({ name: x.name, ms: x.ms })), tokens: (r as { tokens?: unknown }).tokens ?? null };
+    }) });
+  } catch (e) { fail(res, e, next); }
 });
 
 suwiRouter.post('/actions/:id/confirm', async (req, res, next) => {

@@ -72,6 +72,23 @@ function dayLists(r: Awaited<ReturnType<typeof attendanceReport>>, date: string,
   };
 }
 
+export type DayCategory = 'onLeave' | 'absent' | 'late' | 'missedPunch' | 'notPunchedInYet';
+const DAY_TITLE: Record<DayCategory, string> = { onLeave: 'On leave', absent: 'Absent', late: 'Late', missedPunch: 'Missed a punch', notPunchedInYet: 'Not punched in yet' };
+
+/** One day's lists as the panel's tables, one per non-empty category (only `want`'s when given). */
+export function dayTables(day: ReturnType<typeof dayLists>, want?: DayCategory[]) {
+  const pick = (c: DayCategory) => !want || want.includes(c);
+  const out: { title: string; columns: string[]; rows: (string | number)[][] }[] = [];
+  const add = (c: DayCategory, columns: string[], rows: (string | number)[][]) => { if (pick(c) && rows.length) out.push({ title: `${DAY_TITLE[c]} · ${day.date} (${day.counts[c]})`, columns, rows }); };
+  add('onLeave', ['Who', 'Leave', 'Part'], day.onLeave.map((p) => [p.name, `${p.type}${p.paid ? '' : ' (unpaid)'}`, p.part === 'half' ? 'Half day' : 'Full day']));
+  add('absent', ['Who'], day.absent.map((p) => [p.name]));
+  add('late', ['Who', 'Late by', 'In at'], day.late.map((p) => [p.name, `${p.minutes} min`, p.in ?? '']));
+  add('missedPunch', ['Who', 'In', 'Out'], day.missedPunch.map((p) => [p.name, p.in ?? '—', p.out ?? '—']));
+  add('notPunchedInYet', ['Who'], day.notPunchedInYet.map((p) => [p.name]));
+  return out;
+}
+export { dayLists };
+
 defineTools(
   {
     name: 'attendance_summary',
@@ -114,6 +131,8 @@ defineTools(
         return (!dep || (p?.department ?? '').toLowerCase().includes(dep)) && (!mgr || (p?.manager ?? '').toLowerCase().includes(mgr));
       }) : undefined;
       return {
+        ...(day ? { tables: dayTables(day) } : {}),
+        ...(to >= ctx.today ? { live: true } : {}),
         data: {
           from, to, peopleInReport: Object.keys(r.people).length, matching: rows.length,
           ...(day ? { day } : {}),
