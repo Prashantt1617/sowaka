@@ -9,7 +9,7 @@
 <meta name="color-scheme" content="light">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&family=Sora:wght@600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&family=Fredoka:wght@500;600;700&display=swap">
 <style>
 /* Meow: one cat in every row, column and coloured region, and no two cats touching. The puzzle and its pixel look are the Pocket Puzzles
    design; around it, everything Odd One Out has in the Sowaka app: the company's leaderboard, colleague challenges on the same puzzle, how to play,
@@ -19,15 +19,15 @@
 [hidden]{display:none!important}
 :root{
   color-scheme:light; --padt:max(14px,env(safe-area-inset-top));
-  --bg:#FBF7F1; --paper:#FFFFFF; --soft:#F4EFE7; --soft2:#EAE3D8; --ink:#2E2C29; --line:#E7E0D4; --muted:#79736A; --faint:#C9C1B4;
+  --bg:#F6F1FF; --paper:#FFFFFF; --soft:#F4EFE7; --soft2:#EAE3D8; --ink:#2E2C29; --line:#E7E0D4; --muted:#79736A; --faint:#C9C1B4;
   --sh:0 1px 2px rgba(46,44,41,.06),0 6px 18px rgba(46,44,41,.08); --sh-press:0 1px 2px rgba(46,44,41,.08);
-  --accent:#FF8A5B; --accent-hi:#FF9C72; --mint:#E6F2E1; --mint2:#B8D6AD; --good:#4E8B4F; --bad:#A22220; --gold:#F5AB4E; --pink:#E9896D;
-  --pixel:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif; --mono:'Figtree',system-ui,-apple-system,sans-serif; --body:'Figtree',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --accent:#FF9431; --accent-hi:#FFA54F; --accent-deep:#DB6A12; --mint:#E6F2E1; --mint2:#B8D6AD; --good:#4E8B4F; --bad:#A22220; --gold:#F5AB4E; --pink:#E9896D;
+  --pixel:'Fredoka','Sora',system-ui,-apple-system,'Segoe UI',sans-serif; --mono:'Figtree',system-ui,-apple-system,sans-serif; --body:'Figtree',system-ui,-apple-system,'Segoe UI',sans-serif;
 }
 *{box-sizing:border-box}
-html{overflow-x:clip;background:var(--bg);-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation;overscroll-behavior:none}
+html{overflow-x:clip;background:linear-gradient(180deg,#FFF0F8 0%,#EEF2FF 45%,#E6F6FF 100%) fixed;-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation;overscroll-behavior:none}
 body{margin:0;min-height:100vh;min-height:100dvh;color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.35;
-  background:var(--bg);
+  background:transparent;
   padding:var(--padt) max(16px,env(safe-area-inset-right)) calc(32px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
   touch-action:manipulation;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 button{font:inherit;color:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent;cursor:pointer}
@@ -53,12 +53,12 @@ h1 .face{width:26px;height:24px}
 .btn{font-family:var(--body);font-weight:700;font-size:15px;line-height:1.15;min-height:48px;padding:8px 14px;border-radius:14px;border:1px solid var(--line);
   background:var(--paper);color:var(--ink);box-shadow:var(--sh);display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:transform .06s,box-shadow .06s}
 .btn:active{transform:translateY(1px);box-shadow:var(--sh)}
-.btn.go{background:var(--accent);font-family:var(--pixel);font-weight:800;font-size:16px;letter-spacing:0;min-height:58px}
-.btn.go:active{background:var(--accent-hi)}
+.btn.go{background:linear-gradient(180deg,#FFB24F,#FF8A22);color:#fff;border-color:transparent;text-shadow:0 1px 0 rgba(170,70,0,.35);box-shadow:0 5px 0 var(--accent-deep),0 10px 18px rgba(219,106,18,.25)!important;font-family:var(--pixel);font-weight:800;font-size:16px;letter-spacing:0;min-height:58px}
+.btn.go:active{transform:translateY(4px);box-shadow:0 1px 0 var(--accent-deep)!important}
 .btn.primary{background:var(--ink);color:var(--paper)}
 .btn:disabled{opacity:.45;cursor:default}
 .mini{font-family:var(--body);font-weight:700;font-size:12px;min-height:32px;padding:0 10px;border-radius:12px;border:1px solid var(--line);background:var(--paper);color:var(--ink);white-space:nowrap}
-.mini.yes{font-family:var(--pixel);font-weight:800;font-size:12px;min-height:40px;min-width:92px;padding:0 12px;background:var(--accent);box-shadow:var(--sh)}
+.mini.yes{font-family:var(--pixel);font-weight:800;font-size:15px;min-height:40px;min-width:92px;padding:0 12px;background:linear-gradient(180deg,#FFB24F,#FF8A22);color:#fff;border-color:transparent;box-shadow:var(--sh)}
 .mini.yes:active{transform:translateY(1px);box-shadow:var(--sh)}
 .mini:disabled{opacity:.5}
 .link{font-family:var(--body);font-weight:700;font-size:13px;color:var(--muted);background:none;border:0;padding:6px 0;text-decoration:underline;text-underline-offset:2px}
@@ -70,7 +70,7 @@ h1 .face{width:26px;height:24px}
 .top{position:relative;margin:calc(-1*var(--padt)) calc(50% - 50vw) 0;padding:var(--padt) max(16px,env(safe-area-inset-right)) 16px max(16px,env(safe-area-inset-left));
   background:var(--paper);border-bottom:2px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:10px}
 .top>*{position:relative;width:100%;max-width:440px}
-.top .art{border-radius:20px;overflow:hidden;background:linear-gradient(135deg,#FFE9DC 0%,#FDF3E4 45%,#E4F2E6 100%)}
+.top .art{border-radius:22px;overflow:hidden;background:linear-gradient(135deg,#FFE3F2 0%,#F3ECFF 50%,#D9F1FF 100%)}
 .top .art svg{display:block;width:100%;height:160px}
 .top .tt{margin:2px 0 0;text-align:center;font-family:var(--pixel);font-weight:700;font-size:16px;line-height:1.4;letter-spacing:-.01em;color:var(--ink)}
 .rankbar{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:stretch}
@@ -92,7 +92,7 @@ h1 .face{width:26px;height:24px}
 .tabs.one{grid-template-columns:1fr}
 .tab{position:relative;font-family:var(--body);font-weight:700;font-size:14px;line-height:1;min-height:44px;border-radius:12px;border:0;background:transparent;color:var(--muted);
   display:flex;align-items:center;justify-content:center;gap:8px}
-.tab.on{background:var(--ink);color:#fff}
+.tab.on{background:linear-gradient(180deg,#9A7BFF,#7457F0);color:#fff;box-shadow:0 3px 0 #5A3FD0}
 .badge{min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:var(--accent);color:var(--ink);font-weight:700;font-size:12px;display:grid;place-items:center;border:1px solid var(--line)}
 .tab.on .badge{border-color:var(--paper)}
 .pane{display:flex;flex-direction:column;gap:14px}
@@ -135,6 +135,8 @@ h1 .face{width:26px;height:24px}
 .hbox{padding:8px 10px;display:flex;flex-direction:column;gap:5px;min-width:0;border:1px solid var(--line);border-radius:14px;background:var(--paper);box-shadow:var(--sh)}
 .hbox b{font-family:var(--pixel);font-weight:800;font-size:15px;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}
 .hbox.worth{background:var(--mint)}
+.mist{font-weight:700;font-size:11.5px;color:var(--muted)}
+.mist.on{color:var(--bad)}
 .hbox.worth .lab{color:#4A5640}
 .hstars{display:flex;gap:3px;font-size:13px;line-height:1;color:var(--faint)}
 .hstars span.on{color:#FFB547}
@@ -153,22 +155,22 @@ h1 .face{width:26px;height:24px}
 
 /* The board. */
 .stage{position:relative}
-.board{--n:6;display:grid;grid-template-columns:repeat(var(--n),1fr);grid-template-rows:repeat(var(--n),minmax(0,1fr));aspect-ratio:1;border:2.5px solid var(--ink);border-radius:14px;
-  overflow:hidden;background:var(--ink);width:100%;box-shadow:var(--sh);touch-action:none}
-.cell{position:relative;min-width:0;min-height:0;padding:0;border:0;border-radius:0;background:var(--color);display:grid;place-items:center;box-shadow:inset -1px -1px rgba(46,44,41,.14);
-  border-right:var(--edge-r,0) solid #3A3733;border-bottom:var(--edge-b,0) solid #3A3733;-webkit-user-select:none;user-select:none}
+.board{--n:6;display:grid;grid-template-columns:repeat(var(--n),1fr);grid-template-rows:repeat(var(--n),minmax(0,1fr));gap:calc(24px/var(--n));padding:calc(36px/var(--n));aspect-ratio:1;border:0;border-radius:22px;
+  overflow:hidden;background:#fff;width:100%;box-shadow:0 2px 0 rgba(120,90,200,.10),0 12px 30px rgba(120,90,200,.18);touch-action:none}
+.cell{position:relative;min-width:0;min-height:0;padding:0;border:0!important;border-radius:calc(70px/var(--n));display:grid;place-items:center;
+  background:linear-gradient(180deg,rgba(255,255,255,.34) 0,rgba(255,255,255,.34) 32%,rgba(255,255,255,0) 33%),var(--color);box-shadow:inset 0 -4px 0 rgba(0,0,0,.13),inset 0 2px 0 rgba(255,255,255,.35);-webkit-user-select:none;user-select:none}
 .cell:focus-visible{outline:3px dashed var(--ink);outline-offset:-5px;z-index:1}
-.cell .face{width:62%;height:62%;pointer-events:none}
-.cell .mark{width:34%;height:34%;color:rgba(46,44,41,.55);pointer-events:none}
+.cell .face{width:78%;height:72%;pointer-events:none;filter:drop-shadow(0 2px 1px rgba(0,0,0,.18))}
+.cell .mark{width:44%;height:44%;color:#fff;pointer-events:none;filter:drop-shadow(0 1.5px 1px rgba(0,0,0,.28))}
 .cell.bad::after{content:'!';position:absolute;right:2px;top:2px;font:bold 12px/15px var(--mono);background:var(--bad);color:#fff;border-radius:50%;width:15px;height:15px;text-align:center}
 .cell .pin{position:absolute;bottom:3px;right:3px;width:9px;height:9px;color:#55564B;line-height:9px;pointer-events:none}
 .cell.hint{animation:hintflash .9s ease-out}
-.cell.was{outline:3px solid var(--accent);outline-offset:-4px}
+.cell.was{outline:3px solid #fff;outline-offset:-4px;box-shadow:0 0 0 3px var(--accent)}
 /* Over the board while it counts down; on the menu (.m) it is the menu itself. */
-.cover{position:absolute;inset:-4px;border-radius:18px;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:12px;z-index:2}
+.cover{position:absolute;inset:-4px;border-radius:22px;background:#F7F3FF;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:12px;z-index:2}
 .cover:not(.m) h2{font-family:var(--pixel);font-weight:800;font-size:18px;margin:0;line-height:1.4}
 .cover:not(.m) p{margin:0;color:var(--muted);max-width:30ch;font-size:14px}
-.cover .n{font-family:var(--pixel);font-weight:800;font-size:96px;line-height:1;color:var(--accent)}
+.cover .n{font-family:var(--pixel);font-weight:700;font-size:110px;line-height:1;color:#FF9A2E;text-shadow:0 6px 0 var(--accent-deep)}
 .cover .nb{font-family:var(--pixel);font-size:12px;color:var(--muted);letter-spacing:0}
 .cover.m{position:static;inset:auto;background:none;border-radius:0;padding:0;align-items:stretch;justify-content:flex-start;gap:14px;text-align:left}
 /* The tools under the board. */
@@ -339,7 +341,7 @@ html.app .howto{padding-top:20px}
     <div class="hright"><button class="sq" id="help" type="button" aria-label="How to play" title="How to play">?</button><button class="sq" id="snd" type="button" aria-pressed="true" aria-label="Sound on"></button></div>
   </header>
   <div class="hud" id="hud" hidden>
-    <div class="hbox"><span class="lab">Time</span><b id="timer" role="timer">00:00</b></div>
+    <div class="hbox"><span class="lab">Time</span><b id="timer" role="timer">00:00</b><small class="mist" id="mistakes">0 mistakes</small></div>
     <div class="hbox worth"><span class="lab">Worth</span><b id="worth">0</b><span class="hstars" id="hstars" aria-hidden="true"><span>★</span><span>★</span><span>★</span></span></div>
     <div class="hbox"><span class="lab">Cats</span><b id="cats">0/6</b><span class="pips" id="pips" aria-hidden="true"></span></div>
   </div>
@@ -383,11 +385,12 @@ const levelOf=idx=>ORDER.indexOf(idx)+1;
 /* A solved puzzle is worth its level's base (425 at level 1, up 25 a level to 1,900 at level 60), plus up to as much again for speed (all of it
    at once, none at twice the par time), less 150 a hint, and never under a quarter of the base. Par in seconds, by size. Three stars at the par
    time with no hints. */
-const PAR={6:90,7:150,8:240}, HINT_COST=150;
+const PAR={6:90,7:150,8:240}, HINT_COST=150, MISTAKE_COST=50;
 const baseFor=L=>400+25*Math.min(Math.max(1,L|0),60);
 const fmtn=x=>Math.round(x).toLocaleString('en-IN');
 const fmtt=t=>{ t=Math.max(0,Math.floor(t)); return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0'); };
-function worthOf(n,t,h,L){ const b=baseFor(L), w=Math.round(b+b*Math.max(0,1-t/(2*PAR[n]))-h*HINT_COST); return Math.max(Math.round(b/4),w); }
+/* m: mistakes, cats put where they clash with another (−50 each; Undo doesn't give it back). */
+function worthOf(n,t,h,L,m){ const b=baseFor(L), w=Math.round(b+b*Math.max(0,1-t/(2*PAR[n]))-h*HINT_COST-(m||0)*MISTAKE_COST); return Math.max(Math.round(b/4),w); }
 const starsOf=(L,s)=>s>0?1+(s>=baseFor(L)*1.25?1:0)+(s>=baseFor(L)*1.5?1:0):0;
 /* seeded-boards:start
    A challenge's puzzle, from the server's seed: any of the 36, so two players given one seed get the same puzzle (scored at its level). */
@@ -399,30 +402,52 @@ const num=i=>String(i).padStart(3,'0');
 const paths={timer:'M9 2h6 M12 5a8 8 0 1 0 .01 0 M12 8v5h4',cross:'m6 6 12 12M18 6 6 18',cat:'M3 4l5 4h8l5-4v12l-4 4H7l-4-4z M8 12v2m8-2v2m-5 2h2',undo:'M4 10h10a6 6 0 0 1 0 12 M4 10l6-6 M4 10l6 6',bulb:'M9 17v-2a7 7 0 1 1 6 0v2z M9 20h6 M11 23h2',lock:'M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0v4'};
 function icon(k){ return '<svg aria-hidden="true" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="'+paths[k]+'"/></svg>'; }
 document.querySelectorAll('[data-icon]').forEach(e=>e.replaceWith(document.createRange().createContextualFragment(icon(e.dataset.icon))));
-/* The cat: a clean flat face, dark on the pastel squares. */
-const CAT_PATH='<path d="M4 3.5 10.6 8.6Q16 7 21.4 8.6L28 3.5V15.2Q28 25.5 16 25.5T4 15.2Z" fill="#2E2C29"/><ellipse cx="11.4" cy="15.6" rx="2.1" ry="2.5" fill="#FFE7A8"/><ellipse cx="20.6" cy="15.6" rx="2.1" ry="2.5" fill="#FFE7A8"/><circle cx="11.7" cy="16" r=".95" fill="#2E2C29"/><circle cx="20.9" cy="16" r=".95" fill="#2E2C29"/><path d="M14.7 19.6h2.6L16 21.1Z" fill="#F7A1B5"/>';
-const FACE='<svg class="face" aria-hidden="true" viewBox="0 0 32 28">'+CAT_PATH+'</svg>';
+/* Miso, the game's cat: a round ginger face with big green eyes. CAT is the face alone (in a square of the board); MASCOT adds the paws. */
+/* Solid colours with highlights, no gradients: a gradient referenced by id breaks wherever its first copy sits in a hidden part of the page. */
+const CAT_DEFS='';
+const EYE=(x)=>'<ellipse cx="'+x+'" cy="49" rx="9.5" ry="11.5" fill="#fff"/><ellipse cx="'+(x+1)+'" cy="50.5" rx="7.4" ry="9.4" fill="#2DB866"/><ellipse cx="'+(x+.4)+'" cy="47.5" rx="5" ry="4.6" fill="#7FE7A0"/><ellipse cx="'+(x+1.4)+'" cy="51.5" rx="4" ry="6" fill="#1D2626"/><circle cx="'+(x-2.4)+'" cy="45.5" r="2.8" fill="#fff"/><circle cx="'+(x+3.6)+'" cy="55" r="1.3" fill="#fff"/>';
+const CAT_BODY=CAT_DEFS
+  +'<path d="M12 44 17 5Q18.5 0 23 3.5L45 22Z" fill="#F48E33"/><path d="M19 34 21.5 11 37 24Z" fill="#FFA4BD"/>'
+  +'<path d="M88 44 83 5Q81.5 0 77 3.5L55 22Z" fill="#F48E33"/><path d="M81 34 78.5 11 63 24Z" fill="#FFA4BD"/>'
+  +'<ellipse cx="50" cy="53" rx="43" ry="36" fill="#F48E33"/><ellipse cx="50" cy="43" rx="33" ry="22" fill="#FFB466" opacity=".75"/><ellipse cx="40" cy="30" rx="12" ry="6" fill="#FFD9A8" opacity=".55"/>'
+  +'<path d="M50 18v9M42 20l2 7.5M58 20l-2 7.5" stroke="#DA6F1C" stroke-width="3.6" stroke-linecap="round"/>'
+  +'<ellipse cx="38" cy="66" rx="14" ry="11.5" fill="#FFF6EA"/><ellipse cx="62" cy="66" rx="14" ry="11.5" fill="#FFF6EA"/><ellipse cx="50" cy="70" rx="13" ry="10" fill="#FFF6EA"/>'
+  +EYE(32)+EYE(66)
+  +'<ellipse cx="22" cy="64" rx="6" ry="3.6" fill="#FF8FAE" opacity=".55"/><ellipse cx="78" cy="64" rx="6" ry="3.6" fill="#FF8FAE" opacity=".55"/>'
+  +'<path d="M45.6 60.5Q50 57.6 54.4 60.5Q52.6 64.6 50 65Q47.4 64.6 45.6 60.5Z" fill="#FF7AA0"/>'
+  +'<path d="M50 65v2.6M50 67.6q-3.6 3.6-7.6 1.2M50 67.6q3.6 3.6 7.6 1.2" fill="none" stroke="#8A4320" stroke-width="1.8" stroke-linecap="round"/>'
+  +'<path d="M16 62l-11-2M16 67l-11 2M84 62l11-2M84 67l11 2" stroke="#E9B98A" stroke-width="1.4" stroke-linecap="round"/>';
+const FACE='<svg class="face" aria-hidden="true" viewBox="0 0 100 90">'+CAT_BODY+'</svg>';
 document.querySelector('[data-face]').outerHTML=FACE;
-/* Home's picture: a small solved board on a warm gradient, a cat in every row, column and colour. */
-const MEADOW=(()=>{ const n=5, g=[0,0,1,1,1, 0,2,2,1,1, 3,3,2,2,1, 3,3,2,4,4, 3,4,4,4,4], cats=[1,8,10,17,24], C=['#C6DDAC','#AFD4E3','#F5C2A2','#D4C4E5','#EEDCA4'];
-  const cs=26, x0=150-n*cs/2, y0=12; let b='<svg class="scene" viewBox="0 0 300 150" role="img" aria-label="A solved Meow board with five cats">';
-  b+='<g transform="rotate(-4 150 75)"><rect x="'+(x0-5)+'" y="'+(y0-5)+'" width="'+(n*cs+10)+'" height="'+(n*cs+10)+'" rx="14" fill="#2E2C29" opacity=".12" transform="translate(0 6)"/>';
-  b+='<rect x="'+(x0-4)+'" y="'+(y0-4)+'" width="'+(n*cs+8)+'" height="'+(n*cs+8)+'" rx="13" fill="#2E2C29"/>';
-  for(let i=0;i<n*n;i++){ const x=x0+(i%n)*cs, y=y0+Math.floor(i/n)*cs; b+='<rect x="'+(x+.6)+'" y="'+(y+.6)+'" width="'+(cs-1.2)+'" height="'+(cs-1.2)+'" rx="'+(i===0||i===n-1||i===n*n-n||i===n*n-1?9:2)+'" fill="'+C[g[i]]+'"/>';
-    if(cats.includes(i))b+='<svg x="'+(x+4)+'" y="'+(y+5)+'" width="'+(cs-8)+'" height="'+(cs-10)+'" viewBox="0 0 32 28">'+CAT_PATH+'</svg>'; }
+const PAW=(x,y)=>'<g transform="translate('+x+' '+y+')"><ellipse cx="0" cy="0" rx="14" ry="10" fill="#FFF6EA" stroke="#F0D9BF" stroke-width="1.2"/><path d="M-5 -3v6M0 -4v7M5 -3v6" stroke="#E7C9A6" stroke-width="1.4" stroke-linecap="round"/></g>';
+/* Home's picture (and the Games tab card): a glossy board with ×s and cats, and Miso beside it with a paw on the edge. */
+const TILE_COLS=['#9BDE5A','#F57EC6','#5CC6F6','#FFAE4D','#A98BF5','#FFD84A','#4FD8BA','#FF7C7C'];
+function heroArt(square){ const W=300, H=square?300:160, g=[0,0,1,1,1, 0,2,2,1,1, 3,3,2,2,1, 3,3,2,4,4, 3,4,4,4,4], n=5;
+  const cs=square?40:25, x0=square?96:146, y0=square?36:14, cats={1:1,8:1,17:1}, xs={0:1,3:1,6:1,12:1,20:1,23:1};
+  let b='<svg class="scene" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Miso the cat beside a Meow board">'+CAT_DEFS;
+  if(square)b+='<defs><linearGradient id="msky" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFE3F2"/><stop offset="1" stop-color="#D9F1FF"/></linearGradient></defs><rect width="300" height="300" fill="url(#msky)"/>';
+  b+='<g transform="rotate(8 '+(x0+n*cs/2)+' '+(y0+n*cs/2)+')"><rect x="'+(x0-6)+'" y="'+(y0-6)+'" width="'+(n*cs+12)+'" height="'+(n*cs+12)+'" rx="16" fill="#fff" opacity=".9"/>';
+  for(let i=0;i<n*n;i++){ const x=x0+(i%n)*cs, y=y0+Math.floor(i/n)*cs, c=TILE_COLS[g[i]];
+    b+='<rect x="'+(x+1.2)+'" y="'+(y+1.2)+'" width="'+(cs-2.4)+'" height="'+(cs-2.4)+'" rx="'+(cs*.18)+'" fill="'+c+'"/><rect x="'+(x+3)+'" y="'+(y+2.6)+'" width="'+(cs-6)+'" height="'+(cs*.32)+'" rx="'+(cs*.14)+'" fill="#fff" opacity=".28"/>';
+    if(xs[i])b+='<path d="M'+(x+cs*.32)+' '+(y+cs*.32)+'L'+(x+cs*.68)+' '+(y+cs*.68)+'M'+(x+cs*.68)+' '+(y+cs*.32)+'L'+(x+cs*.32)+' '+(y+cs*.68)+'" stroke="#fff" stroke-width="'+(cs*.11)+'" stroke-linecap="round" opacity=".92"/>';
+    if(cats[i])b+='<svg x="'+(x+cs*.12)+'" y="'+(y+cs*.16)+'" width="'+(cs*.76)+'" height="'+(cs*.68)+'" viewBox="0 0 100 90">'+CAT_BODY+'</svg>'; }
   b+='</g>';
+  const mx=square?14:30, my=square?150:62, mw=square?170:104;
+  b+='<svg x="'+mx+'" y="'+my+'" width="'+mw+'" height="'+(mw*.9)+'" viewBox="0 0 100 90">'+CAT_BODY+'</svg>';
+  b+=PAW(mx+mw*.78,my+mw*.86)+PAW(mx+mw*.30,my+mw*.88);
   const spark=(x,y,r,c)=>'<path d="M'+x+' '+(y-r)+'Q'+x+' '+y+' '+(x+r)+' '+y+'Q'+x+' '+y+' '+x+' '+(y+r)+'Q'+x+' '+y+' '+(x-r)+' '+y+'Q'+x+' '+y+' '+x+' '+(y-r)+'Z" fill="'+c+'"/>';
-  b+=spark(52,40,10,'#FFB547')+spark(250,34,7,'#FF8A5B')+spark(240,118,9,'#A9D19A')+spark(64,116,6,'#B9A6E0');
-  return b+'</svg>'; })();
+  b+=square?spark(40,48,14,'#FFC93C')+spark(270,262,10,'#FF7CC4'):spark(30,30,9,'#FFC93C')+spark(282,140,7,'#FF7CC4');
+  return b+'</svg>'; }
+const MEADOW=heroArt(false);
 const RULE_ART=['<path fill="#c1d9e8" d="M1 1h26v26H1z"/><path fill="#94bacc" d="M10 1h8v26h-8zM1 10h26v8H1z"/><path d="M10 1v26m8-26v26M1 10h26M1 18h26"/>','<path fill="#d6c8e9" d="M1 1h26v26H1z"/><path fill="#b5d4a8" d="M1 1h18v9h-9v9H1z"/><path fill="#f6c49b" d="M1 19h9v-9h17v17H1z"/><path d="M19 1v9h8M1 19h9v-9h9"/>','<path fill="#f6d8ba" d="M1 1h26v26H1z"/><path d="M14 1v26M1 14h26"/><path stroke-width="2" d="m4 4 7 7m0-7-7 7m13 6 7 7m0-7-7 7"/>'];
 const ruleSvg=i=>'<svg aria-hidden="true" viewBox="0 0 28 28" stroke="#44483b" stroke-width="1.3" fill="none">'+RULE_ART[i]+'<rect x="1" y="1" width="26" height="26" rx="1"/></svg>';
-const COLORS=['#c6ddac','#afd4e3','#f5c2a2','#d4c4e5','#eedca4','#ebbfc5','#b7dfd3','#c6cdf0'];
+const COLORS=TILE_COLS;
 /* How to play's picture: a small solved board. */
 (function(){ const n=4, g=[0,0,1,1,0,2,2,1,3,2,2,1,3,3,3,1], cats=[1,7,8,14], d=$('demo'); let h='';
   for(let i=0;i<n*n;i++){ const st=['--color:'+COLORS[g[i]]]; if(i%n<n-1&&g[i]!==g[i+1])st.push('--edge-r:2px'); if(i<n*(n-1)&&g[i]!==g[i+n])st.push('--edge-b:2px');
     h+='<span class="cell" style="'+st.join(';')+'">'+(cats.includes(i)?FACE:'')+'</span>'; } d.innerHTML=h; })();
 $('steps').innerHTML=[[0,'One per row and column','Every row and every column gets exactly one cat.'],[1,'One per colour','Each coloured region gets exactly one cat too.'],
-  [2,'Cats can’t touch','Not even corner to corner. Faster, with fewer hints, scores more.']].map(([i,b,t])=>'<li><i>'+ruleSvg(i)+'</i><span><b>'+b+'</b>'+t+'</span></li>').join('');
+  [2,'Cats can’t touch','Not even corner to corner. A cat that clashes costs 50; faster, with fewer hints, scores more.']].map(([i,b,t])=>'<li><i>'+ruleSvg(i)+'</i><span><b>'+b+'</b>'+t+'</span></li>').join('');
 
 /* ---------- save ---------- */
 /* The save is kept per account in the app, under meowdoku.v1.<userId>, so the next person to sign in on this phone starts clean; in a plain browser
@@ -629,13 +654,14 @@ function buildBoard(){ const {n,g,f}=pz(), b=$('board'); b.style.setProperty('--
   focusIndex=f; paint(); }
 function paint(){ const {n,g,f}=pz(), bad=conflicts(), kids=$('board').children;
   round.cells.forEach((v,i)=>{ const e=kids[i]; if(!e)return; const want=v+'|'+(i===f?1:0); if(e._v!==want){ e._v=want;
-      e.innerHTML=(v===1?FACE:v===2?'<svg class="mark" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>':'')+(i===f?'<span class="pin">'+icon('lock').replace('class="icon"','style="width:100%;height:100%"')+'</span>':''); }
+      e.innerHTML=(v===1?FACE:v===2?'<svg class="mark" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/></svg>':'')+(i===f?'<span class="pin">'+icon('lock').replace('class="icon"','style="width:100%;height:100%"')+'</span>':''); }
     e.classList.toggle('bad',bad.includes(i)); e.tabIndex=i===focusIndex?0:-1;
     e.setAttribute('aria-label','Row '+(Math.floor(i/n)+1)+', column '+(i%n+1)+', region '+(g[i]+1)+', '+(v===1?'cat':v===2?'marked':'empty')+(i===f?', starting cat':'')+(bad.includes(i)?', clashes':'')); });
   $('undo').disabled=!round.history.length||mode!=='play'; $('hint').disabled=mode!=='play';
   renderHud(); }
 /* The clock, what solving it now would score (and its stars), the cats placed, and in a challenge the score to beat. */
-function renderHud(){ if(!round)return; const n=pz().n, w=round.gaveUp?0:worthOf(n,round.elapsed,round.hints,round.lv), k=round.gaveUp?0:count();
+function renderHud(){ if(!round)return; const n=pz().n, w=round.gaveUp?0:worthOf(n,round.elapsed,round.hints,round.lv,round.mistakes), k=round.gaveUp?0:count();
+  $('mistakes').textContent=(round.mistakes||0)+' mistake'+(round.mistakes===1?'':'s'); $('mistakes').classList.toggle('on',(round.mistakes||0)>0);
   $('timer').textContent=fmtt(round.elapsed); $('worth').textContent=fmtn(w);
   const st=starsOf(round.lv,w); [...$('hstars').children].forEach((s,i)=>s.classList.toggle('on',i<st));
   $('cats').textContent=k+'/'+n; $('pips').innerHTML=Array.from({length:n},(_,i)=>'<i class="'+(i<k?'on':'')+'"></i>').join('');
@@ -652,7 +678,7 @@ function setCell(i,v,note){ if(mode!=='play')return false; const f=pz().f;
   round.cells[i]=v; focusIndex=i;
   const bad=conflicts(), done=solved();
   if(v===1)sfx.place(count()); else if(v===2)sfx.mark(); else sfx.clear();
-  if(bad.length>before&&v===1){ setTimeout(sfx.no,60); buzz([20,30,20]); const b=$('board'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); }
+  if(bad.length>before&&v===1){ round.mistakes=(round.mistakes||0)+1; toast('−'+MISTAKE_COST+' mistake','bad'); setTimeout(sfx.no,60); buzz([20,30,20]); const b=$('board'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); }
   else buzz(v===1?14:8);
   message(done?'Every cat has a spot!':note||(bad.length?'Cats marked ! share a row, column or colour, or are touching.':''));
   keep(); paint(); if(done)setTimeout(()=>endRound(true),reduce()?60:250); return true; }
@@ -690,11 +716,11 @@ function start(opp,sd,resumeCur){
   hideHowTo(); clearInterval(countTimer); clearInterval(timer); closeSheet();
   let c=resumeCur&&validCur(resumeCur)?resumeCur:null;
   if(!c){ const idx=opp?puzzleFor(+sd,null):levelPuzzle(save.level), lv=opp?levelOf(idx):save.level;
-    c={idx,lv,cells:blank(idx),history:[],elapsed:0,hints:0,duel:opp?{id:opp.id,name:opp.name,theirFinal:opp.theirFinal==null?null:+opp.theirFinal}:null}; }
-  if(!Array.isArray(c.history))c.history=[]; c.elapsed=Math.max(0,+c.elapsed||0); c.hints=Math.max(0,+c.hints||0);
+    c={idx,lv,cells:blank(idx),history:[],elapsed:0,hints:0,mistakes:0,duel:opp?{id:opp.id,name:opp.name,theirFinal:opp.theirFinal==null?null:+opp.theirFinal}:null}; }
+  if(!Array.isArray(c.history))c.history=[]; c.elapsed=Math.max(0,+c.elapsed||0); c.hints=Math.max(0,+c.hints||0); c.mistakes=Math.max(0,+c.mistakes||0);
   round=c; duel=c.duel?Object.assign({},c.duel,{first:firstOf(c.duel.name)}):null;
   if(duel&&opp&&opp.theirFinal!=null)duel.theirFinal=+opp.theirFinal;
-  behindSaid=!!(duel&&duel.theirFinal!=null&&worthOf(pz().n,c.elapsed,c.hints,c.lv)<=duel.theirFinal);
+  behindSaid=!!(duel&&duel.theirFinal!=null&&worthOf(pz().n,c.elapsed,c.hints,c.lv,c.mistakes)<=duel.theirFinal);
   placeHeader(null); mode='count'; playing(true); buildBoard(); message(''); keep();
   $('pzno').textContent=(duel?'CHALLENGE':'LEVEL '+c.lv)+' · '+pz().n+'×'+pz().n;
   renderTop(); const cv=$('cover'); cv.hidden=false; cv.className='cover'; cv.innerHTML='';
@@ -711,8 +737,8 @@ function tick(){ const t=performance.now(), dt=Math.min(1,(t-lastAt)/1000); last
 function endRound(won){
   if(mode!=='play'&&mode!=='pause')return;
   mode='over'; clearInterval(timer); timer=null; const n=pz().n, L=round.lv;
-  const score=won?worthOf(n,round.elapsed,round.hints,L):0, stars=starsOf(L,score), newBest=won&&score>save.best;
-  const rows=[[duel?'Puzzle':'Level',(duel?'':L+' · ')+n+'×'+n],['Time',fmtt(round.elapsed)],['Hints',String(round.hints)]];
+  const score=won?worthOf(n,round.elapsed,round.hints,L,round.mistakes):0, stars=starsOf(L,score), newBest=won&&score>save.best;
+  const rows=[[duel?'Puzzle':'Level',(duel?'':L+' · ')+n+'×'+n],['Time',fmtt(round.elapsed)],['Hints',String(round.hints)],['Mistakes',String(round.mistakes||0)]];
   /* A level of your own moves you on, solved or given up (a puzzle whose answer you have seen would score for nothing). */
   if(!duel&&L===save.level)save.level=L+1;
   save.cur=null; save.rounds++; if(newBest)save.best=score; store(); paint(); renderTop();
@@ -783,7 +809,7 @@ function results(title,stars,pending,newBest,rows,score){
    have played. What it pays (engagement points, scaled and capped) is the server's to say. */
 const CH={incoming:[],outgoing:[],active:[],recent:[],waiting:null,result:null,showing:null,celebrated:{},opened:false,accepting:false,sending:false,listSeq:-1};
 const KINDS=['incoming','outgoing','active','recent'];
-const SAME='Same puzzle for both of you. Faster, with fewer hints, scores more; the higher score wins, and the result shows once you have both played.';
+const SAME='Same puzzle for both of you. Faster, with fewer hints and no clashing cats, scores more; the higher score wins, and the result shows once you have both played.';
 function canChallenge(){ const b=bridge(); return !!(b&&['challenge','challenges','getChallenge','acceptChallenge','declineChallenge','finishChallenge','colleagues'].every(k=>typeof b[k]==='function')); }
 function ask(method,...args){ const b=bridge(); if(!b||typeof b[method]!=='function')return Promise.reject(new Error('Challenges need the Sowaka app.'));
   return Promise.resolve().then(()=>b[method](...args)); }
