@@ -5,19 +5,20 @@ import { leaves, users } from '../../config/db';
 import { getMyLeaveBalance } from '../../services/leave.service';
 import { leaveRulesFor } from '../../services/shift.service';
 import { defineTools, num, str, SuwiContext } from '../tools';
+import { LIGHT_USER, peopleWith } from '../toolCache';
 
 const norm = (s: unknown) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
 /** One person in this company, by userId or by name; several candidates when a name is ambiguous. */
 async function findPerson(ctx: SuwiContext, userId: string, name: string) {
   const filter = { org: ctx.org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } };
-  if (userId) return { person: await users().findOne({ ...filter, userId } as never), candidates: [] };
+  if (userId) return { person: await users().findOne({ ...filter, userId } as never, { projection: LIGHT_USER }), candidates: [] };
   const n = norm(name);
   if (!n) return { person: null, candidates: [] };
-  const all = await users().find(filter as never, { projection: { _id: 0, userId: 1, name: 1, department: 1, employeeId: 1 } }).toArray();
+  const all = await peopleWith<{ userId: string; name: string; department?: string; employeeId?: string }>(ctx.org, ['userId', 'name', 'department', 'employeeId']);
   const exact = all.filter((p) => norm(p.name) === n);
   const loose = exact.length ? exact : all.filter((p) => n.split(' ').every((w) => norm(p.name).includes(w)));
-  if (loose.length === 1) return { person: await users().findOne({ ...filter, userId: loose[0].userId } as never), candidates: [] };
+  if (loose.length === 1) return { person: await users().findOne({ ...filter, userId: loose[0].userId } as never, { projection: LIGHT_USER }), candidates: [] };
   return { person: null, candidates: loose.slice(0, 8).map((p) => ({ userId: p.userId, name: p.name, department: p.department ?? null, employeeId: p.employeeId ?? null })) };
 }
 

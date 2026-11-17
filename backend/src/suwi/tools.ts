@@ -15,6 +15,7 @@ import { hasAllDashboardTabs } from '../middleware/admin.middleware';
 import { hasPayrollAccess } from '../services/payrollAccess.service';
 import { LlmTool } from './llm';
 import type { ParsedSheet } from './sheet';
+import { cachedToolRun } from './toolCache';
 
 export type SuwiArea = 'requests' | 'attendance' | 'people' | 'payroll' | 'claims' | 'performance' | 'connect' | 'settings';
 export const SUWI_AREAS: { key: SuwiArea; label: string; covers: string }[] = [
@@ -79,6 +80,11 @@ const REGISTRY = new Map<string, SuwiTool>();
 export function defineTools(...tools: SuwiTool[]) {
   for (const t of tools) {
     if (REGISTRY.has(t.name)) throw new Error(`Suwi tool ${t.name} defined twice`);
+    // Read-only tools answer from what was kept on unchanged data (toolCache.ts); changes never are.
+    if (!t.acts) {
+      const body = t.run.bind(t);
+      t.run = (ctx, input) => cachedToolRun(t, ctx, input, () => body(ctx, input));
+    }
     REGISTRY.set(t.name, t);
   }
 }

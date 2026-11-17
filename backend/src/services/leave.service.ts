@@ -329,7 +329,8 @@ export function getMyLeaveBalance(userId: string, year = new Date().getUTCFullYe
 async function leaveBalanceOf(userId: string, year: number, asOf: Date) {
   // The signed-in person, as requireAuth read them, when it is them.
   const viewer = requestViewer(userId);
-  const employeeP: Promise<User | null> = viewer ? Promise.resolve(viewer as User) : users().findOne({ userId });
+  // Not the old inline photo, the enrolled face or the document list: none is read here, and they can be megabytes.
+  const employeeP: Promise<User | null> = viewer ? Promise.resolve(viewer as User) : users().findOne({ userId }, { projection: { _id: 0, profilePhotoUrl: 0, faceId: 0, documents: 0 } }) as Promise<User | null>;
   if (!Number.isInteger(year) || year < 2000 || year > 2100) {
     if (!(await employeeP)) throw new LeaveError(404, 'Employee not found');
     throw new LeaveError(400, 'Invalid balance year');

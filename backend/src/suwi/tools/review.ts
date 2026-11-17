@@ -7,6 +7,7 @@
 import { users } from '../../config/db';
 import { notifyUsers } from '../../services/notification.service';
 import { defineTools, num, str, SuwiContext } from '../tools';
+import { LIGHT_USER } from '../toolCache';
 import { defineExecutor, propose } from '../proposals';
 import { Check, leaveSafety, managerStepCheck, ownRequestCheck, OVERDUE_DAYS } from '../insight';
 import { pendingRows, PendingRow, REQUEST_LINKS } from './requests';
@@ -16,7 +17,7 @@ const STEP_KIND = { leave: 'leave', overtime: 'overtime', correction: 'correctio
 
 /** Each pending request with whose call it is: a manager who hasn't acted, or HR. */
 async function withApprover(ctx: SuwiContext, rows: PendingRow[]) {
-  const people = await users().find({ org: ctx.org, userId: { $in: [...new Set(rows.map((r) => r.userId))] } }).toArray();
+  const people = await users().find({ org: ctx.org, userId: { $in: [...new Set(rows.map((r) => r.userId))] } }, { projection: LIGHT_USER }).toArray();
   const byId = new Map(people.map((p) => [p.userId, p]));
   const cache = new Map<string, Promise<Check & { managerUserId?: string; managerName?: string }>>();
   return Promise.all(rows.map(async (r) => {

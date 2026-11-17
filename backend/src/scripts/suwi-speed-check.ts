@@ -80,7 +80,8 @@ async function main() {
   const readCache = await import('../services/lifecycle/readCache');
   const { ObjectId } = await import('mongodb');
 
-  await seed.seedSpeedOrg(50, 30);
+  // Convrse-sized when asked (SUWI_CHECK_PEOPLE=230); 50 keeps the routine run quick.
+  await seed.seedSpeedOrg(Number(process.env.SUWI_CHECK_PEOPLE ?? 50), 30);
   const raw = db.getDb();
   if (!/scratch/.test(raw.databaseName)) throw new Error(`refusing to run against ${raw.databaseName}`);
   const ORG = seed.ORG;
@@ -402,6 +403,95 @@ async function main() {
     await warm.warmSuwiAtBoot();
     t0 = Date.now(); await suwiNotices(ctx); const bootNoticeMs = Date.now() - t0;
     ok('after the boot warm the first notices come from memory', bootNoticeMs < 50, `${bootNoticeMs} ms`);
+  }
+
+  // ── Every tool kept (toolCache.ts): cold vs warm, same answer, invalidation ──
+  {
+    const { toolByName, toolsFor } = await import('../suwi/tools');
+    const tc = await import('../suwi/toolCache');
+    const ctx = contextFor(hr as never, settings.levels, today);
+    const someone = (await db.users().findOne({ userId: people[5].userId }, { projection: { _id: 0, userId: 1, name: 1 } }))!;
+    // Every read-only tool HR may use, with an input that works: none for the no-input tools, a person for the person tools.
+    const personInput: Record<string, Record<string, unknown>> = {
+      search_people: { text: String(someone.name).split(' ')[0] }, person_details: { person: someone.userId }, leave_balance: { userId: someone.userId },
+      person_attendance: { userId: someone.userId }, person_policy_summary: { userId: someone.userId }, claims_by_person: { userId: someone.userId },
+      payslip_explain: { userId: someone.userId }, kpi_trend: { userId: someone.userId }, review_material: { userId: someone.userId },
+    };
+    const readTools = toolsFor(ctx).filter((t) => !t.acts);
+    const strip = (v: unknown) => JSON.stringify(v, (k, x) => (/^(generatedAt|at|asOf|now|checkedAt|ms)$/.test(k) ? undefined : x));
+    const rows: string[] = [];
+    let slowWarm = 0; let differ = 0; let ran = 0;
+    for (const t of readTools) {
+      const required = (t.input_schema as { required?: string[] }).required ?? [];
+      const input = personInput[t.name] ?? (required.length ? null : {});
+      if (!input) continue;
+      readCache.forgetLifecycleReads(ORG);
+      let started = new Date(); let t0 = Date.now(); let coldOut: unknown;
+      try { coldOut = await t.run(ctx, input); } catch (e) { rows.push(`${t.name}: error ${(e as Error).message.slice(0, 60)}`); continue; }
+      const coldMs = Date.now() - t0; const bytes = await bytesSince(started);
+      started = new Date(); t0 = Date.now();
+      const warmOut = await t.run(ctx, input);
+      const warmMs = Date.now() - t0;
+      ran++;
+      if (warmMs >= 100) slowWarm++;
+      // The same answer fresh: cache off for one run.
+      tc.setSuwiToolCache(false);
+      const freshOut = await t.run(ctx, input).catch(() => null);
+      tc.setSuwiToolCache(null);
+      if (strip(warmOut) !== strip(freshOut)) { differ++; rows.push(`${t.name}: kept answer differs from a fresh one`); }
+      rows.push(`${t.name.padEnd(30)} cold ${String(coldMs).padStart(5)} ms ${String(Math.round(bytes / 1024)).padStart(5)} KB · est. prod ${String(Math.round(coldMs + (bytes / PROD_BYTES_PER_S) * 1000)).padStart(6)} ms · warm ${warmMs} ms`);
+      void coldOut;
+    }
+    console.log(`\nEvery read-only tool (HR, ${people.length} people):\n${rows.join('\n')}`);
+    ok(`every read-only tool answers warm in under 100 ms (${ran} tools)`, ran > 20 && slowWarm === 0, `${slowWarm} slow, ${ran} ran`);
+    ok('a kept tool answer equals a fresh one', differ === 0, `${differ} differ`);
+
+    // A change the write hook sees: a new person shows on the next search, the bundle re-read.
+    const fire = (method: string, path: string) => new Promise<void>((resolve) => {
+      const req = { method, path, auth: { user: { org: ORG } } };
+      const res = { end: () => { resolve(); return res; } };
+      readCache.forgetReadsOnWrite(req as never, res as never, () => { (res as { end: () => unknown }).end(); });
+    });
+    await toolByName('search_people')!.run(ctx, { text: 'Zebedee' });
+    await db.users().insertOne({ userId: 'speed-new-person', org: ORG, name: 'Zebedee Quark', email: 'zq@speed.test', lifecycleStatus: 'active', department: 'Design' } as never);
+    const stale = await toolByName('search_people')!.run(ctx, { text: 'Zebedee' }) as { data: unknown };
+    await fire('PATCH', '/admin/employees/speed-new-person');
+    const freshSearch = await toolByName('search_people')!.run(ctx, { text: 'Zebedee' }) as { data: unknown };
+    ok('a person added shows on the next search after the change (bundle and tool answer re-read)', JSON.stringify(freshSearch.data).includes('Zebedee') && !JSON.stringify(stale.data).includes('Zebedee'), `${JSON.stringify(stale.data).slice(0, 80)} → ${JSON.stringify(freshSearch.data).slice(0, 80)}`);
+    const rosterNow = await tc.peopleBundle(ORG);
+    ok('the people bundle has the new person after the change', rosterNow.some((p) => p.userId === 'speed-new-person'));
+
+    // People with different access never share a kept tool answer: the key is per person.
+    const missBefore = tc.toolCacheStats.miss;
+    await toolByName('headcount')!.run(contextFor(hr2 as never, settings.levels, today), {});
+    ok('another person\'s first call is worked out for them, not served from HR\'s', tc.toolCacheStats.miss === missBefore + 1);
+
+    // Changes are never kept: a prepare_* tool runs every time.
+    const acts = [...toolsFor(ctx)].filter((t) => t.acts);
+    ok('tools that prepare a change are not wrapped by the cache', acts.length > 0 && acts.every((t) => !String(t.run).includes('cachedToolRun')), acts.map((t) => t.name).join(','));
+
+    // Redis down: tools still answer (memory only).
+    kept.setSuwiRedisOff(true);
+    readCache.forgetLifecycleReads(ORG);
+    const down = await toolByName('headcount')!.run(ctx, {}).then(() => true, () => false);
+    kept.setSuwiRedisOff(false);
+    ok('with Redis down the tools still answer', down);
+
+    // A restart: memory gone, the Redis copy answers.
+    if (REDIS) {
+      await toolByName('shift_templates')!.run(ctx, {});
+      const r0 = tc.toolCacheStats.redis;
+      (tc as unknown as { __clearMemoryForCheck?: () => void }).__clearMemoryForCheck?.();
+      await toolByName('shift_templates')!.run(ctx, {});
+      ok('after a restart (memory cleared) a kept tool answer comes from Redis', tc.toolCacheStats.redis === r0 + 1);
+    }
+
+    // The warm-up asks the no-input tools ahead for recent Suwi users.
+    readCache.forgetLifecycleReads(ORG);
+    tc.__resetPrerunForCheck();
+    const ranAhead = await tc.prerunTools(ORG, [ctx], toolsFor);
+    const t0 = Date.now(); await toolByName('review_progress')?.run(ctx, {}).catch(() => undefined); const afterAheadMs = Date.now() - t0;
+    ok('tools asked ahead answer the next call from memory', ranAhead > 10 && afterAheadMs < 100, `${ranAhead} ran ahead, then ${afterAheadMs} ms`);
   }
 
   await raw.command({ profile: 0 } as never);
