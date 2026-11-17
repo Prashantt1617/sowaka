@@ -12,7 +12,7 @@
  * told once per change.
  */
 import { randomUUID } from 'node:crypto';
-import { companies, journeys, journeyTasks, lifecycleMeetings, offers, peopleToMeet, users } from '../../config/db';
+import { companies, journeys, journeyTasks, letters, lifecycleMeetings, offers, peopleToMeet, users } from '../../config/db';
 import type {
   CandidateDetails, Day1Pass, DueRule, ExitType, Journey, JourneyFlag, JourneyTask, JourneyTaskStatus, LifecyclePhase,
   OffboardingStatus, OnboardingBoardColumn, OnboardingBoardTab, OnboardingStage, OnboardingStatus, OwnerRole,
@@ -820,6 +820,20 @@ export async function moveJourneysToManager(org: string, fromUserId: string, toU
     }
     // The manager meeting on the Day-1 pass and its meeting now name the successor.
     await syncDay1Meetings(id);
+    // The current offer names the successor too (no new version, nothing re-sent), and so do letters
+    // not sent yet; a sent or signed letter stays as it was.
+    const offer = await offers().findOne({ journeyId: id }, { projection: { _id: 0, versions: 1 } });
+    const last = (offer?.versions?.length ?? 0) - 1;
+    if (last >= 0 && offer!.versions[last]?.fields?.managerUserId === fromUserId) {
+      await offers().updateOne({ journeyId: id }, { $set: { [`versions.${last}.fields.managerUserId`]: toUserId, updatedAt: now } });
+    }
+    const successor = await users().findOne({ userId: toUserId }, { projection: { _id: 0, name: 1 } });
+    if (successor?.name) {
+      await letters().updateMany(
+        { journeyId: id, 'values.managerName': { $exists: true }, 'email.sentAt': { $exists: false }, signature: { $exists: false } },
+        { $set: { 'values.managerName': successor.name } },
+      );
+    }
   }
   return list.map((j) => j.id);
 }

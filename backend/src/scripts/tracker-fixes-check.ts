@@ -9,7 +9,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { companies, connectDb, exitSettlements, getDb, handoverItems, journeyTasks, journeys, letters, lifecycleMeetings, lifecycleTemplates, peopleToMeet, resignations, salaryStructures, surveyResponses, users } from '../config/db';
+import { companies, connectDb, exitSettlements, offers, getDb, handoverItems, journeyTasks, journeys, letters, lifecycleMeetings, lifecycleTemplates, peopleToMeet, resignations, salaryStructures, surveyResponses, users } from '../config/db';
 import type { User } from '../models/user.model';
 import { accountClosedFor } from '../services/auth.service';
 import { recordExit } from '../services/exit.service';
@@ -18,17 +18,19 @@ import { actOnTaskByHr, updateJourneyByHr } from '../services/lifecycle/board';
 import { joinerForManager, onboardingHome, sendSurvey, surveyView } from '../services/lifecycle/appOnboarding';
 import { runLifecycleJobs } from '../services/lifecycle/jobs';
 import { createOffer } from '../services/lifecycle/offers';
-import { createOnboardingJourney, deriveJourney, isWeek1Done, onJoined, tasksOf } from '../services/lifecycle/engine';
+import { createOnboardingJourney, deriveJourney, isWeek1Done, moveJourneysToManager, onJoined, tasksOf } from '../services/lifecycle/engine';
+import { createLetter, outdateChangedLetters } from '../services/lifecycle/letters';
+import { enableLifecycleReadCache, forgetLifecycleReads, pendingRewarms, setLifecycleRewarm } from '../services/lifecycle/readCache';
 import { handoverFileType } from '../services/lifecycle/handoverFiles';
 import { checkUpload, MAX_UPLOAD_BYTES, MULTER_FILE_LIMIT } from '../services/lifecycle/files';
 import express from 'express';
 import multer from 'multer';
 import { exitInsights } from '../services/lifecycle/insights';
-import { addDays, emailSettlement, markHandoverDone, myOffboarding, runOffboardingJobs, setHandoverChecklist, startExit, todayKey, uploadHandover } from '../services/lifecycle/offboarding';
+import { accessEndsLabel, addDays, emailSettlement, markHandoverDone, myOffboarding, runOffboardingJobs, setHandoverChecklist, startExit, todayKey, uploadHandover } from '../services/lifecycle/offboarding';
 import { portalPass } from '../services/lifecycle/portal';
 import { revealFor } from '../services/lifecycle/probation';
 import { acceptResignation, resign } from '../services/lifecycle/resignations';
-import { ensureDefaultTemplates } from '../services/lifecycle/templates';
+import { createTemplate, ensureDefaultTemplates } from '../services/lifecycle/templates';
 
 let passed = 0;
 let failed = 0;
@@ -179,6 +181,16 @@ const HR = { userId: 'hr', name: 'Hema HR' };
   const ins = await exitInsights('hr', { from: addDays(T, -30), to: T }, now);
   ok('the share is over the people offered an interview (Dan, answered on notice), never above 100%', ins.answered.offered === 1 && ins.answered.percent === 100, ins.answered);
   ok('every group shows answers out of people offered', ins.groups.every((g) => typeof g.offered === 'number'), ins.groups);
+  // Someone who left on the 1st of the window's first month and answered: their (month-dated) answer is
+  // counted, so they must count as offered too; over exact days they were not, and answers outnumbered offered.
+  const insFrom = addDays(T, -30);
+  const firstOfMonth = `${insFrom.slice(0, 7)}-01`;
+  if (firstOfMonth < insFrom) {
+    await users().insertOne(person('eli', { name: 'Eli Early', department: 'Design', exit: { kind: 'resigned', lastWorkingDay: firstOfMonth, interview: { filledAt: new Date(`${firstOfMonth}T10:00:00+05:30`), filledBy: 'employee' } } as never }));
+    const ins2 = await exitInsights('hr', { from: insFrom, to: T }, now);
+    ok('people offered are counted over the same whole months as the answers', ins2.answered.offered === ins.answered.offered + 1, { before: ins.answered.offered, after: ins2.answered.offered });
+    await users().deleteOne({ userId: 'eli' });
+  } else ok('people offered are counted over the same whole months as the answers (window starts on the 1st)', true);
 
   console.log('the reveal and its letter');
   const jj = await createOnboardingJourney(ORG, 'hr', { candidate: { name: 'Joy Joiner', personalEmail: 'joy@example.com' }, tj: addDays(T, -200), managerUserId: 'mgr' });
@@ -303,6 +315,46 @@ const HR = { userId: 'hr', name: 'Hema HR' };
   ok('a joining date before the valid-till is refused with a reason', early.status === 400 && /before the offer’s valid-till/.test(early.message), early);
   const soon = await createOffer(HRA, { candidate: { name: 'Soon Sam', personalEmail: 'sam@example.com' }, fields: { designation: 'Artist', ctc: 600000, tj: addDays(T, 3) } });
   ok('with no valid-till given it is never past the joining day', soon.offer.fields.validTill <= addDays(T, 3), soon.offer.fields);
+
+  console.log('round 2: a template\'s settings when it is made, and when access ends');
+  const made = await createTemplate(ORG, { kind: 'offboarding', name: 'Forty-five', settings: { noticeDays: 45, exitInterviewOpensDays: 7, accountCloses: 'tl_end_of_shift' } }, 'Hema HR');
+  ok('a new template keeps the settings sent with it', made.settings.noticeDays === 45 && made.settings.accountCloses === 'tl_end_of_shift', made.settings);
+  ok('the drawer says when access ends: end of shift from the template, at once from the rules', accessEndsLabel('day_after', { templateSnapshot: made } as never) === 'Last day, end of shift' && accessEndsLabel('at_once', { templateSnapshot: made } as never) === 'At once' && accessEndsLabel('day_after', null) === 'The day after the last day');
+
+  console.log('round 2: a joiner moved to the successor, offer and unsent letters too');
+  await users().insertOne(person('lead3', { name: 'Lou Lead', role: 'manager' }));
+  await users().insertOne(person('mgr3', { name: 'Max Next', role: 'manager' }));
+  const sjm = await createOnboardingJourney(ORG, 'hr', { candidate: { name: 'Sid Successor', personalEmail: 'sid@example.com' }, tj: addDays(T, 10), managerUserId: 'lead3' });
+  await offers().insertOne({ id: 'o-sid', org: ORG, journeyId: sjm.id, versions: [{ version: 1, fields: { managerUserId: 'lead3', designation: 'Artist' } }], createdAt: now, updatedAt: now } as never);
+  await letters().insertOne({ id: 'L-sid', org: ORG, journeyId: sjm.id, kind: 'appointment', templateId: 't', refNo: 'AL-9', values: { managerName: 'Lou Lead' }, createdAt: now } as never);
+  await letters().insertOne({ id: 'L-sid-sent', org: ORG, journeyId: sjm.id, kind: 'nda', templateId: 't', refNo: 'ND-9', values: { managerName: 'Lou Lead' }, createdAt: now, email: { to: 'sid@example.com', subject: 's', body: 'b', sentAt: now } } as never);
+  await moveJourneysToManager(ORG, 'lead3', 'mgr3', now);
+  const sOffer = await offers().findOne({ journeyId: sjm.id });
+  ok('the current offer names the successor, still one version', sOffer?.versions.length === 1 && (sOffer.versions[0].fields as { managerUserId?: string }).managerUserId === 'mgr3', sOffer?.versions);
+  ok('an unsent letter names the successor; a sent one stays as sent', (await letters().findOne({ id: 'L-sid' }))?.values.managerName === 'Max Next' && (await letters().findOne({ id: 'L-sid-sent' }))?.values.managerName === 'Lou Lead');
+
+  console.log('round 2: a revision only outdates letters whose own fields changed');
+  const ro = await createOffer(HRA, { candidate: { name: 'Nia Nda', personalEmail: 'nia@example.com' }, fields: { designation: 'Artist', ctc: 600000, tj: addDays(T, 20) } });
+  const nda = await createLetter({ org: ORG, name: 'Hema HR' }, { kind: 'nda', journeyId: ro.journeyId, values: { companyAddress: 'Typed Address, Gurgaon' } });
+  await letters().updateOne({ id: nda.id }, { $set: { signature: { method: 'type', typedName: 'Nia Nda', signedAt: now } } });
+  const none = await outdateChangedLetters(ro.journeyId, now);
+  ok('a company address HR typed is not a change: the signed NDA stays signed', !none.some((c) => c.kind === 'nda') && !(await letters().findOne({ id: nda.id }))?.outdatedAt, none);
+  await offers().updateOne({ journeyId: ro.journeyId }, { $set: { 'versions.0.fields.designation': 'Senior Artist' } });
+  const real = await outdateChangedLetters(ro.journeyId, now);
+  const redraft = await letters().find({ journeyId: ro.journeyId, kind: 'nda', signature: { $exists: false } }).toArray();
+  ok('a field the NDA states that really changed outdates it', real.some((c) => c.kind === 'nda' && c.fields.includes('designation') && !c.fields.includes('companyAddress')), real);
+  ok('the redraft keeps the address HR typed', redraft.length === 1 && redraft[0].values.companyAddress === 'Typed Address, Gurgaon', redraft.map((l) => l.values.companyAddress));
+
+  console.log('round 2: kept answers rebuilt shortly after a change');
+  const rebuilt: string[] = [];
+  enableLifecycleReadCache(true);
+  setLifecycleRewarm(async (org) => { rebuilt.push(org); });
+  forgetLifecycleReads(ORG); forgetLifecycleReads(ORG); forgetLifecycleReads(ORG);
+  ok('a burst of changes waits for one rebuild', pendingRewarms().includes(ORG) && rebuilt.length === 0);
+  await new Promise((r) => setTimeout(r, 3_300));
+  ok('…which runs once, 3 s after the last change', rebuilt.length === 1 && rebuilt[0] === ORG, rebuilt);
+  setLifecycleRewarm(null);
+  enableLifecycleReadCache(false);
 
   console.log(`\n${failed ? `${failed} check(s) failed` : `all ${passed} tracker-fix checks passed`}`);
   process.exit(failed ? 1 : 0);

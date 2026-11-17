@@ -136,6 +136,12 @@ export async function createTemplate(org: string, input: Record<string, unknown>
     const company = await companies().findOne({ id: org }, { projection: { _id: 0, exitNoticeDays: 1 } });
     if (typeof company?.exitNoticeDays === 'number' && company.exitNoticeDays > 0) doc.settings.noticeDays = company.exitNoticeDays;
   }
+  // Settings sent with the new template are its own (they were ignored until a second save), and the
+  // dated tasks follow them the way an update does.
+  if (input.settings !== undefined) {
+    doc.settings = cleanSettings(kind, input.settings, doc.settings);
+    doc.tasks = applySettingsToTasks(kind, doc.settings, doc.tasks);
+  }
   await lifecycleTemplates().insertOne({ ...doc });
   return doc;
 }
