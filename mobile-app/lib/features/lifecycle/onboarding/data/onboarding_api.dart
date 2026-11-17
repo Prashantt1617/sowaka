@@ -137,7 +137,7 @@ class HttpOnboardingApi implements OnboardingApi {
 
   static final Map<String, Map<String, Map<String, dynamic>>> _keptByUser = {};
   static final Map<String, Future<void>> _loading = {};
-  static final Map<String, Timer> _pendingWrite = {};
+  static final Set<String> _pendingWrite = {};
   static final Map<String, DateTime> _writeStartedAt = {};
   static const _replayKey = #onboardingReplay;
 
@@ -163,15 +163,17 @@ class HttpOnboardingApi implements OnboardingApi {
     } else {
       kept[path] = json;
     }
-    // One write for a burst of replies (a screen reads several at once).
+    // One write for the replies that land together (no timer left behind).
     final first = _writeStartedAt[user];
     _writeStartedAt[user] = first == null || startedAt.isBefore(first) ? startedAt : first;
-    _pendingWrite[user]?.cancel();
-    _pendingWrite[user] = Timer(const Duration(milliseconds: 400), () {
-      _pendingWrite.remove(user);
-      final began = _writeStartedAt.remove(user) ?? startedAt;
-      unawaited(DashboardCache.write(_cacheKey, Map.of(kept), startedAt: began));
-    });
+    if (_pendingWrite.add(user)) {
+      final key = _cacheKey;
+      scheduleMicrotask(() {
+        _pendingWrite.remove(user);
+        final began = _writeStartedAt.remove(user) ?? startedAt;
+        unawaited(DashboardCache.write(key, Map.of(kept), startedAt: began));
+      });
+    }
   }
 
   @override
@@ -189,9 +191,6 @@ class HttpOnboardingApi implements OnboardingApi {
   /// Signed out, or someone else signed in: the copies in memory go (the
   /// files go with [DashboardCache.clearAll]).
   static void forgetKept() {
-    for (final timer in _pendingWrite.values) {
-      timer.cancel();
-    }
     _pendingWrite.clear();
     _writeStartedAt.clear();
     _keptByUser.clear();
