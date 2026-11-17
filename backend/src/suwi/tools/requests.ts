@@ -104,9 +104,10 @@ defineTools({
     const minWait = num(i.minDaysWaiting, 0, 0);
     // The company's waiting pile is read once and shared (orgData.ts: kept in memory, dropped on every
     // write that decides or makes a request), then narrowed to what this person's tabs allow.
-    const { orgSuwiData, pendingFor } = await import('../orgData');
+    // When no copy is kept (just after a write), its own narrower read answers and the bundle refreshes behind it.
+    const { keptOrgSuwiData, pendingFor } = await import('../orgData');
     const kind = type ? TYPE_OF[type] : null;
-    const all = (await orgSuwiData(ctx.org, ctx.today, ctx.userId)).pending ?? (await pendingRows(ctx, type));
+    const all = keptOrgSuwiData(ctx.org, ctx.today, ctx.userId)?.pending ?? (await pendingRows(ctx, type));
     const rows = pendingFor(ctx.user, all).filter((x) => (!kind || x.type === kind) && x.daysWaiting >= minWait).sort((a, b) => b.daysWaiting - a.daysWaiting);
     const counts = rows.reduce<Record<string, number>>((m, x) => ({ ...m, [x.type]: (m[x.type] ?? 0) + 1 }), {});
     return {

@@ -19,7 +19,8 @@
  * comes from the attendance report's own short-lived copy at view time.
  */
 import { connectPosts, relayEvents, reimbursementTypes, users } from '../config/db';
-import { cachedLifecycle, refreshLifecycle } from '../services/lifecycle/readCache';
+import { cachedLifecycle, lifecycleReadCacheOn, refreshLifecycle } from '../services/lifecycle/readCache';
+import { peekSwr } from '../services/swr-cache';
 import { listAllReimbursementsForAdmin } from '../services/reimbursement.service';
 import { peopleTasks } from '../services/peopleTasks.service';
 import { leaveSafety, INSIGHT_ROUTE, mayRead } from './insight';
@@ -56,7 +57,7 @@ async function quietly<T>(work: () => Promise<T>): Promise<T | null> {
  * Falls back to the person asking.
  */
 export async function readerFor(org: string, fallbackUserId: string): Promise<{ userId: string }> {
-  const active = { org, dashboardAccess: true, lifecycleStatus: { $nin: ['offboarded', 'terminated'] }, hiddenFromDirectory: { $ne: true } };
+  const active = { org, dashboardAccess: true, lifecycleStatus: { $nin: ['offboarded', 'terminated'] as ('offboarded' | 'terminated')[] }, hiddenFromDirectory: { $ne: true } };
   // A dashboard admin first; else someone with every tab (no tab list), who sees the same lists.
   const admin = await users().findOne({ ...active, dashboardAdmin: true }, { projection: { _id: 0, userId: 1 } })
     ?? await users().findOne({ ...active, dashboardTabs: { $exists: false } }, { projection: { _id: 0, userId: 1 } });
@@ -99,6 +100,19 @@ export async function loadOrgSuwiData(org: string, today: string, fallbackUserId
 export function orgSuwiData(org: string, today: string, askerUserId: string, fresh = false): Promise<OrgSuwiData> {
   const load = () => loadOrgSuwiData(org, today, askerUserId);
   return fresh ? refreshLifecycle(org, 'suwi-org-data', { today }, load) : cachedLifecycle(org, 'suwi-org-data', { today }, load);
+}
+
+/**
+ * The kept copy if there is one; otherwise null, and a refresh starts behind the caller. For a
+ * reader that can make do with a narrower read of its own (pending_requests), so a question right
+ * after a write never waits on the whole company bundle.
+ */
+export function keptOrgSuwiData(org: string, today: string, askerUserId: string): OrgSuwiData | null {
+  if (!lifecycleReadCacheOn()) return null;
+  const kept = peekSwr<OrgSuwiData>(org, 'suwi-org-data', { today });
+  if (kept) return kept;
+  orgSuwiData(org, today, askerUserId, true).catch(() => undefined);
+  return null;
 }
 
 const ROUTE_OF: Record<PendingRow['type'], string> = {

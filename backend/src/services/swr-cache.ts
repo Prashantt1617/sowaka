@@ -84,6 +84,12 @@ export function cachedSwr<T>(org: string, kind: SwrKind, params: unknown, load: 
   return start(org, key, load);
 }
 
+/** The kept answer if there is a usable one, without loading anything (undefined otherwise). */
+export function peekSwr<T>(org: string, kind: SwrKind, params: unknown): T | undefined {
+  const hit = kept.get(keyOf(org, kind, params));
+  return hit?.value !== undefined && Date.now() - hit.at < MAX_STALE_MS ? (hit.value as T) : undefined;
+}
+
 /** Work this one out again now and keep it (the warm-up's way in); readers keep the old answer meanwhile. */
 export function refreshSwr<T>(org: string, kind: SwrKind, params: unknown, load: () => Promise<T>): Promise<T> {
   const key = keyOf(org, kind, params);
