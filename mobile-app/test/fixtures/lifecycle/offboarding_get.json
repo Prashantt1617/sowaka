@@ -1,16 +1,16 @@
 {
   "success": true,
-  "tl": "2026-11-20",
+  "tl": "2026-11-21",
   "daysLeft": 4,
   "exitType": "resignation",
-  "acceptedOn": "2026-11-16",
-  "resignedOn": "2026-11-16",
+  "acceptedOn": "2026-11-17",
+  "resignedOn": "2026-11-17",
   "managerName": "Meera Iyer",
-  "acceptedAt": "2026-11-16T17:26:02.210Z",
-  "noticeFrom": "2026-11-16",
+  "acceptedAt": "2026-11-17T03:47:06.310Z",
+  "noticeFrom": "2026-11-17",
   "tasks": [
     {
-      "id": "1f2962e0-f81b-48b2-8a07-70e27092415c",
+      "id": "16335491-3a33-4461-97f1-a2a63c96a6c1",
       "systemKey": "send_resignation",
       "phase": "resignation",
       "title": "Send resignation",
@@ -24,12 +24,12 @@
       "opensAt": null,
       "dueAt": null,
       "dueLabel": "Any time",
-      "doneAt": "2026-11-16T17:26:02.210Z",
+      "doneAt": "2026-11-17T03:47:06.310Z",
       "doneByName": "Automatic",
       "late": false
     },
     {
-      "id": "81fb68a8-d116-40f9-92d2-63eef5354042",
+      "id": "4358b1c5-fee1-41f1-b67b-85c4c4a64e68",
       "systemKey": "upload_handover",
       "phase": "notice_period",
       "title": "Upload handover items",
@@ -41,12 +41,12 @@
       "mustDo": true,
       "status": "todo",
       "opensAt": null,
-      "dueAt": "2026-11-13T00:00:00.000Z",
-      "dueLabel": "Fri 13 Nov",
+      "dueAt": "2026-11-14T00:00:00.000Z",
+      "dueLabel": "Sat 14 Nov",
       "late": true
     },
     {
-      "id": "3d1009d7-590f-4520-b0c3-ea099786490f",
+      "id": "735fc128-1191-4efa-bb5d-8f0b317fbd6a",
       "systemKey": "exit_interview",
       "phase": "notice_period",
       "title": "Exit interview",
@@ -57,13 +57,13 @@
       "surface": "app",
       "mustDo": false,
       "status": "todo",
-      "opensAt": "2026-11-15T00:00:00.000Z",
-      "dueAt": "2026-11-20T00:00:00.000Z",
-      "dueLabel": "Fri 20 Nov",
+      "opensAt": "2026-11-16T00:00:00.000Z",
+      "dueAt": "2026-11-21T00:00:00.000Z",
+      "dueLabel": "Sat 21 Nov",
       "late": false
     },
     {
-      "id": "7d9b536c-143f-4a40-91e1-ecc7497bed42",
+      "id": "9a9b6e2f-e4ea-4694-a0a2-ef3435d25734",
       "systemKey": "save_documents",
       "phase": "notice_period",
       "title": "Save your documents",
@@ -74,15 +74,15 @@
       "surface": "app",
       "mustDo": false,
       "status": "todo",
-      "opensAt": "2026-11-16T00:00:00.000Z",
-      "dueAt": "2026-11-20T00:00:00.000Z",
-      "dueLabel": "Fri 20 Nov",
+      "opensAt": "2026-11-17T00:00:00.000Z",
+      "dueAt": "2026-11-21T00:00:00.000Z",
+      "dueLabel": "Sat 21 Nov",
       "late": false
     }
   ],
   "handover": [
     {
-      "id": "5df8a1ff-2c72-46df-99d8-ec8b81826b71",
+      "id": "c3725391-3d3c-464c-810b-790a67303a6c",
       "title": "Design system file",
       "done": false,
       "doneAt": null,
@@ -90,11 +90,11 @@
         "kind": "link",
         "name": "docs.example/design-system",
         "url": "https://docs.example/design-system",
-        "at": "2026-11-16T17:26:01.552Z"
+        "at": "2026-11-17T03:47:05.526Z"
       }
     },
     {
-      "id": "ed103ad4-6399-4f0c-8af3-22608e1a33e7",
+      "id": "6e912b69-ae3e-4d17-b4bf-162a6dd27c85",
       "title": "Open projects",
       "done": false,
       "doneAt": null,
@@ -102,11 +102,11 @@
         "kind": "link",
         "name": "docs.example/projects",
         "url": "https://docs.example/projects",
-        "at": "2026-11-16T17:26:01.552Z"
+        "at": "2026-11-17T03:47:05.526Z"
       }
     },
     {
-      "id": "6d9a6bfc-7a3f-4d0a-9cbf-c164703a294b",
+      "id": "197cdc8c-7e98-4c20-9ab5-387cb1de5f95",
       "title": "Vendor list",
       "done": false,
       "doneAt": null,
@@ -114,9 +114,9 @@
     }
   ],
   "handoverNote": "Please share by Friday.",
-  "handoverDue": "2026-11-13",
-  "handoverDueAt": "2026-11-13T00:00:00.000Z",
-  "handoverAddedAt": "2026-11-16T17:26:01.552Z",
+  "handoverDue": "2026-11-14",
+  "handoverDueAt": "2026-11-14T00:00:00.000Z",
+  "handoverAddedAt": "2026-11-17T03:47:05.526Z",
   "handoverDone": false,
   "handoverDoneAt": null,
   "returnAssets": {
@@ -134,7 +134,7 @@
   },
   "interview": {
     "applies": true,
-    "opensAt": "2026-11-15",
+    "opensAt": "2026-11-16",
     "open": true,
     "sent": false
   },
@@ -152,6 +152,6 @@
   ],
   "settlement": {
     "by": "email",
-    "after": "2026-11-20"
+    "after": "2026-11-21"
   }
 }

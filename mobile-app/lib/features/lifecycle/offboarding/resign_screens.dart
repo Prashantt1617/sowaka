@@ -10,9 +10,10 @@ import 'offboarding_models.dart';
 import 'offboarding_store.dart';
 import 'offboarding_ui.dart';
 
-/// The reasons the form offers. The canvas draws only "Better opportunity";
-/// the rest follow the exit interview's list, less "Manager" (the manager
-/// reads this one).
+/// The reasons the form offers when the server sends none (it sends its
+/// `reasons` with `GET /lifecycle/resignation`, and those win). The canvas
+/// draws only "Better opportunity"; the rest follow the exit interview's
+/// list.
 const resignReasons = [
   'Better opportunity',
   'Growth',
@@ -102,7 +103,10 @@ class _ResignScreenState extends State<ResignScreen> {
           const OffSheetHandle(),
           Text('Reason', style: offText(18, weight: FontWeight.w700)),
           const SizedBox(height: 8),
-          for (final reason in resignReasons)
+          for (final reason
+              in widget.store.reasons.isEmpty
+                  ? resignReasons
+                  : widget.store.reasons)
             ListTile(
               key: ValueKey('resign-reason-$reason'),
               contentPadding: EdgeInsets.zero,

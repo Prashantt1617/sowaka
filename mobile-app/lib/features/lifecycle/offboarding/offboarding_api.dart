@@ -146,6 +146,75 @@ class OffboardingApi {
         : null;
   }
 
+  /// The manager's reports with an exit under way, HR-started ones too.
+  Future<List<LeaverSummary>> fetchManagerLeavers() async {
+    final json = await _send('GET', '/lifecycle/manager/leavers');
+    final rows = json['leavers'];
+    return [
+      if (rows is List)
+        for (final row in rows)
+          if (row is Map) LeaverSummary.fromJson(row.cast<String, dynamic>()),
+    ];
+  }
+
+  /// A handover upload, for the leaver (their own) or their manager:
+  /// `GET /lifecycle/offboarding/handover/:id/file` with the session. A stored
+  /// file comes back as a short-lived link; a development server sends the
+  /// bytes.
+  Future<HandoverFile> fetchHandoverFile(String itemId) async {
+    final uri = Uri.parse(
+      '$_baseUrl/lifecycle/offboarding/handover/${Uri.encodeComponent(itemId)}/file',
+    );
+    final http.Response response;
+    try {
+      response = await _client.get(
+        uri,
+        headers: {'Authorization': 'Bearer ${session.token}'},
+      );
+    } catch (error) {
+      NetworkStatus.reportFailure(error, probe: Uri.parse('$_baseUrl/health'));
+      if (NetworkStatus.isNetworkError(error)) {
+        throw const OffboardingApiException('No internet connection');
+      }
+      rethrow;
+    }
+    NetworkStatus.reportSuccess();
+    final type = (response.headers['content-type'] ?? '')
+        .split(';')
+        .first
+        .trim();
+    if (type == 'application/json' ||
+        response.statusCode < 200 ||
+        response.statusCode >= 300) {
+      Map<String, dynamic> json = const {};
+      try {
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+        if (decoded is Map) json = decoded.cast<String, dynamic>();
+      } on FormatException {
+        // Not JSON: the refusal below says so.
+      }
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw OffboardingApiException(
+          json['error'] as String? ??
+              json['message'] as String? ??
+              'Could not open the file. Try again.',
+          statusCode: response.statusCode,
+        );
+      }
+      final url = json['url'];
+      if (url is String && url.isNotEmpty) return HandoverFile(url: url);
+      throw const OffboardingApiException(
+        'Could not open the file. Try again.',
+      );
+    }
+    final disposition = response.headers['content-disposition'] ?? '';
+    return HandoverFile(
+      bytes: response.bodyBytes,
+      contentType: type,
+      name: RegExp(r'filename="([^"]+)"').firstMatch(disposition)?.group(1),
+    );
+  }
+
   Future<LeaverView> fetchLeaver(String userId) async => LeaverView.fromJson(
     await _send(
       'GET',

@@ -621,7 +621,8 @@ void main() {
         expect(text('Handover checklist'), findsOneWidget);
         expect(text('NOTE FOR RAVI'), findsOneWidget);
         expect(text('2 of 4 uploaded'), findsOneWidget);
-        expect(text('ds-handover.pdf · Uploaded 12 Dec'), findsOneWidget);
+        expect(text('ds-handover.pdf'), findsOneWidget);
+        expect(text('Uploaded 12 Dec'), findsNWidgets(2));
         expect(text('Waiting for Ravi'), findsNWidgets(2));
         expect(text('Other exit steps'), findsOneWidget);
         expect(text('Tracked by IT and admin'), findsOneWidget);
@@ -987,6 +988,349 @@ void main() {
       expect(find.textContaining('Credited'), findsNothing);
     },
   );
+
+  // ───────────────────────────── reading again, R8b before HR accepts, exits HR started, uploads
+  group('live, and the gaps closed', () {
+    testWidgets(
+      'the Resignation tab follows HR accepting without a restart: Withdraw goes, the notice comes',
+      (tester) async {
+        phone(tester);
+        final fake = FakeLifecycle()
+          ..canResign = false
+          ..resignation = {
+            ...reportResignation(status: 'with_hr'),
+            'manager': {'action': 'accept', 'at': '2026-11-02T05:00:00.000Z'},
+          };
+        fake.install();
+        final store = OffboardingStore.of(leaverSession);
+        await tester.runAsync(store.ensureLoaded);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ListView(
+                children: [
+                  OwnResignationTab(store: store, today: DateTime(2026, 12, 14)),
+                ],
+              ),
+            ),
+          ),
+        );
+        await settle(tester);
+        expect(key('resignation-withdraw'), findsOneWidget);
+
+        fake.onNotice();
+        await tester.runAsync(store.refresh);
+        await settle(tester);
+        expect(key('resignation-withdraw'), findsNothing);
+        expect(key('resignation-tab-notice'), findsOneWidget);
+        expect(text('Before you go'), findsOneWidget);
+      },
+    );
+
+    test(
+      'the store reads again when stale, and a read asked for mid-load is not lost',
+      () async {
+        final fake = FakeLifecycle()..install();
+        final store = OffboardingStore.of(leaverSession);
+        int reads() => fake.calls.where((c) => c == 'GET /lifecycle/me').length;
+        await store.revalidate();
+        expect(reads(), 1);
+        await store.revalidate();
+        expect(reads(), 1, reason: 'fresh: nothing read again');
+        await store.revalidate(maxAge: Duration.zero);
+        expect(reads(), 2);
+        // Two refreshes at once: the second waits for the first, then reads.
+        fake.resignation = reportResignation(status: 'with_hr');
+        final first = store.refresh();
+        final second = store.refresh();
+        await Future.wait([first, second]);
+        expect(reads(), 4);
+        expect(store.resignation?.withHr, isTrue);
+      },
+    );
+
+    testWidgets(
+      'R8b before HR accepts, as the server answers (no exit yet): where it stands and what comes next, never "No exit"',
+      (tester) async {
+        phone(tester);
+        final fake = FakeLifecycle()
+          ..leaverNeedsExit = true
+          ..resignation = reportResignation();
+        fake.managerResignations.add(reportResignation());
+        fake.install();
+        final store = OffboardingStore.of(managerSession);
+        await tester.runAsync(store.ensureLoaded);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ListView(
+                children: [
+                  ManagerLeaverTab(
+                    store: store,
+                    userId: 'ravi',
+                    name: 'Ravi Menon',
+                    today: DateTime(2026, 12, 14),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await settle(tester);
+        expect(key('manager-leaver-before-accepted'), findsOneWidget);
+        expect(text('With manager'), findsOneWidget);
+        expect(text('What comes next'), findsOneWidget);
+        expect(find.textContaining('It is with you.'), findsOneWidget);
+        expect(text('Reason'), findsOneWidget);
+        expect(find.textContaining('No exit for this person'), findsNothing);
+        expect(text('Try again'), findsNothing);
+        expect(
+          fake.calls,
+          isNot(contains('GET /lifecycle/manager/leavers/ravi')),
+        );
+
+        // HR accepts; the store reads again (a push): the checklist is there.
+        fake.onNotice();
+        fake.managerResignations
+          ..clear()
+          ..add({...fake.resignation!, 'name': 'Ravi Menon'});
+        await tester.runAsync(store.refresh);
+        await settle(tester);
+        expect(key('manager-handover'), findsOneWidget);
+        expect(key('manager-leaver-before-accepted'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'an exit HR started: the report\'s tab (R8b) from the leavers list, and the leaver\'s countdown (R2b) with Save your documents',
+      (tester) async {
+        phone(tester);
+        final fake = FakeLifecycle()
+          ..tl = '2026-12-31'
+          ..pageVisible = true
+          ..canResign = false
+          ..exitType = 'retirement';
+        fake.managerLeavers.add({
+          'userId': 'ravi',
+          'name': 'Ravi Menon',
+          'tl': '2026-12-31',
+          'daysLeft': 17,
+          'handover': {'items': 4, 'uploaded': 2},
+        });
+        fake.install();
+        final manager = OffboardingStore.of(managerSession);
+        await tester.runAsync(manager.ensureLoaded);
+        expect(manager.resignationOf('ravi'), isNull);
+        expect(manager.hasLeaverTab('ravi'), isTrue);
+        expect(manager.hasLeaverTab('neha'), isFalse);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ListView(
+                children: [
+                  ManagerLeaverTab(
+                    store: manager,
+                    userId: 'ravi',
+                    name: 'Ravi Menon',
+                    today: DateTime(2026, 12, 14),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await settle(tester);
+        expect(key('manager-handover'), findsOneWidget);
+        expect(text('Retirement'), findsOneWidget);
+
+        final own = OffboardingStore.of(leaverSession);
+        await tester.runAsync(own.ensureLoaded);
+        expect(own.resignation, isNull);
+        expect(own.showsResignationTab, isTrue);
+        expect(own.resignationTabLabel, 'Exit');
+        var documents = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ListView(
+                children: [
+                  OwnResignationTab(
+                    store: own,
+                    today: DateTime(2026, 12, 14),
+                    onOpenDocuments: () => documents++,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await settle(tester);
+        expect(key('resignation-tab-exit'), findsOneWidget);
+        expect(text('Before you go'), findsOneWidget);
+        expect(text('Retirement'), findsOneWidget);
+        await tapShown(tester, key('before-documents'));
+        expect(documents, 1, reason: 'Save your documents opens Payroll');
+      },
+    );
+
+    testWidgets(
+      'uploads open: the leaver\'s own (R3b) and the manager\'s (R8b), through the file endpoint',
+      (tester) async {
+        phone(tester);
+        final launched = <Uri>[];
+        HandoverOpener.testOverride = HandoverOpener(
+          launch: (uri) async {
+            launched.add(uri);
+            return true;
+          },
+          show: (_, _, _, _) async {},
+        );
+        addTearDown(() => HandoverOpener.testOverride = null);
+        final fake = FakeLifecycle()..onNotice();
+        fake.managerResignations.add({...fake.resignation!, 'name': 'Ravi Menon'});
+        fake.install();
+        final store = OffboardingStore.of(leaverSession);
+        await tester.runAsync(store.ensureLoaded);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: HandoverScreen(store: store, managerName: 'Meera Iyer'),
+          ),
+        );
+        await settle(tester);
+        await tapShown(tester, key('handover-open-h1'));
+        expect(fake.calls, contains('GET /lifecycle/offboarding/handover/h1/file'));
+        expect(launched.last, Uri.parse('https://files.example.test/h1'));
+
+        final manager = OffboardingStore.of(managerSession);
+        await tester.runAsync(manager.ensureLoaded);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ListView(
+                children: [
+                  ManagerLeaverTab(
+                    store: manager,
+                    userId: 'ravi',
+                    name: 'Ravi Menon',
+                    today: DateTime(2026, 12, 14),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await settle(tester);
+        await tapShown(tester, key('manager-handover-open-h2'));
+        expect(fake.calls, contains('GET /lifecycle/offboarding/handover/h2/file'));
+        expect(launched.last, Uri.parse('https://files.example.test/h2'));
+      },
+    );
+
+    testWidgets(
+      'after the manager marks the handover done, Replace offers no Remove',
+      (tester) async {
+        phone(tester);
+        final fake = FakeLifecycle()
+          ..onNotice()
+          ..handoverDone = true;
+        fake.install();
+        final store = OffboardingStore.of(leaverSession);
+        await tester.runAsync(store.ensureLoaded);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: HandoverScreen(store: store, managerName: 'Meera Iyer'),
+          ),
+        );
+        await settle(tester);
+        await tapShown(tester, key('handover-replace-h1'));
+        expect(key('handover-replace-open'), findsOneWidget);
+        expect(key('handover-replace-file'), findsOneWidget);
+        expect(key('handover-replace-remove'), findsNothing);
+      },
+    );
+
+    test('release early stops the day before the last day by notice', () {
+      final today = DateTime(2026, 11, 2);
+      expect(
+        lastEarlyReleaseDay(lastDayByNotice: DateTime(2026, 12, 31), today: today),
+        DateTime(2026, 12, 30),
+      );
+      expect(
+        lastEarlyReleaseDay(lastDayByNotice: DateTime(2026, 12, 1), today: today),
+        DateTime(2026, 11, 30),
+      );
+      expect(
+        lastEarlyReleaseDay(lastDayByNotice: DateTime(2026, 11, 3), today: today),
+        today,
+      );
+      expect(
+        lastEarlyReleaseDay(lastDayByNotice: DateTime(2026, 11, 2), today: today),
+        isNull,
+      );
+    });
+
+    testWidgets('no early release left: the card says so, nothing is sent', (
+      tester,
+    ) async {
+      phone(tester);
+      final fake = FakeLifecycle()
+        ..managerResignations.add({
+          ...reportResignation(),
+          'lastDayByNotice': '2026-11-02',
+        });
+      fake.install();
+      final store = OffboardingStore.of(managerSession);
+      await tester.runAsync(store.ensureLoaded);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ListView(
+              children: [
+                ManagerResignationRequests(
+                  store: store,
+                  today: DateTime(2026, 11, 2),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await settle(tester);
+      await tapShown(tester, key('resignation-release-early-res-1'));
+      expect(text('Release on'), findsNothing);
+      expect(
+        fake.calls.where((c) => c.startsWith('POST /lifecycle/manager')),
+        isEmpty,
+      );
+    });
+
+    test('no manager: the track is Sent → HR → Accepted', () {
+      final steps = resignationSteps(
+        ResignationView.fromJson({
+          ...reportResignation(status: 'with_hr'),
+          'managerName': '',
+        }),
+      );
+      expect(steps.map((s) => s.label), ['Sent', 'HR', 'Accepted']);
+    });
+
+    testWidgets('R1 offers the server\'s reasons when it sends them', (
+      tester,
+    ) async {
+      phone(tester);
+      (FakeLifecycle()..reasons = ['Better opportunity', 'Manager', 'Other'])
+          .install();
+      final store = OffboardingStore.of(leaverSession);
+      await tester.runAsync(store.ensureLoaded);
+      expect(store.reasons, ['Better opportunity', 'Manager', 'Other']);
+      await tester.pumpWidget(MaterialApp(home: ResignScreen(store: store)));
+      await settle(tester);
+      await tester.tap(key('resign-reason'));
+      await settle(tester);
+      expect(key('resign-reason-Manager'), findsOneWidget);
+      expect(key('resign-reason-Relocation'), findsNothing);
+    });
+  });
 }
 
 class _RefusingAuth extends AuthApiService {

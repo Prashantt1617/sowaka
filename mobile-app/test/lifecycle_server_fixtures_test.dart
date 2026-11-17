@@ -535,12 +535,64 @@ void main() {
     });
   });
 
+  // ─────────────────────────────────────────────────────────────── an exit HR started; the manager's leavers
+  group('offboarding: an exit HR started', () {
+    test('the leaver: no resignation, the notice tab (R2b) and the page, its type', () async {
+      final server = FixtureServer([
+        ('GET', '/lifecycle/me', 'me_hr_started'),
+        ('GET', '/lifecycle/resignation', 'resignation_get_hr_started'),
+        ('GET', '/lifecycle/manager/', 'manager_resignations_accepted'),
+        ('GET', '/lifecycle/offboarding', 'offboarding_get_hr_started'),
+      ]);
+      off.OffboardingApi.testOverride = (s) => off.OffboardingApi(session: s, baseUrl: _base, client: server.client);
+      addTearDown(() {
+        off.OffboardingApi.testOverride = null;
+        off.OffboardingStore.reset();
+      });
+      off.OffboardingStore.reset();
+      final store = off.OffboardingStore.of(session('p2', 'Tara Bose'));
+      await store.ensureLoaded();
+      expect(store.resignation, isNull);
+      expect(store.onNotice, isTrue);
+      expect(store.exitWithoutResignation, isTrue);
+      expect(store.showsResignationTab, isTrue, reason: 'countdown in R2b');
+      expect(store.resignationTabLabel, 'Exit');
+      expect(store.canResign, isFalse);
+      final page = await store.api.fetchOffboarding();
+      expect(page.exitType, 'retirement');
+      expect(off.exitTypeLabel(page.exitType), 'Retirement');
+      expect(page.tl, day(fixture('me_hr_started')['offboarding']['tl']));
+      expect(page.acceptedAt, isNotNull);
+    });
+
+    test('the manager: the leavers list carries HR-started exits, and their R8b has no resignation', () async {
+      final leavers = await offboardingApi(FixtureServer([('GET', '/lifecycle/manager/leavers', 'manager_leavers')]), id: 'mgr', name: 'Meera Iyer').fetchManagerLeavers();
+      expect(leavers.map((l) => l.userId), containsAll(['p2', 'ravi']));
+      final tara = leavers.firstWhere((l) => l.userId == 'p2');
+      expect([tara.name, tara.tl, tara.daysLeft], ['Tara Bose', day(fixture('me_hr_started')['offboarding']['tl']), 20]);
+      final ravi = leavers.firstWhere((l) => l.userId == 'ravi');
+      expect([ravi.handoverItems, ravi.handoverUploaded], [3, 2]);
+      final v = off.LeaverView.fromJson(fixture('manager_leaver_hr_started'));
+      expect(v.resignation, isNull);
+      expect(v.onNotice, isTrue);
+      expect(v.exitType, 'retirement');
+      expect(v.tl, tara.tl);
+    });
+
+    test('R1 offers the server\'s reasons', () {
+      final s = off.ResignationState.fromJson(fixture('resignation_get_none'));
+      expect(s.reasons, containsAll(['Better opportunity', 'Manager', 'Other']));
+    });
+  });
+
   // ─────────────────────────────────────────────────────────────── pushes
   group('pushes', () {
     final pushes = [for (final p in fixture('push_payloads')['pushes'] as List) (p as Map).cast<String, dynamic>()];
 
+    bool leaving(Map<String, dynamic> p) => const {'lifecycle_offboarding', 'lifecycle_resignation'}.contains((p['data'] as Map)['type']);
+
     test('every onboarding push names a destination the app opens, with the ids it needs', () {
-      final onboarding = pushes.where((p) => (p['data'] as Map)['destination'] != null).toList();
+      final onboarding = pushes.where((p) => (p['data'] as Map)['destination'] != null && !leaving(p)).toList();
       expect(onboarding, isNotEmpty);
       for (final p in onboarding) {
         final data = (p['data'] as Map).cast<String, dynamic>();
@@ -557,13 +609,88 @@ void main() {
       expect(starter['data']['starterTaskId'], fixture('starter_tasks_get')['tasks'][0]['id']);
     });
 
-    test('offboarding pushes are told apart from onboarding ones', () {
-      final leaving = pushes.where((p) => RegExp('resign|offboard|handover').hasMatch(p['scenario'] as String)).toList();
-      expect(leaving, isNotEmpty);
-      for (final p in leaving) {
-        expect((p['data'] as Map)['destination'], isNull, reason: 'not opened as an onboarding screen');
-        expect(p['data']['type'], startsWith('lifecycle_'));
+    test('every offboarding push names where it opens, with its ids, and is never an onboarding screen', () {
+      final offboarding = pushes.where(leaving).toList();
+      expect(offboarding.length, greaterThanOrEqualTo(8));
+      expect(pushes.where((p) => RegExp('resign|offboard|handover|exit_interview').hasMatch(p['scenario'] as String)).every(leaving), isTrue);
+      for (final p in offboarding) {
+        final data = (p['data'] as Map).cast<String, dynamic>();
+        final destination = data['destination'] as String?;
+        expect(off.offboardingPushDestinations, contains(destination), reason: '${p['scenario']}');
+        expect(onboardingDestinations, isNot(contains(destination)), reason: 'not opened as an onboarding screen');
+        expect(off.OffboardingStore.isOffboardingPush(data), isTrue);
+        if (destination == 'lifecycle_resignation_request') {
+          expect([data['resignationId'], data['userId']], everyElement(isA<String>()), reason: '${p['scenario']}');
+        }
+        if (destination == 'lifecycle_leaver') expect(data['userId'], isA<String>(), reason: '${p['scenario']}');
+        if (destination == 'lifecycle_resignation') {
+          expect(data['resignationId'] ?? data['journeyId'], isA<String>(), reason: '${p['scenario']}');
+        }
       }
+      String where(String scenario) => '${offboarding.firstWhere((p) => p['scenario'] == scenario)['data']['destination']}';
+      expect(where('lifecycle_resignation'), 'lifecycle_resignation_request');
+      expect(where('lifecycle_resignation_withdrawn'), 'lifecycle_resignation_request');
+      expect(where('lifecycle_resignation_with_hr'), 'lifecycle_resignation');
+      expect(where('lifecycle_offboarding_open'), 'lifecycle_resignation');
+      expect(where('lifecycle_handover_checklist'), 'lifecycle_leaver');
+      expect(where('lifecycle_handover_shared'), 'lifecycle_handover');
+      expect(where('lifecycle_handover_uploaded'), 'lifecycle_leaver');
+      expect(where('lifecycle_exit_interview_open'), 'lifecycle_exit_interview');
+    });
+
+    test('the app routes each offboarding push the server sends', () async {
+      Future<List<String>> route(String userId, List<(String, String, String)> routes, Iterable<Map<String, dynamic>> sent) async {
+        final server = FixtureServer(routes);
+        off.OffboardingApi.testOverride = (s) => off.OffboardingApi(session: s, baseUrl: _base, client: server.client);
+        addTearDown(() {
+          off.OffboardingApi.testOverride = null;
+          off.OffboardingStore.reset();
+        });
+        off.OffboardingStore.reset();
+        final store = off.OffboardingStore.of(session(userId, userId));
+        final opened = <String>[];
+        final routes0 = off.OffboardingRoutes(
+          openRequests: (id) => opened.add('requests:$id'),
+          openOwnResignation: () => opened.add('own-resignation'),
+          openOffboarding: ({section}) => opened.add('offboarding:${section ?? ''}'),
+          openLeaver: (id) => opened.add('leaver:$id'),
+          openElsewhere: () => opened.add('elsewhere'),
+        );
+        for (final p in sent) {
+          expect(off.openOffboardingDestination((p['data'] as Map).cast<String, dynamic>(), store, routes0), isTrue);
+          await store.refresh();
+          await Future<void>.delayed(Duration.zero);
+        }
+        return opened;
+      }
+
+      final toRavi = pushes.where((p) => leaving(p) && p['userId'] == 'ravi').toList();
+      final ravi = await route('ravi', [
+        ('GET', '/lifecycle/me', 'me_on_notice'),
+        ('GET', '/lifecycle/resignation', 'resignation_get_accepted'),
+        ('GET', '/lifecycle/manager/', 'manager_resignations_accepted'),
+      ], toRavi);
+      expect(ravi, [
+        for (final p in toRavi)
+          switch (p['scenario']) {
+            'lifecycle_handover_shared' => 'offboarding:handover',
+            'lifecycle_exit_interview_open' => 'offboarding:exit_interview',
+            _ => 'own-resignation',
+          },
+      ]);
+      final toMeera = pushes.where((p) => leaving(p) && p['userId'] == 'mgr').toList();
+      final meera = await route('mgr', [
+        ('GET', '/lifecycle/me', 'me_joiner'),
+        ('GET', '/lifecycle/resignation', 'resignation_get_none'),
+        ('GET', '/lifecycle/manager/resignations', 'manager_resignations_accepted'),
+        ('GET', '/lifecycle/manager/leavers', 'manager_leavers'),
+      ], toMeera);
+      expect(meera, [
+        for (final p in toMeera)
+          p['data']['destination'] == 'lifecycle_resignation_request'
+              ? 'requests:${p['data']['resignationId']}'
+              : 'leaver:${p['data']['userId']}',
+      ]);
     });
   });
 

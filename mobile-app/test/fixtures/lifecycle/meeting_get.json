@@ -1,8 +1,8 @@
 {
   "id": "fx-meeting",
   "title": "Meet your manager",
-  "startsAt": "2026-11-16T17:46:01.552Z",
-  "endsAt": "2026-11-16T18:16:01.552Z",
+  "startsAt": "2026-11-17T04:07:05.526Z",
+  "endsAt": "2026-11-17T04:37:05.526Z",
   "place": "Room 4B",
   "attendees": [
     {
@@ -25,5 +25,5 @@
   ],
   "mustDo": true,
   "systemKey": "meet_manager",
-  "taskId": "93446f4a-c17d-406a-b3a0-f8363130ac65"
+  "taskId": "153f6f8e-e0cb-4146-a4f9-8f2267e9ad33"
 }

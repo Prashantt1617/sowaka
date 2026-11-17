@@ -2,11 +2,18 @@
 /// Resignation tab, R2b) and R3b (Handover: upload).
 library;
 
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:printing/printing.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../shared/app_toast.dart';
 import '../../shared/attachment_picker.dart';
 import 'exit_interview_screen.dart';
+import 'offboarding_api.dart';
 import 'offboarding_dates.dart';
 import 'offboarding_models.dart';
 import 'offboarding_store.dart';
@@ -71,6 +78,7 @@ List<BeforeYouGoItem> beforeYouGoItems(
   required VoidCallback onChanged,
   VoidCallback? onOpenDocuments,
   bool withSettlement = false,
+  OffboardingChrome chrome = const OffboardingChrome(),
 }) {
   final who = managerFirst ?? 'your manager';
   final items = <BeforeYouGoItem>[];
@@ -94,6 +102,7 @@ List<BeforeYouGoItem> beforeYouGoItems(
                     store: store,
                     managerName:
                         data.managerName ?? store.resignation?.managerName,
+                    chrome: chrome,
                   ),
                 ),
               );
@@ -123,6 +132,7 @@ List<BeforeYouGoItem> beforeYouGoItems(
                     store: store,
                     interview: interview,
                     managerFirst: managerFirst,
+                    chrome: chrome,
                   ),
                 ),
               );
@@ -244,11 +254,16 @@ class OffboardingPage extends StatefulWidget {
     required this.store,
     this.chrome = const OffboardingChrome(),
     this.today,
+    this.openSection,
   });
 
   final OffboardingStore store;
   final OffboardingChrome chrome;
   final DateTime? today;
+
+  /// Opened from a push: `handover` (R3b) or `exit_interview` (R5) goes on
+  /// top once the page has loaded.
+  final String? openSection;
 
   @override
   State<OffboardingPage> createState() => _OffboardingPageState();
@@ -257,14 +272,27 @@ class OffboardingPage extends StatefulWidget {
 class _OffboardingPageState extends State<OffboardingPage> {
   OffboardingPageData? _data;
   String? _error;
+  late String? _section = widget.openSection;
+  bool _loading = false;
 
   @override
   void initState() {
     super.initState();
+    widget.store.addListener(_load);
     _load();
   }
 
+  @override
+  void dispose() {
+    widget.store.removeListener(_load);
+    super.dispose();
+  }
+
+  /// Reads the page: on opening, on a pull, after a subscreen, and whenever
+  /// the store reads again (a push, the app coming back to the front).
   Future<void> _load() async {
+    if (_loading) return;
+    _loading = true;
     try {
       final data = await widget.store.api.fetchOffboarding();
       if (mounted) {
@@ -272,11 +300,44 @@ class _OffboardingPageState extends State<OffboardingPage> {
           _data = data;
           _error = null;
         });
+        _openSection();
       }
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
+    } finally {
+      _loading = false;
     }
   }
+
+  void _openSection() {
+    final section = _section;
+    final data = _data;
+    if (section == null || data == null) return;
+    _section = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final key = section == 'exit_interview' ? 'exit-interview' : section;
+      _items(
+        context,
+        data,
+      ).where((item) => item.key == key).firstOrNull?.onTap?.call();
+    });
+  }
+
+  List<BeforeYouGoItem> _items(
+    BuildContext context,
+    OffboardingPageData data,
+  ) => beforeYouGoItems(
+    context,
+    store: widget.store,
+    data: data,
+    managerFirst: firstName(
+      data.managerName ?? widget.store.resignation?.managerName,
+    ),
+    onChanged: _load,
+    onOpenDocuments: widget.chrome.onOpenDocuments,
+    chrome: widget.chrome,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -286,6 +347,9 @@ class _OffboardingPageState extends State<OffboardingPage> {
       title: 'Off-boarding',
       header: widget.chrome.header,
       bottomNav: widget.chrome.bottomNav,
+      onRefresh: () async {
+        await Future.wait([widget.store.refresh(), _load()]);
+      },
       children: data == null
           ? [
               OffLoadState(
@@ -312,17 +376,11 @@ class _OffboardingPageState extends State<OffboardingPage> {
     final acceptedAt = data.acceptedAt ?? resignation?.hrAcceptedAt;
     final noticeFrom =
         data.noticeFrom ?? resignation?.submittedAt ?? acceptedAt;
-    final items = beforeYouGoItems(
-      context,
-      store: widget.store,
-      data: data,
-      managerFirst: managerFirst,
-      onChanged: _load,
-      onOpenDocuments: widget.chrome.onOpenDocuments,
-    );
+    final items = _items(context, data);
     final handoverTask = data.task('upload_handover');
     final handoverDone = handoverTask?.done == true || data.handover.done;
     final handoverDue = handoverTask?.dueAt ?? data.handover.dueAt;
+    final lastDayCame = tl != null && !today.isBefore(tl);
 
     String? weeks;
     if (noticeFrom != null && tl != null) {
@@ -344,18 +402,19 @@ class _OffboardingPageState extends State<OffboardingPage> {
       ),
       OffStep(
         'Handover',
-        acceptedAt == null
-            ? OffStepState.todo
-            : (handoverDone ? OffStepState.done : OffStepState.current),
+        handoverDone
+            ? OffStepState.done
+            : (acceptedAt == null || lastDayCame
+                  ? OffStepState.todo
+                  : OffStepState.current),
         sub: handoverDone
             ? 'Done'
             : (handoverDue == null ? null : 'by ${shortDay(handoverDue)}'),
       ),
+      // The last day is the step under way from Tl itself, handover or not.
       OffStep(
         'Last day',
-        handoverDone && tl != null && !today.isBefore(tl)
-            ? OffStepState.current
-            : OffStepState.todo,
+        lastDayCame ? OffStepState.current : OffStepState.todo,
         sub: tl == null ? null : shortDay(tl),
       ),
     ];
@@ -497,11 +556,15 @@ class HandoverScreen extends StatefulWidget {
     required this.store,
     this.managerName,
     this.pickFile,
+    this.chrome = const OffboardingChrome(),
   });
 
   final OffboardingStore store;
   final String? managerName;
   final HandoverFilePicker? pickFile;
+
+  /// The shell's header and tabs, as R3 wears them.
+  final OffboardingChrome chrome;
 
   /// The picker every handover screen uses, in tests.
   @visibleForTesting
@@ -521,7 +584,14 @@ class _HandoverScreenState extends State<HandoverScreen> {
   void initState() {
     super.initState();
     _managerName = widget.managerName;
+    widget.store.addListener(_load);
     _load();
+  }
+
+  @override
+  void dispose() {
+    widget.store.removeListener(_load);
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -608,6 +678,9 @@ class _HandoverScreenState extends State<HandoverScreen> {
   }
 
   Future<void> _replaceMenu(HandoverItem item) async {
+    // Once the manager has marked the handover done the upload stays; the
+    // server refuses removing it.
+    final locked = item.done || (_checklist?.done ?? false);
     final choice = await showOffSheet<String>(
       context,
       (context) => Column(
@@ -618,9 +691,11 @@ class _HandoverScreenState extends State<HandoverScreen> {
           Text(item.title, style: offText(16, weight: FontWeight.w600)),
           const SizedBox(height: 8),
           for (final (key, label, icon) in [
+            if (item.upload != null)
+              ('open', 'Open', Icons.open_in_new_rounded),
             ('file', 'Upload another file', Icons.upload_file_rounded),
             ('link', 'Use a link instead', Icons.link_rounded),
-            ('remove', 'Remove', Icons.delete_outline_rounded),
+            if (!locked) ('remove', 'Remove', Icons.delete_outline_rounded),
           ])
             ListTile(
               key: ValueKey('handover-replace-$key'),
@@ -643,6 +718,8 @@ class _HandoverScreenState extends State<HandoverScreen> {
     );
     if (!mounted) return;
     switch (choice) {
+      case 'open':
+        await openHandoverUpload(context, widget.store.api, item);
       case 'file':
         await _uploadFile(item);
       case 'link':
@@ -659,6 +736,9 @@ class _HandoverScreenState extends State<HandoverScreen> {
     return OffScaffold(
       key: const ValueKey('handover-screen'),
       title: 'Handover',
+      header: widget.chrome.header,
+      bottomNav: widget.chrome.bottomNav,
+      onRefresh: _load,
       children: checklist == null
           ? [
               OffLoadState(
@@ -762,6 +842,11 @@ class _HandoverScreenState extends State<HandoverScreen> {
                           onUpload: () => _uploadFile(item),
                           onLink: () => _addLink(item),
                           onReplace: () => _replaceMenu(item),
+                          onOpen: () => openHandoverUpload(
+                            context,
+                            widget.store.api,
+                            item,
+                          ),
                         ),
                     ],
                   ),
@@ -779,6 +864,7 @@ class _HandoverItemRow extends StatelessWidget {
     required this.onUpload,
     required this.onLink,
     required this.onReplace,
+    required this.onOpen,
   });
 
   final HandoverItem item;
@@ -786,6 +872,9 @@ class _HandoverItemRow extends StatelessWidget {
   final VoidCallback onUpload;
   final VoidCallback onLink;
   final VoidCallback onReplace;
+
+  /// Opens what was handed in (the chip).
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -831,36 +920,10 @@ class _HandoverItemRow extends StatelessWidget {
                     spacing: 10,
                     runSpacing: 6,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: OffColors.inset,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              upload.isLink
-                                  ? Icons.link_rounded
-                                  : Icons.insert_drive_file_outlined,
-                              size: 14,
-                              color: OffColors.secondary,
-                            ),
-                            const SizedBox(width: 6),
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 180),
-                              child: Text(
-                                upload.label,
-                                overflow: TextOverflow.ellipsis,
-                                style: offText(12, weight: FontWeight.w600),
-                              ),
-                            ),
-                          ],
-                        ),
+                      HandoverUploadChip(
+                        key: ValueKey('handover-open-${item.id}'),
+                        upload: upload,
+                        onTap: onOpen,
                       ),
                       if (upload.at case final at?)
                         Text(
@@ -1010,5 +1073,145 @@ class _LinkDialogState extends State<_LinkDialog> {
         ),
       ),
     ],
+  );
+}
+
+/// What was handed in against an item, as a chip that opens it: a file's
+/// name or a link without its scheme.
+class HandoverUploadChip extends StatelessWidget {
+  const HandoverUploadChip({super.key, required this.upload, this.onTap});
+
+  final HandoverUpload upload;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: onTap != null,
+    label: 'Open ${upload.label}',
+    excludeSemantics: true,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: OffColors.inset,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              upload.isLink
+                  ? Icons.link_rounded
+                  : Icons.insert_drive_file_outlined,
+              size: 14,
+              color: OffColors.secondary,
+            ),
+            const SizedBox(width: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 180),
+              child: Text(
+                upload.label,
+                overflow: TextOverflow.ellipsis,
+                style: offText(
+                  12,
+                  weight: FontWeight.w600,
+                  color: onTap == null ? OffColors.ink : OffColors.brand,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Opens a handover upload for the leaver or their manager: a link in the
+/// browser; a file through the server's file endpoint with the session — a
+/// short-lived link from storage, or (a development server) the bytes: a
+/// PDF in the system viewer, a picture on screen, anything else saved and
+/// handed to the phone.
+Future<void> openHandoverUpload(
+  BuildContext context,
+  OffboardingApi api,
+  HandoverItem item,
+) async {
+  final upload = item.upload;
+  if (upload == null) return;
+  final opener = HandoverOpener.testOverride ?? HandoverOpener.system;
+  try {
+    if (upload.isLink) {
+      final url = upload.url;
+      if (url == null || !await opener.launch(Uri.parse(url))) {
+        throw const OffboardingApiException('Could not open the link.');
+      }
+      return;
+    }
+    final file = await api.fetchHandoverFile(item.id);
+    if (!context.mounted) return;
+    final name = file.name ?? upload.name ?? 'handover';
+    if (file.url case final url?) {
+      if (!await opener.launch(Uri.parse(url))) {
+        throw OffboardingApiException('Could not open $name.');
+      }
+      return;
+    }
+    final bytes = Uint8List.fromList(file.bytes ?? const []);
+    await opener.show(context, name, file.contentType ?? '', bytes);
+  } catch (error) {
+    if (context.mounted) {
+      showAppToast(
+        context,
+        error is OffboardingApiException
+            ? error.message
+            : 'Could not open ${upload.label}.',
+      );
+    }
+  }
+}
+
+/// How an upload reaches the screen; tests put their own in [testOverride].
+class HandoverOpener {
+  const HandoverOpener({required this.launch, required this.show});
+
+  final Future<bool> Function(Uri uri) launch;
+  final Future<void> Function(
+    BuildContext context,
+    String name,
+    String contentType,
+    Uint8List bytes,
+  )
+  show;
+
+  @visibleForTesting
+  static HandoverOpener? testOverride;
+
+  static final system = HandoverOpener(
+    launch: (uri) => launchUrl(uri, mode: LaunchMode.externalApplication),
+    show: (context, name, contentType, bytes) async {
+      if (contentType == 'application/pdf') {
+        await Printing.sharePdf(bytes: bytes, filename: name);
+        return;
+      }
+      if (contentType.startsWith('image/')) {
+        await showDialog<void>(
+          context: context,
+          builder: (context) => Dialog(
+            backgroundColor: Colors.white,
+            child: InteractiveViewer(child: Image.memory(bytes)),
+          ),
+        );
+        return;
+      }
+      final dir = await getTemporaryDirectory();
+      final safe = name.replaceAll(RegExp(r'[^\w.\- ]'), '_');
+      final path = '${dir.path}/$safe';
+      await File(path).writeAsBytes(bytes, flush: true);
+      if (!await launchUrl(Uri.file(path))) {
+        throw OffboardingApiException('Could not open $name.');
+      }
+    },
   );
 }

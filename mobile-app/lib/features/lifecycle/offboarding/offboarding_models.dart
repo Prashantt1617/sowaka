@@ -225,6 +225,7 @@ class ResignationState {
     required this.canResign,
     this.resignation,
     this.lastDayByNotice,
+    this.reasons = const [],
   });
 
   static const none = ResignationState(noticeDays: 0, canResign: false);
@@ -234,8 +235,12 @@ class ResignationState {
   final DateTime? lastDayByNotice;
   final bool canResign;
 
+  /// The reasons the server offers on R1 (`reasons`); empty when it sends none.
+  final List<String> reasons;
+
   factory ResignationState.fromJson(Map<String, dynamic> json) {
     final resignation = json['resignation'];
+    final reasons = json['reasons'];
     return ResignationState(
       resignation: resignation is Map
           ? ResignationView.fromJson(resignation.cast<String, dynamic>())
@@ -243,8 +248,59 @@ class ResignationState {
       noticeDays: _int(json['noticeDays']) ?? 0,
       lastDayByNotice: parseDay(json['lastDayByNotice']),
       canResign: json['canResign'] == true,
+      reasons: [
+        if (reasons is List)
+          for (final reason in reasons) ?_str(reason),
+      ],
     );
   }
+}
+
+/// One of the manager's reports with an exit under way
+/// (`GET /lifecycle/manager/leavers`): resigned and accepted, or an exit HR
+/// started (retirement, end of contract) that has no resignation at all.
+class LeaverSummary {
+  const LeaverSummary({
+    required this.userId,
+    required this.name,
+    this.designation,
+    this.tl,
+    this.daysLeft,
+    this.handoverItems = 0,
+    this.handoverUploaded = 0,
+  });
+
+  final String userId;
+  final String name;
+  final String? designation;
+  final DateTime? tl;
+  final int? daysLeft;
+  final int handoverItems;
+  final int handoverUploaded;
+
+  factory LeaverSummary.fromJson(Map<String, dynamic> json) {
+    final handover = _map(json['handover']);
+    return LeaverSummary(
+      userId: _str(json['userId']) ?? '',
+      name: _str(json['name']) ?? '',
+      designation: _str(json['designation']),
+      tl: parseDay(json['tl']),
+      daysLeft: _int(json['daysLeft']),
+      handoverItems: _int(handover['items']) ?? 0,
+      handoverUploaded: _int(handover['uploaded']) ?? 0,
+    );
+  }
+}
+
+/// A handover upload as the file endpoint gives it back: a short-lived link
+/// (stored files), or the bytes themselves (a development server).
+class HandoverFile {
+  const HandoverFile({this.url, this.bytes, this.contentType, this.name});
+
+  final String? url;
+  final List<int>? bytes;
+  final String? contentType;
+  final String? name;
 }
 
 /// A journey task as a viewer sees it (`TaskView`, ENGINE-API.md).
@@ -461,10 +517,14 @@ class OffboardingPageData {
     this.managerName,
     this.acceptedAt,
     this.noticeFrom,
+    this.exitType,
   });
 
   final DateTime? tl;
   final int? daysLeft;
+
+  /// resignation | retirement | end_of_contract | termination | absconding
+  final String? exitType;
   final List<OffboardingTask> tasks;
   final HandoverChecklist handover;
   final ExitInterviewState interview;
@@ -495,8 +555,19 @@ class OffboardingPageData {
         managerName: _str(json['managerName']),
         acceptedAt: parseDay(json['acceptedAt']),
         noticeFrom: parseDay(json['noticeFrom']),
+        exitType: _str(json['exitType']),
       );
 }
+
+/// "Retirement", "End of contract": how an exit HR started is named.
+String exitTypeLabel(String? exitType) => switch (exitType) {
+  'resignation' => 'Resignation',
+  'retirement' => 'Retirement',
+  'end_of_contract' => 'End of contract',
+  'termination' => 'Termination',
+  'absconding' => 'Absconding',
+  _ => 'Exit',
+};
 
 /// `GET /lifecycle/manager/leavers/:userId`: the manager's Resignation tab
 /// on a report's profile (R8b). Never carries pay.
@@ -509,10 +580,14 @@ class LeaverView {
     this.tl,
     this.daysLeft,
     this.acceptedAt,
+    this.exitType,
   });
 
   final ResignationView? resignation;
   final String? status;
+
+  /// The exit's type (`status.exitType`): an exit HR started has no resignation.
+  final String? exitType;
   final DateTime? tl;
   final int? daysLeft;
   final DateTime? acceptedAt;
@@ -573,6 +648,7 @@ class LeaverView {
           view?.hrAcceptedAt,
       handover: HandoverChecklist.fromJson(json),
       otherSteps: steps,
+      exitType: _str(exit['exitType']),
     );
   }
 }
