@@ -66,3 +66,18 @@ export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boo
   if (user.dashboardAdmin === true || !Array.isArray(user.dashboardTabs)) return true;
   return user.dashboardTabs.includes(view);
 }
+
+/**
+ * Which of the shared request lists this person may load, by the same tabs the server checks
+ * (Overview opens all five). Asking for one they can't open is a refused request on every load.
+ */
+export function inboxAccess(user: AuthUser | null | undefined): { leaves: boolean; overtime: boolean; claims: boolean; corrections: boolean; feedback: boolean } {
+  const any = (...views: AccessKey[]) => views.some((v) => canOpen(user, v));
+  return {
+    leaves: any('leave', 'overview'),
+    overtime: any('overtime', 'overview'),
+    claims: any('reimbursements', 'overview'),
+    corrections: any('attendance', 'overview'),
+    feedback: any('feedback', 'overview'),
+  };
+}

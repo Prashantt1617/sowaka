@@ -30,6 +30,7 @@ import { useAuth } from './auth/AuthContext';
 import { useRequestsLive } from './live';
 import type { LoadState } from './ui';
 import { combineLoad } from './useLoad';
+import { inboxAccess } from './access';
 
 /** The shared lists the store loads, each with its own loading state. */
 export type StoreList = 'leaves' | 'overtime' | 'claims' | 'corrections' | 'feedback' | 'employees' | 'cycle';
@@ -252,11 +253,14 @@ function useProvideStore() {
       for (const k of Object.keys(next) as StoreList[]) if (next[k] === 'error') next[k] = 'loading';
       return next;
     });
-    const lvP = unlessForbidden(getLeaveInbox());
-    const otP = unlessForbidden(getOvertimeInbox());
-    const rbP = unlessForbidden(getReimbInbox());
-    const crP = unlessForbidden(getRegularizationInbox());
-    const fbP = unlessForbidden(getAllFeedback());
+    // Only the lists this person's tabs open: someone with just Onboarding or Offboarding
+    // would otherwise fire five refused requests on every load.
+    const may = inboxAccess(user);
+    const lvP = may.leaves ? unlessForbidden(getLeaveInbox()) : Promise.resolve([]);
+    const otP = may.overtime ? unlessForbidden(getOvertimeInbox()) : Promise.resolve([]);
+    const rbP = may.claims ? unlessForbidden(getReimbInbox()) : Promise.resolve([]);
+    const crP = may.corrections ? unlessForbidden(getRegularizationInbox()) : Promise.resolve([]);
+    const fbP = may.feedback ? unlessForbidden(getAllFeedback()) : Promise.resolve([]);
     const empP = getAllEmployees();
     const liveP = getKpiCycle();
     // Resolve each request's real manager (org-wide data spans many managers).
@@ -304,11 +308,12 @@ function useProvideStore() {
   const refreshRequests = useCallback(async () => {
     if (!user) return;
     try {
+      const may = inboxAccess(user);
       const [lv, ot, rb, cr] = await Promise.all([
-        unlessForbidden(getLeaveInbox()),
-        unlessForbidden(getOvertimeInbox()),
-        unlessForbidden(getReimbInbox()),
-        unlessForbidden(getRegularizationInbox()),
+        may.leaves ? unlessForbidden(getLeaveInbox()) : Promise.resolve([]),
+        may.overtime ? unlessForbidden(getOvertimeInbox()) : Promise.resolve([]),
+        may.claims ? unlessForbidden(getReimbInbox()) : Promise.resolve([]),
+        may.corrections ? unlessForbidden(getRegularizationInbox()) : Promise.resolve([]),
       ]);
       const mgrByUser = new Map(empRawRef.current.map((e) => [e.userId, e.managerName ?? '']));
       const mgrName = (userId: string) => mgrByUser.get(userId) || '—';

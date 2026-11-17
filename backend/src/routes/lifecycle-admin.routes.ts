@@ -3,7 +3,7 @@ import { hasAllDashboardTabs, requireDashboardAccess, requireDashboardTabs } fro
 import { requireAuth } from '../middleware/auth.middleware';
 import { LIFECYCLE_TABS } from '../models/dashboard-tabs';
 import {
-  actOnTaskByHr, decideBankPfRequest, decisionWithoutPay, journeyForViewer, journeyPanel, lifecycleViewer, onboardingBoard, onboardingCounts,
+  actOnTaskByHr, decideBankPfRequest, decisionWithoutPay, journeyForViewer, journeyPanel, lifecycleViewer, onboardingBoard, onboardingCounts, closedJourneys,
   surveyAnswers, updateJourneyByHr,
 } from '../services/lifecycle/board';
 import { nudgeTask } from '../services/lifecycle/nudges';
@@ -106,6 +106,8 @@ lifecycleAdminRouter.get('/board', lifecycleHandler(async (req) => {
 }));
 // The sidebar's Onboarding badge (Needs you + Late).
 lifecycleAdminRouter.get('/counts', lifecycleHandler(async (req) => onboardingCounts(caller(req).org)));
+// The board's Closed view: offers that ended before joining (declined, expired, not joining).
+lifecycleAdminRouter.get('/closed', lifecycleHandler(async (req) => closedJourneys(caller(req).org, req.query as Record<string, unknown>)));
 lifecycleAdminRouter.get('/journeys/:id', lifecycleHandler(async (req) => {
   const { me, j } = await ownJourney(req);
   return journeyPanel(me.org, j.id, new Date(), viewerOf(req));

@@ -361,6 +361,42 @@ type Handler = { handle: (req: unknown, res: unknown, next: (err?: unknown) => v
   ok('With one: lines from the template, adding up to the monthly CTC', !!some.breakup && some.breakup.lines.length > 1 && Math.abs(sum - some.breakup.ctcMonthly) <= some.breakup.lines.length, { some, sum });
   eq('…for this offer’s CTC, on the template the company uses', [some.breakup?.ctcAnnual, some.templateCode], [1_437_000, ZOHO_TEMPLATES.BELOW_TAXABLE.code]);
 
+  // ─── A draft's waiting-on, and the board's Closed view ─────────────────────
+  section('An unsent draft waits on HR; closed offers are listed for the Closed view');
+  const DR = (await offersSvc.createOffer(HR, { candidate: { name: 'Aarav Draft', personalEmail: 'aarav.dash@example.com' }, fields: fields() })).journeyId;
+  const cardD = (await board.onboardingBoard(ORG, 'hr', { tab: 'pre_boarding' })).columns.flatMap((col) => col.cards).find((card) => card.journeyId === DR);
+  const sendTask = (await engine.tasksOf(DR)).find((t) => t.systemKey === 'send_offer');
+  ok('The draft’s card waits on HR to send the offer (not "Nothing waiting")', !!cardD && cardD.waitingOn[0]?.taskId === sendTask?.id && cardD.waitingOn[0]?.ownerRole === 'hr', cardD?.waitingOn);
+  ok('…and it counts for Waiting on me', !!cardD && board.waitedOn({ mustDo: false, dueAt: undefined, systemKey: 'send_offer' }) && cardD.waitingOn.some((w) => w.ownerRole === 'hr'));
+  eq('An optional undated task still waits on nobody', board.waitedOn({ mustDo: false, dueAt: undefined, systemKey: undefined }), false);
+  const XC = (await offersSvc.createOffer(HR, { candidate: { name: 'Pooja Closed', personalEmail: 'pooja.dash@example.com' }, fields: fields({ designation: 'Concept Artist' }) })).journeyId;
+  await offersSvc.uploadOfferPdf(HR, XC, { originalname: 'Offer.pdf', buffer: PDF('offer x') });
+  await offersSvc.sendOffer(HR, XC, { subject: 'Offer', body: 'Hi' });
+  await offersSvc.declineOffer(HR, XC, 'Took another offer');
+  const closed = await admin('GET', '/closed', 'onb');
+  const rows = (closed.body as { journeys: Array<{ journeyId: string; name: string; status: string; closedReason?: string; closedAt?: string }> }).journeys;
+  const rowX = rows?.find((r) => r.journeyId === XC);
+  ok('GET /closed lists a declined offer with its reason and date (onboarding tab is enough)', closed.status === 200 && rowX?.status === 'declined' && /another offer/.test(rowX.closedReason ?? '') && !!rowX.closedAt, closed.body);
+  ok('…and nothing still open', rows.every((r) => ['declined', 'expired', 'not_joining'].includes(r.status)) && !rows.some((r) => r.journeyId === DR));
+  eq('Search: by name', (await admin('GET', '/closed?q=pooja', 'hr')).body && ((await admin('GET', '/closed?q=pooja', 'hr')).body as { journeys: Array<{ journeyId: string }> }).journeys.map((r) => r.journeyId), [XC]);
+  eq('…by role', ((await admin('GET', '/closed?q=concept', 'hr')).body as { journeys: Array<{ journeyId: string }> }).journeys.map((r) => r.journeyId), [XC]);
+  eq('…regex characters are plain text', ((await admin('GET', `/closed?q=${encodeURIComponent('.*(')}`, 'hr')).body as { journeys: unknown[] }).journeys.length, 0);
+  ok('…no pay or contact fields in a row', !!rowX && !has(rowX, 'ctc') && !has(rowX, 'personalEmail') && !has(rowX, 'pooja.dash@'));
+
+  section('A probation card leads with its stage’s step (H1c)');
+  const P = await joinAt('Prem Final', 'prem', finalTj);
+  const probBoard = await board.onboardingBoard(ORG, 'hr', { tab: 'probation' });
+  const finalCol = probBoard.columns.find((col) => col.key === 'final_month');
+  const cardC = finalCol?.cards.find((card) => card.journeyId === P.id);
+  const discussion = (await engine.tasksOf(P.id)).find((t) => t.systemKey === 'confirmation_discussion');
+  if (discussion && engine.ACTIVE_STATUSES.includes(discussion.status)) {
+    eq('Final month: the card’s next step is the confirmation discussion, even with older late tasks', cardC?.waitingOn[0]?.title, discussion.title);
+  } else ok('The final-month joiner has an open confirmation discussion', false, discussion);
+  const leftover = (await engine.tasksOf(P.id)).find((t) => t.phase !== 'probation' && engine.ACTIVE_STATUSES.includes(t.status) && t.dueAt && t.dueAt < now);
+  ok('…an older late task from week 1 is still there but not the lead', !leftover || (cardC?.waitingOn[0]?.taskId !== leftover.id), { leftover: leftover?.title, lead: cardC?.waitingOn[0] });
+  const firstWeek = (await board.onboardingBoard(ORG, 'hr', { tab: 'first_week' })).columns.flatMap((col) => col.cards).find((card) => card.journeyId === W.id);
+  ok('Other tabs keep the late-first order', !!firstWeek && (firstWeek.waitingOn.length < 2 || !firstWeek.waitingOn.slice(1).some((w) => w.late) || !!firstWeek.waitingOn[0]?.late), firstWeek?.waitingOn);
+
   // Clean the scratch uploads this run wrote.
   const { rm } = await import('node:fs/promises');
   const pathMod = await import('node:path');

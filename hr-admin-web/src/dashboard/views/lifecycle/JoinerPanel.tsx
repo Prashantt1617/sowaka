@@ -17,7 +17,7 @@ import type {
 } from '../../../services/lifecycle';
 import { FilePreview, NoteDialog, NudgeButton, OwnerChip, Pick, Plant, Field } from './shared';
 import {
-  DOCS_OPEN_KEY, PHASES, areaStyle, nudgeLabel, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, longDay, rupees, sectionLabel, shortDay, todayKey,
+  DOCS_OPEN_KEY, PHASES, areaStyle, changedFieldsText, nudgeLabel, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, longDay, rupees, sectionLabel, shortDay, todayKey,
 } from './format';
 import { FinaliseDialog, MarkJoinedDialog, OfferWizard } from './OfferDialogs';
 import { DecisionDialog, ProbationMonths } from './Probation';
@@ -114,6 +114,8 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   useEffect(() => {
     let live = true;
     setError('');
+    // Another person opened in the same panel: never show the last one's details while theirs load.
+    setData((d) => (d && d.journey.id !== journeyId ? null : d));
     getJourney(journeyId)
       .then((d) => { if (live) setData(d); })
       .catch((e) => { if (live) setError(isNotAvailable(e) ? 'Employee lifecycle is not switched on for your company.' : errText(e, 'Could not load this joiner')); });
@@ -129,7 +131,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
 
   if (!data) {
     return (
-      <DrawerShell width={460} onClose={onClose}>
+      <DrawerShell width={460} onClose={onClose} label="Joiner" resetKey={journeyId} onEscape={dialog ? undefined : onClose}>
         <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'flex-end' }}><CloseButton onClose={onClose} /></div>
         {error ? <LoadError text={error} onRetry={() => setAttempt((n) => n + 1)} /> : <div style={{ padding: 20 }}><SkeletonLines lines={8} /></div>}
       </DrawerShell>
@@ -145,9 +147,13 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   const today = todayKey();
   const canJoin = PRE_JOIN.has(status) && status !== 'draft' && status !== 'offer_sent' && status !== 'accepted' && Boolean(journey.tj) && journey.tj! <= today;
   // As the board's waiting-on: optional things with no date (asking for another joining day) wait on nobody.
-  const waiting = tasks.filter((t) => OPEN.has(t.status) && (!t.opensAt || t.opensAt.slice(0, 10) <= today) && (t.mustDo || Boolean(t.dueAt)))
+  // Sending an unsent offer has no date, yet nothing moves until HR sends it (the board says the same).
+  const waiting = tasks.filter((t) => OPEN.has(t.status) && (!t.opensAt || t.opensAt.slice(0, 10) <= today) && (t.mustDo || Boolean(t.dueAt) || t.systemKey === 'send_offer'))
     .sort((a, b) => String(a.dueAt ?? '9999').localeCompare(String(b.dueAt ?? '9999'))).slice(0, 6);
-  const approved = documents.filter((d) => d.status === 'approved').length;
+  // Optional documents (a last payslip) never hold anyone up, so the count is of the required ones.
+  const requiredDocs = documents.filter((d) => d.required);
+  const approved = requiredDocs.filter((d) => d.status === 'approved').length;
+  const docsCount = requiredDocs.length ? `${approved} of ${requiredDocs.length} required approved` : documents.length ? 'All optional' : '';
   const reviewQueue = documents.filter((d) => d.status === 'in_review').length;
   const decision: ConfirmationDecision | undefined = probation.decision ?? journey.probation?.decision;
   const decisionLetter: LetterKind | null = decision?.outcome === 'confirm' ? 'confirmation' : decision?.outcome === 'extend' ? 'extension' : null;
@@ -199,7 +205,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   ] : [];
 
   return (
-    <DrawerShell width={460} onClose={onClose}>
+    <DrawerShell width={460} onClose={onClose} label={name} resetKey={journeyId} onEscape={dialog ? undefined : onClose}>
       <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--line)', flexShrink: 0 }}>
         <div style={{ flex: 1, fontSize: 12, fontWeight: 500, color: 'var(--hi)' }}>{TAB_LABEL[journey.tab] ?? ''} · {COLUMN_LABEL[journey.column] ?? journey.column}</div>
         <CloseButton onClose={onClose} />
@@ -219,7 +225,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
           {TRACK.map((t, i) => <span key={t} title={t} style={{ height: 6, borderRadius: 99, background: closed ? 'var(--line-2)' : i < at ? 'var(--ok-solid)' : i === at ? 'var(--accent)' : 'var(--line)' }} />)}
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>
-          <span>Offer</span><span style={{ color: 'var(--ink-2)', fontWeight: 500 }}>{closed ? STATUS_LABEL[status] : TRACK[at]}</span><span>Confirmed</span>
+          <span>Offer</span><span>Confirmed</span>
         </div>
       </div>
 
@@ -237,7 +243,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
           <div style={{ display: 'grid', gap: 8 }}>
             {waiting.map((t) => (
               <div key={t.id} style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: '4px 10px', alignItems: 'center', fontSize: 13 }}>
-                <OwnerChip role={t.ownerRole} name={t.ownerName} />
+                <OwnerChip role={t.ownerRole} name={t.ownerRole === 'hr' ? undefined : t.ownerName} you={t.ownerRole === 'hr'} />
                 <span style={{ overflowWrap: 'anywhere' }}>{t.title}</span>
                 <span style={{ color: t.late ? 'var(--bad)' : 'var(--ink-3)', whiteSpace: 'nowrap', fontWeight: t.late ? 500 : 400 }}>{dueText(t.dueAt, t.late)}</span>
                 {t.canNudge && !closed && (
@@ -259,7 +265,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
           ['Manager', journey.managerName],
           ['Buddy', journey.buddyName],
           ['Template', template?.name],
-          ['Documents', documents.length ? `${approved} of ${documents.length} approved` : ''],
+          ['Documents', docsCount],
           ['Offer', offer ? `Version ${offer.version} · ${offer.status}` : ''],
           ['Accepted', offer?.acceptedAt ? dayTime(offer.acceptedAt) : ''],
           ['Probation', journey.probation ? `${journey.probation.months} months${journey.probation.extendedBy ? `, extended by ${journey.probation.extendedBy}` : ''}` : ''],
@@ -271,7 +277,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
       {offer && (
         <Section title={`Offer · version ${offer.version}`} aside={offer.pdfFileId ? <button type="button" className="pd-btn sm" onClick={() => setDialog({ kind: 'file', id: offer.pdfFileId!, name: `Offer letter – ${name}.pdf` })}>View PDF</button> : undefined}>
           <Facts rows={offerFacts} />
-          {offer.changedFields && offer.changedFields.length > 0 && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 8 }}>Changed in this version: {offer.changedFields.join(', ')}</div>}
+          {offer.changedFields && offer.changedFields.length > 0 && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 8 }}>Changed in this version: {changedFieldsText(offer.changedFields)}</div>}
           {revisionWaiting && (
             <div className="pd-note" style={{ marginTop: 8, color: 'var(--warn)' }}>
               Saved as a draft. {name.split(' ')[0]} still sees version {offer.version - 1} until you send this one.
@@ -313,7 +319,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
       )}
 
       {documents.length > 0 && (
-        <Section id="lf-panel-docs" title={`Documents · ${approved} of ${documents.length} approved`}>
+        <Section id="lf-panel-docs" title={docsCount ? `Documents · ${docsCount}` : 'Documents'}>
           {!seesDocuments && <div className="pd-note" style={{ marginBottom: 10 }}>Only HR opens candidates’ documents and ID proofs. You see where each one is.</div>}
           <div style={{ display: 'grid', gap: 10 }}>
             {documents.map((d) => <DocumentRow key={d.id} doc={d} busy={busy === `doc:${d.id}`} canReview={seesDocuments}
