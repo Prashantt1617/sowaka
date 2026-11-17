@@ -58,7 +58,7 @@ export function ExitInsights() {
   const exportRows = () => data && downloadCsv(`exit-insights-${groupBy}`, [
     { header: groupBy === 'tenure' ? 'Tenure' : 'Department', value: (r: InsightsDTO['groups'][number]) => r.label },
     { header: 'Left', value: (r) => r.left },
-    { header: 'Exit interviews', value: (r) => r.answers },
+    { header: 'Exit interviews', value: (r) => `${r.answers} of ${r.offered}` },
     { header: 'Working here (of 5)', value: (r) => (r.workingHere ?? 'Hidden') as string | number },
     { header: 'Working with their manager (of 5)', value: (r) => (r.manager ?? 'Hidden') as string | number },
   ], data.groups);
@@ -82,7 +82,7 @@ export function ExitInsights() {
           <>
             <div className="ob-kpis">
               <StatTile state={state} label="People who left" value={data.left.total} sub={`${data.left.resigned} resigned · ${data.left.hrStarted} HR-started`} />
-              <StatTile state={state} label="Exit interviews answered" value={`${data.answered.count} of ${data.answered.resignations}`} sub={`${data.answered.percent}% of resignations`} />
+              <StatTile state={state} label="Exit interviews answered" value={`${data.answered.count} of ${data.answered.offered}`} sub={`${data.answered.percent}% of the people offered one`} />
               <StatTile state={state} label="Working here" value={data.workingHere?.average != null ? `${data.workingHere.average} / 5` : 'Hidden'} sub={data.workingHere ? `Average of ${data.workingHere.answers} answers` : `Shows from ${data.minGroup} answers`} />
               <StatTile state={state} label="Would come back" value={data.comeBack ? `${data.comeBack.yes + data.comeBack.maybe} of ${data.comeBack.answered}` : 'Hidden'} sub={data.comeBack ? `${data.comeBack.yes} yes · ${data.comeBack.maybe} maybe` : `Shows from ${data.minGroup} answers`} />
             </div>
@@ -119,7 +119,7 @@ export function ExitInsights() {
                     <div key={g.key} style={TR(COLS, i === data.groups.length - 1)}>
                       <div style={cellName}>{g.label}</div>
                       <div>{g.left}</div>
-                      <div>{g.answers}</div>
+                      <div>{g.answers} of {g.offered}</div>
                       <div style={{ color: g.hidden ? 'var(--ink-4)' : undefined }}>{g.hidden ? 'Hidden' : rating(g.workingHere)}</div>
                       <div style={{ color: g.hidden ? 'var(--ink-4)' : undefined }}>{g.hidden ? 'Hidden' : rating(g.manager)}</div>
                     </div>

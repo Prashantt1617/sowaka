@@ -73,9 +73,14 @@ export function SignedIn() {
       me,
       reload,
       subject,
-      header: (extra) => ({ company: me.company, hr: me.hrContact, help: true, bell, joiner: { name: me.candidateName, tj: me.tj }, ...extra }),
+      header: (extra) => ({
+        company: me.company, hr: me.hrContact, help: true, bell, joiner: { name: me.candidateName, tj: me.tj },
+        // Signing out clears the session and replaces this page in the history: Back lands on sign-in, not the portal.
+        onSignOut: () => { portal.signOut(); navigate('/sign-in', { replace: true }); },
+        ...extra,
+      }),
     };
-  }, [me, reload]);
+  }, [me, reload, navigate]);
 
   if (!hasSession) return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />;
   if (error && !me)

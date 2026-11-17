@@ -35,7 +35,18 @@ class _ProbationScreenState extends State<ProbationScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(_load());
+    unawaited(_first());
+  }
+
+  /// Last time's answer from the device at once; the live read replaces it.
+  Future<void> _first() async {
+    final kept = await _shell.api.fromDevice((api) => api.fetchProbation());
+    if (kept != null && mounted && _view == null) {
+      setState(() {
+        _view = kept;
+      });
+    }
+    await _load();
   }
 
   Future<void> _load() async {
@@ -72,6 +83,7 @@ class _ProbationScreenState extends State<ProbationScreen> {
     return OnbScaffold(
       shell: _shell,
       title: 'Probation',
+      offline: view != null && _error != null,
       body: view == null
           ? OnbLoadState(error: _error, onRetry: _load)
           : view.months.isEmpty
@@ -442,7 +454,19 @@ class _RevealScreenState extends State<RevealScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(_load());
+    unawaited(_firstReveal());
+  }
+
+  /// Last time's answer from the device at once; the live read replaces it.
+  Future<void> _firstReveal() async {
+    final kept = await _shell.api.fromDevice((api) => api.fetchReveal());
+    if (kept != null && mounted && _reveal == null) {
+      setState(() {
+        _reveal = kept;
+        _revealed = kept.seen || kept.outcome != 'confirm';
+      });
+    }
+    await _load();
   }
 
   Future<void> _load() async {
@@ -505,6 +529,7 @@ class _RevealScreenState extends State<RevealScreen> {
       shell: _shell,
       title: 'Your probation',
       showNav: false,
+      offline: _error != null,
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 32, 20, 24),
         children: [

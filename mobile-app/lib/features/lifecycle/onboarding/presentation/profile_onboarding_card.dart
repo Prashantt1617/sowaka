@@ -28,7 +28,20 @@ class _OnboardingProfileCardState extends State<OnboardingProfileCard> {
   @override
   void initState() {
     super.initState();
-    unawaited(_load());
+    unawaited(_first());
+  }
+
+  /// Last time's answer from the device at once; the live read replaces it.
+  Future<void> _first() async {
+    final shell = _shell;
+    if (shell == null) return;
+    final kept = await shell.api.fromDevice((api) => api.fetchHome());
+    if (kept != null && mounted && _home == null) {
+      setState(() {
+        _home = kept;
+      });
+    }
+    await _load();
   }
 
   Future<void> _load() async {

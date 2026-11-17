@@ -14,7 +14,11 @@
  * A change HR makes on these pages calls `forgetSwr(org)` so it shows at once;
  * what employees do (a punch) shows within the minute.
  */
-export type SwrKind = 'ool';
+export type SwrKind = 'ool'
+  // Employee lifecycle and Suwi (lifecycle/readCache.ts): dropped on every write, see there.
+  | 'lc-board-data' | 'off-board-data' | 'suwi-notices'
+  // The manager workspace's company roster (manager.service.ts workspaceRoster).
+  | 'mgr-roster';
 
 const FRESH_MS = 60_000;
 const MAX_STALE_MS = 15 * 60_000;
@@ -90,6 +94,25 @@ const forgetListeners: ((org: string) => void)[] = [];
 /** Other kept answers (the Punch log's) that a forget must drop too. */
 export function onForgetSwr(listener: (org: string) => void): void {
   forgetListeners.push(listener);
+}
+
+/**
+ * Drop these kinds of kept answers for one org, or for every org that has any (`org` null),
+ * without the Punch log listeners `forgetSwr` also runs: for writes that cannot touch punches.
+ * A refresh already under way for that org is not kept when it lands.
+ */
+export function dropSwr(org: string | null, kinds: SwrKind[]): void {
+  const orgs = new Set<string>();
+  for (const key of kept.keys()) {
+    const [o, k] = key.split('\u0000');
+    if ((org === null || o === org) && kinds.includes(k as SwrKind)) orgs.add(o);
+  }
+  if (org !== null) orgs.add(org);
+  for (const o of orgs) {
+    generation.set(o, (generation.get(o) ?? 0) + 1);
+    const prefixes = kinds.map((k) => `${o}\u0000${k}\u0000`);
+    for (const key of kept.keys()) if (prefixes.some((p) => key.startsWith(p))) kept.delete(key);
+  }
 }
 
 /** Drop an org's kept answers (of these kinds, or all), so the next read reflects a change at once. */

@@ -629,6 +629,47 @@ export async function regenerateAppointmentLetters(journeyId: string): Promise<v
   await forgetFired(`letters_ready:${journeyId}`);
 }
 
+/** Merge keys that follow the day a letter is made, not the offer's terms. */
+const DAY_KEYS = new Set(['letterDate', 'refNo']);
+
+/**
+ * After a revised offer is accepted by someone already past finalise: each appointment letter / NDA
+ * whose merge fields changed (the joining date, the role, the pay…) is out of date. An unsigned one
+ * takes the new values and loses its PDF (HR makes it again); a signed one is kept as signed history,
+ * marked out of date with the fields, and a new one is drafted to sign again. Returns what changed.
+ */
+export async function outdateChangedLetters(journeyId: string, now = new Date()): Promise<Array<{ kind: LetterKind; fields: string[] }>> {
+  const journey = await journeys().findOne({ id: journeyId });
+  if (!journey) return [];
+  const rows = await letters().find({ journeyId, kind: { $in: SIGNED_KINDS } }).sort({ createdAt: -1 }).toArray();
+  if (!rows.length) return [];
+  const hrName = (await users().findOne({ userId: journey.createdByUserId }, { projection: { _id: 0, name: 1 } }))?.name ?? '';
+  const changed: Array<{ kind: LetterKind; fields: string[] }> = [];
+  for (const kind of SIGNED_KINDS) {
+    const newest = rows.find((r) => r.kind === kind);
+    if (!newest) continue;
+    const { values } = await mergeValues(journey.org, { kind, journeyId }, hrName, now);
+    // Only the fields this letter states (its template's placeholders): an NDA does not name the joining date.
+    const body = (await letterTemplates().findOne({ id: newest.templateId }, { projection: { _id: 0, body: 1 } }))?.body;
+    const used = body ? new Set([...body.matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map((m) => m[1])) : new Set(REQUIRED_FIELDS[kind]);
+    const fields = [...used].filter((k) => !DAY_KEYS.has(k) && (newest.values[k] ?? '') !== (values[k] ?? ''));
+    if (!fields.length) continue;
+    changed.push({ kind, fields });
+    if (!newest.signature) {
+      values.refNo = newest.refNo;
+      await letters().updateOne({ id: newest.id }, { $set: { values }, $unset: { pdfFileId: '', openedAt: '' } });
+    } else {
+      await letters().updateOne({ id: newest.id }, { $set: { outdatedAt: now, outdatedFields: fields } });
+      await createLetter({ org: journey.org, name: hrName }, { kind, journeyId });
+    }
+  }
+  if (changed.length) {
+    await reopenTask(journeyId, 'sign_letters');
+    await forgetFired(`letters_ready:${journeyId}`);
+  }
+  return changed;
+}
+
 /** Once both letters have their PDF and the documents are approved: "your letters are ready" (once per set). */
 export async function maybeSendLettersReady(journeyId: string): Promise<boolean> {
   const journey = await journeys().findOne({ id: journeyId });

@@ -103,6 +103,15 @@ String taskMeta(TaskView task, DateTime now, {bool forManager = false}) {
 
 /// A task row (Kit TaskRow): icon tile, title, meta and the badge on the
 /// right — done tick, lock, MUST-DO, a count, Needs water, or an empty ring.
+/// The tile behind a task's icon (A2): one tint per kind, as the artboard colours them.
+Color taskTint(TaskView task) => switch (task.systemKey) {
+  'meet_team' || 'starter_task' || 'probation_goals' || 'monthly_goals' => const Color(0xFFF3EEFF),
+  'register_face' || 'day7_survey' || 'pulse_survey' || 'intro_post' => OnbColors.mustTint,
+  'people_to_meet' || 'week1_done' || 'monthly_checkin' => OnbColors.doneTint,
+  'app_tour' || 'laptop_setup' || 'check_logins' => OnbColors.screen,
+  _ => OnbColors.tint,
+};
+
 class OnbTaskRow extends StatelessWidget {
   const OnbTaskRow({
     super.key,
@@ -117,6 +126,7 @@ class OnbTaskRow extends StatelessWidget {
     this.count,
     this.trailing,
     this.semanticsHint,
+    this.tint = OnbColors.tint,
   });
 
   OnbTaskRow.task(TaskView task, DateTime now, {Key? key, VoidCallback? onTap, String? count})
@@ -135,6 +145,7 @@ class OnbTaskRow extends StatelessWidget {
             ? OnbTag(task.doneBy ?? 'Not yours', tone: OnbTone.locked)
             : null,
         semanticsHint: task.readOnly ? '${task.doneBy ?? 'Someone else'} does this one' : null,
+        tint: taskTint(task),
       );
 
   final String emoji;
@@ -148,6 +159,9 @@ class OnbTaskRow extends StatelessWidget {
   final String? count;
   final Widget? trailing;
   final String? semanticsHint;
+
+  /// The icon tile's colour, one per kind of task, as drawn.
+  final Color tint;
 
   @override
   Widget build(BuildContext context) {
@@ -176,10 +190,10 @@ class OnbTaskRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
             child: Row(
               children: [
-                Opacity(opacity: locked ? 0.55 : 1, child: OnbIconTile(emoji, size: 36)),
+                Opacity(opacity: locked ? 0.5 : 1, child: OnbIconTile(emoji, size: 36, tint: tint, radius: 10)),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -196,7 +210,12 @@ class OnbTaskRow extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Text(meta, maxLines: 2, overflow: TextOverflow.ellipsis, style: OnbText.label),
+                      Text(
+                        meta,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: OnbText.label.copyWith(color: mustDo && !done ? OnbColors.mustText : (late && !done ? OnbColors.redText : null)),
+                      ),
                     ],
                   ),
                 ),

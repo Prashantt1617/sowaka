@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { PersonAvatar } from '../PersonAvatar';
@@ -8,18 +9,37 @@ export function DrawerShell({
   width = 440,
   onClose,
   children,
+  label,
+  resetKey,
+  onEscape,
 }: {
   width?: number;
   onClose: () => void;
   children: ReactNode;
+  /** Names the drawer for screen readers and makes it a dialog that takes focus when it opens. */
+  label?: string;
+  /** When this changes (another person opened in the same drawer), the drawer scrolls back to the top. */
+  resetKey?: string;
+  /** Escape calls this; leave it out while a dialog of its own is open above the drawer. */
+  onEscape?: () => void;
 }) {
+  const panel = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (panel.current) panel.current.scrollTop = 0; }, [resetKey]);
+  useEffect(() => { if (label) panel.current?.focus({ preventScroll: true }); }, [label]);
+  useEffect(() => {
+    if (!onEscape) return undefined;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); onEscape(); } };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onEscape]);
   // Drawn on the page body, not where it is used: a page that opens one from inside its own
   // (animated, transformed) view would otherwise pin it to that view, so on a scrolled list it
   // opened far up the page, off screen.
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', justifyContent: 'flex-end' }}>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)', animation: 'ovl .2s ease both' }} />
-      <div className="scry" style={{ position: 'relative', width, maxWidth: '100%', height: '100%', background: 'var(--surface)', borderRadius: '24px 0 0 24px', boxShadow: 'var(--shadow-drawer)', overflowY: 'auto', display: 'flex', flexDirection: 'column', animation: 'drwIn .25s ease both' }}>
+      <div ref={panel} className="scry" {...(label ? { role: 'dialog', 'aria-modal': true, 'aria-label': label, tabIndex: -1 } : {})}
+        style={{ position: 'relative', width, maxWidth: '100%', height: '100%', background: 'var(--surface)', borderRadius: '24px 0 0 24px', boxShadow: 'var(--shadow-drawer)', overflowY: 'auto', display: 'flex', flexDirection: 'column', animation: 'drwIn .25s ease both', outline: 'none' }}>
         {children}
       </div>
     </div>,

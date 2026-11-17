@@ -33,7 +33,18 @@ class _MeetingScreenState extends State<MeetingScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(_load());
+    unawaited(_first());
+  }
+
+  /// Last time's answer from the device at once; the live read replaces it.
+  Future<void> _first() async {
+    final kept = await _shell.api.fromDevice((api) => api.fetchMeeting(widget.meetingId));
+    if (kept != null && mounted && _meeting == null) {
+      setState(() {
+        _meeting = kept;
+      });
+    }
+    await _load();
   }
 
   Future<void> _load() async {
@@ -147,57 +158,81 @@ class _MeetingScreenState extends State<MeetingScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
       children: [
-        Text(_eyebrow(meeting), style: OnbText.eyebrow),
-        const SizedBox(height: 6),
-        Text(meeting.title, style: OnbText.display),
-        const SizedBox(height: 16),
-        OnbCard(
+        // The meeting on its blue card: when and where on two tiles (as drawn).
+        Container(
+          key: const ValueKey('meeting-hero'),
+          padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+          decoration: BoxDecoration(color: OnbColors.primary, borderRadius: BorderRadius.circular(24)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _Fact(
-                label: 'WHEN',
-                value: start == null ? 'Any time' : (end == null ? onbTime(start) : '${onbTime(start)} – ${onbTime(end)}'),
+              Text(
+                _eyebrow(meeting),
+                style: const TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.brandBorder),
               ),
-              if (meeting.place != null || meeting.link != null) ...[
-                const Divider(height: 24, color: OnbColors.line),
-                _Fact(label: 'WHERE', value: meeting.place ?? 'Online'),
-                if (meeting.withWho != null && people.isEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text('With ${meeting.withWho}', style: OnbText.label),
-                ],
-                if (meeting.link != null)
-                  OnbLink(label: 'Join the call', icon: Icons.videocam_outlined, onTap: () => openExternalLink(context, meeting.link!)),
-              ],
-              for (final person in people) ...[
-                const Divider(height: 24, color: OnbColors.line),
-                Row(
-                  children: [
-                    _Avatar(name: person.name, photoUrl: person.photoUrl),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(person.name, style: OnbText.bodyStrong),
-                          Text(
-                            [person.designation, meetingRoleLabel(person.role)].nonNulls.join(' · '),
-                            style: OnbText.label,
-                          ),
-                        ],
-                      ),
+              const SizedBox(height: 8),
+              Text(
+                meeting.title,
+                style: const TextStyle(fontFamily: 'Sora', fontSize: 26, height: 1.15, fontWeight: FontWeight.w800, letterSpacing: -0.52, color: Colors.white),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _HeroFact(
+                      label: 'WHEN',
+                      value: start == null ? 'Any time' : (end == null ? onbTime(start) : '${onbTime(start)} – ${onbTime(end)}'),
                     ),
-                    if (canOpenPersonProfile && person.userId.isNotEmpty)
-                      OnbLink(label: 'Profile', onTap: () => openPersonProfile(person.userId)),
+                  ),
+                  if (meeting.place != null || meeting.link != null) ...[
+                    const SizedBox(width: 10),
+                    Expanded(child: _HeroFact(label: 'WHERE', value: meeting.place ?? 'Online')),
                   ],
+                ],
+              ),
+              if (meeting.link != null) ...[
+                const SizedBox(height: 10),
+                OnbLink(
+                  label: 'Join the call',
+                  icon: Icons.videocam_outlined,
+                  color: Colors.white,
+                  onTap: () => openExternalLink(context, meeting.link!),
                 ),
               ],
             ],
           ),
         ),
+        if (meeting.withWho != null && people.isEmpty) ...[
+          const SizedBox(height: 10),
+          Text('With ${meeting.withWho}', style: OnbText.label),
+        ],
+        for (final person in people) ...[
+          const SizedBox(height: 14),
+          OnbCard(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                _Avatar(name: person.name, photoUrl: person.photoUrl),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(person.name, style: OnbText.bodyStrong.copyWith(fontSize: 15, fontWeight: FontWeight.w700)),
+                      Text([person.designation, meetingRoleLabel(person.role)].nonNulls.join(' · '), style: OnbText.label.copyWith(fontSize: 13)),
+                    ],
+                  ),
+                ),
+                if (canOpenPersonProfile && person.userId.isNotEmpty)
+                  OnbLink(label: 'Profile', onTap: () => openPersonProfile(person.userId)),
+              ],
+            ),
+          ),
+        ],
         if (expect.isNotEmpty) ...[
           const SizedBox(height: 18),
-          const Text('What to expect', style: OnbText.bodyStrong),
+          const Text('What to expect', style: TextStyle(fontFamily: 'Sora', fontSize: 16, fontWeight: FontWeight.w700, color: OnbColors.text)),
           const SizedBox(height: 8),
           for (final line in expect)
             Padding(
@@ -209,7 +244,7 @@ class _MeetingScreenState extends State<MeetingScreen> {
                     padding: EdgeInsets.only(top: 7, right: 10),
                     child: CircleAvatar(radius: 3, backgroundColor: OnbColors.primary),
                   ),
-                  Expanded(child: Text(line, style: OnbText.body)),
+                  Expanded(child: Text(line, style: OnbText.body.copyWith(color: OnbColors.text, fontSize: 15))),
                 ],
               ),
             ),
@@ -301,23 +336,6 @@ class _MeetingScreenState extends State<MeetingScreen> {
   };
 }
 
-class _Fact extends StatelessWidget {
-  const _Fact({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(label, style: OnbText.eyebrow),
-      const SizedBox(height: 4),
-      Text(value, style: OnbText.bodyStrong),
-    ],
-  );
-}
-
 class _Avatar extends StatelessWidget {
   const _Avatar({required this.name, this.photoUrl});
 
@@ -325,5 +343,39 @@ class _Avatar extends StatelessWidget {
   final String? photoUrl;
 
   @override
-  Widget build(BuildContext context) => OnbAvatar(name: name, photoUrl: photoUrl, size: 40);
+  Widget build(BuildContext context) => photoUrl != null && photoUrl!.isNotEmpty
+      ? OnbAvatar(name: name, photoUrl: photoUrl, size: 40)
+      // No photo: the initial on the brand blue, as drawn.
+      : Container(
+          width: 40,
+          height: 40,
+          decoration: const BoxDecoration(color: OnbColors.primary, shape: BoxShape.circle),
+          alignment: Alignment.center,
+          child: Text(
+            OnbAvatar.initials(name).substring(0, 1),
+            style: const TextStyle(fontFamily: 'Sora', fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+          ),
+        );
+}
+
+/// WHEN / WHERE on the blue card: a lighter tile, a small label, the value.
+class _HeroFact extends StatelessWidget {
+  const _HeroFact({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(16)),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontFamily: 'Sora', fontSize: 11, color: OnbColors.brandBorder)),
+        const SizedBox(height: 2),
+        Text(value, style: const TextStyle(fontFamily: 'Sora', fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+      ],
+    ),
+  );
 }

@@ -19,6 +19,7 @@
  * resignation, the journey's tasks, the handover and the settlement; nothing
  * about a column is stored.
  */
+import { cachedLifecycle, refreshLifecycle } from './readCache';
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -30,16 +31,19 @@ import { policyForUser } from '../shift.service';
 import { serviceYears, settlementFor } from '../exitSettlement.service';
 import { notifyUsers } from '../notification.service';
 import { istParts } from '../notification-time';
-import { hasReceiptStorage, presignReceiptDownload, uploadEmployeeDocument } from '../s3-receipt.service';
+import { hasReceiptStorage, presignReceiptDownload, uploadObjectAt } from '../s3-receipt.service';
+import { HANDOVER_TYPES_MESSAGE, handoverFileType } from './handoverFiles';
+import { removeFile } from './files';
 import { logger } from '../../utils/logger';
 import type { HandoverItem, Journey, JourneyTask, Resignation, SurveyResponse, SystemTaskKey } from '../../models/lifecycle.model';
 import type { ExitSettlement } from '../../models/exitSettlement.model';
 import {
   CLEARANCE_TEAMS, DEFAULT_EXIT_CLEARANCE, ClearanceTeam, ExitKind, ExitRules, OffboardingExitType, OffboardingNoticeHandling, User, UserExit, UserExitOffboarding,
 } from '../../models/user.model';
-import { closeJourney, completeTask, createOffboardingJourney, journeyTasksView, moveTl, reopenTask, setJourneyStatus, skipTask } from './engine';
+import { closeJourney, completeTask, createOffboardingJourney, journeyTasksView, moveTl, refreshJourney, reopenTask, setJourneyStatus, skipTask } from './engine';
 import type { TaskView } from './engine';
 import { orgMayEmail, sendLifecycleEmail, smtpConfigured } from './emails';
+import { noticeDaysFor } from './templates';
 import { env } from '../../config/env';
 
 /** Answers with its status and message (the routes send `{ error, message }`). */
@@ -130,6 +134,9 @@ export const KIND_OF: Record<OffboardingExitType, ExitKind> = { resignation: 're
 const KIND_LABEL: Record<ExitKind, string> = { resigned: 'Resignation', retired: 'Retirement', terminated: 'Termination', absconded: 'Absconding', other: 'Other' };
 const TYPE_OF_KIND: Partial<Record<ExitKind, OffboardingExitType>> = { resigned: 'resignation', retired: 'retirement', terminated: 'termination', absconded: 'absconding' };
 export const NOTICE_HANDLING: OffboardingNoticeHandling[] = ['served', 'not_applicable', 'waived', 'recovered', 'paid_in_lieu'];
+export const NOTICE_HANDLING_LABEL: Record<OffboardingNoticeHandling, string> = {
+  served: 'Served in full', not_applicable: 'Not applicable', waived: 'Waived by the company', recovered: 'Shortfall recovered from settlement', paid_in_lieu: 'Paid in lieu of notice',
+};
 
 export const exitTypeOf = (e: UserExit): OffboardingExitType | null => e.offboarding?.exitType ?? TYPE_OF_KIND[e.kind] ?? null;
 export const exitTypeLabel = (e: UserExit) => (e.offboarding ? EXIT_TYPE_LABEL[e.offboarding.exitType] : KIND_LABEL[e.kind]);
@@ -139,13 +146,8 @@ export async function defaultOffboardingTemplate(org: string) {
   return lifecycleTemplates().findOne({ org, kind: 'offboarding', isDefault: true, active: { $ne: false } }, { projection: { _id: 0 } });
 }
 
-/** Days of notice for a resignation: the default offboarding template, else the company's Exit settings, else 30. */
-export async function noticeDaysFor(org: string): Promise<number> {
-  const template = await defaultOffboardingTemplate(org);
-  if (typeof template?.settings?.noticeDays === 'number') return template.settings.noticeDays;
-  const company = await companies().findOne({ id: org }, { projection: { _id: 0, exitNoticeDays: 1 } });
-  return typeof company?.exitNoticeDays === 'number' ? company.exitNoticeDays : 30;
-}
+/** Days of notice for a resignation: the default offboarding template, else the company's Exit settings, else 30 (templates.ts). */
+export { noticeDaysFor };
 
 /** Whether the app shows the Off-boarding page: the template's list when it has one, else on except for terminations and abscondings. */
 export function appPageDefault(type: OffboardingExitType, appPageFor?: OffboardingExitType[]): boolean {
@@ -159,6 +161,8 @@ export function rulesForNotice(type: OffboardingExitType, handling: OffboardingN
     case 'waived': return { noticePay: 'none', noticeRecovery: 'none' };
     case 'recovered': return { noticeRecovery: type === 'absconding' ? 'whole_notice' : 'days_not_served' };
     case 'paid_in_lieu': return { noticePay: 'pay', noticeRecovery: 'none' };
+    // No notice to serve (an absconding with nothing to recover, a retirement): no notice pay, nothing recovered.
+    case 'not_applicable': return { noticePay: 'none', noticeRecovery: 'none' };
     default: return undefined;
   }
 }
@@ -271,6 +275,7 @@ export async function beginOffboarding(hr: Actor, employee: User, input: BeginIn
   if (!input.resignationId) await completeTask(journey.id, 'hr_start_exit', by);
   await completeTask(journey.id, 'tell_clearance_teams', by);
   if (showAppPage) await completeTask(journey.id, 'offboarding_page', by);
+  await syncInterviewTask(journey.id, offboarding);
   await syncGratuityTask(journey.id, employee.joiningDate, input.lastWorkingDay);
   // The quiet door: someone leaving during onboarding or probation gets no plant, no probation pushes, no reveal.
   await closeOnboardingForExit(employee.userId, input.exitType);
@@ -537,6 +542,13 @@ function dedupeWaiting(rows: WaitingOn[]): WaitingOn[] {
 }
 
 /** When the exit interview opens: the journey's task, else Tl less the template's days (5 by default). */
+/** An exit with no exit interview (end of contract, no app page) has its interview task skipped, so the drawer and its counts match the app. */
+export async function syncInterviewTask(journeyId: string, ob: UserExitOffboarding | undefined): Promise<void> {
+  if (!ob || interviewApplies(ob)) return;
+  const open = await journeyTasks().findOne({ journeyId, systemKey: 'exit_interview', status: { $in: ['locked', 'todo'] } }, { projection: { _id: 1 } });
+  if (open) await skipTask(journeyId, 'exit_interview', { name: 'Automatic' }, 'Not part of this exit');
+}
+
 export function interviewOpensKey(e: UserExit, journey: Journey | null): string | null {
   if (!interviewApplies(e.offboarding)) return null;
   const days = journey?.templateSnapshot?.settings?.exitInterviewOpensDays ?? 5;
@@ -546,12 +558,16 @@ export function interviewOpensKey(e: UserExit, journey: Journey | null): string 
 const BOARD_USER = { _id: 0, userId: 1, name: 1, employeeId: 1, designation: 1, department: 1, managerUserId: 1, joiningDate: 1, lifecycleStatus: 1, exit: 1, personalEmail: 1 } as const;
 
 /** Everything the board and the drawer read for a set of exits, in a few queries. */
-async function contexts(org: string, people: Array<BoardUser & { exit: UserExit }>): Promise<ExitCtx[]> {
+/** A journey without its template's task list, and tasks without their long texts: what a board card reads. */
+const SLIM_JOURNEY = { _id: 0, 'templateSnapshot.tasks': 0 } as const;
+const SLIM_TASK = { _id: 0, org: 0, helper: 0, note: 0, doneByName: 0, doneByUserId: 0, dueChangedAt: 0, remindedAt: 0 } as const;
+
+async function contexts(org: string, people: Array<BoardUser & { exit: UserExit }>, slim = false): Promise<ExitCtx[]> {
   const journeyIds = people.map((u) => u.exit.offboarding?.journeyId).filter((x): x is string => !!x);
   const resignationIds = people.map((u) => u.exit.offboarding?.resignationId).filter((x): x is string => !!x);
   const [js, ts, hs, ss, rs, managers] = await Promise.all([
-    journeyIds.length ? journeys().find({ id: { $in: journeyIds } }, { projection: { _id: 0 } }).toArray() : [],
-    journeyIds.length ? journeyTasks().find({ journeyId: { $in: journeyIds } }, { projection: { _id: 0 } }).toArray() : [],
+    journeyIds.length ? journeys().find({ id: { $in: journeyIds } }, { projection: slim ? SLIM_JOURNEY : { _id: 0 } }).toArray() : [],
+    journeyIds.length ? journeyTasks().find({ journeyId: { $in: journeyIds } }, { projection: slim ? SLIM_TASK : { _id: 0 } }).toArray() : [],
     journeyIds.length ? handoverItems().find({ journeyId: { $in: journeyIds } }, { projection: { _id: 0 } }).toArray() : [],
     exitSettlements().find({ org, userId: { $in: people.map((u) => u.userId) } }, { projection: { _id: 0, userId: 1, status: 1, payablePaise: 1, approvedAt: 1, paidAt: 1, 'lines.key': 1, 'lines.amountPaise': 1, 'lines.estimated': 1, 'lines.period': 1 } }).toArray(),
     resignationIds.length ? resignations().find({ id: { $in: resignationIds } }, { projection: { _id: 0 } }).toArray() : [],
@@ -592,11 +608,11 @@ function forTeam(card: BoardCard, ctx: ExitCtx, team: Exclude<ClearanceTeam, 'ma
 export interface BoardQuery { tab?: string; q?: string; from?: string; to?: string }
 
 /** GET /admin/lifecycle/offboarding/board: one tab's columns, every tab's count, and how many wait on HR. */
-export async function offboardingBoard(actorUserId: string, query: BoardQuery = {}, now = new Date()) {
+export async function offboardingBoard(actorUserId: string, query: BoardQuery = {}, now = new Date(), opts: { fresh?: boolean; full?: boolean } = {}) {
   const actor = await dashboardActor(actorUserId);
   const tab: BoardTab = query.tab === 'notice' || query.tab === 'exit' ? query.tab : 'resignations';
   const today = todayKey(now);
-  const cards = await allCards(actor, today);
+  const cards = await allCards(actor, today, opts);
   const q = (query.q ?? '').trim().toLowerCase();
   const from = isDateKey(query.from) ? query.from : null;
   const to = isDateKey(query.to) ? query.to : null;
@@ -616,14 +632,44 @@ export async function offboardingBoard(actorUserId: string, query: BoardQuery = 
   };
 }
 
-async function allCards(actor: Actor, today: string): Promise<BoardCard[]> {
-  const org = actor.org;
+/** What the offboarding board and its count are built from, read in one go. */
+interface OffBoardData {
+  open: Resignation[];
+  people: Array<Pick<User, 'userId' | 'name' | 'employeeId' | 'designation' | 'department' | 'exit'>>;
+  managers: Array<Pick<User, 'userId' | 'name'>>;
+  ctxs: ExitCtx[];
+}
+
+async function loadOffBoardData(org: string, full = false): Promise<OffBoardData> {
   const [open, leavers] = await Promise.all([
     resignations().find({ org, status: { $in: ['with_manager', 'with_hr'] } }, { projection: { _id: 0 } }).toArray(),
     users().find({ org, exit: { $exists: true } }, { projection: BOARD_USER }).toArray(),
   ]);
-  const people = await users().find({ userId: { $in: open.map((r) => r.userId) } }, { projection: { _id: 0, userId: 1, name: 1, employeeId: 1, designation: 1, department: 1, exit: 1 } }).toArray();
-  const managers = await users().find({ userId: { $in: open.map((r) => r.managerUserId).filter((x): x is string => !!x) } }, { projection: { _id: 0, userId: 1, name: 1 } }).toArray();
+  const [people, managers, ctxs] = await Promise.all([
+    users().find({ userId: { $in: open.map((r) => r.userId) } }, { projection: { _id: 0, userId: 1, name: 1, employeeId: 1, designation: 1, department: 1, exit: 1 } }).toArray(),
+    users().find({ userId: { $in: open.map((r) => r.managerUserId).filter((x): x is string => !!x) } }, { projection: { _id: 0, userId: 1, name: 1 } }).toArray(),
+    contexts(org, leavers as Array<BoardUser & { exit: UserExit }>, !full),
+  ]);
+  return { open: open as Resignation[], people, managers, ctxs };
+}
+
+/**
+ * The offboarding board's raw data for an org, kept in memory and shared by the three tabs and the
+ * count (readCache: dropped on every write). `fresh` skips the kept copy; `full` reads whole documents
+ * (both for the speed check).
+ */
+export function offBoardData(org: string, opts: { fresh?: boolean; full?: boolean } = {}): Promise<OffBoardData> {
+  if (opts.fresh || opts.full) return loadOffBoardData(org, opts.full);
+  return cachedLifecycle(org, 'off-board-data', null, () => loadOffBoardData(org));
+}
+
+/** The kept offboarding data worked out again now (the warm-up). */
+export function refreshOffBoardData(org: string): Promise<OffBoardData> {
+  return refreshLifecycle(org, 'off-board-data', null, () => loadOffBoardData(org));
+}
+
+async function allCards(actor: Actor, today: string, opts: { fresh?: boolean; full?: boolean } = {}): Promise<BoardCard[]> {
+  const { open, people, managers, ctxs } = await offBoardData(actor.org, opts);
   const out: BoardCard[] = [];
   if (actor.viewer.kind === 'hr') {
     for (const r of open) {
@@ -632,7 +678,6 @@ async function allCards(actor: Actor, today: string): Promise<BoardCard[]> {
       out.push(toCard(`r:${r.id}`, cardBase(p), deriveResignation(r, managers.find((m) => m.userId === r.managerUserId)?.name, p.name, today)));
     }
   }
-  const ctxs = await contexts(org, leavers as Array<BoardUser & { exit: UserExit }>);
   for (const ctx of ctxs) {
     const card = toCard(ctx.user.userId, cardBase(ctx.user), deriveExit(ctx, today));
     if (actor.viewer.kind === 'hr') {
@@ -737,10 +782,10 @@ export async function sendNudge(actorUserId: string, employeeUserId: string, bod
 }
 
 /** GET /admin/lifecycle/offboarding/count — the sidebar's red badge: cards that need you, and late ones. */
-export async function offboardingCount(actorUserId: string, now = new Date()) {
+export async function offboardingCount(actorUserId: string, now = new Date(), opts: { fresh?: boolean; full?: boolean } = {}) {
   const actor = await dashboardActor(actorUserId);
   const today = todayKey(now);
-  const cards = (await allCards(actor, today)).filter((c) => c.column !== 'closed');
+  const cards = (await allCards(actor, today, opts)).filter((c) => c.column !== 'closed');
   const needs = (c: BoardCard) => (actor.viewer.kind === 'hr' ? c.waitingOnHr : c.flag?.key !== 'all_clear');
   const needsYou = cards.filter(needs).length;
   const late = cards.filter((c) => c.late && !needs(c)).length;
@@ -863,6 +908,9 @@ export async function offboardingDetail(actorUserId: string, employeeUserId: str
   details.push({ label: 'Last day', value: longDay(e.lastWorkingDay) }, { label: 'Manager', value: ctx.managerName ?? '—' });
   if (hr) {
     if (e.noticeDays != null) details.push({ label: 'Notice period', value: `${e.noticeDays} days` });
+    // What HR chose for the notice at the start, and HR's own note (never shown to the employee or the manager).
+    if (ob?.noticeHandling) details.push({ label: 'Notice', value: NOTICE_HANDLING_LABEL[ob.noticeHandling] ?? ob.noticeHandling });
+    if (e.note) details.push({ label: 'HR note', value: e.note });
     if (ctx.journey) details.push({ label: 'Template', value: ctx.journey.templateSnapshot?.name ?? 'Standard' });
     if (ctx.handover.length) details.push({ label: 'Handover', value: `${uploaded} of ${ctx.handover.length} uploaded` });
     details.push({ label: 'Exit interview', value: !interview.applies ? (e.interview ? 'Filled by HR' : 'Not part of this exit') : interview.sent ? 'Sent' : interview.open ? 'Opened, not sent' : `Opens ${shortDay(opens!)}` });
@@ -1057,6 +1105,10 @@ const escapeHtml = (v: string) => v.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', 
  * statement PDF the dashboard made (settlementDoc.ts), emailed to the personal email once the settlement
  * is approved. It is never shown in the app. The personal email is kept on the person when they had none.
  */
+/** A second settlement email within this long of the first needs `resend: true` (the dashboard asks HR to confirm). */
+export const SETTLEMENT_RESEND_MS = 10 * 60_000;
+const minutesAgo = (at: Date, now: Date) => { const m = Math.max(0, Math.round((now.getTime() - at.getTime()) / 60_000)); return m < 1 ? 'a moment ago' : m === 1 ? 'a minute ago' : `${m} minutes ago`; };
+
 export async function emailSettlement(actorUserId: string, employeeUserId: string, body: Record<string, unknown>, now = new Date()) {
   const actor = await dashboardActor(actorUserId);
   requireHr(actor);
@@ -1082,12 +1134,45 @@ export async function emailSettlement(actorUserId: string, employeeUserId: strin
     || `Dear ${first},\n\nYour full and final settlement statement is attached.\n\nFor any question, reply to this email or write to HR.\n\n${companyName}`;
   const html = message.split(/\n{2,}/).map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('');
   if (!orgMayEmail(actor.org)) throw new LifecycleError(409, 'Email to this company is switched off on this server; the PDF was not sent');
-  const sent = await sendLifecycleEmail(actor.org, to, subject, html, [{ filename: `Settlement_${user.employeeId || user.name.replace(/\s+/g, '_')}.pdf`, content: pdf, contentType: 'application/pdf' }]);
+  // One settlement email at a time: a second send soon after the first (a double click, two tabs) is refused
+  // unless HR confirms a resend; two sends at the same moment are refused by the claim below.
+  const last = user.exit.offboarding?.settlementEmail;
+  if (last?.at && now.getTime() - new Date(last.at).getTime() < SETTLEMENT_RESEND_MS && body.resend !== true) {
+    throw new LifecycleError(409, `The settlement was already emailed to ${last.to} ${minutesAgo(new Date(last.at), now)}. Send it again?`);
+  }
+  // (Exits recorded before offboarding existed have no offboarding block to hold the claim; the time check above still applies.)
+  const claim = !!user.exit.offboarding;
+  if (claim) {
+    // The claim holds only if nobody has sent since this request read the exit (a double click read the same
+    // "last sent"), and nobody is sending right now (a stale claim older than 2 minutes is ignored).
+    const claimed = await users().updateOne(
+      {
+        userId: employeeUserId, org: actor.org, 'exit.offboarding': { $exists: true },
+        'exit.offboarding.settlementEmail.at': last?.at ? new Date(last.at) : { $exists: false },
+        $or: [{ 'exit.offboarding.settlementSendingAt': { $exists: false } }, { 'exit.offboarding.settlementSendingAt': { $lt: new Date(now.getTime() - 2 * 60_000) } }],
+      },
+      { $set: { 'exit.offboarding.settlementSendingAt': now } },
+    );
+    if (!claimed.modifiedCount) throw new LifecycleError(409, 'The settlement is being emailed right now, or was just sent');
+  }
+  const release = () => (claim ? users().updateOne({ userId: employeeUserId, org: actor.org, 'exit.offboarding': { $exists: true } }, { $unset: { 'exit.offboarding.settlementSendingAt': '' } }) : Promise.resolve());
+  let sent: boolean;
+  try {
+    sent = await sendLifecycleEmail(actor.org, to, subject, html, [{ filename: `Settlement_${user.employeeId || user.name.replace(/\s+/g, '_')}.pdf`, content: pdf, contentType: 'application/pdf' }]);
+  } catch (error) {
+    await release();
+    throw error;
+  }
   // Without SMTP (development only) the mail is logged and kept in the outbox; anywhere else a failed send is an error.
-  if (!sent && (smtpConfigured() || env.nodeEnv === 'production')) throw new LifecycleError(502, 'The email could not be sent; the PDF was not sent. Try again');
+  if (!sent && (smtpConfigured() || env.nodeEnv === 'production')) {
+    await release();
+    throw new LifecycleError(502, 'The email could not be sent; the PDF was not sent. Try again');
+  }
   const settlementEmail = { to, at: now, ...(actor.name ? { byName: actor.name } : {}), ...(blocking.length ? { overrideReason } : {}) };
+  // Recorded and released in one write, so no second send can slip in between.
+  const unset: Record<string, ''> = { ...(user.exit.offboarding?.settlementDraft ? { 'exit.offboarding.settlementDraft': '' as const } : {}), ...(claim ? { 'exit.offboarding.settlementSendingAt': '' as const } : {}) };
   await users().updateOne({ userId: employeeUserId, org: actor.org }, {
-    ...(user.exit.offboarding?.settlementDraft ? { $unset: { 'exit.offboarding.settlementDraft': '' } } : {}),
+    ...(Object.keys(unset).length ? { $unset: unset } : {}),
     $set: { ...(user.exit.offboarding ? { 'exit.offboarding.settlementEmail': settlementEmail } : { 'exit.offboarding': { exitType: exitTypeOf(user.exit) ?? 'resignation', showAppPage: false, settlementEmail } }), ...(!user.personalEmail ? { personalEmail: to } : {}), updatedAt: now },
   });
   const journeyId = user.exit.offboarding?.journeyId;
@@ -1119,7 +1204,10 @@ async function storeFile(org: string, journeyId: string, userId: string, file: U
   const id = randomUUID();
   let objectKey: string;
   if (hasReceiptStorage()) {
-    objectKey = (await uploadEmployeeDocument(userId, { originalName: file.name, contentType: file.contentType, size: file.bytes.length, bytes: file.bytes })).objectKey;
+    // Handover files under their own prefix, not with reimbursement receipts (whose clean-up rules would reach them).
+    // Files stored earlier keep their old keys and still open (the download signs whatever key the row holds).
+    const safe = (v: string) => v.replace(/[^a-zA-Z0-9_-]/g, '_');
+    objectKey = (await uploadObjectAt(`lifecycle/handover/${safe(org)}/${safe(journeyId)}/${id}${handoverFileType(file.name, file.bytes)?.ext ?? ''}`, file)).objectKey;
   } else {
     objectKey = `lifecycle/${org}/${journeyId}/${id}`;
     await fs.mkdir(path.join(LOCAL_ROOT, path.dirname(objectKey)), { recursive: true });
@@ -1187,7 +1275,9 @@ export async function myOffboarding(userId: string, now = new Date()) {
   const resignedOn = resignation ? keyOfInstant(resignation.submittedAt) : e.noticeFrom ?? null;
   const managerUserId = journey?.managerUserId ?? user.managerUserId;
   const managerName = managerUserId ? (await users().findOne({ userId: managerUserId }, { projection: { _id: 0, name: 1 } }))?.name : undefined;
-  const summary = handoverSummary(items, ob, tasks);
+  // The checklist's shared / done steps are the manager's tasks: read them from every task (covers both
+  // 'handover done' and when the checklist was shared), as the manager's R8b does.
+  const summary = handoverSummary(items, ob, await journeyTasksView(journeyId, 'hr'));
   const acceptedAt = journey?.anchors.exit_accepted ?? journey?.createdAt ?? null;
   return {
     tl: e.lastWorkingDay,
@@ -1228,13 +1318,17 @@ export async function uploadHandover(userId: string, itemId: string, input: { fi
   let upload: NonNullable<HandoverItem['upload']>;
   if (input.file) {
     if (input.file.bytes.length > 10 * 1024 * 1024) throw new LifecycleError(413, 'A file must be 10 MB or smaller');
-    upload = { kind: 'file', fileId: await storeFile(user.org, journeyId, userId, input.file, now), name: input.file.name.slice(0, 200), at: now };
+    const type = handoverFileType(input.file.name, input.file.bytes);
+    if (!type) throw new LifecycleError(415, HANDOVER_TYPES_MESSAGE);
+    upload = { kind: 'file', fileId: await storeFile(user.org, journeyId, userId, { ...input.file, contentType: type.contentType }, now), name: input.file.name.slice(0, 200), at: now };
   } else {
     const url = String(input.url ?? '').trim();
     if (!/^https?:\/\/\S+$/i.test(url) || url.length > 2000) throw new LifecycleError(400, 'A link starts with https://');
     upload = { kind: 'link', url, name: url.replace(/^https?:\/\//i, '').slice(0, 80), at: now };
   }
   await handoverItems().updateOne({ id: item.id }, { $set: { upload } });
+  // The file it replaces goes (its row and its stored object): a replaced upload is never kept.
+  if (item.upload?.kind === 'file' && item.upload.fileId && item.upload.fileId !== (upload.kind === 'file' ? upload.fileId : undefined)) await removeFile(item.upload.fileId);
   const all = await handoverItems().find({ journeyId }, { projection: { _id: 0, upload: 1 } }).toArray();
   if (all.every((h) => !!h.upload)) await completeTask(journeyId, 'upload_handover', { userId, name: user.name });
   const journey = await journeys().findOne({ id: journeyId }, { projection: { _id: 0, managerUserId: 1 } });
@@ -1248,6 +1342,7 @@ export async function removeHandoverUpload(userId: string, itemId: string) {
   const { item } = await myItem(userId, itemId);
   if (item.done) throw new LifecycleError(409, 'Your manager has marked the handover done');
   await handoverItems().updateOne({ id: item.id }, { $unset: { upload: '' } });
+  if (item.upload?.kind === 'file' && item.upload.fileId) await removeFile(item.upload.fileId);
   return { item: handoverView({ ...item, upload: undefined }) };
 }
 
@@ -1373,9 +1468,11 @@ export async function managerLeaver(managerUserId: string, leaverUserId: string,
 const CLEARANCE_TEAM_LABEL: Record<ClearanceTeam, string> = { manager: 'your manager', it: 'IT', admin: 'Admin', finance: 'Finance' };
 
 /** The handover checklist for the app: the items, the manager's note, when it was shared and is due, whether it is done. */
-function handoverSummary(items: HandoverItem[], ob: UserExitOffboarding, tasks: Awaited<ReturnType<typeof journeyTasksView>>) {
+function handoverSummary(items: HandoverItem[], ob: UserExitOffboarding, tasks: Awaited<ReturnType<typeof journeyTasksView>>, markedDone?: { doneAt?: Date | null } | null) {
   const upload = tasks.find((t) => t.systemKey === 'upload_handover');
-  const marked = tasks.find((t) => t.systemKey === 'mark_handover_done' && t.status === 'done');
+  // "Handover done" is the manager's task: a leaver's own task list does not hold it, so their page passes it in.
+  const fromList = tasks.find((t) => t.systemKey === 'mark_handover_done' && t.status === 'done');
+  const marked = fromList ?? (markedDone ? { doneAt: markedDone.doneAt ? new Date(markedDone.doneAt).toISOString() : null } : undefined);
   const shared = tasks.find((t) => t.systemKey === 'handover_checklist' && t.status === 'done');
   const addedAt = items.length ? shared?.doneAt ?? (ob.handoverNoteAt ? new Date(ob.handoverNoteAt).toISOString() : null) : null;
   const doneAt = marked?.doneAt ?? items.map((h) => h.doneAt).filter((d): d is Date => !!d).map((d) => d.toISOString()).sort().at(-1) ?? null;
@@ -1395,7 +1492,11 @@ export async function setHandoverChecklist(managerUserId: string, leaverUserId: 
   const existing = await handoverItems().find({ journeyId }, { projection: { _id: 0 } }).toArray();
   const keep = new Set(titles);
   const gone = existing.filter((h) => !keep.has(h.title));
-  if (gone.length) await handoverItems().deleteMany({ id: { $in: gone.map((h) => h.id) } });
+  if (gone.length) {
+    await handoverItems().deleteMany({ id: { $in: gone.map((h) => h.id) } });
+    // An item taken off the checklist takes its uploaded file with it.
+    for (const h of gone) if (h.upload?.kind === 'file' && h.upload.fileId) await removeFile(h.upload.fileId);
+  }
   const known = new Set(existing.map((h) => h.title));
   const added: HandoverItem[] = titles.filter((t) => !known.has(t)).map((title) => ({ id: randomUUID(), org: leaver.org, journeyId, userId: leaver.userId, title, createdByUserId: managerUserId, done: false }));
   if (added.length) await handoverItems().insertMany(added.map((h) => ({ ...h })));
@@ -1465,6 +1566,10 @@ export async function runOffboardingJobs(now = new Date()) {
       const journey = await journeys().findOne({ id: journeyId }, { projection: { _id: 0 } });
       if (!journey || journey.status === 'closed' || !u.org) continue;
       if (!(await companies().findOne({ id: u.org, 'features.lifecycle': true }, { projection: { _id: 1 } }))) continue;
+      // Offboarding tasks that open on a day (the exit interview at Tl − n, closing the account) open
+      // only when the journey is re-dated; the onboarding day job does this for joiners, this does it for exits.
+      await refreshJourney(journeyId, now);
+      await syncInterviewTask(journeyId, ob);
       const fired = new Set(ob.fired ?? []);
       const fire = async (key: string) => {
         const res = await users().updateOne({ userId: u.userId, 'exit.offboarding.fired': { $ne: key } }, { $push: { 'exit.offboarding.fired': key } });
@@ -1490,8 +1595,12 @@ export async function runOffboardingJobs(now = new Date()) {
         counts.settlementDue++;
       }
       const joined = keyOfInstant(u.joiningDate ?? null);
-      if (pushHours && today >= addDays(e.lastWorkingDay, 30) && joined && serviceYears(joined, e.lastWorkingDay).completed >= 5 && !fired.has('gratuity_due') && (await fire('gratuity_due'))) {
-        await tellOffboarding(await clearanceStaff(u.org), 'lifecycle_gratuity_due', 'lifecycle_clearance', `Gratuity due: ${u.name}`, `Gratuity is due within 30 days of the last day (${shortDay(e.lastWorkingDay)}).`, { userId: u.userId });
+      // The template's gratuity day (its task's due date, Tl + gratuityDays), as the board shows it.
+      const gratuityTask = await journeyTasks().findOne({ journeyId, systemKey: 'gratuity' }, { projection: { _id: 0, dueAt: 1 } });
+      const gratuityDue = keyOfInstant(gratuityTask?.dueAt ?? null) ?? addDays(e.lastWorkingDay, 30);
+      if (pushHours && today >= gratuityDue && joined && serviceYears(joined, e.lastWorkingDay).completed >= 5 && !fired.has('gratuity_due') && (await fire('gratuity_due'))) {
+        const days = daysFromTo(e.lastWorkingDay, gratuityDue);
+        await tellOffboarding(await clearanceStaff(u.org), 'lifecycle_gratuity_due', 'lifecycle_clearance', `Gratuity due: ${u.name}`, `Gratuity is due within ${days} ${days === 1 ? 'day' : 'days'} of the last day (${shortDay(e.lastWorkingDay)}).`, { userId: u.userId });
         counts.gratuityDue++;
       }
     } catch (error) {

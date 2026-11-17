@@ -32,7 +32,7 @@ const LABELS: Record<string, string> = {
   manager: 'Reporting manager', managerName: 'Reporting manager', reportingManager: 'Reporting manager',
   location: 'Work location', workLocation: 'Work location',
   joining: 'Joining date', joiningDate: 'Joining date', tj: 'Joining date',
-  ctc: 'Yearly CTC', yearlyCtc: 'Yearly CTC',
+  ctc: 'Yearly CTC', yearlyCtc: 'Yearly CTC', ctcWords: 'CTC in words',
   probation: 'Probation', probationMonths: 'Probation',
   notice: 'Notice period', noticeDays: 'Notice period', noticePeriod: 'Notice period',
   valid: 'Offer valid till', validTill: 'Offer valid till',

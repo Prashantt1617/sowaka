@@ -88,7 +88,7 @@ export type StartExitInput = {
 export type InsightsDTO = {
   from: string; to: string; groupBy: 'department' | 'tenure'; minGroup: number;
   left: { total: number; resigned: number; hrStarted: number };
-  answered: { count: number; resignations: number; percent: number };
+  answered: { count: number; offered: number; resignations: number; percent: number };
   hidden: boolean;
   workingHere: { average: number | null; answers: number } | null;
   manager: { average: number | null; answers: number } | null;
@@ -98,7 +98,7 @@ export type InsightsDTO = {
   themes: { label: string; count: number; percent: number }[];
   hiddenThemes: number;
   untaggedAnswers: number;
-  groups: { key: string; label: string; left: number; answers: number; workingHere: number | null; manager: number | null; hidden: boolean }[];
+  groups: { key: string; label: string; left: number; offered: number; answers: number; workingHere: number | null; manager: number | null; hidden: boolean }[];
 };
 
 const BASE = '/admin/lifecycle';
@@ -119,7 +119,8 @@ export const setAppPage = (userId: string, showAppPage: boolean) => api<DrawerDT
 export const taskDone = (userId: string, systemKey: string, note?: string) => api<DrawerDTO>(`${BASE}/offboarding/${userId}/tasks/${systemKey}`, { method: 'POST', body: { action: 'done', ...(note ? { note } : {}) } });
 export const closeExit = (userId: string, note?: string) => api<DrawerDTO>(`${BASE}/offboarding/${userId}/close`, { method: 'POST', body: note ? { note } : {} });
 export const getSettlementChecks = (userId: string) => api<SettlementChecksDTO>(`${BASE}/offboarding/${userId}/settlement/checks`);
-export const emailSettlementPdf = (userId: string, body: { pdfBase64: string; to: string; subject?: string; message?: string; overrideReason?: string }) =>
+/** `resend: true` confirms a second email within 10 minutes of the first (the server answers 409 without it). */
+export const emailSettlementPdf = (userId: string, body: { pdfBase64: string; to: string; subject?: string; message?: string; overrideReason?: string; resend?: boolean }) =>
   api<DrawerDTO>(`${BASE}/offboarding/${userId}/settlement/email`, { method: 'POST', body });
 export const saveSettlementDraft = (userId: string, body: { to: string; subject: string; message: string }) =>
   api<SettlementChecksDTO>(`${BASE}/offboarding/${userId}/settlement/draft`, { method: 'PUT', body });

@@ -47,7 +47,11 @@ import { forgetEngagement } from '../services/engagement-cache';
 import { lifecycleOffboardingAdminRouter, lifecycleOffboardingRouter } from './lifecycle-offboarding.routes';
 import { notificationLookRouter } from './notification-look.routes';
 
+import { forgetReadsOnWrite } from '../services/lifecycle/readCache';
+
 export const router = Router();
+// Every write drops the kept lifecycle boards and Suwi notices before it answers (lifecycle/readCache.ts).
+router.use(forgetReadsOnWrite);
 
 router.use('/auth', authRouter);
 // Suwi, the HR assistant: dashboard users only; each tool checks the asker's tabs.

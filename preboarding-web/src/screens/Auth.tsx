@@ -51,10 +51,11 @@ export function SignIn() {
     setBusy(true);
     setError(undefined);
     try {
-      await portal.signIn(email.trim(), password);
+      const out = await portal.signIn(email.trim(), password);
+      if ('closed' in out) { setClosed(out.closed); return; }
       navigate(from && from !== '/sign-in' ? from : '/', { replace: true });
     } catch (err) {
-      // The right password on a closed portal: the closed screen (P16 / PX / P3b / P3c), not an error line.
+      // A server from before the closed answer was 200 says it with a 403: the same closed screen.
       const info = err instanceof ApiError ? (err.details?.closed as ClosedSignIn | undefined) : undefined;
       if (info?.state) setClosed(info);
       else setError((err as Error).message);

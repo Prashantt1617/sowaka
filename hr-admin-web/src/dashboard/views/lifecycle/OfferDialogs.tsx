@@ -11,7 +11,7 @@ import {
 } from '../../../services/lifecycle';
 import type { JourneyView, LetterTemplateDTO, OfferFields, OfferView, SalaryBreakup, TemplateListItem } from '../../../services/lifecycle';
 import { BlobPreview, Field, Modal, Pick, Switch } from './shared';
-import { addDays, areaStyle, errText, firstName, inputStyle, longDay, rupees, todayKey } from './format';
+import { OFFER_FIELD_LABEL, addDays, areaStyle, errText, firstName, inputStyle, longDay, rupees, todayKey } from './format';
 import { annexureHtml, emailDraft, fieldLabel, LETTER_CSS, LETTER_TITLE, letterFileName, letterInner, letterPdf, missingFields, takesAnnexure } from './letterDoc';
 import { Spinner } from '../../ui';
 import { useCompanyName, useOfferChoices } from './hooks';
@@ -32,49 +32,49 @@ function OfferFieldsForm({ value, onChange, showPay, errors }: { value: OfferFie
   const managers = useMemo(() => emps.filter((e) => !e.exit?.left).sort((a, b) => a.name.localeCompare(b.name)), [emps]);
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 14 }}>
-      <Field label="Designation" required error={errors.designation}>
+      <Field label={OFFER_FIELD_LABEL.designation} required error={errors.designation}>
         <input value={value.designation} onChange={(e) => set('designation', e.target.value)} list="lf-designations" placeholder="e.g. Product Designer" style={inputStyle} />
       </Field>
-      <Field label="Department">
+      <Field label={OFFER_FIELD_LABEL.department}>
         <input value={value.department ?? ''} onChange={(e) => set('department', e.target.value)} list="lf-departments" placeholder="e.g. Design" style={inputStyle} />
       </Field>
-      <Field label="Work location">
+      <Field label={OFFER_FIELD_LABEL.location}>
         <input value={value.location ?? ''} onChange={(e) => set('location', e.target.value)} list="lf-locations" placeholder="e.g. Main Campus, New Delhi" style={inputStyle} />
       </Field>
-      <Field label="Reporting manager">
+      <Field label={OFFER_FIELD_LABEL.managerUserId}>
         <Pick value={value.managerUserId ?? ''} onChange={(v) => set('managerUserId', v)}>
           <option value="">Not decided yet</option>
           {managers.map((m) => <option key={m.id} value={m.id}>{m.name}{m.role ? ` · ${m.role}` : ''}</option>)}
         </Pick>
       </Field>
-      <Field label="Joining date" required error={errors.tj}>
+      <Field label={OFFER_FIELD_LABEL.tj} required error={errors.tj}>
         <input type="date" value={value.tj} min={todayKey()} onChange={(e) => set('tj', e.target.value)} style={inputStyle} />
       </Field>
-      <Field label="Offer valid till" required error={errors.validTill}>
+      <Field label={OFFER_FIELD_LABEL.validTill} required error={errors.validTill}>
         <input type="date" value={value.validTill} min={todayKey()} onChange={(e) => set('validTill', e.target.value)} style={inputStyle} />
       </Field>
       {showPay && (
-        <Field label="Yearly CTC (₹)" required error={errors.ctc} hint={value.ctc > 0 ? rupees(value.ctc) : 'Never shown to the manager'}>
+        <Field label={`${OFFER_FIELD_LABEL.ctc} (₹)`} required error={errors.ctc} hint={value.ctc > 0 ? rupees(value.ctc) : 'Never shown to the manager'}>
           <input type="number" min={0} step={1000} value={value.ctc || ''} onChange={(e) => set('ctc', Number(e.target.value) || 0)} placeholder="e.g. 1400000" style={inputStyle} />
         </Field>
       )}
-      <Field label="Employment type">
+      <Field label={OFFER_FIELD_LABEL.employeeType}>
         <Pick value={value.employeeType ?? 'full_time'} onChange={(v) => set('employeeType', v as OfferFields['employeeType'])}>
           <option value="full_time">Full-time</option>
           <option value="intern">Intern</option>
           <option value="contract">Contract</option>
         </Pick>
       </Field>
-      <Field label="Probation">
+      <Field label={OFFER_FIELD_LABEL.probationMonths}>
         <Pick value={String(value.probationMonths)} onChange={(v) => set('probationMonths', Number(v))}>
           <option value="6">6 months</option>
           <option value="3">3 months</option>
         </Pick>
       </Field>
-      <Field label="Notice period (days)" error={errors.noticeDays}>
+      <Field label={`${OFFER_FIELD_LABEL.noticeDays} (days)`} error={errors.noticeDays}>
         <input type="number" min={0} value={value.noticeDays} onChange={(e) => set('noticeDays', Number(e.target.value) || 0)} style={inputStyle} />
       </Field>
-      <Field label="Responsibilities" wide hint="Optional. Shows on the offer the candidate reads.">
+      <Field label={OFFER_FIELD_LABEL.responsibilities} wide hint="Optional. Shows on the offer the candidate reads.">
         <textarea value={value.responsibilities ?? ''} onChange={(e) => set('responsibilities', e.target.value)} style={{ ...areaStyle, minHeight: 70 }} />
       </Field>
       <datalist id="lf-designations">{choices.designations.map((d) => <option key={d} value={d} />)}</datalist>
@@ -173,7 +173,19 @@ export function OfferWizard({ mode, journey, offer, start, onClose, onDone }: {
         if (def.settings.probationMonths) setFields((f) => ({ ...f, probationMonths: def.settings.probationMonths! }));
       }
     }).catch(() => setTemplates([]));
+    // The notice a resignation gets (the default offboarding template's) is the offer's notice too.
+    listTemplates('offboarding').then((t) => {
+      const days = t.find((x) => x.isDefault)?.settings.noticeDays;
+      if (typeof days === 'number') setFields((f) => ({ ...f, noticeDays: days }));
+    }).catch(() => undefined);
   }, [mode]);
+
+  // Picking another template brings its probation into the offer (HR can still change it here).
+  const pickTemplate = (id: string) => {
+    setTemplateId(id);
+    const months = templates.find((x) => x.id === id)?.settings.probationMonths;
+    if (months) setFields((f) => ({ ...f, probationMonths: months }));
+  };
 
   // The offer letter template and the values from the offer, once there is an offer.
   useEffect(() => {
@@ -301,7 +313,7 @@ export function OfferWizard({ mode, journey, offer, start, onClose, onDone }: {
               <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91" style={inputStyle} />
             </Field>
             <Field label="Onboarding template" hint="The tasks they get, from the offer to confirmation">
-              <Pick value={templateId} onChange={setTemplateId}>
+              <Pick value={templateId} onChange={pickTemplate}>
                 {templates.length === 0 && <option value="">The default</option>}
                 {templates.map((t) => <option key={t.id} value={t.id}>{t.name}{t.isDefault ? ' (default)' : ''}</option>)}
               </Pick>

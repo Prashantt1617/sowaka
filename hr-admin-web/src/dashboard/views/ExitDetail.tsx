@@ -180,9 +180,11 @@ function Fact({ label, value }: { label: string; value: ReactNode }) {
 
 // ———————————————————————————————————————————————— the statement
 
-const COLS_PLAIN = '1.4fr 2.2fr 0.9fr 96px';
+// The Amount column keeps room for a crore figure (each row is its own grid, so a fixed floor keeps them aligned).
+// No space inside minmax(): fitCols (ds.ts) wraps every bare "Nfr" that follows a space.
+const COLS_PLAIN = '1.4fr 2.2fr minmax(112px,0.9fr) 96px';
 /** With a "From" column (the lifecycle's settlement page: Payroll, Leave, Rule, Offboarding, HR). */
-const COLS_FROM = '1.3fr 1.9fr 0.8fr 0.9fr 96px';
+const COLS_FROM = '1.3fr 1.9fr 0.8fr minmax(112px,0.9fr) 96px';
 export type Run = (what: string, work: () => Promise<ExitDetailDTO>, done?: string) => Promise<boolean>;
 
 /**
@@ -210,7 +212,7 @@ export function Statement({ exit, settlement, busy, run, userId, sourceOf, extra
           onSave={async (amountPaise, why) => { if (await run(`line-${l.key}`, () => settlementAction(userId, 'line', { key: l.key, amountPaise, reason: why }), amountPaise == null ? 'Line put back' : 'Line changed')) setEditing(''); }} />
       ))}
       <div style={{ ...TR(COLS), fontWeight: 600, background: 'var(--surface-2)', borderRadius: 10, borderBottom: 'none', marginTop: 4 }}>
-        <div>Total {title.toLowerCase()}</div><div />{sourceOf && <div />}<div style={{ textAlign: 'right' }}>{inr(total)}</div><div />
+        <div>Total {title.toLowerCase()}</div><div />{sourceOf && <div />}<div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{inr(total)}</div><div />
       </div>
     </>
   );
@@ -218,7 +220,7 @@ export function Statement({ exit, settlement, busy, run, userId, sourceOf, extra
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <div style={{ overflowX: 'auto' }}>
-        <div style={{ minWidth: 760 }}>
+        <div style={{ minWidth: 620 }}>
           <div style={TH(COLS)}><Th>LINE</Th><Th>HOW IT IS WORKED OUT</Th>{sourceOf && <Th>FROM</Th>}<Th align="right">AMOUNT</Th><span /></div>
           {group('Earnings', earnings, settlement.earningsPaise)}
           {group('Deductions', deductions, settlement.deductionsPaise)}

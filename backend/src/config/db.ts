@@ -724,6 +724,13 @@ async function ensureIndexes(database: Db): Promise<void> {
   await payslipsCollection.createIndex({ userId: 1, period: -1 });
   await getDb().collection('exit_settlements').createIndex({ org: 1, userId: 1 }, { unique: true });
   await getDb().collection('lifecycle_templates').createIndex({ org: 1, kind: 1 });
+  // One Default template per company and kind, held by the database: two first visits at once used to
+  // insert two "Standard" Defaults. Existing duplicates block the index: then it is logged, not fatal.
+  try {
+    await getDb().collection('lifecycle_templates').createIndex({ org: 1, kind: 1 }, { unique: true, partialFilterExpression: { isDefault: true }, name: 'one_default_per_org_kind' });
+  } catch (error) {
+    console.warn('lifecycle_templates: the one-Default index could not be made (a company has two Defaults; remove the extra one)', error instanceof Error ? error.message : String(error));
+  }
   await getDb().collection('lifecycle_journeys').createIndex({ org: 1, kind: 1, status: 1 });
   await getDb().collection('lifecycle_journeys').createIndex({ userId: 1, kind: 1 });
   await getDb().collection('lifecycle_journey_tasks').createIndex({ journeyId: 1, order: 1 });

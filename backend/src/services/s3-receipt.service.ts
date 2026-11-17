@@ -63,6 +63,18 @@ export async function uploadLeaveDocument(userId: string, file: ReceiptFile) {
  * A document HR files against an employee. Same bucket and encryption; its own
  * prefix, so an offer letter is never reachable through a receipt's path.
  */
+/**
+ * A lifecycle file under a key the caller chose (`lifecycle/handover/<org>/<journey>/<id>.<ext>`):
+ * same bucket and encryption, kept apart from reimbursement receipts.
+ */
+export async function uploadObjectAt(objectKey: string, file: { contentType: string; bytes: Buffer }) {
+  validateConfiguration();
+  await getClient().send(new PutObjectCommand({
+    Bucket: env.s3.bucket, Key: objectKey, Body: file.bytes, ContentType: file.contentType, ContentLength: file.bytes.length, ...s3EncryptionParams(),
+  }));
+  return { objectKey };
+}
+
 export async function uploadEmployeeDocument(userId: string, file: ReceiptFile) {
   validateConfiguration();
   const objectKey = buildObjectKey(userId, file.originalName).replace(

@@ -213,7 +213,7 @@ export function Sheet({
 }
 
 /** "Ask HR" sheet: write to HR (mailto, reply subject) with the address and Copy in case no mail app opens. */
-export function AskHrSheet({ open, onClose, name, email, subject }: { open: boolean; onClose: () => void; name: string; email: string; subject?: string }) {
+export function AskHrSheet({ open, onClose, name, email, subject, onSignOut }: { open: boolean; onClose: () => void; name: string; email: string; subject?: string; onSignOut?: () => void }) {
   return (
     <Sheet open={open} onClose={onClose} title="Ask HR">
       <p className="body">Write to {name} and they’ll reply by email.</p>
@@ -227,6 +227,11 @@ export function AskHrSheet({ open, onClose, name, email, subject }: { open: bool
       <a className="btn btn--primary" href={mailto(email, subject)}>
         <Icon name="mail" /> Write to HR
       </a>
+      {onSignOut && (
+        <button type="button" className="btn btn--secondary sheet__sign-out" onClick={onSignOut}>
+          Sign out
+        </button>
+      )}
     </Sheet>
   );
 }

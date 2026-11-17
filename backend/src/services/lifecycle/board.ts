@@ -4,6 +4,8 @@
  * panel; and HR's actions on a journey (manager, buddy, Day-1 pass, template,
  * a task, a bank/PF change).
  */
+import { randomUUID } from 'node:crypto';
+import { cachedLifecycle, refreshLifecycle } from './readCache';
 import { dateChangeRequests, journeys, journeyTasks, offers, surveyResponses, users } from '../../config/db';
 import type {
   Day1Pass, Journey, JourneyFlag, JourneyTask, OnboardingBoardColumn, OnboardingBoardTab, OwnerRole, SurveyKind,
@@ -13,14 +15,14 @@ import { resolveProfilePhoto } from '../s3-connect-media.service';
 import { setPaymentDetails } from '../employeePayment.service';
 import { companyTimeZone, isDateKey, keyOfDay, todayKey } from './dueRules';
 import {
-  ACTIVE_STATUSES, LifecycleError, deriveJourney, finishTaskById, isCounted, isJoined, loadJourney, namesOf, reassignManager,
+  ACTIVE_STATUSES, AGENDA_TASK_KEYS, LifecycleError, deriveJourney, finishTaskById, guessAgendaTask, isCounted, isJoined, loadJourney, namesOf, reassignManager,
   refreshJourney, rematerialiseDraft, reopenTaskById, sanitiseJourney, syncDay1Meetings, taskLate, taskView, tasksOf, tell, completeTask,
-  type Derived, type TaskView,
+  type AgendaTaskKey, type Derived, type TaskView,
 } from './engine';
 import { journeyDocumentsView } from './documents';
 import { journeyLettersView } from './letters';
 import { offerView } from './offers';
-import { probationOf } from './probation';
+import { probationOf, sentDecisionLetter } from './probation';
 import { templateForJourney } from './templates';
 import { nudgedToday, nudgeTarget } from './nudges';
 
@@ -98,16 +100,37 @@ async function markNudged(waiting: WaitingOn[], now: Date): Promise<void> {
 
 const TAB_PHASE: Record<OnboardingBoardTab, JourneyTask['phase']> = { pre_boarding: 'pre_boarding', first_week: 'first_week', probation: 'probation' };
 
-/** Who the journey waits on: open tasks, late first, then must-do, then by due date. */
-export function waitingOnOf(j: Journey, tasks: JourneyTask[], names: Map<string, string>, now: Date, limit = 3): WaitingOn[] {
+/**
+ * Whether an open task is something the journey waits on: must-do or dated ones, and
+ * sending an unsent offer (it has no date, yet nothing moves until HR sends it).
+ * Optional undated things (asking for another joining day) wait on nobody.
+ */
+export function waitedOn(t: Pick<JourneyTask, 'mustDo' | 'dueAt' | 'systemKey'>): boolean {
+  return t.mustDo || !!t.dueAt || t.systemKey === 'send_offer';
+}
+
+/** On the probation tab a card leads with its stage's own step (H1c), not an old leftover from week 1. */
+const STAGE_STEP: Partial<Record<OnboardingBoardColumn, NonNullable<JourneyTask['systemKey']>>> = {
+  final_month: 'confirmation_discussion', confirmed: 'confirmation_letter',
+};
+
+/**
+ * Who the journey waits on: open tasks, late first, then must-do, then by due date.
+ * With `stage` (a probation card), the stage's step comes first, then the rest of the
+ * probation month's tasks, and only then leftovers from earlier phases.
+ */
+export function waitingOnOf(j: Journey, tasks: JourneyTask[], names: Map<string, string>, now: Date, limit = 3, stage?: { tab: OnboardingBoardTab; column: OnboardingBoardColumn }): WaitingOn[] {
   const today = todayKey(now, companyTimeZone(j.org));
   const open = tasks.filter((t) => ACTIVE_STATUSES.includes(t.status) && isCounted(t))
     // An upload in review waits on HR's review, not on the joiner.
     .filter((t) => !(t.status === 'in_review' && t.ownerRole === 'employee'))
     // Optional things with no date (asking for another joining day) are nobody's to wait on.
-    .filter((t) => t.mustDo || !!t.dueAt);
+    .filter(waitedOn);
   const due = (t: JourneyTask) => (t.dueAt ? keyOfDay(t.dueAt) : '9999-12-31');
-  open.sort((a, b) => Number(taskLate(b, today)) - Number(taskLate(a, today)) || Number(b.mustDo) - Number(a.mustDo) || due(a).localeCompare(due(b)) || a.order - b.order);
+  const probation = stage?.tab === 'probation';
+  const step = probation ? STAGE_STEP[stage!.column] : undefined;
+  const lead = (t: JourneyTask) => (!probation ? 0 : t.systemKey && t.systemKey === step ? 2 : t.phase === 'probation' ? 1 : 0);
+  open.sort((a, b) => lead(b) - lead(a) || Number(taskLate(b, today)) - Number(taskLate(a, today)) || Number(b.mustDo) - Number(a.mustDo) || due(a).localeCompare(due(b)) || a.order - b.order);
   return open.slice(0, limit).map((t) => {
     const ownerName = t.ownerUserId ? names.get(t.ownerUserId) : t.ownerRole === 'employee' ? j.candidate?.name : undefined;
     return {
@@ -123,17 +146,28 @@ export function progressOf(tasks: JourneyTask[], tab: OnboardingBoardTab): { don
   return { done: phase.filter((t) => t.status === 'done' || t.status === 'skipped').length, total: phase.length };
 }
 
-async function boardJourneys(org: string, now: Date): Promise<Journey[]> {
+/**
+ * The board's journeys: only the fields a card, its flags and the counts read. The template
+ * snapshot's task list (the bulk of a journey) is left out: the board needs only its settings.
+ * `full` reads whole journeys (the speed check compares the two, so the slim read never changes a card).
+ */
+const BOARD_JOURNEY_PROJECTION = {
+  _id: 0, id: 1, org: 1, kind: 1, userId: 1, candidate: 1, managerUserId: 1, buddyUserId: 1, templateId: 1, status: 1, stage: 1, tj: 1, tl: 1,
+  anchors: 1, designation: 1, department: 1, location: 1, plant: 1, probation: 1, lastActivityAt: 1, createdAt: 1, createdByUserId: 1, updatedAt: 1,
+  closedAt: 1, 'templateSnapshot.settings': 1, 'templateSnapshot.name': 1,
+} as const;
+async function boardJourneys(org: string, now: Date, full = false): Promise<Journey[]> {
   const since = new Date(now.getTime() - CONFIRMED_DAYS * 86_400_000);
   const rows = await journeys().find({
     org, kind: 'onboarding', closedAt: { $exists: false },
     $or: [{ status: { $ne: 'confirmed' } }, { 'probation.decision.decidedAt': { $gte: since } }],
-  }, { projection: { _id: 0, templateSnapshot: 1, id: 1, org: 1, kind: 1, userId: 1, candidate: 1, managerUserId: 1, buddyUserId: 1, templateId: 1, status: 1, stage: 1, tj: 1, anchors: 1, designation: 1, department: 1, location: 1, plant: 1, probation: 1, lastActivityAt: 1, createdAt: 1, createdByUserId: 1, updatedAt: 1 } }).toArray();
+  }, { projection: full ? { _id: 0 } : BOARD_JOURNEY_PROJECTION }).toArray();
   return rows as Journey[];
 }
 
 async function validTills(ids: string[]): Promise<Map<string, string>> {
-  const rows = await offers().find({ journeyId: { $in: ids } }, { projection: { _id: 0, journeyId: 1, versions: 1 } }).toArray();
+  // Only each version's valid-till: the last one is the current offer.
+  const rows = await offers().find({ journeyId: { $in: ids } }, { projection: { _id: 0, journeyId: 1, 'versions.fields.validTill': 1 } }).toArray();
   const out = new Map<string, string>();
   for (const row of rows) {
     const till = row.versions?.at(-1)?.fields?.validTill;
@@ -142,8 +176,26 @@ async function validTills(ids: string[]): Promise<Map<string, string>> {
   return out;
 }
 
-export async function groupTasks(ids: string[]): Promise<Map<string, JourneyTask[]>> {
-  const rows = await journeyTasks().find({ journeyId: { $in: ids } }, { projection: { _id: 0 } }).sort({ order: 1, month: 1 }).toArray();
+/**
+ * A board's view of a task. Every task counts toward progress and the stage, but only an active one
+ * (to do, in review, sent back) is ever shown, named, dated or nudged on a card, so a finished task
+ * or one not yet opened (most of a probation journey) comes as its status alone: the whole board
+ * then moves a fraction of the bytes over the database link.
+ */
+const ifOpen = (field: string) => ({ $cond: [{ $in: ['$status', ACTIVE_STATUSES] }, `$${field}`, '$$REMOVE'] });
+const BOARD_TASK_STAGES = [
+  { $sort: { order: 1, month: 1 } },
+  { $project: {
+    _id: 0, journeyId: 1, systemKey: 1, phase: 1, status: 1, ownerRole: 1, month: 1, order: 1, mustDo: 1, surface: 1,
+    id: ifOpen('id'), title: ifOpen('title'), ownerUserId: ifOpen('ownerUserId'), dueAt: ifOpen('dueAt'), opensAt: ifOpen('opensAt'),
+    kind: ifOpen('kind'), templateTaskId: ifOpen('templateTaskId'),
+  } },
+];
+
+export async function groupTasks(ids: string[], slim = false): Promise<Map<string, JourneyTask[]>> {
+  const rows = slim
+    ? await journeyTasks().aggregate<JourneyTask>([{ $match: { journeyId: { $in: ids } } }, ...BOARD_TASK_STAGES]).toArray()
+    : await journeyTasks().find({ journeyId: { $in: ids } }, { projection: { _id: 0 } }).sort({ order: 1, month: 1 }).toArray();
   const out = new Map<string, JourneyTask[]>();
   for (const row of rows) {
     const list = out.get(row.journeyId) ?? [];
@@ -169,7 +221,7 @@ function cardFor(j: Journey, tasks: JourneyTask[], derived: Derived, names: Map<
     ...((j.department ?? who?.department) ? { department: j.department ?? who?.department } : {}),
     ...(managerName ? { managerName } : {}), ...(photoUrl ? { photoUrl } : {}), ...(j.tj ? { tj: j.tj } : {}),
     dayLabel: derived.dayLabel, status: j.status, statusLabel: derived.statusLabel, column: derived.column, flags: derived.flags,
-    waitingOn: waitingOnOf(j, tasks, names, now), progress: progressOf(tasks, derived.tab), plant: derived.plant,
+    waitingOn: waitingOnOf(j, tasks, names, now, 3, { tab: derived.tab, column: derived.column }), progress: progressOf(tasks, derived.tab), plant: derived.plant,
     ...(derived.quietDays !== undefined ? { quietDays: derived.quietDays } : {}),
     ...(derived.expiresInDays !== undefined ? { expiresInDays: derived.expiresInDays } : {}),
   };
@@ -195,7 +247,41 @@ const urgency = (card: BoardCard) => {
   return i.length ? Math.min(...i) : URGENCY.length;
 };
 
-export async function onboardingBoard(org: string, viewerUserId: string, query: Record<string, unknown>, now = new Date()) {
+/** What the board, its counts and the joiner picker are built from, read in one go. */
+interface BoardData {
+  all: Journey[];
+  tasksBy: Map<string, JourneyTask[]>;
+  tills: Map<string, string>;
+  folks: Map<string, { name: string; designation?: string; department?: string; profilePhotoKey?: string }>;
+  names: Map<string, string>;
+}
+
+async function loadBoardData(org: string, now: Date, full = false): Promise<BoardData> {
+  const all = await boardJourneys(org, now, full);
+  const ids = all.map((j) => j.id);
+  const [tasksBy, tills, folks] = await Promise.all([
+    groupTasks(ids, !full), validTills(ids), people(all.flatMap((j) => [j.userId, j.managerUserId])),
+  ]);
+  const names = await namesOf([...all.flatMap((j) => [j.managerUserId, j.buddyUserId, j.userId]), ...[...tasksBy.values()].flat().map((t) => t.ownerUserId)]);
+  return { all, tasksBy, tills, folks, names };
+}
+
+/**
+ * The board's raw data for an org, kept in memory (readCache: dropped on every write, refreshed
+ * behind the reader after a minute). `opts.fresh` skips the kept copy; `opts.full` also reads whole
+ * documents (both for the speed check).
+ */
+export function boardData(org: string, now = new Date(), opts: { fresh?: boolean; full?: boolean } = {}): Promise<BoardData> {
+  if (opts.fresh || opts.full) return loadBoardData(org, now, opts.full);
+  return cachedLifecycle(org, 'lc-board-data', null, () => loadBoardData(org, now));
+}
+
+/** The kept board data worked out again now (the warm-up). */
+export function refreshBoardData(org: string, now = new Date()): Promise<BoardData> {
+  return refreshLifecycle(org, 'lc-board-data', null, () => loadBoardData(org, now));
+}
+
+export async function onboardingBoard(org: string, viewerUserId: string, query: Record<string, unknown>, now = new Date(), opts: { fresh?: boolean; full?: boolean } = {}) {
   const tab = (TABS.includes(query.tab as OnboardingBoardTab) ? query.tab : 'pre_boarding') as OnboardingBoardTab;
   const filter = query.filter ? String(query.filter) : '';
   if (filter && !FILTERS.includes(filter as QuickFilter)) throw new LifecycleError(400, `filter is one of ${FILTERS.join(', ')}`);
@@ -204,11 +290,7 @@ export async function onboardingBoard(org: string, viewerUserId: string, query: 
   if ((from && !isDateKey(from)) || (to && !isDateKey(to))) throw new LifecycleError(400, 'from and to are YYYY-MM-DD');
   const q = String(query.q ?? '').trim().toLowerCase();
 
-  const all = await boardJourneys(org, now);
-  const ids = all.map((j) => j.id);
-  const [tasksBy, tills] = await Promise.all([groupTasks(ids), validTills(ids)]);
-  const folks = await people(all.flatMap((j) => [j.userId, j.managerUserId]));
-  const names = await namesOf([...all.flatMap((j) => [j.managerUserId, j.buddyUserId, j.userId]), ...[...tasksBy.values()].flat().map((t) => t.ownerUserId)]);
+  const { all, tasksBy, tills, folks, names } = await boardData(org, now, opts);
 
   const counts: Record<OnboardingBoardTab, number> = { pre_boarding: 0, first_week: 0, probation: 0 };
   const columns = BOARD_COLUMNS[tab].map((c) => ({ ...c, cards: [] as BoardCard[] }));
@@ -235,6 +317,25 @@ export async function onboardingBoard(org: string, viewerUserId: string, query: 
   return { tab, columns, counts };
 }
 
+/** One joiner for a picker (Documents): who, and where they are on the board. */
+export interface JoinerPick { journeyId: string; name: string; designation?: string; dayLabel: string; tab: OnboardingBoardTab }
+
+/**
+ * Everyone on the onboarding board, light: the Documents page's joiner picker. Built from the same
+ * kept data as the board (so it is fast and agrees with it), with no cards, tasks or photos.
+ */
+export async function boardJoiners(org: string, now = new Date()): Promise<{ joiners: JoinerPick[] }> {
+  const { all, tasksBy, tills, folks } = await boardData(org, now);
+  const joiners = all.map((j) => {
+    const derived = deriveJourney(j, tasksBy.get(j.id) ?? [], now, { offerValidTill: tills.get(j.id) });
+    const who = j.userId ? folks.get(j.userId) : undefined;
+    const designation = j.designation ?? who?.designation;
+    return { journeyId: j.id, name: who?.name ?? j.candidate?.name ?? '—', ...(designation ? { designation } : {}), dayLabel: derived.dayLabel, tab: derived.tab };
+  });
+  joiners.sort((a, b) => a.name.localeCompare(b.name));
+  return { joiners };
+}
+
 async function requireOnboarding(org: string, journeyId: string): Promise<Journey> {
   const j = await loadJourney(journeyId);
   if (j.org !== org) throw new LifecycleError(404, 'Journey not found');
@@ -245,10 +346,8 @@ async function requireOnboarding(org: string, journeyId: string): Promise<Journe
  * The sidebar's Onboarding badge: joiners on the board that need HR now
  * (Needs you) or are late, each counted once.
  */
-export async function onboardingCounts(org: string, now = new Date()) {
-  const all = await boardJourneys(org, now);
-  const ids = all.map((j) => j.id);
-  const [tasksBy, tills] = await Promise.all([groupTasks(ids), validTills(ids)]);
+export async function onboardingCounts(org: string, now = new Date(), opts: { fresh?: boolean; full?: boolean } = {}) {
+  const { all, tasksBy, tills } = await boardData(org, now, opts);
   let needsYou = 0; let late = 0; let badge = 0;
   for (const j of all) {
     const { flags } = deriveJourney(j, tasksBy.get(j.id) ?? [], now, { offerValidTill: tills.get(j.id) });
@@ -265,14 +364,14 @@ export async function onboardingCounts(org: string, now = new Date()) {
  * salary are left out; without HR's view the documents come as status only
  * (no files) and the About-you and bank/PF details are left out.
  */
-export async function journeyPanel(org: string, journeyId: string, now = new Date(), viewer: PanelViewer = FULL_VIEW) {
-  const j = await requireOnboarding(org, journeyId);
+export async function journeyPanel(org: string, journeyId: string, now = new Date(), viewer: PanelViewer = FULL_VIEW, loaded?: Journey) {
+  // The route has usually read the journey already (its access check): no second read of it.
+  const j = loaded && loaded.id === journeyId && loaded.org === org ? loaded : await requireOnboarding(org, journeyId);
   if (j.kind !== 'onboarding') throw new LifecycleError(404, 'Journey not found');
-  const tasks = await tasksOf(journeyId);
-  const tills = await validTills([journeyId]);
-  const derived = deriveJourney(j, tasks, now, { offerValidTill: tills.get(journeyId) });
-  const names = await namesOf([j.managerUserId, j.buddyUserId, j.userId, ...tasks.map((t) => t.ownerUserId)]);
-  const [documents, letters, offer, dateRequests, probation, batch] = await Promise.all([
+  // Every read that needs only the journey, at once.
+  const [tasks, tills, documents, letters, offer, dateRequests, probation, batch] = await Promise.all([
+    tasksOf(journeyId),
+    validTills([journeyId]),
     journeyDocumentsView(journeyId).then((docs) => (viewer.seesDocuments ? docs : docs.map(documentStatusOnly))),
     journeyLettersView(journeyId),
     offerView(journeyId, { hidePay: !viewer.seesPay }),
@@ -280,6 +379,8 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
     probationOf(journeyId),
     batchOf(j),
   ]);
+  const derived = deriveJourney(j, tasks, now, { offerValidTill: tills.get(journeyId) });
+  const names = await namesOf([j.managerUserId, j.buddyUserId, j.userId, ...tasks.map((t) => t.ownerUserId)]);
   const journey = {
     ...journeyForViewer(sanitiseJourney(j), viewer),
     ...(j.managerUserId && names.get(j.managerUserId) ? { managerName: names.get(j.managerUserId) } : {}),
@@ -288,8 +389,7 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
     stage: derived.stage, plant: derived.plant,
     waitingOn: waitingOnOf(j, tasks, names, now, 10), progress: progressOf(tasks, derived.tab),
   };
-  await markNudged(journey.waitingOn, now);
-  const nudged = await nudgedToday(tasks.map((t) => t.id), now);
+  const [, nudged] = await Promise.all([markNudged(journey.waitingOn, now), nudgedToday(tasks.map((t) => t.id), now)]);
   const views = tasks.map((t) => ({ ...taskView(t, j, names, now), canNudge: !('reason' in nudgeTarget(j, t)), ...(nudged.has(t.id) ? { nudgedToday: true } : {}) }));
   const probationView = viewer.seesPay ? probation : { ...probation, decision: decisionWithoutPay(probation.decision) };
   return { journey, tasks: views, documents, letters, offer, dateRequests, probation: probationView, batch, viewer };
@@ -312,7 +412,7 @@ export async function batchOf(j: Pick<Journey, 'id' | 'org' | 'tj'>): Promise<Ar
   return rows.map((r) => ({ journeyId: r.id, name: (r.userId && names.get(r.userId)) || r.candidate?.name || '—' }));
 }
 
-function cleanDay1Pass(input: unknown): Day1Pass {
+function cleanDay1Pass(input: unknown, previous?: Day1Pass): Day1Pass {
   if (!input || typeof input !== 'object') throw new LifecycleError(400, 'day1Pass must be an object');
   const p = input as Record<string, unknown>;
   const text = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
@@ -344,8 +444,22 @@ function cleanDay1Pass(input: unknown): Day1Pass {
       if (typeof a.time !== 'string' || !time.test(a.time)) throw new LifecycleError(400, `Agenda item ${i + 1}: time is HH:mm`);
       const title = text(a.title, 120);
       if (!title) throw new LifecycleError(400, `Agenda item ${i + 1}: a title is required`);
-      return { time: a.time, title, ...(text(a.with, 120) ? { with: text(a.with, 120) } : {}) };
+      // Each line keeps its own id (its meeting follows it). A line sent without one takes the id of the
+      // same line already on the pass (time and title), else a new one.
+      const before = previous?.agenda?.find((x) => x.time === a.time && x.title === title);
+      const id = typeof a.id === 'string' && /^[\w-]{6,64}$/.test(a.id) ? a.id : before?.id ?? randomUUID();
+      // The task it is: what HR picked; else what it was; else (a line from before) what its words say.
+      let taskKey: AgendaTaskKey | null;
+      if (a.taskKey === null || a.taskKey === '') taskKey = null;
+      else if (a.taskKey !== undefined) {
+        if (!AGENDA_TASK_KEYS.includes(a.taskKey as AgendaTaskKey)) throw new LifecycleError(400, `Agenda item ${i + 1}: taskKey is one of ${AGENDA_TASK_KEYS.join(', ')}, or null`);
+        taskKey = a.taskKey as AgendaTaskKey;
+      } else taskKey = before && before.taskKey !== undefined ? before.taskKey : guessAgendaTask(title) ?? null;
+      return { id, time: a.time, title, ...(text(a.with, 120) ? { with: text(a.with, 120) } : {}), taskKey };
     });
+    // One line per task: a second line naming the same task is just a meeting.
+    const seen = new Set<string>();
+    for (const line of out.agenda) { if (line.taskKey && seen.has(line.taskKey)) line.taskKey = null; else if (line.taskKey) seen.add(line.taskKey); }
   }
   return out;
 }
@@ -366,7 +480,7 @@ export async function updateJourneyByHr(org: string, journeyId: string, body: Re
     if (body.buddyUserId === null || body.buddyUserId === '') unset.buddyUserId = '';
     else set.buddyUserId = await colleague(body.buddyUserId, 'buddy');
   }
-  if (body.day1Pass !== undefined) set.day1Pass = cleanDay1Pass(body.day1Pass);
+  if (body.day1Pass !== undefined) set.day1Pass = cleanDay1Pass(body.day1Pass, j.day1Pass);
   let rematerialise = false;
   if (body.templateId !== undefined) {
     if (j.status !== 'draft') throw new LifecycleError(409, 'The template can only change before the offer is sent');
@@ -377,10 +491,10 @@ export async function updateJourneyByHr(org: string, journeyId: string, body: Re
     rematerialise = true;
   }
   await journeys().updateOne({ id: journeyId }, { $set: set, ...(Object.keys(unset).length ? { $unset: unset } : {}) });
-  if (set.managerUserId && set.managerUserId !== j.managerUserId) await reassignManager(journeyId, set.managerUserId);
+  if (set.managerUserId && set.managerUserId !== j.managerUserId) await reassignManager(journeyId, set.managerUserId, j.managerUserId);
   if (set.buddyUserId) await completeTask(journeyId, 'assign_buddy', { name: 'HR' });
   if (rematerialise) await rematerialiseDraft(journeyId);
-  if (set.day1Pass) await syncDay1Meetings(journeyId);
+  if (set.day1Pass || (set.managerUserId && set.managerUserId !== j.managerUserId)) await syncDay1Meetings(journeyId);
   const fresh = await refreshJourney(journeyId);
   return { journey: sanitiseJourney(fresh) };
 }
@@ -390,6 +504,16 @@ export async function actOnTaskByHr(org: string, journeyId: string, taskId: stri
   const j = await requireOnboarding(org, journeyId);
   const note = typeof body.note === 'string' ? body.note.trim().slice(0, 1000) : undefined;
   let task: JourneyTask;
+  if (body.action === 'done') {
+    // The letter task is the reveal's trigger and its "Read your letter": it is done by sending the
+    // letter from Documents, never by a tick alone (a tick gave a reveal with no letter to read).
+    const target = await journeyTasks().findOne({ id: taskId, journeyId }, { projection: { _id: 0, systemKey: 1, status: 1 } });
+    if (target?.systemKey === 'confirmation_letter' && target.status !== 'done') {
+      const letterId = await sentDecisionLetter(j);
+      if (!letterId) throw new LifecycleError(409, 'Send the letter from Documents first: the joiner’s reveal opens with it');
+      await journeys().updateOne({ id: journeyId }, { $set: { 'probation.decision.letterId': letterId } });
+    }
+  }
   if (body.action === 'done' || body.action === 'skip') task = await finishTaskById(journeyId, taskId, body.action, hr, note);
   else if (body.action === 'reopen') task = await reopenTaskById(journeyId, taskId, note);
   else throw new LifecycleError(400, 'action is done, reopen or skip');
@@ -437,3 +561,34 @@ export async function decideBankPfRequest(org: string, journeyId: string, body: 
 }
 
 export { isJoined };
+
+const CLOSED_LIST_STATUSES = ['declined', 'expired', 'not_joining'] as const;
+export interface ClosedJourneyRow {
+  journeyId: string; name: string; designation?: string; department?: string;
+  status: (typeof CLOSED_LIST_STATUSES)[number]; closedAt?: string; closedReason?: string; tj?: string;
+}
+
+/**
+ * Offers that ended before joining (declined, expired, not joining): off the board, so
+ * the board's Closed view lists them here, newest first. Only the fields a row needs.
+ */
+export async function closedJourneys(org: string, query: Record<string, unknown>): Promise<{ journeys: ClosedJourneyRow[] }> {
+  const q = String(query.q ?? '').trim().slice(0, 80);
+  const filter: Record<string, unknown> = { org, kind: 'onboarding', status: { $in: [...CLOSED_LIST_STATUSES] } };
+  if (q) {
+    const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    filter.$or = [{ 'candidate.name': re }, { designation: re }, { department: re }];
+  }
+  const rows = await journeys().find(filter, {
+    projection: { _id: 0, id: 1, 'candidate.name': 1, designation: 1, department: 1, status: 1, closedAt: 1, closedReason: 1, tj: 1, updatedAt: 1 },
+  }).sort({ closedAt: -1, updatedAt: -1 }).limit(200).toArray();
+  return {
+    journeys: rows.map((j) => ({
+      journeyId: String(j.id), name: String(j.candidate?.name ?? 'Joiner'),
+      ...(j.designation ? { designation: String(j.designation) } : {}), ...(j.department ? { department: String(j.department) } : {}),
+      status: j.status as ClosedJourneyRow['status'],
+      ...(j.closedAt ? { closedAt: new Date(j.closedAt as Date).toISOString() } : {}),
+      ...(j.closedReason ? { closedReason: String(j.closedReason) } : {}), ...(j.tj ? { tj: String(j.tj) } : {}),
+    })),
+  };
+}
