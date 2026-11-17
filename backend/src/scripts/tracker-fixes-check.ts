@@ -13,6 +13,7 @@ import { companies, connectDb, exitSettlements, offers, getDb, handoverItems, jo
 import type { User } from '../models/user.model';
 import { accountClosedFor } from '../services/auth.service';
 import { recordExit } from '../services/exit.service';
+import { assignManager } from '../services/reporting.service';
 import { computeSettlement } from '../services/exitSettlement.service';
 import { actOnTaskByHr, updateJourneyByHr } from '../services/lifecycle/board';
 import { joinerForManager, onboardingHome, sendSurvey, surveyView } from '../services/lifecycle/appOnboarding';
@@ -355,6 +356,29 @@ const HR = { userId: 'hr', name: 'Hema HR' };
   ok('…which runs once, 3 s after the last change', rebuilt.length === 1 && rebuilt[0] === ORG, rebuilt);
   setLifecycleRewarm(null);
   enableLifecycleReadCache(false);
+
+  console.log('a manager changed in People › Reporting manager: the joiner\'s journey follows');
+  await users().insertOne(person('rm-old', { name: 'Rita Old', role: 'manager' }));
+  await users().insertOne(person('rm-new', { name: 'Ravi New', role: 'manager' }));
+  await users().insertOne(person('rj', { name: 'Raj Joiner', managerUserId: 'rm-old' }));
+  const rjj = await createOnboardingJourney(ORG, 'hr', { candidate: { name: 'Raj Joiner', personalEmail: 'raj@example.com' }, tj: addDays(T, -2), managerUserId: 'rm-old' });
+  await onJoined(rjj.id, 'rj');
+  await offers().insertOne({ id: 'o-raj', org: ORG, journeyId: rjj.id, versions: [{ version: 1, fields: { managerUserId: 'rm-old', designation: 'Artist' } }], createdAt: now, updatedAt: now } as never);
+  await letters().insertOne({ id: 'L-raj', org: ORG, journeyId: rjj.id, kind: 'appointment', templateId: 't', refNo: 'AL-R', values: { managerName: 'Rita Old' }, createdAt: now } as never);
+  await peopleToMeet().insertOne({ id: 'p-raj', journeyId: rjj.id, personUserId: 'rm-old', why: 'Your manager' } as never);
+  const openBefore = (await tasksOf(rjj.id)).filter((t) => ['manager', 'buddy_or_manager'].includes(String(t.ownerRole)) && ['todo', 'locked', 'in_review'].includes(String(t.status)));
+  await assignManager('hr', 'rj', 'rm-new');
+  const rjAfter = await journeys().findOne({ id: rjj.id });
+  const openAfter = (await tasksOf(rjj.id)).filter((t) => openBefore.some((b) => b.id === t.id));
+  ok('the journey names the new manager', rjAfter?.managerUserId === 'rm-new', rjAfter?.managerUserId);
+  ok('open manager tasks move to the new manager', openAfter.length > 0 && openAfter.every((t) => t.ownerUserId === 'rm-new'), openAfter.map((t) => [t.systemKey, t.ownerUserId]));
+  ok('people to meet, the current offer and an unsent letter name the new manager', (await peopleToMeet().findOne({ id: 'p-raj' }))?.personUserId === 'rm-new'
+    && ((await offers().findOne({ journeyId: rjj.id }))?.versions[0].fields as { managerUserId?: string }).managerUserId === 'rm-new'
+    && (await letters().findOne({ id: 'L-raj' }))?.values.managerName === 'Ravi New');
+  const mtgs = await lifecycleMeetings().find({ journeyId: rjj.id }).toArray();
+  ok('Day-1 meetings not yet held drop the old manager', mtgs.every((m) => !m.attendeeUserIds.includes('rm-old')), mtgs.map((m) => m.attendeeUserIds));
+  const sameAgain = await assignManager('hr', 'rj', 'rm-new');
+  ok('assigning the same manager again moves nothing and does not fail', !!sameAgain && (await journeys().findOne({ id: rjj.id }))?.managerUserId === 'rm-new');
 
   console.log(`\n${failed ? `${failed} check(s) failed` : `all ${passed} tracker-fix checks passed`}`);
   process.exit(failed ? 1 : 0);
