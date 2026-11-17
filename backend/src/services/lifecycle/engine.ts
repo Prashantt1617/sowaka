@@ -979,6 +979,24 @@ export const agendaTaskKey = (item: AgendaLine): AgendaTaskKey | undefined =>
 /** A Day-1 agenda line that is the meeting with the manager. */
 export const isManagerMeeting = (item: AgendaLine) => agendaTaskKey(item) === 'meet_manager';
 
+/**
+ * Whether a stored meeting is the joiner's meeting with their manager: its task says so; else the Day-1
+ * line it was made from; else (a row from before tasks and lines were linked) its title's words.
+ */
+export function isManagerMeetingRow(m: { title: string; agendaId?: string; journeyTaskId?: string }, task: JourneyTask | undefined, j: Pick<Journey, 'day1Pass'>): boolean {
+  if (task?.systemKey) return task.systemKey === 'meet_manager';
+  const line = m.agendaId ? j.day1Pass?.agenda?.find((a) => a.id === m.agendaId) : undefined;
+  if (line) return isManagerMeeting(line);
+  return !m.agendaId && !m.journeyTaskId && guessAgendaTask(m.title) === 'meet_manager';
+}
+
+/**
+ * Who a meeting is with, as it is read: the manager meeting names the journey's manager now (a manager
+ * change shows at once); any other keeps what HR typed. One rule for the Day-1 pass, its meetings and the app.
+ */
+export const meetingWithName = (isManager: boolean, typed: string | undefined, managerName: string | undefined): string | undefined =>
+  (isManager && managerName ? managerName : typed?.trim() || undefined)?.slice(0, 120);
+
 /** Local wall-clock time on a day, as an instant (company time zone; India has no DST). */
 export function localInstant(day: string, time: string): Date | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(time.trim());
@@ -1015,7 +1033,7 @@ export async function syncDay1Meetings(journeyId: string): Promise<void> {
     if (existing?.met) continue;
     // The room stays when the line names a person too ("Room 4B · with Neha R.").
     const place = j.day1Pass?.place;
-    const withWho = (key === 'meet_manager' && managerName ? managerName : item.with?.trim())?.slice(0, 120);
+    const withWho = meetingWithName(key === 'meet_manager', item.with, managerName);
     const id = existing?.id ?? randomUUID();
     kept.add(id);
     await lifecycleMeetings().updateOne({ id }, {

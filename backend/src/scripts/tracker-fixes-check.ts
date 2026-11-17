@@ -15,7 +15,7 @@ import { accountClosedFor } from '../services/auth.service';
 import { recordExit } from '../services/exit.service';
 import { computeSettlement } from '../services/exitSettlement.service';
 import { actOnTaskByHr, updateJourneyByHr } from '../services/lifecycle/board';
-import { sendSurvey, surveyView } from '../services/lifecycle/appOnboarding';
+import { joinerForManager, onboardingHome, sendSurvey, surveyView } from '../services/lifecycle/appOnboarding';
 import { runLifecycleJobs } from '../services/lifecycle/jobs';
 import { createOffer } from '../services/lifecycle/offers';
 import { createOnboardingJourney, deriveJourney, isWeek1Done, onJoined, tasksOf } from '../services/lifecycle/engine';
@@ -269,6 +269,20 @@ const HR = { userId: 'hr', name: 'Hema HR' };
   const ms3 = await lifecycleMeetings().find({ journeyId: jj.id }).toArray();
   const mgrMeeting = ms3.find((m) => m.title === 'Meet your manager');
   ok('the manager meeting now has the new manager, by name too', !!mgrMeeting && mgrMeeting.attendeeUserIds.includes('mgr2') && !mgrMeeting.attendeeUserIds.includes('mgr') && mgrMeeting.with === 'Mohan Next', mgrMeeting);
+
+  console.log('the app names the current manager on the manager meeting when it is read');
+  // A stored name left behind (a row from before, or edited by hand) does not reach the app.
+  await lifecycleMeetings().updateOne({ id: mgrMeeting!.id }, { $set: { with: 'Harsh' } });
+  await lifecycleMeetings().insertOne({ id: 'm-legacy', org: ORG, journeyId: jj.id, title: '1:1 with your manager', startsAt: new Date(now.getTime() + 86_400_000), attendeeUserIds: ['joy', 'mgr2'], with: 'Ananya' } as never);
+  const homeJoy = await onboardingHome({ userId: 'joy', name: 'Joy Joiner', org: ORG }, now) as { meetings: Array<{ id: string; title: string; with?: string }> };
+  const joyMgr = homeJoy.meetings.find((m) => m.id === mgrMeeting!.id);
+  const joyLegacy = homeJoy.meetings.find((m) => m.id === 'm-legacy');
+  const joyLate = homeJoy.meetings.find((m) => m.title === 'Late call (LA)');
+  ok('joiner app: the manager meeting says the current manager, also on an older row with no task or line', joyMgr?.with === 'Mohan Next' && joyLegacy?.with === 'Mohan Next', { joyMgr, joyLegacy });
+  ok('…and any other meeting keeps what HR typed', joyLate?.with === undefined || joyLate.with !== 'Mohan Next', joyLate);
+  const mgrView = await joinerForManager({ userId: 'mgr2', name: 'Mohan Next', org: ORG }, jj.id) as { meetings: Array<{ id: string; with?: string }> };
+  ok('manager app: the same', mgrView.meetings.find((m) => m.id === mgrMeeting!.id)?.with === 'Mohan Next', mgrView.meetings);
+  await lifecycleMeetings().deleteOne({ id: 'm-legacy' });
 
   console.log('Week 1 done: one rule for the board and the app');
   const wj = await createOnboardingJourney(ORG, 'hr', { candidate: { name: 'Wes Week', personalEmail: 'wes@example.com' }, tj: addDays(T, -6), managerUserId: 'mgr' });
