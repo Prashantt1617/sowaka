@@ -563,22 +563,33 @@ export async function seedLifecycleDemo(opts: Opts): Promise<SeedResult> {
   plan.week1_day4 = (p) => joined(p, D(-3), { reels: 2, intro: false, survey: false });
   plan.intro = (p) => joined(p, D(-4), { reels: 3, intro: true, survey: false });
   plan.day7_survey = (p) => joined(p, D(-6), { reels: 4, intro: true, survey: false });
-  plan.week_done = (p) => joined(p, D(-6), { reels: 4, intro: true, survey: true });
+  plan.week_done = (p) => joined(p, D(-7), { reels: 4, intro: true, survey: true }); // "Week done" is the day Tj + 7 (board and app share the rule); a day later it is Probation › Month 1
   plan.month1 = (p) => joined(p, D(-14), { reels: 4, intro: true, survey: true, tidyTo: D(-2) });
   plan.months_2_5 = (p) => { const tj = D(-75); joined(p, tj, { reels: 4, intro: true, survey: true, people: true, tidyTo: D(-2), months: [1, 2], total: 6 }); };
   plan.final_month = (p) => { const tj = D(-70); joined(p, tj, { reels: 4, intro: true, survey: true, people: true, tidyTo: D(-2), months: [1, 2], total: 3 }); };
+  // The decision letter the product's way (Documents: make it, attach the PDF, email it), which closes
+  // the confirmation_letter task and gives the reveal its letter; HR can't tick that task by hand.
+  const sendDecisionLetter = async (p: PersonSpec, s: State, kind: 'confirmation' | 'extension') => {
+    const merged = await lettersSvc.mergeValues(org, { kind, journeyId: s.journeyId! }, hrUser.name);
+    const fill: Record<string, string> = {};
+    for (const k of lettersSvc.missingFields(kind, merged.values)) fill[k] = k === 'managerName' ? s.manager.name : `[${k}]`;
+    const letter = await lettersSvc.createLetter({ org, name: hrUser.name }, { kind, journeyId: s.journeyId!, values: fill });
+    const title = kind === 'confirmation' ? `Confirmation of employment: ${p.name}` : `Extension of probation: ${p.name}`;
+    await lettersSvc.uploadLetterPdf({ org }, letter.id, { originalname: `${kind}.pdf`, buffer: await pdf(title, [`Designation: ${letter.values.designation ?? p.designation}`, `Department: ${p.department}`, `Reference: ${letter.refNo}`]) });
+    await lettersSvc.sendLetter(HR, letter.id, { to: workEmailOf(p.name), subject: kind === 'confirmation' ? 'Your confirmation letter' : 'Your probation extension letter', body: `Dear ${p.name.split(' ')[0]},\n\nPlease find your letter attached.\n\nRegards,\n${hrUser.name}` });
+  };
   plan.confirmed = (p) => {
     const tj = D(-95);
     joined(p, tj, { reels: 4, intro: true, survey: true, people: true, tidyTo: D(-4), months: [1, 2, 3], total: 3 });
     add(p, rules.addDaysKey(rules.probationMonthStart(tj, 3), 1), '11:00', 'M3 pulse', async (s) => { await app.sendSurvey(joinerMe(p, s), { answers: { q1: 5, q2: 'yes', q3: 5 } }); });
     add(p, D(-3), '11:00', 'HR confirms', async (s) => { await probation.recordDecision(s.journeyId!, { ...HRME, seesPay: true }, { outcome: 'confirm', salary: p.ctc + 150_000, designation: `Senior ${p.designation}`, reportingToUserId: s.manager.userId }); });
-    add(p, D(-2), '12:00', 'confirmation letter sent', async (s) => { await board.actOnTaskByHr(org, s.journeyId!, (await task(s.journeyId!, 'confirmation_letter'))!.id, { action: 'done', note: 'Confirmation letter emailed' }, HRME); });
+    add(p, D(-2), '12:00', 'confirmation letter sent', async (s) => { await sendDecisionLetter(p, s, 'confirmation'); });
   };
   plan.extended = (p) => {
     const tj = D(-100);
     joined(p, tj, { reels: 4, intro: true, survey: true, people: true, tidyTo: D(-31), months: [1, 2], total: 3 });
     add(p, D(-30), '11:00', 'HR extends probation by 2 months', async (s) => { await probation.recordDecision(s.journeyId!, { ...HRME, seesPay: true }, { outcome: 'extend', extendMonths: 2 }); });
-    add(p, D(-29), '12:00', 'extension letter sent', async (s) => { await board.actOnTaskByHr(org, s.journeyId!, (await task(s.journeyId!, 'confirmation_letter'))!.id, { action: 'done', note: 'Extension letter emailed' }, HRME); });
+    add(p, D(-29), '12:00', 'extension letter sent', async (s) => { await sendDecisionLetter(p, s, 'extension'); });
     add(p, D(-28), '19:00', 'reveal seen', async (s) => { await app.revealSeenForMe(joinerMe(p, s)); });
     S.month(p, tj, 3, true);
   };

@@ -166,7 +166,7 @@ async function refusal(work: () => Promise<unknown>): Promise<string> {
     && !result.portalLogins.some((l) => ['Aarav Kulkarni', 'Ishita Rao', 'Kabir Malhotra', 'Meera Pillai'].includes(l.name)), result.portalLogins.map((l) => l.name));
   const auth = await import('../services/lifecycle/portalAuth');
   const ready = result.portalLogins.find((l) => l.name === 'Nisha Agarwal')!;
-  ok('the printed portal password signs in', !!(await auth.signIn(ready.email, ready.password, '198.51.100.7')).token);
+  ok('the printed portal password signs in', 'token' in (await auth.signIn(ready.email, ready.password, '198.51.100.7')));
   scope.setScriptScope(null);
   const offMsg = await refusal(() => auth.signIn(ready.email, ready.password, '198.51.100.8'));
   ok(`outside the seed the portal stays off for Sowaka Test (the feature was not switched on): "${offMsg}"`, offMsg !== '(no refusal)');
