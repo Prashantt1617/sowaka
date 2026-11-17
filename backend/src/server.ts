@@ -1,6 +1,7 @@
 import { app } from './app';
 import { env } from './config/env';
 import { closeDb, connectDb } from './config/db';
+import { drainHttpServer } from './utils/drain';
 import { logger } from './utils/logger';
 import { startConnectScheduler, stopConnectScheduler } from './services/connect-scheduler.service';
 import { startNotificationScheduler, stopNotificationScheduler } from './services/notification-scheduler.service';
@@ -62,8 +63,15 @@ logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v
   // Secret Squad's office sessions: a fourth namespace on the same server.
   initSquadRealtime(io);
 
+  let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info('Shutdown requested', { signal });
+    // Stop taking new requests and let the ones in progress finish before the
+    // database closes (closing it first turned them into 500s). pm2 needs a
+    // kill_timeout longer than this window.
+    const drained = drainHttpServer(server, 10_000, () => logger.warn('Shutdown: requests still open after 10 s, closing them'));
     closeScribbleRealtime();
     closeTileUpRealtime();
     closePokerRealtime();
@@ -71,7 +79,7 @@ logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v
     closeSquadRealtime();
     closeRelayRealtime();
     closeConnectRealtime();
-    server.close();
+    await drained;
     stopConnectScheduler();
     stopNotificationScheduler();
     stopCareScheduler();
