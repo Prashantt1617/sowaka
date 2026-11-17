@@ -21,7 +21,8 @@
 import type { NextFunction, Request, Response } from 'express';
 import { cachedSwr, dropSwr, refreshSwr, type SwrKind } from '../swr-cache';
 
-export const LIFECYCLE_READ_KINDS: SwrKind[] = ['lc-board-data', 'off-board-data', 'suwi-notices', 'mgr-roster'];
+export const LIFECYCLE_READ_KINDS: SwrKind[] = ['lc-board-data', 'off-board-data', 'suwi-notices', 'suwi-org-data', 'mgr-roster'];
+const SUWI_KINDS: SwrKind[] = ['suwi-notices', 'suwi-org-data'];
 
 /**
  * Off until the API server switches it on (server.ts). Scripts and checks call the services
@@ -54,16 +55,17 @@ const READS = new Set(['GET', 'HEAD', 'OPTIONS']);
 /**
  * Writes that can change none of these answers, left alone so a busy company's punches, games,
  * likes and pushes do not empty its kept boards every few seconds: punching, games and rooms,
- * notifications, uploads of media, sign-in, help and support. Connect writes can complete a
+ * notifications, uploads of media, sign-in, help and support, and Suwi's read-only POSTs (a question,
+ * a people search: they change no data; a confirmed Suwi action does, and still drops). Connect writes can complete a
  * lifecycle task (the welcome post), so they drop the boards, but not Suwi's notices.
  */
-const NEVER_LIFECYCLE = /^\/(attendance\/punch|games|play|notifications|relay|cup|poker|squad|talk|garden|face|media|app(\/|$)|care|help|support|auth)(\/|$)/;
+const NEVER_LIFECYCLE = /^\/(attendance\/punch|games|play|notifications|relay|cup|poker|squad|talk|garden|face|media|app(\/|$)|care|help|support|auth|suwi\/ask|suwi\/people-search)(\/|$)/;
 const NOT_SUWI = /^\/connect(\/|$)/;
 
 /** Which kept answers a write to this path can change. */
 export function kindsChangedBy(path: string): SwrKind[] {
   if (NEVER_LIFECYCLE.test(path)) return [];
-  if (NOT_SUWI.test(path)) return LIFECYCLE_READ_KINDS.filter((k) => k !== 'suwi-notices');
+  if (NOT_SUWI.test(path)) return LIFECYCLE_READ_KINDS.filter((k) => !SUWI_KINDS.includes(k));
   return LIFECYCLE_READ_KINDS;
 }
 

@@ -47,6 +47,7 @@ export function SuwiPanel() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState('');
   const panelRef = useRef<HTMLElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -129,7 +130,8 @@ export function SuwiPanel() {
     setMsgs((m) => [...m, { role: 'user', text: question, ...(file ? { file: file.shown } : {}) }]);
     setBusy(true);
     try {
-      const answer = await askSuwi(question, bulk ? `bulk:${bulk}` : s.view, history, file?.send);
+      setChecking('');
+      const answer = await askSuwi(question, bulk ? `bulk:${bulk}` : s.view, history, file?.send, setChecking);
       setMsgs((m) => [...m, { role: 'assistant', answer }]);
     } catch (e) {
       const text = e instanceof ApiError ? e.message : 'Suwi could not answer just now. Try again in a moment.';
@@ -223,7 +225,7 @@ export function SuwiPanel() {
           {busy && (
             <div className="suwi-typing" role="status">
               <SuwiOrb size={20} />
-              <span className="suwi-typing-b"><span className="suwi-typing-d" aria-hidden><span /><span /><span /></span>Looking that up…</span>
+              <span className="suwi-typing-b"><span className="suwi-typing-d" aria-hidden><span /><span /><span /></span>{checking ? `Checking: ${checking}…` : 'Looking that up…'}</span>
             </div>
           )}
         </div>
