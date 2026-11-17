@@ -200,8 +200,8 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
     if (letter && savedKey === valuesKey) return letter;
     const l = await createLetter({ kind, journeyId: person?.journeyId, userId: person?.userId, templateId, values });
     if (savedDraft?.email && savedDraft.id !== l.id) {
-      const { sentAt: _s, savedAt: _v, ...email } = savedDraft.email;
-      await saveLetterDraft(l.id, email).catch(() => undefined);
+      const e = savedDraft.email;
+      await saveLetterDraft(l.id, { to: e.to, cc: e.cc, subject: e.subject, body: e.body, withPortalLink: e.withPortalLink, attachments: e.attachments }).catch(() => undefined);
     }
     setLetter(l); setSavedKey(valuesKey);
     return l;

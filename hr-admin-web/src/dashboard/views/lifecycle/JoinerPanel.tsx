@@ -15,9 +15,9 @@ import {
 import type {
   BankPfRequest, CandidateDocumentView, ConfirmationDecision, Day1Pass, JourneyDetail, LetterKind, LetterView, TaskView, TemplateListItem,
 } from '../../../services/lifecycle';
-import { FilePreview, NoteDialog, NudgeButton, OwnerChip, Pick, Plant, Field, nudgeLabel } from './shared';
+import { FilePreview, NoteDialog, NudgeButton, OwnerChip, Pick, Plant, Field } from './shared';
 import {
-  DOCS_OPEN_KEY, PHASES, areaStyle, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, longDay, rupees, sectionLabel, shortDay, todayKey,
+  DOCS_OPEN_KEY, PHASES, areaStyle, nudgeLabel, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, longDay, rupees, sectionLabel, shortDay, todayKey,
 } from './format';
 import { FinaliseDialog, MarkJoinedDialog, OfferWizard } from './OfferDialogs';
 import { DecisionDialog, ProbationMonths } from './Probation';

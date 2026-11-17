@@ -86,6 +86,11 @@ export function flagLabel(flag: JourneyFlag, card?: { quietDays?: number; expire
   if (flag === 'expires_soon' && card?.expiresInDays !== undefined) return card.expiresInDays <= 0 ? 'Expires today' : `Expires in ${days(card.expiresInDays)}`;
   return FLAG[flag]?.label ?? flag;
 }
+/** "Nudge Kabir" for the joiner or candidate, "Remind Neha" for their manager. */
+export function nudgeLabel(role: OwnerRole, name?: string): string {
+  const who = name ? firstName(name) : role === 'employee' || role === 'manager_employee' ? 'them' : 'the manager';
+  return role === 'manager' || role === 'hr_manager' ? `Remind ${who}` : `Nudge ${who}`;
+}
 export const PHASES: Record<LifecycleKind, Array<{ key: LifecyclePhase; title: string; desc: string }>> = {
   onboarding: [
     { key: 'pre_boarding', title: 'Pre-boarding', desc: 'From the offer to the joining day' },

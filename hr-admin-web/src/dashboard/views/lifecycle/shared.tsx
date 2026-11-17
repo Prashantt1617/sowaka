@@ -12,7 +12,7 @@ import type { JourneyFlag, OwnerRole, PlantState } from '../../../services/lifec
 import { fetchLifecycleFile, nudgeTask } from '../../../services/lifecycle';
 import { useStore } from '../../store';
 import '../people.css';
-import { areaStyle, errText, FLAG, firstName, flagLabel, inputStyle, labelStyle, OWNER_LABEL, OWNER_TONE } from './format';
+import { areaStyle, errText, FLAG, flagLabel, inputStyle, labelStyle, nudgeLabel, OWNER_LABEL, OWNER_TONE } from './format';
 
 /** Who a task waits on: Employee (Arjun), HR · you, Automatic. */
 export function OwnerChip({ role, name, you }: { role: OwnerRole; name?: string; you?: boolean }) {
@@ -231,12 +231,6 @@ export function ConfirmDialog({ title, body, confirm, onClose, onConfirm }: { ti
 }
 
 // —— Nudge / Remind ——————————————————————————————————————————————————————
-
-/** "Nudge Kabir" for the joiner or candidate, "Remind Neha" for their manager. */
-export function nudgeLabel(role: OwnerRole, name?: string): string {
-  const who = name ? firstName(name) : role === 'employee' || role === 'manager_employee' ? 'them' : 'the manager';
-  return role === 'manager' || role === 'hr_manager' ? `Remind ${who}` : `Nudge ${who}`;
-}
 
 /**
  * Reminds whoever a task waits on (email to a candidate, a push to the joiner
