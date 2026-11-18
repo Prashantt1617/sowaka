@@ -20,6 +20,8 @@
  * The promise is what is kept, so two tabs asking at once share one set of
  * queries; a failure is forgotten straight away rather than remembered.
  */
+import { onRemoteDrop, publishDrop } from './cache-bus';
+
 export type EngagementKind = 'games' | 'usage-summary' | 'usage-when' | 'usage-trend' | 'contests' | 'plan';
 
 export const ENGAGEMENT_TTL_MS = 5 * 60_000;
@@ -89,7 +91,13 @@ export function refreshEngagement<T>(ask: () => Promise<T>): Promise<T> {
 
 /** Drop an org's remembered answers of these kinds (all kinds when none are named). */
 export function forgetEngagement(org: string, ...kinds: EngagementKind[]): void {
+  publishDrop({ op: 'engagement', org, kinds });
   generation.set(org, (generation.get(org) ?? 0) + 1);
   const prefixes = kinds.length ? kinds.map((k) => `${org}\u0000${k}\u0000`) : [`${org}\u0000`];
   for (const key of kept.keys()) if (prefixes.some((p) => key.startsWith(p))) kept.delete(key);
 }
+
+// The same drops, made by another process (cache-bus.ts).
+onRemoteDrop((drop) => {
+  if (drop.op === 'engagement') forgetEngagement(drop.org, ...(drop.kinds as EngagementKind[]));
+});

@@ -1173,21 +1173,23 @@ export async function expireChallenges(now = new Date()): Promise<number> {
 }
 
 let sweeper: NodeJS.Timeout | undefined;
-let sweeping = false;
+let sweeping: Promise<void> | null = null;
 
 export function startGameChallengeSweeper(intervalMs = 60_000) {
   if (sweeper) return;
   sweeper = setInterval(() => {
     if (sweeping) return;
-    sweeping = true;
-    expireChallenges()
+    sweeping = expireChallenges()
+      .then(() => undefined)
       .catch((error) => logger.error('Game challenge expiry sweep failed', {}, error))
-      .finally(() => { sweeping = false; });
+      .finally(() => { sweeping = null; });
   }, intervalMs);
   sweeper.unref();
 }
 
-export function stopGameChallengeSweeper() {
+/** Stops the sweeper; resolves once a sweep under way has finished. */
+export async function stopGameChallengeSweeper(): Promise<void> {
   if (sweeper) clearInterval(sweeper);
   sweeper = undefined;
+  await sweeping;
 }

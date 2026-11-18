@@ -27,7 +27,8 @@ export class CareError extends Error {
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 /** When the digest runs, on the IST clock. */
-const DIGEST_HOUR_IST = 21;
+/** The Care journal digest runs at this hour, IST (leader-jobs.ts runs it). */
+export const DIGEST_HOUR_IST = 21;
 const MAX_ENTRY_CHARS = 8000;
 
 export async function requireCareUser(userId: string): Promise<User & { org: string }> {
@@ -317,37 +318,4 @@ export async function runJournalDigest(now = new Date()): Promise<{ mailed: numb
   }
   logger.info('Care journal digest ran', { mailed, kept, sunday });
   return { mailed, kept };
-}
-
-// ---------------------------------------------------------------------------
-// Scheduler: every night at the digest hour, IST.
-
-let timer: NodeJS.Timeout | undefined;
-
-function millisecondsUntilNextDigestHour(now = new Date()): number {
-  const ist = new Date(now.getTime() + IST_OFFSET_MS);
-  let next = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), DIGEST_HOUR_IST, 0, 0, 0);
-  if (next <= ist.getTime()) next += 24 * 60 * 60 * 1000;
-  return next - ist.getTime();
-}
-
-export function startCareScheduler(): void {
-  const schedule = () => {
-    timer = setTimeout(async () => {
-      try {
-        await runJournalDigest();
-      } catch (error) {
-        logger.error('Care journal digest failed', {}, error);
-      }
-      schedule();
-    }, millisecondsUntilNextDigestHour());
-    timer.unref();
-  };
-  schedule();
-  logger.info('Care journal scheduler started', { time: `${DIGEST_HOUR_IST}:00`, timeZone: 'Asia/Kolkata' });
-}
-
-export function stopCareScheduler(): void {
-  if (timer) clearTimeout(timer);
-  timer = undefined;
 }
