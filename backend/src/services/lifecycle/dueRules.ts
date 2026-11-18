@@ -156,6 +156,23 @@ export async function workCalendar(org: string, opts: { userId?: string; locatio
   return { weeklyOff: weeklyOff && Object.keys(weeklyOff).length ? weeklyOff : SAT_SUN, holidays: days };
 }
 
+/**
+ * Why a day is not a working day for a joiner at this location, for a
+ * message ("a Sunday, a week-off" / "Christmas, a holiday"), or null when
+ * it is one.
+ */
+export async function nonWorkingDayReason(org: string, key: string, location?: string): Promise<string | null> {
+  const calendar = await workCalendar(org, { location });
+  if (isWorkingDay(key, calendar)) return null;
+  const weekday = dayDate(key).toLocaleDateString('en-IN', { weekday: 'long', timeZone: 'UTC' });
+  if (calendar.holidays.has(key)) {
+    const rows = await holidays().find({ org }, { projection: { _id: 0, date: 1, name: 1, state: 1, type: 1 } }).toArray();
+    const row = rows.find((r) => keyOfDay(r.date) === key && (r.type ?? 'Public') === 'Public' && holidayAppliesTo(r, { location }));
+    return `${row?.name ?? 'a public holiday'}, a holiday`;
+  }
+  return `a ${weekday}, a week-off`;
+}
+
 export function isWorkingDay(key: string, calendar: WorkCalendar): boolean {
   if (calendar.holidays.has(key)) return false;
   return !isWeekOffDay(dayDate(key), calendar.weeklyOff);

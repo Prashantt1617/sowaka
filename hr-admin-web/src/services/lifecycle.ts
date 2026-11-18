@@ -109,6 +109,8 @@ export interface BoardCard {
   waitingOn: WaitingOn[];
   progress: { done: number; total: number };
   plant: PlantState;
+  /** Optional documents waiting for HR's look (they don't hold Documents open). */
+  optionalWaiting?: number;
   /** Days since the candidate last did anything (the Quiet flag) and days left on the offer (Expires soon). */
   quietDays?: number;
   expiresInDays?: number;
