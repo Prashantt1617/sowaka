@@ -124,10 +124,16 @@ sys.exit(0 if any(p['name']=='sowaka-$NEW' and p['pm2_env']['status']=='online' 
 
   # The first deploy after `migrate`: the old single app runs its jobs without the lease, so the
   # lease is held in its name until it has stopped (lease.js), and the new copy waits for it.
+  # A single app that already runs the lease-aware code (its /health names a leader) holds the
+  # lease itself and lets it go when it stops, so there is nothing to hold for it.
   local legacy=0
   if pm2j | grep -q '"name":"sowaka-backend"'; then
-    legacy=1
-    (cd "$BE" && as_ubuntu node "$BG/lease.js" hold-legacy 20 --env "$BE/.env") || { say "could not hold the lease for sowaka-backend"; exit 1; }
+    if health "$OLD_PORT" | grep -q '"leader":'; then
+      say "sowaka-backend already keeps the background-jobs lease: it hands it over when it stops"
+    else
+      legacy=1
+      (cd "$BE" && as_ubuntu node "$BG/lease.js" hold-legacy 20 --env "$BE/.env") || { say "could not hold the lease for sowaka-backend"; exit 1; }
+    fi
   fi
 
   say "starting sowaka-$NEW on :$NEW_PORT ($(cat "$BE/dist-$NEW/BUILD" 2>/dev/null | head -c 12))"
