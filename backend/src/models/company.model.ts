@@ -159,6 +159,10 @@ export interface CompanyFeatures {
    * where it is on). Off everywhere until switched on.
    */
   lifecycle?: boolean;
+  /** The app's Payroll opens behind the phone's own lock (Face ID, fingerprint or passcode). Off: it opens as before. */
+  payrollLock?: boolean;
+  /** For a company the app has no logo for, the app header shows Sowaka's logo. Off: the header's old default. */
+  sowakaLogo?: boolean;
   /**
    * Speed Poker's big tables: eight seats, a 1,000 buy-in, table chat, watching
    * a full table, sounds and the newer table. Off: six seats and 1,500, as before.

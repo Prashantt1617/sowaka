@@ -13,14 +13,17 @@ void main() {
     expect(demo.logoAsset, isNull);
   });
 
-  test('a company with no brand here (a new one) gets Sowaka\'s face', () {
-    for (final org in ['sowakahq', 'some-new-company', 'sowaka']) {
-      final b = OrgBranding.of(org);
-      expect(b.isSowaka, isTrue, reason: org);
-      expect(b.homeLogoAsset, 'assets/images/sowaka_header_logo.png', reason: org);
-      expect(b.iosIconName, isNull, reason: org);
-      expect(b.logoAsset, isNull, reason: org);
+  test('a company with no brand here (a new one) gets Sowaka\'s face; the header logo only with the server\'s switch', () {
+    for (final org in ['sowakahq', 'some-new-company']) {
+      final on = OrgBranding.of(org, sowakaLogo: true);
+      expect(on.isSowaka, isTrue, reason: org);
+      expect(on.homeLogoAsset, 'assets/images/sowaka_header_logo.png', reason: org);
+      expect(on.iosIconName, isNull, reason: org);
+      expect(on.logoAsset, isNull, reason: org);
+      // features.sowakaLogo off (or an older server): no logo of its own, the header's old default.
+      expect(OrgBranding.of(org).homeLogoAsset, isNull, reason: org);
     }
+    expect(OrgBranding.of('sowaka').homeLogoAsset, 'assets/images/sowaka_header_logo.png');
   });
 
   test('Convrse keeps its own face', () {
@@ -39,9 +42,13 @@ void main() {
       // Sowaka's own companies: Sowaka Test, Sowaka Demo, SOWAKA, Sowaka Care.
       'sowaka': 'assets/images/sowaka_header_logo.png',
       'halcyon': 'assets/images/sowaka_header_logo.png',
-      'sowakahq': 'assets/images/sowaka_header_logo.png',
-      'sowaka-care': 'assets/images/sowaka_header_logo.png',
     };
     logos.forEach((org, logo) => expect(OrgBranding.of(org).homeLogoAsset, logo, reason: org));
+    // The switch never changes a company that has its own logo here.
+    logos.forEach((org, logo) => expect(OrgBranding.of(org, sowakaLogo: true).homeLogoAsset, logo, reason: org));
+    // SOWAKA and Sowaka Care have none here: Sowaka's with the switch on.
+    for (final org in ['sowakahq', 'sowaka-care']) {
+      expect(OrgBranding.of(org, sowakaLogo: true).homeLogoAsset, 'assets/images/sowaka_header_logo.png', reason: org);
+    }
   });
 }

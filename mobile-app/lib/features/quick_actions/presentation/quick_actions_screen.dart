@@ -1045,6 +1045,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           key: const ValueKey('payroll-gate'),
           onClose: _back,
           lock: widget.payrollLock,
+          enabled: widget.bloc.session.user.payrollLockEnabled,
           child: PayrollScreen(
             key: _payrollKey,
             api: _payrollApi,
