@@ -15,10 +15,9 @@ import { getBoard, getClosedJourneys, isNotAvailable } from '../../../services/l
 import type { BoardCard, BoardDTO, BoardTab, ClosedJourneyRow, JourneyFlag } from '../../../services/lifecycle';
 import { FlagPill, NotSwitchedOn, OwnerChip, PlantFace } from './shared';
 import { ClockIcon } from './offboarding/parts';
-import { OWNER_LABEL, dueText, errText, firstName, flagLabel, longDay } from './format';
+import { DOCS_OPEN_KEY, OWNER_LABEL, dueText, errText, firstName, flagLabel, longDay } from './format';
 import { refreshOnboardingBadge } from '../../onboardingBadge';
 import { JoinerPanel } from './JoinerPanel';
-import { OfferWizard } from './OfferDialogs';
 import '../people.css';
 // The two boards share one look: lanes, cards and the filter row come from the offboarding board's sheet.
 import './offboarding/offboarding.css';
@@ -52,7 +51,7 @@ function matches(card: BoardCard, f: Quick): boolean {
 }
 
 export function OnboardingBoard() {
-  const { user } = useStore();
+  const { user, setView: goTo } = useStore();
   const pay = canSeePay(user);
   const [view, setViewRaw] = useState<View>(() => {
     try { const t = sessionStorage.getItem(TAB_KEY) as View | null; return t && VIEWS.includes(t) ? t : 'pre_boarding'; } catch { return 'pre_boarding'; }
@@ -72,7 +71,11 @@ export function OnboardingBoard() {
   const [off, setOff] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [openId, setOpenId] = useState('');
-  const [newOffer, setNewOffer] = useState(false);
+  // New offer letter opens Documents › Offer letter for a new joiner (H3): the form beside the letter.
+  const newOffer = () => {
+    try { sessionStorage.setItem(DOCS_OPEN_KEY, JSON.stringify({ kind: 'offer', newOffer: true })); } catch { /* Documents opens on the offer letter anyway */ }
+    goTo('lifecycle_documents');
+  };
   const [closedRows, setClosedRows] = useState<ClosedJourneyRow[] | null>(null);
   const [closedError, setClosedError] = useState('');
 
@@ -143,7 +146,7 @@ export function OnboardingBoard() {
     <div className="pd-form" style={{ animation: 'fade .3s ease both' }}>
       <PageActions>
         <button type="button" className="pd-btn" onClick={exportBoard} disabled={!cards.length || showClosed}><IconDownload stroke="currentColor" /> Export</button>
-        <button type="button" className="pd-btn primary" onClick={() => setNewOffer(true)} disabled={!pay} title={pay ? undefined : 'Only people with payroll access can set the CTC on an offer'}><IconPlus /> New offer letter</button>
+        <button type="button" className="pd-btn primary" onClick={newOffer} disabled={!pay} title={pay ? undefined : 'Only people with payroll access can set the CTC on an offer'}><IconPlus /> New offer letter</button>
       </PageActions>
 
       <p className="pd-lead" style={{ margin: '-8px 4px 20px', maxWidth: '70ch' }}>Every joiner as a card, from offer to confirmation. Each tab is one phase; columns are its steps.</p>
@@ -211,10 +214,6 @@ export function OnboardingBoard() {
       </Card>
 
       {openId && <JoinerPanel journeyId={openId} onClose={closePanel} onChanged={reload} />}
-      {newOffer && (
-        <OfferWizard mode="new" onClose={() => setNewOffer(false)}
-          onDone={(id) => { setNewOffer(false); pick('pre_boarding'); reload(); setOpenId(id); }} />
-      )}
     </div>
   );
 }
