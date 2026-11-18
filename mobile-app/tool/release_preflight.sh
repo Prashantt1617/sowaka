@@ -63,6 +63,13 @@ if [ -z "$VERSION_LINE" ] || ! [ "$BUILD" -gt "$TOP" ] 2>/dev/null; then
   fi
 fi
 
+# 1b. App Store closes a version once a build of it is approved: a new build needs a higher version.
+APPROVED=$(rows | awk '$5 == "live" || $5 == "pulled" {print $1}' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
+NAME=${VERSION_LINE%+*}
+if [ -n "$APPROVED" ] && [ "$(printf '%s\n%s\n' "$APPROVED" "$NAME" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" != "$NAME" -o "$APPROVED" = "$NAME" ]; then
+  red "FAIL: version $NAME must be above $APPROVED, which a store already approved (App Store refuses it: train closed)."; FAIL=1
+fi
+
 # 2. Made on top of the live build.
 LIVE=$(rows | awk '$5 == "live"' | head -1)
 if [ -z "$LIVE" ]; then
