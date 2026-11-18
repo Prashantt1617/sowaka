@@ -40,6 +40,9 @@ String homePageBridgeScript({
   required bool reduceMotion,
   required String userId,
   String org = '',
+  /// The viewer's name and face, for the page's own avatar (whole URLs).
+  String userName = '',
+  String userPhotoUrl = '',
   List<String> nativeGames = const [],
   String loadId = '',
 }) =>
@@ -72,6 +75,8 @@ String homePageBridgeScript({
   S.reduceMotion = ${reduceMotion ? 'true' : 'false'};
   S.userId = ${_scriptJson(userId)};
   S.org = ${_scriptJson(org)};
+  S.userName = ${_scriptJson(userName)};
+  S.userPhotoUrl = ${_scriptJson(userPhotoUrl)};
   S.nativeGames = ${_scriptJson(nativeGames)};
   S.home = function () { return call('home'); };
   S.leaderboard = function (period) { return call('leaderboard', { period: period === 'all' ? 'all' : 'week' }); };

@@ -345,10 +345,10 @@ class GameBridge {
           if (value == null)
             return reply(id, false, {'message': 'Score is invalid'});
           final board = await service.submitScore(gameKey, value);
-          return reply(id, true, board.toPageJson(company: company));
+          return reply(id, true, service.absoluteUrls(board.toPageJson(company: company)));
         case 'leaderboard':
           final board = await service.leaderboard(gameKey);
-          return reply(id, true, board.toPageJson(company: company));
+          return reply(id, true, service.absoluteUrls(board.toPageJson(company: company)));
         case 'colleagues':
           final query = data['query'];
           return reply(

@@ -577,6 +577,7 @@ class HandoverScreen extends StatefulWidget {
 class _HandoverScreenState extends State<HandoverScreen> {
   HandoverChecklist? _checklist;
   String? _managerName;
+  String? _managerPhotoUrl;
   String? _error;
   final _busy = <String>{};
 
@@ -601,6 +602,7 @@ class _HandoverScreenState extends State<HandoverScreen> {
       setState(() {
         _checklist = data.handover;
         _managerName = data.managerName ?? _managerName;
+        _managerPhotoUrl = data.managerPhotoUrl ?? _managerPhotoUrl;
         _error = null;
       });
     } catch (error) {
@@ -756,7 +758,7 @@ class _HandoverScreenState extends State<HandoverScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    OffAvatar(initialsOf(_managerName)),
+                    OffAvatar(initialsOf(_managerName), photoUrl: _managerPhotoUrl),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(

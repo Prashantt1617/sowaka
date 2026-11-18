@@ -19,6 +19,11 @@ export interface AppNotification {
   title: string;
   body: string;
   data: Record<string, string>;
+  /**
+   * The person whose doing it is (who liked, asked, decided, challenged), for
+   * their face on the row. Absent on rows about no one and on older rows.
+   */
+  actorUserId?: string;
   /** Whether it also went out as a push; false for inbox-only entries. */
   pushed?: boolean;
   readAt?: Date;

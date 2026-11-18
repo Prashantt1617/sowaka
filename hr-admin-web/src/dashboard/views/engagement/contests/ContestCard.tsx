@@ -6,6 +6,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import type { ContestDetailDTO } from '../../../../services/engagement-contests';
 import { C, ICONS, SORA } from './ContestComposer';
+import { usePhotoFor } from '../../../photos';
 
 // _EngagementColors in engagement_cards.dart, for what the composer's palette lacks.
 const APP = {
@@ -46,7 +47,21 @@ function initials(name: string) {
   return name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('') || '?';
 }
 
-function Face({ name, size = 40 }: { name: string; size?: number }) {
+/** Their photo from the loaded directory; their initials on the app's teal when there is none. */
+function Face({ name, userId, size = 40 }: { name: string; userId?: string; size?: number }) {
+  const photo = usePhotoFor(userId, name);
+  const [failed, setFailed] = useState('');
+  if (photo && photo !== failed) {
+    return (
+      <img
+        src={photo}
+        alt=""
+        aria-hidden
+        onError={() => setFailed(photo)}
+        style={{ width: size, height: size, borderRadius: '50%', flex: '0 0 auto', objectFit: 'cover', display: 'block', border: '2px solid #fff', boxSizing: 'border-box' }}
+      />
+    );
+  }
   return (
     <span
       aria-hidden
@@ -122,7 +137,7 @@ export function ContestCard({ detail }: { detail: ContestDetailDTO }) {
             </div>
             {top && (
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginTop: -22, position: 'relative', padding: '0 2px' }}>
-                <Face name={top.by.name} />
+                <Face name={top.by.name} userId={top.by.userId} />
                 <div style={{ flex: 1, background: APP.bubble, borderRadius: 14, padding: '10px 12px', boxShadow: `3px 3px 0 ${APP.band}`, display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ flex: 1, fontSize: 13, fontWeight: 700, lineHeight: 1.3 }}>{top.text}</span>
                   <span style={{ fontSize: 11, fontWeight: 600, color: APP.inkSecondary, whiteSpace: 'nowrap' }}>▲ {top.votes}</span>
@@ -144,7 +159,7 @@ export function ContestCard({ detail }: { detail: ContestDetailDTO }) {
             )}
             {top && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 13 }}>
-                <Face name={top.by.name} size={28} />
+                <Face name={top.by.name} userId={top.by.userId} size={28} />
                 <span style={{ flex: 1, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{top.text || top.by.name}</span>
                 <span style={{ fontSize: 12, color: APP.inkSecondary }}>{top.votes} {top.votes === 1 ? 'vote' : 'votes'}</span>
               </div>
@@ -162,7 +177,7 @@ export function ContestCard({ detail }: { detail: ContestDetailDTO }) {
                 return (
                   <div key={t.person.userId} style={{ position: 'relative', height: 48, borderRadius: 12, border: `2px solid ${col}`, overflow: 'hidden', display: 'flex', alignItems: 'center', padding: '0 10px 0 4px', gap: 8 }}>
                     <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.round((t.points / maxTag) * 100)}%`, background: col, opacity: 0.85 }} />
-                    <span style={{ position: 'relative' }}><Face name={t.person.name} size={36} /></span>
+                    <span style={{ position: 'relative' }}><Face name={t.person.name} userId={t.person.userId} size={36} /></span>
                     <span style={{ position: 'relative', flex: 1, fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.person.name}</span>
                     <span style={{ position: 'relative', fontSize: 16, fontWeight: 700 }}>{t.points}pt</span>
                   </div>

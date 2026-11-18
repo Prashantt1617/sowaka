@@ -2822,6 +2822,7 @@ class _EngagementBodyState extends State<_EngagementBody>
               child: _EngagementAvatar(
                 userId: taggedUserId,
                 initials: them?.initials ?? '?',
+                photoUrl: them?.authorPhotoUrl,
                 size: 32,
                 fontSize: 13,
               ),

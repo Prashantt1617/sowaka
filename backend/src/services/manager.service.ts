@@ -994,6 +994,7 @@ export async function upsertFeedback(
       scenario: 'feedback_shared',
       title: `Your manager shared your ${month} feedback`,
       body: 'Tap to read it',
+      actorUserId: managerUserId,
       data: { destination: 'grow_feedback', view: 'mine', period, feedbackId: String(record?._id ?? '') },
     }).catch(() => undefined);
   }

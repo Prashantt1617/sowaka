@@ -79,7 +79,7 @@ import {
 } from './game-challenge-rules';
 import { notifyUsers } from './notification.service';
 import { recordPointChanges } from './points-ledger.service';
-import { resolveProfilePhoto } from './s3-connect-media.service';
+import { FACE_PROJECTION, faceUrlOf, keptFaceUrlNow, keptFaceUrlsFor, type FaceFields } from './face-photos';
 
 export class GameChallengeError extends Error {
   constructor(
@@ -132,6 +132,8 @@ export interface ChallengePlayerView {
   /** Last score reported mid-round, and when. */
   live: number | null;
   liveAt: Date | null;
+  /** Their face; null for no photo (the initials stand in). */
+  photoUrl: string | null;
 }
 
 export interface ChallengeView {
@@ -208,6 +210,8 @@ function playerView(c: GameChallenge, userId: string): ChallengePlayerView {
     finishedAt: score ? score.finishedAt : null,
     live: live ? live.score : null,
     liveAt: live ? live.at : null,
+    // Kept a few minutes; the lists read them first (see listMyChallenges).
+    photoUrl: keptFaceUrlNow(userId),
   };
 }
 
@@ -261,6 +265,8 @@ function push(userId: string, scenario: string, title: string, body: string, c: 
     title,
     body,
     push: !INBOX_ONLY.has(scenario),
+    // The other player's face on the row.
+    actorUserId: userId === c.challengerUserId ? c.opponentUserId : c.challengerUserId,
     data: { destination: 'game_challenge', gameKey: c.gameKey, challengeId: c.id },
   }).catch((error) => logger.error('Game challenge push failed', { scenario, challengeId: c.id }, error));
 }
@@ -313,7 +319,8 @@ export async function listColleagues(viewer: ChallengeViewer, rawQuery: unknown,
     isCounsellor: { $ne: true }, hiddenFromDirectory: { $ne: true },
     $or: [{ org }, { org: { $exists: false }, email: { $regex: `@${escapeRegex(org)}$`, $options: 'i' } }],
   };
-  const projection = { _id: 0, userId: 1, name: 1, designation: 1, department: 1, profilePhotoKey: 1 } as const;
+  // The face lean (services/face-photos): a link or an older inline photo shows too, never read whole.
+  const projection = { _id: 0, name: 1, designation: 1, department: 1, ...FACE_PROJECTION } as const;
   const find = (extra: Filter<User>, n: number) =>
     n <= 0 ? Promise.resolve([] as User[]) : users().find({ $and: [base, extra] }, { projection }).sort({ name: 1 }).limit(n).toArray();
   let rows: User[];
@@ -335,7 +342,7 @@ export async function listColleagues(viewer: ChallengeViewer, rawQuery: unknown,
       name: row.name,
       designation: row.designation ?? '',
       department: row.department ?? '',
-      photoUrl: (await resolveProfilePhoto({ profilePhotoKey: row.profilePhotoKey })) ?? null,
+      photoUrl: faceUrlOf(row as unknown as FaceFields),
     })),
   );
 }
@@ -698,6 +705,7 @@ async function toggleReady(viewer: ChallengeViewer, loaded: GameChallenge): Prom
 export async function getChallenge(viewer: ChallengeViewer, id: string) {
   const now = new Date();
   const c = await joinLobby(await loadFor(viewer, id, 'view'), viewer.userId, now);
+  await keptFaceUrlsFor([c.challengerUserId, c.opponentUserId]).catch(() => undefined);
   return toView(c, viewer.userId, now);
 }
 
@@ -718,6 +726,8 @@ export async function listMyChallenges(viewer: ChallengeViewer, gameKey: unknown
     .sort({ createdAt: -1 })
     .limit(LIST_SCAN)
     .toArray();
+  // Both players' faces, read once for the list (and kept for the views after it).
+  await keptFaceUrlsFor(rows.flatMap((row) => [row.challengerUserId, row.opponentUserId])).catch(() => undefined);
   const views = rows.map((row) => toView(row, viewer.userId, now));
   const recent = views
     .filter((v) => v.status === 'finished' || v.status === 'declined' || v.status === 'expired')

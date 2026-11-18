@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
-import { listNotificationRows, listUnreadNotificationRows, withoutDeletedPosts, markAllNotificationsRead, markNotificationRead, registerDeviceToken, sendTestPush, unregisterDeviceToken } from '../services/notification.service';
+import { listNotificationRows, listUnreadNotificationRows, withActorFaces, withoutDeletedPosts, markAllNotificationsRead, markNotificationRead, registerDeviceToken, sendTestPush, unregisterDeviceToken } from '../services/notification.service';
 import { resolveNotifications, withoutEndedGames } from '../services/notification-resolution.service';
 import { optional } from '../utils/optional';
 import { readNotificationSound, soundManifest } from '../services/notification-look.service';
@@ -25,15 +25,25 @@ export async function notificationInbox(req: Request, res: Response, next: NextF
     //
     // Each filter fails on its own: should the posts be unreadable, the rows
     // about them stay in rather than the inbox not opening.
-    const [kept, resolved, current] = await Promise.all([
+    const [kept, resolved, current, faced] = await Promise.all([
       optional('Inbox deleted-posts filter', () => withoutDeletedPosts(rows), rows),
       resolveNotifications(userId(req), rows),
       withoutEndedGames(rows),
+      // The sender's face on each row; the row's own icon stands in without it.
+      optional('Inbox sender faces', () => withActorFaces(rows), rows),
     ]);
     const keep = new Set(kept);
     const live = new Set(current);
-    // `resolved` is `rows`, row for row, some marked resolved.
-    res.json({ success: true, notifications: resolved.filter((_, i) => keep.has(rows[i]) && live.has(rows[i])) });
+    // `resolved` and `faced` are `rows`, row for row.
+    res.json({
+      success: true,
+      notifications: resolved
+        .map((row, i) => {
+          const face = (faced[i] as { actorPhotoUrl?: string } | undefined)?.actorPhotoUrl;
+          return face ? { ...row, actorPhotoUrl: face } : row;
+        })
+        .filter((_, i) => keep.has(rows[i]) && live.has(rows[i])),
+    });
   } catch (error) { next(error); }
 }
 /**

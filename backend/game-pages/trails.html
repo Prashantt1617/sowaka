@@ -518,7 +518,7 @@ function loadSave(){ const id=playerId(), key=id?SAVE_KEY+'.'+id:SAVE_KEY; if(ke
   if(s&&id)store(); return true; }
 loadSave();
 let board=null; /* the last board seen, for the best line under the grid */
-function shapeBoard(r){ r=r||{}; const rows=(Array.isArray(r.entries)?r.entries:[]).map(x=>({rank:+x.rank||0,userId:x.userId?String(x.userId):'',name:String(x.name||'Player'),score:+x.score||0,me:!!x.me}));
+function shapeBoard(r){ r=r||{}; const rows=(Array.isArray(r.entries)?r.entries:[]).map(x=>({rank:+x.rank||0,userId:x.userId?String(x.userId):'',name:String(x.name||'Player'),score:+x.score||0,me:!!x.me,photoUrl:typeof x.photoUrl==='string'?x.photoUrl:''}));
   const me=r.me&&typeof r.me.score==='number'?{rank:+r.me.rank||0,score:r.me.score}:null;
   return {rows,me,total:+r.total||0,title:r.company?'Top at '+r.company:'Leaderboard',company:r.company?String(r.company):'',shared:true}; }
 function localBoard(at){ const list=save.scores.slice(0,LOCAL_TOP);
@@ -548,7 +548,7 @@ function drawBoard(box,b){
   if(b.offline){ box.appendChild(el('p','wait','Could not reach the leaderboard. This round is kept on this device.')); return; }
   if(!b.rows.length){ box.appendChild(el('p','wait','No scores yet. Yours will be the first.')); return; }
   const list=el('div','ranks'), you=(Board.name()||'You')+' (you)';
-  const row=(r,name)=>{ const w=el('div','rank'+(r.me?' me':'')+(r.rank>=1&&r.rank<=3?' p'+r.rank:'')), left=el('span'); left.append(el('i','pos',String(r.rank)),document.createTextNode(name)); w.append(left,el('b','',fmtn(r.score)));
+  const row=(r,name)=>{ const w=el('div','rank'+(r.me?' me':'')+(r.rank>=1&&r.rank<=3?' p'+r.rank:'')), left=el('span'); left.append(el('i','pos',String(r.rank)),...(b.shared&&r.name?[boardFace(r)]:[]),document.createTextNode(name)); w.append(left,el('b','',fmtn(r.score)));
     if(opensProfile(r)){ w.classList.add('tap'); w.setAttribute('role','button'); w.tabIndex=0; w.setAttribute('aria-label',r.name+'’s profile');
       w.onclick=()=>openProfile(r); w.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); openProfile(r); } }; } list.appendChild(w); return w; };
   /* Ranks come sorted: the top, then a gap wherever ranks are skipped (with 100+ players, the top 10, ⋯, then the two either side of you). */
@@ -953,6 +953,8 @@ function refreshChallenges(){ if(!canChallenge())return Promise.resolve();
 function avatar(name,photo){ const a=el('span','av'), s=String(name||'?'); let h=0; for(const ch of s)h=(h*31+ch.codePointAt(0))%360; a.style.setProperty('--ah',h);
   a.textContent=([...(s.trim().split(/\s+/)[0]||'?')][0]||'?').toUpperCase();
   if(photo){ const img=new Image(); img.alt=''; img.onload=()=>{a.textContent='';a.appendChild(img);}; img.src=photo; } a.setAttribute('aria-hidden','true'); return a; }
+/* A company leaderboard row's face, small beside the place: their photo, else the letter (avatar's own fallback). */
+function boardFace(r){ const a=avatar(r.name,r.photoUrl); a.style.cssText+=';width:20px;height:20px;min-width:20px;font-size:10px;line-height:1;display:inline-grid;place-items:center;vertical-align:middle;margin:0 7px 0 0;border-radius:50%;overflow:hidden;flex:none'; return a; }
 function mini(label,fn,yes){ const b=el('button','mini'+(yes?' yes':''),label); b.type='button'; b.onclick=e=>{e.stopPropagation();sfx.ui();fn(b);}; return b; }
 function linkRow(items){ const r=el('div','links'); items.forEach(([label,fn])=>{ const b=el('button','link',label); b.type='button'; b.onclick=()=>{sfx.ui();fn();}; r.append(b); }); return r; }
 function leftText(v){ const ms=Date.parse(v.expiresAt)-Date.now(); if(!(ms>0))return 'Expired'; const h=Math.floor(ms/3600000); return h>=1?'Expires in '+h+' h':'Expires in '+Math.max(1,Math.round(ms/60000))+' min'; }
@@ -973,10 +975,10 @@ function chRow(kind,v){
   else { tx.append(el('b','','You vs '+f),el('small','',v.them.score!=null?f+' scored '+fmtn(v.them.score)+'. Beat it.':'Your round is waiting.'));
     if(lobbyServer(v)&&v.them.score==null)tx.append(small('Call it off',()=>askCallOff(v)));
     bt.append(mini('Play',()=>startChallenge(v),true)); }
-  row.append(avatar(n),tx,bt); r.append(row); return r; }
+  row.append(avatar(n,v.them.photoUrl),tx,bt); r.append(row); return r; }
 /* A line for anything else: waiting on the other player, or a result. Tapping it opens the challenge; its button withdraws or clears it. */
 function infoRow(v){
-  const r=el('div','crow tap'), p=el('p'), bt=el('div','bt'), n=firstOf(v.them.name); r.tabIndex=0; r.setAttribute('role','button'); r.append(avatar(v.them.name));
+  const r=el('div','crow tap'), p=el('p'), bt=el('div','bt'), n=firstOf(v.them.name); r.tabIndex=0; r.setAttribute('role','button'); r.append(avatar(v.them.name,v.them.photoUrl));
   let line, sub='', pts=null;
   if(v.status==='pending'){ line='Waiting for '+n+' to accept'; sub=null; }
   else if(v.status==='accepted'){ line='Waiting for '+n+' to play'; sub='You scored '+fmtn(v.me.score); }

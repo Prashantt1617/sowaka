@@ -107,7 +107,8 @@ export function Meet() {
             <blockquote className="quote">
               <p className="body">“{item.text}”</p>
               {item.authorName && (
-                <footer className="label">
+                <footer className="label" style={item.authorPhotoUrl ? { display: 'flex', alignItems: 'center', gap: 8 } : undefined}>
+                  {item.authorPhotoUrl && <AuthorFace src={mediaUrl(item.authorPhotoUrl)} />}
                   {/* "Neha R. · Design lead · your manager": the role once, however the server words it. */}
                   {[item.authorName, item.authorRole?.replace(/\s*·\s*your manager$/i, '').trim(), 'your manager'].filter(Boolean).join(' · ')}
                 </footer>
@@ -159,5 +160,21 @@ export function Meet() {
       </BottomBar>
       <AskHrSheet open={askOpen} onClose={() => setAskOpen(false)} name={me.hrContact.name} email={me.hrContact.email} subject={subject} />
     </Page>
+  );
+}
+
+/** The note's author's face beside their name; gone (the name stands alone) if it fails to load. */
+function AuthorFace({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <img
+      src={src}
+      alt=""
+      width={28}
+      height={28}
+      onError={() => setFailed(true)}
+      style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flex: 'none' }}
+    />
   );
 }

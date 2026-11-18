@@ -7,7 +7,8 @@
 // their own items and no money.
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Avatar, LoadError, SkeletonLines } from '../../../ui';
+import { LoadError, SkeletonLines } from '../../../ui';
+import { PersonAvatar } from '../../../PersonAvatar';
 import { DrawerShell, CloseButton } from '../../../drawers/shell';
 import { useStore } from '../../../store';
 import {
@@ -78,7 +79,7 @@ export function OffboardingDrawer({ card, tabLabel, columnLabel, onClose, onChan
       <div className="ob-dr-top"><span>{tabLabel} · {columnLabel}</span><CloseButton onClose={onClose} /></div>
       <div className="ob-dr-body" role="dialog" aria-label={card.name}>
         <div className="ob-dr-id">
-          <Avatar name={card.name} size={64} font={22} />
+          <PersonAvatar name={card.name} userId={card.userId} size={64} font={22} />
           <div style={{ minWidth: 0 }}>
             <h2>{card.name}</h2>
             <div className="sub">{[card.designation, card.department].filter(Boolean).join(' · ')}</div>

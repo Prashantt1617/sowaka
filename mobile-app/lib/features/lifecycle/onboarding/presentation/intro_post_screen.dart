@@ -309,7 +309,7 @@ class _IntroPostScreenState extends State<IntroPostScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                OnbAvatar(name: comment.name, size: 32),
+                OnbAvatar(name: comment.name, photoUrl: comment.photoUrl, size: 32),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(

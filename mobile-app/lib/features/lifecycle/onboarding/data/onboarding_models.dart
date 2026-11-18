@@ -791,7 +791,7 @@ class IntroPost {
       commentCount: json['commentCount'] == null ? null : _int(json['commentCount']),
       comments: [
         for (final c in _maps(json['comments']))
-          (name: _str(c['name']) ?? '', text: _str(c['text']) ?? '', at: parseLifecycleDate(c['at'])),
+          (name: _str(c['name']) ?? '', text: _str(c['text']) ?? '', at: parseLifecycleDate(c['at']), photoUrl: _str(c['photoUrl'])),
       ],
     );
   }
@@ -818,7 +818,8 @@ class IntroPost {
   /// Once posted: how it is doing on Connect.
   final int? likes;
   final int? commentCount;
-  final List<({String name, String text, DateTime? at})> comments;
+  /// The latest comments, each with the commenter's face (null for no photo).
+  final List<({String name, String text, DateTime? at, String? photoUrl})> comments;
 
   bool get posted => postedAt != null;
 
@@ -898,6 +899,7 @@ class StarterTask {
     this.assignedByName,
     this.assignedByDesignation,
     this.assignedByUserId,
+    this.assignedByPhotoUrl,
     this.doneAt,
     this.doneNote,
     this.managerReply,
@@ -914,6 +916,7 @@ class StarterTask {
     assignedByName: _str(json['assignedByName']),
     assignedByDesignation: _str(json['assignedByDesignation']),
     assignedByUserId: _str(json['assignedByUserId']),
+    assignedByPhotoUrl: _str(json['assignedByPhotoUrl']),
     doneAt: parseLifecycleDate(json['doneAt']),
     doneNote: _str(json['doneNote']),
     managerReply: _str(json['managerReply']),
@@ -931,6 +934,9 @@ class StarterTask {
   final String? assignedByName;
   final String? assignedByDesignation;
   final String? assignedByUserId;
+
+  /// Their face beside "From your manager"; null for no photo.
+  final String? assignedByPhotoUrl;
   final DateTime? doneAt;
   final String? doneNote;
   final String? managerReply;
@@ -963,6 +969,7 @@ class OneOnOneNote {
     this.seenAt,
     this.createdAt,
     this.authorName,
+    this.authorPhotoUrl,
     this.replies = const [],
   });
 
@@ -974,6 +981,7 @@ class OneOnOneNote {
     seenAt: parseLifecycleDate(json['seenAt']),
     createdAt: parseLifecycleDate(json['createdAt']),
     authorName: _str(json['authorName']),
+    authorPhotoUrl: _str(json['authorPhotoUrl']),
     replies: [for (final reply in _maps(json['replies'])) NoteReply.fromJson(reply, viewerId)],
   );
 
@@ -986,6 +994,9 @@ class OneOnOneNote {
 
   /// Not in CONTRACT's OneOnOneNote (authorUserId only); read when sent.
   final String? authorName;
+
+  /// The author's face on the note; null for no photo.
+  final String? authorPhotoUrl;
   final List<NoteReply> replies;
 
   bool get seen => seenAt != null;

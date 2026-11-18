@@ -19,6 +19,7 @@ import {
 } from './offboarding';
 import type { OffboardingDestination } from './offboarding';
 import { completeTask } from './engine';
+import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
 
 /** What the app offers as the reason (R1); any short reason is accepted. */
 export const RESIGNATION_REASONS = ['Better opportunity', 'Growth', 'Pay', 'Manager', 'Work-life balance', 'Higher studies', 'Relocation', 'Personal', 'Other'];
@@ -87,7 +88,7 @@ export async function withdrawResignation(userId: string, now = new Date()) {
 export async function managerResignations(managerUserId: string, now = new Date()) {
   const manager = await appUser(managerUserId);
   const found = await resignations().find({ org: manager.org, managerUserId, status: { $in: [...OPEN, 'accepted'] } }, { projection: { _id: 0 } }).sort({ submittedAt: -1 }).toArray();
-  const people = await users().find({ userId: { $in: found.map((r) => r.userId) } }, { projection: { _id: 0, userId: 1, name: 1, designation: 1, department: 1, exit: 1 } }).toArray();
+  const people = await users().find({ userId: { $in: found.map((r) => r.userId) } }, { projection: { _id: 0, name: 1, designation: 1, department: 1, exit: 1, ...FACE_PROJECTION } }).toArray();
   const underWay = (r: Resignation) => {
     const e = people.find((x) => x.userId === r.userId)?.exit;
     return !!e && !e.accessEndedAt && e.offboarding?.resignationId === r.id;
@@ -101,6 +102,8 @@ export async function managerResignations(managerUserId: string, now = new Date(
       return {
         ...resignationView(r, manager.name, now), ...(tl ? { tl, daysLeft: daysFromTo(todayKey(now), tl) } : {}),
         name: p?.name ?? '', designation: p?.designation ?? '', department: p?.department ?? '',
+        // Their face on the card; absent for no photo (the initials stand in).
+        ...((p && faceUrlOf(p as unknown as FaceFields)) ? { photoUrl: faceUrlOf(p as unknown as FaceFields)! } : {}),
       };
     }),
   };

@@ -7,7 +7,8 @@
 // email; the lines are kept on the settlement as they change.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Avatar, Card, LoadError, PageActions, Pill, SkeletonForm } from '../../../ui';
+import { Card, LoadError, PageActions, Pill, SkeletonForm } from '../../../ui';
+import { PersonAvatar } from '../../../PersonAvatar';
 import { usePageHead } from '../../../pageHead';
 import { btn, btnClass, note as noteBox } from '../../../ds';
 import { IconDownload, IconPlus } from '../../../icons';
@@ -169,7 +170,7 @@ export function SettlementSend({ userId, onBack }: { userId: string; onBack: () 
       </PageActions>
       <section className="pd-card pd-phead">
         <div className="ph-id">
-          <Avatar name={exit.name} size={52} font={21} />
+          <PersonAvatar name={exit.name} userId={userId} size={52} font={21} />
           <div style={{ minWidth: 0, flex: 1 }}>
             <div className="pn"><h2>{exit.name}</h2>{emailed && <Pill label={`Emailed ${longDay(istKey(emailed.at))}`} tone={{ bg: 'var(--ok-bg)', fg: 'var(--ok)' }} />}</div>
             <span className="sub">Figures come from payroll and clearance. Check them, then email the statement to {name} as a PDF. It is not shown in the app.{checks.draft ? ` Draft saved ${longDay(istKey(checks.draft.savedAt))}${checks.draft.byName ? ` by ${checks.draft.byName}` : ''}.` : ''}</span>
