@@ -261,6 +261,11 @@ function JoinerCard({ card, tint, where, selected, dim, onOpen }: { card: BoardC
           <div style={{ minWidth: 0 }}><b>{card.name}</b>{role && <span>{role}</span>}</div>
         </div>
         <div className="ob-next">{next ? next.title : <span style={{ color: 'var(--ink-3)' }}>Nothing waiting</span>}</div>
+        {!!card.optionalWaiting && (
+          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: -4 }}>
+            {card.optionalWaiting === 1 ? 'Optional document waiting' : `${card.optionalWaiting} optional documents waiting`}
+          </div>
+        )}
         <div className="ob-foot">
           {next && (
             <span style={{ minWidth: 0, maxWidth: '100%', display: 'inline-flex' }}>
