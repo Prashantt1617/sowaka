@@ -230,7 +230,7 @@ class _PunchScreenState extends State<PunchScreen> {
       if (!mounted) return;
       setState(() {
         _stage = _PunchStage.blocked;
-        _problem = error.message;
+        _problem = _plain(error.message);
         _canOpenSettings = error.problem == PunchLocationProblem.deniedForever;
       });
       return;
@@ -498,9 +498,44 @@ class _PunchScreenState extends State<PunchScreen> {
     } on ManagerApiException catch (error) {
       if (!mounted) return;
       if (_refusedForFace(error)) return;
+      if (await _landedAnyway(error)) return;
       _showRefusal(error);
+    } catch (error) {
+      if (!mounted) return;
+      if (await _landedAnyway(null)) return;
+      _showRefusal(const ManagerApiException("Couldn't reach Sowaka. Check your connection and try again."));
     }
   }
+
+  /// A punch the server already has: an "Already punched" answer to a second
+  /// tap, or an answer that never arrived (slow or dropped connection) while
+  /// the punch itself was saved. Today's record decides; when it holds this
+  /// punch, the employee sees it done instead of an error.
+  Future<bool> _landedAnyway(ManagerApiException? error) async {
+    final worth = error == null || error.offline || error.statusCode == 409 || (error.statusCode ?? 0) >= 500;
+    if (!worth) return false;
+    try {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final (records, _, _) = await widget.api.fetchAttendance(today, today);
+      for (final record in records) {
+        final stamp = _punchingIn ? record.punchIn : record.punchOut;
+        if (stamp != null) {
+          if (!mounted) return true;
+          _recorded(record);
+          return true;
+        }
+      }
+    } catch (_) {
+      // Still offline: fall through to the refusal as it came.
+    }
+    return false;
+  }
+
+  /// What the employee reads: the server's words, without the request name
+  /// ("POST /attendance/punch: ") the API adds for the logs.
+  static String _plain(String message) =>
+      message.replaceFirst(RegExp(r'^(GET|POST|PUT|PATCH|DELETE) /\S+: '), '');
 
   /// A refused punch: outside the fence is the one refusal with somewhere to
   /// go next (the employee says why, and HR's policy decides what that leads
@@ -515,7 +550,7 @@ class _PunchScreenState extends State<PunchScreen> {
         // Only a refusal that carries HR's outcome has somewhere to go; an
         // imprecise reading also names the nearest office, but is a retry.
         _stage = outside != null ? _PunchStage.outside : _PunchStage.blocked;
-        _problem = error.message;
+        _problem = _plain(error.message);
         _canOpenSettings = false;
         _reasons = (outside?['reasons'] as List<dynamic>? ?? const [])
             .map((value) => value.toString())
@@ -591,10 +626,22 @@ class _PunchScreenState extends State<PunchScreen> {
     } on ManagerApiException catch (error) {
       if (!mounted) return;
       if (_refusedForFace(error)) return;
+      if (await _landedAnyway(error)) return;
+      if (!mounted) return;
       setState(() {
         _busy = false;
         _stage = _PunchStage.blocked;
-        _problem = error.message;
+        _problem = _plain(error.message);
+        _canOpenSettings = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      if (await _landedAnyway(null)) return;
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _stage = _PunchStage.blocked;
+        _problem = "Couldn't reach Sowaka. Check your connection and try again.";
         _canOpenSettings = false;
       });
     }
