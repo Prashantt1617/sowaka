@@ -362,7 +362,6 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
               {people.map((p) => <option key={p.key} value={p.key}>{p.key === NEW_JOINER ? '+ New joiner' : `${p.name}${p.sub ? ` · ${p.sub}` : ''}`}</option>)}
             </Pick>
           </Field>
-          <SourceNote>{source}</SourceNote>
           {loadError && <LoadError compact text={loadError} onRetry={() => setAttempt((n) => n + 1)} />}
           {!isNew && !detail ? <SkeletonLines lines={8} /> : (
             <FieldGrid>
@@ -481,7 +480,6 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
         </section>
 
         <PreviewCard templateName={template?.name} loading={!ready}
-          onEdit={template && canEditTemplates ? () => onEditTemplate(template.id) : undefined}
           html={template ? letterInner(template.body, values, head, 'preview', annex) : ''} />
       </div>
 

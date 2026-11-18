@@ -100,9 +100,6 @@ export function LifecycleDocuments() {
 
   return (
     <div className="pd-form" style={{ animation: 'fade .3s ease both' }}>
-      <p className="pd-lead" style={{ margin: '-4px 4px 16px', fontSize: 12.5, maxWidth: '70ch' }}>
-        Pick a document and a {kind === 'relieving' ? 'person' : 'joiner'}. Details come from their record; fill anything missing and check the letter on the right before you generate it.
-      </p>
       <div style={{ marginBottom: 20 }} role="tablist" aria-label="Document">
         <StatusTabs<LetterKind> options={LETTER_KINDS} active={kind} onSelect={setKind} labels={KIND_LABEL} />
       </div>
@@ -308,7 +305,6 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, h
               {people.map((p) => <option key={p.key} value={p.key}>{p.name}{p.sub ? ` · ${p.sub}` : ''}</option>)}
             </Pick>
           </Field>
-          <SourceNote>{SOURCE[kind](first || 'them')}</SourceNote>
           {error && <LoadError compact text={error} onRetry={() => setAttempt((n) => n + 1)} />}
           {!base || !templates ? <SkeletonLines lines={6} /> : (
             <FieldGrid>
@@ -354,7 +350,6 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, h
         </section>
 
         <PreviewCard templateName={template?.name} loading={!template || !base}
-          onEdit={template && canEditTemplates ? () => onEditTemplate(template.id) : undefined}
           html={template ? letterInner(template.body, shown, head, 'preview', annex) : ''} />
       </div>
 

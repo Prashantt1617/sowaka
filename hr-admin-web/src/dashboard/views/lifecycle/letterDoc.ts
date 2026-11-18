@@ -83,15 +83,16 @@ export function sanitizeHtml(html: string): string {
 export const filled = (values: Record<string, string>, key: string) => (values[key] ?? '').trim() !== '';
 
 /**
- * The body with each field filled. `preview` marks filled values and shows a
- * missing one as "[Field label]"; `pdf` writes the plain value.
+ * The body with each field filled. `preview` writes the plain value and a blank
+ * line for a missing one; `pdf` writes the plain value.
  */
 export function fillBody(body: string, values: Record<string, string>, mode: 'preview' | 'pdf'): string {
   return sanitizeHtml(body).replace(FIELD, (_, raw: string) => {
     const key = norm(raw);
     const v = (values[key] ?? '').trim();
     if (mode === 'pdf') return esc(v);
-    return v ? `<mark class="lf-on">${esc(v)}</mark>` : `<mark class="lf-miss">[${esc(fieldLabel(key))}]</mark>`;
+    // The preview reads as the letter will: plain values, and a blank line where one is still missing.
+    return v ? esc(v) : `<span class="lf-blank" title="${esc(fieldLabel(key))}">__________</span>`;
   });
 }
 
@@ -137,6 +138,7 @@ export const LETTER_CSS = `
   .lf-body img { max-width: 100%; }
   mark.lf-on { background: #E5F2FF; color: inherit; border-radius: 4px; padding: 0 2px; }
   mark.lf-miss { background: #FFEDE4; color: #C2562A; border-radius: 4px; padding: 0 2px; }
+  .lf-blank { color: #9A9AA3; letter-spacing: 1px; }
   .lf-annex { margin-top: 28px; padding-top: 18px; border-top: 1px dashed #DADADF; page-break-before: always; break-before: page; }
   .lf-annex table { border-collapse: collapse; width: 100%; margin: 10px 0 14px; } .lf-annex td, .lf-annex th { border: 1px solid #E9E9EC; padding: 7px 10px; text-align: left; }
   .lf-annex td.n, .lf-annex th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
