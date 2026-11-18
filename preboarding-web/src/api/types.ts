@@ -183,6 +183,8 @@ export interface MeetItem {
   subtitle?: string;
   authorName?: string;
   authorRole?: string;
+  /** not in CONTRACT: the author's face beside their name (an API path; absent for no photo). */
+  authorPhotoUrl?: string;
 }
 
 export type LetterState = 'locked' | 'ready' | 'opened' | 'signed';

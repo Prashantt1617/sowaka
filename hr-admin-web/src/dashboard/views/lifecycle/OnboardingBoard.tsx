@@ -13,7 +13,7 @@ import { IconDownload, IconPlus } from '../../icons';
 import { downloadCsv } from '../../export';
 import { getBoard, getClosedJourneys, isNotAvailable } from '../../../services/lifecycle';
 import type { BoardCard, BoardDTO, BoardTab, ClosedJourneyRow, JourneyFlag } from '../../../services/lifecycle';
-import { FlagPill, NotSwitchedOn, OwnerChip, Plant } from './shared';
+import { FlagPill, NotSwitchedOn, OwnerChip, PlantFace } from './shared';
 import { ClockIcon } from './offboarding/parts';
 import { OWNER_LABEL, dueText, errText, firstName, flagLabel, longDay } from './format';
 import { refreshOnboardingBadge } from '../../onboardingBadge';
@@ -257,7 +257,7 @@ function JoinerCard({ card, tint, where, selected, dim, onOpen }: { card: BoardC
     <div className={`ob-card-wrap${dim ? ' dim' : ''}`}>
       <button type="button" className={`ob-card${selected ? ' on' : ''}`} onClick={onOpen} aria-pressed={selected} data-journey-card={card.journeyId} title={tip} style={{ gap: 10 }}>
         <div className="ob-who">
-          <span aria-hidden style={{ width: 32, height: 36, borderRadius: 10, background: tint, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', flex: 'none' }}><Plant plant={card.plant} size={26} /></span>
+          <span aria-hidden style={{ width: 32, height: 36, borderRadius: 10, background: tint, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', flex: 'none', overflow: 'hidden' }}><PlantFace plant={card.plant} size={card.photoUrl ? 32 : 26} name={card.name} photoUrl={card.photoUrl} /></span>
           <div style={{ minWidth: 0 }}><b>{card.name}</b>{role && <span>{role}</span>}</div>
         </div>
         <div className="ob-next">{next ? next.title : <span style={{ color: 'var(--ink-3)' }}>Nothing waiting</span>}</div>

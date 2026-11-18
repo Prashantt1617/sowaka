@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../shared/app_toast.dart';
 import '../data/onboarding_api.dart';
 import '../data/onboarding_models.dart';
+import '../../../shared/face_photo.dart';
 import 'onboarding_kit.dart';
 
 /// A10 · notes from the 1:1 the manager chose to share (6Zs §5.3): reply,
@@ -203,14 +204,19 @@ class _NoteCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: const BoxDecoration(color: OnbColors.primary, shape: BoxShape.circle),
-                alignment: Alignment.center,
-                child: Text(
-                  OnbAvatar.initials(author).substring(0, 1),
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+              // Their photo; the initial on the brand blue without one.
+              FacePhoto(
+                photoUrl: note.authorPhotoUrl,
+                size: 40,
+                fallback: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: const BoxDecoration(color: OnbColors.primary, shape: BoxShape.circle),
+                  alignment: Alignment.center,
+                  child: Text(
+                    OnbAvatar.initials(author).substring(0, 1),
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),

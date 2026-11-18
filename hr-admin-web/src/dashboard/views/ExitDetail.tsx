@@ -5,7 +5,8 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Avatar, LoadError, Pill, SkeletonForm, Th } from '../ui';
+import { LoadError, Pill, SkeletonForm, Th } from '../ui';
+import { PersonAvatar } from '../PersonAvatar';
 import { TH, TR, cellName, cellSub, note as noteBox } from '../ds';
 import { IconDownload } from '../icons';
 import { inr } from '../../services/payroll';
@@ -93,7 +94,7 @@ export function ExitDetail({ userId, onBack, embedded }: { userId: string; onBac
 
       {!embedded && <section className="pd-card pd-phead">
         <div className="ph-id">
-          <Avatar name={exit.name} size={52} font={21} />
+          <PersonAvatar name={exit.name} userId={userId} size={52} font={21} />
           <div style={{ minWidth: 0, flex: 1 }}>
             <div className="pn">
               <h1>{exit.name}</h1>

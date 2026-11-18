@@ -517,6 +517,25 @@ async function main() {
   eq('A second decision waits for the new final month', (await refusal(async () => probation.recordDecision(J4.id, HR, { outcome: 'confirm' }))).status, 409);
   eq('The manager is told', await tellCount('mgr', 'lifecycle_decision'), 1);
 
+  // D24-2: an offer shorter than the template (3 of 6 months) cancels months 4–6; extending by 2 brings months 4–5 back.
+  const Jx = await joinAt('Runb Extend', 'runb', -10);
+  await journeys().updateOne({ id: Jx.id }, { $set: { 'probation.months': 3 } });
+  await engine.syncProbationTasks(Jx.id);
+  const tShort = await engine.tasksOf(Jx.id);
+  eq('A 3-month offer on a 6-month template: month 4–6 check-ins cancelled',
+    [4, 5, 6].map((m) => byKey(tShort, 'monthly_checkin', m)?.status), ['cancelled', 'cancelled', 'cancelled']);
+  await journeys().updateOne({ id: Jx.id }, { $set: { 'probation.extendedBy': 2 } });
+  await engine.syncProbationTasks(Jx.id);
+  const tx = await engine.tasksOf(Jx.id);
+  eq('Extended by 2: months 4–5 check-in, review and goals back (not cancelled), month 6 stays cancelled, one task per month',
+    [
+      ...[4, 5].flatMap((m) => (['monthly_checkin', 'monthly_review', 'monthly_goals'] as SystemTaskKey[]).map((k) => byKey(tx, k, m)?.status === 'cancelled')),
+      byKey(tx, 'monthly_checkin', 6)?.status,
+      tx.filter((t) => t.systemKey === 'monthly_checkin' && t.month === 4).length,
+    ],
+    [false, false, false, false, false, false, 'cancelled', 1]);
+  ok('…dated again by the refresh', [4, 5].every((m) => !!byKey(tx, 'monthly_checkin', m)?.dueAt));
+
   const J5 = await joinAt('Ishita Kaur', 'ishita', rules.daysBetween(TODAY, finalTj));
   const ISHITA = me('ishita', 'Ishita Kaur');
   const { kpiTemplates, kpiParameters } = db;

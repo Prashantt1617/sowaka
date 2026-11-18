@@ -515,6 +515,7 @@ class OffboardingPageData {
     this.tl,
     this.daysLeft,
     this.managerName,
+    this.managerPhotoUrl,
     this.acceptedAt,
     this.noticeFrom,
     this.exitType,
@@ -533,6 +534,9 @@ class OffboardingPageData {
   /// Not in the contract's list, read when the server sends them; otherwise
   /// they come from the resignation.
   final String? managerName;
+
+  /// The manager's face on "your manager"; null for no photo.
+  final String? managerPhotoUrl;
   final DateTime? acceptedAt;
   final DateTime? noticeFrom;
 
@@ -553,6 +557,7 @@ class OffboardingPageData {
             LeaverDocument.fromJson(row),
         ],
         managerName: _str(json['managerName']),
+        managerPhotoUrl: _str(json['managerPhotoUrl']),
         acceptedAt: parseDay(json['acceptedAt']),
         noticeFrom: parseDay(json['noticeFrom']),
         exitType: _str(json['exitType']),

@@ -15,6 +15,7 @@ import {
 } from '../models/game-catalog.model';
 import { User } from '../models/user.model';
 import { challengeRewardsOf } from './game-challenge-rules';
+import { keptFaceUrlsFor } from './face-photos';
 
 export class GameCatalogError extends Error {
   constructor(
@@ -343,6 +344,8 @@ export interface LeaderboardRow {
   score: number;
   achievedAt: Date;
   isMe: boolean;
+  /** Their face; null for no photo (the initials stand in). */
+  photoUrl: string | null;
 }
 
 export interface Leaderboard {
@@ -376,6 +379,7 @@ async function boardFor(key: string, org: string, viewerId: string, scoring: Gam
     });
     me = { rank: ahead + 1, score: mine.score, achievedAt: mine.achievedAt };
   }
+  const faces = await keptFaceUrlsFor(rows.map((row) => row.userId)).catch(() => new Map<string, string | null>());
   return {
     scoring: { higherIsBetter, label: scoring.label || 'points' },
     leaderboard: rows.map((row, index) => ({
@@ -385,6 +389,7 @@ async function boardFor(key: string, org: string, viewerId: string, scoring: Gam
       score: row.score,
       achievedAt: row.achievedAt,
       isMe: row.userId === viewerId,
+      photoUrl: faces.get(row.userId) ?? null,
     })),
     me,
   };

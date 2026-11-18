@@ -406,23 +406,30 @@ class PlayedGame {
 
 /// Colleagues with game activity in the last few minutes.
 class PlayingNow {
-  const PlayingNow({this.count = 0, this.initials = const []});
+  const PlayingNow({this.count = 0, this.initials = const [], this.photoUrls = const []});
 
   factory PlayingNow.fromJson(Map<String, dynamic> json) {
     final people = json['people'];
+    final shown = [
+      if (people is List)
+        for (final row in people)
+          if (row is Map && _string(row['initials']).isNotEmpty) row,
+    ];
     return PlayingNow(
       count: _int(json['count']),
-      initials: [
-        if (people is List)
-          for (final row in people)
-            if (row is Map && _string(row['initials']).isNotEmpty)
-              _string(row['initials']),
+      initials: [for (final row in shown) _string(row['initials'])],
+      photoUrls: [
+        for (final row in shown)
+          _string(row['photoUrl']).isEmpty ? null : _string(row['photoUrl']),
       ],
     );
   }
 
   final int count;
   final List<String> initials;
+
+  /// Each face's photo, beside [initials] one for one; null for no photo.
+  final List<String?> photoUrls;
 }
 
 /// Which points a leaderboard ranks by.

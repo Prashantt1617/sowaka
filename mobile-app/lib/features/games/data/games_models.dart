@@ -212,6 +212,7 @@ class GameLeaderEntry {
     required this.score,
     this.userId = '',
     this.isMe = false,
+    this.photoUrl,
   });
 
   factory GameLeaderEntry.fromJson(Map<String, dynamic> json) =>
@@ -221,6 +222,7 @@ class GameLeaderEntry {
         score: (json['score'] as num?) ?? 0,
         userId: _string(json['userId']),
         isMe: json['isMe'] == true,
+        photoUrl: _string(json['photoUrl']).isEmpty ? null : _string(json['photoUrl']),
       );
 
   final int rank;
@@ -231,6 +233,9 @@ class GameLeaderEntry {
   /// server that does not say.
   final String userId;
   final bool isMe;
+
+  /// Their face; null for no photo (the page draws the initial).
+  final String? photoUrl;
 }
 
 /// A company's top ten for a game, and the viewer's own best.
@@ -286,6 +291,8 @@ class GameLeaderboard {
           'name': entry.playerName,
           'score': entry.score,
           'me': entry.isMe,
+          // Their face (made whole by the bridge); left out for no photo.
+          'photoUrl': ?entry.photoUrl,
         },
     ],
     'me': myBest == null ? null : {'rank': myRank, 'score': myBest},

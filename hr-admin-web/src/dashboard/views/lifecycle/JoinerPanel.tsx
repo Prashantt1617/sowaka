@@ -17,7 +17,7 @@ import {
 import type {
   BankPfRequest, CandidateDocumentView, ConfirmationDecision, Day1Pass, JourneyDetail, LetterKind, LetterView, TaskView, TemplateListItem,
 } from '../../../services/lifecycle';
-import { FilePreview, NoteDialog, OwnerChip, Pick, Plant, Field } from './shared';
+import { FilePreview, NoteDialog, OwnerChip, Pick, PlantFace, Field } from './shared';
 import { IconChevronDown } from '../../icons';
 import {
   DOCS_OPEN_KEY, OWNER_LABEL, PHASES, areaStyle, changedFieldsText, nudgeLabel, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, longDay, rupees, sectionLabel, shortDay, todayKey,
@@ -274,8 +274,8 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
 
       <div style={{ padding: 20, display: 'grid', gap: 20, alignContent: 'start', flex: 1 }}>
         <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end' }}>
-          <span style={{ width: 76, height: 84, borderRadius: 20, background: closed ? 'var(--surface-2)' : TINT[journey.tab] ?? 'var(--surface-2)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', flex: 'none' }}>
-            <Plant plant={journey.plant} size={66} />
+          <span style={{ width: 76, height: 84, borderRadius: 20, background: closed ? 'var(--surface-2)' : TINT[journey.tab] ?? 'var(--surface-2)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', flex: 'none', overflow: 'hidden' }}>
+            <PlantFace plant={journey.plant} size={66} name={name} userId={journey.userId} />
           </span>
           <div style={{ minWidth: 0, display: 'grid', gap: 3 }}>
             <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.01em', lineHeight: 1.2, overflowWrap: 'anywhere' }}>{name}</div>

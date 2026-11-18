@@ -23,6 +23,7 @@ import { prepareRecent, recentSuwiUsers } from '../../suwi/planner';
 import { prepareFrequent } from '../../suwi/prepared';
 import { logger } from '../../utils/logger';
 import { yieldToLive } from '../background-pace';
+import { isLeader } from '../leader';
 
 /** `afterWrite`: the rebuild a few seconds after a change (readCache.scheduleRewarm), not the warm-up round. */
 export async function warmLifecycle(org: string, isStopping: () => boolean = () => false, opts: { afterWrite?: boolean } = {}): Promise<Record<string, number | string>> {
@@ -52,17 +53,18 @@ export async function warmLifecycle(org: string, isStopping: () => boolean = () 
     await yieldToLive(isStopping);
     if (viewer) await suwiNotices(contextFor(viewer, settings.levels, today), true);
     // "What needs my attention today?" made ahead for the people who use Suwi (planner.ts): once per
-    // data version, at most once a minute each, so asking it is usually instant.
+    // data version, at most once a minute each, so asking it is usually instant. A model call, so only
+    // where the background jobs run (leader.ts): the answers are kept in Redis for every process.
     await yieldToLive(isStopping);
-    await prepareRecent(org, today, isStopping);
+    if (isLeader()) await prepareRecent(org, today, isStopping);
     // The people bundle every people tool reads, then the heavier no-input tools asked ahead as the
     // people who use Suwi (toolCache.ts): once per data version, at most every five minutes.
     await yieldToLive(isStopping);
     await peopleBundle(org);
     const recent = (await recentSuwiUsers(org, 3)).map((u) => contextFor(u, settings.levels, today));
     await prerunTools(org, recent, toolsFor, isStopping);
-    // And the questions each of them keeps asking (suwi/prepared.ts), so those are instant too.
-    await prepareFrequent(org, isStopping);
+    // And the questions each of them keeps asking (suwi/prepared.ts), so those are instant too (model calls: leader only).
+    if (isLeader()) await prepareFrequent(org, isStopping);
   }]);
   for (const [name, run] of steps) {
     if (isStopping()) break;
@@ -103,11 +105,13 @@ export async function warmSuwiAtBoot(isStopping: () => boolean = () => false): P
         if (isStopping()) break;
         await suwiNotices(contextFor(u, settings.levels, today)).catch(() => undefined);
       }
-      await prepareRecent(org, today, isStopping);
+      // The model-made answers only where the background jobs run; a new process beside the old one
+      // (a blue/green deploy) reads the ones the old one kept in Redis.
+      if (isLeader()) await prepareRecent(org, today, isStopping);
       await peopleBundle(org);
       const recent = (await recentSuwiUsers(org, 3)).map((u) => contextFor(u, settings.levels, today));
       await prerunTools(org, recent, toolsFor, isStopping);
-      await prepareFrequent(org, isStopping);
+      if (isLeader()) await prepareFrequent(org, isStopping);
     } catch (error) {
       logger.warn('Suwi boot warm failed for a company', { org, error: (error as Error).message });
     }

@@ -55,40 +55,17 @@ export async function runHourlyJobs(now = new Date()): Promise<void> {
   if (hour === 16 && weekday === 'Fri') await run('sendLeaveNextWeek', () => sendLeaveNextWeek(now));
 }
 
-let timer: NodeJS.Timeout | undefined;
-let fiveMinuteTimer: NodeJS.Timeout | undefined;
-let fiveMinuteRunning = false;
-export function startNotificationScheduler() {
-  // Shifts start at different times, so the punch-in reminder checks every
-  // five minutes; grouped Connect pushes go out as their three-hour windows
-  // close. A tick still running when the next one is due is not doubled up.
-  fiveMinuteTimer = setInterval(() => {
-    if (fiveMinuteRunning) return;
-    fiveMinuteRunning = true;
-    void (async () => {
-      await run('sendLatePunchInReminders', () => sendLatePunchInReminders());
-      await run('flushGroupedNotifications', () => flushGroupedNotifications());
-      // Contests: two hours before closing, to those not in yet; then the results (once each).
-      await run('runContestNotifications', () => runContestNotifications());
-      // Employee lifecycle: meeting reminders every tick, the day jobs once an hour (fired once each).
-      await run('runLifecycleJobs', () => runLifecycleJobs());
-    })().finally(() => { fiveMinuteRunning = false; });
-  }, 5 * 60 * 1000);
-  fiveMinuteTimer.unref();
-
-  const schedule = () => {
-    timer = setTimeout(async () => {
-      try { await runHourlyJobs(); }
-      catch (error) { logger.error('Notification scheduler tick failed', {}, error); }
-      finally { schedule(); }
-    }, msToNextIstHour(new Date()));
-    timer.unref();
-  };
-  schedule();
-}
-export function stopNotificationScheduler() {
-  if (timer) clearTimeout(timer);
-  timer = undefined;
-  if (fiveMinuteTimer) clearInterval(fiveMinuteTimer);
-  fiveMinuteTimer = undefined;
+/**
+ * The jobs for one five-minute slot. Shifts start at different times, so the punch-in reminder
+ * checks every five minutes; grouped Connect pushes go out as their three-hour windows close.
+ * Run on the clock by leader-jobs.ts (one process, once per slot; a slot still running when the
+ * next is due is not doubled up).
+ */
+export async function runFiveMinuteJobs(): Promise<void> {
+  await run('sendLatePunchInReminders', () => sendLatePunchInReminders());
+  await run('flushGroupedNotifications', () => flushGroupedNotifications());
+  // Contests: two hours before closing, to those not in yet; then the results (once each).
+  await run('runContestNotifications', () => runContestNotifications());
+  // Employee lifecycle: meeting reminders every tick, the day jobs once an hour (fired once each).
+  await run('runLifecycleJobs', () => runLifecycleJobs());
 }

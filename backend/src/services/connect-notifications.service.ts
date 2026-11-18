@@ -138,6 +138,8 @@ async function send(
         title: r.copy!.title,
         body: r.copy!.body,
         data,
+        // Their face on the row: the person who posted, liked, commented or voted.
+        ...(actorUserId ? { actorUserId } : {}),
         push: r.copy!.push !== false,
         // Inbox-only likes, comments and votes on a post: the latest row stands for the rest.
         latestOnly: LATEST_ONLY.has(scenario),
@@ -412,7 +414,7 @@ async function grouped(
 ): Promise<void> {
   if (!recipientUserId || recipientUserId === actor.userId) return;
   try {
-    await notifyGrouped({ recipientUserId, kind, entityId: post.id, actorName: actor.name, data });
+    await notifyGrouped({ recipientUserId, kind, entityId: post.id, actorName: actor.name, actorUserId: actor.userId, data });
   } catch (error) {
     logger.error('Grouped feed notification failed', { kind, postId: post.id }, error);
   }

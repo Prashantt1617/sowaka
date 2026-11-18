@@ -13,6 +13,7 @@ import { notificationRouter } from './notification.routes';
 import { attendanceRouter } from './attendance.routes';
 import { faceRouter } from './face.routes';
 import { mediaRouter } from './media.routes';
+import { facesRouter } from './faces.routes';
 import { payrollRouter } from './payroll.routes';
 import { payslipRouter } from './payslip.routes';
 import { employeePayrollRouter } from './employee-payroll.routes';
@@ -95,6 +96,8 @@ router.use('/payroll', employeePayrollRouter);
 // Mounted before the authenticated Connect router: image requests can't carry
 // a bearer token, so media is served by unguessable key instead.
 router.use('/media', mediaRouter);
+// Older accounts' inline photos, by signed address (services/face-photos).
+router.use('/faces', facesRouter);
 router.use('/connect', connectRouter);
 router.use('/manager', managerRouter);
 router.use('/overtime', overtimeRouter);

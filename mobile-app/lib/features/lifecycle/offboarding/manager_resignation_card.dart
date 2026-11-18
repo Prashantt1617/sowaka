@@ -222,7 +222,7 @@ class _ResignationRequestCardState extends State<ResignationRequestCard> {
           children: [
             Row(
               children: [
-                OffAvatar(initialsOf(name)),
+                OffAvatar(initialsOf(name), photoUrl: r.photoUrl),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(

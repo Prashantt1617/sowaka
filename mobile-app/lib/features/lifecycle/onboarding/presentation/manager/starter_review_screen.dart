@@ -19,6 +19,7 @@ class StarterReviewScreen extends StatefulWidget {
     this.starterTaskId,
     this.initial,
     this.joinerName,
+    this.joinerPhotoUrl,
   });
 
   final OnboardingShell shell;
@@ -27,6 +28,9 @@ class StarterReviewScreen extends StatefulWidget {
   final StarterTask? initial;
   final String? joinerName;
 
+  /// The joiner's face beside their note, when the caller has it.
+  final String? joinerPhotoUrl;
+
   @override
   State<StarterReviewScreen> createState() => _StarterReviewScreenState();
 }
@@ -34,6 +38,7 @@ class StarterReviewScreen extends StatefulWidget {
 class _StarterReviewScreenState extends State<StarterReviewScreen> {
   StarterTask? _task;
   String? _name;
+  String? _photo;
   String? _error;
   final _reply = TextEditingController();
   bool _busy = false;
@@ -45,6 +50,7 @@ class _StarterReviewScreenState extends State<StarterReviewScreen> {
     super.initState();
     _task = widget.initial;
     _name = widget.joinerName;
+    _photo = widget.joinerPhotoUrl;
     if (_task == null || _name == null) unawaited(_load());
   }
 
@@ -61,6 +67,7 @@ class _StarterReviewScreenState extends State<StarterReviewScreen> {
       final tasks = detail.starterTasks;
       setState(() {
         _name = detail.joiner.name;
+        _photo = detail.joiner.photoUrl ?? _photo;
         _task = (widget.starterTaskId == null
                 ? tasks.where((t) => t.done).lastOrNull
                 : tasks.where((t) => t.id == widget.starterTaskId).firstOrNull) ??
@@ -172,7 +179,7 @@ class _StarterReviewScreenState extends State<StarterReviewScreen> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      OnbAvatar(name: name, size: 36),
+                      OnbAvatar(name: name, photoUrl: _photo, size: 36),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Container(

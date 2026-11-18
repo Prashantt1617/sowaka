@@ -29,6 +29,7 @@ import {
   addDays, companyDisplayName, companyOf, formatDay, hrContactFor, isDay, istDate, lifecycleEnabled, mails, portalLink, sendLifecycleEmail,
 } from './emails';
 import type { LifecycleAttachment } from './emails';
+import { nonWorkingDayReason } from './dueRules';
 import { closeJourney, completeTask, createOnboardingJourney, moveTj, onJoined, refreshJourney, reopenTask, setJourneyStatus, syncProbationTasks } from './engine';
 import { checkUpload, LifecycleOfferError, pdfPageCount, readFileBytes, storeFile } from './files';
 import { regenerateAppointmentLetters, outdateChangedLetters } from './letters';
@@ -148,6 +149,13 @@ async function cleanFields(org: string, input: unknown, base: Partial<OfferField
   const department = text('department', 120); if (department) fields.department = department;
   const location = text('location', 120); if (location) fields.location = location;
   if (managerUserId) fields.managerUserId = managerUserId;
+  // A new joining date on a week-off or holiday is refused unless HR says it is meant (Day 1 is a working day).
+  if (tj !== base.tj && raw.allowNonWorkingDay !== true) {
+    const why = await nonWorkingDayReason(org, tj, fields.location);
+    if (why) {
+      throw new LifecycleOfferError(409, `${formatDay(tj)} is ${why} at this company. Pick a working day, or keep it if the joiner really starts then.`, { code: 'non_working_day', day: tj, why });
+    }
+  }
   const responsibilities = text('responsibilities', 5000); if (responsibilities) fields.responsibilities = responsibilities;
   return fields;
 }
@@ -664,6 +672,8 @@ export async function createDateRequest(journey: Journey, input: { requestedTj?:
   if (!isDay(requestedTj)) throw new LifecycleOfferError(400, 'Pick a date');
   if (requestedTj <= istDate(now)) throw new LifecycleOfferError(400, 'Pick a date after today');
   if (requestedTj === journey.tj) throw new LifecycleOfferError(400, 'That is already your joining date');
+  const why = await nonWorkingDayReason(journey.org, requestedTj, journey.location);
+  if (why) throw new LifecycleOfferError(400, `${formatDay(requestedTj)} is ${why}. Pick a working day.`, { code: 'non_working_day', day: requestedTj, why });
   const reason = String(input.reason ?? '') as DateChangeRequest['reason'];
   if (!REASONS.includes(reason)) throw new LifecycleOfferError(400, 'Pick a reason');
   const note = String(input.note ?? '').trim();
@@ -691,7 +701,8 @@ export async function decideDateRequest(hr: HrActor, requestId: string, input: {
   const journey = await journeyOf(hr.org, request.journeyId);
   if (decision === 'approve') {
     if (!PRE_JOIN_OPEN.has(String(journey.status))) throw new LifecycleOfferError(409, 'This joiner’s offer is closed');
-    await reviseOffer(null, journey.id, { tj: request.requestedTj }, hr.org);
+    // The candidate's date was a working day when asked (createDateRequest); HR's approval stands even if that changed.
+    await reviseOffer(null, journey.id, { tj: request.requestedTj, allowNonWorkingDay: true }, hr.org);
     await moveTj(journey.id, request.requestedTj);
     await completeTask(journey.id, 'new_joining_date', { userId: hr.userId, name: hr.name });
     await tellManager(journey, 'lifecycle_joining_date_moved', `${journey.candidate?.name ?? 'Your new joiner'} now joins ${formatDay(request.requestedTj)}`, `Moved from ${formatDay(journey.tj)}.`);

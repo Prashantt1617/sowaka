@@ -35,6 +35,8 @@ interface GroupDoc {
    * earlier ones for the post, so it counts them all.
    */
   everyone?: string[];
+  /** The latest person's userId, whose face the row wears. */
+  latestActorUserId?: string;
   lastPushAt?: Date;
   updatedAt: Date;
 }
@@ -79,7 +81,13 @@ async function claimPush(key: string, now: Date): Promise<GroupDoc | null> {
 async function send(doc: GroupDoc): Promise<void> {
   const copy = groupedCopy(doc.kind, doc.everyone?.length ? doc.everyone : doc.actors);
   // The newest group's row says it all: it replaces the earlier ones for this post.
-  await notifyUsers([doc.recipientUserId], { scenario: doc.kind, ...copy, data: doc.data, latestOnly: true });
+  await notifyUsers([doc.recipientUserId], {
+    scenario: doc.kind,
+    ...copy,
+    data: doc.data,
+    ...(doc.latestActorUserId ? { actorUserId: doc.latestActorUserId } : {}),
+    latestOnly: true,
+  });
 }
 
 /** One event: pushed now when the post has been quiet for three hours, else gathered. */
@@ -88,6 +96,8 @@ export async function notifyGrouped(input: {
   kind: GroupKind;
   entityId: string;
   actorName: string;
+  /** Theirs, for the face on the row. */
+  actorUserId?: string;
   data: Record<string, string>;
   now?: Date;
 }): Promise<void> {
@@ -108,7 +118,10 @@ export async function notifyGrouped(input: {
     if ((error as { code?: number }).code !== 11000) throw error;
     return groups().updateOne({ key }, { $set: { data: input.data, updatedAt: now }, $pull: { actors: name, everyone: name } });
   });
-  await groups().updateOne({ key }, { $push: { actors: name, everyone: name } });
+  await groups().updateOne(
+    { key },
+    { $push: { actors: name, everyone: name }, ...(input.actorUserId ? { $set: { latestActorUserId: input.actorUserId } } : {}) },
+  );
   const claimed = await claimPush(key, now);
   if (claimed) await send(claimed);
 }

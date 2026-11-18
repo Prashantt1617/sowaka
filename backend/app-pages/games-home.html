@@ -202,6 +202,7 @@ svg{overflow:visible}
 .pn-f{position:relative;height:20px;flex:none}
 .pn-f b{position:absolute;top:0;width:20px;height:20px;border-radius:50%;border:1.1px solid var(--ink2);display:flex;align-items:center;justify-content:center;
   font:800 7px/8.75px var(--fig);color:var(--ink2)}
+.pn-f b img.pn-ph{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%}
 .pn-t{font:400 9.5px/11.875px var(--fig);color:var(--secondary);min-width:0}
 
 /* loading and failure */
@@ -644,7 +645,7 @@ svg{overflow:visible}
       playingNow: {
         count: int(playing.count),
         people: Array.isArray(playing.people) ? playing.people.map(function (p) {
-          return p && str(p.initials) ? { initials: str(p.initials), name: str(p.name), userId: strOrNull(p.userId) } : null;
+          return p && str(p.initials) ? { initials: str(p.initials), name: str(p.name), userId: strOrNull(p.userId), photoUrl: strOrNull(p.photoUrl) } : null;
         }).filter(Boolean) : []
       }
     };
@@ -1291,7 +1292,8 @@ svg{overflow:visible}
     var colors = ['var(--blue)', '#C6F03C', '#FF8A3D'];
     var f = pn.people.slice(0, 3);
     var pile = f.length ? '<span class="pn-f" style="width:' + (20 + (f.length - 1) * 13) + 'px">' + f.map(function (p, n) {
-      return '<b' + personAttrs(p.userId, p.name) + ' style="left:' + n * 13 + 'px;background:' + colors[n % 3] + '">' + esc(Array.from(p.initials)[0]) + '</b>';
+      // Their photo over the initial (gone, leaving the initial, if it does not load).
+      return '<b' + personAttrs(p.userId, p.name) + ' style="left:' + n * 13 + 'px;background:' + colors[n % 3] + (p.photoUrl ? ';overflow:hidden' : '') + '">' + esc(Array.from(p.initials)[0]) + img(p.photoUrl, 'pn-ph') + '</b>';
     }).join('') + '</span>' : '';
     var text = pn.count === 1 ? '1 person from your team is playing right now' : count(pn.count) + ' people from your team are playing right now';
     return '<div class="pn"><div class="pn-in">' + pile + '<span class="pn-t ell">' + esc(text) + '</span></div></div>';

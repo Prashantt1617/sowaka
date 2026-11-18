@@ -11,6 +11,7 @@ import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRe
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { ApiError, BASE_URL, api, getToken } from '../../services/http';
 import { useStore } from '../store';
+import { usePhotoFor } from '../photos';
 import { boardAt } from './cupBoards';
 import { trailAt } from './cupTrailsBoards';
 
@@ -291,6 +292,20 @@ function useCupFonts() {
 
 const fmt = (n: number) => Math.round(n).toLocaleString('en-IN');
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?';
+
+/** A player's face: their photo from the loaded directory, else their initials on their side's colour. */
+function CupFace({ p, colour }: { p: Player | null; colour: string }) {
+  const photo = usePhotoFor(p?.userId ?? null, p?.name ?? null);
+  const [failed, setFailed] = useState('');
+  const show = photo && photo !== failed;
+  return (
+    <span className="ctv-av" style={{ background: colour, ...(show ? { overflow: 'hidden', padding: 0 } : {}) }}>
+      {show ? (
+        <img src={photo} alt="" onError={() => setFailed(photo)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', borderRadius: '50%' }} />
+      ) : p ? initials(p.name) : '?'}
+    </span>
+  );
+}
 const firstName = (name: string) => name.split(/\s+/)[0] || name;
 const ms = (iso?: string | null) => (iso ? new Date(iso).getTime() : Number.NaN);
 
@@ -641,7 +656,7 @@ function BoardsDuel({ match, size }: { match: Match; size: number }) {
         return (
           <div key={i} className={`ctv-bside${s > other ? ' lead' : ''}`} style={{ '--pc': colour } as CSSProperties}>
             <div className="ctv-who">
-              <span className="ctv-av" style={{ background: colour }}>{p ? initials(p.name) : '?'}</span>
+              <CupFace p={p} colour={colour} />
               <span className="ctv-nm">
                 {p ? firstName(p.name) : 'To be decided'}
                 {p && <span className="ctv-seed">#{p.seed}</span>}
@@ -754,7 +769,7 @@ function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
         return (
           <div className="ctv-row" key={i}>
             <div className="ctv-who">
-              <span className="ctv-av" style={{ background: colour }}>{p ? initials(p.name) : '?'}</span>
+              <CupFace p={p} colour={colour} />
               <span className="ctv-nm">
                 {p ? p.name : 'To be decided'}
                 {p && <span className="ctv-seed">#{p.seed}</span>}
@@ -1132,7 +1147,7 @@ function StreamDuel({ match, round, split, serverNow, roundSec, kicker }: {
     return (
       <div className={`cs-side${i ? ' b' : ''}${s > (i === 0 ? sb : sa) ? ' lead' : ''}`} style={{ '--pc': colour } as CSSProperties}>
         <div className="cs-who">
-          <span className="ctv-av" style={{ background: colour }}>{p ? initials(p.name) : '?'}</span>
+          <CupFace p={p} colour={colour} />
           <span className="cs-nm">
             {p ? p.name : 'No opponent'}
             {p && <span className="ctv-seed">#{p.seed}</span>}

@@ -25,6 +25,7 @@ import {
   tickTileUp,
 } from './tileup-room.service';
 import { verifyTicket } from './scribble-ticket.service';
+import { InFlight } from '../utils/inflight';
 import { logger } from '../utils/logger';
 
 /**
@@ -42,6 +43,7 @@ const TICK_MS = 500;
 
 let namespace: Namespace | undefined;
 let timer: NodeJS.Timeout | undefined;
+const passes = new InFlight();
 
 const userRoom = (userId: string) => `tileup:user:${userId}`;
 const roomChannel = (org: string, code: string) => `tileup:room:${org}:${code}`;
@@ -267,15 +269,17 @@ function listen(socket: Socket, seated: Promise<Seat | null>) {
 function start() {
   if (timer) return;
   timer = setInterval(() => {
-    void tickTileUp().catch((error) => logger.error('Tile Up tick failed', {}, error));
+    void passes.track(tickTileUp().catch((error) => logger.error('Tile Up tick failed', {}, error)));
   }, TICK_MS);
   timer.unref?.();
 }
 
-export function closeTileUpRealtime(): void {
+/** Stops the clock and the namespace; resolves once a pass under way has finished (it reads the database). */
+export async function closeTileUpRealtime(): Promise<void> {
   if (timer) clearInterval(timer);
   timer = undefined;
   namespace = undefined;
   setTileUpEmitter(null);
   people.clear();
+  await passes.settle();
 }

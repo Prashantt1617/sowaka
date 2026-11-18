@@ -19,6 +19,7 @@ import { maybeSendLettersReady, portalLetters, SIGNED_KINDS } from './letters';
 import { CLOSED_STATUSES, mediaPath } from './portalAuth';
 import { addWorkingDaysKey, workCalendar } from './dueRules';
 import { scopedJourneys, scriptScope } from './scriptScope';
+import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
 
 type PathKey = 'offer' | 'docs' | 'about' | 'meet' | 'letter' | 'pass';
 /** `waiting`: the candidate's part is done and HR has it (every required document uploaded, in review). */
@@ -96,13 +97,16 @@ export interface MeetItem {
   id: string; kind: 'manager_note' | 'video' | 'card'; title: string; text?: string; videoUrl?: string; seen: boolean;
   /** The reel's tag, the line under the title, and the note's author. */
   tag?: string; subtitle?: string; authorName?: string; authorRole?: string;
+  /** The note's author's face beside their name; absent for no photo. */
+  authorPhotoUrl?: string;
 }
 
 export async function meetItems(journey: Journey): Promise<MeetItem[]> {
   const seen = new Set(journey.meetUs?.seen ?? []);
   const items: Omit<MeetItem, 'seen'>[] = [];
   const note = journey.meetUs?.managerNote;
-  const manager = journey.managerUserId ? await users().findOne({ userId: journey.managerUserId }, { projection: { _id: 0, name: 1, designation: 1 } }) : null;
+  const manager = journey.managerUserId ? await users().findOne<FaceFields & { name: string; designation?: string }>({ userId: journey.managerUserId }, { projection: { _id: 0, name: 1, designation: 1, ...FACE_PROJECTION } }) : null;
+  const managerFace = faceUrlOf(manager);
   if (note && (note.text || note.fileId)) {
     items.push({
       id: 'manager_note', kind: 'manager_note',
@@ -110,6 +114,7 @@ export async function meetItems(journey: Journey): Promise<MeetItem[]> {
       tag: 'FROM YOUR MANAGER', subtitle: note.kind === 'video' ? 'Your manager · video' : 'A note from your manager',
       // The portal adds "· your manager" after the role ("Neha R. · Design lead · your manager").
       ...(manager?.name ? { authorName: manager.name } : {}), ...(manager?.designation ? { authorRole: manager.designation } : {}),
+      ...(managerFace ? { authorPhotoUrl: managerFace } : {}),
       // A signed link: <video src> cannot send the portal's Bearer token.
       ...(note.text ? { text: note.text } : {}), ...(note.kind === 'video' && note.fileId ? { videoUrl: mediaPath(journey.id, note.fileId) } : {}),
     });

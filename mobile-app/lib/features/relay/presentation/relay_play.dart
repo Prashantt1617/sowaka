@@ -481,7 +481,7 @@ class _RelayPlayState extends State<RelayPlay> {
           ),
           child: Row(
             children: [
-              RelayInitial(name: state.leadName, size: 31.987, fontSize: 11.2, gradient: RelayStyle.avatarPink),
+              RelayInitial(name: state.leadName, size: 31.987, fontSize: 11.2, gradient: RelayStyle.avatarPink, photoUrl: state.leadPhotoUrl),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

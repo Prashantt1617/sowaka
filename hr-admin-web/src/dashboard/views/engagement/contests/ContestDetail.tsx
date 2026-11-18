@@ -7,7 +7,8 @@ import { getContest, type ContestDetailDTO, type ContestPersonDTO, type ContestS
 import { ApiError } from '../../../../services/http';
 import { downloadCsv } from '../../../export';
 import { useStore } from '../../../store';
-import { Avatar, LoadError, SearchInput, SelectBox, SkeletonLines, StatusTabs } from '../../../ui';
+import { PersonAvatar } from '../../../PersonAvatar';
+import { LoadError, SearchInput, SelectBox, SkeletonLines, StatusTabs } from '../../../ui';
 import { LookTable, Td, Th } from '../../lookUi';
 import * as L from '../../look';
 import { ContestCard } from './ContestCard';
@@ -19,7 +20,7 @@ type Tab = 'took' | 'voted' | 'tags' | 'not';
 function Who({ p }: { p: ContestPersonDTO }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-      <Avatar name={p.name} size={30} font={12} />
+      <PersonAvatar name={p.name} userId={p.userId} size={30} font={12} />
       <span style={{ minWidth: 0 }}>
         <span style={{ ...L.cellName, display: 'block' }}>{p.name}</span>
         <span style={{ ...L.cellSub, display: 'block' }}>{[p.department, p.location].filter(Boolean).join(' · ') || '—'}</span>
@@ -190,8 +191,8 @@ export function ContestDetail({ summary, onDeleted }: { summary: ContestSummaryD
 
   const took = ml ? c.voters : c.entrants;
   const leaderboard = ml
-    ? detail.tagged.slice(0, 5).map((t, i) => ({ key: t.person.userId, rank: i + 1, name: t.person.name, line: t.person.name, sub: `${t.person.department || '—'} · tagged by ${t.by.slice(0, 3).map((b) => b.name.split(' ')[0]).join(', ')}${t.by.length > 3 ? ` +${t.by.length - 3}` : ''}`, n: `${t.tags} ${t.tags === 1 ? 'tag' : 'tags'}` }))
-    : detail.entries.slice(0, 5).map((e, i) => ({ key: e.id, rank: i + 1, name: e.by.name, line: e.text ? `“${e.text}”` : `${e.by.name}’s photo`, sub: `${e.by.name}${e.by.department ? ` · ${e.by.department}` : ''}`, n: `${e.votes} ${e.votes === 1 ? 'vote' : 'votes'}` }));
+    ? detail.tagged.slice(0, 5).map((t, i) => ({ key: t.person.userId, userId: t.person.userId, rank: i + 1, name: t.person.name, line: t.person.name, sub: `${t.person.department || '—'} · tagged by ${t.by.slice(0, 3).map((b) => b.name.split(' ')[0]).join(', ')}${t.by.length > 3 ? ` +${t.by.length - 3}` : ''}`, n: `${t.tags} ${t.tags === 1 ? 'tag' : 'tags'}` }))
+    : detail.entries.slice(0, 5).map((e, i) => ({ key: e.id, userId: e.by.userId, rank: i + 1, name: e.by.name, line: e.text ? `“${e.text}”` : `${e.by.name}’s photo`, sub: `${e.by.name}${e.by.department ? ` · ${e.by.department}` : ''}`, n: `${e.votes} ${e.votes === 1 ? 'vote' : 'votes'}` }));
 
   return (
     <>
@@ -221,7 +222,7 @@ export function ContestDetail({ summary, onDeleted }: { summary: ContestSummaryD
                 {leaderboard.map((r) => (
                   <li key={r.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
                     <span style={{ width: 22, height: 22, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 700, background: r.rank === 1 ? 'var(--p-yellow)' : 'var(--surface-2)', color: r.rank === 1 ? 'var(--p-yellow-ink)' : 'var(--ink-2)', flex: '0 0 auto' }}>{r.rank}</span>
-                    <Avatar name={r.name} size={30} font={12} />
+                    <PersonAvatar name={r.name} userId={r.userId} size={30} font={12} />
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ ...L.cellName, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.line}</span>
                       <span style={{ ...L.cellSub, display: 'block' }}>{r.sub}</span>
