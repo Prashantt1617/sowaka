@@ -56,7 +56,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // Now there is a company to ask about: must, or may, this build update?
     // (Asked only if the launch did not already ask for this session.)
     AppUpdateGate.signedIn();
-    final branding = OrgBranding.of(session.user.org);
+    final branding = OrgBranding.of(session.user.org, sowakaLogo: session.user.sowakaDefaultLogo);
     OrgBranding.current.value = branding;
     await OrgBranding.remember(session.user.org);
     await AppIcon.use(branding.iosIconName);

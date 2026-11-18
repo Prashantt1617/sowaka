@@ -75,12 +75,15 @@ class PayrollLockSession with WidgetsBindingObserver {
 /// or the phone's passcode first; a phone with no lock at all is asked to set
 /// one, because Payroll shows salary.
 class PayrollLockGate extends StatefulWidget {
-  const PayrollLockGate({super.key, required this.child, required this.onClose, this.lock, this.session});
+  const PayrollLockGate({super.key, required this.child, required this.onClose, this.lock, this.session, this.enabled = true});
 
   final Widget child;
   final VoidCallback onClose;
   final DeviceLock? lock;
   final PayrollLockSession? session;
+
+  /// The company's switch (`features.payrollLock`); off, Payroll opens straight away.
+  final bool enabled;
 
   @override
   State<PayrollLockGate> createState() => _PayrollLockGateState();
@@ -93,7 +96,7 @@ class _PayrollLockGateState extends State<PayrollLockGate> with WidgetsBindingOb
   bool _asking = false;
 
   /// Web has no phone lock to ask for.
-  bool get _skip => kIsWeb;
+  bool get _skip => kIsWeb || !widget.enabled;
 
   @override
   void initState() {

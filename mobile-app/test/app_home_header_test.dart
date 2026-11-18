@@ -172,7 +172,18 @@ void main() {
     _expectUsualLayout(tester);
   });
 
-  testWidgets('a company with no logo of its own here shows Sowaka\'s, never Convrse\'s', (
+  testWidgets('a company with no logo of its own here shows Sowaka\'s where the switch is on', (
+    tester,
+  ) async {
+    await _pumpHeader(tester, branding: OrgBranding.of('sowakahq', sowakaLogo: true));
+    _expectUsualLayout(tester);
+    final logo = tester.widget<Image>(
+      find.descendant(of: _logo, matching: find.byType(Image)).first,
+    );
+    expect((logo.image as AssetImage).assetName, 'assets/images/sowaka_header_logo.png');
+  });
+
+  testWidgets('…and the header\'s old default where it is off', (
     tester,
   ) async {
     await _pumpHeader(tester, branding: OrgBranding.of('sowakahq'));
@@ -180,7 +191,7 @@ void main() {
     final logo = tester.widget<Image>(
       find.descendant(of: _logo, matching: find.byType(Image)).first,
     );
-    expect((logo.image as AssetImage).assetName, 'assets/images/sowaka_header_logo.png');
+    expect((logo.image as AssetImage).assetName, 'assets/images/convrse_logo.png');
   });
 
   testWidgets('a logo that fails to load leaves the slot as it was', (
@@ -200,7 +211,7 @@ void main() {
     expect(
       find.descendant(
         of: _logo,
-        matching: find.image(const AssetImage('assets/images/sowaka_header_logo.png')),
+        matching: find.image(const AssetImage('assets/images/convrse_logo.png')),
       ),
       findsOneWidget,
     );

@@ -25,6 +25,8 @@ class AuthUser {
     this.faceIdEnrolled = false,
     this.faceIdAtPunch = false,
     this.placementsEnabled = false,
+    this.payrollLockEnabled = false,
+    this.sowakaDefaultLogo = false,
   });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
@@ -68,6 +70,8 @@ class AuthUser {
       faceIdEnrolled: _faceId(json, 'enrolled'),
       faceIdAtPunch: _faceId(json, 'atPunch'),
       placementsEnabled: _feature(json, 'placements'),
+      payrollLockEnabled: _feature(json, 'payrollLock'),
+      sowakaDefaultLogo: _feature(json, 'sowakaLogo'),
     );
   }
 
@@ -130,6 +134,14 @@ class AuthUser {
   /// company, and a server that predates it, never sees the card.
   final bool placementsEnabled;
 
+  /// Payroll opens behind the phone's own lock, where the company switched it on
+  /// (`features.payrollLock`). False when missing: Payroll opens as before.
+  final bool payrollLockEnabled;
+
+  /// The header shows Sowaka's logo when the app has no logo for this company
+  /// (`features.sowakaLogo`). False when missing: the header's old default.
+  final bool sowakaDefaultLogo;
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'email': email,
@@ -157,7 +169,7 @@ class AuthUser {
       'enrolled': faceIdEnrolled,
       'atPunch': faceIdAtPunch,
     },
-    'features': {'placements': placementsEnabled},
+    'features': {'placements': placementsEnabled, 'payrollLock': payrollLockEnabled, 'sowakaLogo': sowakaDefaultLogo},
   };
 
   AuthUser copyWith({String? profilePhotoUrl, List<String>? interests}) => AuthUser(
@@ -186,6 +198,8 @@ class AuthUser {
     faceIdEnrolled: faceIdEnrolled,
     faceIdAtPunch: faceIdAtPunch,
     placementsEnabled: placementsEnabled,
+    payrollLockEnabled: payrollLockEnabled,
+    sowakaDefaultLogo: sowakaDefaultLogo,
   );
 }
 

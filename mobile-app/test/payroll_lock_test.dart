@@ -24,6 +24,16 @@ void main() {
     session = PayrollLockSession.instance..lock();
   });
 
+  testWidgets('the company switch off (features.payrollLock): Payroll opens straight away, no phone lock asked', (tester) async {
+    final lock = FakeLock([DeviceLockResult.canceled]);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: PayrollLockGate(lock: lock, session: session, enabled: false, onClose: () {}, child: const Text('SALARY'))),
+    ));
+    await tester.pumpAndSettle();
+    expect(lock.asked, 0);
+    expect(find.text('SALARY'), findsOneWidget);
+  });
+
   testWidgets('asks for the phone lock on opening and shows Payroll once unlocked', (tester) async {
     final lock = FakeLock([DeviceLockResult.unlocked]);
     await pump(tester, lock, session);

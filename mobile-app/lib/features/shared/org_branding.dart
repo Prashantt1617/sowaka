@@ -59,6 +59,14 @@ class OrgBranding {
     org: '',
     wordmark: 'sowaka',
     tagline: 'Your workplace, connected.',
+  );
+
+  /// [sowaka] with Sowaka's header logo: a company without its own brand here,
+  /// where the server's `features.sowakaLogo` is on.
+  static const sowakaWithLogo = OrgBranding(
+    org: '',
+    wordmark: 'sowaka',
+    tagline: 'Your workplace, connected.',
     homeLogoAsset: 'assets/images/sowaka_header_logo.png',
   );
 
@@ -134,8 +142,8 @@ class OrgBranding {
   };
 
   /// The branding for an org id, or Sowaka's when there is none for it.
-  static OrgBranding of(String? org) =>
-      _known[(org ?? '').trim().toLowerCase()] ?? sowaka;
+  static OrgBranding of(String? org, {bool sowakaLogo = false}) =>
+      _known[(org ?? '').trim().toLowerCase()] ?? (sowakaLogo ? sowakaWithLogo : sowaka);
 
   static const _key = 'branding.org';
 

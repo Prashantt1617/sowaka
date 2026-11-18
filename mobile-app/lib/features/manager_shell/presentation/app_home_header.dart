@@ -69,9 +69,10 @@ class AppHomeHeader extends StatelessWidget {
   }
 }
 
-/// Whose app this is: the signed-in org's logo, or Sowaka's when the org has
-/// none of its own here yet. Listens, so the
-/// face changes the moment the org is known.
+/// Whose app this is: the signed-in org's logo; for an org with none of its
+/// own here, Sowaka's where the server's `features.sowakaLogo` is on, else the
+/// Convrse logo the header has always worn. Listens, so the face changes the
+/// moment the org is known.
 ///
 /// Always 99 x 41, whatever the logo's shape: a wide wordmark or a tall crest
 /// is fitted inside, and one that fails to load gives way to the default logo
@@ -79,7 +80,7 @@ class AppHomeHeader extends StatelessWidget {
 class _AppHeaderLogo extends StatelessWidget {
   const _AppHeaderLogo();
 
-  static const _defaultLogo = 'assets/images/sowaka_header_logo.png';
+  static const _defaultLogo = 'assets/images/convrse_logo.png';
 
   static Widget _logo(String asset, {required Widget fallback}) => Image.asset(
     asset,

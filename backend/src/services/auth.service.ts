@@ -480,6 +480,10 @@ async function toAuthUser(
       lifecycle: company?.features?.lifecycle === true,
       // Payroll in the app, once HR switches it on (PUT /admin/payroll/employee-app-settings).
       payroll: payrollAppEnabledFrom(company?.payrollEmployee),
+      // Payroll behind the phone's own lock (Face ID, fingerprint or passcode): only where switched on.
+      payrollLock: company?.features?.payrollLock === true,
+      // A company the app has no logo for shows Sowaka's (else the header's old default): only where switched on.
+      sowakaLogo: company?.features?.sowakaLogo === true,
     },
   };
 }
