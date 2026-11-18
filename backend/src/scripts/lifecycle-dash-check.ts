@@ -396,6 +396,28 @@ type Handler = { handle: (req: unknown, res: unknown, next: (err?: unknown) => v
   ok('…an older late task from week 1 is still there but not the lead', !leftover || (cardC?.waitingOn[0]?.taskId !== leftover.id), { leftover: leftover?.title, lead: cardC?.waitingOn[0] });
   const firstWeek = (await board.onboardingBoard(ORG, 'hr', { tab: 'first_week' })).columns.flatMap((col) => col.cards).find((card) => card.journeyId === W.id);
   ok('Other tabs keep the late-first order', !!firstWeek && (firstWeek.waitingOn.length < 2 || !firstWeek.waitingOn.slice(1).some((w) => w.late) || !!firstWeek.waitingOn[0]?.late), firstWeek?.waitingOn);
+  // Month 1, Months 2–5 and Confirmed lead with their own step too, not "Set up laptop and login · N days late".
+  const M1 = await joinAt('Mira Monthone', 'mira', day(-10));
+  const M3 = await joinAt('Neel Monththree', 'neel', rules.addDaysKey(rules.addMonthsKey(TODAY, -2), -3));
+  const RC = await joinAt('Rhea Confirmed', 'rhea', finalTj);
+  await probation.recordDecision(RC.id, { userId: 'hr', name: 'Hema HR', seesPay: true }, { outcome: 'confirm' });
+  const probCards = (await board.onboardingBoard(ORG, 'hr', { tab: 'probation' }, new Date(), { fresh: true })).columns.flatMap((col) => col.cards.map((card) => ({ col: col.key, card })));
+  const cardOf = (id: string) => probCards.find((x) => x.card.journeyId === id);
+  const lateWeek1 = async (id: string) => (await engine.tasksOf(id)).find((t) => t.phase === 'first_week' && engine.ACTIVE_STATUSES.includes(t.status) && t.dueAt && t.dueAt < now);
+  const m1 = cardOf(M1.id);
+  eq('Month 1: the card leads with the month’s check-in, even before it opens', [m1?.col, m1?.card.waitingOn[0]?.title], ['month1', 'Month 1 check-in']);
+  const m1Tasks = await engine.tasksOf(M1.id);
+  const m1Checkin = m1Tasks.find((t) => t.systemKey === 'monthly_checkin' && t.month === 1);
+  ok('…though it has late week-1 tasks, and the check-in has not opened yet', !!(await lateWeek1(M1.id)) && m1Checkin?.status === 'locked', m1Checkin?.status);
+  eq('…the check-in is that task, with its due day, not late and not nudged yet', [m1?.card.waitingOn[0]?.taskId, m1?.card.waitingOn[0]?.dueAt, !!m1?.card.waitingOn[0]?.late, m1?.card.waitingOn[0]?.canNudge],
+    [m1Checkin?.id, m1Checkin?.dueAt?.toISOString(), false, false]);
+  ok('…and no week-1 task leads it', !m1Tasks.some((t) => t.phase !== 'probation' && t.id === m1?.card.waitingOn[0]?.taskId), m1?.card.waitingOn);
+  const m3 = cardOf(M3.id);
+  ok('Months 2–5: the card leads with that month’s check-in or pulse', m3?.col === 'months_2_5' && /^Month [2-5] (check-in|pulse survey)$/.test(m3.card.waitingOn[0]?.title ?? ''), m3);
+  const rc = cardOf(RC.id);
+  eq('Confirmed, letter not sent: the card leads with the confirmation letter', [rc?.col, rc?.card.waitingOn[0]?.title, rc?.card.waitingOn[0]?.ownerRole], ['confirmed', 'Confirmation letter', 'hr']);
+  const cc = cardOf(C.id);
+  ok('Confirmed, letter sent: no week-1 leftover leads the card', cc?.col === 'confirmed' && !(await engine.tasksOf(C.id)).some((t) => t.phase !== 'probation' && t.id === cc.card.waitingOn[0]?.taskId), cc);
 
   // Clean the scratch uploads this run wrote.
   const { rm } = await import('node:fs/promises');
