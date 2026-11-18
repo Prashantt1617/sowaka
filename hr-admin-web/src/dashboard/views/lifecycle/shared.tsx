@@ -14,13 +14,16 @@ import { useStore } from '../../store';
 import '../people.css';
 import { areaStyle, errText, FLAG, flagLabel, inputStyle, labelStyle, nudgeLabel, OWNER_LABEL, OWNER_TONE } from './format';
 
-/** Who a task waits on: Employee (Arjun), HR · you, Automatic. */
-export function OwnerChip({ role, name, you }: { role: OwnerRole; name?: string; you?: boolean }) {
+/**
+ * Who a task waits on: Employee (Arjun), HR · you, Automatic. `label` replaces the words (the
+ * boards show just "Arjun": the chip's colour already says the role); `title` its tooltip.
+ */
+export function OwnerChip({ role, name, you, label: words, title }: { role: OwnerRole; name?: string; you?: boolean; label?: string; title?: string }) {
   const t = OWNER_TONE[role] ?? OWNER_TONE.automatic;
-  const label = you && (role === 'hr' || role === 'hr_manager') ? `${OWNER_LABEL[role]} · you` : name ? `${OWNER_LABEL[role]} (${name})` : OWNER_LABEL[role];
+  const label = words ?? (you && (role === 'hr' || role === 'hr_manager') ? `${OWNER_LABEL[role]} · you` : name ? `${OWNER_LABEL[role]} (${name})` : OWNER_LABEL[role]);
   return (
     // inline-block (not flex) so a long name ends in an ellipsis; minWidth 0 lets it shrink inside a flex row.
-    <span title={label} style={{ display: 'inline-block', verticalAlign: 'middle', maxWidth: '100%', minWidth: 0, fontSize: 11.5, fontWeight: 500, lineHeight: 1.5, padding: '2px 9px', borderRadius: 999, background: t.bg, color: t.fg, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+    <span title={title ?? label} style={{ display: 'inline-block', verticalAlign: 'middle', maxWidth: '100%', minWidth: 0, fontSize: 11.5, fontWeight: 500, lineHeight: 1.5, padding: '2px 9px', borderRadius: 999, background: t.bg, color: t.fg, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
       {label}
     </span>
   );
