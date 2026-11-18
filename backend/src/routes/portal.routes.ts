@@ -17,7 +17,7 @@ import {
   acceptOffer, acceptOfferForJourney, createDateRequest, offerLinkPdf, openOfferLink, orgOfOfferToken, portalOfferForJourney, portalOfferPdfForJourney,
 } from '../services/lifecycle/offers';
 import {
-  aboutYouView, markMeetSeen, meetItems, portalDocuments, portalHome, portalPass, portalPassIcs, saveAboutYou,
+  aboutYouView, markMeetSeen, meetItems, portalDocuments, portalHome, portalPassIcs, portalPassOrLocked, saveAboutYou,
 } from '../services/lifecycle/portal';
 import { CLOSED_STATUSES, forgotPassword, journeyForPortalToken, resetPassword, signIn, verifyMediaToken } from '../services/lifecycle/portalAuth';
 import { sendLifecycleError } from './lifecycle-offer.routes';
@@ -215,7 +215,8 @@ r.post('/letters/:id/sign', requirePortal, handle(async (req, res) => ({
 })));
 r.get('/letters/:id/pdf', requirePortal, handle(async (req, res) => sendPdf(res, await letterPdfForPortal(journeyOf(res), param(req, 'id')), req.query.download === '1')));
 
-r.get('/pass', requirePortal, handle(async (_req, res) => portalPass(journeyOf(res))));
+// Before it opens: 200 { state: 'locked', opensOn } (a normal screen, not an error the browser logs).
+r.get('/pass', requirePortal, handle(async (_req, res) => portalPassOrLocked(journeyOf(res))));
 r.get('/pass.ics', requirePortal, handle(async (_req, res) => {
   const ics = await portalPassIcs(journeyOf(res));
   res.setHeader('Content-Type', 'text/calendar; charset=utf-8');

@@ -8,6 +8,7 @@ if (!globalThis.crypto) {
 
 import { Collection, Db, MongoClient } from 'mongodb';
 import { env } from './env';
+import { tracked } from './writeTrack';
 import { AuthSessionDocument, OtpChallenge } from '../models/auth.model';
 import { User } from '../models/user.model';
 import { Office } from '../models/office.model';
@@ -89,6 +90,8 @@ export async function connectDb(): Promise<Db> {
   // one waits at most mongoWaitQueueMs and fails, rather than queueing until
   // the proxy gives up and every later request queues behind it.
   client = new MongoClient(env.mongoUri, {
+    // Checks count the bytes each command brings back (lifecycle:consistency); never on the server.
+    ...(process.env.MONGODB_MONITOR_COMMANDS === '1' ? { monitorCommands: true } : {}),
     compressors: ['zlib'],
     maxConnecting: 10,
     maxPoolSize: env.mongoMaxPool,
@@ -99,6 +102,11 @@ export async function connectDb(): Promise<Db> {
   db = client.db(env.mongoDbName);
   await ensureIndexes(db);
   return db;
+}
+
+/** The client (for checks that listen to its command events; see MONGODB_MONITOR_COMMANDS). */
+export function dbClient(): MongoClient | null {
+  return client;
 }
 
 export function getDb(): Db {
@@ -142,7 +150,8 @@ export function authSessions(): Collection<AuthSessionDocument> {
 }
 
 export function users(): Collection<User> {
-  return getDb().collection<User>('users');
+  // Noted inside a write request, so the kept onboarding board can patch its names (writeTrack.ts).
+  return tracked('users', getDb().collection<User>('users'));
 }
 
 export function leaves(): Collection<Leave> {
@@ -362,9 +371,11 @@ export function exitSettlements(): Collection<ExitSettlement> {
 
 // ─── Employee lifecycle (models/lifecycle.model.ts, docs/lifecycle/CONTRACT.md) ───
 export function lifecycleTemplates(): Collection<LifecycleTemplate> { return getDb().collection<LifecycleTemplate>('lifecycle_templates'); }
-export function journeys(): Collection<Journey> { return getDb().collection<Journey>('lifecycle_journeys'); }
-export function journeyTasks(): Collection<JourneyTask> { return getDb().collection<JourneyTask>('lifecycle_journey_tasks'); }
-export function offers(): Collection<Offer> { return getDb().collection<Offer>('lifecycle_offers'); }
+// The onboarding board is built from these: a write request notes what it wrote (writeTrack.ts), so the
+// kept board is patched for those journeys rather than read again whole.
+export function journeys(): Collection<Journey> { return tracked('journeys', getDb().collection<Journey>('lifecycle_journeys')); }
+export function journeyTasks(): Collection<JourneyTask> { return tracked('tasks', getDb().collection<JourneyTask>('lifecycle_journey_tasks')); }
+export function offers(): Collection<Offer> { return tracked('offers', getDb().collection<Offer>('lifecycle_offers')); }
 export function candidateAccounts(): Collection<CandidateAccount> { return getDb().collection<CandidateAccount>('lifecycle_candidate_accounts'); }
 export function candidateDocuments(): Collection<CandidateDocument> { return getDb().collection<CandidateDocument>('lifecycle_candidate_documents'); }
 export function lifecycleFiles(): Collection<LifecycleFile> { return getDb().collection<LifecycleFile>('lifecycle_files'); }

@@ -13,6 +13,8 @@ import { closeExitCase, getExitDetail, saveExitInterview, setExitClearance, sett
 import type { ExitDetailDTO, ExitDTO, ExitInterview, ExitInterviewReason, SettlementDTO, SettlementLine } from '../../services/hrms';
 import { downloadSettlementPdf } from '../settlementDoc';
 import { longDay } from './ExitDialog';
+import { useAuth } from '../auth/AuthContext';
+import { canOpen, SALARY_DETAILS } from '../access';
 import './people.css';
 
 const STAGE = {
@@ -151,7 +153,7 @@ export function ExitDetail({ userId, onBack, embedded }: { userId: string; onBac
             <h3>Final settlement</h3>
             {settlement && <Pill label={STATUS[settlement.status].label} tone={STATUS[settlement.status].tone} />}
           </span>
-          {settlement && (
+          {settlement && !settlement.notSetUp && (
             <button type="button" id="settle-download" onClick={() => void downloadSettlementPdf(exit, settlement, data.company).catch((e) => s.flash(e instanceof Error ? e.message : 'Could not make the PDF', 'error'))} className="pd-btn sm">
               <IconDownload stroke="currentColor" /> Statement and letter
             </button>
@@ -192,6 +194,31 @@ export type Run = (what: string, work: () => Promise<ExitDetailDTO>, done?: stri
  * under the lines (the lifecycle page's Add a line). People › Exits passes neither.
  */
 export function Statement({ exit, settlement, busy, run, userId, sourceOf, extra }: { exit: ExitDTO; settlement: SettlementDTO; busy: string; run: Run; userId: string; sourceOf?: (line: SettlementLine) => string; extra?: ReactNode }) {
+  // No salary structure: nothing is worked out (no ₹0 lines, no total) and nothing can be approved.
+  if (settlement.notSetUp) return <SettlementNotSetUp userId={userId} name={exit.name} message={settlement.notSetUp} />;
+  return <StatementLines exit={exit} settlement={settlement} busy={busy} run={run} userId={userId} sourceOf={sourceOf} extra={extra} />;
+}
+
+/**
+ * The settlement when payroll has nothing to work it out from (the server's `notSetUp`): what is
+ * missing and where to set it up. The figures come from Payroll only, so nothing is filled in here.
+ */
+export function SettlementNotSetUp({ userId, name, message }: { userId: string; name: string; message: string }) {
+  const s = useStore();
+  const { user } = useAuth();
+  const canSetUp = canOpen(user, SALARY_DETAILS);
+  return (
+    <div id="settle-not-set-up" role="status" style={{ ...noteBox, alignItems: 'center', flexWrap: 'wrap' }}>
+      <span style={{ flex: 1, minWidth: 240 }}>
+        <b style={{ display: 'block', color: 'var(--ink)', fontWeight: 600, marginBottom: 2 }}>Not set up</b>
+        {message} {canSetUp ? `It is on ${firstName(name)}’s profile, under Salary.` : 'Someone with Payroll access sets it up on their profile, under Salary.'} The settlement is worked out again once it is there.
+      </span>
+      {canSetUp && <button type="button" id="settle-set-up" className="pd-btn primary" onClick={() => s.openProfile(userId, 'salary')}>Set up salary details</button>}
+    </div>
+  );
+}
+
+function StatementLines({ exit, settlement, busy, run, userId, sourceOf, extra }: { exit: ExitDTO; settlement: SettlementDTO; busy: string; run: Run; userId: string; sourceOf?: (line: SettlementLine) => string; extra?: ReactNode }) {
   const COLS = sourceOf ? COLS_FROM : COLS_PLAIN;
   const [editing, setEditing] = useState('');
   const [reason, setReason] = useState('');

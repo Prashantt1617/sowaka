@@ -39,6 +39,8 @@ process.env.ZOHO_SMTP_PASS = '';
 process.env.PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET || 'consistency-secret';
 process.env.PORTAL_BASE_URL = 'http://localhost:5181';
 process.env.NODE_ENV = 'test';
+// Section 5 counts the bytes each command brings back (config/db.ts).
+process.env.MONGODB_MONITOR_COMMANDS = '1';
 
 // ─── The fake clock ─────────────────────────────────────────────────────────
 const RealDate = Date;
@@ -469,9 +471,16 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
       const docTask = hr.find((t) => t.systemKey === 'upload_documents');
       const docStep = v.portal.me.path.find((s: Json) => s.key === 'docs');
       if (docTask && !opts.joined) eq(`${step}: the portal’s documents due day is the task’s`, [docStep?.due ?? null, ...new Set(v.portal.documents.map((d: Json) => d.dueAt))], [day(docTask.dueAt), day(docTask.dueAt)]);
-      const passOpen = v.portal.pass.status === 200;
+      // GET /portal/pass answers 200 either way: `state: 'open'` with the pass, or `state: 'locked'` with the day it opens.
+      ok(`${step}: the Day-1 pass answers 200 (open or not yet), never an error the browser logs`, v.portal.pass.status === 200 && ['open', 'locked'].includes(v.portal.pass.body?.state), v.portal.pass);
+      const passOpen = v.portal.pass.status === 200 && v.portal.pass.body?.state === 'open';
       const passStep = v.portal.me.path.find((s: Json) => s.key === 'pass');
       if (passStep) ok(`${step}: the Day-1 pass opens exactly when the path says (${passStep.state})`, passOpen === (passStep.state !== 'locked'), { pass: v.portal.pass.status, step: passStep });
+      if (v.portal.pass.body?.state === 'locked' && v.portal.pass.body.opensOn) {
+        const passTask = (v.portal.me.tasks as Json[]).find((t) => t.systemKey === 'day1_pass');
+        eq(`${step}: a locked pass names the day it opens (Tj − 7)`, v.portal.pass.body.opensOn, addDays(v.portal.me.tj, -7));
+        if (passTask?.opensAt) eq(`${step}: the day it opens is the pass task's opening day`, v.portal.pass.body.opensOn, day(passTask.opensAt));
+      }
     }
     // The Onboarding-only coordinator: the same documents, status only (allowed: no files)
     agree(`${step}: documents for the Onboarding-only role (status only)`, {
@@ -639,8 +648,8 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
   heading('1 · Tj − 7: the Day-1 pass');
   v = await onboardingViews(A, { portal: true });
   compareOnboarding('Tj − 7', v);
-  ok('the pass opens', v.portal!.pass.status === 200, v.portal!.pass);
-  if (v.portal!.pass.status === 200) agree('the pass names the manager and buddy the panel names', { pass: [v.portal!.pass.body.managerName, v.portal!.pass.body.buddyName, v.portal!.pass.body.date], panel: [v.panel.journey.managerName, v.panel.journey.buddyName, v.panel.journey.tj] });
+  ok('the pass opens', v.portal!.pass.status === 200 && v.portal!.pass.body.state === 'open', v.portal!.pass);
+  if (v.portal!.pass.body?.state === 'open') agree('the pass names the manager and buddy the panel names', { pass: [v.portal!.pass.body.managerName, v.portal!.pass.body.buddyName, v.portal!.pass.body.date], panel: [v.panel.journey.managerName, v.panel.journey.buddyName, v.panel.journey.tj] });
 
   // ── Step 10: letters signed
   await advanceTo(T('2027-03-16', '11:00'));
@@ -1258,6 +1267,182 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
     const jobsBefore = await boardSvc.boardData(ORG);
     await jobs.runLifecycleJobs(new Date(), { full: true });
     ok('a full run of the lifecycle jobs drops the kept board data', (await boardSvc.boardData(ORG)) !== jobsBefore);
+  }
+
+  // ═════════════════════════════════════════════════════════════ 5 · SUITE FIXES (18 Nov)
+  {
+    const boardSvc = await import('../services/lifecycle/board');
+    const swr = await import('../services/swr-cache');
+    const writeTrack = await import('../config/writeTrack');
+    const today = istKey(new Date());
+    const TABS3 = ['pre_boarding', 'first_week', 'probation'] as const;
+    const cardsIn = (b: Json) => ((b?.columns ?? []) as Json[]).flatMap((c) => c.cards as Json[]);
+    /** Kept (patched) = a whole read: every tab, the counts and the joiner picker, at one instant. */
+    async function keptIsWhole(label: string) {
+      const at = new Date();
+      const kept: Json[] = []; const whole: Json[] = [];
+      for (const tab of TABS3) {
+        kept.push(await boardSvc.onboardingBoard(ORG, 'hr', { tab }, at));
+        whole.push(await boardSvc.onboardingBoard(ORG, 'hr', { tab }, at, { fresh: true }));
+      }
+      kept.push(await boardSvc.onboardingCounts(ORG, at), await boardSvc.boardJoiners(ORG, at));
+      whole.push(await boardSvc.onboardingCounts(ORG, at, { fresh: true }), await boardSvc.boardJoiners(ORG, at, { fresh: true }));
+      eq(`${label}: the kept board, counts and joiner list are exactly what a whole read gives`, JSON.stringify(kept), JSON.stringify(whole));
+    }
+
+    current = 'across';
+    heading('5 · claudeA-slow-board / claude-B-board-10s / claudeA-documents-page-slow: a write patches the kept board data, it is not read again whole');
+    await get('hr', '/admin/lifecycle/board?tab=pre_boarding');
+    const kept0 = await boardSvc.boardData(ORG);
+    const other = kept0.all.find((j) => (kept0.tasksBy.get(j.id)?.length ?? 0) > 0)!;
+    ok('there is a journey on the board to watch (one the writes below do not touch)', !!other);
+    // Bytes the database sends back, per command (the link to production moves ~100 KB/s).
+    const { BSON } = await import('mongodb');
+    const started = new Map<number, string>();
+    let traffic: { bytes: number; rows: string[] } | null = null;
+    db.dbClient()!.on('commandStarted', (e) => { started.set(e.requestId, `${e.commandName} ${String((e.command as Json)[e.commandName] ?? '')}`); });
+    db.dbClient()!.on('commandSucceeded', (e) => {
+      const what = started.get(e.requestId) ?? e.commandName; started.delete(e.requestId);
+      if (!traffic) return;
+      const n = BSON.calculateObjectSize(e.reply as Json);
+      traffic.bytes += n; traffic.rows.push(`${what} ${n}`);
+    });
+    const measure = async <T>(fn: () => Promise<T>) => {
+      traffic = { bytes: 0, rows: [] };
+      const t0 = RealDate.now();
+      const value = await fn();
+      const out = { value, bytes: traffic.bytes, rows: traffic.rows, ms: RealDate.now() - t0 };
+      traffic = null;
+      return out;
+    };
+    const whole = await measure(() => boardSvc.boardData(ORG, new Date(), { fresh: true }));
+
+    // A new offer draft through the API (as the dashboard saves it), then the board, counts and joiners.
+    const draft = await measure(() => send('hr', 'POST', '/admin/lifecycle/offers', {
+      candidate: { name: 'Pia Patch', personalEmail: 'pia.patch@example.com' },
+      fields: { designation: 'Designer', department: 'Design', location: 'Bengaluru', ctc: 1_000_000, tj: addDays(today, 40), managerUserId: 'mgr', probationMonths: 3, noticeDays: 30, validTill: addDays(today, 12), employeeType: 'full_time' },
+    }));
+    const P = draft.value.journeyId as string;
+    // Each of these is ~17 KB (a journey with its template snapshot) and ~20 KB (its tasks) here, more in a real company.
+    const bigReads = (rows: string[], coll: string) => rows.filter((r) => r.startsWith(`find ${coll} `) && Number(r.split(' ').at(-1)) > 5_000).length;
+    const heaviest = (rows: string[]) => [...rows].sort((a, b) => Number(b.split(' ').at(-1)) - Number(a.split(' ').at(-1))).slice(0, 6).join(' · ');
+    say(`  ·    saving an offer draft: ${draft.bytes} bytes back from the database in ${draft.rows.length} commands, ${draft.ms} ms (heaviest: ${heaviest(draft.rows)})`);
+    eq('saving an offer draft reads the new journey and its tasks at most once each (lean writes)', [bigReads(draft.rows, 'lifecycle_journeys') <= 1, bigReads(draft.rows, 'lifecycle_journey_tasks') <= 1], [true, true]);
+    const firstRead = await measure(() => get('hr', '/admin/lifecycle/board?tab=pre_boarding'));
+    say(`  ·    the first board read after it: ${firstRead.bytes} bytes (a whole read of the board data: ${whole.bytes} bytes)`);
+    ok('the first board read after a write reads only the written journey (under half of a whole read)', firstRead.bytes < whole.bytes / 2, { first: firstRead.bytes, whole: whole.bytes, rows: firstRead.rows.slice(0, 12) });
+    const kept1 = await boardSvc.boardData(ORG);
+    eq('the new draft is on the kept board; a journey nobody wrote keeps its kept tasks (not read again)', [kept1.all.some((j) => j.id === P), kept1.tasksBy.get(other.id) === kept0.tasksBy.get(other.id)], [true, true]);
+    ok('the writer sees it at once: the draft is on the board the very next read', cardsIn(firstRead.value).some((c) => c.journeyId === P));
+    eq('the Documents picker has it at once too', (await get('hr', '/admin/lifecycle/joiners')).joiners.some((j: Json) => j.journeyId === P), true);
+    await keptIsWhole('after an offer draft');
+
+    // Saving the draft again (the offer form's Save): a revise by journey id.
+    const revised = await measure(() => send('hr', 'PUT', `/admin/lifecycle/offers/${P}`, { fields: { designation: 'Senior Designer', department: 'Design', location: 'Bengaluru', ctc: 1_100_000, tj: addDays(today, 41), managerUserId: 'mgr', probationMonths: 3, noticeDays: 30, validTill: addDays(today, 12), employeeType: 'full_time' } }));
+    say(`  ·    saving the draft again (new date): ${revised.bytes} bytes back in ${revised.rows.length} commands, ${revised.ms} ms (heaviest: ${heaviest(revised.rows)})`);
+    eq('saving the draft again reads the journey and its tasks at most once each', [bigReads(revised.rows, 'lifecycle_journeys') <= 1, bigReads(revised.rows, 'lifecycle_journey_tasks') <= 1], [true, true]);
+    const revCard = cardsIn(await get('hr', '/admin/lifecycle/board?tab=pre_boarding')).find((c) => c.journeyId === P);
+    eq('the revised draft on the board: its new role and day', [revCard?.designation, revCard?.tj], ['Senior Designer', addDays(today, 41)]);
+    await keptIsWhole('after a revised draft');
+
+    // A task done by its own id (the panel's tick), traced to its journey.
+    const panelP = await get('hr', `/admin/lifecycle/journeys/${P}`);
+    const hrTask = (panelP.tasks as Json[]).find((t) => ACTIVE.includes(t.status) && t.ownerRole === 'hr' && t.systemKey !== 'send_offer');
+    if (hrTask) {
+      await send('hr', 'POST', `/admin/lifecycle/journeys/${P}/tasks/${hrTask.id}`, { action: 'done', note: 'Patch check' });
+      await keptIsWhole('after a task ticked on the panel');
+    }
+    // A write to people (a manager's name): the names are read again.
+    await users().updateOne({ userId: 'hr' }, { $set: { canEditEmployeeDetails: true } });
+    await send('hr', 'PATCH', '/admin/employees/mgr', { name: 'Neha Rao-Patch' });
+    eq('a renamed manager shows on the kept board at the next read', cardsIn(await get('hr', '/admin/lifecycle/board?tab=pre_boarding')).find((c) => c.journeyId === P)?.managerName, 'Neha Rao-Patch');
+    await keptIsWhole('after a name change');
+    await send('hr', 'PATCH', '/admin/employees/mgr', { name: 'Neha Rao' });
+    // A write that touches none of the board's records leaves the kept data alone.
+    const kept2 = await boardSvc.boardData(ORG);
+    await send('hr', 'PUT', '/admin/exit-settings', { noticeDays: 50 });
+    ok('a write to nothing the board is built from (Exit settings) keeps the kept board data as it is', (await boardSvc.boardData(ORG)) === kept2);
+    // A write that names no journey cannot be patched: the kept data is dropped, as before.
+    await new Promise<void>((resolve) => {
+      const res = { locals: {}, end: () => { resolve(); return res; } };
+      const req = { method: 'POST', path: '/admin/lifecycle/anything', auth: { user: { org: ORG } } };
+      readCache.forgetReadsOnWrite(req as never, res as never, () => {
+        void journeys().updateMany({ org: ORG, kind: 'no-such-kind' as never }, { $set: { updatedAt: new Date() } }).then(() => (res as { end: () => unknown }).end());
+      });
+    });
+    eq('a write whose filter names no journey drops the kept board data (never patched on a guess)', swr.peekSwr(ORG, 'lc-board-data', null), undefined);
+    await keptIsWhole('after a drop');
+    // A write still running after the answer went out (left unawaited) patches again when it lands.
+    await get('hr', '/admin/lifecycle/board?tab=pre_boarding');
+    await new Promise<void>((resolve) => {
+      const res = { locals: {}, end: () => res };
+      const req = { method: 'POST', path: '/admin/lifecycle/anything', auth: { user: { org: ORG } } };
+      readCache.forgetReadsOnWrite(req as never, res as never, () => {
+        (res as { end: () => unknown }).end();
+        void journeys().updateOne({ id: P }, { $set: { designation: 'Late Designer' } }).then(() => setTimeout(resolve, 20));
+      });
+    });
+    eq('a write that lands after the answer still reaches the kept board', cardsIn(await get('hr', '/admin/lifecycle/board?tab=pre_boarding')).find((c) => c.journeyId === P)?.designation, 'Late Designer');
+    const { types } = await import('node:util');
+    ok('outside a write request the collections are not wrapped (no cost on reads, scripts and jobs)', !types.isProxy(journeys()) && !types.isProxy(users()));
+    ok('inside one they are (what it writes is noted)', writeTrack.trackWrites(writeTrack.noWrites(), () => types.isProxy(journeys()) && types.isProxy(journeyTasks()) && types.isProxy(users())));
+
+    // ═══ X1-1 · C-portal-disabled-meet: a template without Meet us has no Team step on the portal
+    current = 'template';
+    heading('5 · C-portal-disabled-meet: the portal path follows the template (Meet us off: no Team step)');
+    const standard = (await get('hr', '/admin/lifecycle/templates?kind=onboarding')).templates.find((t: Json) => t.isDefault);
+    let noMeetTpl = (await send('hr', 'POST', '/admin/lifecycle/templates', { kind: 'onboarding', name: 'No Meet us', copyFromId: standard.id })).template;
+    noMeetTpl = (await send('hr', 'PUT', `/admin/lifecycle/templates/${noMeetTpl.id}`, { tasks: (noMeetTpl.tasks as Json[]).map((t) => (t.systemKey === 'meet_us' ? { ...t, enabled: false } : t)) })).template;
+    eq('saved: Meet us is off in the template', (noMeetTpl.tasks as Json[]).find((t) => t.systemKey === 'meet_us')?.enabled, false);
+    const MIRA = 'mira.nomeet@example.com';
+    const nm = await send('hr', 'POST', '/admin/lifecycle/offers', { candidate: { name: 'Mira Nomeet', personalEmail: MIRA }, fields: { designation: 'Designer', department: 'Design', location: 'Bengaluru', ctc: 900_000, tj: addDays(today, 30), managerUserId: 'mgr', probationMonths: 3, noticeDays: 30, validTill: addDays(today, 10), employeeType: 'full_time' }, templateId: noMeetTpl.id });
+    await send('hr', 'POST', `/admin/lifecycle/offers/${nm.journeyId}/pdf`, undefined, pdfForm('Offer - Mira.pdf'));
+    await send('hr', 'POST', `/admin/lifecycle/offers/${nm.journeyId}/send`, { subject: 'Your offer', body: 'Hello Mira' });
+    await send(null, 'POST', `/portal/offer/${tokenIn(lastMailTo(MIRA)!.html)}/accept`);
+    await send('hr', 'POST', `/admin/lifecycle/offers/${nm.journeyId}/finalise`);
+    const savedPortal = { token: portalToken, creds: portalCreds };
+    portalCreds = { email: MIRA, password: passwordIn(lastMailTo(MIRA)!.html) };
+    portalToken = (await send(null, 'POST', '/portal/auth/sign-in', portalCreds)).token;
+    const miraHome = await get('portal', '/portal/me');
+    const miraTasks = (await get('hr', `/admin/lifecycle/journeys/${nm.journeyId}`)).tasks as Json[];
+    eq('the journey has no Meet us task', miraTasks.some((t) => t.systemKey === 'meet_us'), false);
+    eq('the portal path leaves the Team step out (offer, docs, about, [letter,] pass)', (miraHome.path as Json[]).map((s) => s.key), ['offer', 'docs', 'about', ...(noMeetTpl.settings.signLettersOnDay1 ? [] : ['letter']), 'pass']);
+    ok('Up next is never the Team step', miraHome.upNext?.key !== 'meet', miraHome.upNext);
+
+    // ═══ L7-3 · claudeA-pass-403: a pass not open yet is a normal answer
+    heading('5 · claudeA-pass-403: GET /portal/pass before it opens answers 200 with when it opens');
+    const locked = await call('portal', 'GET', '/portal/pass');
+    eq('before Tj − 7: 200 { state: locked, opensOn: Tj − 7 }', [locked.status, locked.body.state, locked.body.opensOn], [200, 'locked', addDays(miraHome.tj, -7)]);
+    ok('the locked answer carries none of the pass (no place, agenda or names)', !('agenda' in locked.body) && !('managerName' in locked.body) && !('date' in locked.body), locked.body);
+    ok('the .ics stays refused until the pass opens', (await call('portal', 'GET', '/portal/pass.ics')).status === 403);
+    portalToken = savedPortal.token; portalCreds = savedPortal.creds;
+
+    // ═══ EO-10 · C-successor-open-resignation: a leaving manager's team move takes their reports' open resignations
+    current = 'across';
+    heading('5 · C-successor-open-resignation: the team move takes the reports’ open resignations to the new manager');
+    await users().insertMany([
+      person('zlead', 'Zoya Lead', { role: 'manager', employeeId: 'ELC-ZL', department: 'Design', designation: 'Lead' }),
+      person('zrep', 'Zane Report', { employeeId: 'ELC-ZR', department: 'Design', designation: 'Designer', managerUserId: 'zlead' }),
+      person('zrep2', 'Zia Report', { employeeId: 'ELC-ZR2', department: 'Design', designation: 'Designer', managerUserId: 'zlead' }),
+    ] as never[]);
+    for (const id of ['zlead', 'zrep', 'zrep2']) await session(id);
+    await send('zrep', 'POST', '/lifecycle/resignation', { reason: 'Growth' });
+    await send('zrep2', 'POST', '/lifecycle/resignation', { reason: 'Relocation' });
+    // zrep2's goes on to HR (the manager accepted), still open.
+    const cardsOf = async (who: string) => ((await get(who, '/lifecycle/manager/resignations')).resignations as Json[]).map((r) => r.userId).filter((u) => u === 'zrep' || u === 'zrep2').sort();
+    const zrep2Res = ((await get('zlead', '/lifecycle/manager/resignations')).resignations as Json[]).find((r) => r.userId === 'zrep2');
+    await send('zlead', 'POST', `/lifecycle/manager/resignations/${zrep2Res.id}`, { action: 'accept' });
+    eq('before: both cards are the leaving manager’s, none the new manager’s', [await cardsOf('zlead'), await cardsOf('mgr')], [['zrep', 'zrep2'], []]);
+    await send('zlead', 'POST', '/lifecycle/resignation', { reason: 'Personal' });
+    const leadRes = await db.resignations().findOne({ org: ORG, userId: 'zlead', status: { $in: ['with_manager', 'with_hr'] } });
+    await send('hr', 'POST', `/admin/lifecycle/resignations/${leadRes!.id}/accept`, { lastWorkingDay: addDays(today, 30), newManagerUserId: 'mgr', moveTeamNow: true });
+    const rows = await db.resignations().find({ org: ORG, userId: { $in: ['zrep', 'zrep2'] } }).toArray();
+    eq('both open resignations now name the new manager (with the manager, and with HR)', rows.map((r) => [r.userId, r.status, r.managerUserId]).sort(), [['zrep', 'with_manager', 'mgr'], ['zrep2', rows.find((r) => r.userId === 'zrep2')!.status, 'mgr']].sort());
+    eq('Team › Requests: the cards are the new manager’s, no longer the leaver’s', [await cardsOf('mgr'), await cardsOf('zlead')], [['zrep', 'zrep2'], []]);
+    eq('the reports themselves report to the new manager', (await users().find({ userId: { $in: ['zrep', 'zrep2'] } }).toArray()).map((u) => u.managerUserId), ['mgr', 'mgr']);
+    const zrepView = await get('zrep', '/lifecycle/resignation');
+    eq('the report’s own resignation names the new manager', zrepView.resignation?.managerName, 'Neha Rao');
+    ok('the new manager is told a resignation waits for them', (await notifications().find({ userId: 'mgr', 'data.destination': 'lifecycle_resignation_request' }).toArray()).some((n: Json) => /waiting for you/.test(String(n.title))));
   }
 
   // ═════════════════════════════════════════════════════════════ the end

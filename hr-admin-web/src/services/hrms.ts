@@ -503,6 +503,8 @@ export type SettlementTax = { engine: boolean; regime?: 'new' | 'old'; fy: strin
 export type SettlementDTO = {
   status: SettlementStatus; lines: SettlementLine[]; earningsPaise: number; deductionsPaise: number; payablePaise: number; tax: SettlementTax | null;
   clearanceOverrideReason: string | null; approvedAt: string | null; approvedByName: string | null; paidAt: string | null; paidByName: string | null; updatedAt: string;
+  /** Why there are no figures yet (no salary structure): the payroll rules come from Payroll only, so nothing is worked out and nothing can be approved. */
+  notSetUp?: string | null;
 };
 export type ExitDetailDTO = { exit: ExitDTO; settlement: SettlementDTO | null; company: { name: string; address: string; org?: string } };
 export type ExitInput = { kind: ExitKind; lastWorkingDay: string; noticeFrom?: string; noticeDays?: number | null; note?: string; newManagerUserId?: string; moveTeamNow?: boolean; endAccessNow?: boolean; rules?: Partial<ExitRules> };

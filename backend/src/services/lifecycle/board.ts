@@ -5,7 +5,8 @@
  * a task, a bank/PF change).
  */
 import { randomUUID } from 'node:crypto';
-import { cachedLifecycle, refreshLifecycle } from './readCache';
+import { cachedLifecycle, refreshLifecycle, setBoardPatch, type BoardWrites } from './readCache';
+import { orgsKeeping, patchSwr } from '../swr-cache';
 import { dateChangeRequests, journeys, journeyTasks, offers, surveyResponses, users } from '../../config/db';
 import type {
   Day1Pass, Journey, JourneyFlag, JourneyTask, OnboardingBoardColumn, OnboardingBoardTab, OwnerRole, SurveyKind,
@@ -156,11 +157,12 @@ const BOARD_JOURNEY_PROJECTION = {
   anchors: 1, designation: 1, department: 1, location: 1, plant: 1, probation: 1, lastActivityAt: 1, createdAt: 1, createdByUserId: 1, updatedAt: 1,
   closedAt: 1, 'templateSnapshot.settings': 1, 'templateSnapshot.name': 1,
 } as const;
-async function boardJourneys(org: string, now: Date, full = false): Promise<Journey[]> {
+async function boardJourneys(org: string, now: Date, full = false, only?: string[]): Promise<Journey[]> {
   const since = new Date(now.getTime() - CONFIRMED_DAYS * 86_400_000);
   const rows = await journeys().find({
     org, kind: 'onboarding', closedAt: { $exists: false },
     $or: [{ status: { $ne: 'confirmed' } }, { 'probation.decision.decidedAt': { $gte: since } }],
+    ...(only ? { id: { $in: only } } : {}),
   }, { projection: full ? { _id: 0 } : BOARD_JOURNEY_PROJECTION }).toArray();
   return rows as Journey[];
 }
@@ -248,7 +250,7 @@ const urgency = (card: BoardCard) => {
 };
 
 /** What the board, its counts and the joiner picker are built from, read in one go. */
-interface BoardData {
+export interface BoardData {
   all: Journey[];
   tasksBy: Map<string, JourneyTask[]>;
   tills: Map<string, string>;
@@ -280,6 +282,63 @@ export function boardData(org: string, now = new Date(), opts: { fresh?: boolean
 export function refreshBoardData(org: string, now = new Date()): Promise<BoardData> {
   return refreshLifecycle(org, 'lc-board-data', null, () => loadBoardData(org, now));
 }
+
+/**
+ * The kept board data after a write, for the journeys it touched only: their journey (if it is still
+ * on the board), tasks and offer valid-till are read again (a few KB, not every journey's tasks); the
+ * rest carries over. Tasks and offers written by their own id are traced to their journey first. A
+ * write to people (a name, a photo, a manager) reads the board's names again (small). The result is
+ * what a whole read would give for those journeys (the consistency check compares the two).
+ */
+export async function patchBoardData(org: string, kept: BoardData, writes: BoardWrites, now = new Date()): Promise<BoardData> {
+  const ids = new Set(writes.journeyIds);
+  const [byTask, byOffer] = await Promise.all([
+    writes.taskIds.size ? journeyTasks().find({ id: { $in: [...writes.taskIds] } }, { projection: { _id: 0, journeyId: 1 } }).toArray() : [],
+    writes.offerIds.size ? offers().find({ id: { $in: [...writes.offerIds] } }, { projection: { _id: 0, journeyId: 1 } }).toArray() : [],
+  ]);
+  for (const row of [...byTask, ...byOffer]) if (row.journeyId) ids.add(row.journeyId);
+  // A task or offer whose journey can no longer be found (deleted with it): only a whole read is sure.
+  if (byTask.length < writes.taskIds.size || byOffer.length < writes.offerIds.size) return loadBoardData(org, now);
+  let { all, tasksBy, tills } = kept;
+  if (ids.size) {
+    const list = [...ids];
+    const rows = await boardJourneys(org, now, false, list);
+    const rowIds = rows.map((j) => j.id);
+    const [freshTasks, freshTills] = rowIds.length ? await Promise.all([groupTasks(rowIds, true), validTills(rowIds)]) : [new Map<string, JourneyTask[]>(), new Map<string, string>()];
+    // Same order as a whole read: a journey keeps its place, a new one goes last.
+    const byId = new Map(rows.map((j) => [j.id, j]));
+    all = kept.all.flatMap((j) => (ids.has(j.id) ? (byId.has(j.id) ? [byId.get(j.id)!] : []) : [j]));
+    const had = new Set(kept.all.map((j) => j.id));
+    for (const j of rows) if (!had.has(j.id)) all.push(j);
+    tasksBy = new Map(kept.tasksBy);
+    tills = new Map(kept.tills);
+    for (const id of list) { tasksBy.delete(id); tills.delete(id); }
+    for (const id of rowIds) {
+      const tasks = freshTasks.get(id);
+      if (tasks) tasksBy.set(id, tasks);
+      const till = freshTills.get(id);
+      if (till) tills.set(id, till);
+    }
+  }
+  // Names and photos: all again after a write to people, else only the ones the patched journeys bring in.
+  const wantFolks = [...new Set(all.flatMap((j) => [j.userId, j.managerUserId]).filter((x): x is string => !!x))];
+  const wantNames = [...new Set([...all.flatMap((j) => [j.managerUserId, j.buddyUserId, j.userId]), ...[...tasksBy.values()].flat().map((t) => t.ownerUserId)].filter((x): x is string => !!x))];
+  const missingFolks = writes.people ? wantFolks : wantFolks.filter((id) => !kept.folks.has(id));
+  const missingNames = writes.people ? wantNames : wantNames.filter((id) => !kept.names.has(id));
+  const [moreFolks, moreNames] = await Promise.all([people(missingFolks), missingNames.length ? namesOf(missingNames) : Promise.resolve(new Map<string, string>())]);
+  const folks: BoardData['folks'] = new Map();
+  const names: BoardData['names'] = new Map();
+  for (const id of wantFolks) { const who = moreFolks.get(id) ?? (writes.people ? undefined : kept.folks.get(id)); if (who) folks.set(id, who); }
+  for (const id of wantNames) { const name = moreNames.get(id) ?? (writes.people ? undefined : kept.names.get(id)); if (name !== undefined) names.set(id, name); }
+  return { all, tasksBy, tills, folks, names };
+}
+
+// A write through the API patches the kept board data (readCache.forgetReadsOnWrite) instead of dropping it.
+setBoardPatch((org, writes) => {
+  for (const o of org ? [org] : orgsKeeping('lc-board-data')) {
+    patchSwr<BoardData>(o, 'lc-board-data', null, (kept) => patchBoardData(o, kept, writes));
+  }
+});
 
 export async function onboardingBoard(org: string, viewerUserId: string, query: Record<string, unknown>, now = new Date(), opts: { fresh?: boolean; full?: boolean } = {}) {
   const tab = (TABS.includes(query.tab as OnboardingBoardTab) ? query.tab : 'pre_boarding') as OnboardingBoardTab;
@@ -324,8 +383,8 @@ export interface JoinerPick { journeyId: string; name: string; designation?: str
  * Everyone on the onboarding board, light: the Documents page's joiner picker. Built from the same
  * kept data as the board (so it is fast and agrees with it), with no cards, tasks or photos.
  */
-export async function boardJoiners(org: string, now = new Date()): Promise<{ joiners: JoinerPick[] }> {
-  const { all, tasksBy, tills, folks } = await boardData(org, now);
+export async function boardJoiners(org: string, now = new Date(), opts: { fresh?: boolean } = {}): Promise<{ joiners: JoinerPick[] }> {
+  const { all, tasksBy, tills, folks } = await boardData(org, now, opts);
   const joiners = all.map((j) => {
     const derived = deriveJourney(j, tasksBy.get(j.id) ?? [], now, { offerValidTill: tills.get(j.id) });
     const who = j.userId ? folks.get(j.userId) : undefined;

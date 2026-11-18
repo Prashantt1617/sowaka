@@ -90,7 +90,7 @@ export function SettlementSend({ userId, onBack }: { userId: string; onBack: () 
   };
 
   const footer: StatementFooter | undefined = checks ? { issuedOn: todayKey(), payBy: checks.dueOn, hrEmail: checks.hrEmail || undefined } : undefined;
-  const previewHtml = useMemo(() => (data?.settlement && footer ? settlementHtml(data.exit, data.settlement, data.company, footer) : ''), [data, footer?.payBy, footer?.hrEmail]); // eslint-disable-line react-hooks/exhaustive-deps
+  const previewHtml = useMemo(() => (data?.settlement && !data.settlement.notSetUp && footer ? settlementHtml(data.exit, data.settlement, data.company, footer) : ''), [data, footer?.payBy, footer?.hrEmail]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (error) return <div><section className="pd-card"><LoadError text={error} onRetry={() => setAttempt((n) => n + 1)} /></section></div>;
   if (!data || !checks) return <div><section className="pd-card"><SkeletonForm fields={8} /></section></div>;
@@ -101,10 +101,12 @@ export function SettlementSend({ userId, onBack }: { userId: string; onBack: () 
   const emailOk = EMAIL.test(to.trim());
   const blocked = checks.blocking.length > 0;
   const reason = override.trim();
-  const canSend = !!settlement && emailOk && (!blocked || !!reason);
+  // No salary structure: no figures, so nothing to approve or email (the server refuses it too).
+  const notSetUp = settlement?.notSetUp || '';
+  const canSend = !!settlement && !notSetUp && emailOk && (!blocked || !!reason);
 
   const send = async (resend = false) => {
-    if (!settlement) return;
+    if (!settlement || notSetUp) return;
     setBusy('email');
     setResendAsk(null);
     try {
@@ -161,8 +163,8 @@ export function SettlementSend({ userId, onBack }: { userId: string; onBack: () 
     <div style={{ animation: 'fade .3s ease both' }}>
       <PageActions>
         <button type="button" id="ob-save-draft" disabled={!!busy || !!emailed} onClick={() => void saveDraft()} className={btnClass()} style={btn()}>{busy === 'draft' ? 'Saving…' : 'Save draft'}</button>
-        <button type="button" id="ob-email-settlement" disabled={!canSend || !!busy} title={!emailOk ? 'Add their personal email' : blocked && !reason ? 'Resolve the checks, or say why you are sending anyway' : undefined} onClick={() => void send()} className={btnClass('primary')} style={btn('primary')}>
-          {busy === 'email' ? 'Sending…' : settlement?.status === 'draft' ? 'Approve and email PDF' : emailed ? 'Email the PDF again' : 'Email PDF'}
+        <button type="button" id="ob-email-settlement" disabled={!canSend || !!busy} title={notSetUp ? 'Set up their salary details first' : !emailOk ? 'Add their personal email' : blocked && !reason ? 'Resolve the checks, or say why you are sending anyway' : undefined} onClick={() => void send()} className={btnClass('primary')} style={btn('primary')}>
+          {busy === 'email' ? 'Sending…' : notSetUp ? 'Email PDF' : settlement?.status === 'draft' ? 'Approve and email PDF' : emailed ? 'Email the PDF again' : 'Email PDF'}
         </button>
       </PageActions>
       <section className="pd-card pd-phead">
@@ -228,7 +230,7 @@ export function SettlementSend({ userId, onBack }: { userId: string; onBack: () 
                 <button type="button" onClick={() => void downloadSettlementPdf(exit, settlement, company, footer).catch((e) => s.flash(e instanceof Error ? e.message : 'Could not make the PDF', 'error'))} className={btnClass()} style={btn()}><IconDownload stroke="currentColor" /> Download</button>
               </div>
             </>
-          ) : <div style={noteBox}>The preview shows once the settlement has started.</div>}
+          ) : <div style={noteBox}>{notSetUp ? 'The preview shows once the salary details are set up and the settlement is worked out.' : 'The preview shows once the settlement has started.'}</div>}
         </section>
       </div>
 
