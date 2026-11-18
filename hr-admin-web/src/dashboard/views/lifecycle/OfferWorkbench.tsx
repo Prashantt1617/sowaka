@@ -17,14 +17,14 @@ import {
 import type { JourneyDetail, LetterTemplateDTO, LetterView, OfferFields, SalaryBreakup, TemplateListItem } from '../../../services/lifecycle';
 import { htmlToPdfBlob } from '../../pdf';
 import { BlobPreview, FilePreview, Field, Pick } from './shared';
-import { OFFER_FIELD_LABEL, areaStyle, errText, firstName, inputStyle, longDay, shortDay, todayKey } from './format';
+import { OFFER_FIELD_LABEL, areaStyle, errText, firstName, inputStyle, longDay, todayKey } from './format';
 import {
   LETTER_TITLE, annexureHtml, checklistHtml, fieldLabel, filled, letterFileName, letterInner, letterPdf, missingFields, placeholders, simpleDocument, takesAnnexure,
 } from './letterDoc';
 import { useOfferChoices } from './hooks';
 import { OFFER_VALUE_FIELD, blankOfferFields, cleanOfferFields, formatDay, offerFormValues, validateOffer } from './offerValues';
 import type { OfferFormKey } from './offerValues';
-import { AUTO_KEYS, DetailsHead, DocActions, EarlierLetters, EmailCard, FieldGrid, MailPanel, NEEDED, PreviewCard, SourceNote, logoSrc, missingInput } from './DocumentParts';
+import { AUTO_KEYS, DetailsHead, DocActions, downloadFile, showFirstMissing, EarlierLetters, EmailCard, FieldGrid, MailPanel, NEEDED, PreviewCard, logoSrc, missingInput } from './DocumentParts';
 import type { MailOut, Person } from './DocumentParts';
 
 /** The Joiner picker's "New joiner": a new offer, saved as a draft on the board. */
@@ -36,7 +36,7 @@ const OPEN = new Set(['draft', 'offer_sent', 'accepted', 'finalised', 'active', 
 type Errors = Partial<Record<OfferFormKey | 'email', string>>;
 type Retry = (tj: string) => void;
 
-export function OfferWorkbench({ person, people, onPerson, pay, company, logo, hrName, managerEmail, canEditTemplates, onEditTemplate, flash, openMail, onCreated }: {
+export function OfferWorkbench({ person, people, onPerson, pay, company, logo, hrName, managerEmail, flash, openMail, onCreated }: {
   person: Person | null; people: Person[]; onPerson: (key: string) => void;
   pay: boolean; company: string; logo?: string; hrName: string;
   managerEmail: (id?: string) => { name: string; email: string } | undefined;
@@ -157,7 +157,8 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
   }, [journeyId, pay, rev, attempt]);
 
   const template = letterTemplates?.find((t) => t.id === letterId);
-  const withAnnex = Boolean(template && takesAnnexure('offer', template.body));
+  // The salary breakup is part of the offer letter itself (its Annexure A page), whatever the template says.
+  const withAnnex = Boolean(template);
   // Annexure A: the saved CTC split by the company's salary template.
   useEffect(() => {
     if (!journeyId || !pay || !withAnnex) { setBreakup(null); return; }
@@ -182,6 +183,14 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
   const values: Record<string, string> = { ...(baseValues ?? {}), ...formValues, ...edits };
   const missing = template ? missingFields(template.body, values, serverMissing) : [];
   const formMissing = new Set(missing.map((k) => OFFER_VALUE_FIELD[k]).filter(Boolean));
+  // Missing details show only once HR presses Generate PDF or Send, never on first look.
+  const [tried, setTried] = useState(false);
+  const needsFilling = () => {
+    if (!missing.length) return false;
+    setTried(true); showFirstMissing();
+    flash(`Fill ${missing.length === 1 ? 'the missing detail' : `the ${missing.length} missing details`} first`, 'error');
+    return true;
+  };
   // Fields the template needs that the offer does not carry (and the system did not fill): typed here, for the letter only.
   const extraKeys = [...new Set([...(template ? placeholders(template.body) : []), ...serverMissing])]
     .filter((k) => !OFFER_VALUE_FIELD[k] && (!AUTO_KEYS.has(k) || !filled(baseValues ?? {}, k)));
@@ -275,6 +284,7 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
       const blob = await letterPdf(template.body, v, { ...head, company: v.companyName || company, address: v.companyAddress, refNo: v.refNo || head.refNo }, fileName, ann);
       await uploadOfferPdf(id, blob, fileName);
       setPdf({ blob, key: JSON.stringify([letterId, v, ann]) });
+      downloadFile(blob, fileName);
       setRev((n) => n + 1);
       flash('Offer letter generated');
       return true;
@@ -337,26 +347,20 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
   }
 
   const lock = closed || Boolean(busy);
-  const err = (k: OfferFormKey) => errors[k] ?? (formMissing.has(k) ? NEEDED : undefined);
+  const err = (k: OfferFormKey) => errors[k] ?? (tried && formMissing.has(k) ? NEEDED : undefined);
   const style = (k: OfferFormKey) => ({ ...inputStyle, ...(err(k) ? missingInput : null) });
   const managers = emps.filter((e) => !e.exit?.left).sort((a, b) => a.name.localeCompare(b.name));
   const probationChoices = [...new Set([6, 3, fields.probationMonths].filter((n) => n > 0))].sort((a, b) => b - a);
-  const source = isNew
-    ? `A new offer. The offer, the portal link and their login go to their personal email; Save draft adds ${first || 'them'} to the board as a draft.`
-    : closed ? `${first || 'Their'}’s offer is closed, so it can no longer change.`
-      : sentVersion && offer
-        ? `Version ${offer.version} went to ${first || 'them'}${offer.sentAt ? ` on ${shortDay(offer.sentAt)}` : ''}${offer.acceptedAt ? ' and was accepted' : ''}. Saving a change makes version ${offer.version + 1}: they see what changed and accept again${offer.finalisedAt ? ', and you finalise again' : ''}.`
-        : `Filled from the offer HR created for ${first || 'them'}${offer && offer.version > 1 ? ` (version ${offer.version}, not sent yet)` : ''}. Edit here; Save draft keeps it.`;
 
   return (
     <>
       <DocActions onSave={() => void saveDraft()} saving={busy === 'draft'} canSave={dirty && !closed}
         onMail={() => setMailOpen(true)} canMail={Boolean(template) && !closed}
-        onGenerate={() => void generate()} generating={busy === 'pdf'} generated={pdfReady} missing={missing.length} disabled={lock || !ready} />
+        onGenerate={() => { if (needsFilling()) return; void generate(); }} generating={busy === 'pdf'} generated={pdfReady} missing={missing.length} disabled={lock || !ready} />
 
       <div className="lf-doc-grid">
         <section className="pd-card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <DetailsHead missing={missing.length} ready={ready} />
+          <DetailsHead missing={missing.length} ready={ready && tried} />
           <Field label="Joiner">
             <Pick value={person.key} onChange={onPerson} ariaLabel="Joiner">
               {people.map((p) => <option key={p.key} value={p.key}>{p.key === NEW_JOINER ? '+ New joiner' : `${p.name}${p.sub ? ` · ${p.sub}` : ''}`}</option>)}
@@ -449,7 +453,7 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
                 <textarea value={fields.responsibilities ?? ''} onChange={(e) => set('responsibilities', e.target.value)} disabled={closed} style={{ ...areaStyle, minHeight: 64 }} />
               </Field>
               {extraKeys.map((k) => {
-                const miss = !filled(values, k);
+                const miss = tried && !filled(values, k);
                 return (
                   <Field key={k} label={fieldLabel(k)} error={miss ? NEEDED : undefined} hint="For this letter only">
                     <input value={values[k] ?? ''} onChange={(e) => { setEdits((x) => ({ ...x, [k]: e.target.value })); }} style={{ ...inputStyle, ...(miss ? missingInput : null) }} />

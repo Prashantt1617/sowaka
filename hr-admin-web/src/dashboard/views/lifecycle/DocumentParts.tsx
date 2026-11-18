@@ -33,7 +33,7 @@ const MailIcon = ({ size = 15, stroke = 'currentColor' }: { size?: number; strok
 );
 
 /** Save draft, Draft email and Generate PDF, in the page head beside the title. */
-export function DocActions({ onSave, saving, canSave, onMail, canMail, onGenerate, generating, generated, missing, disabled }: {
+export function DocActions({ onSave, saving, canSave, onMail, canMail, onGenerate, generating, generated, disabled }: {
   onSave?: () => void; saving: boolean; canSave: boolean; onMail: () => void; canMail: boolean;
   onGenerate: () => void; generating: boolean; generated: boolean; missing: number; disabled: boolean;
 }) {
@@ -41,10 +41,26 @@ export function DocActions({ onSave, saving, canSave, onMail, canMail, onGenerat
     <PageActions>
       {onSave && <button type="button" className="pd-btn" onClick={onSave} disabled={disabled || !canSave}>{saving ? 'Saving…' : 'Save draft'}</button>}
       <button type="button" className="pd-btn" onClick={onMail} disabled={!canMail}><MailIcon />Draft email</button>
-      <button type="button" className="pd-btn primary" onClick={onGenerate} disabled={disabled || missing > 0 || generated} aria-disabled={missing > 0}
-        title={missing ? 'Fill the missing details first' : undefined}><IconDownload stroke="currentColor" />{generating ? 'Generating…' : generated ? 'PDF generated' : 'Generate PDF'}</button>
+      <button type="button" className="pd-btn primary" onClick={onGenerate} disabled={disabled || generated}><IconDownload stroke="currentColor" />{generating ? 'Generating…' : generated ? 'PDF generated' : 'Generate PDF'}</button>
     </PageActions>
   );
+}
+
+/** Saves a made PDF to the computer (Generate PDF downloads it as well as attaching it). */
+export function downloadFile(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** After a press with details missing: the first missing field comes into view. */
+export function showFirstMissing() {
+  requestAnimationFrame(() => {
+    const el = document.querySelector<HTMLElement>('[data-missing="1"]');
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el?.querySelector<HTMLElement>('input, select, textarea')?.focus({ preventScroll: true });
+  });
 }
 
 /** "Details" and how many fields the letter still needs. */
@@ -172,9 +188,8 @@ export function EmailCard({ kind, first, to: toStart, toFixed, values, company, 
     </div>
   );
 }
-type Suggestion = { kind: AttachmentKind; title: string; sub: string };
 
-export function MailPanel({ kind, values, name, to: toStart, manager, company, hrName, missing, pdfReady, fileName, busy, draft, annexInLetter, journeyId, canBreakup, canChecklist, makeExtra, onPreview, onSaveDraft, onClose, onSend }: {
+export function MailPanel({ kind, values, name, to: toStart, manager, company, hrName, missing, pdfReady, fileName, busy, draft, annexInLetter, journeyId, onPreview, onSaveDraft, onClose, onSend }: {
   kind: LetterKind; values: Record<string, string>; name: string; to: string; manager?: { name: string; email: string };
   company: string; hrName: string; missing: number; pdfReady: boolean; fileName: string; busy: string;
   /** HR's saved draft of this email, if any (it opens instead of the template's words). */
@@ -213,23 +228,9 @@ export function MailPanel({ kind, values, name, to: toStart, manager, company, h
     setError('');
     void onSend(mail());
   };
-  const suggestions: Suggestion[] = [
-    ...(canBreakup ? [{ kind: 'salary_breakup' as const, title: 'Salary breakup (Annexure A)', sub: annexInLetter ? '1 page · also the letter’s last page' : '1 page · from the offer' }] : []),
-    ...(canChecklist ? [{ kind: 'joining_checklist' as const, title: 'Joining checklist', sub: '1 page · documents to keep ready' }] : []),
-    ...(!isOffer ? [{ kind: 'policies' as const, title: 'Company policies', sub: 'The handbook · a PDF from your computer' }] : []),
-  ].filter((x) => !extras.some((e) => e.kind === x.kind));
   const upload = async (blob: Blob, filename: string, k: AttachmentKind) => {
     const r = await uploadLetterAttachment(blob, filename, k, journeyId);
     setExtras((list) => [...list, r.attachment]);
-  };
-  const attach = async (sg: Suggestion) => {
-    if (sg.kind === 'policies') { fileInput.current?.click(); return; }
-    setAdding(sg.kind);
-    try {
-      const made = await makeExtra(sg.kind as 'salary_breakup' | 'joining_checklist');
-      if (!made) { flash('That can’t be made yet', 'error'); return; }
-      await upload(made.blob, made.name, sg.kind);
-    } catch (e) { flash(errText(e, 'Could not attach it'), 'error'); } finally { setAdding(''); }
   };
   const chip = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 99, background: 'var(--surface-2)', border: '1px solid var(--line)', fontSize: 12.5, maxWidth: '100%', overflowWrap: 'anywhere' } as const;
   return (
@@ -275,12 +276,7 @@ export function MailPanel({ kind, values, name, to: toStart, manager, company, h
                 <button type="button" className="pd-btn sm ghost" onClick={() => setExtras((list) => list.filter((e) => e.fileId !== x.fileId))}>Remove</button>
               </div>
             ))}
-            {suggestions.map((sg) => (
-              <div key={sg.kind} className="pd-li" style={{ border: '1px dashed var(--line-2)', borderRadius: 14, padding: '10px 12px' }}>
-                <span className="grow"><b style={{ overflowWrap: 'anywhere' }}><span style={{ color: 'var(--ink-3)', fontWeight: 400 }}>Suggested · </span>{sg.title}</b><span className="s">{sg.sub}</span></span>
-                <button type="button" className="pd-btn sm" onClick={() => void attach(sg)} disabled={Boolean(adding) || Boolean(busy)}>{adding === sg.kind ? 'Attaching…' : 'Attach'}</button>
-              </div>
-            ))}
+            <button type="button" className="pd-btn sm ghost" style={{ justifySelf: 'start' }} onClick={() => fileInput.current?.click()} disabled={Boolean(adding) || Boolean(busy)}>{adding ? 'Attaching…' : 'Attach a file'}</button>
             <input ref={fileInput} type="file" accept="application/pdf" hidden onChange={(e) => {
               const f = e.target.files?.[0];
               e.target.value = '';

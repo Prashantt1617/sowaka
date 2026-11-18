@@ -117,7 +117,7 @@ export function Switch({ on, onChange, label, disabled }: { on: boolean; onChang
 
 export function Field({ label, required, hint, error, children, wide }: { label: string; required?: boolean; hint?: ReactNode; error?: string; children: ReactNode; wide?: boolean }) {
   return (
-    <label style={{ ...labelStyle, gridColumn: wide ? '1 / -1' : undefined }}>
+    <label style={{ ...labelStyle, gridColumn: wide ? '1 / -1' : undefined }} data-missing={error ? '1' : undefined}>
       <span>{label}{required && <span style={{ color: 'var(--bad)' }}> *</span>}</span>
       {children}
       {error ? <span style={{ fontSize: 11.5, color: 'var(--bad)' }}>{error}</span> : hint ? <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>{hint}</span> : null}

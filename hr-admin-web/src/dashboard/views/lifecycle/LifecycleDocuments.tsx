@@ -23,19 +23,12 @@ import {
   simpleDocument, takesAnnexure, valueName,
 } from './letterDoc';
 import { useCompanyName } from './hooks';
-import { AUTO_KEYS, DetailsHead, DocActions, logoSrc, EarlierLetters, EmailCard, FieldGrid, MailPanel, NEEDED, PreviewCard, SourceNote, missingInput } from './DocumentParts';
+import { AUTO_KEYS, DetailsHead, DocActions, downloadFile, showFirstMissing, logoSrc, EarlierLetters, EmailCard, FieldGrid, MailPanel, NEEDED, PreviewCard, missingInput } from './DocumentParts';
 import type { MailOut, Person } from './DocumentParts';
 import { OfferWorkbench, NEW_JOINER } from './OfferWorkbench';
 import '../people.css';
 
 const PAY_FIELD = /ctc|salary|pay/i;
-const SOURCE: Record<Exclude<LetterKind, 'offer'>, (first: string) => string> = {
-  appointment: (f) => `Filled from ${f}’s accepted offer and their record. Generated once all documents are approved.`,
-  nda: (f) => `Filled from ${f}’s accepted offer and their record.`,
-  confirmation: (f) => `Filled from ${f}’s record and the confirmation discussion.`,
-  extension: (f) => `Filled from ${f}’s record and the confirmation discussion.`,
-  relieving: (f) => `Filled from ${f}’s record. Add the last working day from their exit.`,
-};
 const TABS_FOR: Record<LetterKind, BoardTab[]> = {
   offer: ['pre_boarding'], appointment: ['pre_boarding', 'first_week'], nda: ['pre_boarding', 'first_week'],
   confirmation: ['probation'], extension: ['probation'], relieving: [],
@@ -120,7 +113,7 @@ export function LifecycleDocuments() {
   );
 }
 
-function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, hrName, managerEmail, canEditTemplates, onEditTemplate, flash }: {
+function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, hrName, managerEmail, flash }: {
   kind: Exclude<LetterKind, 'offer'>; person: Person | null; people: Person[]; onPerson: (key: string) => void;
   pay: boolean; company: string; logo?: string; hrName: string;
   managerEmail: (id?: string) => { name: string; email: string } | undefined;
@@ -195,6 +188,14 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, h
     return list.filter((k) => !AUTO_KEYS.has(k) || !filled(base ?? {}, k));
   }, [template, serverMissing, base]);
   const missing = template ? missingFields(template.body, values, serverMissing) : [];
+  // Missing details show only once HR presses Generate PDF or Send, never on first look.
+  const [tried, setTried] = useState(false);
+  const needsFilling = () => {
+    if (!missing.length) return false;
+    setTried(true); showFirstMissing();
+    flash(`Fill ${missing.length === 1 ? 'the missing detail' : `the ${missing.length} missing details`} first`, 'error');
+    return true;
+  };
   const name = valueName(values) || person?.name || '';
   const withAnnex = Boolean(template && takesAnnexure(kind, template.body));
   const annex = withAnnex && breakup?.breakup ? annexureHtml(breakup.breakup, name) : '';
@@ -258,6 +259,7 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, h
       const blob = await letterPdf(template.body, values, { ...head, refNo: l.refNo || head.refNo }, fileName, annex);
       const up = await uploadLetterPdf(l.id, blob, fileName);
       setLetter(up); setPdf({ blob, key: valuesKey });
+      downloadFile(blob, fileName);
       flash(`${KIND_LABEL[kind]} generated`);
       return true;
     } catch (e) { flash(errText(e, 'Could not make the PDF'), 'error'); return false; } finally { setBusy(''); }
@@ -295,11 +297,11 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, h
     <>
       <DocActions onSave={() => void saveDraft()} saving={busy === 'draft'} canSave={Boolean(template && base)}
         onMail={() => setMailOpen(true)} canMail={Boolean(template && base)}
-        onGenerate={() => void generate()} generating={busy === 'pdf'} generated={pdfReady} missing={missing.length} disabled={Boolean(busy) || !template || !base} />
+        onGenerate={() => { if (needsFilling()) return; void generate(); }} generating={busy === 'pdf'} generated={pdfReady} missing={missing.length} disabled={Boolean(busy) || !template || !base} />
 
       <div className="lf-doc-grid">
         <section className="pd-card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <DetailsHead missing={missing.length} ready={Boolean(base && template)} />
+          <DetailsHead missing={missing.length} ready={Boolean(base && template) && tried} />
           <Field label={kind === 'relieving' ? 'Employee' : 'Joiner'}>
             <Pick value={person.key} onChange={onPerson} ariaLabel={kind === 'relieving' ? 'Employee' : 'Joiner'}>
               {people.map((p) => <option key={p.key} value={p.key}>{p.name}{p.sub ? ` · ${p.sub}` : ''}</option>)}
@@ -317,7 +319,7 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, h
               )}
               {keys.map((k) => {
                 const isPay = PAY_FIELD.test(k);
-                const miss = !filled(values, k);
+                const miss = tried && !filled(values, k);
                 if (isPay && !pay) {
                   return <Field key={k} label={fieldLabel(k)} error={miss ? `${NEEDED}. Someone with payroll access fills it.` : undefined}><input value={miss ? '' : 'Hidden · needs payroll access'} readOnly style={{ ...inputStyle, color: 'var(--ink-3)' }} /></Field>;
                 }
