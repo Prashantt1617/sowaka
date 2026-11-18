@@ -38,7 +38,7 @@ export function Pass() {
             <p className="body sub">It will show where to go, when, and who to ask for. We’ll email you the reporting details too.</p>
           </section>
         ) : (
-          <ErrorNote error={state.error} onRetry={state.reload} />
+          <ErrorNote error={state.error ?? new Error("Could not load your Day-1 pass")} onRetry={state.reload} />
         )}
         <BottomBar>
           <PrimaryButton onClick={() => navigate('/')}>Back to home</PrimaryButton>
