@@ -177,7 +177,11 @@ export async function signIn(emailInput: unknown, passwordInput: unknown, ip: st
     const minutes = Math.ceil((account.lockedUntil.getTime() - now.getTime()) / 60_000);
     throw new LifecycleOfferError(403, `Too many wrong tries. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}, or reset your password.`);
   }
-  if (!(await verifyPassword(password, account.passwordHash))) {
+  // A password copied from the login email often brings a space or line break with it; the generated
+  // ones never have either, so the trimmed copy is tried too (a password that really ends in a space still works).
+  const matches = (await verifyPassword(password, account.passwordHash))
+    || (password.trim() !== password && password.trim() !== '' && await verifyPassword(password.trim(), account.passwordHash));
+  if (!matches) {
     const tries = (account.failedTries ?? 0) + 1;
     if (tries >= MAX_WRONG_TRIES) {
       await candidateAccounts().updateOne({ email }, { $set: { failedTries: 0, lockedUntil: new Date(now.getTime() + LOCK_MINUTES * 60_000) } });
