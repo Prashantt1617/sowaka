@@ -344,7 +344,7 @@ html.app .howto{padding-top:20px}
   </div>
   <p class="taphelp" id="taphelp" hidden>Tap: × then cat · slide to cross many</p>
   <p class="feedback" id="feedback" role="status" hidden></p>
-  <div class="rowlinks" id="rowlinks" hidden><span class="lab" id="pzno"></span><button class="link" id="giveup" type="button">Give up</button></div>
+  <div class="rowlinks" id="rowlinks" hidden><span class="lab" id="pzno"></span></div>
   <div class="foot" id="foot" hidden><span id="best"></span></div>
   <div class="sheet" id="sheet" hidden><div class="card" id="card" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="sh"><div class="shead"><h2 id="sh"></h2><button class="sx" id="sx" type="button" aria-label="Close"><svg viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="2.6" stroke-linecap="square"/></svg></button></div><div id="sb" style="display:contents"></div><div class="acts" id="sa"></div></div></div>
   <div class="howto" id="howto" hidden role="dialog" aria-modal="true" aria-labelledby="howh">
@@ -1053,7 +1053,7 @@ board.addEventListener('keydown',e=>{ if(mode!=='play')return; const t=e.target.
   else if(e.key==='ArrowUp')j=Math.max(i%n,i-n); else if(e.key==='ArrowDown')j=Math.min((n-1)*n+i%n,i+n);
   else return;
   e.preventDefault(); focusIndex=j; t.tabIndex=-1; board.children[j].tabIndex=0; board.children[j].focus(); });
-$('undo').onclick=undo; $('hint').onclick=hint; $('giveup').onclick=giveUp;
+$('undo').onclick=undo; $('hint').onclick=hint;
 $('snd').onclick=()=>{ save.sound=!save.sound; store(); sndLabel(); if(save.sound){ audioChecked=false; unlockAudio(); sfx.go(); } };
 $('help').onclick=()=>{ sfx.ui(); showHowTo(null); };
 $('howok').onclick=()=>{ sfx.ui(); save.seenHowTo=true; store(); const then=howThen; hideHowTo(); if(then)then(); };

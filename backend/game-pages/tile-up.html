@@ -285,7 +285,7 @@ html.app .tops{top:12px}
 }
 @keyframes bounce{0%{transform:scale(.7)}60%{transform:scale(1.12)}100%{transform:scale(1)}}
 @media (prefers-reduced-motion:reduce){.toast{opacity:1} .btn{transition:none}}
-/* Tile Up: Scrabble for colleagues. 2 to 4 players, a 15×15 board, one bag of 100 tiles, seven each, taking turns. Every word is checked against
+/* Tile Up: Scrabble for colleagues. 2 to 6 players, a 15×15 board, one bag of 100 tiles, seven each, taking turns. Every word is checked against
    the dictionary. One dark look, like the other Sowaka games:
    Lilita One for the big words, Figtree for the rest, a violet accent on deep ink, and cream letter tiles.
    Sowaka: this one file is the whole game. The room, the letters, the clock, the dictionary check and the score are the server's, and reach the page
@@ -506,7 +506,7 @@ html.app .tops{top:12px}
   <div class="howto" id="howto" hidden role="dialog" aria-modal="true" aria-labelledby="howh">
     <div class="hin">
       <div class="howart" aria-hidden="true" style="width:auto;padding:14px 12px 12px"><div class="demo" id="demo"></div></div>
-      <p class="kick">2 to 4 colleagues · take turns</p>
+      <p class="kick">2 to 6 colleagues · take turns</p>
       <h2 id="howh">How to play</h2>
       <ol class="steps">
         <li><i>1</i><span><b>Your own 7 tiles</b>On your turn, drop tiles on the board to make a word that joins the others.</span></li>
@@ -760,7 +760,7 @@ const PEOPLE=[['Ananya Rao','Product Designer','Design'],['Arjun Das','Backend E
  ['Rahul Mehta','Account Manager','Sales'],['Shiv Patel','Mobile Engineer','Engineering'],['Yami Kapoor','Content Writer','Marketing'],['Zoya Khan','Recruiter','People']]
  .map((p,i)=>({userId:'u'+i,name:p[0],designation:p[1],department:p[2],photoUrl:null}));
 const who=n=>PEOPLE.find(p=>p.name===n);
-const CFG={min:2,max:4};
+const CFG={min:2,max:6};
 const SEC_OPTS=[30,60,120];
 let quick=false, meOnline=true, mine=null, seq=0, myBest=0;
 const now=()=>Date.now(), copy=v=>JSON.parse(JSON.stringify(v)), rnd=(a,b)=>a+Math.random()*(b-a), pick=a=>a[Math.floor(Math.random()*a.length)];
@@ -1197,7 +1197,7 @@ const offNote=()=>'Open Tile Up in the Sowaka app to play with colleagues.';
 function playPanel(){ const p=el('div','panel'), c=el('div','playcard'), r=el('div','rules');
   [['🔤','Your own 7 tiles'],['📖','Real words only'],['🔁','Take turns']].forEach(([i,t])=>{ const d=el('div'); d.append(el('i','',i),t); r.append(d); });
   const host=el('button','btn go','Start a room'); host.type='button'; host.onclick=hostClick;
-  c.append(r,host,el('p','note','You pick the time for each turn, then invite colleagues. 2 to 4 can play.'));
+  c.append(r,host,el('p','note','You pick the time for each turn, then invite colleagues. 2 to 6 can play.'));
   if(!rooms()){ host.disabled=true; c.append(el('p','note',offNote())); }
   p.append(c); return p; }
 function invitePanel(){ const p=el('div','panel'), send=el('button','btn send','Join with a code'), list=el('div','chlist');
