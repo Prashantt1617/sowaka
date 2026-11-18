@@ -160,12 +160,12 @@ class _StarterReviewScreenState extends State<StarterReviewScreen> {
               children: [
                 const Text(
                   'STARTER TASK',
-                  style: TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.9, color: OnbColors.text3),
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.9, color: OnbColors.text3),
                 ),
                 const SizedBox(height: 12),
                 Text(
                   task.title,
-                  style: const TextStyle(fontFamily: 'Sora', fontSize: 20, height: 1.25, fontWeight: FontWeight.w800, letterSpacing: -0.2, color: OnbColors.text),
+                  style: const TextStyle(fontSize: 20, height: 1.25, fontWeight: FontWeight.w800, letterSpacing: -0.2, color: OnbColors.text),
                 ),
                 if (task.doneNote != null) ...[
                   const SizedBox(height: 12),
@@ -220,10 +220,10 @@ class _StarterReviewScreenState extends State<StarterReviewScreen> {
                                   Uri.tryParse(link)?.host ?? link,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontFamily: 'Sora', fontSize: 13, fontWeight: FontWeight.w600, color: OnbColors.text),
+                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: OnbColors.text),
                                 ),
                               ),
-                              const Text('Open', style: TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.primary)),
+                              const Text('Open', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.primary)),
                             ],
                           ),
                         ),

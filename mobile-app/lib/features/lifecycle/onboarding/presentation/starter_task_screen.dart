@@ -212,7 +212,7 @@ class _TaskCard extends StatelessWidget {
                 alignment: Alignment.center,
                 child: Text(
                   OnbAvatar.initials(manager).substring(0, 1),
-                  style: const TextStyle(fontFamily: 'Sora', fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
                 ),
               ),
               const SizedBox(width: 10),
@@ -222,7 +222,7 @@ class _TaskCard extends StatelessWidget {
                   children: [
                     const Text(
                       'FROM YOUR MANAGER',
-                      style: TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.primary),
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.primary),
                     ),
                     Text([manager, ?task.assignedByDesignation].join(' · '), style: OnbText.bodyStrong),
                   ],
@@ -234,7 +234,7 @@ class _TaskCard extends StatelessWidget {
           const SizedBox(height: 14),
           Text(
             task.title,
-            style: const TextStyle(fontFamily: 'Sora', fontSize: 24, height: 1.15, fontWeight: FontWeight.w800, letterSpacing: -0.48, color: OnbColors.text),
+            style: const TextStyle(fontSize: 24, height: 1.15, fontWeight: FontWeight.w800, letterSpacing: -0.48, color: OnbColors.text),
           ),
           const SizedBox(height: 10),
           Text(
@@ -281,10 +281,10 @@ class _TaskCard extends StatelessWidget {
                             Uri.tryParse(link)?.host.isNotEmpty == true ? Uri.parse(link).host : link,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontFamily: 'Sora', fontSize: 13, fontWeight: FontWeight.w600, color: OnbColors.text),
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: OnbColors.text),
                           ),
                         ),
-                        const Text('Open', style: TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.primary)),
+                        const Text('Open', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.primary)),
                       ],
                     ),
                   ),

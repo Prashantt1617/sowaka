@@ -239,7 +239,7 @@ class _IntroPostScreenState extends State<IntroPostScreen> {
           children: [
             for (final fact in choices)
               FilterChip(
-                label: Text(fact, style: const TextStyle(fontFamily: 'Sora', fontSize: 13)),
+                label: Text(fact, style: const TextStyle(fontSize: 13)),
                 selected: _facts.contains(fact),
                 showCheckmark: false,
                 selectedColor: OnbColors.tint,

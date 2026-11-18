@@ -20,6 +20,7 @@ import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_models.
 import 'package:mobile_app/features/payroll/data/payroll_api_service.dart';
 import 'package:mobile_app/features/quick_actions/presentation/quick_actions_screen.dart';
 import 'package:mobile_app/features/shared/attachment_picker.dart';
+import 'package:mobile_app/main.dart' show sowakaTheme;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'lifecycle_offboarding_fake.dart';
@@ -91,9 +92,14 @@ class _ProfileHost extends StatelessWidget {
 
 void main() {
   setUpAll(() async {
-    await (FontLoader(
-      'Sora',
-    )..addFont(rootBundle.load('assets/fonts/sora/Sora-Variable.ttf'))).load();
+    // The app's own font (the screens take it from the theme), so the
+    // pages lay out as on a phone.
+    await (FontLoader('Plus Jakarta Sans')..addFont(
+          rootBundle.load(
+            'assets/fonts/plus_jakarta_sans/PlusJakartaSans-Variable.ttf',
+          ),
+        ))
+        .load();
   });
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -108,7 +114,7 @@ void main() {
     arrange?.call(fake);
     fake.install();
     final store = OffboardingStore.of(leaverSession);
-    await tester.pumpWidget(MaterialApp(home: _ProfileHost(store)));
+    await tester.pumpWidget(MaterialApp(theme: sowakaTheme(), home: _ProfileHost(store)));
     await tester.runAsync(store.ensureLoaded);
     await settle(tester);
     return (fake, store);
@@ -269,7 +275,7 @@ void main() {
       expect(store.showsOffboardingPage, isTrue);
       final opened = <String>[];
       await tester.pumpWidget(
-        MaterialApp(
+        MaterialApp(theme: sowakaTheme(), 
           home: OffboardingPage(
             store: store,
             today: DateTime(2026, 12, 14),
@@ -326,7 +332,7 @@ void main() {
     );
     addTearDown(() => HandoverScreen.testPicker = null);
     await tester.pumpWidget(
-      MaterialApp(
+      MaterialApp(theme: sowakaTheme(), 
         home: HandoverScreen(store: store, managerName: 'Meera Iyer'),
       ),
     );
@@ -375,7 +381,7 @@ void main() {
       fake.install();
       final store = OffboardingStore.of(leaverSession);
       await tester.pumpWidget(
-        MaterialApp(
+        MaterialApp(theme: sowakaTheme(), 
           home: HandoverScreen(store: store, managerName: 'Meera Iyer'),
         ),
       );
@@ -399,7 +405,7 @@ void main() {
       fake.install();
       final store = OffboardingStore.of(leaverSession);
       await tester.pumpWidget(
-        MaterialApp(
+        MaterialApp(theme: sowakaTheme(), 
           home: ExitInterviewScreen(
             store: store,
             interview: state,
@@ -504,7 +510,7 @@ void main() {
       final store = OffboardingStore.of(managerSession);
       await tester.runAsync(store.ensureLoaded);
       await tester.pumpWidget(
-        MaterialApp(
+        MaterialApp(theme: sowakaTheme(), 
           home: Scaffold(
             body: ListView(
               padding: const EdgeInsets.all(16),
@@ -599,7 +605,7 @@ void main() {
         await tester.runAsync(store.ensureLoaded);
         expect(store.resignationOf('ravi'), isNotNull);
         await tester.pumpWidget(
-          MaterialApp(
+          MaterialApp(theme: sowakaTheme(), 
             home: Scaffold(
               body: ListView(
                 padding: const EdgeInsets.all(16),
@@ -688,7 +694,7 @@ void main() {
         final store = OffboardingStore.of(managerSession);
         await tester.runAsync(store.ensureLoaded);
         await tester.pumpWidget(
-          MaterialApp(
+          MaterialApp(theme: sowakaTheme(), 
             home: Scaffold(
               body: ListView(
                 children: [
@@ -839,7 +845,7 @@ void main() {
       final mails = <Uri>[];
       var back = 0;
       await tester.pumpWidget(
-        MaterialApp(
+        MaterialApp(theme: sowakaTheme(), 
           home: AccountClosedScreen(
             info: AccountClosedInfo(
               companyName: 'Sowaka',
@@ -871,7 +877,7 @@ void main() {
     ) async {
       phone(tester);
       await tester.pumpWidget(
-        MaterialApp(
+        MaterialApp(theme: sowakaTheme(), 
           home: AccountClosedScreen(
             info: AccountClosedInfo(
               companyName: 'Sowaka Test',
@@ -894,7 +900,7 @@ void main() {
     testWidgets('a last day of today reads "was"', (tester) async {
       phone(tester);
       await tester.pumpWidget(
-        MaterialApp(
+        MaterialApp(theme: sowakaTheme(), 
           home: AccountClosedScreen(
             info: AccountClosedInfo(lastDay: DateTime(2026, 11, 17)),
             onBackToSignIn: () {},
@@ -910,7 +916,7 @@ void main() {
 
     testWidgets('without an HR email there is no Email HR', (tester) async {
       await tester.pumpWidget(
-        MaterialApp(
+        MaterialApp(theme: sowakaTheme(), 
           home: AccountClosedScreen(
             info: const AccountClosedInfo(),
             onBackToSignIn: () {},
@@ -991,7 +997,7 @@ void main() {
         };
       });
       await tester.pumpWidget(
-        MaterialApp(
+        MaterialApp(theme: sowakaTheme(), 
           home: Scaffold(
             body: PayrollSalarySummaryHost(
               screen: PayrollScreen(
@@ -1048,7 +1054,7 @@ void main() {
         final store = OffboardingStore.of(leaverSession);
         await tester.runAsync(store.ensureLoaded);
         await tester.pumpWidget(
-          MaterialApp(
+          MaterialApp(theme: sowakaTheme(), 
             home: Scaffold(
               body: ListView(
                 children: [
@@ -1104,7 +1110,7 @@ void main() {
         final store = OffboardingStore.of(managerSession);
         await tester.runAsync(store.ensureLoaded);
         await tester.pumpWidget(
-          MaterialApp(
+          MaterialApp(theme: sowakaTheme(), 
             home: Scaffold(
               body: ListView(
                 children: [
@@ -1167,7 +1173,7 @@ void main() {
         expect(manager.hasLeaverTab('ravi'), isTrue);
         expect(manager.hasLeaverTab('neha'), isFalse);
         await tester.pumpWidget(
-          MaterialApp(
+          MaterialApp(theme: sowakaTheme(), 
             home: Scaffold(
               body: ListView(
                 children: [
@@ -1193,7 +1199,7 @@ void main() {
         expect(own.resignationTabLabel, 'Exit');
         var documents = 0;
         await tester.pumpWidget(
-          MaterialApp(
+          MaterialApp(theme: sowakaTheme(), 
             home: Scaffold(
               body: ListView(
                 children: [
@@ -1235,7 +1241,7 @@ void main() {
         final store = OffboardingStore.of(leaverSession);
         await tester.runAsync(store.ensureLoaded);
         await tester.pumpWidget(
-          MaterialApp(
+          MaterialApp(theme: sowakaTheme(), 
             home: HandoverScreen(store: store, managerName: 'Meera Iyer'),
           ),
         );
@@ -1247,7 +1253,7 @@ void main() {
         final manager = OffboardingStore.of(managerSession);
         await tester.runAsync(manager.ensureLoaded);
         await tester.pumpWidget(
-          MaterialApp(
+          MaterialApp(theme: sowakaTheme(), 
             home: Scaffold(
               body: ListView(
                 children: [
@@ -1280,7 +1286,7 @@ void main() {
         final store = OffboardingStore.of(leaverSession);
         await tester.runAsync(store.ensureLoaded);
         await tester.pumpWidget(
-          MaterialApp(
+          MaterialApp(theme: sowakaTheme(), 
             home: HandoverScreen(store: store, managerName: 'Meera Iyer'),
           ),
         );
@@ -1325,7 +1331,7 @@ void main() {
       final store = OffboardingStore.of(managerSession);
       await tester.runAsync(store.ensureLoaded);
       await tester.pumpWidget(
-        MaterialApp(
+        MaterialApp(theme: sowakaTheme(), 
           home: Scaffold(
             body: ListView(
               children: [
@@ -1366,7 +1372,7 @@ void main() {
       final store = OffboardingStore.of(leaverSession);
       await tester.runAsync(store.ensureLoaded);
       expect(store.reasons, ['Better opportunity', 'Manager', 'Other']);
-      await tester.pumpWidget(MaterialApp(home: ResignScreen(store: store)));
+      await tester.pumpWidget(MaterialApp(theme: sowakaTheme(), home: ResignScreen(store: store)));
       await settle(tester);
       await tester.tap(key('resign-reason'));
       await settle(tester);

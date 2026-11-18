@@ -167,7 +167,7 @@ class _NotesScreenState extends State<NotesScreen> {
                       children: [
                         Icon(Icons.check_rounded, color: OnbColors.doneText),
                         SizedBox(width: 6),
-                        Text('Marked as read', style: TextStyle(fontFamily: 'Sora', color: OnbColors.doneText, fontWeight: FontWeight.w600)),
+                        Text('Marked as read', style: TextStyle(color: OnbColors.doneText, fontWeight: FontWeight.w600)),
                       ],
                     ),
                   )
@@ -210,7 +210,7 @@ class _NoteCard extends StatelessWidget {
                 alignment: Alignment.center,
                 child: Text(
                   OnbAvatar.initials(author).substring(0, 1),
-                  style: const TextStyle(fontFamily: 'Sora', fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
                 ),
               ),
               const SizedBox(width: 12),

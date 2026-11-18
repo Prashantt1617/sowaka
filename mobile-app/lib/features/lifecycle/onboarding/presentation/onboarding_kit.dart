@@ -10,15 +10,19 @@ import '../../../manager_shell/presentation/tablet_shell.dart' show isTabletLayo
 import '../../../support/presentation/support_ui.dart' show SupportBackButton;
 import '../data/onboarding_api.dart';
 
-/// The onboarding screens' pieces, on the Sowaka Connect kit (6Zs §8): the
-/// app's own blue, greys and Sora, white cards on the #F7F7F9 screen, one
-/// 56 px primary button pinned at the bottom, story bars on reels.
+/// The onboarding screens' pieces, on the app's own design system: the
+/// theme's font (Plus Jakarta Sans, [sowakaTheme] in main.dart, which every
+/// style here inherits), colours taken from the palette the older app screens
+/// already use, white cards on the #F7F7F9 screen, one 56 px primary button
+/// pinned at the bottom, story bars on reels.
 
+/// Each value is one the app already uses (main.dart's theme, or two or more of
+/// the older feature screens); none is the kit's own.
 abstract final class OnbColors {
   static const primary = Color(0xFF0571A6);
-  static const primaryPressed = Color(0xFF045A85);
-  static const brandBorder = Color(0xFFBEEDFF);
-  static const tint = Color(0xFFE8F4FA);
+  static const primaryPressed = Color(0xFF075985);
+  static const brandBorder = Color(0xFFC3EBFE);
+  static const tint = Color(0xFFE8F3FA);
   static const text = Color(0xFF222222);
   static const text2 = Color(0xFF484848);
   static const text3 = Color(0xFF717171);
@@ -26,23 +30,25 @@ abstract final class OnbColors {
   static const screen = Color(0xFFF7F7F9);
   static const line = Color(0xFFEBEBEB);
   static const lineDark = Color(0xFFDDDDDD);
-  static const green = Color(0xFF30D158);
-  static const doneTint = Color(0xFFEAF9EE);
-  static const doneText = Color(0xFF1F9D45);
-  static const waterTint = Color(0xFFFFF4E0);
-  static const waterText = Color(0xFF8A4B08);
-  static const mustTint = Color(0xFFFFF4E5);
+  static const green = Color(0xFF34C759);
+  static const doneTint = Color(0xFFE7F8EC);
+  static const doneText = Color(0xFF16A34A);
+  static const waterTint = Color(0xFFFFF5DC);
+  static const waterText = Color(0xFF8A6218);
+  static const mustTint = Color(0xFFFFF5DC);
   static const mustText = Color(0xFFB23500);
   static const redTint = Color(0xFFFDECEC);
   static const redText = Color(0xFFE5484D);
+  static const quiet = Color(0xFFF1F1F4);
+  static const divider = Color(0xFFF3F4F6);
   static const scrim = Color(0x73111827);
 }
 
+/// No family on any of these: they take the theme's (Plus Jakarta Sans) from
+/// the text around them. A button, which sets its own text style, gets the
+/// theme's through [button].
 abstract final class OnbText {
-  static const _font = 'Sora';
-
   static TextStyle displayXl([double size = 44, Color color = OnbColors.text]) => TextStyle(
-    fontFamily: _font,
     fontSize: size,
     fontWeight: FontWeight.w600,
     letterSpacing: -0.03 * size,
@@ -50,20 +56,23 @@ abstract final class OnbText {
     color: color,
   );
 
-  static const display = TextStyle(fontFamily: _font, fontSize: 24, fontWeight: FontWeight.w600, height: 1.25, color: OnbColors.text);
-  static const h1 = TextStyle(fontFamily: _font, fontSize: 20, fontWeight: FontWeight.w600, height: 1.3, color: OnbColors.text);
-  static const screenTitle = TextStyle(fontFamily: _font, fontSize: 17, fontWeight: FontWeight.w600, color: OnbColors.text);
-  static const bodyStrong = TextStyle(fontFamily: _font, fontSize: 14, fontWeight: FontWeight.w600, height: 1.4, color: OnbColors.text);
-  static const body = TextStyle(fontFamily: _font, fontSize: 14, fontWeight: FontWeight.w400, height: 1.45, color: OnbColors.text2);
-  static const label = TextStyle(fontFamily: _font, fontSize: 12, fontWeight: FontWeight.w400, height: 1.35, color: OnbColors.text3);
+  static const display = TextStyle(fontSize: 24, fontWeight: FontWeight.w600, height: 1.25, color: OnbColors.text);
+  static const h1 = TextStyle(fontSize: 20, fontWeight: FontWeight.w600, height: 1.3, color: OnbColors.text);
+  static const screenTitle = TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: OnbColors.text);
+  static const bodyStrong = TextStyle(fontSize: 14, fontWeight: FontWeight.w600, height: 1.4, color: OnbColors.text);
+  static const body = TextStyle(fontSize: 14, fontWeight: FontWeight.w400, height: 1.45, color: OnbColors.text2);
+  static const label = TextStyle(fontSize: 12, fontWeight: FontWeight.w400, height: 1.35, color: OnbColors.text3);
   static const eyebrow = TextStyle(
-    fontFamily: _font,
     fontSize: 11,
     fontWeight: FontWeight.w600,
     letterSpacing: 1.1,
     color: OnbColors.text3,
   );
-  static const link = TextStyle(fontFamily: _font, fontSize: 13, fontWeight: FontWeight.w600, color: OnbColors.primary);
+  static const link = TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: OnbColors.primary);
+
+  /// A button's words: the theme's label style (its font), at the kit's size.
+  static TextStyle? button(BuildContext context, {double size = 15, FontWeight weight = FontWeight.w600}) =>
+      Theme.of(context).textTheme.labelLarge?.copyWith(fontSize: size, fontWeight: weight);
 }
 
 // ─── The app around the screens ─────────────────────────────────────────────
@@ -171,7 +180,7 @@ class OnbScaffold extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             decoration: const BoxDecoration(
               color: Colors.white,
-              border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
+              border: Border(bottom: BorderSide(color: OnbColors.divider)),
             ),
             child: Row(
               children: [
@@ -215,7 +224,7 @@ class OnbOfflineNote extends StatelessWidget {
       children: [
         Icon(Icons.cloud_off_rounded, size: 16, color: OnbColors.waterText),
         SizedBox(width: 8),
-        Expanded(child: Text(text, style: TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.waterText))),
+        Expanded(child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.waterText))),
       ],
     ),
   );
@@ -263,7 +272,7 @@ class OnbPrimaryButton extends StatelessWidget {
         foregroundColor: Colors.white,
         disabledForegroundColor: OnbColors.text3,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        textStyle: const TextStyle(fontFamily: 'Sora', fontSize: 15, fontWeight: FontWeight.w600),
+        textStyle: OnbText.button(context),
       ),
       child: busy
           ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
@@ -289,7 +298,7 @@ class OnbSecondaryButton extends StatelessWidget {
         foregroundColor: OnbColors.text,
         side: const BorderSide(color: OnbColors.lineDark),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        textStyle: const TextStyle(fontFamily: 'Sora', fontSize: 15, fontWeight: FontWeight.w600),
+        textStyle: OnbText.button(context),
       ),
       child: Text(label),
     ),
@@ -345,9 +354,9 @@ class OnbTag extends StatelessWidget {
       OnbTone.inReview || OnbTone.count => (OnbColors.tint, OnbColors.primary),
       OnbTone.needsWater => (OnbColors.waterTint, OnbColors.waterText),
       OnbTone.red => (OnbColors.redTint, OnbColors.redText),
-      OnbTone.locked => (const Color(0xFFF1F1F3), OnbColors.text3),
+      OnbTone.locked => (OnbColors.quiet, OnbColors.text3),
       OnbTone.brand => (OnbColors.primary, Colors.white),
-      OnbTone.todo => (const Color(0xFFF1F1F3), OnbColors.text2),
+      OnbTone.todo => (OnbColors.quiet, OnbColors.text2),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
@@ -359,7 +368,7 @@ class OnbTag extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              fontFamily: 'Sora',
+              
               fontSize: 11,
               fontWeight: FontWeight.w600,
               letterSpacing: tone == OnbTone.mustDo ? 0.4 : 0,
@@ -459,7 +468,7 @@ class OnbAvatar extends StatelessWidget {
     final fallback = Center(
       child: Text(
         initials(name),
-        style: TextStyle(fontFamily: 'Sora', fontSize: size * 0.36, fontWeight: FontWeight.w600, color: OnbColors.primary),
+        style: TextStyle(fontSize: size * 0.36, fontWeight: FontWeight.w600, color: OnbColors.primary),
       ),
     );
     return Semantics(
@@ -645,12 +654,12 @@ class OnbTextArea extends StatelessWidget {
     maxLines: minLines == 1 ? 1 : 6,
     maxLength: maxLength,
     onChanged: onChanged,
-    style: const TextStyle(fontFamily: 'Sora', fontSize: 14, color: OnbColors.text),
+    style: const TextStyle(fontSize: 14, color: OnbColors.text),
     decoration: InputDecoration(
       hintText: hint,
       labelText: label,
       counterText: showCounter ? null : '',
-      hintStyle: const TextStyle(fontFamily: 'Sora', fontSize: 14, color: OnbColors.icon),
+      hintStyle: const TextStyle(fontSize: 14, color: OnbColors.icon),
       filled: true,
       fillColor: Colors.white,
       contentPadding: const EdgeInsets.all(14),

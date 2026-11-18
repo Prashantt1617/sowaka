@@ -165,12 +165,12 @@ class _JoinerScreenState extends State<JoinerScreen> {
             children: [
               Text(
                 onboardingStageLabel(joiner.stage).toUpperCase(),
-                style: const TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.primary),
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.primary),
               ),
               const SizedBox(height: 2),
               Text(
                 joiner.dayLabelOn(now),
-                style: const TextStyle(fontFamily: 'Sora', fontSize: 26, height: 1.1, fontWeight: FontWeight.w800, letterSpacing: -0.52, color: OnbColors.text),
+                style: const TextStyle(fontSize: 26, height: 1.1, fontWeight: FontWeight.w800, letterSpacing: -0.52, color: OnbColors.text),
               ),
               const SizedBox(height: 2),
               Text(
@@ -178,7 +178,7 @@ class _JoinerScreenState extends State<JoinerScreen> {
                   ?joiner.designation,
                   if (joiner.tj != null) (joiner.preboarding ? 'joins ${onbDay(joiner.tj!)}' : 'joined ${onbDay(joiner.tj!)}'),
                 ].join(' · '),
-                style: const TextStyle(fontFamily: 'Sora', fontSize: 12, color: OnbColors.text3),
+                style: const TextStyle(fontSize: 12, color: OnbColors.text3),
               ),
             ],
           ),
@@ -467,7 +467,7 @@ String compactTime(DateTime at) {
   return full.replaceFirst(':00 ', ' ');
 }
 
-const _purpleTint = Color(0xFFF3EEFF);
+const _purpleTint = Color(0xFFEEF0FF);
 
 /// The set-up tasks: done, their pill reopens the set-up.
 const _setupKeys = {'manager_setup', 'assign_buddy', 'probation_goals', 'people_to_meet'};
@@ -504,11 +504,11 @@ String _mgrMeta(TaskView task, DateTime now) {
 }
 
 abstract final class _MgrText {
-  static const section = TextStyle(fontFamily: 'Sora', fontSize: 16, fontWeight: FontWeight.w700, height: 1.3, color: OnbColors.text);
-  static const cardTitle = TextStyle(fontFamily: 'Sora', fontSize: 14, fontWeight: FontWeight.w700, color: OnbColors.text);
-  static const count = TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.text);
-  static const title = TextStyle(fontFamily: 'Sora', fontSize: 14, fontWeight: FontWeight.w600, height: 1.3, color: OnbColors.text);
-  static const meta = TextStyle(fontFamily: 'Sora', fontSize: 12, height: 1.35, color: OnbColors.text3);
+  static const section = TextStyle(fontSize: 16, fontWeight: FontWeight.w700, height: 1.3, color: OnbColors.text);
+  static const cardTitle = TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: OnbColors.text);
+  static const count = TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.text);
+  static const title = TextStyle(fontSize: 14, fontWeight: FontWeight.w600, height: 1.3, color: OnbColors.text);
+  static const meta = TextStyle(fontSize: 12, height: 1.35, color: OnbColors.text3);
 }
 
 typedef _DoneRow = ({String key, String title, String meta, VoidCallback? onTap});
@@ -567,7 +567,7 @@ class _DoneGroup extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(open ? 'Hide' : 'View', style: const TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.doneText)),
+                        Text(open ? 'Hide' : 'View', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.doneText)),
                         const SizedBox(width: 4),
                         Icon(open ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 14, color: OnbColors.doneText),
                       ],
@@ -610,9 +610,9 @@ class _DoneGroup extends StatelessWidget {
                               children: [
                                 Text(
                                   row.title,
-                                  style: const TextStyle(fontFamily: 'Sora', fontSize: 13, fontWeight: FontWeight.w600, color: OnbColors.text3, decoration: TextDecoration.lineThrough),
+                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: OnbColors.text3, decoration: TextDecoration.lineThrough),
                                 ),
-                                Text(row.meta, style: const TextStyle(fontFamily: 'Sora', fontSize: 11, color: OnbColors.icon)),
+                                Text(row.meta, style: const TextStyle(fontSize: 11, color: OnbColors.icon)),
                               ],
                             ),
                           ),
@@ -730,7 +730,7 @@ class _Pill extends StatelessWidget {
               height: 30,
               padding: const EdgeInsets.symmetric(horizontal: 12),
               alignment: Alignment.center,
-              child: Text(label, style: TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: fg)),
+              child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg)),
             ),
           ),
         ),
@@ -926,7 +926,7 @@ class _DueButton extends StatelessWidget {
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontFamily: 'Sora', fontSize: 13, fontWeight: FontWeight.w600, color: selected ? OnbColors.primary : OnbColors.text),
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: selected ? OnbColors.primary : OnbColors.text),
             ),
           ),
         ),
@@ -937,9 +937,9 @@ class _DueButton extends StatelessWidget {
 
 /// The manager's sheets (M2a, M2b), as drawn: a 22 title, a grey line, small labels.
 abstract final class _SheetText {
-  static const title = TextStyle(fontFamily: 'Sora', fontSize: 22, fontWeight: FontWeight.w700, height: 1.25, color: OnbColors.text);
-  static const sub = TextStyle(fontFamily: 'Sora', fontSize: 13, height: 1.4, color: OnbColors.text3);
-  static const label = TextStyle(fontFamily: 'Sora', fontSize: 12, height: 1.3, color: OnbColors.text2);
+  static const title = TextStyle(fontSize: 22, fontWeight: FontWeight.w700, height: 1.25, color: OnbColors.text);
+  static const sub = TextStyle(fontSize: 13, height: 1.4, color: OnbColors.text3);
+  static const label = TextStyle(fontSize: 12, height: 1.3, color: OnbColors.text2);
 }
 
 // ─── M2b · 1:1 notes sheet ──────────────────────────────────────────────────

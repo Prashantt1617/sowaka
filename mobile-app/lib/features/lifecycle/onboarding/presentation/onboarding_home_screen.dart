@@ -312,7 +312,7 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text('Journey', style: TextStyle(fontFamily: 'Sora', fontWeight: FontWeight.w600, fontSize: 12)),
+                        const Text('Journey', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
                         const SizedBox(width: 4),
                         AnimatedRotation(
                           turns: _journeyOpen ? 0.5 : 0,
@@ -487,7 +487,7 @@ class _DoneSummary extends StatelessWidget {
                   shape: const StadiumBorder(),
                   minimumSize: const Size(0, 26),
                   padding: const EdgeInsets.symmetric(horizontal: 10),
-                  textStyle: const TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w700),
+                  textStyle: OnbText.button(context, size: 11, weight: FontWeight.w700),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -660,11 +660,11 @@ Future<void> showJourneySheet(BuildContext context, List<JourneyStage> stages, S
 
 /// A2's type, as the artboard sets it.
 abstract final class _A2Text {
-  static const eyebrow = TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.primary);
-  static const day = TextStyle(fontFamily: 'Sora', fontSize: 26, height: 1.1, fontWeight: FontWeight.w800, letterSpacing: -0.52, color: OnbColors.text);
-  static const listTitle = TextStyle(fontFamily: 'Sora', fontSize: 16, fontWeight: FontWeight.w700, color: OnbColors.text);
-  static const listMeta = TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.text2);
-  static const upNextEyebrow = TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 1.1, color: OnbColors.brandBorder);
-  static const upNextTitle = TextStyle(fontFamily: 'Sora', fontSize: 18, height: 1.2, fontWeight: FontWeight.w700, color: Colors.white);
-  static const upNextMeta = TextStyle(fontFamily: 'Sora', fontSize: 12, color: OnbColors.tint);
+  static const eyebrow = TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.primary);
+  static const day = TextStyle(fontSize: 26, height: 1.1, fontWeight: FontWeight.w800, letterSpacing: -0.52, color: OnbColors.text);
+  static const listTitle = TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: OnbColors.text);
+  static const listMeta = TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.text2);
+  static const upNextEyebrow = TextStyle(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 1.1, color: OnbColors.brandBorder);
+  static const upNextTitle = TextStyle(fontSize: 18, height: 1.2, fontWeight: FontWeight.w700, color: Colors.white);
+  static const upNextMeta = TextStyle(fontSize: 12, color: OnbColors.tint);
 }

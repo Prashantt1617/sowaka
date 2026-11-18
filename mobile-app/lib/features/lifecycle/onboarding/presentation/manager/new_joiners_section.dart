@@ -201,7 +201,7 @@ class JoinersOfflineNote extends StatelessWidget {
     children: [
       Icon(Icons.cloud_off_rounded, size: 14, color: OnbColors.waterText),
       SizedBox(width: 6),
-      Text(OnbOfflineNote.text, style: TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.waterText)),
+      Text(OnbOfflineNote.text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.waterText)),
     ],
   );
 }
@@ -441,7 +441,7 @@ class _JoinerPill extends StatelessWidget {
     decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(8)),
     child: Text(
       label,
-      style: TextStyle(fontFamily: 'Sora', fontSize: 12.5, height: 16 / 12.5, fontWeight: FontWeight.w500, color: foreground),
+      style: TextStyle(fontSize: 12.5, height: 16 / 12.5, fontWeight: FontWeight.w500, color: foreground),
     ),
   );
 }

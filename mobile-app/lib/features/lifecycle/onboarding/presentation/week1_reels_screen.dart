@@ -221,7 +221,7 @@ class _Week1ReelsScreenState extends State<Week1ReelsScreen> {
                       const Expanded(
                         child: Text(
                           'I have read and agree to the company policies',
-                          style: TextStyle(fontFamily: 'Sora', fontSize: 13, height: 1.35, color: OnbColors.text2),
+                          style: TextStyle(fontSize: 13, height: 1.35, color: OnbColors.text2),
                         ),
                       ),
                     ],
@@ -525,9 +525,9 @@ Future<void> showPolicySheet(BuildContext context, PolicyItem policy) => showOnb
 
 /// The reels' type, as the artboard sets it (A4).
 abstract final class _ReelText {
-  static const step = TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.text3);
-  static const title = TextStyle(fontFamily: 'Sora', fontSize: 28, height: 1.1, fontWeight: FontWeight.w800, letterSpacing: -0.56, color: OnbColors.text);
-  static const doneTitle = TextStyle(fontFamily: 'Sora', fontSize: 22, fontWeight: FontWeight.w700, color: OnbColors.text);
+  static const step = TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.text3);
+  static const title = TextStyle(fontSize: 28, height: 1.1, fontWeight: FontWeight.w800, letterSpacing: -0.56, color: OnbColors.text);
+  static const doneTitle = TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: OnbColors.text);
 }
 
 /// A policy's icon (A4): leave 🌴, attendance ⏰, conduct 🤝, else a page.

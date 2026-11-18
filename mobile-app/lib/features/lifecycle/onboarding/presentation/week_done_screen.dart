@@ -40,16 +40,16 @@ class WeekDoneScreen extends StatelessWidget {
                   const Text(
                     'WELCOME STAGE COMPLETE',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.doneText),
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.doneText),
                   ),
                   const SizedBox(height: 8),
                   const Text(
                     'Week 1, done!',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontFamily: 'Sora', fontSize: 40, height: 1.05, fontWeight: FontWeight.w800, letterSpacing: -1.2, color: OnbColors.text),
+                    style: TextStyle(fontSize: 40, height: 1.05, fontWeight: FontWeight.w800, letterSpacing: -1.2, color: OnbColors.text),
                   ),
                   const SizedBox(height: 8),
-                  const Text('Your plant is now a seedling', textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Sora', fontSize: 14, color: OnbColors.text2)),
+                  const Text('Your plant is now a seedling', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: OnbColors.text2)),
                   const SizedBox(height: 40),
                   Plant(stage: 2, size: 150, leaves: home.plant.leaves, droop: home.plant.droop),
                 ],
@@ -73,12 +73,12 @@ class WeekDoneScreen extends StatelessWidget {
               children: [
                 const Text(
                   'NEXT STAGE · SETTLING IN',
-                  style: TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.primary),
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.primary),
                 ),
                 const SizedBox(height: 6),
                 Text(
                   goalsOn == null ? 'Your month-1 goals arrive soon' : 'Your month-1 goals arrive ${onbDay(goalsOn)}',
-                  style: const TextStyle(fontFamily: 'Sora', fontSize: 16, fontWeight: FontWeight.w700, color: OnbColors.text),
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: OnbColors.text),
                 ),
                 const SizedBox(height: 4),
                 Text('$manager sets them. You’ll check in at the end of the month.', style: OnbText.label),
@@ -109,7 +109,7 @@ class _Stat extends StatelessWidget {
         children: [
           Text(
             value,
-            style: const TextStyle(fontFamily: 'Sora', fontSize: 26, height: 1.1, fontWeight: FontWeight.w800, color: OnbColors.primary),
+            style: const TextStyle(fontSize: 26, height: 1.1, fontWeight: FontWeight.w800, color: OnbColors.primary),
           ),
           const SizedBox(height: 4),
           Text(label, style: OnbText.label.copyWith(color: OnbColors.text2)),
