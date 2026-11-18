@@ -1923,24 +1923,30 @@ class _PlayingNowPill extends StatelessWidget {
                     for (var i = 0; i < faces.length; i++)
                       Positioned(
                         left: i * 13.0,
-                        child: Container(
-                          width: 20,
-                          height: 20,
-                          decoration: BoxDecoration(
-                            color: _colors[i % _colors.length],
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: GamesStyle.ink2,
-                              width: 1.1,
+                        child: FacePhoto(
+                          photoUrl: i < playingNow.photoUrls.length
+                              ? playingNow.photoUrls[i]
+                              : null,
+                          size: 20,
+                          fallback: Container(
+                            width: 20,
+                            height: 20,
+                            decoration: BoxDecoration(
+                              color: _colors[i % _colors.length],
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: GamesStyle.ink2,
+                                width: 1.1,
+                              ),
                             ),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            faces[i].characters.first,
-                            style: GamesStyle.figtree(
-                              7,
-                              weight: FontWeight.w800,
-                              height: 8.75,
+                            alignment: Alignment.center,
+                            child: Text(
+                              faces[i].characters.first,
+                              style: GamesStyle.figtree(
+                                7,
+                                weight: FontWeight.w800,
+                                height: 8.75,
+                              ),
                             ),
                           ),
                         ),

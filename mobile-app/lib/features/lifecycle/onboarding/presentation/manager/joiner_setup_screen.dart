@@ -92,7 +92,7 @@ class _JoinerSetupScreenState extends State<JoinerSetupScreen> {
   Future<void> _chooseBuddy() async {
     final picked = await _choose(title: 'Choose a buddy');
     if (picked == null || !mounted) return;
-    setState(() => _buddy = SetupPerson(userId: picked.userId, name: picked.name, designation: picked.designation));
+    setState(() => _buddy = SetupPerson(userId: picked.userId, name: picked.name, designation: picked.designation, photoUrl: picked.photoUrl));
   }
 
   Future<void> _save() async {
@@ -188,7 +188,7 @@ class _JoinerSetupScreenState extends State<JoinerSetupScreen> {
             onTap: _directory == null ? null : _chooseBuddy,
             child: Row(
               children: [
-                if (_buddy != null) ...[OnbAvatar(name: _nameOf(_buddy!), size: 36), const SizedBox(width: 10)],
+                if (_buddy != null) ...[OnbAvatar(name: _nameOf(_buddy!), photoUrl: _buddy!.photoUrl, size: 36), const SizedBox(width: 10)],
                 Expanded(child: Text(_buddy == null ? 'Choose a buddy' : _nameOf(_buddy!), style: OnbText.bodyStrong)),
                 const Icon(Icons.chevron_right_rounded, color: OnbColors.icon),
               ],

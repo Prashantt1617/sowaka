@@ -378,7 +378,9 @@ export async function seedLifecycleDemo(opts: Opts): Promise<SeedResult> {
       const { journeyId } = await offersSvc.createOffer(HR, {
         candidate: { name: p.name, personalEmail: personalEmailOf(p.name), phone: phoneOf(s.i) },
         fields: { designation: p.designation, department: p.department, location, ctc: p.ctc, tj, managerUserId: s.manager.userId, noticeDays: 60,
-          validTill: rules.addDaysKey(day, 7), responsibilities: `${firstName} will work on feature-film and series shots in the ${p.department} team.`, ...extra },
+          validTill: rules.addDaysKey(day, 7), responsibilities: `${firstName} will work on feature-film and series shots in the ${p.department} team.`,
+          // The story's dates are fixed relative days; some fall on a week-off or holiday.
+          allowNonWorkingDay: true, ...extra },
       });
       s.journeyId = journeyId;
       await track({ journeyId });

@@ -59,6 +59,7 @@ import { cupEvents } from './cup.service';
 import { eventFor as pokerEventFor } from './poker-room.service';
 import { phaseOf as pokerPhaseOf } from './poker-floor';
 import { optional } from '../utils/optional';
+import { keptFaceUrlsFor } from './face-photos';
 import { requestViewer } from '../middleware/request-viewer';
 
 const CONTEST_TYPES: ConnectPostType[] = ['caption_challenge', 'photo_story_challenge', 'most_likely'];
@@ -586,7 +587,7 @@ async function playedGamesFor(viewer: User, games: PublicGame[], allMine: ScoreR
 export interface PlayingNow {
   count: number;
   /** The first few, each with their userId so the page can open their profile. */
-  people: { userId: string; name: string; initials: string }[];
+  people: { userId: string; name: string; initials: string; photoUrl: string | null }[];
 }
 
 /**
@@ -638,12 +639,15 @@ async function playingNowFor(
   }
   active.delete(viewer.userId);
   const colleagues = roster.filter((person) => active.has(person.userId));
+  const shown = colleagues.slice(0, PLAYING_FACES);
+  const faces = await keptFaceUrlsFor(shown.map((person) => person.userId)).catch(() => new Map<string, string | null>());
   return {
     count: colleagues.length,
-    people: colleagues.slice(0, PLAYING_FACES).map((person) => ({
+    people: shown.map((person) => ({
       userId: person.userId,
       name: person.name,
       initials: initialsOf(person.name),
+      photoUrl: faces.get(person.userId) ?? null,
     })),
   };
 }

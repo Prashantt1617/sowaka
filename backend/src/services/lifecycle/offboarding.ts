@@ -46,6 +46,7 @@ import { orgMayEmail, sendLifecycleEmail, smtpConfigured } from './emails';
 import { noticeDaysFor } from './templates';
 import { scopedUsers, scriptForcesFeatures } from './scriptScope';
 import { env } from '../../config/env';
+import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
 
 /** Answers with its status and message (the routes send `{ error, message }`). */
 export class LifecycleError extends AdminError {}
@@ -1277,7 +1278,9 @@ export async function myOffboarding(userId: string, now = new Date()) {
   const handoverDue = tasks.find((t) => t.systemKey === 'upload_handover')?.dueAt ?? null;
   const resignedOn = resignation ? keyOfInstant(resignation.submittedAt) : e.noticeFrom ?? null;
   const managerUserId = journey?.managerUserId ?? user.managerUserId;
-  const managerName = managerUserId ? (await users().findOne({ userId: managerUserId }, { projection: { _id: 0, name: 1 } }))?.name : undefined;
+  const managerRow = managerUserId ? await users().findOne<FaceFields & { name: string }>({ userId: managerUserId }, { projection: { _id: 0, name: 1, ...FACE_PROJECTION } }) : null;
+  const managerName = managerRow?.name;
+  const managerPhotoUrl = faceUrlOf(managerRow);
   // The checklist's shared / done steps are the manager's tasks: read them from every task (covers both
   // 'handover done' and when the checklist was shared), as the manager's R8b does.
   const summary = handoverSummary(items, ob, await journeyTasksView(journeyId, 'hr'));
@@ -1290,6 +1293,7 @@ export async function myOffboarding(userId: string, now = new Date()) {
     resignedOn,
     // What the app's R3 reads beside the contract's fields: the manager, when HR accepted and when the notice runs from.
     ...(managerName ? { managerName } : {}),
+    ...(managerPhotoUrl ? { managerPhotoUrl } : {}),
     acceptedAt: acceptedAt ? new Date(acceptedAt).toISOString() : null,
     noticeFrom: e.noticeFrom ?? resignedOn,
     tasks,

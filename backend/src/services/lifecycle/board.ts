@@ -7,12 +7,12 @@
 import { randomUUID } from 'node:crypto';
 import { cachedLifecycle, refreshLifecycle, setBoardPatch, type BoardWrites } from './readCache';
 import { orgsKeeping, patchSwr } from '../swr-cache';
-import { dateChangeRequests, journeys, journeyTasks, offers, surveyResponses, users } from '../../config/db';
+import { candidateDocuments, dateChangeRequests, journeys, journeyTasks, offers, surveyResponses, users } from '../../config/db';
 import type {
   Day1Pass, Journey, JourneyFlag, JourneyTask, OnboardingBoardColumn, OnboardingBoardTab, OwnerRole, SurveyKind,
 } from '../../models/lifecycle.model';
 import { decryptField, fieldKeyConfigured } from '../fieldCrypto';
-import { resolveProfilePhoto } from '../s3-connect-media.service';
+import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
 import { setPaymentDetails } from '../employeePayment.service';
 import { companyTimeZone, isDateKey, keyOfDay, todayKey } from './dueRules';
 import {
@@ -54,6 +54,8 @@ export interface BoardCard {
   dayLabel: string; status: Journey['status']; statusLabel: string; column: OnboardingBoardColumn; flags: JourneyFlag[];
   waitingOn: WaitingOn[]; progress: { done: number; total: number }; plant: Derived['plant'];
   quietDays?: number; expiresInDays?: number;
+  /** Optional documents the joiner sent that HR has not looked at yet: they never hold Documents open, so the card says so. */
+  optionalWaiting?: number;
 }
 
 // ─── Who is asking ──────────────────────────────────────────────────────────
@@ -212,7 +214,8 @@ export async function groupTasks(ids: string[], slim = false): Promise<Map<strin
 async function people(ids: Array<string | undefined>) {
   const list = [...new Set(ids.filter((id): id is string => !!id))];
   if (!list.length) return new Map<string, { name: string; designation?: string; department?: string; profilePhotoKey?: string }>();
-  const rows = await users().find({ userId: { $in: list } }, { projection: { _id: 0, userId: 1, name: 1, designation: 1, department: 1, profilePhotoKey: 1 } }).toArray();
+  // The face read lean (services/face-photos): a link or an older inline photo shows on the card too.
+  const rows = await users().find({ userId: { $in: list } }, { projection: { _id: 0, name: 1, designation: 1, department: 1, ...FACE_PROJECTION } }).toArray();
   return new Map(rows.map((row) => [row.userId, row]));
 }
 
@@ -368,12 +371,21 @@ export async function onboardingBoard(org: string, viewerUserId: string, query: 
     }
     counts[derived.tab] += 1;
     if (derived.tab !== tab) continue;
-    const photoUrl = who?.profilePhotoKey ? await resolveProfilePhoto({ profilePhotoKey: who.profilePhotoKey }) : undefined;
+    const photoUrl = (who ? faceUrlOf(who as unknown as FaceFields) : null) ?? undefined;
     const card = cardFor(j, tasks, derived, names, now, who, photoUrl);
     if (filter && !matchesFilter(card, filter as QuickFilter, tasks, viewerUserId)) continue;
     columns.find((c) => c.key === derived.column)?.cards.push(card);
   }
   for (const column of columns) column.cards.sort((a, b) => urgency(a) - urgency(b) || (a.tj ?? '').localeCompare(b.tj ?? '') || a.name.localeCompare(b.name));
+  if (tab === 'pre_boarding') {
+    const cards = columns.flatMap((c) => c.cards);
+    const waiting = cards.length ? await candidateDocuments().aggregate<{ _id: string; n: number }>([
+      { $match: { journeyId: { $in: cards.map((c) => c.journeyId) }, required: { $ne: true }, status: 'in_review' } },
+      { $group: { _id: '$journeyId', n: { $sum: 1 } } },
+    ]).toArray() : [];
+    const by = new Map(waiting.map((w) => [w._id, w.n]));
+    for (const card of cards) if (by.get(card.journeyId)) card.optionalWaiting = by.get(card.journeyId);
+  }
   await markNudged(columns.flatMap((c) => c.cards.flatMap((card) => card.waitingOn)), now);
   return { tab, columns, counts };
 }

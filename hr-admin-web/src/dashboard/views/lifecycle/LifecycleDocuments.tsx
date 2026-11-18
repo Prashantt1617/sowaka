@@ -2,33 +2,34 @@
 // offer, journey and record; fill anything missing on the left and check the
 // letter on the right (filled values blue, missing orange). Generate PDF waits
 // until nothing is missing, makes the PDF in the browser and uploads it; Draft
-// email (H3c) opens the email with the PDF attached. The offer letter goes
-// through the offer itself (its PDF and its email carry the portal link).
-import { useEffect, useMemo, useRef, useState } from 'react';
+// email (H3c) opens the email with the PDF attached. The offer letter is the
+// offer itself (OfferWorkbench): its form saves the offer as a draft, and New
+// offer letter on the board opens it for a new joiner.
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../store';
 import { canOpen, canSeePay } from '../../access';
-import { DrawerShell, CloseButton } from '../../drawers/shell';
-import { LoadError, PageActions, SkeletonLines, Spinner, StatusTabs } from '../../ui';
+import { useBrand } from '../../brand';
+import { LoadError, SkeletonLines, StatusTabs } from '../../ui';
 import {
-  createLetter, getJoinerPicks, getJourney, getMergeValues, getSalaryBreakup, isNotAvailable, listLetterTemplates, listLetters, saveLetterDraft, sendLetter, sendOffer,
-  uploadLetterAttachment, uploadLetterPdf, uploadOfferPdf,
+  createLetter, getJoinerPicks, getJourney, getMergeValues, getSalaryBreakup, isNotAvailable, listLetterTemplates, listLetters, saveLetterDraft, sendLetter,
+  uploadLetterPdf,
 } from '../../../services/lifecycle';
-import type { AttachmentKind, BoardTab, JoinerPick, LetterAttachment, LetterEmail, LetterKind, LetterTemplateDTO, LetterView, SalaryBreakup } from '../../../services/lifecycle';
+import type { BoardTab, JoinerPick, LetterKind, LetterTemplateDTO, LetterView, SalaryBreakup } from '../../../services/lifecycle';
 import { htmlToPdfBlob } from '../../pdf';
-import { BlobPreview, FilePreview, Field, NotSwitchedOn, Pick, Switch } from './shared';
-import { DOCS_OPEN_KEY, LETTER_TEMPLATE_OPEN_KEY, areaStyle, errText, firstName, inputStyle, readHandoff, shortDay } from './format';
+import { BlobPreview, FilePreview, Field, NotSwitchedOn, Pick } from './shared';
+import { DOCS_OPEN_KEY, LETTER_TEMPLATE_OPEN_KEY, errText, firstName, inputStyle, readHandoff } from './format';
 import {
-  KIND_LABEL, LETTER_KINDS, LETTER_TITLE, annexureHtml, checklistHtml, emailDraft, fieldLabel, filled, letterFileName, letterInner, letterPdf, missingFields, placeholders,
+  KIND_LABEL, LETTER_KINDS, LETTER_TITLE, annexureHtml, checklistHtml, fieldLabel, filled, letterFileName, letterInner, letterPdf, missingFields, placeholders,
   simpleDocument, takesAnnexure, valueName,
 } from './letterDoc';
-import { LetterPreview } from './OfferDialogs';
 import { useCompanyName } from './hooks';
+import { AUTO_KEYS, DetailsHead, DocActions, logoSrc, EarlierLetters, EmailCard, FieldGrid, MailPanel, NEEDED, PreviewCard, SourceNote, missingInput } from './DocumentParts';
+import type { MailOut, Person } from './DocumentParts';
+import { OfferWorkbench, NEW_JOINER } from './OfferWorkbench';
 import '../people.css';
 
-type Person = { key: string; journeyId?: string; userId?: string; name: string; sub: string; managerUserId?: string; email?: string };
 const PAY_FIELD = /ctc|salary|pay/i;
-const SOURCE: Record<LetterKind, (first: string) => string> = {
-  offer: (f) => `Filled from the offer HR created for ${f}. Edit here or in the offer.`,
+const SOURCE: Record<Exclude<LetterKind, 'offer'>, (first: string) => string> = {
   appointment: (f) => `Filled from ${f}’s accepted offer and their record. Generated once all documents are approved.`,
   nda: (f) => `Filled from ${f}’s accepted offer and their record.`,
   confirmation: (f) => `Filled from ${f}’s record and the confirmation discussion.`,
@@ -40,35 +41,38 @@ const TABS_FOR: Record<LetterKind, BoardTab[]> = {
   confirmation: ['probation'], extension: ['probation'], relieving: [],
 };
 
+/** What another page asks Documents to open: a letter for a joiner, a new offer, or the offer's email. */
+type Handoff = { kind?: LetterKind; journeyId?: string; userId?: string; newOffer?: boolean; mail?: boolean };
+
 export function LifecycleDocuments() {
   const { user, emps, setView, flash } = useStore();
   const pay = canSeePay(user);
   const company = useCompanyName();
-  const [handoff] = useState(() => {
+  const logo = useBrand().icon;
+  const [handoff] = useState<Handoff | null>(() => {
     try {
       const raw = readHandoff(DOCS_OPEN_KEY);
-      return raw ? (JSON.parse(raw) as { kind?: LetterKind; journeyId?: string; userId?: string }) : null;
+      return raw ? (JSON.parse(raw) as Handoff) : null;
     } catch { return null; }
   });
-  const [kind, setKind] = useState<LetterKind>(handoff?.kind && LETTER_KINDS.includes(handoff.kind) ? handoff.kind : 'offer');
+  const [kind, setKind] = useState<LetterKind>(handoff?.newOffer ? 'offer' : handoff?.kind && LETTER_KINDS.includes(handoff.kind) ? handoff.kind : 'offer');
   const [cards, setCards] = useState<Record<BoardTab, JoinerPick[]> | null>(null);
   const [off, setOff] = useState(false);
-  const [personKey, setPersonKey] = useState(handoff?.journeyId ? `j:${handoff.journeyId}` : handoff?.userId ? `u:${handoff.userId}` : '');
+  const startKey = handoff?.newOffer ? NEW_JOINER : handoff?.journeyId ? `j:${handoff.journeyId}` : handoff?.userId ? `u:${handoff.userId}` : '';
+  const [personKey, setPersonKey] = useState(startKey);
+  // The workbench is made again when HR picks someone else, not when a new offer gets its journey.
+  const [benchKey, setBenchKey] = useState(startKey);
+  const pick = useCallback((key: string) => { setPersonKey(key); setBenchKey(key); }, []);
 
-  // Everyone on the onboarding board, for the joiner letters.
-  useEffect(() => {
-    let live = true;
-    // One light call (who and where on the board), not the three full boards.
-    getJoinerPicks()
-      .then((joiners) => {
-        if (!live) return;
-        const byTab: Record<BoardTab, JoinerPick[]> = { pre_boarding: [], first_week: [], probation: [] };
-        for (const j of joiners) byTab[j.tab]?.push(j);
-        setCards(byTab);
-      })
-      .catch((e) => { if (!live) return; if (isNotAvailable(e)) setOff(true); else setCards({ pre_boarding: [], first_week: [], probation: [] }); });
-    return () => { live = false; };
-  }, []);
+  // Everyone on the onboarding board, for the joiner letters. One light call (who and where on the board), not the three full boards.
+  const loadPicks = useCallback(() => getJoinerPicks()
+    .then((joiners) => {
+      const byTab: Record<BoardTab, JoinerPick[]> = { pre_boarding: [], first_week: [], probation: [] };
+      for (const j of joiners) byTab[j.tab]?.push(j);
+      setCards(byTab);
+    })
+    .catch((e) => { if (isNotAvailable(e)) setOff(true); else setCards((c) => c ?? { pre_boarding: [], first_week: [], probation: [] }); }), []);
+  useEffect(() => { void loadPicks(); }, [loadPicks]);
 
   const people: Person[] = useMemo(() => {
     if (kind === 'relieving') {
@@ -76,44 +80,52 @@ export function LifecycleDocuments() {
         .map((e) => ({ key: `u:${e.id}`, userId: e.id, name: e.name, sub: [e.role, e.exit ? (e.exit.left ? 'left' : 'on notice') : ''].filter(Boolean).join(' · '), managerUserId: e.managerId, email: e.email }));
     }
     if (!cards) return [];
-    return TABS_FOR[kind].flatMap((tab) => cards[tab]).map((c) => ({ key: `j:${c.journeyId}`, journeyId: c.journeyId, name: c.name, sub: [c.designation, c.dayLabel].filter(Boolean).join(' · ') }));
-  }, [kind, cards, emps]);
+    const joiners = TABS_FOR[kind].flatMap((tab) => cards[tab]).map((c) => ({ key: `j:${c.journeyId}`, journeyId: c.journeyId, name: c.name, sub: [c.designation, c.dayLabel].filter(Boolean).join(' · ') }));
+    // The offer letter also starts an offer: a new joiner, last in the list.
+    return kind === 'offer' && pay ? [...joiners, { key: NEW_JOINER, name: 'New joiner', sub: '' }] : joiners;
+  }, [kind, cards, emps, pay]);
   const person = people.find((p) => p.key === personKey) ?? null;
 
   // A person who does not fit the new letter is cleared; the first one is picked when there is none.
   useEffect(() => {
     if (!people.length) return;
-    if (!people.some((p) => p.key === personKey)) setPersonKey(people[0].key);
-  }, [people, personKey]);
+    if (!people.some((p) => p.key === personKey)) pick(people[0].key);
+  }, [people, personKey, pick]);
 
   if (off) return <NotSwitchedOn />;
 
+  const canEditTemplates = canOpen(user, 'lifecycle_letter_templates');
+  const onEditTemplate = (id: string) => { try { sessionStorage.setItem(LETTER_TEMPLATE_OPEN_KEY, id); } catch { /* opens the list */ } setView('lifecycle_letter_templates'); };
+  const managerEmail = (id?: string) => emps.find((e) => e.id === id);
+
   return (
     <div className="pd-form" style={{ animation: 'fade .3s ease both' }}>
-      <div className="pd-head" style={{ marginBottom: 16 }}>
-        <p className="pd-lead">Pick a document and a {kind === 'relieving' ? 'person' : 'joiner'}. Details come from their record; fill anything missing and check the letter on the right before you generate it.</p>
-        {canOpen(user, 'lifecycle_letter_templates') && <button type="button" className="pd-btn ghost" onClick={() => setView('lifecycle_letter_templates')}>Document templates</button>}
-      </div>
-      <div style={{ marginBottom: 16 }}>
+      <p className="pd-lead" style={{ margin: '-4px 4px 16px', fontSize: 12.5, maxWidth: '70ch' }}>
+        Pick a document and a {kind === 'relieving' ? 'person' : 'joiner'}. Details come from their record; fill anything missing and check the letter on the right before you generate it.
+      </p>
+      <div style={{ marginBottom: 20 }} role="tablist" aria-label="Document">
         <StatusTabs<LetterKind> options={LETTER_KINDS} active={kind} onSelect={setKind} labels={KIND_LABEL} />
       </div>
       {!cards && kind !== 'relieving' ? (
         <section className="pd-card"><SkeletonLines lines={6} /></section>
+      ) : kind === 'offer' ? (
+        <OfferWorkbench key={`offer|${benchKey}`} person={person} people={people} onPerson={pick}
+          pay={pay} company={company} logo={logo} hrName={user?.name ?? 'HR'} managerEmail={managerEmail}
+          canEditTemplates={canEditTemplates} onEditTemplate={onEditTemplate} flash={flash}
+          openMail={Boolean(handoff?.mail) && benchKey === startKey}
+          onCreated={(journeyId) => { void loadPicks().then(() => setPersonKey(`j:${journeyId}`)); }} />
       ) : (
-        <LetterWorkbench key={`${kind}|${person?.key ?? ''}`} kind={kind} person={person} people={people} onPerson={setPersonKey}
-          pay={pay} company={company} hrName={user?.name ?? 'HR'}
-          managerEmail={(id?: string) => emps.find((e) => e.id === id)}
-          canEditTemplates={canOpen(user, 'lifecycle_letter_templates')}
-          onEditTemplate={(id) => { try { sessionStorage.setItem(LETTER_TEMPLATE_OPEN_KEY, id); } catch { /* opens the list */ } setView('lifecycle_letter_templates'); }}
-          flash={flash} />
+        <LetterWorkbench key={`${kind}|${benchKey}`} kind={kind} person={person} people={people} onPerson={pick}
+          pay={pay} company={company} logo={logo} hrName={user?.name ?? 'HR'} managerEmail={managerEmail}
+          canEditTemplates={canEditTemplates} onEditTemplate={onEditTemplate} flash={flash} />
       )}
     </div>
   );
 }
 
-function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName, managerEmail, canEditTemplates, onEditTemplate, flash }: {
-  kind: LetterKind; person: Person | null; people: Person[]; onPerson: (key: string) => void;
-  pay: boolean; company: string; hrName: string;
+function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, hrName, managerEmail, canEditTemplates, onEditTemplate, flash }: {
+  kind: Exclude<LetterKind, 'offer'>; person: Person | null; people: Person[]; onPerson: (key: string) => void;
+  pay: boolean; company: string; logo?: string; hrName: string;
   managerEmail: (id?: string) => { name: string; email: string } | undefined;
   canEditTemplates: boolean;
   onEditTemplate: (id: string) => void;
@@ -166,8 +178,8 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
     return () => { live = false; };
   }, [kind, journeyId, userId, attempt]);
 
-  // Annexure A (offer, appointment): the CTC split by the company's salary template. Pay only.
-  const wantsBreakup = pay && (kind === 'offer' || kind === 'appointment') && Boolean(journeyId);
+  // Annexure A (appointment; the offer's is in OfferWorkbench): the CTC split by the company's salary template. Pay only.
+  const wantsBreakup = pay && kind === 'appointment' && Boolean(journeyId);
   useEffect(() => {
     if (!wantsBreakup || !journeyId) { setBreakup(null); return; }
     let live = true;
@@ -182,20 +194,20 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
   const keys = useMemo(() => {
     const list = template ? placeholders(template.body) : [];
     for (const k of serverMissing) if (!list.includes(k)) list.push(k);
-    return list;
-  }, [template, serverMissing]);
+    // What the system fills (company, date, reference) stays off the form unless it came empty.
+    return list.filter((k) => !AUTO_KEYS.has(k) || !filled(base ?? {}, k));
+  }, [template, serverMissing, base]);
   const missing = template ? missingFields(template.body, values, serverMissing) : [];
   const name = valueName(values) || person?.name || '';
   const withAnnex = Boolean(template && takesAnnexure(kind, template.body));
   const annex = withAnnex && breakup?.breakup ? annexureHtml(breakup.breakup, name) : '';
   const valuesKey = JSON.stringify([templateId, values, annex]);
   const first = firstName(name);
-  const head = { company: values.companyName || company, address: values.companyAddress, refNo: letter?.refNo || values.refNo, title: LETTER_TITLE[kind] };
+  const head = { company: values.companyName || company, address: values.companyAddress, refNo: letter?.refNo || values.refNo, title: LETTER_TITLE[kind], date: values.letterDate || undefined, logo: logoSrc(logo) };
   const fileName = letterFileName(kind, name);
   const pdfReady = Boolean(pdf && pdf.key === valuesKey);
   // What the preview shows: pay figures masked for someone without payroll access.
   const shown = pay ? values : Object.fromEntries(Object.entries(values).map(([k, v]) => [k, PAY_FIELD.test(k) && v ? '••••••' : v]));
-  const isOffer = kind === 'offer';
 
   // The latest email draft saved for this letter kind and person (H3c's Save draft), not sent yet.
   const savedDraft = earlier.find((l) => l.kind === kind && l.email && !l.email.sentAt && l.email.savedAt) ?? null;
@@ -239,22 +251,16 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
     const fileName = `Joining checklist – ${name}.pdf`.replace(/[/\\:*?"<>|]/g, '');
     return { blob: await htmlToPdfBlob(simpleDocument(docHead, checklistHtml(name, candidate.docs ?? [], candidate.bring ?? [], values.joiningDate)), fileName), name: fileName };
   };
-  /** Makes the PDF and uploads it (to the offer, or to the letter). */
+  /** Makes the PDF and uploads it to the letter. */
   const generate = async (): Promise<boolean> => {
     if (!template || !person || missing.length) return false;
     if (pdfReady) return true;
     setBusy('pdf');
     try {
-      if (isOffer) {
-        const blob = await letterPdf(template.body, values, head, fileName, annex);
-        await uploadOfferPdf(person.journeyId!, blob, fileName);
-        setPdf({ blob, key: valuesKey });
-      } else {
-        const l = await ensureLetter();
-        const blob = await letterPdf(template.body, values, { ...head, refNo: l.refNo || head.refNo }, fileName, annex);
-        const up = await uploadLetterPdf(l.id, blob, fileName);
-        setLetter(up); setPdf({ blob, key: valuesKey });
-      }
+      const l = await ensureLetter();
+      const blob = await letterPdf(template.body, values, { ...head, refNo: l.refNo || head.refNo }, fileName, annex);
+      const up = await uploadLetterPdf(l.id, blob, fileName);
+      setLetter(up); setPdf({ blob, key: valuesKey });
       flash(`${KIND_LABEL[kind]} generated`);
       return true;
     } catch (e) { flash(errText(e, 'Could not make the PDF'), 'error'); return false; } finally { setBusy(''); }
@@ -279,12 +285,9 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
     if (!(await generate())) return false;
     setBusy('send');
     try {
-      if (isOffer) await sendOffer(person.journeyId!, { subject: mail.subject, body: mail.body, cc: mail.cc, withPortalLink: mail.withPortalLink, attachments: mail.attachments });
-      else {
-        const l = await ensureLetter();
-        const sent = await sendLetter(l.id, { to: mail.to, cc: mail.cc, subject: mail.subject, body: mail.body, withPortalLink: mail.withPortalLink, attachments: mail.attachments });
-        setLetter(sent);
-      }
+      const l = await ensureLetter();
+      const sent = await sendLetter(l.id, { to: mail.to, cc: mail.cc, subject: mail.subject, body: mail.body, withPortalLink: mail.withPortalLink, attachments: mail.attachments });
+      setLetter(sent);
       flash(`${KIND_LABEL[kind]} sent to ${first || mail.to}`);
       void reloadEarlier();
       return true;
@@ -293,96 +296,74 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
 
   return (
     <>
-      <PageActions>
-        {!isOffer && <button type="button" className="pd-btn" onClick={() => void saveDraft()} disabled={Boolean(busy) || !template || !base}>{busy === 'draft' ? 'Saving…' : 'Save draft'}</button>}
-        <button type="button" className="pd-btn" onClick={() => setMailOpen(true)} disabled={!template || !base}>Draft email</button>
-        <button type="button" className="pd-btn primary" onClick={() => void generate()} disabled={Boolean(busy) || !template || !base || missing.length > 0} aria-disabled={missing.length > 0}
-          title={missing.length ? 'Fill the missing details first' : undefined}>{busy === 'pdf' ? 'Generating…' : pdfReady ? 'PDF generated' : 'Generate PDF'}</button>
-      </PageActions>
+      <DocActions onSave={() => void saveDraft()} saving={busy === 'draft'} canSave={Boolean(template && base)}
+        onMail={() => setMailOpen(true)} canMail={Boolean(template && base)}
+        onGenerate={() => void generate()} generating={busy === 'pdf'} generated={pdfReady} missing={missing.length} disabled={Boolean(busy) || !template || !base} />
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
-        <section className="pd-card" style={{ flex: '1 1 320px', maxWidth: 420, minWidth: 0, display: 'grid', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, flex: 1 }}>Details</h2>
-            {base && template && <span style={{ fontSize: 12.5, fontWeight: 500, color: missing.length ? 'var(--bad)' : 'var(--ok)' }}>{missing.length ? `${missing.length} field${missing.length === 1 ? '' : 's'} missing` : 'All details filled'}</span>}
-          </div>
+      <div className="lf-doc-grid">
+        <section className="pd-card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <DetailsHead missing={missing.length} ready={Boolean(base && template)} />
           <Field label={kind === 'relieving' ? 'Employee' : 'Joiner'}>
-            <Pick value={person.key} onChange={onPerson}>
+            <Pick value={person.key} onChange={onPerson} ariaLabel={kind === 'relieving' ? 'Employee' : 'Joiner'}>
               {people.map((p) => <option key={p.key} value={p.key}>{p.name}{p.sub ? ` · ${p.sub}` : ''}</option>)}
             </Pick>
           </Field>
-          <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{SOURCE[kind](first || 'them')}</div>
-          {templates && templates.length > 1 && (
-            <Field label="Template">
-              <Pick value={templateId} onChange={setTemplateId}>
-                {templates.map((t) => <option key={t.id} value={t.id}>{t.name}{t.isDefault ? ' (default)' : ''}</option>)}
-              </Pick>
-            </Field>
-          )}
+          <SourceNote>{SOURCE[kind](first || 'them')}</SourceNote>
           {error && <LoadError compact text={error} onRetry={() => setAttempt((n) => n + 1)} />}
-          {!base || !templates ? <SkeletonLines lines={6} /> : keys.map((k) => {
-            const isPay = PAY_FIELD.test(k);
-            const miss = !filled(values, k);
-            if (isPay && !pay) {
-              return <Field key={k} label={fieldLabel(k)} hint={miss ? 'Needed for this letter. Someone with payroll access fills it.' : undefined}><input value={miss ? '' : 'Hidden · needs payroll access'} readOnly style={{ ...inputStyle, color: 'var(--ink-3)' }} /></Field>;
-            }
-            return (
-              <Field key={k} label={fieldLabel(k)} hint={miss ? 'Needed for this letter' : undefined}>
-                <input value={values[k] ?? ''} onChange={(e) => setEdits((x) => ({ ...x, [k]: e.target.value }))}
-                  placeholder={k.toLowerCase().includes('valid') ? 'e.g. Fri 5 Dec 2026' : k.toLowerCase().includes('last') ? 'e.g. Fri 30 Jan 2027' : undefined}
-                  style={{ ...inputStyle, ...(miss ? { borderColor: 'var(--t-peach-i)', background: 'var(--t-peach)' } : null) }} />
-              </Field>
-            );
-          })}
-          {withAnnex && pay && (
-            <Field label="Annexure A · salary breakup" hint={breakup?.breakup ? `Added as the letter’s last page, from the ${breakup.breakup.templateName} salary structure.` : undefined}>
-              {!breakup ? <SkeletonLines lines={1} />
-                : breakup.templates.length > 1 ? (
-                  <Pick value={breakup.templateCode ?? ''} onChange={setBreakupTemplate}>
-                    {breakup.templates.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}
+          {!base || !templates ? <SkeletonLines lines={6} /> : (
+            <FieldGrid>
+              {templates.length > 1 && (
+                <Field label="Template" wide>
+                  <Pick value={templateId} onChange={setTemplateId} ariaLabel="Template">
+                    {templates.map((t) => <option key={t.id} value={t.id}>{t.name}{t.isDefault ? ' (default)' : ''}</option>)}
                   </Pick>
-                ) : breakup.breakup ? <input value={breakup.breakup.templateName} readOnly style={{ ...inputStyle, color: 'var(--ink-2)' }} /> : null}
-              {breakup && !breakup.breakup && <div style={{ fontSize: 12, color: 'var(--warn)', marginTop: 4 }}>{breakup.reason ?? 'The salary breakup could not be worked out'}. The letter goes without Annexure A.</div>}
-            </Field>
+                </Field>
+              )}
+              {keys.map((k) => {
+                const isPay = PAY_FIELD.test(k);
+                const miss = !filled(values, k);
+                if (isPay && !pay) {
+                  return <Field key={k} label={fieldLabel(k)} error={miss ? `${NEEDED}. Someone with payroll access fills it.` : undefined}><input value={miss ? '' : 'Hidden · needs payroll access'} readOnly style={{ ...inputStyle, color: 'var(--ink-3)' }} /></Field>;
+                }
+                return (
+                  <Field key={k} label={fieldLabel(k)} error={miss ? NEEDED : undefined}>
+                    <input value={values[k] ?? ''} onChange={(e) => setEdits((x) => ({ ...x, [k]: e.target.value }))}
+                      placeholder={k.toLowerCase().includes('valid') ? 'e.g. Fri 5 Dec 2026' : k.toLowerCase().includes('last') ? 'e.g. Fri 30 Jan 2027' : undefined}
+                      style={{ ...inputStyle, ...(miss ? missingInput : null) }} />
+                  </Field>
+                );
+              })}
+              {withAnnex && pay && (
+                <Field label="Annexure A · salary breakup" wide hint={breakup?.breakup ? `Added as the letter’s last page, from the ${breakup.breakup.templateName} salary structure.` : undefined}>
+                  {!breakup ? <SkeletonLines lines={1} />
+                    : breakup.templates.length > 1 ? (
+                      <Pick value={breakup.templateCode ?? ''} onChange={setBreakupTemplate}>
+                        {breakup.templates.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}
+                      </Pick>
+                    ) : breakup.breakup ? <input value={breakup.breakup.templateName} readOnly style={{ ...inputStyle, color: 'var(--ink-2)' }} /> : null}
+                  {breakup && !breakup.breakup && <div style={{ fontSize: 12, color: 'var(--warn)', marginTop: 4 }}>{breakup.reason ?? 'The salary breakup could not be worked out'}. The letter goes without Annexure A.</div>}
+                </Field>
+              )}
+            </FieldGrid>
           )}
           {template && base && (
             <EmailCard kind={kind} first={first} to={to} values={values} company={company} hrName={hrName} manager={manager}
               draft={savedDraft?.email} missing={missing.length} busy={busy} onSend={sendMail} onOpen={() => setMailOpen(true)} />
           )}
-          {earlier.length > 0 && (
-            <div>
-              <div style={{ fontSize: 11.5, color: 'var(--ink-2)', margin: '4px 0 6px' }}>Letters for {first}</div>
-              <div className="pd-list">
-                {earlier.map((l) => {
-                  const f = l.signedPdfFileId ?? l.pdfFileId;
-                  return (
-                    <div key={l.id} className="pd-li">
-                      <span className="grow"><b>{KIND_LABEL[l.kind]}{l.refNo ? ` · ${l.refNo}` : ''}</b><span className="s">{l.state}{l.signedAt ? ` ${shortDay(l.signedAt)}` : l.sentAt ? ` · sent ${shortDay(l.sentAt)}` : ''}</span></span>
-                      {f && <button type="button" className="pd-btn sm" onClick={() => setPreview({ fileId: f, name: letterFileName(l.kind, name) })}>View</button>}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          <EarlierLetters earlier={earlier} first={first} name={name} onView={(fileId, n) => setPreview({ fileId, name: n })} />
         </section>
 
-        <section className="pd-card" style={{ flex: '2 1 480px', minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, flex: 1, minWidth: 0 }}>Preview · <span style={{ fontWeight: 500 }}>{template?.name ?? '…'}</span></h2>
-            {template && canEditTemplates && <button type="button" className="pd-btn ghost sm" onClick={() => onEditTemplate(template.id)}>Edit template</button>}
-          </div>
-          {!template || !base ? <div style={{ padding: 40, textAlign: 'center' }}><Spinner label="Filling in the letter…" /></div>
-            : <LetterPreview html={letterInner(template.body, shown, head, 'preview', annex)} />}
-        </section>
+        <PreviewCard templateName={template?.name} loading={!template || !base}
+          onEdit={template && canEditTemplates ? () => onEditTemplate(template.id) : undefined}
+          html={template ? letterInner(template.body, shown, head, 'preview', annex) : ''} />
       </div>
 
       {mailOpen && template && base && (
         <MailPanel kind={kind} values={values} name={name} to={to} manager={manager} company={company} hrName={hrName}
           missing={missing.length} pdfReady={pdfReady} fileName={fileName} busy={busy} draft={savedDraft?.email}
           annexInLetter={Boolean(annex)} journeyId={person.journeyId}
-          canBreakup={pay && Boolean(breakup?.breakup) && (kind === 'offer' || kind === 'appointment')}
-          canChecklist={kind === 'offer' && Boolean(person.journeyId)}
+          canBreakup={pay && Boolean(breakup?.breakup) && kind === 'appointment'}
+          canChecklist={false}
           makeExtra={makeExtra}
           onPreview={() => pdf && setPreview({ blob: pdf.blob, name: fileName })}
           onSaveDraft={(mail) => void saveEmailDraft(mail)}
@@ -395,189 +376,3 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
   );
 }
 
-type MailOut = { to: string; cc?: string[]; subject: string; body: string; withPortalLink?: boolean; attachments?: LetterAttachment[] };
-
-/**
- * H3's "Email this letter to …" card under the details: the recipient (their personal email,
- * editable), a short message and Send, through the same send as the full email panel. A saved
- * draft fills it; Edit full email opens the panel (subject, Cc, attachments).
- */
-function EmailCard({ kind, first, to: toStart, values, company, hrName, manager, draft, missing, busy, onSend, onOpen }: {
-  kind: LetterKind; first: string; to: string; values: Record<string, string>; company: string; hrName: string;
-  manager?: { name: string; email: string }; draft?: LetterEmail; missing: number; busy: string;
-  onSend: (mail: MailOut) => Promise<boolean>; onOpen: () => void;
-}) {
-  const isOffer = kind === 'offer';
-  const portalLink = isOffer || kind === 'appointment' || kind === 'nda';
-  const withLink = draft?.withPortalLink ?? true;
-  const start = emailDraft(kind, values, { company, hrName, withLink });
-  // Untouched, they follow the details as they load and change; typed, they are HR's own.
-  const [toTyped, setTo] = useState<string | null>(null);
-  const [noteTyped, setNote] = useState<string | null>(null);
-  const [error, setError] = useState('');
-  const to = toTyped ?? (draft?.to || toStart);
-  const note = noteTyped ?? (draft?.body || start.body);
-  const cc = draft ? draft.cc : manager?.email ? [manager.email] : undefined;
-  const ccName = !cc?.length ? '' : manager?.email && cc.some((x) => x.toLowerCase() === manager.email.toLowerCase()) ? manager.name : cc.join(', ');
-  const send = async () => {
-    if (!isOffer && !/^\S+@\S+\.\S+$/.test(to.trim())) { setError('Enter who it goes to'); return; }
-    if (!note.trim()) { setError('Write a short message'); return; }
-    setError('');
-    const sent = await onSend({
-      to: to.trim(), cc, subject: draft?.subject || start.subject, body: note,
-      withPortalLink: portalLink ? withLink : undefined, attachments: draft?.attachments?.length ? draft.attachments : undefined,
-    });
-    if (sent) { setTo(null); setNote(null); }
-  };
-  return (
-    <div style={{ border: '1px solid var(--line)', borderRadius: 14, padding: '12px 14px', background: 'var(--surface)', display: 'grid', gap: 10 }}>
-      <div>
-        <b style={{ display: 'block', fontSize: 13.5, fontWeight: 500 }}>Email this letter to {first || 'them'}</b>
-        <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-          {draft?.savedAt ? `Your draft from ${shortDay(draft.savedAt)}. ` : ''}The PDF goes attached{portalLink && withLink ? ' with the portal link' : ''}{ccName ? `; ${ccName} is copied` : ''}.
-        </span>
-      </div>
-      <Field label="To" hint={isOffer ? 'Their personal email from the offer. Change it in the offer.' : 'Their personal email. Change it if it should go elsewhere.'}>
-        {isOffer ? <input value={to} readOnly aria-label="To" style={{ ...inputStyle, color: 'var(--ink-2)' }} />
-          : <input type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="name@example.com" aria-label="To" style={inputStyle} />}
-      </Field>
-      <Field label="Message"><textarea value={note} onChange={(e) => setNote(e.target.value)} rows={5} style={areaStyle} /></Field>
-      {missing > 0 && <div style={{ fontSize: 12, color: 'var(--bad)' }}>Fill the missing details first: the PDF is made when you send.</div>}
-      {error && <div role="alert" style={{ fontSize: 12, color: 'var(--bad)' }}>{error}</div>}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-        <button type="button" className="pd-btn ghost sm" onClick={onOpen} disabled={Boolean(busy)}>Edit full email</button>
-        <button type="button" className="pd-btn primary sm" onClick={() => void send()} disabled={Boolean(busy) || missing > 0}>
-          {busy === 'send' ? 'Sending…' : busy === 'pdf' ? 'Generating…' : 'Send'}
-        </button>
-      </div>
-    </div>
-  );
-}
-type Suggestion = { kind: AttachmentKind; title: string; sub: string };
-
-function MailPanel({ kind, values, name, to: toStart, manager, company, hrName, missing, pdfReady, fileName, busy, draft, annexInLetter, journeyId, canBreakup, canChecklist, makeExtra, onPreview, onSaveDraft, onClose, onSend }: {
-  kind: LetterKind; values: Record<string, string>; name: string; to: string; manager?: { name: string; email: string };
-  company: string; hrName: string; missing: number; pdfReady: boolean; fileName: string; busy: string;
-  /** HR's saved draft of this email, if any (it opens instead of the template's words). */
-  draft?: LetterEmail;
-  annexInLetter: boolean; journeyId?: string; canBreakup: boolean; canChecklist: boolean;
-  makeExtra: (which: 'salary_breakup' | 'joining_checklist') => Promise<{ blob: Blob; name: string } | null>;
-  onPreview: () => void; onSaveDraft: (mail: MailOut) => void; onClose: () => void;
-  onSend: (mail: MailOut) => Promise<void>;
-}) {
-  const { flash } = useStore();
-  const isOffer = kind === 'offer';
-  // The offer's link is how they accept: on by default, with a switch (6Zs H3c). Appointment / NDA: their portal, where they sign.
-  const portalSwitch = isOffer || kind === 'appointment' || kind === 'nda';
-  const [withLink, setWithLink] = useState(draft?.withPortalLink ?? true);
-  const start = emailDraft(kind, values, { company, hrName, withLink });
-  const [to, setTo] = useState(draft?.to || toStart);
-  const [ccManager, setCcManager] = useState(draft ? Boolean(manager?.email && draft.cc?.includes(manager.email.toLowerCase())) : Boolean(manager?.email));
-  const [subject, setSubject] = useState(draft?.subject || start.subject);
-  const [body, setBody] = useState(draft?.body || start.body);
-  const [edited, setEdited] = useState(Boolean(draft?.body));
-  const [extras, setExtras] = useState<LetterAttachment[]>(draft?.attachments ?? []);
-  const [adding, setAdding] = useState<AttachmentKind | ''>('');
-  const [error, setError] = useState('');
-  const fileInput = useRef<HTMLInputElement>(null);
-  const flip = (v: boolean) => {
-    setWithLink(v);
-    if (!edited) setBody(emailDraft(kind, values, { company, hrName, withLink: v }).body);
-  };
-  const mail = (): MailOut => ({
-    to: to.trim(), cc: ccManager && manager?.email ? [manager.email] : undefined, subject: subject.trim(), body,
-    withPortalLink: portalSwitch ? withLink : undefined, attachments: extras.length ? extras : undefined,
-  });
-  const send = () => {
-    if (!isOffer && !/^\S+@\S+\.\S+$/.test(to.trim())) { setError('Enter who it goes to'); return; }
-    if (!subject.trim() || !body.trim()) { setError('Write a subject and a message'); return; }
-    setError('');
-    void onSend(mail());
-  };
-  const suggestions: Suggestion[] = [
-    ...(canBreakup ? [{ kind: 'salary_breakup' as const, title: 'Salary breakup (Annexure A)', sub: annexInLetter ? '1 page · also the letter’s last page' : '1 page · from the offer' }] : []),
-    ...(canChecklist ? [{ kind: 'joining_checklist' as const, title: 'Joining checklist', sub: '1 page · documents to keep ready' }] : []),
-    ...(!isOffer ? [{ kind: 'policies' as const, title: 'Company policies', sub: 'The handbook · a PDF from your computer' }] : []),
-  ].filter((x) => !extras.some((e) => e.kind === x.kind));
-  const upload = async (blob: Blob, filename: string, k: AttachmentKind) => {
-    const r = await uploadLetterAttachment(blob, filename, k, journeyId);
-    setExtras((list) => [...list, r.attachment]);
-  };
-  const attach = async (sg: Suggestion) => {
-    if (sg.kind === 'policies') { fileInput.current?.click(); return; }
-    setAdding(sg.kind);
-    try {
-      const made = await makeExtra(sg.kind as 'salary_breakup' | 'joining_checklist');
-      if (!made) { flash('That can’t be made yet', 'error'); return; }
-      await upload(made.blob, made.name, sg.kind);
-    } catch (e) { flash(errText(e, 'Could not attach it'), 'error'); } finally { setAdding(''); }
-  };
-  const chip = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 99, background: 'var(--surface-2)', border: '1px solid var(--line)', fontSize: 12.5, maxWidth: '100%', overflowWrap: 'anywhere' } as const;
-  return (
-    <DrawerShell width={460} onClose={onClose}>
-      <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--line)' }}>
-        <h2 style={{ margin: 0, flex: 1, fontSize: 16, fontWeight: 600 }}>New email</h2>
-        <CloseButton onClose={onClose} />
-      </div>
-      <div className="pd-form" style={{ padding: 20, display: 'grid', gap: 12, fontSize: 13 }}>
-        {draft?.savedAt && <div className="pd-note">Your draft from {shortDay(draft.savedAt)}.</div>}
-        <div style={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr)', gap: 8, alignItems: 'center' }}>
-          <span style={{ color: 'var(--ink-3)' }}>From</span><span><span style={chip}>HR · {hrName}</span></span>
-          <span style={{ color: 'var(--ink-3)' }}>To</span>
-          {isOffer ? <span><span style={chip}>{name}{toStart ? ` · ${toStart}` : ''}</span></span>
-            : <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="name@example.com" aria-label="To" style={inputStyle} />}
-          {manager?.email && <>
-            <span style={{ color: 'var(--ink-3)' }}>Cc</span>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Switch on={ccManager} onChange={setCcManager} label={`Copy ${manager.name}`} /><span style={chip}>{manager.name} (manager)</span></label>
-          </>}
-        </div>
-        {kind === 'relieving' && values.personalEmail && to.trim().toLowerCase() === values.personalEmail.toLowerCase() && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: -4 }}>Their personal email: the work email closes when they leave.</div>}
-        <Field label="Subject"><input value={subject} onChange={(e) => setSubject(e.target.value)} style={inputStyle} /></Field>
-        <Field label="Email body"><textarea value={body} onChange={(e) => { setBody(e.target.value); setEdited(true); }} style={{ ...areaStyle, minHeight: 240 }} /></Field>
-        {portalSwitch && (
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-            <Switch on={withLink} onChange={flip} label="Add the portal link" />
-            <span><b style={{ display: 'block', fontWeight: 500 }}>Add the portal link</b><span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{isOffer ? 'A “View and accept your offer” button in the email' : 'A button to open their joining portal, where they sign it'}</span></span>
-          </label>
-        )}
-        {isOffer && !withLink && <div className="pd-note" style={{ color: 'var(--warn)' }}>Without the link they can’t read and accept the offer online. Send it again with the link if they ask.</div>}
-        <div>
-          <div style={{ fontSize: 11.5, color: 'var(--ink-2)', marginBottom: 6 }}>Attachments</div>
-          <div style={{ display: 'grid', gap: 6 }}>
-            <div className="pd-li" style={{ border: '1px solid var(--line)', borderRadius: 14, padding: '10px 12px' }}>
-              <span className="pd-li-i" aria-hidden style={{ fontSize: 10, fontWeight: 600 }}>PDF</span>
-              <span className="grow"><b style={{ overflowWrap: 'anywhere' }}>{fileName}</b><span className="s">{pdfReady ? `Generated from the details${annexInLetter ? ', with Annexure A' : ''}` : missing ? 'Not generated yet' : 'Generated when you send'}</span></span>
-              {pdfReady && <button type="button" className="pd-btn sm" onClick={onPreview}>Preview</button>}
-            </div>
-            {extras.map((x) => (
-              <div key={x.fileId} className="pd-li" style={{ border: '1px solid var(--line)', borderRadius: 14, padding: '10px 12px' }}>
-                <span className="pd-li-i" aria-hidden style={{ fontSize: 10, fontWeight: 600 }}>PDF</span>
-                <span className="grow"><b style={{ overflowWrap: 'anywhere' }}>{x.name}</b><span className="s">Attached</span></span>
-                <button type="button" className="pd-btn sm ghost" onClick={() => setExtras((list) => list.filter((e) => e.fileId !== x.fileId))}>Remove</button>
-              </div>
-            ))}
-            {suggestions.map((sg) => (
-              <div key={sg.kind} className="pd-li" style={{ border: '1px dashed var(--line-2)', borderRadius: 14, padding: '10px 12px' }}>
-                <span className="grow"><b style={{ overflowWrap: 'anywhere' }}><span style={{ color: 'var(--ink-3)', fontWeight: 400 }}>Suggested · </span>{sg.title}</b><span className="s">{sg.sub}</span></span>
-                <button type="button" className="pd-btn sm" onClick={() => void attach(sg)} disabled={Boolean(adding) || Boolean(busy)}>{adding === sg.kind ? 'Attaching…' : 'Attach'}</button>
-              </div>
-            ))}
-            <input ref={fileInput} type="file" accept="application/pdf" hidden onChange={(e) => {
-              const f = e.target.files?.[0];
-              e.target.value = '';
-              if (!f) return;
-              setAdding('policies');
-              upload(f, f.name, 'policies').catch((err) => flash(errText(err, 'Could not attach it'), 'error')).finally(() => setAdding(''));
-            }} />
-          </div>
-        </div>
-        {missing > 0 && <div className="pd-note" style={{ color: 'var(--bad)' }}>The letter can’t be attached yet: fill the missing details first.</div>}
-        {error && <div role="alert" style={{ color: 'var(--bad)' }}>{error}</div>}
-      </div>
-      <div style={{ marginTop: 'auto', position: 'sticky', bottom: 0, background: 'var(--surface)', borderTop: '1px solid var(--line)', padding: '14px 20px', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        <button type="button" className="pd-btn" onClick={() => onSaveDraft(mail())} disabled={Boolean(busy) || Boolean(adding)}>{busy === 'draft' ? 'Saving…' : 'Save draft'}</button>
-        <button type="button" className="pd-btn primary" onClick={send} disabled={Boolean(busy) || Boolean(adding) || missing > 0}>{busy === 'send' ? 'Sending…' : busy === 'pdf' ? 'Generating…' : 'Send email'}</button>
-      </div>
-    </DrawerShell>
-  );
-}

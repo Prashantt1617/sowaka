@@ -4,6 +4,7 @@
 import { mediaUrl } from '../../../../services/api';
 import type { FeedCardDTO } from '../../../../services/engagement-feed';
 import { Avatar } from '../../../ui';
+import { PersonAvatar } from '../../../PersonAvatar';
 import { ago, shortDate } from './format';
 
 function AuthorAvatar({ post }: { post: FeedCardDTO }) {
@@ -20,7 +21,7 @@ function AuthorAvatar({ post }: { post: FeedCardDTO }) {
       </span>
     );
   }
-  return <Avatar name={author.name} size={40} />;
+  return <PersonAvatar name={author.name} userId={author.userId} size={40} />;
 }
 
 export function FeedCard({ post }: { post: FeedCardDTO }) {

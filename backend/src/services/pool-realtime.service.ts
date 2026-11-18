@@ -27,6 +27,7 @@ import { verifyTicket } from './scribble-ticket.service';
 import { VoiceGame, dropMic, listenForVoice, voiceOn } from './game-voice.service';
 import { readRoom, seatOf } from './pool-store';
 import { seatedIds } from './pool-rooms-engine';
+import { InFlight } from '../utils/inflight';
 import { logger } from '../utils/logger';
 
 /**
@@ -44,6 +45,7 @@ const TICK_MS = 500;
 
 let namespace: Namespace | undefined;
 let timer: NodeJS.Timeout | undefined;
+const passes = new InFlight();
 
 const userRoom = (userId: string) => `pool:user:${userId}`;
 
@@ -292,15 +294,17 @@ function listen(socket: Socket, seated: Promise<Seat | null>) {
 function start() {
   if (timer) return;
   timer = setInterval(() => {
-    void tickPool().catch((error) => logger.error('Pool tick failed', {}, error));
+    void passes.track(tickPool().catch((error) => logger.error('Pool tick failed', {}, error)));
   }, TICK_MS);
   timer.unref?.();
 }
 
-export function closePoolRealtime(): void {
+/** Stops the clock and the namespace; resolves once a pass under way has finished (it reads the database). */
+export async function closePoolRealtime(): Promise<void> {
   if (timer) clearInterval(timer);
   timer = undefined;
   namespace = undefined;
   setPoolEmitter(null);
   people.clear();
+  await passes.settle();
 }

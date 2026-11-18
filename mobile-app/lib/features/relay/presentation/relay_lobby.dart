@@ -172,7 +172,7 @@ class _Row extends StatelessWidget {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                RelayInitial(name: mate.name, size: 40, fontSize: 16.8),
+                RelayInitial(name: mate.name, size: 40, fontSize: 16.8, photoUrl: mate.photoUrl),
                 // Worn on top of the lead's avatar (Figma 2606:35694).
                 if (mate.isLeader)
                   Positioned(

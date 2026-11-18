@@ -14,6 +14,7 @@ import {
   submitAnswer,
 } from './relay-runtime.service';
 import { RelayError } from './relay-import.service';
+import { InFlight } from '../utils/inflight';
 import { logger } from '../utils/logger';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { redisPubSubPair } from '../config/redis';
@@ -32,6 +33,7 @@ const TICK_MS = 1000;
 
 let namespace: Namespace | undefined;
 let timer: NodeJS.Timeout | undefined;
+const passes = new InFlight();
 /** What each player was last sent, so an unchanged tick costs nothing. */
 const lastSent = new Map<string, string>();
 
@@ -187,7 +189,7 @@ async function pushTeamOf(userId: string) {
 function start() {
   if (timer) return;
   timer = setInterval(() => {
-    void tick();
+    void passes.track(tick());
   }, TICK_MS);
   // Never hold the process open on account of the game loop.
   timer.unref?.();
@@ -233,9 +235,11 @@ async function tick() {
   }
 }
 
-export function closeRelayRealtime(): void {
+/** Stops the clock and the namespace; resolves once a pass under way has finished (it reads the database). */
+export async function closeRelayRealtime(): Promise<void> {
   if (timer) clearInterval(timer);
   timer = undefined;
   namespace = undefined;
   lastSent.clear();
+  await passes.settle();
 }

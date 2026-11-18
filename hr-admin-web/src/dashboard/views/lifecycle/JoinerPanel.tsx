@@ -1,9 +1,11 @@
-// H1b · the joiner side panel: where they are on the journey, what waits on
-// whom, the key facts, and everything HR does for one joiner: the offer and
-// its versions, joining-date requests, documents (preview, approve, send back),
+// H1b · the joiner side panel, as the design draws it: where they are on the
+// journey, what waits on whom (grey tiles), the key facts, and a footer with
+// Open profile, Nudge and the one thing to do next. Everything else HR does for
+// one joiner folds under that: the offer and its versions, joining-date
+// requests, the bank/PF change, documents (preview, approve, send back),
 // letters, tasks by phase, the Day-1 pass, manager and buddy, the batch and
 // probation with its decision.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { DrawerShell, CloseButton } from '../../drawers/shell';
 import { useStore } from '../../store';
@@ -15,11 +17,12 @@ import {
 import type {
   BankPfRequest, CandidateDocumentView, ConfirmationDecision, Day1Pass, JourneyDetail, LetterKind, LetterView, TaskView, TemplateListItem,
 } from '../../../services/lifecycle';
-import { FilePreview, NoteDialog, NudgeButton, OwnerChip, Pick, Plant, Field } from './shared';
+import { FilePreview, NoteDialog, OwnerChip, Pick, PlantFace, Field } from './shared';
+import { IconChevronDown } from '../../icons';
 import {
-  DOCS_OPEN_KEY, PHASES, areaStyle, changedFieldsText, nudgeLabel, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, longDay, rupees, sectionLabel, shortDay, todayKey,
+  DOCS_OPEN_KEY, OWNER_LABEL, PHASES, areaStyle, changedFieldsText, nudgeLabel, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, longDay, rupees, sectionLabel, shortDay, todayKey,
 } from './format';
-import { FinaliseDialog, MarkJoinedDialog, OfferWizard } from './OfferDialogs';
+import { FinaliseDialog, MarkJoinedDialog } from './OfferDialogs';
 import { DecisionDialog, ProbationMonths } from './Probation';
 import { KIND_LABEL } from './letterDoc';
 
@@ -58,7 +61,6 @@ const OPEN = new Set(['todo', 'in_review', 'sent_back']);
 const PRE_JOIN = new Set(['draft', 'offer_sent', 'accepted', 'finalised', 'active', 'docs_approved']);
 
 type Dialog =
-  | { kind: 'offer'; mode: 'revise' | 'send'; start?: 'details' | 'letter' | 'email' }
   | { kind: 'finalise' } | { kind: 'joined' } | { kind: 'decision' }
   | { kind: 'status'; action: 'decline' | 'reopen' | 'not-joining' }
   | { kind: 'task'; task: TaskView; action: 'done' | 'skip' | 'reopen' }
@@ -68,36 +70,67 @@ type Dialog =
   | { kind: 'bankpf'; decision: 'approve' | 'decline' }
   | null;
 
-function Section({ title, aside, children, id }: { title: string; aside?: ReactNode; children: ReactNode; id?: string }) {
+/**
+ * One of the panel's further sections (offer, documents, tasks, Day-1 pass, probation…), folded
+ * under the design's short card: a row with its title and a one-line summary that opens in place.
+ */
+function Fold({ id, title, summary, open, onToggle, actions, children }: {
+  id: string; title: string; summary?: ReactNode; open: boolean; onToggle: () => void; actions?: ReactNode; children: ReactNode;
+}) {
   return (
-    <section id={id} style={{ padding: '16px 20px', borderTop: '1px solid var(--line)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <h3 style={{ ...sectionLabel, margin: 0, flex: 1 }}>{title}</h3>
-        {aside}
-      </div>
-      {children}
+    <section id={`lf-panel-${id}`} style={{ borderTop: '1px solid var(--line)' }}>
+      <h3 style={{ margin: 0, font: 'inherit' }}>
+        <button type="button" aria-expanded={open} aria-controls={`lf-fold-${id}`} onClick={onToggle}
+          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '13px 0', background: 'none', border: 0, font: 'inherit', color: 'var(--ink)', cursor: 'pointer', textAlign: 'left' }}>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 500 }}>{title}</span>
+          {summary && <span style={{ fontSize: 12.5, color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '55%' }}>{summary}</span>}
+          <IconChevronDown size={14} stroke="var(--ink-3)" style={{ flex: 'none', transform: open ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }} />
+        </button>
+      </h3>
+      {open && (
+        <div id={`lf-fold-${id}`} style={{ paddingBottom: 16, display: 'grid', gap: 10 }}>
+          {children}
+          {actions && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{actions}</div>}
+        </div>
+      )}
     </section>
   );
 }
 
-function Facts({ rows }: { rows: [string, ReactNode][] }) {
+/** Key facts, as the design's card lists them: a narrow label column, the value in medium weight. */
+function Facts({ rows, strong = true }: { rows: [string, ReactNode][]; strong?: boolean }) {
   const shown = rows.filter(([, v]) => v != null && v !== '');
   return (
-    <dl style={{ display: 'grid', gridTemplateColumns: 'minmax(110px, 34%) minmax(0, 1fr)', gap: '6px 12px', margin: 0, fontSize: 13 }}>
+    <dl style={{ display: 'grid', gridTemplateColumns: '120px minmax(0, 1fr)', gap: '10px 16px', margin: 0, fontSize: 13 }}>
       {shown.map(([k, v]) => (
         <div key={k} style={{ display: 'contents' }}>
           <dt style={{ color: 'var(--ink-3)' }}>{k}</dt>
-          <dd style={{ margin: 0, color: 'var(--ink)', overflowWrap: 'anywhere' }}>{v}</dd>
+          <dd style={{ margin: 0, color: 'var(--ink)', fontWeight: strong ? 500 : 400, overflowWrap: 'anywhere' }}>{v}</dd>
         </div>
       ))}
     </dl>
   );
 }
 
-/** Opens Documents on a letter kind for this joiner. */
-function openDocuments(setView: (v: 'lifecycle_documents') => void, kind: LetterKind, journeyId: string) {
-  try { sessionStorage.setItem(DOCS_OPEN_KEY, JSON.stringify({ kind, journeyId })); } catch { /* Documents opens on its own first choice */ }
+/** Opens Documents on a letter kind for this joiner (the offer letter is where an offer is edited and sent; `mail` opens its email). */
+function openDocuments(setView: (v: 'lifecycle_documents') => void, kind: LetterKind, journeyId: string, mail?: boolean) {
+  try { sessionStorage.setItem(DOCS_OPEN_KEY, JSON.stringify({ kind, journeyId, ...(mail ? { mail: true } : {}) })); } catch { /* Documents opens on its own first choice */ }
   setView('lifecycle_documents');
+}
+
+/** The tile behind the plant, by phase (the board's card uses the same). */
+const TINT: Record<string, string> = { pre_boarding: 'var(--surface-2)', first_week: 'var(--accent-soft)', probation: 'var(--ok-bg)' };
+
+/** The blue line under the name: "Joins Mon 8 Dec · 7 days to go" before joining, then where they are. */
+function journeyLine(status: string, tj: string | undefined, dayLabel: string | undefined): string {
+  if (PRE_JOIN.has(status) && tj) {
+    const n = daysTo(tj);
+    if (n > 1) return `Joins ${shortDay(tj)} · ${n} days to go`;
+    if (n === 1) return `Joins tomorrow, ${shortDay(tj)}`;
+    if (n === 0) return `Joins today, ${shortDay(tj)}`;
+    return `Was to join ${shortDay(tj)}`;
+  }
+  return dayLabel || STATUS_LABEL[status] || status;
 }
 
 export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: string; onClose: () => void; onChanged: () => void }) {
@@ -110,6 +143,10 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   const [dialog, setDialog] = useState<Dialog>(null);
   const [templates, setTemplates] = useState<TemplateListItem[]>([]);
   const [busy, setBusy] = useState('');
+  // Which folded sections HR opened or closed for this person (the rest keep their default).
+  const [folds, setFolds] = useState<Record<string, boolean>>({});
+  const [nudgeMenu, setNudgeMenu] = useState(false);
+  const nudgeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let live = true;
@@ -121,7 +158,14 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
       .catch((e) => { if (live) setError(isNotAvailable(e) ? 'Employee lifecycle is not switched on for your company.' : errText(e, 'Could not load this joiner')); });
     return () => { live = false; };
   }, [journeyId, attempt]);
+  useEffect(() => { setFolds({}); setNudgeMenu(false); }, [journeyId]);
   useEffect(() => { listTemplates('onboarding').then(setTemplates).catch(() => undefined); }, []);
+  useEffect(() => {
+    if (!nudgeMenu) return undefined;
+    const close = (e: globalThis.MouseEvent) => { if (!nudgeRef.current?.contains(e.target as Node)) setNudgeMenu(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [nudgeMenu]);
 
   const changed = useCallback(() => { setAttempt((n) => n + 1); onChanged(); }, [onChanged]);
   const run = async (key: string, fn: () => Promise<unknown>, ok?: string): Promise<boolean> => {
@@ -131,7 +175,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
 
   if (!data) {
     return (
-      <DrawerShell width={460} onClose={onClose} label="Joiner" resetKey={journeyId} onEscape={dialog ? undefined : onClose}>
+      <DrawerShell width={440} onClose={onClose} label="Joiner" resetKey={journeyId} onEscape={dialog ? undefined : onClose}>
         <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'flex-end' }}><CloseButton onClose={onClose} /></div>
         {error ? <LoadError text={error} onRetry={() => setAttempt((n) => n + 1)} /> : <div style={{ padding: 20 }}><SkeletonLines lines={8} /></div>}
       </DrawerShell>
@@ -161,36 +205,47 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   const template = templates.find((t) => t.id === journey.templateId);
   // The onboarding tab alone (IT, Admin) sees each document's status, never the files.
   const seesDocuments = data.viewer?.seesDocuments !== false;
-  // Nudge: the first thing waiting that can be reminded and was not today.
-  const nudgeable = waiting.find((t) => t.canNudge && !t.nudgedToday);
-
-  // The one thing to do next, as the board's card names it.
-  let primary: { label: string; go: () => void } | null = null;
-  // A revision (or an approved new joining date) stays HR's draft until sent: the candidate still sees the last version they got.
+  // Nudge (the footer): whoever a waiting step can remind; once a day per step.
+  const nudgeable = closed ? [] : waiting.filter((t) => t.canNudge);
+  const nudgeOpen = nudgeable.filter((t) => !t.nudgedToday);
   const revisionWaiting = Boolean(offer && offer.status === 'draft' && offer.version > 1);
+  const pendingDates = dateRequests.filter((r) => r.status === 'pending').length;
+  const bankPf = journey.bankPfRequest && (journey.bankPfRequest.status === 'pending' || journey.bankPfRequest.decidedAt) ? journey.bankPfRequest : null;
+
+  // A section's default: folded, unless something in it waits on HR.
+  const foldDefault: Record<string, boolean> = { offer: revisionWaiting, dates: pendingDates > 0, bankpf: bankPf?.status === 'pending', docs: false };
+  const isOpen = (k: string) => folds[k] ?? foldDefault[k] ?? false;
+  const toggle = (k: string) => setFolds((f) => ({ ...f, [k]: !isOpen(k) }));
+  const reveal = (k: string) => {
+    setFolds((f) => ({ ...f, [k]: true }));
+    requestAnimationFrame(() => document.getElementById(`lf-panel-${k}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+
+  // The one thing to do next, as the board's card names it (the footer's main button).
+  // A revision (or an approved new joining date) stays HR's draft until sent: the candidate still sees the last version they got.
+  let primary: { label: string; go: () => void } | null = null;
   if (closed) primary = { label: 'Reopen', go: () => setDialog({ kind: 'status', action: 'reopen' }) };
-  else if (revisionWaiting && pay) primary = { label: 'Send revised offer', go: () => setDialog({ kind: 'offer', mode: 'send', start: 'letter' }) };
-  else if (status === 'draft') primary = { label: 'Send offer', go: () => setDialog({ kind: 'offer', mode: 'send', start: offer?.pdfFileId ? 'email' : 'letter' }) };
-  else if (status === 'offer_sent') primary = { label: 'Resend offer email', go: () => setDialog({ kind: 'offer', mode: 'send', start: offer?.pdfFileId ? 'email' : 'letter' }) };
+  else if (revisionWaiting && pay) primary = { label: 'Send revised offer', go: () => openDocuments(s.setView, 'offer', journey.id) };
+  else if (status === 'draft') primary = { label: 'Send offer', go: () => openDocuments(s.setView, 'offer', journey.id, Boolean(offer?.pdfFileId)) };
+  else if (status === 'offer_sent') primary = { label: 'Resend offer email', go: () => openDocuments(s.setView, 'offer', journey.id, Boolean(offer?.pdfFileId)) };
   else if (status === 'accepted') primary = { label: 'Finalise', go: () => setDialog({ kind: 'finalise' }) };
   else if (canJoin) primary = { label: 'Mark joined', go: () => setDialog({ kind: 'joined' }) };
-  else if (reviewQueue > 0) primary = { label: 'Review documents', go: () => document.getElementById('lf-panel-docs')?.scrollIntoView({ behavior: 'smooth' }) };
+  else if (reviewQueue > 0) primary = { label: 'Review documents', go: () => reveal('docs') };
   else if (status === 'docs_approved' && !letters.some((l) => l.kind === 'appointment')) primary = { label: 'Make the appointment letter', go: () => openDocuments(s.setView, 'appointment', journey.id) };
   else if (journey.column === 'final_month' && !decision) primary = { label: 'Record decision', go: () => setDialog({ kind: 'decision' }) };
   else if (decisionLetter && !hasDecisionLetter) primary = { label: `Make the ${decisionLetter} letter`, go: () => openDocuments(s.setView, decisionLetter, journey.id) };
 
-  const secondary: { label: string; go: () => void; danger?: boolean }[] = [];
-  if (journey.userId) secondary.push({ label: 'Open profile', go: () => { onClose(); s.openProfile(journey.userId!); } });
-  if (offer && PRE_JOIN.has(status) && pay) secondary.push({ label: status === 'draft' ? 'Edit offer' : 'Revise offer', go: () => setDialog({ kind: 'offer', mode: 'revise', start: 'details' }) });
-  if (status === 'offer_sent') secondary.push({ label: 'Mark declined', go: () => setDialog({ kind: 'status', action: 'decline' }), danger: true });
-  if (['accepted', 'finalised', 'active', 'docs_approved'].includes(status)) secondary.push({ label: 'Not joining', go: () => setDialog({ kind: 'status', action: 'not-joining' }), danger: true });
-  if (journey.column === 'final_month' && decision) secondary.push({ label: 'Change decision', go: () => setDialog({ kind: 'decision' }) });
-  if (nudgeable && !closed) {
-    secondary.push({
-      label: busy === 'nudge' ? 'Sending…' : nudgeLabel(nudgeable.ownerRole, nudgeable.ownerName),
-      go: () => void run('nudge', async () => { const r = await nudgeTask(journey.id, nudgeable.id); flash(r.channel === 'email' ? `Reminder emailed to ${r.to}` : `Reminder sent to ${r.to} in the app`); }),
-    });
-  }
+  // The offer's own actions sit with the offer.
+  const offerActions: { label: string; go: () => void; danger?: boolean }[] = [];
+  if (offer && PRE_JOIN.has(status) && pay) offerActions.push({ label: status === 'draft' ? 'Edit offer' : 'Revise offer', go: () => openDocuments(s.setView, 'offer', journey.id) });
+  if (status === 'offer_sent') offerActions.push({ label: 'Mark declined', go: () => setDialog({ kind: 'status', action: 'decline' }), danger: true });
+  if (['accepted', 'finalised', 'active', 'docs_approved'].includes(status)) offerActions.push({ label: 'Not joining', go: () => setDialog({ kind: 'status', action: 'not-joining' }), danger: true });
+  const actionButtons = (list: typeof offerActions) => list.map((b) => <button key={b.label} type="button" className="pd-btn sm" onClick={b.go} disabled={Boolean(busy)} style={b.danger ? { color: 'var(--bad)' } : undefined}>{b.label}</button>);
+
+  const nudge = (t: TaskView) => {
+    setNudgeMenu(false);
+    void run('nudge', async () => { const r = await nudgeTask(journey.id, t.id); flash(r.channel === 'email' ? `Reminder emailed to ${r.to}` : `Reminder sent to ${r.to} in the app`); });
+  };
 
   const offerFacts: [string, ReactNode][] = offer ? [
     ['Role', offer.fields.designation],
@@ -202,190 +257,199 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
     ['Probation', `${offer.fields.probationMonths} months`],
     ['Notice', `${offer.fields.noticeDays} days`],
     ['Valid till', longDay(offer.validTill)],
+    ['Accepted', offer.acceptedAt ? dayTime(offer.acceptedAt) : ''],
   ] : [];
+  const tasksLive = tasks.filter((t) => t.status !== 'cancelled');
+  const tasksDone = tasksLive.filter((t) => t.status === 'done' || t.status === 'skipped').length;
+  const passFilled = Boolean(journey.day1Pass && (journey.day1Pass.reportingTime || journey.day1Pass.place || journey.day1Pass.meetingLink));
+  const probationTotal = (journey.probation?.months ?? 0) + (journey.probation?.extendedBy ?? 0);
 
   return (
-    <DrawerShell width={460} onClose={onClose} label={name} resetKey={journeyId} onEscape={dialog ? undefined : onClose}>
+    <DrawerShell width={440} onClose={onClose} label={name} resetKey={journeyId} onEscape={dialog ? undefined : nudgeMenu ? () => setNudgeMenu(false) : onClose}>
       <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--line)', flexShrink: 0 }}>
-        <div style={{ flex: 1, fontSize: 12, fontWeight: 500, color: 'var(--hi)' }}>{TAB_LABEL[journey.tab] ?? ''} · {COLUMN_LABEL[journey.column] ?? journey.column}</div>
+        <div style={{ flex: 1, fontSize: 12, color: 'var(--ink-3)' }}>{TAB_LABEL[journey.tab] ?? ''} · {COLUMN_LABEL[journey.column] ?? journey.column}</div>
         <CloseButton onClose={onClose} />
       </div>
 
-      <div style={{ padding: '18px 20px', display: 'flex', gap: 14, alignItems: 'center' }}>
-        <Plant plant={journey.plant} size={66} />
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.02em', lineHeight: 1.2, overflowWrap: 'anywhere' }}>{name}</div>
-          {role && <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 2 }}>{role}</div>}
-          <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>{journey.dayLabel || STATUS_LABEL[status] || status}</div>
-        </div>
-      </div>
-
-      <div style={{ padding: '0 20px 16px' }}>
-        <div role="img" aria-label={`Journey: ${TRACK[at]}`} style={{ display: 'grid', gridTemplateColumns: `repeat(${TRACK.length}, 1fr)`, gap: 4 }}>
-          {TRACK.map((t, i) => <span key={t} title={t} style={{ height: 6, borderRadius: 99, background: closed ? 'var(--line-2)' : i < at ? 'var(--ok-solid)' : i === at ? 'var(--accent)' : 'var(--line)' }} />)}
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>
-          <span>Offer</span><span>Confirmed</span>
-        </div>
-      </div>
-
-      {(primary || secondary.length > 0) && (
-        <div style={{ padding: '0 20px 16px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {primary && <button type="button" className="pd-btn primary" onClick={primary.go}>{primary.label}</button>}
-          {secondary.map((b) => <button key={b.label} type="button" className="pd-btn" onClick={b.go} disabled={Boolean(busy)} style={b.danger ? { color: 'var(--bad)' } : undefined}>{b.label}</button>)}
-        </div>
-      )}
-
-      <Section title="Waiting on">
-        {waiting.length === 0 ? (
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 13 }}><OwnerChip role="automatic" /><span style={{ flex: 1 }}>Nothing waiting</span><span style={{ color: 'var(--ink-3)' }}>—</span></div>
-        ) : (
-          <div style={{ display: 'grid', gap: 8 }}>
-            {waiting.map((t) => (
-              <div key={t.id} style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: '4px 10px', alignItems: 'center', fontSize: 13 }}>
-                <OwnerChip role={t.ownerRole} name={t.ownerRole === 'hr' ? undefined : t.ownerName} you={t.ownerRole === 'hr'} />
-                <span style={{ overflowWrap: 'anywhere' }}>{t.title}</span>
-                <span style={{ color: t.late ? 'var(--bad)' : 'var(--ink-3)', whiteSpace: 'nowrap', fontWeight: t.late ? 500 : 400 }}>{dueText(t.dueAt, t.late)}</span>
-                {t.canNudge && !closed && (
-                  <span style={{ gridColumn: '2 / 4', justifySelf: 'end' }}>
-                    <NudgeButton compact journeyId={journey.id} taskId={t.id} role={t.ownerRole} name={t.ownerName} done={t.nudgedToday} />
-                  </span>
-                )}
-              </div>
-            ))}
+      <div style={{ padding: 20, display: 'grid', gap: 20, alignContent: 'start', flex: 1 }}>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end' }}>
+          <span style={{ width: 76, height: 84, borderRadius: 20, background: closed ? 'var(--surface-2)' : TINT[journey.tab] ?? 'var(--surface-2)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', flex: 'none', overflow: 'hidden' }}>
+            <PlantFace plant={journey.plant} size={66} name={name} userId={journey.userId} />
+          </span>
+          <div style={{ minWidth: 0, display: 'grid', gap: 3 }}>
+            <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.01em', lineHeight: 1.2, overflowWrap: 'anywhere' }}>{name}</div>
+            {role && <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{role}</div>}
+            <div style={{ fontSize: 13, fontWeight: 500, color: closed ? 'var(--ink-2)' : 'var(--accent-ink)' }}>{closed ? STATUS_LABEL[status] ?? status : journeyLine(status, journey.tj, journey.dayLabel)}</div>
           </div>
-        )}
-      </Section>
+        </div>
 
-      <Section title="Details">
+        <div style={{ display: 'grid', gap: 6 }}>
+          <div role="img" aria-label={`Journey: ${TRACK[at]}`} style={{ display: 'grid', gridTemplateColumns: `repeat(${TRACK.length}, 1fr)`, gap: 4 }}>
+            {TRACK.map((t, i) => <span key={t} title={t} style={{ height: 8, borderRadius: 99, background: closed ? 'var(--line-2)' : i < at ? 'var(--ok-solid)' : i === at ? 'var(--accent)' : 'var(--line)' }} />)}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--ink-3)' }}>
+            <span>Offer</span><span>Confirmed</span>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gap: 8 }}>
+          <h3 style={{ ...sectionLabel, margin: 0 }}>Waiting on</h3>
+          {(waiting.length ? waiting : [null]).map((t) => (
+            <div key={t?.id ?? 'none'} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--surface-2)', borderRadius: 12, fontSize: 13, minWidth: 0 }}>
+              {t ? <OwnerChip role={t.ownerRole} label={OWNER_LABEL[t.ownerRole]} title={t.ownerRole === 'hr' ? 'HR · you' : t.ownerName ? `${OWNER_LABEL[t.ownerRole]} (${t.ownerName})` : undefined} /> : <OwnerChip role="automatic" />}
+              <span style={{ flex: 1, minWidth: 0, fontWeight: 500, overflowWrap: 'anywhere' }}>{t ? t.title : 'Nothing waiting'}</span>
+              <span style={{ fontSize: 12, whiteSpace: 'nowrap', color: t?.late ? 'var(--bad)' : 'var(--ink-3)', fontWeight: t?.late ? 500 : 400 }}>{t ? dueText(t.dueAt, t.late) : '—'}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* The design's key facts; the offer's version and acceptance, the buddy and probation sit in their sections below. */}
         <Facts rows={[
-          ['Joining', journey.tj ? `${longDay(journey.tj)}${daysTo(journey.tj) > 0 && PRE_JOIN.has(status) ? ` · ${daysTo(journey.tj)} days to go` : ''}` : ''],
+          ['Joining', journey.tj ? longDay(journey.tj) : ''],
+          ['Manager', journey.managerName],
+          ['Documents', docsCount],
+          ['Template', template?.name],
           ['Personal email', journey.candidate?.personalEmail],
           ['Work email', journey.candidate?.workEmail],
-          ['Manager', journey.managerName],
-          ['Buddy', journey.buddyName],
-          ['Template', template?.name],
-          ['Documents', docsCount],
-          ['Offer', offer ? `Version ${offer.version} · ${offer.status}` : ''],
-          ['Accepted', offer?.acceptedAt ? dayTime(offer.acceptedAt) : ''],
-          ['Probation', journey.probation ? `${journey.probation.months} months${journey.probation.extendedBy ? `, extended by ${journey.probation.extendedBy}` : ''}` : ''],
           ['Decision', decision ? decisionLine(decision, pay) : ''],
           ['Closed', journey.closedAt ? `${longDay(journey.closedAt)}${journey.closedReason ? ` · ${journey.closedReason}` : ''}` : ''],
         ]} />
-      </Section>
+        {!offer && offerActions.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{actionButtons(offerActions)}</div>}
 
-      {offer && (
-        <Section title={`Offer · version ${offer.version}`} aside={offer.pdfFileId ? <button type="button" className="pd-btn sm" onClick={() => setDialog({ kind: 'file', id: offer.pdfFileId!, name: `Offer letter – ${name}.pdf` })}>View PDF</button> : undefined}>
-          <Facts rows={offerFacts} />
-          {offer.changedFields && offer.changedFields.length > 0 && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 8 }}>Changed in this version: {changedFieldsText(offer.changedFields)}</div>}
-          {revisionWaiting && (
-            <div className="pd-note" style={{ marginTop: 8, color: 'var(--warn)' }}>
-              Saved as a draft. {name.split(' ')[0]} still sees version {offer.version - 1} until you send this one.
-            </div>
+        <div style={{ borderBottom: '1px solid var(--line)' }}>
+          {offer && (
+            <Fold id="offer" title="Offer" summary={`Version ${offer.version} · ${offer.status}`} open={isOpen('offer')} onToggle={() => toggle('offer')}
+              actions={(offer.pdfFileId || offerActions.length > 0) && <>
+                {offer.pdfFileId && <button type="button" className="pd-btn sm" onClick={() => setDialog({ kind: 'file', id: offer.pdfFileId!, name: `Offer letter – ${name}.pdf` })}>View PDF</button>}
+                {actionButtons(offerActions)}
+              </>}>
+              <Facts strong={false} rows={offerFacts} />
+              {offer.changedFields && offer.changedFields.length > 0 && <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>Changed in this version: {changedFieldsText(offer.changedFields)}</div>}
+              {revisionWaiting && (
+                <div className="pd-note" style={{ color: 'var(--warn)' }}>
+                  Saved as a draft. {firstName(name)} still sees version {offer.version - 1} until you send this one.
+                </div>
+              )}
+              {offer.versions.length > 1 && (
+                <div style={{ display: 'grid', gap: 4, fontSize: 12.5, color: 'var(--ink-2)' }}>
+                  {offer.versions.slice().reverse().map((v) => (
+                    <div key={v.version}>Version {v.version} · {v.status}{v.sentAt ? ` · sent ${shortDay(v.sentAt)}` : ''}{v.acceptedAt ? ` · accepted ${shortDay(v.acceptedAt)}` : ''}</div>
+                  ))}
+                </div>
+              )}
+            </Fold>
           )}
-          {offer.versions.length > 1 && (
-            <div style={{ marginTop: 10, display: 'grid', gap: 4, fontSize: 12.5, color: 'var(--ink-2)' }}>
-              {offer.versions.slice().reverse().map((v) => (
-                <div key={v.version}>Version {v.version} · {v.status}{v.sentAt ? ` · sent ${shortDay(v.sentAt)}` : ''}{v.acceptedAt ? ` · accepted ${shortDay(v.acceptedAt)}` : ''}</div>
+
+          {dateRequests.length > 0 && (
+            <Fold id="dates" title="Joining date requests" summary={pendingDates ? `${pendingDates} waiting for you` : `${dateRequests.length} decided`} open={isOpen('dates')} onToggle={() => toggle('dates')}>
+              {dateRequests.slice().sort((a, b) => (a.status === 'pending' ? -1 : 0) - (b.status === 'pending' ? -1 : 0)).map((r) => (
+                <div key={r.id} style={{ border: '1px solid var(--line)', borderRadius: 14, padding: '10px 12px', fontSize: 13 }}>
+                  <div><b style={{ fontWeight: 500 }}>Asks to join on {longDay(r.requestedTj)}</b> · {r.reason}</div>
+                  {r.note && <div style={{ color: 'var(--ink-2)', marginTop: 2, overflowWrap: 'anywhere' }}>“{r.note}”</div>}
+                  {r.status === 'pending' ? (
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      <button type="button" className="pd-btn sm primary" onClick={() => setDialog({ kind: 'date', id: r.id, decision: 'approve', day: r.requestedTj })}>Approve</button>
+                      <button type="button" className="pd-btn sm" onClick={() => setDialog({ kind: 'date', id: r.id, decision: 'decline', day: r.requestedTj })}>Decline</button>
+                    </div>
+                  ) : <div style={{ color: 'var(--ink-3)', marginTop: 4 }}>{r.status === 'approved' ? 'Approved' : 'Declined'}{r.decidedByName ? ` by ${r.decidedByName}` : ''}{r.decidedAt ? ` · ${shortDay(r.decidedAt)}` : ''}</div>}
+                </div>
               ))}
-            </div>
+            </Fold>
           )}
-        </Section>
-      )}
 
-      {dateRequests.length > 0 && (
-        <Section title="Joining date requests">
-          <div style={{ display: 'grid', gap: 10 }}>
-            {dateRequests.slice().sort((a, b) => (a.status === 'pending' ? -1 : 0) - (b.status === 'pending' ? -1 : 0)).map((r) => (
-              <div key={r.id} style={{ border: '1px solid var(--line)', borderRadius: 14, padding: '10px 12px', fontSize: 13 }}>
-                <div><b style={{ fontWeight: 500 }}>Asks to join on {longDay(r.requestedTj)}</b> · {r.reason}</div>
-                {r.note && <div style={{ color: 'var(--ink-2)', marginTop: 2, overflowWrap: 'anywhere' }}>“{r.note}”</div>}
-                {r.status === 'pending' ? (
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    <button type="button" className="pd-btn sm primary" onClick={() => setDialog({ kind: 'date', id: r.id, decision: 'approve', day: r.requestedTj })}>Approve</button>
-                    <button type="button" className="pd-btn sm" onClick={() => setDialog({ kind: 'date', id: r.id, decision: 'decline', day: r.requestedTj })}>Decline</button>
-                  </div>
-                ) : <div style={{ color: 'var(--ink-3)', marginTop: 4 }}>{r.status === 'approved' ? 'Approved' : 'Declined'}{r.decidedByName ? ` by ${r.decidedByName}` : ''}{r.decidedAt ? ` · ${shortDay(r.decidedAt)}` : ''}</div>}
+          {bankPf && (
+            <Fold id="bankpf" title="Bank and PF change" summary={bankPf.status === 'pending' ? 'Waiting for HR' : bankPf.status === 'approved' ? 'Approved' : 'Declined'} open={isOpen('bankpf')} onToggle={() => toggle('bankpf')}>
+              <BankPfCard request={bankPf} pay={pay} busy={Boolean(busy)} onDecide={(d) => setDialog({ kind: 'bankpf', decision: d })} />
+            </Fold>
+          )}
+
+          {documents.length > 0 && (
+            <Fold id="docs" title="Documents" summary={reviewQueue ? `${reviewQueue} to review · ${docsCount}` : docsCount} open={isOpen('docs')} onToggle={() => toggle('docs')}>
+              {!seesDocuments && <div className="pd-note">Only HR opens candidates’ documents and ID proofs. You see where each one is.</div>}
+              {documents.map((d) => <DocumentRow key={d.id} doc={d} busy={busy === `doc:${d.id}`} canReview={seesDocuments}
+                onOpen={(f) => setDialog({ kind: 'file', id: f.id, name: f.name })}
+                onApprove={() => void run(`doc:${d.id}`, () => reviewDocument(d.id, 'approve'), `${d.label} approved`)}
+                onSendBack={() => setDialog({ kind: 'sendback', doc: d })} />)}
+            </Fold>
+          )}
+
+          {letters.length > 0 && (
+            <Fold id="letters" title="Letters" summary={letters.map((l) => `${KIND_LABEL[l.kind]}: ${LETTER_STATE[l.state] ?? l.state}`).join(' · ')} open={isOpen('letters')} onToggle={() => toggle('letters')}>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {letters.map((l) => <LetterRow key={l.id} letter={l} name={name} onOpen={(id, n) => setDialog({ kind: 'file', id, name: n })} onDocuments={() => openDocuments(s.setView, l.kind, journey.id)} />)}
               </div>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {journey.bankPfRequest && (journey.bankPfRequest.status === 'pending' || journey.bankPfRequest.decidedAt) && (
-        <Section title="Bank and PF change">
-          <BankPfCard request={journey.bankPfRequest} pay={pay} busy={Boolean(busy)} onDecide={(d) => setDialog({ kind: 'bankpf', decision: d })} />
-        </Section>
-      )}
-
-      {documents.length > 0 && (
-        <Section id="lf-panel-docs" title={docsCount ? `Documents · ${docsCount}` : 'Documents'}>
-          {!seesDocuments && <div className="pd-note" style={{ marginBottom: 10 }}>Only HR opens candidates’ documents and ID proofs. You see where each one is.</div>}
-          <div style={{ display: 'grid', gap: 10 }}>
-            {documents.map((d) => <DocumentRow key={d.id} doc={d} busy={busy === `doc:${d.id}`} canReview={seesDocuments}
-              onOpen={(f) => setDialog({ kind: 'file', id: f.id, name: f.name })}
-              onApprove={() => void run(`doc:${d.id}`, () => reviewDocument(d.id, 'approve'), `${d.label} approved`)}
-              onSendBack={() => setDialog({ kind: 'sendback', doc: d })} />)}
-          </div>
-        </Section>
-      )}
-
-      {letters.length > 0 && (
-        <Section title="Letters">
-          <div style={{ display: 'grid', gap: 8 }}>
-            {letters.map((l) => <LetterRow key={l.id} letter={l} name={name} onOpen={(id, n) => setDialog({ kind: 'file', id, name: n })} onDocuments={() => openDocuments(s.setView, l.kind, journey.id)} />)}
-          </div>
-        </Section>
-      )}
-
-      <Section title="Tasks">
-        <TasksByPhase tasks={tasks} busy={busy} onAction={(task, action) => setDialog({ kind: 'task', task, action })} />
-      </Section>
-
-      {!closed && PRE_JOIN.has(status) && status !== 'draft' && (
-        <Section title="Day-1 pass">
-          <Day1PassEditor key={journey.id} value={journey.day1Pass} tj={journey.tj}
-            onSave={(p) => run('pass', () => updateJourney(journey.id, { day1Pass: p }), 'Day-1 pass saved')} busy={busy === 'pass'} />
-        </Section>
-      )}
-
-      {!closed && (
-        <Section title="Manager and buddy">
-          <PeoplePicker key={`${journey.managerUserId}-${journey.buddyUserId}`} managerUserId={journey.managerUserId} buddyUserId={journey.buddyUserId} exclude={journey.userId}
-            emps={emps} busy={busy === 'people'}
-            onSave={(patch) => run('people', () => updateJourney(journey.id, patch), 'Saved')} />
-          {status === 'draft' && templates.length > 1 && (
-            <div style={{ marginTop: 12 }}>
-              <Field label="Onboarding template" hint="Can change until the offer is sent">
-                <Pick value={journey.templateId} onChange={(v) => void run('template', () => updateJourney(journey.id, { templateId: v }), 'Template changed')}>
-                  {templates.filter((t) => t.active).map((t) => <option key={t.id} value={t.id}>{t.name}{t.isDefault ? ' (default)' : ''}</option>)}
-                </Pick>
-              </Field>
-            </div>
+            </Fold>
           )}
-        </Section>
-      )}
 
-      {batch.length > 0 && (
-        <Section title={`Joining the same day · ${batch.length}`}>
-          <div style={{ fontSize: 13, color: 'var(--ink-2)', overflowWrap: 'anywhere' }}>{batch.map((b) => b.name).join(', ')}</div>
-        </Section>
-      )}
+          <Fold id="tasks" title="Tasks" summary={tasksLive.length ? `${tasksDone} of ${tasksLive.length} done` : 'None yet'} open={isOpen('tasks')} onToggle={() => toggle('tasks')}>
+            <TasksByPhase tasks={tasks} busy={busy} onAction={(task, action) => setDialog({ kind: 'task', task, action })} />
+          </Fold>
 
-      {(journey.userId || probation.months.length > 0) && (
-        <Section title={`Probation${journey.probation ? ` · ${journey.probation.months + (journey.probation.extendedBy ?? 0)} months` : ''}`}
-          aside={journey.column === 'final_month' ? <button type="button" className="pd-btn sm" onClick={() => setDialog({ kind: 'decision' })}>{decision ? 'Change decision' : 'Record decision'}</button> : undefined}>
-          {decision && <div className="pd-note" style={{ marginBottom: 10 }}>{decisionLine(decision, pay)}</div>}
-          <ProbationMonths months={probation.months} total={(journey.probation?.months ?? 0) + (journey.probation?.extendedBy ?? 0)} />
-        </Section>
-      )}
+          {!closed && PRE_JOIN.has(status) && status !== 'draft' && (
+            <Fold id="pass" title="Day-1 pass" summary={passFilled ? 'Filled in' : 'Not filled in yet'} open={isOpen('pass')} onToggle={() => toggle('pass')}>
+              <Day1PassEditor key={journey.id} value={journey.day1Pass} tj={journey.tj}
+                onSave={(p) => run('pass', () => updateJourney(journey.id, { day1Pass: p }), 'Day-1 pass saved')} busy={busy === 'pass'} />
+            </Fold>
+          )}
 
-      <div style={{ height: 24, flexShrink: 0 }} />
+          {!closed && (
+            <Fold id="people" title="Manager and buddy" summary={[journey.managerName, journey.buddyName].filter(Boolean).join(' · ') || 'Not picked'} open={isOpen('people')} onToggle={() => toggle('people')}>
+              <PeoplePicker key={`${journey.managerUserId}-${journey.buddyUserId}`} managerUserId={journey.managerUserId} buddyUserId={journey.buddyUserId} exclude={journey.userId}
+                emps={emps} busy={busy === 'people'}
+                onSave={(patch) => run('people', () => updateJourney(journey.id, patch), 'Saved')} />
+              {status === 'draft' && templates.length > 1 && (
+                <Field label="Onboarding template" hint="Can change until the offer is sent">
+                  <Pick value={journey.templateId} onChange={(v) => void run('template', () => updateJourney(journey.id, { templateId: v }), 'Template changed')}>
+                    {templates.filter((t) => t.active).map((t) => <option key={t.id} value={t.id}>{t.name}{t.isDefault ? ' (default)' : ''}</option>)}
+                  </Pick>
+                </Field>
+              )}
+            </Fold>
+          )}
 
-      {dialog?.kind === 'offer' && (
-        <OfferWizard mode={dialog.mode} start={dialog.start} journey={journey} offer={offer} onClose={() => setDialog(null)}
-          onDone={() => { setDialog(null); changed(); }} />
-      )}
+          {batch.length > 0 && (
+            <Fold id="batch" title="Joining the same day" summary={`${batch.length} ${batch.length === 1 ? 'person' : 'people'}`} open={isOpen('batch')} onToggle={() => toggle('batch')}>
+              <div style={{ fontSize: 13, color: 'var(--ink-2)', overflowWrap: 'anywhere' }}>{batch.map((b) => b.name).join(', ')}</div>
+            </Fold>
+          )}
+
+          {(journey.userId || probation.months.length > 0) && (
+            <Fold id="probation" title="Probation" summary={decision ? decisionLine(decision, pay) : journey.probation ? `${journey.probation.months} months${journey.probation.extendedBy ? `, extended by ${journey.probation.extendedBy}` : ''}` : undefined} open={isOpen('probation')} onToggle={() => toggle('probation')}
+              actions={journey.column === 'final_month' ? <button type="button" className="pd-btn sm" onClick={() => setDialog({ kind: 'decision' })}>{decision ? 'Change decision' : 'Record decision'}</button> : undefined}>
+              {decision && <div className="pd-note">{decisionLine(decision, pay)}</div>}
+              <ProbationMonths months={probation.months} total={probationTotal} />
+            </Fold>
+          )}
+        </div>
+      </div>
+
+      {/* The design's footer: Open profile, Nudge, then the one thing to do next. */}
+      <div ref={nudgeRef} style={{ position: 'sticky', bottom: 0, flexShrink: 0, display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', padding: '16px 20px', borderTop: '1px solid var(--line)', background: 'var(--surface)' }}>
+        <button type="button" className="pd-btn" disabled={!journey.userId} title={journey.userId ? undefined : 'Their profile is made when HR finalises the offer'}
+          onClick={() => { if (journey.userId) { onClose(); s.openProfile(journey.userId); } }}>Open profile</button>
+        {nudgeable.length > 0 && (
+          <>
+            <button type="button" className="pd-btn" disabled={Boolean(busy) || nudgeOpen.length === 0}
+              aria-haspopup={nudgeOpen.length > 1 ? 'menu' : undefined} aria-expanded={nudgeOpen.length > 1 ? nudgeMenu : undefined}
+              title={nudgeOpen.length === 0 ? 'Reminded today. You can remind again tomorrow.' : nudgeOpen.length === 1 ? `${nudgeLabel(nudgeOpen[0].ownerRole, nudgeOpen[0].ownerName)}: ${nudgeOpen[0].title}` : 'Pick who to remind'}
+              onClick={() => (nudgeOpen.length === 1 ? nudge(nudgeOpen[0]) : setNudgeMenu((v) => !v))}>
+              {busy === 'nudge' ? 'Sending…' : nudgeOpen.length === 0 ? 'Reminded today' : 'Nudge'}
+            </button>
+            {nudgeMenu && (
+              <div role="menu" style={{ position: 'absolute', right: 20, bottom: 'calc(100% - 8px)', background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: 6, zIndex: 5, minWidth: 260, display: 'grid' }}>
+                {nudgeable.map((t) => (
+                  <button key={t.id} type="button" role="menuitem" disabled={t.nudgedToday} onClick={() => nudge(t)}
+                    style={{ display: 'grid', gap: 2, textAlign: 'left', background: 'none', border: 0, borderRadius: 10, padding: '8px 10px', font: 'inherit', cursor: t.nudgedToday ? 'default' : 'pointer', color: t.nudgedToday ? 'var(--ink-4)' : 'var(--ink)' }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>{t.nudgedToday ? `${nudgeLabel(t.ownerRole, t.ownerName)} · reminded today` : nudgeLabel(t.ownerRole, t.ownerName)}</span>
+                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{t.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+        {primary && <button type="button" className="pd-btn primary" onClick={primary.go} disabled={Boolean(busy)}>{primary.label}</button>}
+      </div>
       {dialog?.kind === 'finalise' && <FinaliseDialog journey={journey} onClose={() => setDialog(null)} onDone={() => { setDialog(null); changed(); }} />}
       {dialog?.kind === 'joined' && <MarkJoinedDialog journey={journey} onClose={() => setDialog(null)} onDone={() => { setDialog(null); changed(); }} />}
       {dialog?.kind === 'decision' && <DecisionDialog journey={journey} onClose={() => setDialog(null)} onDone={() => { setDialog(null); changed(); }} />}

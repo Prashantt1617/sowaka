@@ -4,7 +4,8 @@
 // interview answers never show here: they go to Exit insights, anonymised.
 // Where the company has the lifecycle on, this replaces People › Exits.
 import { useEffect, useMemo, useState } from 'react';
-import { Avatar, Card, LoadError, PageActions, SearchInput, SkeletonCards } from '../../../ui';
+import { Card, LoadError, PageActions, SearchInput, SkeletonCards } from '../../../ui';
+import { PersonAvatar } from '../../../PersonAvatar';
 import { btn, btnClass } from '../../../ds';
 import { IconDownload, IconPlus } from '../../../icons';
 import { downloadCsv } from '../../../export';
@@ -143,7 +144,7 @@ export function OffboardingBoard() {
                   <div key={c.key} className={`ob-card-wrap${matches(c) ? '' : ' dim'}`}>
                   <button type="button" className={`ob-card${open?.key === c.key ? ' on' : ''}${c.nudge ? ' has-nudge' : ''}`} onClick={() => setOpen(c)}>
                     <div className="ob-who">
-                      <Avatar name={c.name} size={32} font={12.5} />
+                      <PersonAvatar name={c.name} userId={c.userId} size={32} font={12.5} />
                       <div style={{ minWidth: 0 }}><b>{c.name}</b><span>{[c.designation, c.department].filter(Boolean).join(' · ') || c.employeeId}</span></div>
                     </div>
                     <div className="ob-line"><span className="ob-type">{c.exitTypeLabel}</span><span>{c.lastDayLine}</span></div>

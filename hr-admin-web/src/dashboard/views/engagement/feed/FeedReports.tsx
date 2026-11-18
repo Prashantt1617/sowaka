@@ -4,7 +4,8 @@
 import { useMemo, useState } from 'react';
 import { getContentReports, reviewContentReport, type ContentReportDTO } from '../../../../services/hrms';
 import { removeFeedComment, removeFeedPost } from '../../../../services/engagement-feed';
-import { Avatar, EmptyRow, ListPending, Pill, StatusTabs } from '../../../ui';
+import { EmptyRow, ListPending, Pill, StatusTabs } from '../../../ui';
+import { PersonAvatar } from '../../../PersonAvatar';
 import { btn, btnClass } from '../../../ds';
 import { useStore } from '../../../store';
 import { useLoad } from '../../../useLoad';
@@ -152,7 +153,7 @@ function ReportGroup({
   return (
     <article className="fd-rep">
       <div className="fd-rep-h">
-        <Avatar name={r.authorName} size={34} />
+        <PersonAvatar name={r.authorName} userId={r.authorUserId} size={34} />
         <div className="txt">
           <b>{r.authorName}</b>
           <span>

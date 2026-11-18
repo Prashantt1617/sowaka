@@ -50,3 +50,4 @@ android/.gradle/
 # Misc
 tmp/
 temp/
+backend/.bluegreen-logs/

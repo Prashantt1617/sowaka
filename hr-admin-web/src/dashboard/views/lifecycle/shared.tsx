@@ -5,22 +5,27 @@
 import { useEffect, useState } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Pill, Spinner } from '../../ui';
+import { Avatar, Pill, Spinner } from '../../ui';
+import { usePhotoFor } from '../../photos';
 import { iconBtn } from '../../ds';
 import { IconClose } from '../../icons';
 import type { JourneyFlag, OwnerRole, PlantState } from '../../../services/lifecycle';
 import { fetchLifecycleFile, nudgeTask } from '../../../services/lifecycle';
+import { mediaUrl } from '../../../services/api';
 import { useStore } from '../../store';
 import '../people.css';
 import { areaStyle, errText, FLAG, flagLabel, inputStyle, labelStyle, nudgeLabel, OWNER_LABEL, OWNER_TONE } from './format';
 
-/** Who a task waits on: Employee (Arjun), HR · you, Automatic. */
-export function OwnerChip({ role, name, you }: { role: OwnerRole; name?: string; you?: boolean }) {
+/**
+ * Who a task waits on: Employee (Arjun), HR · you, Automatic. `label` replaces the words (the
+ * boards show just "Arjun": the chip's colour already says the role); `title` its tooltip.
+ */
+export function OwnerChip({ role, name, you, label: words, title }: { role: OwnerRole; name?: string; you?: boolean; label?: string; title?: string }) {
   const t = OWNER_TONE[role] ?? OWNER_TONE.automatic;
-  const label = you && (role === 'hr' || role === 'hr_manager') ? `${OWNER_LABEL[role]} · you` : name ? `${OWNER_LABEL[role]} (${name})` : OWNER_LABEL[role];
+  const label = words ?? (you && (role === 'hr' || role === 'hr_manager') ? `${OWNER_LABEL[role]} · you` : name ? `${OWNER_LABEL[role]} (${name})` : OWNER_LABEL[role]);
   return (
     // inline-block (not flex) so a long name ends in an ellipsis; minWidth 0 lets it shrink inside a flex row.
-    <span title={label} style={{ display: 'inline-block', verticalAlign: 'middle', maxWidth: '100%', minWidth: 0, fontSize: 11.5, fontWeight: 500, lineHeight: 1.5, padding: '2px 9px', borderRadius: 999, background: t.bg, color: t.fg, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+    <span title={title ?? label} style={{ display: 'inline-block', verticalAlign: 'middle', maxWidth: '100%', minWidth: 0, fontSize: 11.5, fontWeight: 500, lineHeight: 1.5, padding: '2px 9px', borderRadius: 999, background: t.bg, color: t.fg, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
       {label}
     </span>
   );
@@ -37,6 +42,27 @@ export function FlagPill({ flag, card }: { flag: JourneyFlag; card?: { quietDays
 
 const STAGE_NAMES = ['seed', 'sprout', 'seedling', 'sapling', 'bud', 'bloom'];
 /** The growth plant: seed (watered 0–3 in pre-boarding) to bloom on confirmation; droops when something is overdue, never red. */
+/**
+ * A joiner's face with their plant on it as a badge, where a card or panel
+ * shows who they are: the card's photo, else the directory's (by userId).
+ * Someone with no photo (a candidate not yet joined, most often) keeps the
+ * plant alone, as before.
+ */
+export function PlantFace({ plant, size, name, photoUrl, userId }: { plant?: PlantState | null; size: number; name: string; photoUrl?: string; userId?: string }) {
+  const found = usePhotoFor(photoUrl ? null : userId, null);
+  const src = photoUrl ? mediaUrl(photoUrl) : found;
+  if (!src) return <Plant plant={plant} size={size} />;
+  const badge = Math.round(size * 0.5);
+  return (
+    <span data-plant-face style={{ position: 'relative', width: size, height: size, flex: 'none', display: 'inline-block' }}>
+      <Avatar name={name} size={size} font={Math.round(size * 0.38)} src={src} />
+      <span style={{ position: 'absolute', right: -Math.round(badge * 0.3), bottom: -Math.round(badge * 0.2), width: badge, height: badge, borderRadius: '50%', background: 'var(--surface)', display: 'grid', placeItems: 'center', boxShadow: '0 0 0 1.5px var(--line)' }}>
+        <Plant plant={plant} size={Math.round(badge * 0.86)} />
+      </span>
+    </span>
+  );
+}
+
 export function Plant({ plant, size = 26 }: { plant?: PlantState | null; size?: number }) {
   const stage = plant?.stage ?? 0;
   const water = plant?.water ?? 0;

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../auth/data/auth_models.dart';
 import '../../connect/data/connect_models.dart';
+import '../../shared/face_photo.dart';
 import '../data/relay_api_service.dart';
 import '../data/relay_models.dart';
 import 'relay_game_screen.dart';
@@ -462,7 +463,14 @@ class _RelayPostCardState extends State<RelayPostCard> {
             clipBehavior: Clip.none,
             children: [
               for (var i = 0; i < shown.length; i += 1)
-                Positioned(left: 31.0 * i, child: _bubble(_initials(shown[i].name), tints[i % tints.length])),
+                Positioned(
+                  left: 31.0 * i,
+                  child: FacePhoto(
+                    photoUrl: shown[i].photoUrl,
+                    size: 38,
+                    fallback: _bubble(_initials(shown[i].name), tints[i % tints.length]),
+                  ),
+                ),
               if (extra > 0)
                 Positioned(
                   left: 31.0 * shown.length,

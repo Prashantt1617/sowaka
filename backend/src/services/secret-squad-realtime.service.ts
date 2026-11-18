@@ -23,6 +23,7 @@ import {
   tickSquad,
   viewerFor,
 } from './secret-squad.service';
+import { InFlight } from '../utils/inflight';
 import { logger } from '../utils/logger';
 
 const TICK_MS = 500;
@@ -31,6 +32,7 @@ const OPEN_MS = 5_000;
 let namespace: Namespace | undefined;
 let ticker: NodeJS.Timeout | undefined;
 let opener: NodeJS.Timeout | undefined;
+const passes = new InFlight();
 
 const userRoom = (userId: string) => `squad:user:${userId}`;
 const officeRoom = (org: string, office: string) => `squad:office:${org}:${officeKey(office)}`;
@@ -190,9 +192,9 @@ function start() {
     ticker = setInterval(() => {
       if (busy) return;
       busy = true;
-      void tickSquad()
+      void passes.track(tickSquad()
         .catch((error) => logger.error('Secret Squad tick failed', {}, error))
-        .finally(() => { busy = false; });
+        .finally(() => { busy = false; }));
     }, TICK_MS);
     ticker.unref?.();
   }
@@ -201,19 +203,21 @@ function start() {
     opener = setInterval(() => {
       if (busy) return;
       busy = true;
-      void openDueSessions()
+      void passes.track(openDueSessions()
         .catch((error) => logger.error('Secret Squad opening failed', {}, error))
-        .finally(() => { busy = false; });
+        .finally(() => { busy = false; }));
     }, OPEN_MS);
     opener.unref?.();
   }
 }
 
-export function closeSquadRealtime(): void {
+/** Stops the clock and the namespace; resolves once a pass under way has finished (it reads the database). */
+export async function closeSquadRealtime(): Promise<void> {
   if (ticker) clearInterval(ticker);
   if (opener) clearInterval(opener);
   ticker = undefined;
   opener = undefined;
   namespace = undefined;
   setSquadEmitter(null);
+  await passes.settle();
 }

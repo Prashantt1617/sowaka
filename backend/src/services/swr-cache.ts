@@ -14,6 +14,8 @@
  * A change HR makes on these pages calls `forgetSwr(org)` so it shows at once;
  * what employees do (a punch) shows within the minute.
  */
+import { onRemoteDrop, publishDrop } from './cache-bus';
+
 export type SwrKind = 'ool'
   // Employee lifecycle and Suwi (lifecycle/readCache.ts): dropped on every write, see there.
   | 'lc-board-data' | 'off-board-data' | 'suwi-notices'
@@ -161,6 +163,8 @@ export function patchSwr<T>(org: string, kind: SwrKind, params: unknown, patch: 
   const key = keyOf(org, kind, params);
   const hit = kept.get(key);
   bump(`${org}\u0000${kind}`);
+  // Another process (a blue/green deploy's other copy) cannot patch what it has: it drops it.
+  publishDrop({ op: 'swr-drop', org, kinds: [kind] });
   const usable = hit && (hit.patching || (hit.value !== undefined && Date.now() - hit.at < MAX_STALE_MS));
   if (!hit || !usable) {
     kept.delete(key);
@@ -214,6 +218,7 @@ export function onForgetSwr(listener: (org: string) => void): void {
  * A refresh already under way for that org is not kept when it lands.
  */
 export function dropSwr(org: string | null, kinds: SwrKind[]): void {
+  publishDrop({ op: 'swr-drop', org, kinds });
   const orgs = new Set<string>();
   for (const key of kept.keys()) {
     const [o, k] = key.split('\u0000');
@@ -233,6 +238,7 @@ export function dropSwr(org: string | null, kinds: SwrKind[]): void {
  * already under way for the org is not kept when it lands.
  */
 export function dropSwrForPerson(org: string, kinds: SwrKind[], userId: string): void {
+  publishDrop({ op: 'swr-person', org, kinds, userId });
   for (const k of kinds) {
     const prefix = `${org}\u0000${k}\u0000`;
     for (const key of [...kept.keys()]) {
@@ -245,6 +251,7 @@ export function dropSwrForPerson(org: string, kinds: SwrKind[], userId: string):
 
 /** Drop an org's kept answers (of these kinds, or all), so the next read reflects a change at once. */
 export function forgetSwr(org: string, ...kinds: SwrKind[]): void {
+  publishDrop({ op: 'swr-forget', org, kinds });
   for (const listener of forgetListeners) listener(org);
   if (kinds.length) for (const k of kinds) bump(`${org}\u0000${k}`);
   else bump(org);
@@ -257,6 +264,7 @@ export function forgetSwr(org: string, ...kinds: SwrKind[]): void {
  * (a leave or correction decided: readCache patches Suwi's company bundle rather than dropping it).
  */
 export function forgetSwrExcept(org: string, except: SwrKind[]): void {
+  publishDrop({ op: 'swr-forget-except', org, except });
   for (const listener of forgetListeners) listener(org);
   const prefix = `${org}\u0000`;
   const kinds = new Set<string>();
@@ -264,3 +272,11 @@ export function forgetSwrExcept(org: string, except: SwrKind[]): void {
   for (const k of kinds) bump(`${org}\u0000${k}`);
   for (const key of [...kept.keys()]) if (key.startsWith(prefix) && kinds.has(kindOf(key))) kept.delete(key);
 }
+
+// The same drops, made by another process (cache-bus.ts).
+onRemoteDrop((drop) => {
+  if (drop.op === 'swr-drop') dropSwr(drop.org, drop.kinds as SwrKind[]);
+  else if (drop.op === 'swr-person') dropSwrForPerson(drop.org, drop.kinds as SwrKind[], drop.userId);
+  else if (drop.op === 'swr-forget') forgetSwr(drop.org, ...(drop.kinds as SwrKind[]));
+  else if (drop.op === 'swr-forget-except') forgetSwrExcept(drop.org, drop.except as SwrKind[]);
+});

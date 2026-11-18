@@ -6,6 +6,7 @@ import { companyDisplayName } from './company-settings.service';
 import { cupBoardFor } from './cup.service';
 import { notifyLiveGameStarted } from './connect-notifications.service';
 import { logger } from '../utils/logger';
+import { keptFaceUrlsFor } from './face-photos';
 
 export class GameError extends Error {
   constructor(public statusCode: number, message: string) { super(message); }
@@ -122,6 +123,8 @@ export async function submitGameScore(userId: string, gameId: string, rawScore: 
 
 async function leaderboard(gameId: string, org: string, limit: number) {
   const scores = await gameScores().find({ gameId, org }).sort({ score: -1, achievedAt: 1 }).limit(limit).toArray();
+  // Each player's face beside their name; null for no photo.
+  const faces = await keptFaceUrlsFor(scores.map((entry) => entry.userId)).catch(() => new Map<string, string | null>());
   return scores.map((entry, index) => ({ rank: index + 1, userId: entry.userId, playerName: entry.playerName,
-    score: entry.score, achievedAt: entry.achievedAt }));
+    score: entry.score, achievedAt: entry.achievedAt, photoUrl: faces.get(entry.userId) ?? null }));
 }

@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../shared/face_photo.dart';
+
 /// The game's look, taken from the Figma file so every screen agrees.
 ///
 /// Values are the design's own — the gradient angle, the card tints, the type
@@ -117,7 +119,8 @@ class RelayBackdrop extends StatelessWidget {
   }
 }
 
-/// A round avatar carrying one initial, as the roster and lead strip draw it.
+/// A round avatar, as the roster and lead strip draw it: the person's photo,
+/// or one initial on the gradient when they have none.
 class RelayInitial extends StatelessWidget {
   const RelayInitial({
     super.key,
@@ -125,15 +128,20 @@ class RelayInitial extends StatelessWidget {
     required this.size,
     required this.fontSize,
     this.gradient = RelayStyle.avatarViolet,
+    this.photoUrl,
   });
 
   final String name;
   final double size;
   final double fontSize;
   final Gradient gradient;
+  final String? photoUrl;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      FacePhoto(photoUrl: photoUrl, size: size, fallback: _initial());
+
+  Widget _initial() {
     return Container(
       width: size,
       height: size,

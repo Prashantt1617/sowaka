@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderShiftedBox;
 
 import '../../shared/app_update.dart';
+import '../../shared/face_photo.dart';
 import '../../shared/image_crop_sheet.dart';
 import '../../shared/image_source_sheet.dart';
 
@@ -4163,6 +4164,14 @@ class _LiveGameBody extends StatelessWidget {
                             style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                         ),
+                        // The player's face; their initials without a photo.
+                        _InitialAvatar(
+                          initials: _initials('${entry['playerName'] ?? ''}'),
+                          color: _ConnectColors.terra,
+                          size: 24,
+                          photoUrl: entry['photoUrl'] is String ? entry['photoUrl'] as String : '',
+                        ),
+                        const SizedBox(width: 8),
                         Expanded(child: Text('${entry['playerName']}')),
                         Text(
                           '${entry['score']}',
@@ -7560,24 +7569,29 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         children: [
           _person(
             reply,
-            Container(
-              width: 24,
-              height: 24,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: gradient,
+            // Their photo, as the top-level row shows; the initials without one.
+            FacePhoto(
+              photoUrl: reply.photoUrl,
+              size: 24,
+              fallback: Container(
+                width: 24,
+                height: 24,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: gradient,
+                  ),
                 ),
-              ),
-              child: Text(
-                _initials(reply.name),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
+                child: Text(
+                  _initials(reply.name),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),
