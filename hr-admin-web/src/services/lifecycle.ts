@@ -121,6 +121,18 @@ export interface BoardCard {
   replyBy?: string;
 }
 
+export interface ProfileAddressView { line: string; city: string; state: string; pin: string }
+export interface CandidateProfileView {
+  personal?: { fullName: string; preferredName?: string; dob: string; gender: string; maritalStatus?: string; nationality?: string };
+  contact?: { mobile: string; current: ProfileAddressView; permanentSame: boolean; permanent?: ProfileAddressView };
+  bank?: { holderName: string; ifsc: string; accountLast4: string; bankName?: string };
+  education?: { qualification: string; institution: string; year: string };
+  experience?: { firstJob: boolean; jobs: Array<{ company: string; role: string; from: string; to?: string }> };
+  ids?: { aadhaarLast4?: string; panLast4?: string };
+  photoFileId?: string;
+  savedAt?: string;
+}
+
 export interface BoardDTO {
   tab: BoardTab;
   columns: Array<{ key: BoardColumn; label: string; cards: BoardCard[] }>;
@@ -216,6 +228,10 @@ export interface JourneyView {
   updatedAt?: string;
   /** The week-1 bank / PF change waiting for HR (HR's view only; the account and UAN show their last four). */
   bankPfRequest?: BankPfRequest;
+  /** The portal's Employee profile (HR only; the account number, Aadhaar and PAN as their last four). */
+  profile?: CandidateProfileView;
+  /** The portal's About you: the emergency contact and PF (HR only). */
+  aboutYou?: { emergencyContact?: { name: string; relation: string; phone: string }; pf?: { firstJob: boolean; uan?: string } };
   waitingOn?: WaitingOn[];
   managerName?: string;
   buddyName?: string;
