@@ -1,17 +1,17 @@
-// Final settlement · emailed as a PDF (O3). The figures are the live exit's settlement (payroll,
-// leave, gratuity, notice, clearance): check them, change or add a line with a reason, approve, then
-// email the statement to the personal email as a PDF made here (settlementDoc.ts), previewed on the
-// page. It is never shown in the app. Before sending: the last month's attendance and payroll,
-// clearance n of 4, the salary status and a personal email. The first three stop the send until
-// they pass, unless HR says why it goes anyway (the server keeps the reason). Save draft keeps the
-// email; the lines are kept on the settlement as they change.
+// Final settlement · emailed as a PDF (O3, canvas HRSettlement). The figures are the live exit's
+// settlement (payroll, leave, gratuity, notice, clearance): check them, change or add a line with a
+// reason, approve, then email the statement to the personal email as a PDF made here
+// (settlementDoc.ts), previewed on the right. It is never shown in the app. Before sending: the last
+// month's attendance and payroll, clearance n of 4, the salary status and a personal email. The first
+// three stop the send until they pass, unless HR says why it goes anyway (the server keeps the
+// reason). The email (to, subject, message) opens from the personal email check's Edit email; Save
+// draft keeps it; the lines are kept on the settlement as they change.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Card, LoadError, PageActions, Pill, SkeletonForm } from '../../../ui';
-import { PersonAvatar } from '../../../PersonAvatar';
+import { LoadError, PageActions, SkeletonForm } from '../../../ui';
 import { usePageHead } from '../../../pageHead';
 import { btn, btnClass, note as noteBox } from '../../../ds';
-import { IconDownload, IconPlus } from '../../../icons';
+import { IconCheck, IconDownload, IconPlus } from '../../../icons';
 import { useStore } from '../../../store';
 import { getExitDetail, settlementAction } from '../../../../services/hrms';
 import type { ExitDetailDTO, SettlementLine } from '../../../../services/hrms';
@@ -21,11 +21,15 @@ import { downloadSettlementPdf, settlementHtml } from '../../../settlementDoc';
 import type { StatementFooter } from '../../../settlementDoc';
 import { htmlToPdfBase64 } from '../../../pdf';
 import { ApiError } from '../../../../services/http';
-import { Statement } from '../../ExitDetail';
-import { IconCheck } from '../../../icons';
+import { SettlementStatement } from './SettlementStatement';
 import { ClockIcon, firstName, inrPaise, istKey, longDay, todayKey } from './parts';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** The envelope on the email actions (HRSettlement). */
+const IconMail = () => (
+  <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M3 5h18v14H3zM3 7l9 6 9-6" /></svg>
+);
 
 /** Where a line comes from (6Zs §10: Payroll, Leave, Claims, Rule, Clearance, Offboarding, manual). */
 function sourceOf(line: SettlementLine): string {
@@ -56,6 +60,7 @@ export function SettlementSend({ userId, onBack }: { userId: string; onBack: () 
   const [message, setMessage] = useState('');
   const [override, setOverride] = useState('');
   const [adding, setAdding] = useState(false);
+  const [editingEmail, setEditingEmail] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -152,89 +157,83 @@ export function SettlementSend({ userId, onBack }: { userId: string; onBack: () 
     }
   };
 
-  const rows: { label: string; ok: boolean; status: string }[] = [
+  const rows: { label: string; ok: boolean; status: string; edit?: boolean }[] = [
     { label: 'Attendance and payroll for the last month', ok: checks.attendance.ok, status: checks.attendance.label },
     { label: 'Clearance: IT, Admin, Finance, handover', ok: checks.clearance.ok, status: `${checks.clearance.done} of ${checks.clearance.total} done` },
     { label: 'Salary status from payroll', ok: checks.salary.ok, status: checks.salary.label },
-    { label: 'Personal email for the PDF', ok: emailOk, status: to.trim() || 'Not on their profile: add it below' },
+    { label: 'Personal email for the PDF', ok: emailOk, status: to.trim() || 'Not on their profile', edit: true },
   ];
   const zeroLines = settlement?.lines.filter((l) => l.amountPaise === 0) ?? [];
 
+  // Where the PDF goes, as the preview's header says it.
+  const goesTo = emailed ? emailed.to : emailOk ? to.trim() : '';
+
   return (
-    <div style={{ animation: 'fade .3s ease both' }}>
+    <div style={{ animation: 'fade .3s ease both', display: 'flex', flexDirection: 'column', gap: 20 }}>
       <PageActions>
         <button type="button" id="ob-save-draft" disabled={!!busy || !!emailed} onClick={() => void saveDraft()} className={btnClass()} style={btn()}>{busy === 'draft' ? 'Saving…' : 'Save draft'}</button>
         <button type="button" id="ob-email-settlement" disabled={!canSend || !!busy} title={notSetUp ? 'Set up their salary details first' : !emailOk ? 'Add their personal email' : blocked && !reason ? 'Resolve the checks, or say why you are sending anyway' : undefined} onClick={() => void send()} className={btnClass('primary')} style={btn('primary')}>
-          {busy === 'email' ? 'Sending…' : notSetUp ? 'Email PDF' : settlement?.status === 'draft' ? 'Approve and email PDF' : emailed ? 'Email the PDF again' : 'Email PDF'}
+          <IconMail />{busy === 'email' ? 'Sending…' : notSetUp ? 'Email PDF' : settlement?.status === 'draft' ? 'Approve and email PDF' : emailed ? 'Email the PDF again' : 'Email PDF'}
         </button>
       </PageActions>
-      <section className="pd-card pd-phead">
-        <div className="ph-id">
-          <PersonAvatar name={exit.name} userId={userId} size={52} font={21} />
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="pn"><h2>{exit.name}</h2>{emailed && <Pill label={`Emailed ${longDay(istKey(emailed.at))}`} tone={{ bg: 'var(--ok-bg)', fg: 'var(--ok)' }} />}</div>
-            <span className="sub">Figures come from payroll and clearance. Check them, then email the statement to {name} as a PDF. It is not shown in the app.{checks.draft ? ` Draft saved ${longDay(istKey(checks.draft.savedAt))}${checks.draft.byName ? ` by ${checks.draft.byName}` : ''}.` : ''}</span>
-          </div>
-        </div>
-      </section>
+      {/* HRSettlement: the lead line sits under the page's title. */}
+      <p className="pd-lead" style={{ margin: '-14px 4px 0', maxWidth: '76ch' }}>
+        Figures come from payroll and clearance. Check them, then email the statement to {name} as a PDF. It is not shown in the app.
+        {emailed ? ` Emailed to ${emailed.to} on ${longDay(istKey(emailed.at))}.` : checks.draft ? ` Draft saved ${longDay(istKey(checks.draft.savedAt))}${checks.draft.byName ? ` by ${checks.draft.byName}` : ''}.` : ''}
+      </p>
 
-      <div className="ob-banner"><ClockIcon /><span><b>Due {longDay(checks.dueOn)}</b> · 2 working days after the last day ({longDay(exit.lastWorkingDay)}). Gratuity, when eligible, is due within 30 days.</span></div>
+      <div className="ob-banner" style={{ marginBottom: 0 }}><ClockIcon /><span><b>Due {longDay(checks.dueOn)}</b> · 2 working days after the last day ({longDay(exit.lastWorkingDay)}). Gratuity, when eligible, is due within 30 days.</span></div>
 
-      <div className="ob-two" style={{ marginBottom: 20 }}>
-        <Card padded>
-          <div className="pd-card-h"><h3>Before you send</h3>{blocked && <small style={{ color: 'var(--warn)' }}>Sending waits for these</small>}</div>
-          {rows.map((r) => (
-            <div key={r.label} className="ob-check">
-              <span aria-label={r.ok ? 'Done' : 'Not yet'} style={{ width: 16, display: 'inline-flex' }}>{r.ok ? <IconCheck /> : <span style={{ color: 'var(--warn)' }}>!</span>}</span>
-              <span>{r.label}</span>
-              <span className="s" style={{ color: r.ok ? undefined : 'var(--warn)' }}>{r.status}</span>
-            </div>
-          ))}
-          {/* Open checks need a reason on every send, a resend too (it was hidden once emailed, leaving Send disabled). */}
-          {blocked && (
-            <label className="pd-label" style={{ display: 'grid', gap: 6, marginTop: 12 }}>
-              <span>Send anyway? Say why (kept with the settlement)</span>
-              <input id="ob-send-override" className="pd-inp" value={override} onChange={(e) => setOverride(e.target.value)} placeholder="e.g. November paid off-cycle on 2 Dec" />
-            </label>
-          )}
-        </Card>
-        <Card padded>
-          <div className="pd-card-h"><h3>Email</h3><small>{emailed ? `Sent to ${emailed.to} on ${longDay(istKey(emailed.at))}` : 'To their personal email'}</small></div>
-          <div className="ob-form">
-            <label className="f">To<input className="pd-inp" type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="name@example.com" /></label>
-            <label className="f">Subject<input className="pd-inp" value={subject} onChange={(e) => setSubject(e.target.value)} /></label>
-            <label className="f">Message<textarea className="pd-inp" rows={5} value={message} onChange={(e) => setMessage(e.target.value)} /></label>
-          </div>
-        </Card>
-      </div>
-
-      <div className="ob-two settle" style={{ alignItems: 'start' }}>
-        <section className="pd-card" style={{ minWidth: 0 }}>
-          <div className="pd-card-h"><h3>Statement</h3></div>
-          {!settlement && <div style={noteBox}>{exit.caseOpen ? `${name} stopped coming: the settlement starts once the case is closed (People › ${exit.name} › Exit).` : `The settlement starts the day after ${name}'s last day (${longDay(exit.lastWorkingDay)}).`}</div>}
-          {settlement && (
-            <Statement exit={exit} settlement={settlement} busy={busy} run={run} userId={userId} sourceOf={sourceOf}
-              extra={settlement.status === 'draft' ? (
-                <div><button type="button" id="ob-add-line" className="pd-btn sm" disabled={!!busy} onClick={() => setAdding(true)}><IconPlus size={14} /> Add a line</button></div>
-              ) : undefined} />
-          )}
-        </section>
-        <section className="pd-card" style={{ minWidth: 0 }}>
-          <div className="pd-card-h">
-            <h3>PDF preview</h3>
-            <small>{emailed ? `Emailed to ${emailed.to}` : emailOk ? `To ${to.trim()}` : 'Not sent'}</small>
-          </div>
-          {settlement && previewHtml ? (
-            <>
-              <ScaledPage html={previewHtml} />
-              <div style={{ marginTop: 10 }}>
-                <button type="button" onClick={() => void downloadSettlementPdf(exit, settlement, company, footer).catch((e) => s.flash(e instanceof Error ? e.message : 'Could not make the PDF', 'error'))} className={btnClass()} style={btn()}><IconDownload stroke="currentColor" /> Download</button>
+      <div className="ob-settle">
+        <div className="ob-settle-l">
+          <section className="pd-card ob-sends" aria-label="Before you send">
+            <div className="ob-eyebrow"><span>Before you send</span>{blocked && <small>Sending waits for these</small>}</div>
+            {rows.map((r) => (
+              <div key={r.label} className={`ob-send${r.ok ? '' : ' no'}`}>
+                <span className="dot" aria-label={r.ok ? 'Done' : 'Not yet'}>{r.ok ? <IconCheck size={11} stroke="currentColor" /> : '!'}</span>
+                <span className="t">{r.label}</span>
+                <span className="s">{r.status}</span>
+                {r.edit && <button type="button" id="ob-edit-email" className="pd-btn ghost sm" disabled={!!busy} onClick={() => setEditingEmail(true)}>{emailOk ? 'Edit email' : 'Add email'}</button>}
               </div>
-            </>
-          ) : <div style={noteBox}>{notSetUp ? 'The preview shows once the salary details are set up and the settlement is worked out.' : 'The preview shows once the settlement has started.'}</div>}
+            ))}
+            {/* Open checks need a reason on every send, a resend too (it was hidden once emailed, leaving Send disabled). */}
+            {blocked && (
+              <label className="pd-label" style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+                <span>Send anyway? Say why (kept with the settlement)</span>
+                <input id="ob-send-override" className="pd-inp" value={override} onChange={(e) => setOverride(e.target.value)} placeholder="e.g. November paid off-cycle on 2 Dec" />
+              </label>
+            )}
+          </section>
+
+          <section className="pd-card" aria-label="Statement">
+            {!settlement && <div style={noteBox}>{exit.caseOpen ? `${name} stopped coming: the settlement starts once the case is closed (People › ${exit.name} › Exit).` : `The settlement starts the day after ${name}'s last day (${longDay(exit.lastWorkingDay)}).`}</div>}
+            {settlement && (
+              <SettlementStatement exit={exit} settlement={settlement} busy={busy} run={run} userId={userId} sourceOf={sourceOf}
+                addLine={<div style={{ marginTop: 12 }}><button type="button" id="ob-add-line" className="pd-btn sm" disabled={!!busy} onClick={() => setAdding(true)}><IconPlus size={14} stroke="currentColor" /> Add a line</button></div>} />
+            )}
+          </section>
+        </div>
+
+        <section className="pd-card ob-preview" aria-label="PDF preview">
+          <div className="ob-preview-h">
+            <span>PDF preview{goesTo ? <> · {emailed ? 'emailed to' : 'goes to'} <b>{goesTo}</b></> : ' · not sent'}</span>
+            <span className="acts">
+              {settlement && previewHtml && (
+                <button type="button" id="ob-download-settlement" className="pd-btn sm" onClick={() => void downloadSettlementPdf(exit, settlement, company, footer).catch((e) => s.flash(e instanceof Error ? e.message : 'Could not make the PDF', 'error'))}><IconDownload stroke="currentColor" /> Download</button>
+              )}
+            </span>
+          </div>
+          {settlement && previewHtml
+            ? <ScaledPage html={previewHtml} />
+            : <div style={{ ...noteBox, background: 'var(--surface)' }}>{notSetUp ? 'The preview shows once the salary details are set up and the settlement is worked out.' : 'The preview shows once the settlement has started.'}</div>}
         </section>
       </div>
 
+      {editingEmail && (
+        <EmailDialog to={to} subject={subject} message={message} sent={emailed ? `Sent to ${emailed.to} on ${longDay(istKey(emailed.at))}` : ''}
+          onClose={() => setEditingEmail(false)}
+          onDone={(v) => { setTo(v.to); setSubject(v.subject); setMessage(v.message); setEditingEmail(false); }} />
+      )}
       {resendAsk && (
         <ResendDialog ask={resendAsk} busy={busy === 'email'} onClose={() => setResendAsk(null)} onSend={() => void send(true)} />
       )}
@@ -245,6 +244,40 @@ export function SettlementSend({ userId, onBack }: { userId: string; onBack: () 
           }} />
       )}
     </div>
+  );
+}
+
+/**
+ * The email that carries the PDF: to their personal email, the subject and the message. HRSettlement
+ * has no place for it on the page, so it opens from the personal email check (Edit email).
+ * Done keeps it for this send; Save draft keeps it on the settlement.
+ */
+function EmailDialog({ to, subject, message, sent, onClose, onDone }: { to: string; subject: string; message: string; sent: string; onClose: () => void; onDone: (v: { to: string; subject: string; message: string }) => void }) {
+  const [v, setV] = useState({ to, subject, message });
+  const ok = EMAIL.test(v.to.trim());
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [onClose]);
+  return createPortal(
+    <div onClick={onClose} className="pd-scrim" style={{ zIndex: 90, background: 'var(--scrim)' }}>
+      <div onClick={(e) => e.stopPropagation()} className="pd-modal" role="dialog" aria-label="Email" style={{ width: 'min(520px, 100%)' }}>
+        <div className="pd-md-h"><div><h3>Email</h3><div className="pd-md-sub">{sent || 'The PDF goes to their personal email. It is not shown in the app.'}</div></div></div>
+        <div className="pd-md-b">
+          <div className="ob-form">
+            <label className="f">To<input id="ob-email-to" className="pd-inp" type="email" value={v.to} onChange={(e) => setV({ ...v, to: e.target.value })} placeholder="name@example.com" /></label>
+            <label className="f">Subject<input id="ob-email-subject" className="pd-inp" value={v.subject} onChange={(e) => setV({ ...v, subject: e.target.value })} /></label>
+            <label className="f">Message<textarea id="ob-email-message" className="pd-inp" rows={6} value={v.message} onChange={(e) => setV({ ...v, message: e.target.value })} /></label>
+          </div>
+        </div>
+        <div className="pd-md-f">
+          <button type="button" className="pd-btn" onClick={onClose}>Cancel</button>
+          <button type="button" id="ob-email-done" className="pd-btn primary" disabled={!ok} onClick={() => onDone({ to: v.to.trim(), subject: v.subject, message: v.message })}>Done</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -309,7 +342,7 @@ function ScaledPage({ html }: { html: string }) {
   const PAGE_H = 1120;
   const scale = width ? Math.min(1, width / PAGE_W) : 1;
   return (
-    <div ref={box} style={{ width: '100%', height: Math.round(PAGE_H * scale), overflow: 'hidden', border: '1px solid var(--line)', borderRadius: 12, background: '#fff' }}>
+    <div ref={box} style={{ width: '100%', height: Math.round(PAGE_H * scale), overflow: 'hidden', borderRadius: 'var(--r-sm)', background: '#fff', boxShadow: 'var(--shadow)' }}>
       <iframe title="Settlement PDF preview" sandbox="" srcDoc={html}
         style={{ width: PAGE_W, height: PAGE_H, border: 0, display: 'block', transform: `scale(${scale})`, transformOrigin: '0 0' }} />
     </div>
