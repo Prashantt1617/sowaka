@@ -26,7 +26,7 @@ export const TILEUP = {
   /** How long a removed player waits before the code lets them back in; a fresh invite lets them in at once. */
   kickCooldownMs: 60_000,
   minPlayers: 2,
-  maxPlayers: 4,
+  maxPlayers: 6,
   /** A turn's time, in seconds: the host picks one of these in the lobby. */
   secsOptions: [30, 60, 120] as readonly number[],
   secs: 60,

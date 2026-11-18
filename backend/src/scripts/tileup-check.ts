@@ -288,6 +288,8 @@ async function main() {
   const sc: Seat = { userId: 'c', org: 'sowaka', name: 'Chitra Iyer', photoUrl: null };
   const sd: Seat = { userId: 'd', org: 'sowaka', name: 'Dev Shah', photoUrl: null };
   const se: Seat = { userId: 'e', org: 'sowaka', name: 'Esha Roy', photoUrl: null };
+  const sf: Seat = { userId: 'f', org: 'sowaka', name: 'Farah Ali', photoUrl: null };
+  const sg: Seat = { userId: 'g', org: 'sowaka', name: 'Gaurav Jain', photoUrl: null };
   const other: Seat = { userId: 'x', org: 'acme', name: 'Xavier', photoUrl: null };
   let code = '';
   await check('host: a four-digit room, you are its host, in the lobby, 60 s turns', async () => {
@@ -298,7 +300,7 @@ async function main() {
     assert.equal(view.status, 'lobby');
     assert.equal(view.secs, 60);
     assert.equal(view.min, 2);
-    assert.equal(view.max, 4);
+    assert.equal(view.max, 6);
   });
   await check('join: by code at your company only; another company\'s code reads as no room', async () => {
     await assert.rejects(joinRoom(other, code), (e: TileUpError) => e.status === 404);
@@ -312,10 +314,14 @@ async function main() {
     assert.equal((await settingsRoom(sa, { secs: 30 })).secs, 30);
     assert.equal((await settingsRoom(sa, { secs: 120 })).secs, 120);
   });
-  await check('full at 4: the fifth gets 409', async () => {
+  await check('full at 6: the seventh gets 409', async () => {
     await joinRoom(sc, code);
     await joinRoom(sd, code);
-    await assert.rejects(joinRoom(se, code), (e: TileUpError) => e.status === 409);
+    await joinRoom(se, code);
+    await joinRoom(sf, code);
+    await assert.rejects(joinRoom(sg, code), (e: TileUpError) => e.status === 409);
+    await leaveRoom(sf);
+    await leaveRoom(se);
     await leaveRoom(sd);
   });
   await check('kick: host only; removed for a minute, told so', async () => {
