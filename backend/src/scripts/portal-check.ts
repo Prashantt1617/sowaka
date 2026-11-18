@@ -233,6 +233,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   await auth.resetPassword(resetToken, 'NewPassword9');
   ok('the reset link works once', (await refusal(() => auth.resetPassword(resetToken, 'NewPassword9'))).status === 400);
   ok('the new password signs in; the old one does not', 'token' in (await auth.signIn(KABIR, 'NewPassword9', '6.6.6.7')) && (await refusal(() => auth.signIn(KABIR, password, '6.6.6.7'))).status === 401);
+  ok('a password copied with a space or line break around it still signs in', 'token' in (await auth.signIn(KABIR, ' NewPassword9\n', '6.6.6.8')));
   auth.resetRateLimits();
   let limited: { status?: number } = {};
   for (let i = 0; i < auth.LIMITS.signIn.max + 1; i += 1) limited = await refusal(() => auth.signIn('nobody@example.com', 'x1xxxxxx', '9.9.9.9'));
