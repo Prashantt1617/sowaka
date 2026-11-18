@@ -74,7 +74,7 @@ function Shell() {
   // Land on a tab this person may open, and leave one taken away from them.
   useEffect(() => {
     if (canOpen(user, view)) return;
-    const first = [OVERVIEW_ITEM, ...SECTIONS.flatMap((s) => s.items)].find((item) => canOpen(user, item.key));
+    const first = [OVERVIEW_ITEM, ...SECTIONS.flatMap((s) => s.items.filter((item) => !item.hidden))].find((item) => canOpen(user, item.key));
     if (first) setView(first.key);
   }, [user, view, setView]);
   // So the next sign-in screen on this device already wears their company.

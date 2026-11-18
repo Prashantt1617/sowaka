@@ -28,11 +28,12 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { Collection } from 'mongodb';
 import { env } from '../config/env';
-import { companies, gameScores, getDb, users } from '../config/db';
+import { companies, gameCatalog, gameScores, getDb, users } from '../config/db';
 import type { CupDecision, CupEntrant, CupEvent, CupMatch, CupRound, CupBet } from '../models/cup.model';
 import { catalogScoreId } from '../models/game-catalog.model';
 import type { User } from '../models/user.model';
 import { hasAllDashboardTabs } from '../middleware/admin.middleware';
+import { InFlight } from '../utils/inflight';
 import { logger } from '../utils/logger';
 import {
   buildDraw,
@@ -675,6 +676,25 @@ async function createRoundMatches(rt: Runtime, n: number, now: Date, status: 'sc
 
 const nameOf = (event: CupEvent, userId: string) => event.entrants.find((e) => e.userId === userId)?.name ?? 'your opponent';
 
+const catalogPictures = new Map<string, { at: number; url: string | null }>();
+
+/**
+ * The event's own picture for its pushes: its banner, else the game's catalog
+ * picture when that is a link (a bundled `assets/...` or `data:` one is not).
+ */
+async function cupPicture(event: CupEvent): Promise<string | null> {
+  if (event.imageKey) return event.imageKey;
+  const hit = catalogPictures.get(event.catalogKey);
+  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.url;
+  const entry = await gameCatalog()
+    .findOne({ key: event.catalogKey }, { projection: { _id: 0, thumbnail: 1 } })
+    .catch(() => null);
+  const thumbnail = String(entry?.thumbnail ?? '');
+  const url = thumbnail.startsWith('https://') || thumbnail.startsWith('/media/') ? thumbnail : null;
+  catalogPictures.set(event.catalogKey, { at: Date.now(), url });
+  return url;
+}
+
 /** A push that opens the Cup in the Games tab. Never holds anything up. */
 async function pushCup(event: CupEvent, userIds: string[], scenario: string, title: string, body: string) {
   try {
@@ -684,6 +704,7 @@ async function pushCup(event: CupEvent, userIds: string[], scenario: string, tit
       body,
       // The app opens the game named here, on no challenge in particular: the Cup page.
       data: { destination: 'game_challenge', gameKey: event.catalogKey, challengeId: '' },
+      picture: await cupPicture(event),
     });
   } catch (error) {
     logger.error('Cup push failed', { eventId: event.id, scenario }, error);
@@ -774,26 +795,31 @@ async function tickOnce(id: string, again: boolean): Promise<void> {
  */
 function kick(rt: Runtime) {
   if (!ticker || !runnerMoves(rt.event.org) || !rt.event.active) return;
-  void tickOnce(rt.event.id, true);
+  void runnerPasses.track(tickOnce(rt.event.id, true));
 }
+
+/** The runner's passes and kicks still running, for `stopCupRunner` to wait on. */
+const runnerPasses = new InFlight();
 
 export function startCupRunner(intervalMs = 1000) {
   if (ticker || !env.cupRunner) return;
   ticker = setInterval(() => {
     if (ticking) return;
     ticking = true;
-    tickCups()
+    void runnerPasses.track(tickCups()
       .catch((error) => logger.error('Cup runner failed', {}, error))
       .finally(() => {
         ticking = false;
-      });
+      }));
   }, intervalMs);
   ticker.unref();
 }
 
-export function stopCupRunner() {
+/** Stops the runner; resolves once the pass under way (and any kick) has finished, so the database can close. */
+export async function stopCupRunner(): Promise<void> {
   if (ticker) clearInterval(ticker);
   ticker = undefined;
+  await runnerPasses.settle();
 }
 
 /**

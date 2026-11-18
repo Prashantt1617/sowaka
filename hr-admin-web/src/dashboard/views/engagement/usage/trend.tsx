@@ -1,6 +1,8 @@
 // App usage over time, and when in the day and week people open the app.
 // Both come from the server's daily app activity log, which only starts on
-// the day it shipped: days before are drawn hatched as "not tracked".
+// the day it shipped: days before are drawn hatched as "not tracked", unless
+// they were filled in from app activity (punches, requests, posts, games…),
+// which the chart draws like any other day. "When" uses tracked days only.
 import { useState } from 'react';
 import { getUsageTrend } from '../../../../services/engagement-usage';
 import type { UsageWhenDTO } from '../../../../services/engagement-usage';
@@ -8,8 +10,8 @@ import type { LoadState } from '../../../ui';
 import { useLoad } from '../../../useLoad';
 import { DateRange, LoadError, SkeletonLines, StatusTabs } from '../../../ui';
 import * as L from '../../look';
-import { Card, Columns, GroupLegend, Kpis } from './parts';
-import { GROUPS, GROUP_COLOR, GROUP_SHORT, addDays, istToday, pct, plural, rangeLabel, sd, sdw } from './format';
+import { Card, Columns, Kpis } from './parts';
+import { addDays, istToday, plural, rangeLabel, sd, sdw } from './format';
 
 const HOUR = (h: number) => `${h % 12 || 12}${h < 12 ? 'a' : 'p'}`;
 const WEEK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -63,11 +65,10 @@ const QUICK: Record<'date' | 'week', [string, number][]> = {
   week: [['Last 4 weeks', -27], ['Last 12 weeks', -83], ['Last 26 weeks', -181]],
 };
 
-/** 6. Usage over time: active people per day, week or month, split by attendance group. */
+/** 6. Usage over time: how many people opened the app each day, week or month. One number per column. */
 export function TrendTab({ dept, loc }: { dept: string; loc: string }) {
   const today = istToday();
   const [gran, setGran] = useState<Gran>('date');
-  const [split, setSplit] = useState(true);
   const [ranges, setRanges] = useState<Record<'date' | 'week', [string, string]>>({
     date: [addDays(today, -29), today],
     week: [addDays(today, -83), today],
@@ -81,7 +82,12 @@ export function TrendTab({ dept, loc }: { dept: string; loc: string }) {
     setRanges((r) => ({ ...r, [gran]: [a, b] }));
   };
   const unit = gran === 'date' ? 'day' : gran === 'week' ? 'week' : 'month';
-  const tracked = data?.buckets.filter((b) => !b.untracked) ?? [];
+  const anyEst = Boolean(data?.buckets.some((b) => b.estimated));
+  const anyOff = Boolean(data?.buckets.some((b) => b.untracked && (!data.trackingSince || b.to < data.trackingSince)));
+  const seen = data?.buckets.filter((b) => !b.untracked) ?? [];
+  // The figures leave out the day, week or month still under way (it would read as a drop), unless it is all there is.
+  const done = seen.filter((b) => b.to < today);
+  const tracked = done.length ? done : seen;
   const totals = tracked.map((b) => b.app + b.bio + b.present);
   const first = totals[0] ?? 0;
   const last = totals[totals.length - 1] ?? 0;
@@ -92,13 +98,9 @@ export function TrendTab({ dept, loc }: { dept: string; loc: string }) {
     return gran === 'date' ? String(Number(a.slice(8))) : sd(a);
   };
   return (
-    <Card title="App usage over time" note={`People who opened the app each ${unit}${split ? ', by attendance group' : ''}`}>
+    <Card title="App usage over time" note={`People who opened the app each ${unit}`}>
       <div className="ua-bar">
         <StatusTabs options={['date', 'week', 'month']} active={gran} onSelect={setGran} labels={{ date: 'Date-wise', week: 'Week-wise', month: 'Month-wise' }} />
-        <span className="sp" />
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink-2)', cursor: 'pointer' }}>
-          <input type="checkbox" checked={split} onChange={(e) => setSplit(e.target.checked)} /> Split by group
-        </label>
       </div>
       {R ? (
         <div className="ua-bar" style={{ marginTop: 12 }}>
@@ -126,23 +128,21 @@ export function TrendTab({ dept, loc }: { dept: string; loc: string }) {
                 const when = b.from === b.to ? sdw(b.from) : rangeLabel(b.from, b.to);
                 const tip = b.untracked
                   ? `${when}: not tracked`
-                  : `${when}: ${total}${split ? ` (${GROUPS.map((g) => `${GROUP_SHORT[g]} ${b[g]}`).join(', ')})` : ''}${b.partial ? ' · tracked part of it' : ''}`;
+                  : `${when}: ${plural(total, 'person', 'people')}${b.partial ? ' · tracked part of it' : ''}`;
                 return {
                   key: b.from,
                   label: label(b.from),
                   off: b.untracked,
                   part: b.partial,
                   tip,
-                  parts: split ? GROUPS.map((g) => ({ v: b[g], color: GROUP_COLOR[g] })) : [{ v: total, color: 'var(--accent)' }],
+                  parts: [{ v: total, color: 'var(--accent)' }],
                 };
               })}
             />
-            {split && <GroupLegend counts={data.groups} />}
             <p className="ua-note">
-              {data.trackingSince
-                ? `App opens are tracked from ${sd(data.trackingSince)}; earlier ${unit}s are hatched (not tracked, not zero). A person counts once per ${unit}.`
-                : 'App opens are not tracked yet: they start counting from the first time someone opens the app.'}
-              {data.trackingSince && ` ${pct(totals.length, data.buckets.length)} of these ${unit}s are tracked.`}
+              {anyEst ? '' : data.trackingSince ? `App opens are tracked from ${sd(data.trackingSince)}. ` : 'App opens are not tracked yet: they start counting from the first time someone opens the app.'}
+              {data.trackingSince && anyOff && `Hatched ${unit}s are not tracked (not zero). `}
+              {data.trackingSince && `A person counts once per ${unit}.`}
             </p>
           </>
         )}

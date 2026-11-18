@@ -1,21 +1,26 @@
 import { peopleTasks } from '../services/peopleTasks.service';
+import { correctionsForAdmin, feedbackForAdmin, leavesForAdmin, overtimeForAdmin } from '../services/timeOfficeLists';
 import { getMyLeaveBalance } from '../services/leave.service';
 import { users } from '../config/db';
+import { closeCase, endAccessNow, exitDetail, exitSettings, listExits, recordExit, saveInterview, setClearance, setExitSettings, settlementAction, withdrawExit } from '../services/exit.service';
 import { NextFunction, Request, Response } from 'express';
 import { applyImport, cancelImport, importTemplate, previewImport } from '../services/employeeImport.service';
 import { attendanceReport, employeeCalendar } from '../services/attendance-report.service';
-import { clearAttendanceOverride, markableDates, setAttendanceOverride } from '../services/attendance-override.service';
+import { clearAttendanceOverride, markableDates, setAttendanceOverride, setMarkRemoved } from '../services/attendance-override.service';
 import { listDashboardAccesses, setDashboardAccess } from '../services/dashboard-access.service';
 import {
   AttendanceError,
   adminDecideRegularization,
-  listAllRegularizationsForAdmin,
   listOutOfLocationForAdmin,
 } from '../services/attendance.service';
 import { deleteOffice, listOffices, officeView, saveOffice } from '../services/geofence.service';
-import { requireOrg } from '../services/shift.service';
-import { adminDecideLeave, decideLeaveCancellation, listAllLeavesForAdmin } from '../services/leave.service';
-import { adminDecideOvertime, listAllOvertimeForAdmin } from '../services/overtime.service';
+import { requireOrg, todayIso } from '../services/shift.service';
+import { payCycleForAdmin, PunchLogError, punchLogForAdmin } from '../services/punch-log.service';
+import { cachedSwr } from '../services/swr-cache';
+import { PayrollInputsError } from '../services/payroll-inputs.service';
+import { hasAllDashboardTabs } from '../middleware/admin.middleware';
+import { adminCancelLeave, adminDecideLeave, decideLeaveCancellation } from '../services/leave.service';
+import { adminDecideOvertime } from '../services/overtime.service';
 import {
   adminDecideReimbursement,
   listAllReimbursementsForAdmin,
@@ -27,7 +32,6 @@ import {
   createEmployeeForAdmin,
   removeEmployeeDocument,
   listAllEmployeesForAdmin,
-  listAllFeedbackForAdmin,
   setOvertimeEligibilityForAdmin,
   updateEmployeeDetailsForAdmin,
   deleteEmployeeForAdmin,
@@ -43,7 +47,7 @@ function adminUserId(req: Request): string {
 // ---- Org-wide lists (rule 5) ----
 export async function listLeaves(req: Request, res: Response, next: NextFunction) {
   try {
-    res.status(200).json({ success: true, leaves: await listAllLeavesForAdmin(adminUserId(req)) });
+    res.status(200).json({ success: true, leaves: await leavesForAdmin(adminUserId(req)) });
   } catch (error) {
     next(error);
   }
@@ -53,7 +57,7 @@ export async function listOvertime(req: Request, res: Response, next: NextFuncti
   try {
     res
       .status(200)
-      .json({ success: true, overtime: await listAllOvertimeForAdmin(adminUserId(req)) });
+      .json({ success: true, overtime: await overtimeForAdmin(adminUserId(req)) });
   } catch (error) {
     next(error);
   }
@@ -75,8 +79,39 @@ export async function listOutOfLocation(req: Request, res: Response, next: NextF
     const today = new Date().toISOString().slice(0, 10);
     const from = String(req.query.from ?? `${today.slice(0, 8)}01`);
     const to = String(req.query.to ?? today);
-    res.status(200).json({ success: true, checkIns: await listOutOfLocationForAdmin(adminUserId(req), from, to) });
+    const who = adminUserId(req);
+    // Kept per org and range and refreshed behind the reader (swr-cache); a decision drops it.
+    const org = await requireOrg(who);
+    const checkIns = await cachedSwr(org, 'ool', { from, to }, () => listOutOfLocationForAdmin(who, from, to));
+    res.status(200).json({ success: true, checkIns });
   } catch (error) {
+    next(error);
+  }
+}
+
+/** Punch log: every day someone punched in a range, with where each punch was taken. */
+export async function punchLogHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const today = todayIso();
+    const from = String(req.query.from ?? `${today.slice(0, 8)}01`);
+    const to = String(req.query.to ?? today);
+    // Face check results are biometric records: only for someone who can open Face ID.
+    const user = req.auth?.user;
+    const faceChecks = hasAllDashboardTabs(user) || (user?.dashboardTabs ?? []).includes('faceid');
+    res.status(200).json({ success: true, punches: await punchLogForAdmin(adminUserId(req), from, to, { faceChecks }) });
+  } catch (error) {
+    if (error instanceof PunchLogError) { res.status(error.status).json({ success: false, message: error.message }); return; }
+    next(error);
+  }
+}
+
+/** This pay cycle and the last, for the pages that count against payroll; `current: null` when none is set. */
+export async function payCycleHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(200).json({ success: true, cycle: await payCycleForAdmin(adminUserId(req), todayIso()) });
+  } catch (error) {
+    // A pay cycle setting that makes no sense is HR's to fix, not a server fault.
+    if (error instanceof PayrollInputsError) { res.status(error.statusCode).json({ success: false, message: error.message }); return; }
     next(error);
   }
 }
@@ -126,7 +161,7 @@ export async function listRegularizations(req: Request, res: Response, next: Nex
   try {
     res.status(200).json({
       success: true,
-      regularizations: await listAllRegularizationsForAdmin(adminUserId(req)),
+      regularizations: await correctionsForAdmin(adminUserId(req)),
     });
   } catch (error) {
     next(error);
@@ -137,7 +172,7 @@ export async function listFeedback(req: Request, res: Response, next: NextFuncti
   try {
     res
       .status(200)
-      .json({ success: true, feedback: await listAllFeedbackForAdmin(adminUserId(req)) });
+      .json({ success: true, feedback: await feedbackForAdmin(adminUserId(req)) });
   } catch (error) {
     next(error);
   }
@@ -288,6 +323,13 @@ export async function setCalendarDayHandler(req: Request, res: Response, next: N
   } catch (error) { next(error); }
 }
 
+/** HR takes a late or left-early mark off one day ({ mark: 'late' | 'early', removed: false } puts it back). */
+export async function setMarkRemovedHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(200).json({ success: true, ...(await setMarkRemoved(adminUserId(req), String(req.params.userId ?? ''), String(req.params.date ?? ''), (req.body ?? {}) as { mark?: unknown; removed?: unknown })) });
+  } catch (error) { next(error); }
+}
+
 /** HR takes their mark off a day; the day goes back to what the record says. */
 export async function clearCalendarDayHandler(req: Request, res: Response, next: NextFunction) {
   try {
@@ -367,6 +409,47 @@ export async function deleteEmployee(req: Request, res: Response, next: NextFunc
   } catch (error) { next(error); }
 }
 
+// ---- Exits ----
+const exitUser = (req: Request) => String(req.params.userId ?? '');
+export async function exitDetailHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await exitDetail(adminUserId(req), exitUser(req))) }); } catch (error) { next(error); }
+}
+export async function exitClearanceHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await setClearance(adminUserId(req), exitUser(req), req.body ?? {})) }); } catch (error) { next(error); }
+}
+export async function exitInterviewHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await saveInterview(adminUserId(req), exitUser(req), req.body ?? {})) }); } catch (error) { next(error); }
+}
+export async function exitCloseCaseHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await closeCase(adminUserId(req), exitUser(req))) }); } catch (error) { next(error); }
+}
+/** POST …/exit/settlement/:action — line (change a line), approve, reopen, paid. */
+export async function exitSettlementHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const action = String(req.params.action ?? '');
+    if (!['line', 'approve', 'reopen', 'paid'].includes(action)) { res.status(404).json({ success: false, message: 'Unknown settlement action' }); return; }
+    res.status(200).json({ success: true, ...(await settlementAction(adminUserId(req), exitUser(req), action as 'line' | 'approve' | 'reopen' | 'paid', req.body ?? {})) });
+  } catch (error) { next(error); }
+}
+export async function listExitsHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, exits: await listExits(adminUserId(req)) }); } catch (error) { next(error); }
+}
+export async function exitSettingsHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await exitSettings(adminUserId(req))) }); } catch (error) { next(error); }
+}
+export async function setExitSettingsHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await setExitSettings(adminUserId(req), req.body ?? {})) }); } catch (error) { next(error); }
+}
+export async function recordExitHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, exit: await recordExit(adminUserId(req), String(req.params.userId ?? ''), req.body ?? {}) }); } catch (error) { next(error); }
+}
+export async function withdrawExitHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await withdrawExit(adminUserId(req), String(req.params.userId ?? ''))) }); } catch (error) { next(error); }
+}
+export async function endAccessNowHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, exit: await endAccessNow(adminUserId(req), String(req.params.userId ?? '')) }); } catch (error) { next(error); }
+}
+
 export async function updateEmployeeDetails(req: Request, res: Response, next: NextFunction) {
   try {
     const employee = await updateEmployeeDetailsForAdmin(adminUserId(req), String(req.params.userId ?? ''), req.body ?? {});
@@ -388,6 +471,16 @@ export async function decideLeave(req: Request, res: Response, next: NextFunctio
 }
 
 /** HR answers an employee's request to cancel an approved leave, as an override where the policy allows. */
+/** HR cancels a leave (approved or pending) from the dashboard. */
+export async function adminCancelLeaveHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const leave = await adminCancelLeave(adminUserId(req), String(req.params.leaveId ?? ''), { note: req.body?.note == null ? undefined : String(req.body.note) });
+    res.status(200).json({ success: true, leave });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function decideLeaveCancellationHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const leave = await decideLeaveCancellation(adminUserId(req), String(req.params.leaveId ?? ''), {

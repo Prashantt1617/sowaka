@@ -10,7 +10,9 @@ import {
   type Contender,
   type RankedEntry,
 } from './leaderboard';
-import { buildOrgChart, ManagerError, reportsUpTo } from './manager.service';
+import { buildOrgChart, keptWorkspaceRoster, ManagerError, reportsUpTo } from './manager.service';
+import { lifecycleReadCacheOn } from './lifecycle/readCache';
+import { requestViewer } from '../middleware/request-viewer';
 import { pointEvents } from './points-ledger.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 
@@ -193,25 +195,32 @@ export async function getPointsActivity(
  * depth: a skip-level manager reads the reviews their managers wrote.
  */
 export async function getPersonProfile(viewerUserId: string, personUserId: string) {
-  const viewer = await requireViewer(viewerUserId);
+  // The viewer as the auth check read them (every field bar the photo, as read here otherwise).
+  const viewer = (requestViewer(viewerUserId) as User | undefined) ?? (await requireViewer(viewerUserId));
   const notFound = new ManagerError(404, 'Person not found');
   if (!viewer.org || !personUserId) throw notFound;
 
-  const roster = await users()
-    .find(
-      { org: viewer.org },
-      {
-        projection: {
-          _id: 0,
-          profilePhotoUrl: 0,
-          documents: 0,
-          helpIntake: 0,
-          helpMatch: 0,
-          counsellor: 0,
+  // The company's roster: the manager workspace's kept copy when there is one (lifecycle/readCache:
+  // dropped by every write that can touch people, warmed every few minutes), which holds every field
+  // read below; before, each profile opened read the whole company's records again (~2 s on the
+  // cluster). Without one, the lean read below (the kept copy is whole records, heavier to fetch).
+  const keptRoster = lifecycleReadCacheOn() ? keptWorkspaceRoster(viewer.org) : undefined;
+  const roster: User[] = keptRoster
+    ?? await users()
+      .find(
+        { org: viewer.org },
+        {
+          projection: {
+            _id: 0,
+            profilePhotoUrl: 0,
+            documents: 0,
+            helpIntake: 0,
+            helpMatch: 0,
+            counsellor: 0,
+          },
         },
-      },
-    )
-    .toArray();
+      )
+      .toArray();
   const byId = new Map(roster.map((user) => [user.userId, user]));
   const person = byId.get(personUserId);
   if (!person || inactive.includes(person.lifecycleStatus) || person.isCounsellor || person.hiddenFromDirectory) {

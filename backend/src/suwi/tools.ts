@@ -15,6 +15,7 @@ import { hasAllDashboardTabs } from '../middleware/admin.middleware';
 import { hasPayrollAccess } from '../services/payrollAccess.service';
 import { LlmTool } from './llm';
 import type { ParsedSheet } from './sheet';
+import { cachedToolRun } from './toolCache';
 
 export type SuwiArea = 'requests' | 'attendance' | 'people' | 'payroll' | 'claims' | 'performance' | 'connect' | 'settings';
 export const SUWI_AREAS: { key: SuwiArea; label: string; covers: string }[] = [
@@ -42,11 +43,17 @@ export interface SuwiContext {
 }
 
 export interface SuwiLink { label: string; view?: string; userId?: string; tab?: string }
+/** A list the panel draws as a table from the data itself, so the model never has to write it out. */
+export interface SuwiTable { title: string; columns: string[]; rows: (string | number)[][] }
 export interface ToolOutput {
   /** What Claude reads: small, plain JSON. */
   data: unknown;
   /** Buttons for the panel ("Open attendance report"). */
   links?: SuwiLink[];
+  /** Rows to show as tables under the answer (the model is told not to repeat them). */
+  tables?: SuwiTable[];
+  /** Read from today's attendance, which punches change without a write hook: answers using it are kept a minute only. */
+  live?: boolean;
   /** A prepared change, shown as a "What will happen" card; nothing is saved yet. */
   proposalId?: string;
   /** Several cards at once (a sheet with a different value per row: one card per value). */
@@ -73,6 +80,11 @@ const REGISTRY = new Map<string, SuwiTool>();
 export function defineTools(...tools: SuwiTool[]) {
   for (const t of tools) {
     if (REGISTRY.has(t.name)) throw new Error(`Suwi tool ${t.name} defined twice`);
+    // Read-only tools answer from what was kept on unchanged data (toolCache.ts); changes never are.
+    if (!t.acts) {
+      const body = t.run.bind(t);
+      t.run = (ctx, input) => cachedToolRun(t, ctx, input, () => body(ctx, input));
+    }
     REGISTRY.set(t.name, t);
   }
 }

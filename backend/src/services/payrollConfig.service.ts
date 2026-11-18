@@ -64,7 +64,9 @@ async function accessOf(viewerUserId: string): Promise<{ canEdit: boolean }> {
   const viewer = requestViewer(viewerUserId)
     ?? (await users().findOne({ userId: viewerUserId }, { projection: { _id: 0, org: 1, dashboardAccess: 1, dashboardAdmin: 1, dashboardTabs: 1 } }));
   if (!viewer?.org) throw new PayrollConfigError(403, 'No organisation on this account');
-  if (!hasPayrollAccess(viewer)) throw new PayrollConfigError(403, 'Only people with payroll access can see the statutory and income tax settings');
+  // Read by payroll access, or by Statutory & tax access (that page shows these figures under the company's choices).
+  const statutoryTab = Array.isArray(viewer.dashboardTabs) && viewer.dashboardTabs.includes('statutorycomponents') && viewer.dashboardAccess === true;
+  if (!hasPayrollAccess(viewer) && !statutoryTab) throw new PayrollConfigError(403, 'Only people with payroll access can see the statutory and income tax settings');
   return { canEdit: viewer.dashboardAdmin === true && env.payrollConfigOrgs.includes(viewer.org) };
 }
 

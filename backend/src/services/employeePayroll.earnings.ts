@@ -20,8 +20,8 @@ import { ObjectId } from 'mongodb';
 import { flexibleSplits, payrollRuns, payslips, salaryStructures } from '../config/db';
 import { Payslip, PayrollRunStatus } from '../models/payrollRun.model';
 import { fyOf } from '../shared/payroll/tds';
-import { EmployeePayrollError, askHr, meOf, parseFyParam } from './employeePayroll.common';
-import { myPayrollHome } from './employeePayroll.home';
+import { EmployeePayrollError, askHr, meOf, parseFyParam, parsePeriodParam, payrollAppEnabled } from './employeePayroll.common';
+import { homePayPeriod } from './employeePayroll.home';
 import { splitAmountsFor } from './employeePayroll.split';
 import { PayrollConfigError } from './payrollConfig.service';
 import { SalaryStructureError, computeStructureFor } from './salaryStructure.service';
@@ -66,8 +66,15 @@ export interface EarningsNotSetUp {
 type StoredSlip = Payslip & { _id: ObjectId };
 
 /** The person's released payslips in this company, one per month (the newest run's). */
+/** What Earnings reads off a payslip: its money, its days and its lines' names (not the inputs' detail, the TDS working, the employer side). */
+const EARNINGS_SLIP_FIELDS = {
+  _id: 1, runId: 1, period: 1, createdAt: 1, grossPaise: 1, reimbursementsPaise: 1, netPayablePaise: 1, 'inputs.lopDays': 1,
+  'deductions.key': 1, 'deductions.amountPaise': 1, 'earnings.code': 1, 'earnings.name': 1, 'earnings.fullPaise': 1,
+  'reimbursementLines.code': 1, 'reimbursementLines.name': 1, 'reimbursementLines.amountPaise': 1,
+} as const;
+
 async function releasedSlips(org: string, userId: string): Promise<StoredSlip[]> {
-  const all = (await payslips().find({ org, userId }).sort({ period: 1, createdAt: -1 }).toArray()) as StoredSlip[];
+  const all = (await payslips().find({ org, userId }, { projection: EARNINGS_SLIP_FIELDS }).sort({ period: 1, createdAt: -1 }).toArray()) as StoredSlip[];
   const runIds = [...new Set(all.map((s) => s.runId))].filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
   const runs = runIds.length
     ? await payrollRuns().find({ _id: { $in: runIds }, status: { $in: RELEASED } }, { projection: { _id: 1 } }).toArray()
@@ -108,36 +115,14 @@ function slipMoney(slip: Payslip): MonthMoney {
   };
 }
 
-/** Home's estimate for this pay period, as earnings (or why there is none). */
-async function currentEstimate(userId: string, now: Date) {
-  const home = await myPayrollHome(userId, undefined, now);
-  if (home.appEnabled !== true) return { period: home.period, month: null, notSetUp: null };
-  const salary = home.salary;
-  if (!salary) {
-    const notSetUp: EarningsNotSetUp | null = home.salaryNotSetUp
-      ? { reason: home.salaryNotSetUp.reason, message: home.salaryNotSetUp.message }
-      : null;
-    return { period: home.period, month: null, notSetUp };
-  }
-  // A released payslip for the month is already among the released months.
-  if (salary.status !== 'estimate') return { period: home.period, month: null, notSetUp: null };
-  let tax = 0;
-  let pfPt = 0;
-  let other = 0;
-  for (const d of salary.deductions) {
-    if (d.key === 'income_tax') tax += d.amountPaise;
-    else if (PF_PT.has(d.key)) pfPt += d.amountPaise;
-    else other += d.amountPaise;
-  }
-  const money: MonthMoney = {
-    grossPaise: salary.grossPaise - salary.lopPaise + salary.overtimePaise,
-    taxPaise: tax,
-    pfPtPaise: pfPt,
-    otherDeductionsPaise: other,
-    reimbursementsPaise: salary.reimbursementsPaise,
-    netPaise: salary.takeHomePaise,
-  };
-  return { period: salary.period, month: { money, unpaidDays: salary.lopDays }, notSetUp: null };
+/**
+ * The pay period Home is on, which is all Earnings takes from Home: the period whose pay dates hold
+ * today (homePayPeriod), or the calendar month while Payroll is off. Before, Home was worked out whole
+ * for it (its estimate, missing punches, split, declaration, proofs: about as much as Home itself).
+ */
+async function currentPeriod(org: string, now: Date): Promise<string> {
+  if (!(await payrollAppEnabled(org))) return parsePeriodParam(undefined, now);
+  return (await homePayPeriod(org, undefined, now)).period;
 }
 
 /** The structure's yearly components as it pays in `period`, or why they can't be shown. */
@@ -200,7 +185,8 @@ function payslipComponents(slips: Payslip[]): EarningsComponent[] {
 export async function myEarnings(userId: string, fyRaw: unknown, now = new Date()) {
   const { org } = await meOf(userId);
   const asked = fyRaw === undefined || fyRaw === null || fyRaw === '' ? null : parseFyParam(fyRaw, now);
-  const [slips, estimate] = await Promise.all([releasedSlips(org, userId), currentEstimate(userId, now)]);
+  const [slips, period] = await Promise.all([releasedSlips(org, userId), currentPeriod(org, now)]);
+  const estimate = { period };
   // The year of the pay period Home is on (a company paying 26th to 25th is in April's from 26 March).
   const currentFy = fyOf(estimate.period).fy;
   if (asked && asked > currentFy) throw new EmployeePayrollError(400, 'That financial year has not started yet');

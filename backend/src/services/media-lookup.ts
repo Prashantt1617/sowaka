@@ -25,6 +25,11 @@ export function rememberMissingCopy(key: string, now = Date.now()) {
   missing.set(key, now + MISSING_FOR_MS);
 }
 
+/** A copy that exists now (made on first ask: media-copies.ts). */
+export function forgetMissingCopy(key: string) {
+  missing.delete(key);
+}
+
 function knownMissing(key: string, now: number) {
   const until = missing.get(key);
   if (until == null) return false;
@@ -56,13 +61,27 @@ export function mediaCandidates(
  * How long a reader may keep what it was sent. Every key's bytes never
  * change, so a copy, or an original that was asked for, is kept a year.
  * An original sent in place of a copy that does not exist yet is kept a
- * week, so a phone picks up the smaller copy once the backfill has made it.
+ * week, so a phone picks up the smaller copy once it has been made.
  *
- * `private` as before: these URLs are not behind sign-in but are secret, and
- * letting a shared cache (CloudFront, a proxy) keep them is a decision of its
- * own, since a deleted post's picture would live on there until it expired.
+ * `public`, so CloudFront keeps them too and a scroll through the feed is
+ * served from the edge rather than from this server: the URLs are not behind
+ * sign-in (an image widget cannot send one) but are unguessable, and the bytes
+ * under a key never change. A deleted post's picture can then still be fetched
+ * from the edge by someone who kept its URL, until it expires there.
  */
 export function mediaCacheControl(served: MediaCandidate, asked: number | 'original' | undefined, objectKey: string) {
   const standIn = !served.copy && asked !== 'original' && mayHaveCopies(objectKey);
-  return standIn ? 'private, max-age=604800' : 'private, max-age=31536000, immutable';
+  return standIn ? 'public, max-age=604800' : 'public, max-age=31536000, immutable';
+}
+
+/**
+ * The file name a push's picture is sent under (`/media/<key>?push=1`): its
+ * extension from what is really sent, since a PNG upload may be served as a
+ * JPEG copy. iOS's notification extension (Firebase's helper) names the
+ * attachment after the response, and refuses a picture whose name says
+ * another type.
+ */
+export function pushPictureName(contentType: string): string {
+  const ext = contentType === 'image/png' ? 'png' : contentType === 'image/gif' ? 'gif' : 'jpg';
+  return `picture.${ext}`;
 }

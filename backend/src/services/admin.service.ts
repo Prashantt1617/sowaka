@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { keptForCompanyOf } from './keptReads';
 import { forgetAuthUser } from './auth-cache';
 import { authSessions, companies, deviceTokens, employeePaymentDetails, feedbackRecords, salaryStructures, users } from '../config/db';
 import { invalidateAttendanceSetup } from './attendance-report.service';
@@ -49,8 +50,18 @@ export async function listAllFeedbackForAdmin(adminUserId: string) {
 }
 
 /** Org-wide employee directory, for the HR dashboard. */
+/** The fields the dashboard's employee list renders (whole records carry payroll, exit and face data it never shows). */
+const EMPLOYEE_LIST_FIELDS = [
+  'userId', 'name', 'email', 'profilePhotoKey', 'profilePhotoUrl', 'documents', 'department', 'designation', 'state', 'role',
+  'isLeadership', 'dashboardAccess', 'overtimeEligible', 'managerUserId', 'lifecycleStatus',
+  'exit.lastWorkingDay', 'exit.kind', 'exit.accessEndedAt', 'employeeId', 'location', 'branch', 'recognition.label',
+  'employeeType', 'joiningDate', 'birthday', 'gender', 'phone', 'isDirector',
+];
+
 export async function listAllEmployeesForAdmin(adminUserId: string) {
-  const employees = await orgUsers(adminUserId);
+  // The records are kept per company (keptReads: an inline photo or two and everyone's documents made
+  // this ~2 MB a read); the links below are signed afresh every time.
+  const employees = await keptForCompanyOf(adminUserId, 'adm-employees', null, () => orgUsers(adminUserId, EMPLOYEE_LIST_FIELDS));
   const nameById = new Map(employees.map((e) => [e.userId, e.name]));
   // Presigning is local arithmetic, not a round trip, so the whole roster's
   // photos resolve in one pass without slowing the directory down.
@@ -73,6 +84,8 @@ export async function listAllEmployeesForAdmin(adminUserId: string) {
     managerUserId: e.managerUserId,
     managerName: e.managerUserId ? nameById.get(e.managerUserId) : undefined,
     lifecycleStatus: e.lifecycleStatus,
+    // An exit HR recorded: the dashboard tags "On notice · 31 Dec" and keeps people who have left out of Employees.
+    exit: e.exit ? { lastWorkingDay: e.exit.lastWorkingDay, kind: e.exit.kind, left: Boolean(e.exit.accessEndedAt) } : null,
     // Present on the user record already; the dashboard's employee table and
     // profile show these, and without them every row reads as a dash.
     employeeId: e.employeeId,

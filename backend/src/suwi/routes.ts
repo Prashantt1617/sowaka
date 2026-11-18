@@ -34,9 +34,14 @@ const fail = (res: Response, e: unknown, next: NextFunction) => {
  * cut it (CloudFront gives up on an answer after 60 s); a quick question is
  * answered in one go, as before. Tickets live in this process for 10 minutes.
  */
-type AskJob = { userId: string; at: number; answer?: unknown; error?: unknown };
+type AskJob = { userId: string; at: number; answer?: unknown; error?: unknown; checking?: string; partial?: string };
 const askJobs = new Map<string, AskJob>();
-const FIRST_WAIT_MS = 20_000;
+/**
+ * A few seconds, not twenty: a slower answer gets its ticket early so the panel can show what Suwi is
+ * checking ("Attendance for 17 Nov") while it works, instead of a bare spinner. The model's reply is
+ * not streamed (llm.ts makes one request per round), so progress is per tool, not per word.
+ */
+const FIRST_WAIT_MS = 1_200;
 const JOB_TTL_MS = 10 * 60_000;
 const failed = (e: unknown) => {
   const code = (e as { statusCode?: number }).statusCode;
@@ -46,7 +51,7 @@ const failed = (e: unknown) => {
 suwiRouter.post('/ask', async (req, res, next) => {
   const u = me(req);
   const job: AskJob = { userId: u.userId, at: Date.now() };
-  const run = askSuwi(u, req.body ?? {}).then(
+  const run = askSuwi(u, req.body ?? {}, (checking) => { job.checking = checking; }, (partial) => { job.partial = partial; }).then(
     (answer) => { job.answer = answer; },
     (e: unknown) => { job.error = e; },
   );
@@ -63,7 +68,7 @@ suwiRouter.post('/ask', async (req, res, next) => {
   askJobs.set(id, job);
   // Logged here, since nobody may come back for it.
   void run.then(() => { if (job.error !== undefined && !(job.error as { statusCode?: number }).statusCode) logger.error('Suwi answer failed', { userId: u.userId }, job.error); });
-  res.status(202).json({ success: true, pending: id });
+  res.status(202).json({ success: true, pending: id, ...(job.checking ? { checking: job.checking } : {}), ...(job.partial ? { partial: job.partial } : {}) });
 });
 
 suwiRouter.get('/ask/:id', (req, res) => {
@@ -72,11 +77,61 @@ suwiRouter.get('/ask/:id', (req, res) => {
   if (!job || job.userId !== me(req).userId) { res.status(404).json({ success: false, message: 'That answer is no longer here. Ask again.' }); return; }
   if (job.answer !== undefined) { askJobs.delete(id); res.json({ success: true, answer: job.answer }); return; }
   if (job.error !== undefined) { askJobs.delete(id); const f = failed(job.error); res.status(f.status).json({ success: false, message: f.message }); return; }
-  res.json({ success: true, pending: id });
+  res.json({ success: true, pending: id, ...(job.checking ? { checking: job.checking } : {}), ...(job.partial ? { partial: job.partial } : {}) });
+});
+
+/**
+ * How long the last questions took (dashboard admins only): total, time to the first words, each
+ * model round, each tool, and how it was answered (instant, model, or a kept answer).
+ */
+/**
+ * How long each Suwi question took (dashboard admins, this company only): newest first, in pages of up
+ * to 200 (`before` = the last row's `at`). Filters: `path` (instant, cache, prepared, planner, router,
+ * model), `slowMs` (only answers that took at least this long), `userId`, `q` (words in the question).
+ */
+suwiRouter.get('/timings', async (req, res, next) => {
+  try {
+    const u = me(req);
+    if (u.dashboardAdmin !== true) { res.status(403).json({ success: false, message: 'Only a dashboard admin can see Suwi timings' }); return; }
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+    const filter: Record<string, unknown> = { org: u.org, kind: 'question' };
+    const before = typeof req.query.before === 'string' ? new Date(req.query.before) : null;
+    if (before && !Number.isNaN(before.getTime())) filter.at = { $lt: before };
+    const path = typeof req.query.path === 'string' ? req.query.path : '';
+    if (path) filter['timing.path'] = path === 'old' ? { $exists: false } : path;
+    const slowMs = Number(req.query.slowMs);
+    if (Number.isFinite(slowMs) && slowMs > 0) filter['timing.totalMs'] = { $gte: slowMs };
+    if (typeof req.query.userId === 'string' && req.query.userId) filter.userId = req.query.userId;
+    if (typeof req.query.q === 'string' && req.query.q.trim()) filter.question = { $regex: req.query.q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').slice(0, 80), $options: 'i' };
+    const rows = await auditCol().find(filter as never).sort({ at: -1 }).limit(limit + 1).toArray();
+    const page = rows.slice(0, limit);
+    const ids = [...new Set(page.map((r) => r.userId).filter(Boolean))];
+    const names = new Map((await users().find({ org: u.org, userId: { $in: ids } } as never).project({ _id: 0, userId: 1, name: 1 }).toArray()).map((x) => [x.userId as string, x.name as string]));
+    res.json({
+      success: true,
+      next: rows.length > limit ? page[page.length - 1].at.toISOString() : null,
+      timings: page.map((r) => {
+        const t = (r as { timing?: { path?: string; totalMs?: number; firstTextMs?: number; rounds?: unknown[]; writer?: string; mode?: string; live?: boolean } }).timing;
+        return {
+          at: r.at.toISOString(), userId: r.userId, user: names.get(r.userId) ?? null, page: (r as { page?: string }).page ?? null,
+          question: String(r.question ?? '').slice(0, 200), status: r.status ?? null,
+          path: t?.path ?? null, totalMs: t?.totalMs ?? null, firstTextMs: t?.firstTextMs ?? null, rounds: t?.rounds ?? null,
+          writer: t?.writer ?? null, mode: t?.mode ?? null, live: t?.live ?? null,
+          tools: (r.tools ?? []).map((x) => ({ name: x.name, label: x.label, ms: x.ms, ok: x.ok !== false, ...((x as { timedOut?: boolean }).timedOut ? { timedOut: true } : {}), ...((x as { memo?: boolean }).memo ? { memo: true } : {}) })),
+          tokens: (r as { tokens?: unknown }).tokens ?? null, costUsd: (r as { costUsd?: number }).costUsd ?? null,
+        };
+      }),
+    });
+  } catch (e) { fail(res, e, next); }
 });
 
 suwiRouter.post('/actions/:id/confirm', async (req, res, next) => {
-  try { res.json({ success: true, action: await confirmProposal(me(req).userId, me(req).org!, String(req.params.id), req.body?.typed) }); } catch (e) { fail(res, e, next); }
+  try {
+    const action = await confirmProposal(me(req).userId, me(req).org!, String(req.params.id), req.body?.typed);
+    // Deciding claims changes only the waiting requests: the write hook patches Suwi's company bundle instead of reading it all again.
+    if (action.kind === 'approve_claims') res.locals.suwiRequestsOnly = true;
+    res.json({ success: true, action });
+  } catch (e) { fail(res, e, next); }
 });
 suwiRouter.post('/actions/:id/cancel', async (req, res, next) => {
   try { res.json({ success: true, ...(await cancelProposal(me(req).userId, me(req).org!, String(req.params.id))) }); } catch (e) { fail(res, e, next); }

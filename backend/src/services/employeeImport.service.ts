@@ -30,6 +30,7 @@ import { assignTemplateToUsers } from './kpi.service';
 import { setPaymentDetails } from './employeePayment.service';
 import { currentPeriodFor, nextPeriod } from './cycle';
 import { detailChanges, detailsTitle, logActivity, nameOfUser, withActivityVia } from './employee-activity.service';
+import { followManagerChange } from './reporting.service';
 
 type Field = 'employeeId' | 'name' | 'email' | 'phone' | 'gender' | 'birthday' | 'joiningDate' | 'designation' | 'department'
   | 'location' | 'state' | 'branch' | 'employeeType' | 'manager' | 'isDirector'
@@ -643,6 +644,8 @@ async function applyImportNow(adminUserId: string, importId: string, choices: { 
         await users().updateOne({ userId, org: admin.org }, { $set: { ...$set, updatedAt: new Date() }, ...(Object.keys($unset).length ? { $unset } : {}) });
         touched = true;
         logImportedChange(admin.org ?? '', adminUserId, userId, beforeById.get(userId), $set, $unset);
+        const fromManager = beforeById.get(userId)?.managerUserId;
+        if (admin.org && typeof $set.managerUserId === 'string' && $set.managerUserId !== fromManager) await followManagerChange(admin.org, userId, $set.managerUserId);
       } catch (err) { failed.push({ row: w.row, message: (err as Error).message }); }
     }
     // Templates, salary and bank details, for existing and new people alike.

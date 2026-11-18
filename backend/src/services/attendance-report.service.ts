@@ -1,6 +1,6 @@
-import { attendanceOverrides, attendanceRecords, holidays, leaves, shiftAssignments, shiftTemplates, users } from '../config/db';
+import { attendanceMarkRemovals, attendanceOverrides, attendanceRecords, holidays, leaves, shiftAssignments, shiftTemplates, users } from '../config/db';
 import { requestViewer } from '../middleware/request-viewer';
-import { AttendanceOverride, AttendanceRecord, HrDayStatus } from '../models/attendance.model';
+import { AttendanceMarkRemoval, AttendanceOverride, AttendanceRecord, HrDayStatus } from '../models/attendance.model';
 import type { Holiday } from '../models/holiday.model';
 import { Leave } from '../models/leave.model';
 import { DayMark, OrgShiftPolicy, PunchFormat, ShiftAssignment, ShiftTemplate, isUnpaidLeaveType } from '../models/shift.model';
@@ -126,7 +126,7 @@ function lateBy(punchIn: Date, startTime: string, graceMinutes: number): number 
   return over > 0 ? over : 0;
 }
 
-type Person = Pick<User, 'userId' | 'name' | 'employeeId' | 'department' | 'location' | 'branch' | 'state' | 'managerUserId' | 'joiningDate'>;
+type Person = Pick<User, 'userId' | 'name' | 'employeeId' | 'department' | 'location' | 'branch' | 'state' | 'managerUserId' | 'joiningDate' | 'endDate'>;
 
 /**
  * The day someone joined, 'YYYY-MM-DD': days before it are not theirs to
@@ -134,6 +134,16 @@ type Person = Pick<User, 'userId' | 'name' | 'employeeId' | 'department' | 'loca
  */
 export const joinedOn = (user: { joiningDate?: Date | string | null }): string | undefined =>
   user.joiningDate ? new Date(user.joiningDate).toISOString().slice(0, 10) : undefined;
+
+/**
+ * Their last working day, 'YYYY-MM-DD', once HR has recorded an exit: days after it are
+ * not theirs either, and payroll counts them as after leaving. Mirrors joinedOn.
+ */
+export const leftOn = (user: { endDate?: Date | string | null }): string | undefined =>
+  user.endDate ? new Date(user.endDate).toISOString().slice(0, 10) : undefined;
+
+/** Leavers stay on the roster this long after their last working day, so past months still grade them. */
+const LEAVERS_KEPT_MS = 400 * 86_400_000;
 
 /**
  * The roster, templates and org policy change rarely and cost the most to
@@ -154,6 +164,24 @@ const setupCache = new Map<string, { expires: number; value: OrgSetup }>();
 // effect tomorrow anyway. Five minutes stale costs nothing a reader would
 // notice and saves the slowest round trip the report makes.
 const SETUP_TTL_MS = 5 * 60_000;
+/**
+ * Past its five minutes but within this, a setup is still answered at once while one read of it runs
+ * behind the reader. Before, whoever came first after the five minutes waited for the company's
+ * roster, templates and assignments (the p95 of a month's GET /attendance/mine, 1.3 s, and part of
+ * every Payroll home), and everyone who came at the same moment read them again alongside.
+ * A change that must show at once still drops the setup (dropSetup), and the next reader waits.
+ */
+const SETUP_STALE_MS = 15 * 60_000;
+/** The read under way per org, so readers at the same moment share it. */
+const setupLoads = new Map<string, Promise<OrgSetup>>();
+/** Bumped by a drop: a read that began before it is not kept. */
+const setupGeneration = new Map<string, number>();
+
+function dropSetup(org: string): void {
+  setupCache.delete(org);
+  setupLoads.delete(org);
+  setupGeneration.set(org, (setupGeneration.get(org) ?? 0) + 1);
+}
 
 // Which org an admin belongs to never changes, and looking it up was a whole
 // round trip before any real work could start.
@@ -166,22 +194,30 @@ const ADMIN_ORG_TTL_MS = 10 * 60_000;
 // re-request — never waits on the link twice.
 const reportCache = new Map<string, { expires: number; value: AttendanceReport }>();
 const REPORT_TTL_MS = 2 * 60_000;
+/** How long past its TTL a report is still served (while one refresh runs). */
+const STALE_SERVE_MS = 13 * 60_000;
+const refreshingReports = new Set<string>();
+/** Bumped when an org's reports are dropped or patched: a full read that began before does not land. */
+const reportGeneration = new Map<string, number>();
+/** A patch under way per report key (patchAttendanceReport): readers wait for it. */
+const reportPatches = new Map<string, Promise<void>>();
 
 // A template edit, an assignment or a new default has to show on the next
 // refresh; a finished report for that org is just as stale as its setup.
 onShiftSetupChanged((org) => {
-  setupCache.delete(org);
+  dropSetup(org);
   invalidateAttendanceReport(org);
 });
 
 /** Drop an org's finished reports, so the next read reflects a change at once. */
 export function invalidateAttendanceReport(org: string): void {
+  reportGeneration.set(org, (reportGeneration.get(org) ?? 0) + 1);
   for (const key of reportCache.keys()) if (key.startsWith(`${org}|`)) reportCache.delete(key);
 }
 
 /** The report and the roster behind it, after a change to who someone is (a joining date). */
 export function invalidateAttendanceSetup(org: string): void {
-  setupCache.delete(org);
+  dropSetup(org);
   invalidateAttendanceReport(org);
 }
 
@@ -194,6 +230,15 @@ async function hrMarks(userIds: string[], from: string, to: string): Promise<Map
   return new Map(rows.map((row) => [`${row.userId}|${row.workDate}`, row]));
 }
 
+/** Late or left-early marks HR took off, keyed `userId|YYYY-MM-DD`. */
+async function markRemovals(userIds: string[], from: string, to: string): Promise<Map<string, AttendanceMarkRemoval>> {
+  if (userIds.length === 0) return new Map();
+  const rows = await attendanceMarkRemovals()
+    .find({ userId: { $in: userIds }, workDate: { $gte: from, $lte: to } }, { projection: { _id: 0 } })
+    .toArray();
+  return new Map(rows.map((row) => [`${row.userId}|${row.workDate}`, row]));
+}
+
 /** The calendar's words for an HR mark. */
 const HR_STATUS_LABEL: Record<HrDayStatus, string> = {
   present: 'Present', half_day: 'Half day', absent: 'Absent', on_leave: 'Leave', week_off: 'Week off', holiday: 'Holiday',
@@ -201,12 +246,38 @@ const HR_STATUS_LABEL: Record<HrDayStatus, string> = {
 
 async function orgSetup(org: string): Promise<OrgSetup> {
   const hit = setupCache.get(org);
-  if (hit && hit.expires > Date.now()) return hit.value;
+  const now = Date.now();
+  if (hit && hit.expires > now) return hit.value;
+  if (hit && now < hit.expires + SETUP_STALE_MS) {
+    void loadSetup(org).catch(() => undefined);
+    return hit.value;
+  }
+  return loadSetup(org);
+}
+
+/** One read of the org's setup at a time; kept unless a drop came while it read. */
+function loadSetup(org: string): Promise<OrgSetup> {
+  const running = setupLoads.get(org);
+  if (running) return running;
+  const generation = setupGeneration.get(org) ?? 0;
+  const load = readSetup(org).then((value) => {
+    if ((setupGeneration.get(org) ?? 0) === generation) setupCache.set(org, { expires: Date.now() + SETUP_TTL_MS, value });
+    return value;
+  }).finally(() => {
+    if (setupLoads.get(org) === load) setupLoads.delete(org);
+  });
+  setupLoads.set(org, load);
+  return load;
+}
+
+async function readSetup(org: string): Promise<OrgSetup> {
   const [roster, templates, orgPolicy, assignments] = await Promise.all([
     users()
       .find(
-        { org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } },
-        { projection: { _id: 0, userId: 1, name: 1, employeeId: 1, department: 1, location: 1, branch: 1, state: 1, managerUserId: 1, joiningDate: 1 } },
+        // Everyone still here, and anyone who left in the last year or so: their days up to the
+        // last working day still count (a payroll run, a past month on the calendar); after it, none do.
+        { org, $or: [{ lifecycleStatus: { $nin: ['offboarded', 'terminated'] } }, { endDate: { $gte: new Date(Date.now() - LEAVERS_KEPT_MS) } }] } as never,
+        { projection: { _id: 0, userId: 1, name: 1, employeeId: 1, department: 1, location: 1, branch: 1, state: 1, managerUserId: 1, joiningDate: 1, endDate: 1 } },
       )
       // One batch, not a round trip per hundred rows: on a slow link the trips
       // were the whole wait, and the whole roster is a few hundred kilobytes.
@@ -220,9 +291,7 @@ async function orgSetup(org: string): Promise<OrgSetup> {
     // shift that covered it rather than the one they are on today.
     shiftAssignments().find({ org }).sort({ effectiveFrom: -1 }).batchSize(BATCH).toArray(),
   ]);
-  const value = setupOf({ roster, templates, orgPolicy, assignments });
-  setupCache.set(org, { expires: Date.now() + SETUP_TTL_MS, value });
-  return value;
+  return setupOf({ roster, templates, orgPolicy, assignments });
 }
 
 /**
@@ -320,6 +389,7 @@ type RangeData = {
   approvedLeaves: Leave[];
   holidayRows: Holiday[];
   marks: Map<string, AttendanceOverride>;
+  removals: Map<string, AttendanceMarkRemoval>;
   /** How many punch rows were read, for the log. */
   records: number;
 };
@@ -335,7 +405,7 @@ async function rangeData(org: string, { roster }: Pick<OrgSetup, 'roster'>, from
   // back: on a slow link the bytes of every row's locations and face checks
   // were most of the wait.
   const employeeIds = roster.map((u) => u.employeeId).filter((id): id is string => !!id);
-  const [records, approvedLeaves, holidayRows, marks] = await Promise.all([
+  const [records, approvedLeaves, holidayRows, marks, removals] = await Promise.all([
     attendanceRecords()
       .find(
         { workDate: { $gte: from, $lte: to }, $or: [{ userId: { $in: userIds } }, { employeeId: { $in: employeeIds } }] },
@@ -349,13 +419,14 @@ async function rangeData(org: string, { roster }: Pick<OrgSetup, 'roster'>, from
       .toArray(),
     holidays().find({ org, date: { $gte: dayOf(from), $lte: dayOf(to) } }).toArray(),
     hrMarks(userIds, from, to),
+    markRemovals(userIds, from, to),
   ]);
   const punchesBy: RangeData['punchesBy'] = new Map();
   for (const record of records) {
     if (record.userId) punchesBy.set(`${record.userId}|${record.workDate}`, record);
     if (record.employeeId) punchesBy.set(`${record.employeeId}|${record.workDate}`, record);
   }
-  return { punchesBy, approvedLeaves, holidayRows, marks, records: records.length };
+  return { punchesBy, approvedLeaves, holidayRows, marks, removals, records: records.length };
 }
 
 /** One employee-day, graded: off (not owed) or a graded day. Null before they joined. */
@@ -369,7 +440,7 @@ type GradedDay =
  * narrower question of the same days (who had a missed punch) gets the
  * report's answer without building the report.
  */
-function dayGrader(setup: OrgSetup, { punchesBy, approvedLeaves, holidayRows, marks }: RangeData) {
+function dayGrader(setup: OrgSetup, { punchesBy, approvedLeaves, holidayRows, marks, removals }: RangeData) {
   const policyOn = dayPolicyResolver(setup);
 
   // ── holidays, by the people who observe them ──────────────────────────
@@ -397,6 +468,9 @@ function dayGrader(setup: OrgSetup, { punchesBy, approvedLeaves, holidayRows, ma
     // not loss of pay (payroll counts those days on its own).
     const joined = joinedOn(user);
     if (joined && key < joined) return null;
+    // After their last working day: nothing to grade either.
+    const left = leftOn(user);
+    if (left && key > left) return null;
     // The shift that covered this day, which is not always today's.
     const onDay = policyOn(user, key);
     // HR's mark on the day outranks everything below it.
@@ -443,10 +517,11 @@ function dayGrader(setup: OrgSetup, { punchesBy, approvedLeaves, holidayRows, ma
     // in the record, which is a different conversation and a different fix.
     const nothing = !punchIn && !punchOut;
     const mark = markForDay(onDay, punchIn, punchOut);
-    // Late and early are each a switch first: off, nobody on the shift is marked.
-    const over = punchIn && onDay.lateMarkingEnabled !== false ? lateBy(punchIn, onDay.startTime, onDay.lateGraceMinutes) : 0;
+    // Late and early are each a switch first: off, nobody on the shift is marked. HR may also take either off one day.
+    const removed = removals.get(`${user.userId}|${key}`);
+    const over = punchIn && onDay.lateMarkingEnabled !== false && !removed?.late ? lateBy(punchIn, onDay.startTime, onDay.lateGraceMinutes) : 0;
     // A single-punch shift has no punch-out to leave early on.
-    const short = punchOut && !singlePunch && onDay.earlyMarkingEnabled !== false ? earlyBy(punchOut, onDay.startTime, onDay.endTime, onDay.earlyOutGraceMinutes) : 0;
+    const short = punchOut && !singlePunch && onDay.earlyMarkingEnabled !== false && !removed?.early ? earlyBy(punchOut, onDay.startTime, onDay.endTime, onDay.earlyOutGraceMinutes) : 0;
     const status: DayStatus = nothing
       ? 'absent'
       : missing
@@ -523,6 +598,7 @@ export async function missedPunchPeople(
 export async function attendanceReport(
   adminUserId: string,
   input: { from?: string; to?: string },
+  opts: { refresh?: boolean } = {},
 ): Promise<AttendanceReport> {
   const from = input.from ?? '';
   const to = input.to ?? '';
@@ -536,13 +612,29 @@ export async function attendanceReport(
   const org = await adminOrg(adminUserId);
 
   const cacheKey = `${org}|${from}|${to}`;
-  const cached = reportCache.get(cacheKey);
+  // A patch for a leave change under way: the report after it is the one to serve.
+  const patching = reportPatches.get(cacheKey);
+  if (patching) await patching;
+  const cached = opts.refresh ? undefined : reportCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
     console.log(`[attendance-report] ${org} ${from}..${to}: served from cache`);
     return cached.value;
   }
+  // Past its two minutes but under fifteen: answer with it now and work it out again behind the
+  // reader (the Company calendar and Punch log wait seconds otherwise on this database tier).
+  if (cached && cached.expires + STALE_SERVE_MS > Date.now()) {
+    if (!refreshingReports.has(cacheKey)) {
+      refreshingReports.add(cacheKey);
+      attendanceReport(adminUserId, input, { refresh: true })
+        .catch(() => undefined)
+        .finally(() => refreshingReports.delete(cacheKey));
+    }
+    console.log(`[attendance-report] ${org} ${from}..${to}: served while refreshing`);
+    return cached.value;
+  }
 
   const started = Date.now();
+  const generation = reportGeneration.get(org) ?? 0;
   const setup = await orgSetup(org);
   const { roster } = setup;
   const setupMs = Date.now() - started;
@@ -550,9 +642,84 @@ export async function attendanceReport(
 
   console.log(`[attendance-report] ${org} ${from}..${to}: setup ${setupMs}ms, queries ${Date.now() - started - setupMs}ms, records ${data.records}`);
 
-  const { policyOn, gradeDay } = dayGrader(setup, data);
+  const grader = graderFor(setup, data);
+  const now = Date.now();
+  const graded = roster.map((user) => gradePerson(grader, user, from, to, now));
+  const report = assembleReport(from, to, roster, graded);
+  // Not when the org's reports were dropped or patched while this was read: the next reader reads again.
+  if ((reportGeneration.get(org) ?? 0) === generation) reportCache.set(cacheKey, { expires: Date.now() + REPORT_TTL_MS, value: report });
+  return report;
+}
 
-  // ── grade every working day ───────────────────────────────────────────
+/**
+ * One person's rows of the report for a range, graded exactly as the whole report grades them (the
+ * same setup, grader and gradePerson a patch uses), from their own punches, leave and marks alone:
+ * a few KB, where the report reads the whole company's range (≈300 KB for a hundred people over a
+ * pay period, a megabyte at Convrse). Null when they are not on the roster the report is built from,
+ * or left before the range. For payroll's estimate of one person's pay (deduction.service).
+ */
+export async function reportDaysOfPerson(org: string, userId: string, from: string, to: string): Promise<Pick<AttendanceReport, 'days' | 'halfDayLeave'> | null> {
+  if (!DATE.test(from) || !DATE.test(to)) throw new ReportError(400, 'from and to must be YYYY-MM-DD');
+  if (from > to) throw new ReportError(400, 'from must not be after to');
+  const setup = await orgSetup(org);
+  const user = setup.roster.find((u) => u.userId === userId);
+  if (!user) return null;
+  const grader = graderFor(setup, await rangeData(org, { roster: [user] }, from, to));
+  const part = gradePerson(grader, user, from, to, Date.now());
+  return part ? { days: part.days, halfDayLeave: part.halfDayLeave } : null;
+}
+
+/** One person's part of a report: their row, graded days, days off and half-day leave. Null when they left before the range. */
+type PersonPart = { userId: string; person: ReportPerson; days: ReportDay[]; offDays: AttendanceReport['offDays']; halfDayLeave: string[] } | null;
+
+type Grader = ReturnType<typeof dayGrader> & { nameOf: Map<string, string> };
+/** The day grader for this setup and range, and everyone's names (a row names its manager). Made once per report. */
+function graderFor(setup: OrgSetup, data: RangeData): Grader {
+  return { ...dayGrader(setup, data), nameOf: new Map(setup.roster.map((u) => [u.userId, u.name])) };
+}
+
+/**
+ * Grades one person over the range: the one place the report's rows are made, for the whole report
+ * and for a patch of a few people (patchAttendanceReport), so the two can never differ.
+ */
+function gradePerson({ policyOn, gradeDay, nameOf }: Grader, user: Person, from: string, to: string, now: number): PersonPart {
+  // Left before this range began: not part of it at all.
+  const leftDay = leftOn(user);
+  if (leftDay && leftDay < from) return null;
+  // The row that names the person describes where they stand at the end of
+  // the range; each day below is graded on its own.
+  const policy = policyOn(user, to);
+  const manager = (user.managerUserId && nameOf.get(user.managerUserId)) || '';
+  const person: ReportPerson = {
+    name: user.name,
+    employeeId: user.employeeId ?? '—',
+    department: user.department || '—',
+    location: user.location ?? user.branch ?? '—',
+    template: policy.templateName,
+    punchFormat: policy.correction.punchFormat,
+    manager,
+    shiftStart: policy.startTime,
+    shiftEnd: policy.endTime,
+    lateGraceMinutes: policy.lateMarkingEnabled === false ? null : policy.lateGraceMinutes,
+  };
+  const days: ReportDay[] = [];
+  const offDays: AttendanceReport['offDays'] = [];
+  const halfDayLeave: string[] = [];
+  for (let t = dayOf(from).getTime(); t <= dayOf(to).getTime(); t += DAY_MS) {
+    const graded = gradeDay(user, new Date(t), now);
+    if (!graded) continue;
+    if ('off' in graded) {
+      offDays.push([user.userId, graded.key, graded.off]);
+      continue;
+    }
+    days.push(graded.day);
+    if (graded.halfDayLeave) halfDayLeave.push(`${user.userId}|${graded.key}`);
+  }
+  return { userId: user.userId, person, days, offDays, halfDayLeave };
+}
+
+/** The report from each person's part, in roster order, with the filter lists worked out from the rows. */
+function assembleReport(from: string, to: string, roster: Person[], parts: PersonPart[]): AttendanceReport {
   const people: Record<string, ReportPerson> = {};
   const days: ReportDay[] = [];
   const offDays: AttendanceReport['offDays'] = [];
@@ -562,49 +729,20 @@ export async function attendanceReport(
   const leaveTypes = new Set<string>();
   const punchFormats = new Set<string>();
   const managers = new Set<string>();
-  const nameOf = new Map(roster.map((u) => [u.userId, u.name]));
-  const first = dayOf(from).getTime();
-  const last = dayOf(to).getTime();
-  const now = Date.now();
-
-  for (const user of roster) {
-    // The row that names the person describes where they stand at the end of
-    // the range; each day below is graded on its own.
-    const policy = policyOn(user, to);
-    const department = user.department || '—';
-    departments.add(department);
-    punchFormats.add(policy.correction.punchFormat);
-    if (policy.templateName) templateNames.add(policy.templateName);
-    const manager = (user.managerUserId && nameOf.get(user.managerUserId)) || '';
-    if (manager) managers.add(manager);
-    people[user.userId] = {
-      name: user.name,
-      employeeId: user.employeeId ?? '—',
-      department,
-      location: user.location ?? user.branch ?? '—',
-      template: policy.templateName,
-      punchFormat: policy.correction.punchFormat,
-      manager,
-      shiftStart: policy.startTime,
-      shiftEnd: policy.endTime,
-      lateGraceMinutes: policy.lateMarkingEnabled === false ? null : policy.lateGraceMinutes,
-    };
-
-    for (let t = first; t <= last; t += DAY_MS) {
-      const graded = gradeDay(user, new Date(t), now);
-      if (!graded) continue;
-      if ('off' in graded) {
-        offDays.push([user.userId, graded.key, graded.off]);
-        continue;
-      }
-      // Every leave day names its type; no other day carries one.
-      if (graded.day[6]) leaveTypes.add(graded.day[6]);
-      days.push(graded.day);
-      if (graded.halfDayLeave) halfDayLeave.push(`${user.userId}|${graded.key}`);
-    }
-  }
-
-  const report: AttendanceReport = {
+  roster.forEach((_, i) => {
+    const part = parts[i];
+    if (!part) return;
+    people[part.userId] = part.person;
+    departments.add(part.person.department);
+    punchFormats.add(part.person.punchFormat);
+    if (part.person.template) templateNames.add(part.person.template);
+    if (part.person.manager) managers.add(part.person.manager);
+    // Every leave day names its type; no other day carries one.
+    for (const d of part.days) { if (d[6]) leaveTypes.add(d[6]); days.push(d); }
+    offDays.push(...part.offDays);
+    halfDayLeave.push(...part.halfDayLeave);
+  });
+  return {
     from,
     to,
     departments: [...departments].sort(),
@@ -617,9 +755,57 @@ export async function attendanceReport(
     offDays,
     halfDayLeave,
   };
-  reportCache.set(cacheKey, { expires: Date.now() + REPORT_TTL_MS, value: report });
-  return report;
 }
+
+/** A finished report split back into each person's part (the rows are kept in roster order, one person's together). */
+function partsOf(report: AttendanceReport, roster: Person[]): PersonPart[] {
+  const daysBy = new Map<string, ReportDay[]>();
+  for (const d of report.days) { const list = daysBy.get(d[0]); if (list) list.push(d); else daysBy.set(d[0], [d]); }
+  const offBy = new Map<string, AttendanceReport['offDays']>();
+  for (const o of report.offDays) { const list = offBy.get(o[0]); if (list) list.push(o); else offBy.set(o[0], [o]); }
+  const halfBy = new Map<string, string[]>();
+  for (const h of report.halfDayLeave) { const uid = h.slice(0, h.lastIndexOf('|')); const list = halfBy.get(uid); if (list) list.push(h); else halfBy.set(uid, [h]); }
+  return roster.map((u) => (report.people[u.userId]
+    ? { userId: u.userId, person: report.people[u.userId], days: daysBy.get(u.userId) ?? [], offDays: offBy.get(u.userId) ?? [], halfDayLeave: halfBy.get(u.userId) ?? [] }
+    : null));
+}
+
+/**
+ * A few people's leave changed (leave.service): each kept report of their company is re-graded for
+ * them alone (their punches, leave and marks: a few KB) instead of being dropped, which made the next
+ * reader (the calendar, Suwi's shift gaps) read the whole company's month again (≈800 KB at Convrse).
+ * Registered at once, so a report asked for meanwhile waits for the patch; a full read already under
+ * way is not kept when it lands (the generation). Keeps each report's expiry: the other people's rows
+ * are exactly as fresh as they were. With no kept report, or anything unexpected, it drops instead.
+ */
+export function patchAttendanceReport(org: string, userIds: string[]): void {
+  reportGeneration.set(org, (reportGeneration.get(org) ?? 0) + 1);
+  const keys = [...reportCache.keys()].filter((key) => key.startsWith(`${org}|`));
+  for (const key of keys) {
+    const entry = reportCache.get(key);
+    if (!entry || entry.expires + STALE_SERVE_MS <= Date.now()) { reportCache.delete(key); continue; }
+    const [, from, to] = key.split('|');
+    const before = reportPatches.get(key) ?? Promise.resolve();
+    const patch = before.then(async () => {
+      const kept = reportCache.get(key);
+      if (!kept) return;
+      const setup = await orgSetup(org);
+      const changed = setup.roster.filter((u) => userIds.includes(u.userId));
+      // Someone not on the roster the report is built from: read it whole next time.
+      if (changed.length !== new Set(userIds).size) { reportCache.delete(key); return; }
+      const grader = graderFor(setup, await rangeData(org, { roster: changed }, from, to));
+      const now = Date.now();
+      const fresh = new Map(changed.map((u) => [u.userId, gradePerson(grader, u, from, to, now)]));
+      const parts = partsOf(kept.value, setup.roster).map((part, i) => (fresh.has(setup.roster[i].userId) ? fresh.get(setup.roster[i].userId)! : part));
+      if (reportCache.get(key) === kept) reportCache.set(key, { expires: kept.expires, value: assembleReport(from, to, setup.roster, parts) });
+    }).catch(() => { reportCache.delete(key); }).finally(() => { if (reportPatches.get(key) === patch) reportPatches.delete(key); });
+    reportPatches.set(key, patch);
+  }
+}
+
+
+/** The company whose report someone reads (their own): as `attendanceReport` finds it. */
+export const reportOrgOf = (userId: string): Promise<string> => adminOrg(userId);
 
 async function adminOrg(adminUserId: string): Promise<string> {
   const hit = adminOrgCache.get(adminUserId);
@@ -669,19 +855,21 @@ export interface EmployeeCalendar {
  */
 async function gradeEmployeeDays(org: string, setup: OrgSetup, user: Person, from: string, to: string): Promise<CalendarDay[]> {
   const policyOn = dayPolicyResolver(setup);
-  const [records, approvedLeaves, holidayRows, marks] = await Promise.all([
+  const [records, approvedLeaves, holidayRows, marks, removals] = await Promise.all([
+    // Only what grading reads off a punch row (PUNCH_FIELDS), not its locations and face checks.
     attendanceRecords()
       .find({
         workDate: { $gte: from, $lte: to },
         $or: [{ userId: user.userId }, ...(user.employeeId ? [{ employeeId: user.employeeId }] : [])],
-      })
-      .toArray(),
+      }, { projection: PUNCH_FIELDS })
+      .toArray() as Promise<PunchRow[]>,
     leaves()
       .find({ userId: user.userId, status: 'approved', startDate: { $lte: dayOf(to) }, endDate: { $gte: dayOf(from) } })
       .toArray(),
     // The roster row carries no org, and without one the lookup returns nothing.
     holidaysForUser({ ...user, org }, { from: dayOf(from), to: dayOf(to) }),
     hrMarks([user.userId], from, to),
+    markRemovals([user.userId], from, to),
   ]);
   const punchByDate = new Map(records.map((r) => [r.workDate, r]));
   const holidayByDate = new Map(holidayRows.map((h) => [keyOf(h.date), h.name]));
@@ -718,12 +906,18 @@ async function gradeEmployeeDays(org: string, setup: OrgSetup, user: Person, fro
   };
 
   const joined = joinedOn(user);
+  const left = leftOn(user);
   for (let t = dayOf(from).getTime(); t <= dayOf(to).getTime(); t += DAY_MS) {
     const day = new Date(t);
     const key = keyOf(day);
     // Before they joined: an empty day, not an absence.
     if (joined && key < joined) {
       days.push({ date: key, status: 'before_joining', label: 'Before joining', punchIn: null, punchOut: null, lateByMinutes: 0, earlyByMinutes: 0 });
+      continue;
+    }
+    // After their last working day: empty too (shown like the days before joining).
+    if (left && key > left) {
+      days.push({ date: key, status: 'before_joining', label: 'After leaving', punchIn: null, punchOut: null, lateByMinutes: 0, earlyByMinutes: 0 });
       continue;
     }
     const onDay = policyOn(user, key);
@@ -752,8 +946,9 @@ async function gradeEmployeeDays(org: string, setup: OrgSetup, user: Person, fro
     const missing = singlePunch ? !punchIn : !punchIn || !punchOut;
     const nothing = !punchIn && !punchOut;
     const mark = markForDay(onDay, punchIn, punchOut);
-    const late = punchIn && onDay.lateMarkingEnabled !== false ? Math.max(0, lateBy(punchIn, onDay.startTime, onDay.lateGraceMinutes)) : 0;
-    const short = punchOut && !singlePunch && onDay.earlyMarkingEnabled !== false ? earlyBy(punchOut, onDay.startTime, onDay.endTime, onDay.earlyOutGraceMinutes) : 0;
+    const removed = removals.get(`${user.userId}|${key}`);
+    const late = punchIn && onDay.lateMarkingEnabled !== false && !removed?.late ? Math.max(0, lateBy(punchIn, onDay.startTime, onDay.lateGraceMinutes)) : 0;
+    const short = punchOut && !singlePunch && onDay.earlyMarkingEnabled !== false && !removed?.early ? earlyBy(punchOut, onDay.startTime, onDay.endTime, onDay.earlyOutGraceMinutes) : 0;
     const status: DayStatus = nothing
       ? 'absent'
       : missing

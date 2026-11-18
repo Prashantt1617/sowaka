@@ -52,9 +52,28 @@ export function costUsd(model: string, u: LlmUsage): number {
   return ((Math.max(0, (u.input_tokens ?? 0)) * i) + cached * c + (u.cache_creation_input_tokens ?? 0) * i * 1.25 + (u.output_tokens ?? 0) * o) / 1e6;
 }
 
-export async function callModel(input: { model?: string; system: string; tools?: LlmTool[]; messages: LlmMessage[]; maxTokens?: number }): Promise<LlmReply> {
-  return SUWI_PROVIDER === 'gemini' ? callGemini(input) : SUWI_PROVIDER === 'openai' ? callOpenAI(input) : callClaude(input);
+/**
+ * One round with the model. `onText` hears the reply's text as it is written (Gemini streams it;
+ * the other providers call it once with the whole text), so the panel can show the first words
+ * while the rest comes.
+ */
+export async function callModel(input: { model?: string; system: string; tools?: LlmTool[]; messages: LlmMessage[]; maxTokens?: number; onText?: (soFar: string) => void; thinking?: string }): Promise<LlmReply> {
+  const reply = await (SUWI_PROVIDER === 'gemini' ? callGemini(input) : SUWI_PROVIDER === 'openai' ? callOpenAI(input) : callClaude(input));
+  if (input.onText && SUWI_PROVIDER !== 'gemini') {
+    const text = reply.content.filter((b): b is Extract<ContentBlock, { type: 'text' }> => b.type === 'text').map((b) => b.text).join('\n');
+    if (text) input.onText(text);
+  }
+  return reply;
 }
+
+/**
+ * How long Gemini thinks before answering (`SUWI_THINKING`: minimal, low, medium, high, or off to
+ * send nothing). Thinking is written out like the answer, token by token, and Suwi's questions are
+ * lookups, so "low" saves seconds. A model that refuses the setting is asked again without it, once.
+ */
+const THINKING = (process.env.SUWI_THINKING ?? 'low').trim();
+let thinkingRefused = false;
+const thinkingConfig = () => (THINKING && THINKING !== 'off' && !thinkingRefused ? { thinkingConfig: { thinkingLevel: THINKING } } : {});
 
 async function post(url: string, headers: Record<string, string>, body: unknown): Promise<unknown> {
   let lastError = '';
@@ -109,7 +128,7 @@ function geminiSchema(s: unknown): unknown {
   return out;
 }
 
-async function callGemini(input: { model?: string; system: string; tools?: LlmTool[]; messages: LlmMessage[]; maxTokens?: number }): Promise<LlmReply> {
+async function callGemini(input: { model?: string; system: string; tools?: LlmTool[]; messages: LlmMessage[]; maxTokens?: number; onText?: (soFar: string) => void; thinking?: string }): Promise<LlmReply> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new SuwiLlmError(503, 'Suwi is not set up on this server yet (no GEMINI_API_KEY)');
   const model = input.model ?? SUWI_MODEL;
@@ -143,14 +162,23 @@ async function callGemini(input: { model?: string; system: string; tools?: LlmTo
     contents,
     ...(tools.length ? { tools: [{ functionDeclarations: tools.map((t) => ({ name: t.name, description: t.description, parameters: geminiSchema(t.input_schema) })) }] } : {}),
     // Thinking tokens count as output on Gemini, so leave room beyond the answer itself.
-    generationConfig: { maxOutputTokens: (input.maxTokens ?? 1500) + 2500 },
+    // A call that names its own thinking level (the fast writer asks for the least) uses that; 'off' sends none.
+    generationConfig: { maxOutputTokens: (input.maxTokens ?? 1500) + (input.thinking === 'off' || input.thinking === 'minimal' ? 200 : 2500), ...(input.thinking !== undefined ? (input.thinking === 'off' ? {} : { thinkingConfig: { thinkingLevel: input.thinking } }) : thinkingConfig()) },
   };
-  const res = await post(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { 'x-goog-api-key': key }, body) as {
-    candidates?: { content?: { parts?: GPart[] }; finishReason?: string }[];
-    usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; cachedContentTokenCount?: number; thoughtsTokenCount?: number };
-    modelVersion?: string;
-    promptFeedback?: { blockReason?: string };
-  };
+  const base = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}`;
+  let res: GeminiReply;
+  try {
+    res = input.onText ? await streamGemini(`${base}:streamGenerateContent?alt=sse`, key, body, input.onText) : await post(`${base}:generateContent`, { 'x-goog-api-key': key }, body) as GeminiReply;
+  } catch (e) {
+    // A call that named its own level and was refused: once more with none (only this call).
+    if (input.thinking !== undefined && input.thinking !== 'off' && /thinking|\(400:/i.test((e as Error).message)) return callGemini({ ...input, thinking: 'off' });
+    // A model that doesn't take the thinking setting: once more without it, and never again.
+    if (!thinkingRefused && /thinking|\(400:/i.test((e as Error).message) && 'thinkingConfig' in body.generationConfig) {
+      thinkingRefused = true;
+      return callGemini(input);
+    }
+    throw e;
+  }
   if (res.promptFeedback?.blockReason) throw new SuwiLlmError(400, `The AI service declined this question (${res.promptFeedback.blockReason})`);
   const parts = res.candidates?.[0]?.content?.parts ?? [];
   const content: ContentBlock[] = [];
@@ -173,6 +201,65 @@ async function callGemini(input: { model?: string; system: string; tools?: LlmTo
 }
 
 // —— OpenAI (Chat Completions) ——
+type GeminiReply = {
+  candidates?: { content?: { parts?: GPart[] }; finishReason?: string }[];
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; cachedContentTokenCount?: number; thoughtsTokenCount?: number };
+  modelVersion?: string;
+  promptFeedback?: { blockReason?: string };
+};
+
+/**
+ * Gemini's streamed reply (server-sent events), put back together as one reply. Every part is kept
+ * as it came (thought signatures included: they must go back unchanged next round); `onText` hears
+ * the visible text so far each time more arrives. A failure before the stream starts is retried
+ * like `post`; once text has been shown, a broken stream fails the round.
+ */
+async function streamGemini(url: string, key: string, body: unknown, onText: (soFar: string) => void): Promise<GeminiReply> {
+  let res: Response | null = null;
+  let lastError = '';
+  for (let attempt = 0; attempt < 3 && !res; attempt++) {
+    const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(body), signal: AbortSignal.timeout(60_000) })
+      .catch((e: Error) => { lastError = e.message; return null; });
+    if (!r) continue;
+    if (r.ok && r.body) { res = r; break; }
+    lastError = `${r.status}: ${(await r.text()).slice(0, 300)}`;
+    if (r.status !== 429 && r.status !== 503 && r.status < 500) break;
+    await new Promise((w) => setTimeout(w, 800 * (attempt + 1) + Math.random() * 400));
+  }
+  if (!res) {
+    if (lastError.startsWith('429')) throw new SuwiLlmError(429, 'The AI service has run out of quota for now (its plan or billing needs a look). Try again in a few minutes.');
+    throw new SuwiLlmError(502, `Suwi couldn't reach the AI service (${lastError.slice(0, 120) || 'no response'})`);
+  }
+  const parts: GPart[] = [];
+  const out: GeminiReply = {};
+  let text = '';
+  let buffer = '';
+  const decoder = new TextDecoder();
+  const take = (event: string) => {
+    const data = event.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join('');
+    if (!data || data === '[DONE]') return;
+    const chunk = JSON.parse(data) as GeminiReply;
+    if (chunk.promptFeedback) out.promptFeedback = chunk.promptFeedback;
+    if (chunk.usageMetadata) out.usageMetadata = chunk.usageMetadata;
+    if (chunk.modelVersion) out.modelVersion = chunk.modelVersion;
+    const fresh = chunk.candidates?.[0]?.content?.parts ?? [];
+    parts.push(...fresh);
+    const added = fresh.filter((p) => p.text && !p.thought).map((p) => p.text).join('');
+    if (added) { text += added; onText(text); }
+  };
+  for await (const piece of res.body as unknown as AsyncIterable<Uint8Array>) {
+    buffer += decoder.decode(piece, { stream: true }).replace(/\r\n/g, '\n');
+    let cut: number;
+    while ((cut = buffer.indexOf('\n\n')) >= 0) { take(buffer.slice(0, cut)); buffer = buffer.slice(cut + 2); }
+  }
+  if (buffer.trim()) take(buffer);
+  out.candidates = [{ content: { parts } }];
+  return out;
+}
+
+/** For checks: the Gemini round on its own (a stub fetch stands in for the service). */
+export const callGeminiForCheck = (input: Parameters<typeof callGemini>[0]) => callGemini(input);
+
 type OPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 type OMsg = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string | OPart[] | null; tool_calls?: { id: string; type: 'function'; function: { name: string; arguments: string } }[]; tool_call_id?: string };
 

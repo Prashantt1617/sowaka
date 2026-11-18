@@ -449,6 +449,11 @@ class _WebGamesHomeState extends State<WebGamesHome>
             reduceMotion: _reduceMotion,
             userId: widget.session.user.id,
             org: widget.session.user.org ?? '',
+            userName: widget.session.user.name,
+            // An older account's inline photo stays out of the script; the page draws the initial.
+            userPhotoUrl: (widget.session.user.profilePhotoUrl ?? '').startsWith('data:')
+                ? ''
+                : _service.absoluteUrl(widget.session.user.profilePhotoUrl) ?? '',
             nativeGames: widget.nativeGames,
             loadId: '$_loads${_random.nextInt(1 << 30).toRadixString(36)}',
           ),

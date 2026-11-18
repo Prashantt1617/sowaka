@@ -5,6 +5,8 @@ export type Pill = { bg: string; fg: string };
 export type View =
   | 'organisation'
   | 'overview'
+  | 'setup'
+  | 'bulkassign'
   | 'leave'
   | 'overtime'
   | 'attendance'
@@ -22,6 +24,10 @@ export type View =
   | 'shiftswaps'
   | 'reimbursements'
   | 'onboarding'
+  // Employee lifecycle (behind companies.features.lifecycle): the board is `onboarding`.
+  | 'lifecycle_documents'
+  | 'lifecycle_templates'
+  | 'lifecycle_letter_templates'
   | 'exit'
   | 'payroll'
   | 'payschedule'
@@ -42,9 +48,16 @@ export type View =
   | 'designations'
   | 'employees'
   | 'employeeimport'
+  | 'exits'
+  | 'exitsettings'
+  | 'notificationlook'
+  | 'offboarding'
+  | 'exit_insights'
   | 'peopletasks'
   | 'orgchart'
   | 'attendancereport'
+  | 'companycalendar'
+  | 'punchlog'
   | 'usersroles'
   | 'cycle'
   | 'reimbursementtypes'
@@ -58,7 +71,8 @@ export type View =
   | 'placements'
   | 'placementclients'
   | 'placementcustomers'
-  | 'suwi';
+  | 'suwi'
+  | 'suwitimings';
 
 /** A leave type as the lists show it: 'Casual', 'Comp-off', or a type HR added, 'Emergency'. */
 export type LeaveType = string;
@@ -111,6 +125,12 @@ export const STAT: Record<ReqStatus, Pill> = {
   Cancelled: SOLID.mute,
 };
 
+/** Time office's "waiting on a decision": a calm blue tint, not the yellow pill. */
+export const ATTN_PILL: Pill = { bg: 'var(--attn-bg)', fg: 'var(--attn)' };
+/** STAT as the Time office pages show it: Pending in the attention blue, the rest as everywhere. */
+// Pending is the live dashboard's yellow on the Time office pages too, as on the Company calendar.
+export const TO_STAT: Record<ReqStatus, Pill> = { ...STAT };
+
 export const FSTAT: Record<FeedbackStatus, Pill> = {
   Acknowledged: SOLID.ok,
   Submitted: SOLID.info,
@@ -144,9 +164,11 @@ export function initials(name: string): string {
 export const TITLES: Record<View, [string, string]> = {
   organisation: ['Organisation', 'Company profile, identity & contact details'],
   overview: ['HR control room', ''], // the date is filled in by Topbar
-  leave: ['Leave requests', 'Tracking time off · approved by reporting managers'],
-  overtime: ['Overtime', 'Tracking overtime · approved by reporting managers'],
-  attendance: ['Attendance corrections', 'Requests · days employees asked to have corrected'],
+  setup: ['Setup', ''],
+  bulkassign: ['Bulk assign', ''],
+  leave: ['Leave requests', 'Time office'],
+  overtime: ['Overtime', 'Time office'],
+  attendance: ['Attendance corrections', 'Time office'],
   feedback: ['Performance Reviews', 'Performance · manager reviews & recognition'],
   kpi: ['KPI Parameters', 'Performance · define measurable KPIs'],
   kpitemplates: ['Templates', 'Performance · weighted sets of KPI parameters'],
@@ -154,13 +176,16 @@ export const TITLES: Record<View, [string, string]> = {
   shifttypes: ['Templates', 'Shifts · timings, breaks, segmentation & grace rules'],
   holidaybank: ['Holiday Bank', 'Shifts · master list of holidays, applied by location'],
   offices: ['Offices', 'Shifts · where a geotagged punch may be taken from'],
-  oolcheckins: ['OOL check-ins', 'Requests · punches taken away from every office'],
+  oolcheckins: ['OOL check-ins', 'Time office'],
   faceid: ['Face check', 'Shifts · the selfie that confirms who is punching in'],
   support: ['Support desk', 'Support · tickets employees raised from the app'],
   roster: ['Roster', 'Shifts · schedule employees onto shifts'],
   shiftswaps: ['Swap Requests', 'Shifts · shift swap & change approvals'],
   reimbursements: ['Reimbursements', 'People'],
-  onboarding: ['Onboarding', 'People'],
+  onboarding: ['Onboarding', 'Employee lifecycle'],
+  lifecycle_documents: ['Documents', 'Employee lifecycle'],
+  lifecycle_templates: ['Templates', 'Employee lifecycle · the tasks every joiner and leaver gets'],
+  lifecycle_letter_templates: ['Document templates', 'Employee lifecycle · the wording of every letter'],
   exit: ['Exit', 'People'],
   payroll: ['Payroll', 'People'],
   payschedule: ['Pay Schedule', 'Payroll · how often and when payroll runs'],
@@ -171,19 +196,26 @@ export const TITLES: Record<View, [string, string]> = {
   payrolldash: ['Payroll Dashboard', 'Payroll · the month at a glance'],
   payrollbulk: ['Bulk Assign', 'Payroll · through Suwi'],
   payrollreports: ['Payroll Reports', 'Payroll · summaries, registers and statutory reports'],
-  statutorycomponents: ['Statutory Components', 'Payroll · EPF, ESI, PT, LWF & more'],
+  statutorycomponents: ['Statutory & tax', 'Setup · the company’s choices and the law’s figures'],
   payruns: ['Payroll Runs', 'Payroll · monthly runs and payslips'],
-  payrollconfig: ['Statutory & tax settings', 'Payroll · every statutory and income tax figure, per financial year'],
+  payrollconfig: ['Statutory & tax', 'Setup · the company’s choices and the law’s figures'],
   investmentproofs: ['Investment proofs', 'Payroll · the proofs employees upload for their tax declaration'],
   fbprequests: ['FBP requests', 'Payroll · the FBP bills employees upload: approved bills make that much of the head tax-free'],
   fbpsplits: ['FBP splits', 'Payroll · how each employee splits their flexible benefit pool this FY'],
   departments: ['Departments', 'People'],
   designations: ['Designations', 'People'],
   employees: ['Employees', 'People'],
+  exits: ['Exits', 'People · who is leaving, and who has left'],
+  exitsettings: ['Exit settings', 'Setup'],
+  notificationlook: ['Notification sounds and pictures', 'Setup · how each kind of notification sounds and looks on phones'],
+  offboarding: ['Offboarding', 'Employee lifecycle · everyone leaving, from resignation to final settlement'],
+  exit_insights: ['Exit insights', 'Employee lifecycle · why people leave, anonymised'],
   employeeimport: ['Import employees', 'People · update details from a sheet, approved before it saves'],
   peopletasks: ['Tasks', 'People · who still needs a template, salary, bank details or basic details'],
   orgchart: ['Org chart', 'People'],
   attendancereport: ['Attendance report', 'Reports'],
+  companycalendar: ['Company calendar', 'Time office'],
+  punchlog: ['Punch log', 'Time office'],
   usersroles: ['Accesses', 'People · users, roles and permissions'],
   cycle: ['Cycle', 'Performance · the monthly review cycle'],
   reimbursementtypes: ['Reimbursement Types', 'Claims · what can be claimed, and the cap on each'],
@@ -198,6 +230,7 @@ export const TITLES: Record<View, [string, string]> = {
   placementclients: ['Clients', 'Placements · the companies hiring'],
   placementcustomers: ['Candidates', 'Placements · the candidates being placed'],
   suwi: ['Suwi', 'Your HR assistant · what it may do, and what it did'],
+  suwitimings: ['Suwi response times', 'How long each question took, and where the time went'],
 };
 
 export type Placeholder = {

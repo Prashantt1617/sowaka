@@ -6,6 +6,12 @@ import { sendLatePunchInReminders } from './punch-reminder.service';
 import { flushGroupedNotifications } from './notification-groups.service';
 import { istParts } from './notification-time';
 import { logger } from '../utils/logger';
+import { closeDueExits } from './exit.service';
+import { runPortalJobs } from './lifecycle/portal';
+import { runOffboardingJobs } from './lifecycle/offboarding';
+import { runLifecycleJobs } from './lifecycle/jobs';
+import { forgetLifecycleReads } from './lifecycle/readCache';
+import { runContestNotifications } from './contest-notifications.service';
 
 /**
  * Runs one scheduled job in isolation: a thrown error is logged and does not
@@ -29,6 +35,14 @@ export function msToNextIstHour(now: Date): number {
 /** The jobs for one IST hour. The spec's times are all IST. */
 export async function runHourlyJobs(now = new Date()): Promise<void> {
   const { hour, weekday } = istParts(now);
+  // Exits: access ends the day after the last working day. Every hour, so a missed one catches up.
+  await run('closeDueExits', () => closeDueExits(now));
+  // Pre-boarding portal: offer expiry, login/quiet/letter nudges, the Day-1 pass mail (idempotent).
+  await run('runPortalJobs', () => runPortalJobs(now));
+  // Offboarding: exit interview opens, settlement due, gratuity due (once each; access itself is closeDueExits').
+  await run('runOffboardingJobs', () => runOffboardingJobs(now));
+  // Those three change exits, journeys and tasks without a request: the kept boards go too.
+  forgetLifecycleReads(null);
   if (hour === 10) {
     await run('sendNewJoinerNotifications', () => sendNewJoinerNotifications(now));
     // Cycle open, the Friday reminder and the last day, to managers only.
@@ -41,36 +55,17 @@ export async function runHourlyJobs(now = new Date()): Promise<void> {
   if (hour === 16 && weekday === 'Fri') await run('sendLeaveNextWeek', () => sendLeaveNextWeek(now));
 }
 
-let timer: NodeJS.Timeout | undefined;
-let fiveMinuteTimer: NodeJS.Timeout | undefined;
-let fiveMinuteRunning = false;
-export function startNotificationScheduler() {
-  // Shifts start at different times, so the punch-in reminder checks every
-  // five minutes; grouped Connect pushes go out as their three-hour windows
-  // close. A tick still running when the next one is due is not doubled up.
-  fiveMinuteTimer = setInterval(() => {
-    if (fiveMinuteRunning) return;
-    fiveMinuteRunning = true;
-    void (async () => {
-      await run('sendLatePunchInReminders', () => sendLatePunchInReminders());
-      await run('flushGroupedNotifications', () => flushGroupedNotifications());
-    })().finally(() => { fiveMinuteRunning = false; });
-  }, 5 * 60 * 1000);
-  fiveMinuteTimer.unref();
-
-  const schedule = () => {
-    timer = setTimeout(async () => {
-      try { await runHourlyJobs(); }
-      catch (error) { logger.error('Notification scheduler tick failed', {}, error); }
-      finally { schedule(); }
-    }, msToNextIstHour(new Date()));
-    timer.unref();
-  };
-  schedule();
-}
-export function stopNotificationScheduler() {
-  if (timer) clearTimeout(timer);
-  timer = undefined;
-  if (fiveMinuteTimer) clearInterval(fiveMinuteTimer);
-  fiveMinuteTimer = undefined;
+/**
+ * The jobs for one five-minute slot. Shifts start at different times, so the punch-in reminder
+ * checks every five minutes; grouped Connect pushes go out as their three-hour windows close.
+ * Run on the clock by leader-jobs.ts (one process, once per slot; a slot still running when the
+ * next is due is not doubled up).
+ */
+export async function runFiveMinuteJobs(): Promise<void> {
+  await run('sendLatePunchInReminders', () => sendLatePunchInReminders());
+  await run('flushGroupedNotifications', () => flushGroupedNotifications());
+  // Contests: two hours before closing, to those not in yet; then the results (once each).
+  await run('runContestNotifications', () => runContestNotifications());
+  // Employee lifecycle: meeting reminders every tick, the day jobs once an hour (fired once each).
+  await run('runLifecycleJobs', () => runLifecycleJobs());
 }

@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
-import { getMessaging } from 'firebase-admin/messaging';
+import { getMessaging, type BatchResponse, type MulticastMessage } from 'firebase-admin/messaging';
 import { connectPosts, deviceTokens, getDb, notifications, users } from '../config/db';
 import { env } from '../config/env';
 import { sendNotificationEmail } from './email.service';
 import { withAppLink } from './app-link';
+import { faceUrlsFor } from './face-photos';
 import { logger } from '../utils/logger';
 import type { AppNotification } from '../models/notification.model';
+import { buildPushMessages, kindOfScenario, lookForPush } from './notification-look.service';
 
 /** Greeting name for email copy; falls back to a neutral form when unset. */
 function firstName(name?: string): string {
@@ -24,6 +26,14 @@ function messaging() {
     catch (error) { logger.error('Firebase initialization failed', {}, error); return undefined; }
   }
   return getMessaging();
+}
+
+type PushSender = { sendEachForMulticast(message: MulticastMessage): Promise<BatchResponse> };
+let pushSender: PushSender | undefined;
+
+/** For check scripts only: pushes go to this instead of Firebase, so their payloads can be read. */
+export function capturePushesForCheck(sender: PushSender | undefined) {
+  pushSender = sender;
 }
 
 export async function sendTestPush(tokenInput: string) {
@@ -61,13 +71,26 @@ export async function sendTestPush(tokenInput: string) {
   return { sent: true, messageId };
 }
 
-export async function registerDeviceToken(userId: string, tokenInput: string, platformInput: string) {
+/** `key@version` tags, as the app reports the sounds it has; anything else is dropped. */
+export function cleanSoundTags(input: unknown): string[] | undefined {
+  if (!Array.isArray(input)) return undefined;
+  const tags = input.map((tag) => String(tag).trim()).filter((tag) => /^[a-z][a-z0-9_]{1,23}@[1-9][0-9]{0,5}$/.test(tag));
+  return [...new Set(tags)].slice(0, 100);
+}
+
+export async function registerDeviceToken(userId: string, tokenInput: string, platformInput: string, soundsInput?: unknown) {
   const token = tokenInput.trim();
   if (!token) throw new NotificationError(400, 'FCM token is required');
   const platform = platformInput === 'ios' || platformInput === 'web' ? platformInput : 'android';
   const now = new Date();
-  await deviceTokens().updateOne({ token }, { $set: { userId, platform, updatedAt: now }, $setOnInsert: { createdAt: now } }, { upsert: true });
-  return { registered: true };
+  // A build that does not report its sounds leaves what is stored alone: it may be the same phone.
+  const sounds = cleanSoundTags(soundsInput);
+  await deviceTokens().updateOne(
+    { token },
+    { $set: { userId, platform, updatedAt: now, ...(sounds ? { sounds } : {}) }, $setOnInsert: { createdAt: now } },
+    { upsert: true },
+  );
+  return { registered: true, ...(sounds ? { sounds: sounds.length } : {}) };
 }
 
 export async function unregisterDeviceToken(userId: string, token: string) {
@@ -76,6 +99,22 @@ export async function unregisterDeviceToken(userId: string, token: string) {
 
 export async function listNotifications(userId: string) {
   return withoutDeletedPosts(await listNotificationRows(userId));
+}
+
+/**
+ * Each row with the face of the person it is about (`actorPhotoUrl`, from
+ * its `actorUserId`), read lean in one go for the whole inbox. A row with no
+ * one behind it, or whose person has no photo, comes back as it was.
+ */
+export async function withActorFaces<T extends { actorUserId?: string; userId?: string }>(
+  rows: T[],
+): Promise<Array<T & { actorPhotoUrl?: string }>> {
+  const faces = await faceUrlsFor(rows.map((row) => (row.actorUserId && row.actorUserId !== row.userId ? row.actorUserId : null)));
+  if (faces.size === 0) return rows;
+  return rows.map((row) => {
+    const face = row.actorUserId ? faces.get(row.actorUserId) : null;
+    return face && row.actorUserId !== row.userId ? { ...row, actorPhotoUrl: face } : row;
+  });
 }
 
 /** The newest hundred rows of someone's inbox, as stored. */
@@ -155,6 +194,8 @@ export interface NotificationEmail {
 
 export interface NotificationInput {
   scenario: string; title: string; body: string; data: Record<string, string>;
+  /** Whose doing it is, for their face on the inbox row (see AppNotification.actorUserId). */
+  actorUserId?: string;
   /** Email copy to send alongside the push. Omit for in-app-only scenarios. */
   email?: NotificationEmail;
   /**
@@ -173,6 +214,11 @@ export interface NotificationInput {
    * already says what the earlier ones did, so only the latest is kept.
    */
   latestOnly?: boolean;
+  /**
+   * The post's or event's own picture (a Connect media key or an https link),
+   * which the kind's look may put on the push. See notification-look.service.
+   */
+  picture?: string | null;
 }
 
 /**
@@ -208,7 +254,7 @@ export async function notifyUsers(userIds: string[], input: NotificationInput) {
   if (!recipients.length) return;
   const now = new Date();
   // `email`, `push` and `inbox` are how it is delivered, not part of the stored record.
-  const { email, push, inbox, latestOnly, ...record } = input;
+  const { email, push, inbox, latestOnly, picture, ...record } = input;
   if (inbox !== false && latestOnly && record.data?.postId) {
     await notifications().deleteMany({
       userId: { $in: recipients.map((user) => user.userId) },
@@ -238,25 +284,37 @@ export async function notifyUsers(userIds: string[], input: NotificationInput) {
   // Scoped to the filtered recipients rather than every id asked for —
   // otherwise a suppressed org still gets the push.
   const tokens = await deviceTokens()
-    .find({ userId: { $in: recipients.map((user) => user.userId) } })
+    .find({ userId: { $in: recipients.map((user) => user.userId) } }, { projection: { _id: 0, userId: 1, token: 1, platform: 1, sounds: 1 } })
     .toArray();
-  const firebase = messaging();
+  const firebase = pushSender ?? messaging();
   if (!firebase || !tokens.length) return;
-  // FCM takes at most 500 tokens a call (more throws and pushes nobody): a whole company is sent in slices.
+  // Each company has its own look (sound, picture) for this kind of push, and
+  // each phone its own sounds: phones without the sound asked for get the plain one.
+  const kind = kindOfScenario(input.scenario);
+  const orgOf = new Map(recipients.map((user) => [user.userId, user.org ?? '']));
+  const byOrg = new Map<string, typeof tokens>();
+  for (const entry of tokens) {
+    const org = orgOf.get(entry.userId) ?? '';
+    const list = byOrg.get(org);
+    if (list) list.push(entry);
+    else byOrg.set(org, [entry]);
+  }
   const invalid: string[] = [];
-  for (let at = 0; at < tokens.length; at += 500) {
-    const slice = tokens.slice(at, at + 500);
-    const result = await firebase.sendEachForMulticast({
-      tokens: slice.map((entry) => entry.token),
-      notification: { title: input.title, body: input.body },
-      data: { ...input.data, scenario: input.scenario },
-      android: { priority: 'high', notification: { channelId: 'sowaka_notifications' } },
-      apns: { payload: { aps: { sound: 'default' } } },
-    });
-    result.responses.forEach((response, index) => {
-      const code = response.error?.code ?? '';
-      if (!response.success && (code.includes('registration-token-not-registered') || code.includes('invalid-registration-token'))) invalid.push(slice[index].token);
-    });
+  for (const [org, devices] of byOrg) {
+    const { look, sound, imageUrl } = await lookForPush(org, kind, picture);
+    const messages = buildPushMessages(
+      { scenario: input.scenario, kind, title: input.title, body: input.body, data: input.data, imageUrl },
+      look,
+      sound,
+      devices,
+    );
+    for (const message of messages) {
+      const result = await firebase.sendEachForMulticast(message);
+      result.responses.forEach((response, index) => {
+        const code = response.error?.code ?? '';
+        if (!response.success && (code.includes('registration-token-not-registered') || code.includes('invalid-registration-token'))) invalid.push(message.tokens[index]);
+      });
+    }
   }
   if (invalid.length) await deviceTokens().deleteMany({ token: { $in: invalid } });
 }

@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import { authSessions, users } from '../config/db';
-import { hashSessionToken } from '../services/auth.service';
+import { accountClosedFor, hashSessionToken } from '../services/auth.service';
 import { cachedAuth, rememberAuth } from '../services/auth-cache';
 import { redactTicket } from '../services/scribble-ticket.service';
 import { runAsRequestUser } from '../services/request-user';
@@ -73,10 +73,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     const user = session.user[0];
     if (!user || user.lifecycleStatus === 'offboarded' || user.lifecycleStatus === 'terminated') {
       logAuthRejection(req, 'Session user is missing or inactive', session.userId);
+      const accountClosed = await accountClosedFor(user);
       res.status(401).json({
         success: false,
         message: 'User is not active',
         requestId: req.requestId,
+        ...(accountClosed ? { accountClosed } : {}),
       });
       return;
     }

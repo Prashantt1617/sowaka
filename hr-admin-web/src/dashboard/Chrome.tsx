@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import type { View } from './theme';
 import { prefetchView } from './viewChunks';
 import { TITLES } from './theme';
-import { IconBell, IconCheck, IconLogout, navIcon } from './icons';
+import { IconCheck, IconLogout, navIcon } from './icons';
 import { useStore } from './store';
 import type { StoreList } from './store';
 import { PersonAvatar } from './PersonAvatar';
@@ -19,15 +19,30 @@ import { applyThemeMode, readThemeMode } from './themeMode';
 import { SuwiOrb } from './suwi/SuwiPanel';
 import { useSuwiNotices } from './suwi/SuwiNoticed';
 import { PAGE_ACTIONS_ID } from './ds';
+import { usePageHeadOverride } from './pageHead';
+import { BULK_VIEWS, SETUP_VIEWS } from './setupGroups';
+import { useLifecycleOn } from './lifecycleSwitch';
+import { TEAM_NAME, useOffboardingCount } from './views/lifecycle/offboarding/badge';
+import { useOnboardingBadge } from './onboardingBadge';
 
-export type NavItem = { key: View; label: string };
+/** `hidden`: not shown in the sidebar, but still part of its section's access (Accesses grants it). */
+export type NavItem = { key: View; label: string; hidden?: boolean };
 
 export const OVERVIEW_ITEM: NavItem = { key: 'overview', label: 'Overview' };
+// Every settings page, by area (setupGroups.ts); those pages are hidden in their own sections.
+export const SETUP_ITEM: NavItem = { key: 'setup', label: 'Setup' };
+// Every bulk assignment (setupGroups.ts), likewise hidden in their own sections.
+export const BULK_ITEM: NavItem = { key: 'bulkassign', label: 'Bulk assign' };
+// In the redesign's order: who is in or off and every punch first, then the
+// requests that change them. OOL check-ins stays reachable (granted with Time
+// office) but off the sidebar: the Punch log shows those punches.
 const REQUESTS: NavItem[] = [
+  { key: 'companycalendar', label: 'Company calendar' },
+  { key: 'punchlog', label: 'Punch log' },
+  { key: 'attendance', label: 'Attendance corrections' },
   { key: 'leave', label: 'Leave requests' },
   { key: 'overtime', label: 'Overtime' },
-  { key: 'attendance', label: 'Attendance' },
-  { key: 'oolcheckins', label: 'OOL check-ins' },
+  { key: 'oolcheckins', label: 'OOL check-ins', hidden: true },
 ];
 // Support is its own section, like Claims: a desk of conversations handled by
 // the people given a Support role, not one more approval queue.
@@ -35,56 +50,56 @@ const SUPPORT: NavItem[] = [
   { key: 'support', label: 'Tickets' },
 ];
 const PEOPLE: NavItem[] = [
-  { key: 'departments', label: 'Departments' },
-  { key: 'designations', label: 'Designations' },
+  { key: 'departments', label: 'Departments', hidden: true },
+  { key: 'designations', label: 'Designations', hidden: true },
   { key: 'employees', label: 'Employees' },
   { key: 'employeeimport', label: 'Import' },
+  { key: 'exits', label: 'Exits' },
   { key: 'peopletasks', label: 'Tasks' },
   { key: 'orgchart', label: 'Org chart' },
   { key: 'usersroles', label: 'Accesses' },
 ];
 const PERFORMANCE: NavItem[] = [
-  { key: 'kpi', label: 'KPI Parameters' },
-  { key: 'kpitemplates', label: 'Templates' },
-  { key: 'kpibulk', label: 'Bulk Assign' },
+  { key: 'kpi', label: 'KPI Parameters', hidden: true },
+  { key: 'kpitemplates', label: 'Templates', hidden: true },
+  { key: 'kpibulk', label: 'Bulk Assign', hidden: true },
   { key: 'feedback', label: 'Performance Reviews' },
-  { key: 'cycle', label: 'Cycle' },
+  { key: 'cycle', label: 'Cycle', hidden: true },
 ];
 const SHIFTS: NavItem[] = [
-  { key: 'holidaybank', label: 'Holiday Bank' },
-  { key: 'shifttypes', label: 'Templates' },
-  { key: 'shiftbulk', label: 'Bulk Assign' },
-  { key: 'offices', label: 'Offices' },
-  { key: 'faceid', label: 'Face check' },
-];
-// Reports sits above Payroll: it is what HR reads before a pay cycle is run,
-// and the attendance behind it is what the cycle is built from.
-const REPORTS: NavItem[] = [
-  { key: 'attendancereport', label: 'Attendance' },
+  { key: 'holidaybank', label: 'Holiday Bank', hidden: true },
+  { key: 'shifttypes', label: 'Templates', hidden: true },
+  { key: 'shiftbulk', label: 'Bulk Assign', hidden: true },
+  { key: 'offices', label: 'Offices', hidden: true },
+  // Hidden from the Shifts menu for now (still granted with Shifts / its own tab).
+  { key: 'faceid', label: 'Face check', hidden: true },
 ];
 const PAYROLL: NavItem[] = [
   { key: 'payrolldash', label: 'Payroll Dashboard' },
-  { key: 'payschedule', label: 'Pay schedule' },
-  { key: 'taxdetails', label: 'Tax details' },
-  { key: 'payheads', label: 'Salary Components' },
-  { key: 'statutorycomponents', label: 'Statutory Components' },
-  { key: 'payrollconfig', label: 'Statutory & tax settings' },
-  { key: 'templates', label: 'Salary Templates' },
-  { key: 'paiddays', label: 'Paid Days Templates' },
+  { key: 'payschedule', label: 'Pay schedule', hidden: true },
+  { key: 'taxdetails', label: 'Tax details', hidden: true },
+  { key: 'payheads', label: 'Salary Components', hidden: true },
+  { key: 'statutorycomponents', label: 'Statutory & tax', hidden: true },
+  { key: 'payrollconfig', label: 'Statutory & tax settings', hidden: true },
+  { key: 'templates', label: 'Salary Templates', hidden: true },
+  { key: 'paiddays', label: 'Paid Days Templates', hidden: true },
   { key: 'payruns', label: 'Payroll Runs' },
-  { key: 'investmentproofs', label: 'Investment proofs' },
-  // FBP is part of salary, not a claim: its bills and splits sit with payroll.
+  { key: 'payrollreports', label: 'Payroll Reports' },
+  { key: 'payrollbulk', label: 'Bulk Assign', hidden: true },
+];
+// What employees upload for tax: FBP bills and splits, and investment proofs. Its own
+// section in the sidebar, but given with Payroll Runs or Salary details (access.ts).
+const TAX_UPLOADS: NavItem[] = [
   { key: 'fbprequests', label: 'FBP requests' },
   { key: 'fbpsplits', label: 'FBP splits' },
-  { key: 'payrollreports', label: 'Payroll Reports' },
-  { key: 'payrollbulk', label: 'Bulk Assign' },
+  { key: 'investmentproofs', label: 'Investment proofs' },
 ];
 
 // Claims sits below Payroll: the claims people raise and what can be claimed,
 // together, so money questions are one section to give someone.
 const CLAIMS: NavItem[] = [
   { key: 'reimbursements', label: 'Reimbursement requests' },
-  { key: 'reimbursementtypes', label: 'Reimbursement Types' },
+  { key: 'reimbursementtypes', label: 'Reimbursement Types', hidden: true },
 ];
 // Engagement: how people use the app, the feed (reported posts included, so
 // moderation sits where the posts are), the plan, contests and games. Tournament
@@ -103,18 +118,31 @@ const PLACEMENTS: NavItem[] = [
   { key: 'placementclients', label: 'Clients' },
   { key: 'placementcustomers', label: 'Candidates' },
 ];
+// Employee lifecycle: a company feature (lifecycleSwitch.ts), so the whole group
+// shows only where it is on. Templates and Document templates open from Setup
+// (hidden here, so Accesses still gives them with the group). Where it is on,
+// Offboarding replaces People › Exits.
+export const LIFECYCLE_SECTION = 'EMPLOYEE LIFECYCLE';
+const LIFECYCLE: NavItem[] = [
+  { key: 'onboarding', label: 'Onboarding' },
+  { key: 'offboarding', label: 'Offboarding' },
+  { key: 'exit_insights', label: 'Exit insights' },
+  { key: 'lifecycle_documents', label: 'Documents' },
+  { key: 'lifecycle_templates', label: 'Templates', hidden: true },
+];
 export const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'PLACEMENTS', items: PLACEMENTS },
-  { title: 'REQUESTS', items: REQUESTS },
+  { title: 'TIME OFFICE', items: REQUESTS },
   { title: 'SUPPORT', items: SUPPORT },
   { title: 'PEOPLE', items: PEOPLE },
+  { title: LIFECYCLE_SECTION, items: LIFECYCLE },
   { title: 'SHIFTS', items: SHIFTS },
   { title: 'PERFORMANCE', items: PERFORMANCE },
-  { title: 'REPORTS', items: REPORTS },
   { title: 'PAYROLL', items: PAYROLL },
+  { title: 'TAX UPLOADS', items: TAX_UPLOADS },
   { title: 'CLAIMS', items: CLAIMS },
   { title: 'ENGAGEMENT', items: ENGAGEMENT },
-  { title: 'SUWI', items: [{ key: 'suwi', label: 'Settings & activity' }] },
+  { title: 'SUWI', items: [{ key: 'suwi', label: 'Settings & activity' }, { key: 'suwitimings', label: 'Response times' }] },
 ];
 const SOON: Partial<Record<View, boolean>> = {};
 
@@ -161,7 +189,8 @@ function SoonBadge() {
 
 function NavButton({ item, badge, sub }: { item: NavItem; badge?: ReactNode; sub?: boolean }) {
   const { view, setView } = useStore();
-  const active = view === item.key;
+  // Setup stays lit on the settings pages it leads to.
+  const active = view === item.key || (item.key === 'setup' && SETUP_VIEWS.includes(view)) || (item.key === 'bulkassign' && BULK_VIEWS.includes(view));
   const soon = SOON[item.key];
   return (
     <button
@@ -265,11 +294,13 @@ export function Sidebar() {
   const { user } = useAuth();
   // The company's real name, not a constant baked in at build time.
   const companyName = brand.name ?? user?.company ?? ORG_DISPLAY_NAME;
-  const { leaves, ots, rbs, corrs, fbMgrs, view, setView, listState } = useStore();
-  const orgActive = view === 'organisation';
-  // Only the tabs People › Accesses gives this person.
-  const orgOpen = canOpen(user, 'organisation');
-  const sections = SECTIONS.map((s) => ({ ...s, items: s.items.filter((item) => canOpen(user, item.key)) })).filter((s) => s.items.length > 0);
+  const { leaves, ots, rbs, corrs, fbMgrs, listState } = useStore();
+  const lifecycle = useLifecycleOn(Boolean(user?.dashboardAccess));
+  // Where the lifecycle is on, the Offboarding board takes the place of People › Exits.
+  const replaced = (key: View) => key === 'exits' && (user?.features?.lifecycle === true || lifecycle === true);
+  const sections = SECTIONS
+    .filter((s) => s.title !== LIFECYCLE_SECTION || lifecycle === true)
+    .map((s) => ({ ...s, items: s.items.filter((item) => !item.hidden && !replaced(item.key) && canOpen(user, item.key)) })).filter((s) => s.items.length > 0);
   // A cancellation request on an approved leave waits on HR's decision too.
   const leavesPending = leaves.filter((l) => l.status === 'Pending' || l.cancelRequest?.status === 'Pending').length;
   const otPending = ots.filter((o) => o.status === 'Pending').length;
@@ -280,8 +311,12 @@ export function Sidebar() {
   const supportCount = useSupportBadge(canOpen(user, 'support') ? user?.supportRole : null);
   // FBP bills waiting for HR: counted under FBP requests, not under reimbursements.
   const fbpPending = useFbpBadge(canOpen(user, 'fbprequests'));
+  // Onboarding: joiners who need HR now or are late (red), where the lifecycle is on.
+  const onboardingPending = useOnboardingBadge(lifecycle === true && canOpen(user, 'onboarding'));
   // What Suwi noticed: requests waiting past the limit turn the Requests counts red (Claims already are).
   const overdue = useSuwiNotices().notices.some((n) => n.key === 'requests_overdue');
+  // Offboarding: cards that need you, and late ones.
+  const offboardingCount = useOffboardingCount(lifecycle === true && canOpen(user, 'offboarding'));
 
   // A count waits for its list: no "0" before the requests have arrived.
   const LIST_FOR: Partial<Record<View, StoreList>> = { leave: 'leaves', overtime: 'overtime', attendance: 'corrections', feedback: 'feedback', reimbursements: 'claims' };
@@ -303,6 +338,10 @@ export function Sidebar() {
         return <CountBadge value={supportCount} danger={supportCount > 0} />;
       case 'fbprequests':
         return fbpPending === null ? null : <CountBadge value={fbpPending} danger={fbpPending > 0} />;
+      case 'offboarding':
+        return offboardingCount === null ? null : <CountBadge value={offboardingCount.count} danger={offboardingCount.count > 0} />;
+      case 'onboarding':
+        return onboardingPending === null ? null : <CountBadge value={onboardingPending} danger={onboardingPending > 0} />;
       default:
         return SOON[key] ? <SoonBadge /> : null;
     }
@@ -322,12 +361,8 @@ export function Sidebar() {
         overflow: 'hidden',
       }}
     >
-      {/* Company display name + logo — top-left. Clicking opens Organisation details. */}
-      <button
-        onClick={() => { if (orgOpen) setView('organisation'); }}
-        onMouseEnter={() => { if (orgOpen) prefetchView('organisation'); }}
-        title={orgOpen ? 'Organisation details' : undefined}
-        className="ds-brand"
+      {/* Company display name + logo — top-left. Organisation details is opened from Setup. */}
+      <div
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -335,12 +370,10 @@ export function Sidebar() {
           width: 'calc(100% - 24px)',
           margin: '12px 12px 8px',
           padding: '10px 12px',
-          border: orgActive ? '1px solid transparent' : '1px solid var(--line)',
+          border: '1px solid var(--line)',
           borderRadius: 'var(--r)',
-          cursor: orgOpen ? 'pointer' : 'default',
           textAlign: 'left',
-          background: orgActive ? 'var(--accent-soft)' : 'var(--surface)',
-          transition: 'background .15s, border-color .15s',
+          background: 'var(--surface)',
         }}
       >
         <div
@@ -376,14 +409,11 @@ export function Sidebar() {
             {brand.wordmark?.text ?? companyName}
           </div>
         </div>
-        {orgOpen && (
-          <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink-3)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-            <path d="m9 6 6 6-6 6" />
-          </svg>
-        )}
-      </button>
+      </div>
 
       <div className="scry" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '0 12px 16px' }}>
+        {canOpen(user, SETUP_ITEM.key) && <NavButton item={SETUP_ITEM} />}
+        {/* Bulk assign is hidden from the sidebar for now (BULK_ITEM, its page and its access stay). */}
         {canOpen(user, OVERVIEW_ITEM.key) && <NavButton item={OVERVIEW_ITEM} badge={badgeFor(OVERVIEW_ITEM.key)} />}
         {sections.map((section) => (
           <NavSection
@@ -471,15 +501,22 @@ function ThemeSwitch() {
 }
 
 export function Topbar() {
-  const { view, user, signOut, suwiOpen, setSuwiOpen } = useStore();
-  const [title, fixedMeta] = TITLES[view];
+  const { view, setView, user, signOut, suwiOpen, setSuwiOpen } = useStore();
+  const head = usePageHeadOverride();
+  const [viewTitle, fixedMeta] = TITLES[view];
+  // A sub-page (Start an exit, Final settlement) names itself and brings its own way back.
+  const title = head?.title ?? viewTitle;
   // A company with Suwi turned off sees no Ask Suwi button (Settings › Suwi can turn it on).
   const suwiOff = useSuwiNotices().enabled === false;
   // The overview's line is today's date, in India time like the rest of the dashboard.
-  const meta = view === 'overview'
+  const meta = head?.eyebrow ? head.eyebrow : view === 'overview'
     ? `${new Date().toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'Asia/Kolkata' })}, ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })}`
     : fixedMeta;
   const displayName = user?.name ?? 'HR Admin';
+  // IT, Admin and Finance clearance staff see their team under their name, not "HR".
+  const lifecycleOn = useLifecycleOn(Boolean(user?.dashboardAccess));
+  const offViewer = useOffboardingCount(lifecycleOn === true && canOpen(user, 'offboarding'))?.viewer;
+  const roleLabel = offViewer?.kind === 'team' && offViewer.team ? TEAM_NAME[offViewer.team] : 'HR';
   const iconBtn = {
     position: 'relative' as const,
     width: 42,
@@ -518,17 +555,13 @@ export function Topbar() {
           </button>
         )}
         <ThemeSwitch />
-        <button className="ds-icon-btn" style={iconBtn}>
-          <IconBell stroke="currentColor" />
-          <span style={{ position: 'absolute', top: 9, right: 10, width: 8, height: 8, background: '#E5533D', borderRadius: '50%', border: '2px solid var(--surface)' }} />
-        </button>
 
         {/* Logged-in HR — top-right. */}
         <div className="ds-me" style={{ display: 'flex', alignItems: 'center', gap: 10, height: 42, padding: '0 14px 0 4px', borderRadius: 12, border: '1px solid var(--line)', background: 'var(--surface)', flexShrink: 0 }}>
           <PersonAvatar name={displayName} userId={user?.id} size={32} font={12} tone={{ bg: 'var(--t-butter)', fg: 'var(--t-butter-i)' }} />
           <div style={{ minWidth: 0, lineHeight: 1.15, display: 'flex', flexDirection: 'column', gap: 2 }}>
             <div style={{ fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap' }}>{displayName}</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 }}>HR</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 }}>{roleLabel}</div>
           </div>
         </div>
         <button
@@ -545,10 +578,25 @@ export function Topbar() {
       <div style={{ padding: '28px 4px 0', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 500, lineHeight: '18px', color: 'var(--hi)', letterSpacing: '.02em' }}>
-            <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--hi)', boxShadow: '0 0 0 3px var(--hi-soft)', flexShrink: 0 }} />
+            {meta && <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--hi)', boxShadow: '0 0 0 3px var(--hi-soft)', flexShrink: 0 }} />}
             {meta}
           </div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.02em', lineHeight: 1.2, margin: '4px 0' }}>{title}</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* A page opened from Setup or Bulk assign has its way back beside the title. */}
+            {head?.onBack && (
+              <button type="button" onClick={head.onBack} aria-label={head.backLabel ?? 'Back'} title={head.backLabel ?? 'Back'}
+                style={{ width: 34, height: 34, borderRadius: '50%', border: '1px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="m15 6-6 6 6 6" /></svg>
+              </button>
+            )}
+            {!head?.onBack && ((SETUP_VIEWS.includes(view) && canOpen(user, 'setup')) || (BULK_VIEWS.includes(view) && canOpen(user, 'bulkassign'))) && (
+              <button type="button" onClick={() => setView(BULK_VIEWS.includes(view) ? 'bulkassign' : 'setup')} aria-label={BULK_VIEWS.includes(view) ? 'Back to Bulk assign' : 'Back to Setup'} title={BULK_VIEWS.includes(view) ? 'Back to Bulk assign' : 'Back to Setup'}
+                style={{ width: 34, height: 34, borderRadius: '50%', border: '1px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="m15 6-6 6 6 6" /></svg>
+              </button>
+            )}
+            <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.02em', lineHeight: 1.2, margin: '4px 0' }}>{title}</h1>
+          </div>
         </div>
         {/* A view's own buttons land here (ui.tsx PageActions). */}
         <div id={PAGE_ACTIONS_ID} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }} />

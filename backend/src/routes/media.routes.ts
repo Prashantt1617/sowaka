@@ -2,10 +2,12 @@ import { Router } from 'express';
 import { connectMedia } from '../config/db';
 import { logger } from '../utils/logger';
 import { isConnectMediaKey, readConnectMedia } from '../services/s3-connect-media.service';
-import { requestedWidth } from '../services/image-fit';
+import { copyKey, mayHaveCopies, requestedWidth } from '../services/image-fit';
+import { copyMadeFor, copyWidthFor, type MadeCopy } from '../services/media-copies';
 import {
   mediaCacheControl,
   mediaCandidates,
+  pushPictureName,
   rememberMissingCopy,
   type MediaCandidate,
 } from '../services/media-lookup';
@@ -70,15 +72,40 @@ mediaRouter.get('/:key', async (req, res, next) => {
       // else the original (see [mediaCandidates]).
       let object: Awaited<ReturnType<typeof readConnectMedia>> | undefined;
       let served: MediaCandidate | undefined;
-      for (const candidate of mediaCandidates(objectKey, wanted)) {
+      // A thumbnail asked for at a width: when the picture has no copy there yet, the copy is made
+      // from the original once, stored beside it and sent (media-copies.ts), instead of the whole
+      // original being streamed on every ask.
+      const madeWidth = typeof wanted === 'number' && !range && mayHaveCopies(objectKey) ? copyWidthFor(wanted) : undefined;
+      const madeKey = madeWidth === undefined ? undefined : copyKey(objectKey, madeWidth);
+      const candidates = mediaCandidates(objectKey, wanted);
+      let made: MadeCopy | null = null;
+      if (madeKey && !candidates.some((c) => c.key === madeKey)) made = await copyMadeFor(objectKey, madeWidth!);
+      for (const candidate of made ? [] : candidates) {
+        let missing = false;
         object = await readConnectMedia(candidate.key, range).catch((error: unknown) => {
-          if (candidate.copy && isMissingObject(error)) rememberMissingCopy(candidate.key);
+          if (candidate.copy && isMissingObject(error)) {
+            rememberMissingCopy(candidate.key);
+            missing = true;
+          }
           return undefined;
         });
         if (readerGone || res.destroyed || object?.body) {
           served = candidate;
           break;
         }
+        if (missing && candidate.key === madeKey) {
+          made = await copyMadeFor(objectKey, madeWidth!);
+          if (made) break;
+        }
+      }
+      if (made && !readerGone && !res.destroyed) {
+        res.setHeader('Content-Type', made.contentType);
+        if (req.query.push === '1') res.setHeader('Content-Disposition', `inline; filename="${pushPictureName(made.contentType)}"`);
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader('Content-Length', String(made.bytes.length));
+        res.setHeader('Cache-Control', mediaCacheControl({ key: madeKey!, copy: true }, wanted, objectKey));
+        res.status(200).end(made.bytes);
+        return;
       }
       if (readerGone || res.destroyed) {
         (object?.body as (NodeJS.ReadableStream & { destroy?: () => void }) | undefined)?.destroy?.();
@@ -89,11 +116,14 @@ mediaRouter.get('/:key', async (req, res, next) => {
         return;
       }
       res.setHeader('Content-Type', object.contentType);
+      if (req.query.push === '1') res.setHeader('Content-Disposition', `inline; filename="${pushPictureName(object.contentType)}"`);
       res.setHeader('Accept-Ranges', 'bytes');
       if (object.contentLength != null) {
         res.setHeader('Content-Length', String(object.contentLength));
       }
       if (object.contentRange) res.setHeader('Content-Range', object.contentRange);
+      // The bytes under a key never change: a reader holding them can ask whether they still stand.
+      if (object.etag) res.setHeader('ETag', object.etag);
       res.setHeader('Cache-Control', mediaCacheControl(served, wanted, objectKey));
       res.status(object.contentRange ? 206 : 200);
       // pipe() does not forward the source's errors. An S3 socket reset
@@ -127,6 +157,7 @@ mediaRouter.get('/:key', async (req, res, next) => {
     const bytes = media.bytes as unknown as { buffer: ArrayBuffer } | Buffer;
     const body = Buffer.isBuffer(bytes) ? bytes : Buffer.from((bytes as { buffer: ArrayBuffer }).buffer);
     res.setHeader('Content-Type', media.contentType);
+    if (req.query.push === '1') res.setHeader('Content-Disposition', `inline; filename="${pushPictureName(media.contentType)}"`);
     res.setHeader('Accept-Ranges', 'bytes');
     // Content is immutable per key, so let clients cache it hard rather than
     // refetching megabytes on every feed render.

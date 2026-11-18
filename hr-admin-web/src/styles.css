@@ -48,6 +48,12 @@
   --warn: #8A6A12;
   --warn-bg: #FDF3D6;
   --warn-line: #EEDCA5;
+  /* Time office "needs attention" (pending requests, Needs action, cancellation
+     asked): a calm neutral blue instead of the amber --warn, which the rest of
+     the dashboard keeps. */
+  --attn: var(--hi);
+  --attn-bg: var(--sky-soft);
+  --attn-line: #BFDDEE;
   --bad: #A83C3E;
   --bad-bg: #F8E6E6;
   --bad-line: #EDC9CA;
@@ -146,6 +152,7 @@
     --warn: #F0D689;
     --warn-bg: #33301F;
     --warn-line: #54492A;
+    --attn-line: #1F4A5E;
     --bad: #F0A3A4;
     --bad-bg: #3A1D1E;
     --bad-line: #5E2F31;
@@ -214,6 +221,7 @@
   --warn: #F0D689;
   --warn-bg: #33301F;
   --warn-line: #54492A;
+  --attn-line: #1F4A5E;
   --bad: #F0A3A4;
   --bad-bg: #3A1D1E;
   --bad-line: #5E2F31;

@@ -8,16 +8,20 @@ import {
   createEmployee,
   decideLeave,
   decideLeaveCancellationHandler,
+  adminCancelLeaveHandler,
   decideOvertime,
   decideRegularization,
   decideReimbursement,
   deleteOfficeHandler,
   listOfficesHandler,
   listOutOfLocation,
+  payCycleHandler,
+  punchLogHandler,
   saveOfficeHandler,
   employeeCalendarHandler,
   employeeLeaveBalanceHandler,
   setCalendarDayHandler,
+  setMarkRemovedHandler,
   clearCalendarDayHandler,
   listAccessesHandler,
   setAccessHandler,
@@ -39,8 +43,8 @@ import {
   employeeImportPreview,
   employeeImportApply,
   employeeImportCancel,
-  updateOvertimeEligibility,
-} from '../controllers/admin.controller';
+  updateOvertimeEligibility, listExitsHandler, exitSettingsHandler, setExitSettingsHandler, recordExitHandler, withdrawExitHandler, endAccessNowHandler,
+  exitDetailHandler, exitClearanceHandler, exitInterviewHandler, exitCloseCaseHandler, exitSettlementHandler } from '../controllers/admin.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { uploadEmployeeDocumentFile } from '../middleware/employee-document-upload.middleware';
 import { requireDashboardAccess, requireDashboardAdmin, requireDashboardTabs } from '../middleware/admin.middleware';
@@ -84,6 +88,8 @@ adminRouter.get('/reimbursements', listReimbursements);
 adminRouter.get('/regularizations', listRegularizations);
 // Punches taken away from every office — what HR reads as "OOL check-ins".
 adminRouter.get('/out-of-location', listOutOfLocation);
+adminRouter.get('/punch-log', punchLogHandler);
+adminRouter.get('/pay-cycle', payCycleHandler);
 // Face ID: the company's switches, who has set it up, resets and the check log.
 adminRouter.get('/face-id', adminFaceOverview);
 adminRouter.patch('/face-id/settings', adminFaceSettings);
@@ -108,6 +114,18 @@ adminRouter.get('/account-limit', accountLimit);
 adminRouter.patch('/employees/:userId/overtime-eligibility', updateOvertimeEligibility);
 // Profile details, by someone given the right (User.canEditEmployeeDetails): their own and their reports'.
 adminRouter.patch('/employees/:userId', updateEmployeeDetails);
+// Exits: record (or change) one, withdraw it before it takes effect, end access at once; the company's list.
+adminRouter.get('/exits', listExitsHandler);
+adminRouter.get('/exit-settings', exitSettingsHandler);
+adminRouter.put('/exit-settings', setExitSettingsHandler);
+adminRouter.put('/employees/:userId/exit', recordExitHandler);
+adminRouter.delete('/employees/:userId/exit', withdrawExitHandler);
+adminRouter.post('/employees/:userId/exit/end-access', endAccessNowHandler);
+adminRouter.get('/employees/:userId/exit', exitDetailHandler);
+adminRouter.put('/employees/:userId/exit/clearance', exitClearanceHandler);
+adminRouter.put('/employees/:userId/exit/interview', exitInterviewHandler);
+adminRouter.post('/employees/:userId/exit/close-case', exitCloseCaseHandler);
+adminRouter.post('/employees/:userId/exit/settlement/:action', exitSettlementHandler);
 // Delete an employee for good (dashboard admins; their name typed to confirm).
 adminRouter.delete('/employees/:userId', deleteEmployee);
 // Who changed what on them: details, manager, shift and templates.
@@ -119,6 +137,7 @@ adminRouter.get('/employees/:userId/leave-balance', employeeLeaveBalanceHandler)
 // HR marks a day of the current month; it outranks punches, leave and holidays everywhere.
 adminRouter.put('/employees/:userId/calendar/:date', setCalendarDayHandler);
 adminRouter.delete('/employees/:userId/calendar/:date', clearCalendarDayHandler);
+adminRouter.put('/employees/:userId/calendar/:date/marks', setMarkRemovedHandler);
 // Every payslip a payroll run has produced for them.
 adminRouter.get('/employees/:userId/payslips', employeePayslipsHandler);
 // Documents filed against an employee — offer letter, ID proof and the like.
@@ -178,6 +197,7 @@ adminRouter.get('/reports/attendance', attendanceReportHandler);
 // Overrides / dashboard-only decisions (rules 3, 6, 7, 8)
 adminRouter.patch('/leaves/:leaveId/decision', decideLeave);
 adminRouter.patch('/leaves/:leaveId/cancellation', decideLeaveCancellationHandler);
+adminRouter.post('/leaves/:leaveId/cancel', adminCancelLeaveHandler);
 adminRouter.patch('/overtime/:overtimeId/decision', decideOvertime);
 adminRouter.patch('/reimbursements/:claimId/decision', decideReimbursement);
 adminRouter.patch('/regularizations/:regularizationId/decision', decideRegularization);

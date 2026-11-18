@@ -14,6 +14,7 @@ import '../../manager/data/manager_api_service.dart';
 import '../../onboarding/presentation/onboarding_flow.dart';
 import '../../shared/startup_prefs.dart';
 import '../../shared/offline_banner.dart';
+import '../../lifecycle/offboarding/account_closed_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -157,6 +158,18 @@ class _LoginScreenState extends State<LoginScreen>
               if (state.error != null && state.step == AuthStep.success) {
                 showAppToast(context, state.error!);
                 _bloc.add(const ClearAuthError());
+              }
+              // An ended account (R6): its own screen, not an error line.
+              if (state.closedAccount case final closed?) {
+                _bloc.add(const ClearAuthError());
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (context) => AccountClosedScreen(
+                      info: closed,
+                      onBackToSignIn: () => Navigator.of(context).pop(),
+                    ),
+                  ),
+                );
               }
               if (state.step == AuthStep.code && !_didFocusOtp) {
                 _didFocusOtp = true;

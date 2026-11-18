@@ -8,6 +8,7 @@ if (!globalThis.crypto) {
 
 import { Collection, Db, MongoClient } from 'mongodb';
 import { env } from './env';
+import { tracked } from './writeTrack';
 import { AuthSessionDocument, OtpChallenge } from '../models/auth.model';
 import { User } from '../models/user.model';
 import { Office } from '../models/office.model';
@@ -31,7 +32,7 @@ import {
   RelayTeamProgress,
 } from '../models/relay.model';
 import { AppNotification, DeviceToken } from '../models/notification.model';
-import { AttendanceOverride, AttendanceRecord, AttendanceRegularization } from '../models/attendance.model';
+import { AttendanceMarkRemoval, AttendanceOverride, AttendanceRecord, AttendanceRegularization } from '../models/attendance.model';
 import { PayHead } from '../models/payHead.model';
 import { StateStatutoryRule } from '../models/statutoryRule.model';
 import { StatutoryConfigRow } from '../models/statutoryConfig.model';
@@ -40,6 +41,7 @@ import { SalaryStructure } from '../models/salaryStructure.model';
 import { SalaryTemplate } from '../models/salaryTemplate.model';
 import { PaidDaysTemplate } from '../models/paidDaysTemplate.model';
 import { PayrollRun, Payslip } from '../models/payrollRun.model';
+import { ExitSettlement } from '../models/exitSettlement.model';
 import { PayrollPeriodSetting } from '../models/payrollPeriod.model';
 import { EmployeePaymentDetails } from '../models/employeePayment.model';
 import { TaxDeclarationRow, TdsConfigRow } from '../models/tds.model';
@@ -57,6 +59,10 @@ import { AppPage } from '../models/app-page.model';
 import { EmployeeActivity } from '../models/employee-activity.model';
 import { FaceChallenge, FaceLivenessSession, FaceVerification } from '../models/face.model';
 import { Placement, PlacementClient, PlacementCustomer } from '../models/placement.model';
+import type {
+  CandidateAccount, CandidateDocument, DateChangeRequest, HandoverItem, Journey, JourneyTask, Letter, LetterTemplate,
+  LifecycleFile, LifecycleTemplate, Meeting, Offer, OneOnOneNote, PeopleToMeet, ProbationMonth, Resignation, StarterTask, SurveyResponse,
+} from '../models/lifecycle.model';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -84,6 +90,8 @@ export async function connectDb(): Promise<Db> {
   // one waits at most mongoWaitQueueMs and fails, rather than queueing until
   // the proxy gives up and every later request queues behind it.
   client = new MongoClient(env.mongoUri, {
+    // Checks count the bytes each command brings back (lifecycle:consistency); never on the server.
+    ...(process.env.MONGODB_MONITOR_COMMANDS === '1' ? { monitorCommands: true } : {}),
     compressors: ['zlib'],
     maxConnecting: 10,
     maxPoolSize: env.mongoMaxPool,
@@ -94,6 +102,11 @@ export async function connectDb(): Promise<Db> {
   db = client.db(env.mongoDbName);
   await ensureIndexes(db);
   return db;
+}
+
+/** The client (for checks that listen to its command events; see MONGODB_MONITOR_COMMANDS). */
+export function dbClient(): MongoClient | null {
+  return client;
 }
 
 export function getDb(): Db {
@@ -137,7 +150,8 @@ export function authSessions(): Collection<AuthSessionDocument> {
 }
 
 export function users(): Collection<User> {
-  return getDb().collection<User>('users');
+  // Noted inside a write request, so the kept onboarding board can patch its names (writeTrack.ts).
+  return tracked('users', getDb().collection<User>('users'));
 }
 
 export function leaves(): Collection<Leave> {
@@ -286,6 +300,11 @@ export function attendanceOverrides(): Collection<AttendanceOverride> {
   return getDb().collection<AttendanceOverride>('attendance_overrides');
 }
 
+/** Late or left-early marks HR took off a day. */
+export function attendanceMarkRemovals(): Collection<AttendanceMarkRemoval> {
+  return getDb().collection<AttendanceMarkRemoval>('attendance_mark_removals');
+}
+
 export function statutoryRules(): Collection<StateStatutoryRule> {
   return getDb().collection<StateStatutoryRule>('statutory_rules');
 }
@@ -344,6 +363,33 @@ export function investmentProofs(): Collection<InvestmentProof> {
 export function payslips(): Collection<Payslip> {
   return getDb().collection<Payslip>('payslips');
 }
+
+/** Final settlements of people who have left, one per person (exitSettlement.service). */
+export function exitSettlements(): Collection<ExitSettlement> {
+  return getDb().collection<ExitSettlement>('exit_settlements');
+}
+
+// ─── Employee lifecycle (models/lifecycle.model.ts, docs/lifecycle/CONTRACT.md) ───
+export function lifecycleTemplates(): Collection<LifecycleTemplate> { return getDb().collection<LifecycleTemplate>('lifecycle_templates'); }
+// The onboarding board is built from these: a write request notes what it wrote (writeTrack.ts), so the
+// kept board is patched for those journeys rather than read again whole.
+export function journeys(): Collection<Journey> { return tracked('journeys', getDb().collection<Journey>('lifecycle_journeys')); }
+export function journeyTasks(): Collection<JourneyTask> { return tracked('tasks', getDb().collection<JourneyTask>('lifecycle_journey_tasks')); }
+export function offers(): Collection<Offer> { return tracked('offers', getDb().collection<Offer>('lifecycle_offers')); }
+export function candidateAccounts(): Collection<CandidateAccount> { return getDb().collection<CandidateAccount>('lifecycle_candidate_accounts'); }
+export function candidateDocuments(): Collection<CandidateDocument> { return getDb().collection<CandidateDocument>('lifecycle_candidate_documents'); }
+export function lifecycleFiles(): Collection<LifecycleFile> { return getDb().collection<LifecycleFile>('lifecycle_files'); }
+export function letterTemplates(): Collection<LetterTemplate> { return getDb().collection<LetterTemplate>('lifecycle_letter_templates'); }
+export function letters(): Collection<Letter> { return getDb().collection<Letter>('lifecycle_letters'); }
+export function dateChangeRequests(): Collection<DateChangeRequest> { return getDb().collection<DateChangeRequest>('lifecycle_date_requests'); }
+export function peopleToMeet(): Collection<PeopleToMeet> { return getDb().collection<PeopleToMeet>('lifecycle_people_to_meet'); }
+export function starterTasks(): Collection<StarterTask> { return getDb().collection<StarterTask>('lifecycle_starter_tasks'); }
+export function oneOnOneNotes(): Collection<OneOnOneNote> { return getDb().collection<OneOnOneNote>('lifecycle_one_on_one_notes'); }
+export function lifecycleMeetings(): Collection<Meeting> { return getDb().collection<Meeting>('lifecycle_meetings'); }
+export function probationMonths(): Collection<ProbationMonth> { return getDb().collection<ProbationMonth>('lifecycle_probation_months'); }
+export function surveyResponses(): Collection<SurveyResponse> { return getDb().collection<SurveyResponse>('lifecycle_survey_responses'); }
+export function resignations(): Collection<Resignation> { return getDb().collection<Resignation>('lifecycle_resignations'); }
+export function handoverItems(): Collection<HandoverItem> { return getDb().collection<HandoverItem>('lifecycle_handover_items'); }
 
 export function kpiParameters(): Collection<KpiParameter> {
   return getDb().collection<KpiParameter>('kpi_parameters');
@@ -436,6 +482,8 @@ async function ensureIndexes(database: Db): Promise<void> {
   await database.collection('secret_squad_offices').createIndex({ org: 1, userId: 1 });
   // One HR mark per person per day; the calendars read them by person and range.
   await database.collection('attendance_overrides').createIndex({ org: 1, userId: 1, workDate: 1 }, { unique: true });
+  await database.collection('attendance_mark_removals').createIndex({ org: 1, userId: 1, workDate: 1 }, { unique: true });
+  await database.collection('attendance_mark_removals').createIndex({ userId: 1, workDate: 1 });
   await database.collection('paid_days_templates').createIndex({ org: 1, code: 1 }, { unique: true });
   // One national statutory row per financial year.
   await database.collection('payroll_statutory_configs').createIndex({ fy: 1 }, { unique: true });
@@ -546,11 +594,15 @@ async function ensureIndexes(database: Db): Promise<void> {
 
   const overtimeCollection = database.collection<OvertimeRequest>('overtime_requests');
   await overtimeCollection.createIndex({ userId: 1, createdAt: -1 });
+  // The waiting requests only (Suwi's lists look each person's up with a status filter).
+  await overtimeCollection.createIndex({ userId: 1, status: 1 });
   await overtimeCollection.createIndex({ managerUserId: 1, status: 1, createdAt: -1 });
 
   const reimbursementCollection =
     database.collection<ReimbursementClaim>('reimbursement_claims');
   await reimbursementCollection.createIndex({ userId: 1, createdAt: -1 });
+  // The waiting requests only (Suwi's lists look each person's up with a status filter).
+  await reimbursementCollection.createIndex({ userId: 1, status: 1 });
   await reimbursementCollection.createIndex({ managerUserId: 1, status: 1, createdAt: -1 });
 
   await database.collection<Company>('companies').createIndex({ id: 1 }, { unique: true });
@@ -593,6 +645,9 @@ async function ensureIndexes(database: Db): Promise<void> {
   await scoresCollection.createIndex({ gameId: 1, userId: 1 }, { unique: true });
   await scoresCollection.createIndex({ gameId: 1, score: -1, achievedAt: 1 });
   await database.collection<GameCatalogEntry>('game_catalog').createIndex({ key: 1 }, { unique: true });
+  // Which version each game is at, read from the index alone (keptReads.ts): a game's document carries its
+  // whole page, and the Games list only needs to know whether one changed.
+  await database.collection<GameCatalogEntry>('game_catalog').createIndex({ key: 1, active: 1, updatedAt: 1 });
   // One document per policy per company, and how a company's are found.
   await database.collection<PolicyDocument>('policy_documents').createIndex({ org: 1, key: 1 }, { unique: true });
   const challengesCollection = database.collection<GameChallenge>('game_challenges');
@@ -685,6 +740,27 @@ async function ensureIndexes(database: Db): Promise<void> {
   const payslipsCollection = database.collection<Payslip>('payslips');
   await payslipsCollection.createIndex({ org: 1, runId: 1 });
   await payslipsCollection.createIndex({ userId: 1, period: -1 });
+  await getDb().collection('exit_settlements').createIndex({ org: 1, userId: 1 }, { unique: true });
+  await getDb().collection('lifecycle_templates').createIndex({ org: 1, kind: 1 });
+  // One Default template per company and kind, held by the database: two first visits at once used to
+  // insert two "Standard" Defaults. Existing duplicates block the index: then it is logged, not fatal.
+  try {
+    await getDb().collection('lifecycle_templates').createIndex({ org: 1, kind: 1 }, { unique: true, partialFilterExpression: { isDefault: true }, name: 'one_default_per_org_kind' });
+  } catch (error) {
+    console.warn('lifecycle_templates: the one-Default index could not be made (a company has two Defaults; remove the extra one)', error instanceof Error ? error.message : String(error));
+  }
+  await getDb().collection('lifecycle_journeys').createIndex({ org: 1, kind: 1, status: 1 });
+  await getDb().collection('lifecycle_journeys').createIndex({ userId: 1, kind: 1 });
+  await getDb().collection('lifecycle_journey_tasks').createIndex({ journeyId: 1, order: 1 });
+  await getDb().collection('lifecycle_journey_tasks').createIndex({ org: 1, status: 1, dueAt: 1 });
+  await getDb().collection('lifecycle_offers').createIndex({ journeyId: 1 }, { unique: true });
+  await getDb().collection('lifecycle_offers').createIndex({ 'versions.linkTokenHash': 1 });
+  await getDb().collection('lifecycle_candidate_accounts').createIndex({ email: 1 }, { unique: true });
+  await getDb().collection('lifecycle_candidate_accounts').createIndex({ journeyId: 1 }, { unique: true });
+  await getDb().collection('lifecycle_candidate_documents').createIndex({ journeyId: 1 });
+  await getDb().collection('lifecycle_letters').createIndex({ org: 1, journeyId: 1 });
+  await getDb().collection('lifecycle_resignations').createIndex({ org: 1, userId: 1, status: 1 });
+  await getDb().collection('lifecycle_survey_responses').createIndex({ org: 1, kind: 1, createdAt: -1 });
 
   const relayEventsCollection = database.collection<RelayEvent>('relay_events');
   await relayEventsCollection.createIndex({ id: 1 }, { unique: true });

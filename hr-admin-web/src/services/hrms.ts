@@ -35,6 +35,8 @@ export type LeaveDTO = {
   };
   /** On a cancelled leave: withdrawn while pending, or cancelled once approved. Older servers omit it. */
   cancelledFrom?: 'pending' | 'approved';
+  /** The admin list only: the person's leave type is leave without pay (HR's unpaid flag). */
+  unpaid?: boolean;
 };
 
 /** Overtime pay, or comp-off of a full (1) or half (0.5) day. */
@@ -77,8 +79,16 @@ export type RegularizationDTO = {
   manager?: string;
   employee: { name: string; department?: string };
   workDate: string;
-  /** A correction disputes the day's grade; out of location is a punch away from every office. */
-  kind?: 'correction' | 'out_of_location';
+  /**
+   * A correction disputes the day's grade; out of location is a punch away from every office;
+   * face check is a punch the face check refused, sent for a decision instead.
+   */
+  kind?: 'correction' | 'out_of_location' | 'face_check';
+  /** Face check only: which punch the check refused (absent on the first rows: a punch-in). */
+  faceCheck?: { punchType?: 'in' | 'out'; reason?: string; attempts?: number };
+  /** Older corrections only: the punch times the employee asked for, from before day types. */
+  requestedPunchIn?: string;
+  requestedPunchOut?: string;
   /** The heading everyone sees — "Out of location request (Client visit)" or "Attendance correction". */
   title?: string;
   /** Out of location only: why, where, and how far from the nearest office. */
@@ -151,6 +161,10 @@ export const decideLeaveCancellation = (id: string, decision: 'approved' | 'decl
     method: 'PATCH',
     body: { decision, ...(note ? { note } : {}) },
   }).then((r) => r.leave);
+
+// HR cancels a leave (approved or pending) from the dashboard: its days go back on the balance.
+export const adminCancelLeave = (id: string, note?: string) =>
+  api<{ leave: LeaveDTO }>(`/admin/leaves/${id}/cancel`, { method: 'POST', body: note ? { note } : {} }).then((r) => r.leave);
 
 // ---- Overtime (org-wide) ----
 export const getOvertimeInbox = () =>
@@ -284,6 +298,8 @@ export type EmployeeDTO = {
   managerUserId?: string;
   managerName?: string;
   lifecycleStatus?: string;
+  /** An exit HR recorded (companies with Exits on): on notice until lastWorkingDay, then left. */
+  exit?: { lastWorkingDay: string; kind: string; left: boolean } | null;
   employeeId?: string;
   location?: string;
   branch?: string;
@@ -352,6 +368,10 @@ export const setCalendarDay = (userId: string, date: string, status: HrDayStatus
 /** Take HR's mark off a day; it goes back to what the record says. */
 export const clearCalendarDay = (userId: string, date: string) =>
   api(`/admin/employees/${userId}/calendar/${date}`, { method: 'DELETE' });
+
+// HR takes the late or left-early mark off one day (or puts it back with removed: false); the day stays as punched.
+export const setDayMarkRemoved = (userId: string, date: string, mark: 'late' | 'early', removed = true) =>
+  api<{ removed: boolean }>(`/admin/employees/${userId}/calendar/${date}/marks`, { method: 'PUT', body: { mark, removed } });
 
 /** What HR may file against an employee. Mirrors the server's list. */
 export const EMPLOYEE_DOCUMENT_TYPES = ['Offer letter', 'ID proof', 'Address proof', 'Experience letter', 'Resume'] as const;
@@ -443,6 +463,63 @@ export type PeopleTasksDTO = {
 };
 /** People › Tasks: everyone whose setup is incomplete, worked out fresh each time. */
 export const getPeopleTasks = () => api<PeopleTasksDTO & { success: boolean }>('/admin/employees/tasks');
+
+/** An exit HR recorded (People › Exits). state: notice (still working), leaving (past the last day, access ends within the hour), left. */
+export type ExitKind = 'resigned' | 'terminated' | 'absconded' | 'retired' | 'other';
+export type ExitRuleKind = ExitKind | 'consultant';
+/** What an exit does (Setup › Payroll › Exit settings, per kind; changeable on each exit). */
+export type ExitRules = {
+  holdPay: boolean;
+  access: 'day_after' | 'at_once' | 'never';
+  noticePay: 'none' | 'hr_chooses' | 'pay';
+  noticeRecovery: 'none' | 'days_not_served' | 'whole_notice';
+};
+/** How the notice lines of a settlement are worked out, and when the team is told. */
+export type ExitNoticeSettings = { recoveryBasis: 'basic_30' | 'gross_30' | 'basic_month'; noticePayBasis: 'gross_30' | 'basic_30' | 'gross_month'; leaveCoversShortfall: boolean; teamNoticeDays: number };
+export type ExitSettingsDTO = { kinds: { kind: ExitRuleKind; rules: ExitRules; isDefault: boolean }[]; defaults: Record<ExitRuleKind, ExitRules>; noticeDays: number | null; notice: ExitNoticeSettings; noticeDefaults: ExitNoticeSettings };
+export const getExitSettings = () => api<ExitSettingsDTO>('/admin/exit-settings');
+export const saveExitSettings = (kinds: Partial<Record<ExitRuleKind, Partial<ExitRules> | null>>, noticeDays?: number | null, notice?: Partial<ExitNoticeSettings>) =>
+  api<ExitSettingsDTO>('/admin/exit-settings', { method: 'PUT', body: { kinds, ...(noticeDays !== undefined ? { noticeDays } : {}), ...(notice ? { notice } : {}) } });
+export type ExitClearanceItem = { key: string; label: string; done: boolean; doneAt: string | null; doneByName: string; team?: 'manager' | 'admin' | 'it' | 'finance' | null; amountPaise?: number; note?: string };
+export type ExitInterviewReason = 'pay' | 'growth' | 'manager' | 'work_life' | 'relocation' | 'studies' | 'the_work' | 'personal' | 'other';
+export type ExitInterview = { reason?: ExitInterviewReason; workRating?: number; managerRating?: number; comeBack?: 'yes' | 'maybe' | 'no'; change?: string; filledBy: 'employee' | 'hr'; filledByName?: string; filledAt: string };
+export type ExitDTO = {
+  userId: string; name: string; employeeId: string; department: string; designation: string; joiningDate: string | null;
+  kind: ExitKind; kindLabel: string; noticeFrom: string | null; lastWorkingDay: string; noticeDays: number | null; note: string;
+  recordedByName: string; recordedAt: string; accessEndedAt: string | null; state: 'notice' | 'leaving' | 'left'; status: string;
+  /** notice: working their notice; settlement_due: gone, the settlement is not paid yet; left: settled. */
+  stage: 'notice' | 'settlement_due' | 'left';
+  rules: ExitRules;
+  team: { newManagerUserId: string; newManagerName: string; move: 'day_after' | 'now'; movedAt: string | null; toldAt: string | null; size: number } | null;
+  clearance: ExitClearanceItem[]; clearanceDone: boolean;
+  interview: ExitInterview | null;
+  /** An absconding whose case HR has not closed yet: its settlement has not started. */
+  caseOpen: boolean; caseClosedAt: string | null;
+  settlement: { status: SettlementStatus; payablePaise: number } | null;
+};
+export type SettlementStatus = 'draft' | 'approved' | 'paid';
+export type SettlementLine = { key: string; side: 'earning' | 'deduction'; label: string; note?: string; computedPaise: number; amountPaise: number; changedReason?: string; changedByName?: string; period?: string; estimated?: boolean };
+export type SettlementTax = { engine: boolean; regime?: 'new' | 'old'; fy: string; paidTaxablePaise: number; settlementTaxablePaise: number; excessExemptPaise: number; taxableIncomePaise?: number; annualTaxPaise?: number; alreadyDeductedPaise: number; duePaise: number; refundViaReturnPaise?: number };
+export type SettlementDTO = {
+  status: SettlementStatus; lines: SettlementLine[]; earningsPaise: number; deductionsPaise: number; payablePaise: number; tax: SettlementTax | null;
+  clearanceOverrideReason: string | null; approvedAt: string | null; approvedByName: string | null; paidAt: string | null; paidByName: string | null; updatedAt: string;
+  /** Why there are no figures yet (no salary structure): the payroll rules come from Payroll only, so nothing is worked out and nothing can be approved. */
+  notSetUp?: string | null;
+};
+export type ExitDetailDTO = { exit: ExitDTO; settlement: SettlementDTO | null; company: { name: string; address: string; org?: string } };
+export type ExitInput = { kind: ExitKind; lastWorkingDay: string; noticeFrom?: string; noticeDays?: number | null; note?: string; newManagerUserId?: string; moveTeamNow?: boolean; endAccessNow?: boolean; rules?: Partial<ExitRules> };
+export const getExitDetail = (userId: string) => api<ExitDetailDTO>(`/admin/employees/${userId}/exit`);
+export const setExitClearance = (userId: string, key: string, done: boolean) => api<ExitDetailDTO>(`/admin/employees/${userId}/exit/clearance`, { method: 'PUT', body: { key, done } });
+export const saveExitInterview = (userId: string, body: Partial<ExitInterview>) => api<ExitDetailDTO>(`/admin/employees/${userId}/exit/interview`, { method: 'PUT', body });
+export const closeExitCase = (userId: string) => api<ExitDetailDTO>(`/admin/employees/${userId}/exit/close-case`, { method: 'POST' });
+export const settlementAction = (userId: string, action: 'line' | 'approve' | 'reopen' | 'paid', body: Record<string, unknown> = {}) =>
+  api<ExitDetailDTO>(`/admin/employees/${userId}/exit/settlement/${action}`, { method: 'POST', body });
+export const listExits = () => api<{ exits: ExitDTO[] }>('/admin/exits').then((r) => r.exits);
+export const recordExit = (userId: string, input: ExitInput) =>
+  api<{ exit: ExitDTO }>(`/admin/employees/${userId}/exit`, { method: 'PUT', body: input }).then((r) => r.exit);
+export const withdrawExit = (userId: string) => api<{ withdrawn: boolean }>(`/admin/employees/${userId}/exit`, { method: 'DELETE' });
+export const endExitAccessNow = (userId: string) =>
+  api<{ exit: ExitDTO }>(`/admin/employees/${userId}/exit/end-access`, { method: 'POST' }).then((r) => r.exit);
 
 /** Delete an employee for good (dashboard admins); `confirmName` is their name, typed. */
 export const deleteEmployee = (userId: string, confirmName: string) =>
@@ -740,6 +817,43 @@ export type OutOfLocationDTO = OutsideLocationDTO & {
   managerNote: string;
 };
 
+/** Where one punch was taken, as the device reported it. */
+export type PunchPlaceDTO = {
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  officeName: string | null;
+  distanceMeters: number | null;
+  inOffice: boolean;
+  mocked: boolean;
+  place: string;
+};
+/** One person's one day in the punch log. */
+export type PunchDayDTO = {
+  userId: string;
+  name: string;
+  employeeCode: string;
+  department: string;
+  manager: string;
+  workDate: string;
+  punchIn: string | null;
+  punchOut: string | null;
+  inLocation: PunchPlaceDTO | null;
+  outLocation: PunchPlaceDTO | null;
+  outside: OutsideLocationDTO | null;
+  /** The punch-in's face check, only for a viewer with Face ID access; null otherwise. */
+  face: 'passed' | 'failed' | null;
+  dayType: string | null;
+  /** An out-of-location punch still waiting on the manager (no record yet). */
+  waiting: boolean;
+};
+export const getPunchLog = (from: string, to: string) =>
+  api<{ punches: PunchDayDTO[] }>(`/admin/punch-log?from=${from}&to=${to}`).then((r) => r.punches);
+
+export type PayCycleDTO = { current: { from: string; to: string } | null; previous: { from: string; to: string } | null };
+/** This pay cycle and the last, as payroll reads them. */
+export const getPayCycle = () => api<{ cycle: PayCycleDTO }>('/admin/pay-cycle').then((r) => r.cycle);
+
 export const getOutOfLocation = (from: string, to: string) =>
   api<{ checkIns: OutOfLocationDTO[] }>(`/admin/out-of-location?from=${from}&to=${to}`).then((r) => r.checkIns);
 
@@ -1024,6 +1138,8 @@ export type ReportRow = ReportPersonDTO & {
   /** An overlay on a day that has a punch-in, not a status of its own. */
   late: boolean;
   lateByMinutes: number;
+  /** Minutes before the shift's end they punched out; 0 when not early. */
+  earlyByMinutes: number;
   punchIn: string | null;
   punchOut: string | null;
   leaveType: string | null;
@@ -1137,3 +1253,10 @@ export const resetFaceId = (userId: string) =>
   api<{ removed: boolean }>(`/admin/face-id/people/${encodeURIComponent(userId)}`, { method: 'DELETE' });
 export const getFaceChecks = (from: string, to: string, all = false) =>
   api<{ checks: FaceCheckDTO[] }>(`/admin/face-id/checks?from=${from}&to=${to}${all ? '&all=true' : ''}`).then((r) => r.checks);
+
+/** Filters Suwi read from a people search in plain words (only values this company has). */
+export type PeopleSearchFilterDTO = {
+  departments: string[]; designations: string[]; locations: string[]; managerIds: string[];
+  types: string[]; genders: string[]; ids: string[]; joinedFrom?: string; joinedTo?: string; on?: 'yes' | 'no';
+};
+export const smartPeopleSearch = (q: string) => api<{ filter: PeopleSearchFilterDTO }>('/suwi/people-search', { method: 'POST', body: { q } }).then((r) => r.filter);

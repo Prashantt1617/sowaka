@@ -8,13 +8,14 @@
 // wired to a backend yet, so the sections stand as placeholders rather than
 // being removed.
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { CSSProperties, ReactNode } from 'react';
 import type { Emp } from '../seed';
 import { useStore } from '../store';
 import { IconFile } from '../icons';
 import { ETYPE, STAT, TYPE } from '../theme';
 import type { LeaveType, ReqStatus } from '../theme';
-import { Avatar, ListPending, LoadError, LoadingFigure, Pill, Skeleton, SkeletonFrame, SkeletonLines, SkeletonRows, StatusTabs } from '../ui';
+import { Avatar, ListPending, LoadError, LoadingFigure, Pill, Skeleton, SkeletonForm, SkeletonFrame, SkeletonLines, SkeletonRows, StatusTabs } from '../ui';
 import type { LoadState } from '../ui';
 import { useLoad } from '../useLoad';
 import { PersonAvatar } from '../PersonAvatar';
@@ -22,8 +23,10 @@ import { PdBank, PdCalendar, PdChart, PdClock, PdEdit, PdFile, PdLock, PdStar, P
 import './people.css';
 import { periodLabel, periodShort } from '../period';
 import { EmployeeKpiPanel } from './KpiAssign';
-import { assignShift, clearCalendarDay, clearReportingManager, deleteEmployee, getCompanySettings, getEmployeeCalendar, getShifts, setCalendarDay, setReportingManager, updateEmployeeDetails } from '../../services/hrms';
-import type { EmployeeDetailsInput, ShiftDTO } from '../../services/hrms';
+import { assignShift, clearCalendarDay, clearReportingManager, deleteEmployee, getCompanySettings, listExits, getEmployeeCalendar, getShifts, setCalendarDay, setReportingManager, updateEmployeeDetails } from '../../services/hrms';
+import type { EmployeeDetailsInput, ExitDTO, ShiftDTO } from '../../services/hrms';
+import { ExitBanner, ExitDialog } from './ExitDialog';
+import { ExitDetail } from './ExitDetail';
 import { Field, GENDERS as GENDER_CHOICES, Select, TypeOrPick, grid2, grid3, infoCallout, infoIcon, inputStyle } from './AddEmployeeWizard';
 import { ApiError } from '../../services/http';
 import { useAuth } from '../auth/AuthContext';
@@ -200,7 +203,13 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
   // What someone earns is its own access, apart from Employees.
   const { user } = useAuth();
   const [deleting, setDeleting] = useState(false);
+  // Their exit, when HR has recorded one (admins only: the server says the same).
+  const [exitRow, setExitRow] = useState<ExitDTO | null>(null);
+  const [exitReady, setExitReady] = useState(false);
+  const [exitTick, setExitTick] = useState(0);
   const seesSalary = canOpen(user, SALARY_DETAILS);
+  // Exits: dashboard admins, where the company has them switched on, for anyone but themselves.
+  const seesExit = user?.dashboardAdmin === true && user?.features?.exits === true && user.id !== emp.id;
   // Edit details: for someone given the right, on themselves and anyone below them.
   const [editingDetails, setEditingDetails] = useState(false);
   // HR (a dashboard admin with the right) edits anyone; others their own reporting line.
@@ -238,13 +247,16 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
 
   return (
     <div className="pd-prof" style={{ animation: 'fade .3s ease both' }}>
+      <ExitLoader userId={emp.id} enabled={user?.dashboardAdmin === true && user?.features?.exits === true} tick={exitTick} onLoaded={(e) => { setExitRow(e); setExitReady(true); }} />
       <div className="pd-prof-top">
         <button onClick={onBack} className="pd-btn ghost sm" style={{ marginLeft: -12 }}>{backLabel}</button>
-        {user?.dashboardAdmin === true && user.id !== emp.id && (
+        {SHOW_DELETE_EMPLOYEE && user?.dashboardAdmin === true && user.id !== emp.id && (
           <button type="button" onClick={() => setDeleting(true)} className="pd-btn sm" style={{ color: 'var(--bad)' }}><PdTrash /> Delete employee</button>
         )}
       </div>
-      {deleting && <DeleteEmployee emp={emp} onClose={() => setDeleting(false)} onDeleted={() => { setDeleting(false); void s.reload(); onBack(); }} />}
+      {/* On the page body: this page fades in with a transform, which would pin a fixed dialog to the page instead of the screen. */}
+      {deleting && createPortal(<DeleteEmployee emp={emp} onClose={() => setDeleting(false)} onDeleted={() => { setDeleting(false); void s.reload(); onBack(); }} />, document.body)}
+      {exitRow && <ExitBanner exit={exitRow} />}
 
       {/* Identity header */}
       <section className="pd-card pd-phead">
@@ -274,10 +286,10 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
       {/* One page, several views of the same person. */}
       <div className="pd-ptabs">
         <StatusTabs<ProfileTab>
-          options={seesSalary ? ['profile', 'performance', 'calendar', 'requests', 'salary', 'orgchart', 'activity'] : ['profile', 'performance', 'calendar', 'requests', 'orgchart', 'activity']}
+          options={[...(seesSalary ? ['profile', 'performance', 'calendar', 'requests', 'salary', 'orgchart', 'activity'] as ProfileTab[] : ['profile', 'performance', 'calendar', 'requests', 'orgchart', 'activity'] as ProfileTab[]), ...(seesExit ? ['exit' as const] : [])]}
           active={tab}
           onSelect={setTab}
-          labels={{ profile: 'Profile', performance: 'Performance', calendar: 'Calendar', requests: 'Requests', salary: 'Salary details', orgchart: 'Org chart', activity: 'Activity' }}
+          labels={{ profile: 'Profile', performance: 'Performance', calendar: 'Calendar', requests: 'Requests', salary: 'Salary details', orgchart: 'Org chart', activity: 'Activity', exit: 'Exit' }}
         />
       </div>
 
@@ -454,6 +466,21 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
         </div>
       )}
 
+      {tab === 'exit' && seesExit && (
+        <div>
+          {!exitReady ? <section className="pd-card"><SkeletonForm fields={6} /></section> : (
+            <>
+              {/* Recorded or changed here until they have gone; after that, only the settlement and its lists. */}
+              {exitRow?.state !== 'left' && (
+                <ExitDialog key={`${exitTick}:${exitRow?.recordedAt ?? 'none'}`} variant="card" emp={emp} exit={exitRow} emps={s.emps}
+                  onClose={() => undefined} onSaved={() => { setExitTick((n) => n + 1); void s.reload(); }} />
+              )}
+              {exitRow && <ExitDetail key={`detail:${exitTick}`} userId={emp.id} embedded />}
+            </>
+          )}
+        </div>
+      )}
+
       {tab === 'activity' && (
         <div className="pd-psecs">
           <Section title="Activity" icon={<PdClock />}>
@@ -521,7 +548,10 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
   );
 }
 
-export type ProfileTab = 'profile' | 'performance' | 'calendar' | 'requests' | 'salary' | 'orgchart' | 'activity';
+/** Delete employee is hidden from the dashboard for now; the dialog and the server's delete stay. */
+const SHOW_DELETE_EMPLOYEE = false as boolean;
+
+export type ProfileTab = 'profile' | 'performance' | 'calendar' | 'requests' | 'salary' | 'orgchart' | 'activity' | 'exit';
 
 // —— Calendar: one month, every day named ————————————————————————————————
 const CAL_TONE: Record<CalendarDayStatus, { bg: string; fg: string; label: string }> = {
@@ -1125,6 +1155,17 @@ function MiniRow({ label, value }: { label: string; value: string }) {
       <span className="pv">{value}</span>
     </div>
   );
+}
+
+/** Reads the person's exit, if any, whenever they or `tick` change. */
+function ExitLoader({ userId, enabled, tick, onLoaded }: { userId: string; enabled: boolean; tick: number; onLoaded: (e: ExitDTO | null) => void }) {
+  useEffect(() => {
+    if (!enabled) { onLoaded(null); return; }
+    let live = true;
+    listExits().then((all) => { if (live) onLoaded(all.find((x) => x.userId === userId) ?? null); }).catch(() => { if (live) onLoaded(null); });
+    return () => { live = false; };
+  }, [userId, enabled, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
 }
 
 /** The editor themselves, or anyone below them in the reporting line. The server checks the same. */

@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "item": {
+    "id": "50d94bf0-8417-405d-adcb-f9bbc7530347",
+    "title": "Open projects",
+    "done": false,
+    "doneAt": null,
+    "upload": {
+      "kind": "file",
+      "name": "open-projects.pdf",
+      "at": "2026-11-17T05:16:26.129Z"
+    }
+  }
+}

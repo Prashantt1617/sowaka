@@ -24,12 +24,22 @@ import { listContests } from './engagement-contests.service';
 import { gamesOverview } from './engagement-games.service';
 import { planFor } from './engagement-plan.service';
 import { usageSummary, usageTrend, usageWhen } from './engagement-usage.service';
+import { attendanceReport } from './attendance-report.service';
+import { listOutOfLocationForAdmin } from './attendance.service';
+import { payCycleForAdmin, warmPunchLog } from './punch-log.service';
+import { refreshSwr } from './swr-cache';
+import { warmLifecycle } from './lifecycle/warm';
+import { warmTimeOfficeLists } from './timeOfficeLists';
+import { takePaceStats, yieldToLive } from './background-pace';
 
 const ROUND_MS = 4 * 60_000;
 /** After the server starts, so boot is not slowed by it. */
 const FIRST_ROUND_MS = 30_000;
-/** Between one company and the next. */
+/** Between one company and the next, at the least. */
 const BETWEEN_ORGS_MS = 2_000;
+/** And at the most: the companies are spread over this share of the round, not run back to back. */
+const MAX_BETWEEN_ORGS_MS = 15_000;
+const SPREAD_SHARE = 0.4;
 const IST_OFFSET_MS = 330 * 60_000;
 const DAY_MS = 86_400_000;
 
@@ -87,6 +97,8 @@ export async function warmOrg(org: string): Promise<Record<string, number | stri
   const took: Record<string, number | string> = {};
   for (const [name, ask] of steps) {
     if (stopping) break;
+    // Live requests first (background-pace.ts).
+    await yieldToLive(() => stopping);
     const t0 = Date.now();
     try {
       await refreshEngagement(ask);
@@ -98,16 +110,85 @@ export async function warmOrg(org: string): Promise<Record<string, number | stri
   return took;
 }
 
-async function round(): Promise<void> {
+/**
+ * The Time office pages an org's HR opens, worked out again so they answer at once:
+ * Punch log (today, this month, this pay cycle), the attendance report behind it and
+ * the Company calendar (the same ranges), and this month's out-of-location list.
+ * Run as one of the org's dashboard users who sees everyone; skipped without one.
+ */
+export async function warmTimeOffice(org: string): Promise<Record<string, number | string>> {
+  const viewer = await users().findOne(
+    { org, dashboardAccess: true, lifecycleStatus: { $nin: ['offboarded', 'terminated'] }, $or: [{ dashboardAdmin: true }, { dashboardTabs: { $exists: false } }] },
+    { projection: { _id: 0, userId: 1 } },
+  );
+  const took: Record<string, number | string> = {};
+  if (!viewer) return took;
+  const who = viewer.userId;
+  const today = istToday();
+  const month = { from: `${today.slice(0, 8)}01`, to: today };
+  const ranges: Record<string, { from: string; to: string }> = { today: { from: today, to: today }, month };
+  try {
+    const cycle = (await payCycleForAdmin(who, today)).current;
+    if (cycle && (cycle.from !== month.from || (cycle.to < today ? cycle.to : today) !== today)) {
+      ranges.cycle = { from: cycle.from, to: cycle.to < today ? cycle.to : today };
+    }
+  } catch { /* no usable pay cycle: today and the month only */ }
+  const steps: [string, () => Promise<unknown>][] = [];
+  for (const [name, r] of Object.entries(ranges)) {
+    steps.push([`punches-${name}`, () => warmPunchLog(who, org, r.from, r.to)]);
+    steps.push([`report-${name}`, () => attendanceReport(who, r, { refresh: true })]);
+  }
+  steps.push(['ool-month', () => refreshSwr(org, 'ool', month, () => listOutOfLocationForAdmin(who, month.from, month.to))]);
+  // Corrections, Leave requests, Overtime and Feedback (timeOfficeLists.ts), read as the same viewer.
+  steps.push(['lists', () => warmTimeOfficeLists(org, who, () => stopping)]);
+  for (const [name, ask] of steps) {
+    if (stopping) break;
+    await yieldToLive(() => stopping);
+    const t0 = Date.now();
+    try {
+      await ask();
+      took[name] = Date.now() - t0;
+    } catch (error) {
+      took[name] = `failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 200);
+    }
+  }
+  return took;
+}
+
+async function round(opts: { spread?: boolean } = {}): Promise<void> {
   const t0 = Date.now();
   const orgs = await orgsToWarm();
   const perOrg: Record<string, Record<string, number | string>> = {};
+  // Spread over the round rather than one company straight after another: the cluster's bandwidth is
+  // shared with every live request. The boot round (`warmEngagementNow`) is not: nothing is waiting on it
+  // but the deploy, and the process is not taking traffic yet.
+  const between = opts.spread === false
+    ? BETWEEN_ORGS_MS
+    : Math.min(MAX_BETWEEN_ORGS_MS, Math.max(BETWEEN_ORGS_MS, Math.floor((ROUND_MS * SPREAD_SHARE) / Math.max(1, orgs.length))));
+  takePaceStats();
   for (const [i, org] of orgs.entries()) {
     if (stopping) break;
-    if (i > 0) await pause(BETWEEN_ORGS_MS);
-    perOrg[org] = await warmOrg(org);
+    if (i > 0) await pause(between);
+    perOrg[org] = { ...(await warmOrg(org)), ...(await warmTimeOffice(org)), ...(await warmLifecycle(org, () => stopping)) };
   }
-  logger.info('Engagement warm-up', { orgs: orgs.length, ms: Date.now() - t0, perOrg });
+  // `waited`: how often and how long the steps held back for live requests.
+  logger.info('Engagement warm-up', { orgs: orgs.length, ms: Date.now() - t0, waited: takePaceStats(), boot: opts.spread === false, perOrg });
+}
+
+/**
+ * One round straight away, companies back to back: what a new process runs before it says it is
+ * ready (server.ts, readiness.ts), so the first HR page after a blue/green switch is served warm.
+ * Joins the round already running rather than starting a second.
+ */
+export async function warmEngagementNow(): Promise<void> {
+  if (running) return running;
+  stopping = false;
+  running = round({ spread: false })
+    .catch((error) => logger.error('Engagement warm-up failed', {}, error))
+    .finally(() => {
+      running = null;
+    });
+  return running;
 }
 
 function schedule(ms: number): void {

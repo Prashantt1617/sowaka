@@ -1,0 +1,13 @@
+{
+  "status": 403,
+  "body": {
+    "success": false,
+    "message": "This employee account is not active",
+    "requestId": "fixture",
+    "accountClosed": {
+      "company": "Fixture Works",
+      "lastWorkingDay": "2026-11-21",
+      "hrEmail": "people@fixture.test"
+    }
+  }
+}

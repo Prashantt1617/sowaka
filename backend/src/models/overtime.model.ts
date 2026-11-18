@@ -29,8 +29,8 @@ export interface OvertimeRequest {
    * While pending it is the person's preference from the form; on approval
    * it becomes the approver's decision (the preference, unless they chose
    * otherwise). Absent on every request from before the choice existed and
-   * from app builds that predate it; those are treated exactly as they always
-   * were — see [compOffDaysOf] and [OVERTIME_PAID_IN_PAYROLL].
+   * from app builds that predate it; those are comp-off, as overtime always was
+   * until then, and never paid — see [compOffDaysOf] and [OVERTIME_PAID_IN_PAYROLL].
    */
   compensation?: OvertimeCompensation;
   /**
@@ -98,7 +98,8 @@ export function sameCompensation(a: OvertimeCompensation | null | undefined, b: 
  * The approved requests payroll pays: all but those taken as comp-off. A
  * request without a choice is paid as it always was.
  */
-export const OVERTIME_PAID_IN_PAYROLL = { 'compensation.kind': { $ne: 'comp_off' as const } };
+// Only overtime given as pay: a request from before the choice existed was comp-off, as overtime always was.
+export const OVERTIME_PAID_IN_PAYROLL = { 'compensation.kind': 'pay' as const };
 
 /** "Overtime Pay", or "Leave (Comp-off) · Full day" — the choice in the form's words. */
 export function compensationLabel(compensation: OvertimeCompensation | null | undefined): string | undefined {

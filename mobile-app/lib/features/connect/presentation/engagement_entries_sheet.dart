@@ -60,6 +60,7 @@ List<ConnectCaptionEntry> _shownBoard(ConnectPost post) {
           initials: row.initials,
           text: row.text,
           photoUrl: row.photoUrl,
+          authorPhotoUrl: row.authorPhotoUrl,
           votes: entry.votes,
           points: entry.points,
           votedByViewer: entry.votedByViewer,
@@ -490,6 +491,9 @@ class _EntriesSheetState extends State<_EntriesSheet> {
                               userId: voted?.userId ?? votedPerson!.userId,
                               initials:
                                   voted?.initials ?? votedPerson!.initials,
+                              photoUrl: voted?.authorPhotoUrl ??
+                                  votedPerson?.photoUrl ??
+                                  _photos[voted?.userId ?? votedPerson!.userId],
                             ),
                             const SizedBox(width: 7),
                           ],
@@ -1133,13 +1137,19 @@ class _SheetLivePill extends StatelessWidget {
 
 /// A solid circle with an initial — the sheet's small faces (node 3261:25870).
 class _InitialDot extends StatelessWidget {
-  const _InitialDot({required this.userId, required this.initials});
+  const _InitialDot({required this.userId, required this.initials, this.photoUrl});
 
   final String userId;
   final String initials;
 
+  /// Their face, drawn in place of the initial when there is one.
+  final String? photoUrl;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      FacePhoto(photoUrl: photoUrl, size: 23, fallback: _initial());
+
+  Widget _initial() {
     return Container(
       width: 23,
       height: 23,
@@ -1993,9 +2003,13 @@ class _TagByRow extends StatelessWidget {
     final more = taggers.length - shown.length;
     final faces = [
       for (final (index, tagger) in shown.indexed)
-        _faceOf(
-          tagger.initials.isEmpty ? '?' : tagger.initials,
-          _fills[math.min(index, _fills.length - 1)],
+        FacePhoto(
+          photoUrl: tagger.photoUrl,
+          size: _face,
+          fallback: _faceOf(
+            tagger.initials.isEmpty ? '?' : tagger.initials,
+            _fills[math.min(index, _fills.length - 1)],
+          ),
         ),
       if (more > 0) _faceOf('+$more', const Color(0xFFCDE3E8), bold: true),
     ];

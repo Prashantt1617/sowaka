@@ -55,6 +55,23 @@ import '../../care/presentation/care_tab.dart';
 import '../../garden/presentation/garden_screen.dart';
 import '../../garden/presentation/floating_tree.dart';
 import '../../profile/profile.dart';
+import '../../lifecycle/offboarding/offboarding.dart'
+    show
+        ManagerLeaverTab,
+        OffboardingApi,
+        ManagerResignationRequests,
+        OffboardingRoutes,
+        OffboardingStore,
+        OwnResignationTab,
+        ResignEntryRow,
+        openOffboardingDestination;
+import '../../face_id/face_check_screen.dart' show FaceCheckOutcome;
+import '../../face_id/face_setup_screen.dart';
+import '../../lifecycle/onboarding/data/onboarding_api.dart';
+import '../../lifecycle/onboarding/data/onboarding_models.dart';
+import '../../lifecycle/onboarding/onboarding_launcher.dart';
+import '../../lifecycle/onboarding/presentation/manager/new_joiners_section.dart';
+import '../../lifecycle/onboarding/presentation/profile_onboarding_card.dart';
 
 part '../../connect/presentation/connect_tab.dart';
 part '../../games/presentation/games_tab.dart';
@@ -117,6 +134,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
   late AuthSession _session;
   StreamSubscription<Map<String, dynamic>>? _notificationSubscription;
   StreamSubscription<Map<String, dynamic>>? _receivedSubscription;
+  StreamSubscription<ManagerTab>? _tabWatch;
   AppLifecycleListener? _lifecycle;
 
   @override
@@ -163,8 +181,20 @@ class _ManagerScreenState extends State<ManagerScreen> {
         NotificationBadge.arrived();
         final type = '${data['type'] ?? ''}';
         if (type.isNotEmpty) _bloc.refreshRequestsNow(type);
+        // A resignation, HR accepting, a handover: the screens about leaving
+        // read again, so what the push says is already there when it is opened.
+        if (OffboardingStore.isOffboardingPush(data)) {
+          unawaited(OffboardingStore.of(_session).refresh());
+        }
       },
     );
+    // The Team and Action tabs stay built; coming back to one reads what may
+    // have moved on since (a report resigning, HR accepting).
+    _tabWatch = _bloc.stream.map((state) => state.tab).distinct().listen((tab) {
+      if (tab == ManagerTab.manage || tab == ManagerTab.quick) {
+        unawaited(OffboardingStore.of(_session).revalidate());
+      }
+    });
     // The bell's dot: anything unread since the inbox was last opened, read
     // now and again whenever the app comes back to the front.
     unawaited(NotificationBadge.refresh(_session));
@@ -174,6 +204,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
       onResume: () {
         _bloc.setInBackground(false);
         unawaited(NotificationBadge.refresh(_session));
+        unawaited(LifecycleMeStore.instance.refresh(HttpOnboardingApi(session: _session)));
+        // Back to the front: what HR or the manager did meanwhile shows.
+        final offboarding = OffboardingStore.of(_session);
+        if (offboarding.loaded) unawaited(offboarding.refresh());
       },
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -193,6 +227,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
     registerInboxProfileAction(_inboxProfileAction);
     // A profile's Post tab shares this feed's directory, composer and list.
     _profileFeed = _connectComposerController;
+    // The lifecycle's onboarding screens open over the shell from anywhere;
+    // what `/lifecycle/me` says decides whether they show at all.
+    registerOnboardingShell(_onboardingShell);
+    unawaited(LifecycleMeStore.instance.refresh(HttpOnboardingApi(session: widget.session)));
   }
 
   @override
@@ -201,6 +239,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
     unregisterPersonProfileOpener(_openTeamMember);
     unregisterSupportTicketOpener(_raiseSupportTicket);
     unregisterInboxProfileAction(_inboxProfileAction);
+    unregisterOnboardingShell(_onboardingShell);
     NetworkStatus.offline.removeListener(_onNetworkChanged);
     activeManagerBloc.value = null;
     _quickActionsController
@@ -209,6 +248,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
     if (_ownsBloc) _bloc.dispose();
     _notificationSubscription?.cancel();
     _receivedSubscription?.cancel();
+    _tabWatch?.cancel();
     _lifecycle?.dispose();
     // The feed's bloc, kept by the controller for the session, goes with it.
     _connectComposerController.dispose();
@@ -396,6 +436,79 @@ class _ManagerScreenState extends State<ManagerScreen> {
     );
   }
 
+  /// The onboarding screens' view of the app around them: the header, the
+  /// tabs, the face setup, a new photo and the feed.
+  OnboardingShell _onboardingShell() {
+    final dashboard = _bloc.state.dashboard;
+    final user = _session.user;
+    return OnboardingShell(
+      api: HttpOnboardingApi(session: _session),
+      profileAction: _ProfileAvatarAction(
+        initial: dashboard?.managerInitial ?? '',
+        photoUrl: dashboard?.managerPhotoUrl,
+        onTap: _openProfile,
+        size: 30,
+      ),
+      onNotifications: () => _openNotifications(context),
+      tabs: visibleTabs(_session.user.enabledTabs),
+      selectedTab: _bloc.state.tab,
+      onSelectTab: (tab) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        _bloc.add(ChangeManagerTab(tab, fresh: true));
+      },
+      registerFace: (context) async {
+        await Navigator.of(context).push<FaceCheckOutcome>(
+          MaterialPageRoute(builder: (_) => FaceSetupScreen(api: _bloc.api, onboarding: true)),
+        );
+        return FaceCheckOutcome.enrolledThisRun;
+      },
+      changePhoto: _changeOnboardingPhoto,
+      openPost: (postId) {
+        _bloc.add(const ChangeManagerTab(ManagerTab.connect));
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _connectComposerController.openPost(postId),
+        );
+      },
+      viewerName: user.name,
+      viewerDesignation: user.designation,
+      viewerDepartment: user.department,
+      viewerPhotoUrl: user.profilePhotoUrl,
+    );
+  }
+
+  /// A new profile photo from the intro post: chosen, cropped square and
+  /// saved as the profile's photo, as the profile's own camera does.
+  Future<String?> _changeOnboardingPhoto(BuildContext context) async {
+    final file = await pickImageFrom(context);
+    if (file == null || !context.mounted) return null;
+    final cropped = await cropImageFile(
+      context,
+      path: file.path,
+      title: 'Crop your photo',
+      initial: CropShape.square,
+      allowShapeChange: false,
+      maxEdge: 1024,
+    );
+    if (cropped == null) return null;
+    try {
+      final photoUrl = await _bloc.service.updateProfilePhoto(
+        path: cropped,
+        filename: file.name.replaceAll(RegExp(r'\.[^.]+$'), '.png'),
+      );
+      _bloc.setManagerPhoto(photoUrl);
+      await _updateProfilePhoto(photoUrl);
+      return photoUrl;
+    } catch (error) {
+      if (context.mounted) {
+        showAppToast(
+          context,
+          error is ManagerApiException ? error.message : 'Could not update your photo. Try again.',
+        );
+      }
+      return null;
+    }
+  }
+
   /// Takes a tapped notification to the thing it is about, not just to a
   /// tab: the post, the request queue, the person, the review.
   void _handleNotificationDestination(Map<String, dynamic> data) {
@@ -405,6 +518,14 @@ class _ManagerScreenState extends State<ManagerScreen> {
     final employeeUserId = '${data['employeeUserId'] ?? ''}';
     setState(() => _profileOpen = false);
     Navigator.of(context).popUntil((route) => route.isFirst);
+    // Onboarding's own (meetings, starter tasks, shared notes, nudges, a
+    // joiner for their manager): their screens open over the shell.
+    if (openOnboardingDestination(context, data)) return;
+    // Offboarding's (a resignation, HR accepting, the handover, the exit
+    // interview): the tab or page it is about, once the store has read it.
+    if (openOffboardingDestination(data, OffboardingStore.of(_session), _offboardingRoutes)) {
+      return;
+    }
     switch (destination) {
       case 'connect_post':
       case 'connect_comment':
@@ -471,6 +592,32 @@ class _ManagerScreenState extends State<ManagerScreen> {
         _bloc.add(const ChangeManagerTab(ManagerTab.connect));
     }
   }
+
+  /// Where an offboarding push opens, in this shell.
+  late final OffboardingRoutes _offboardingRoutes = OffboardingRoutes(
+    openRequests: (resignationId) {
+      if (!mounted) return;
+      OffboardingStore.of(_session).focusResignation(resignationId);
+      _openTeamRequests();
+    },
+    openOwnResignation: () {
+      if (mounted) _openProfile(on: ProfileTab.resignation);
+    },
+    openOffboarding: ({section}) {
+      if (!mounted) return;
+      _bloc.add(const ChangeManagerTab(ManagerTab.quick));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _quickActionsController.openOffboarding(section: section);
+      });
+    },
+    openLeaver: (userId) {
+      if (!mounted) return;
+      _bloc.add(const ChangeManagerTab(ManagerTab.manage));
+      if (_teamMember(userId) != null) {
+        _openTeamMember(userId, ProfileEntry.elsewhere, on: ProfileTab.resignation);
+      }
+    },
+  );
 
   void _openGameChallenge(String gameKey, String challengeId) {
     final hook = widget.onOpenGameChallenge;
@@ -567,10 +714,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
   /// fetched as the colleague view ([colleagueProfileTabs]). False only when
   /// there is nobody to open. Registered as [openPersonProfile], so other
   /// libraries reach it without importing the shell.
-  bool _openTeamMember(String userId, ProfileEntry from) {
+  bool _openTeamMember(String userId, ProfileEntry from, {ProfileTab? on}) {
     final dashboard = _bloc.state.dashboard;
     if (!mounted || userId.isEmpty || dashboard == null) return false;
-    final openOn = openingTabFor(from);
+    final openOn = on ?? openingTabFor(from);
     if (userId == _session.user.id) {
       Navigator.of(context).popUntil((route) => route.isFirst);
       _openProfile(on: openOn);
@@ -607,6 +754,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // Every copy on this phone goes with them — dashboard and feed — and a
     // load still in flight cannot put one back.
     await DashboardCache.clearAll();
+    HttpOnboardingApi.forgetKept();
+    OffboardingApi.forgetKept();
     // The server forgets the device, then the session, before the phone
     // does, so pushes for this account stop landing here and the token dies
     // now. The device first: unregistering needs the token that logout
@@ -628,6 +777,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // next account does not inherit it. Bounded, like the rest.
     await clearGamesWebData().timeout(const Duration(seconds: 3), onTimeout: () {});
     forgetPolicies();
+    LifecycleMeStore.instance.clear();
     await AuthSessionStore().clear();
     if (!mounted) return;
     Navigator.of(
@@ -786,6 +936,15 @@ class _ManagerScreenState extends State<ManagerScreen> {
                       onOpenComposer: _connectComposerController.openComposer,
                       onNotifications: () => _openNotifications(context),
                       onProfilePhotoUpdated: _updateProfilePhoto,
+                      // "Save your documents" on the Resignation tab (R2b):
+                      // Action › Payroll, where the payslips and Form 16 are.
+                      onOpenDocuments: () {
+                        _closeProfile();
+                        _bloc.add(const ChangeManagerTab(ManagerTab.quick));
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) _quickActionsController.openPayroll();
+                        });
+                      },
                     ),
                 ],
               ),

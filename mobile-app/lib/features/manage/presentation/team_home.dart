@@ -20,6 +20,17 @@ class _TeamHome extends StatefulWidget {
 }
 
 class _TeamHomeState extends State<_TeamHome> {
+  /// Resignations waiting on this manager count with their requests (R7).
+  late final OffboardingStore _offboarding = OffboardingStore.of(
+    widget.bloc.session,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_offboarding.revalidate());
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = widget.state.dashboard!;
@@ -54,11 +65,15 @@ class _TeamHomeState extends State<_TeamHome> {
                 // would have sat, so the header meets the page background the
                 // way it does on the Apply Leave and Reimbursement screens.
                 if (canManage)
-                  _TeamSectionBar(
-                    data: data,
-                    section: section,
-                    onChanged: (value) =>
-                        widget.bloc.add(ShowTeamSection(value)),
+                  ListenableBuilder(
+                    listenable: _offboarding,
+                    builder: (context, _) => _TeamSectionBar(
+                      data: data,
+                      section: section,
+                      onChanged: (value) =>
+                          widget.bloc.add(ShowTeamSection(value)),
+                      extraRequests: _offboarding.pendingForManager,
+                    ),
                   ),
               ],
             ),
@@ -132,11 +147,16 @@ class _TeamSectionBar extends StatelessWidget {
     required this.data,
     required this.section,
     required this.onChanged,
+    this.extraRequests = 0,
   });
 
   final ManagerDashboard data;
   final TeamSection section;
   final ValueChanged<TeamSection> onChanged;
+
+  /// Requests from outside the workspace: resignations waiting on the
+  /// manager.
+  final int extraRequests;
 
   @override
   Widget build(BuildContext context) {
@@ -161,7 +181,7 @@ class _TeamSectionBar extends StatelessWidget {
             Expanded(
               child: _SegmentTab(
                 label: 'Requests',
-                count: _pendingTeamRequests(data),
+                count: _pendingTeamRequests(data) + extraRequests,
                 selected: section == TeamSection.requests,
                 onTap: () => onChanged(TeamSection.requests),
               ),
@@ -329,11 +349,45 @@ class _MyTeamViewState extends State<_MyTeamView> {
   void _toggleTeam(String title) =>
       setState(() => _openTeam = _openTeam == title ? null : title);
 
+  // M0: the New joiners section's joiners and its filter pill.
+  void _onJoiners() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    NewJoinersSection.joinerUserIds.addListener(_onJoiners);
+    NewJoinersSection.joinersOnly.addListener(_onJoiners);
+    NewJoinersSection.tree.addListener(_onJoiners);
+  }
+
+  @override
+  void dispose() {
+    NewJoinersSection.joinerUserIds.removeListener(_onJoiners);
+    NewJoinersSection.joinersOnly.removeListener(_onJoiners);
+    NewJoinersSection.tree.removeListener(_onJoiners);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
+    final showJoiners = widget.canManage && _query.isEmpty;
+    // M0 (artboard AppTeams): with one department of reports, the joiners
+    // are the first cards on the Direct Reports tree and the filter pills sit
+    // on that heading. With several departments they keep their own section
+    // above the team cards.
+    final inTree = _ledTeams(data.team).length <= 1;
+    final tree = showJoiners && inTree ? NewJoinersSection.tree.value : null;
+    // Joiners are drawn as joiner cards; they are not listed a second time
+    // as plain rows (unless searching).
+    final joiners = showJoiners
+        ? NewJoinersSection.joinerUserIds.value
+        : const <String>{};
+    final joinersOnly = (joiners.isNotEmpty || tree != null) && NewJoinersSection.joinersOnly.value;
     final filtered = _query.isEmpty
-        ? data.team
+        ? data.team.where((member) => member.isSelf || !joiners.contains(member.userId)).toList()
         : data.team
               .where(
                 (member) =>
@@ -351,9 +405,18 @@ class _MyTeamViewState extends State<_MyTeamView> {
           hint: 'Search employee',
         ),
         const SizedBox(height: 12),
+        // M0: a manager's reports in onboarding or probation, first; no
+        // joiners (or the lifecycle off) and it is not there at all.
+        if (showJoiners)
+          NewJoinersSection(
+            allCount: _directReportCount(data.team, tree),
+            inTree: inTree,
+          ),
         // The viewer is part of the team the server sends, so there is no
         // separate card for them any more — their row simply says "(You)".
-        if (filtered.isEmpty)
+        if (joinersOnly && tree == null)
+          const SizedBox.shrink()
+        else if (filtered.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 40),
             child: Center(
@@ -370,11 +433,28 @@ class _MyTeamViewState extends State<_MyTeamView> {
             ),
           )
         else
+          // The joiners are the device's copy: say so above the tree.
+          if (tree != null && tree.offline) const Padding(padding: EdgeInsets.only(bottom: 8), child: JoinersOfflineNote()),
           ..._teamTree(
             members: filtered,
             openTeam: _openTeam,
             onToggle: _toggleTeam,
             searching: _query.isNotEmpty,
+            directReportsTrailing: tree == null
+                ? null
+                : JoinersFilterPills(
+                    allCount: _directReportCount(data.team, tree),
+                    joinersCount: tree.joiners.length,
+                  ),
+            leadingReports: [
+              for (final joiner in tree?.joiners ?? const <JoinerSummary>[])
+                JoinerCard(
+                  joiner: joiner,
+                  now: tree!.now,
+                  onTap: () => tree.open(joiner),
+                ),
+            ],
+            onlyLeadingReports: joinersOnly && tree != null,
             row: (member) => _TeamMemberRow(
               member: member,
               canManage: widget.canManage,
@@ -388,6 +468,17 @@ class _MyTeamViewState extends State<_MyTeamView> {
       ],
     );
   }
+}
+
+/// "All n": everyone who reports to the viewer, and the joiners not yet in
+/// the team list (still pre-boarding, so no account yet).
+int _directReportCount(List<TeamMember> team, JoinersInTree? tree) {
+  final reports = team.where((m) => m.reportsToViewer && !m.isSelf).toList();
+  final ids = {for (final m in reports) m.userId};
+  final notListed = (tree?.joiners ?? const <JoinerSummary>[])
+      .where((j) => j.userId == null || !ids.contains(j.userId))
+      .length;
+  return reports.length + notListed;
 }
 
 // ── One person's team, as the Team tab draws it ──────────────────────────────
@@ -496,15 +587,18 @@ List<_TeamDepartmentGroup> _ledTeams(List<TeamMember> members) {
 Widget _teamHeading(String title, {_TeamSizing sizing = _TeamSizing.teamTab}) =>
     Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontFamily: 'Sora',
-          color: const Color(0xFF222222),
-          fontSize: sizing.name,
-          height: sizing.nameHeight / sizing.name,
-          fontWeight: FontWeight.w700,
-        ),
+      child: _teamHeadingText(title, sizing: sizing),
+    );
+
+Widget _teamHeadingText(String title, {_TeamSizing sizing = _TeamSizing.teamTab}) =>
+    Text(
+      title,
+      style: TextStyle(
+        fontFamily: 'Sora',
+        color: const Color(0xFF222222),
+        fontSize: sizing.name,
+        height: sizing.nameHeight / sizing.name,
+        fontWeight: FontWeight.w700,
       ),
     );
 
@@ -525,12 +619,16 @@ List<Widget> _teamTree({
   bool searching = false,
   String coreTitle = 'My Team',
   _TeamSizing sizing = _TeamSizing.teamTab,
+  Widget? directReportsTrailing,
+  List<Widget> leadingReports = const [],
+  bool onlyLeadingReports = false,
 }) {
   final led = _ledTeams(members);
   final self = members.where((member) => member.isSelf).firstOrNull;
   // Level 1: nobody reports to them, so their team is one flat list —
-  // their manager, them, their peers (node 2488:90748).
-  if (led.isEmpty) {
+  // their manager, them, their peers (node 2488:90748). Joiners still
+  // pre-boarding are reports too: they make it a Direct Reports tree.
+  if (led.isEmpty && leadingReports.isEmpty) {
     return [
       _teamHeading(coreTitle, sizing: sizing),
       for (final member in _coreTeam(members))
@@ -543,7 +641,9 @@ List<Widget> _teamTree({
     // people they lead. Someone with no manager has no such card; their
     // own card heads the page instead (node 2503:92534).
     if (_coreOthers(members).isEmpty) ...[
-      if (self != null) ...[row(self), const SizedBox(height: 16)],
+      // With one department their own card already heads the Direct
+      // Reports tree below; drawing it here too showed "(You)" twice.
+      if (self != null && led.length > 1) ...[row(self), const SizedBox(height: 16)],
     ] else ...[
       if (openTeam == coreTitle || searching)
         _OpenTeamBox(
@@ -584,13 +684,30 @@ List<Widget> _teamTree({
       // One department: a plain "Direct Reports" list — their own
       // card off the tree, their reports on it, always shown in full
       // rather than behind a card to open (node 2488:91055).
-      ...led.expand(
-        (group) => [
-          _teamHeading('Direct Reports', sizing: sizing),
-          if (self != null) row(self),
-          _DirectReportsTree(members: group.members, row: row),
-        ],
-      ),
+      ...[
+        if (directReportsTrailing == null)
+          _teamHeading('Direct Reports', sizing: sizing)
+        else
+          // M0: the filter pills on the heading's right.
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                Expanded(child: _teamHeadingText('Direct Reports', sizing: sizing)),
+                directReportsTrailing,
+              ],
+            ),
+          ),
+        if (self != null) row(self),
+        _DirectReportsTree(
+          children: [
+            ...leadingReports,
+            if (!onlyLeadingReports)
+              for (final member in led.firstOrNull?.members ?? const <TeamMember>[])
+                row(member),
+          ],
+        ),
+      ],
   ];
 }
 
@@ -625,7 +742,7 @@ class _TeamMemberRow extends StatelessWidget {
         : 0;
     final upcomingLeave = _upcomingLeaveFor(data, member.userId);
     final birthdaySoon = _isBirthdaySoon(member.birthday);
-    // Working away says where from — "Work from home", "Client visit", in
+    // Working away says where from — "Working from home", "Client visit", in
     // HR's words — in the same green as the time beside it.
     final away = member.todayAway;
     final status = away != null
@@ -1178,6 +1295,46 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
   _RequestViewMode _mode = _RequestViewMode.newestFirst;
   String _query = '';
 
+  /// Reports' resignations (R7), on their own cards above the rest.
+  late final OffboardingStore _offboarding = OffboardingStore.of(
+    widget.bloc.session,
+  );
+
+  void _offboardingChanged() {
+    if (!mounted) return;
+    setState(() {
+      // A push about a resignation: its card shows under "All", unfiltered.
+      if (_offboarding.focusResignationId != null) {
+        if (_mode != _RequestViewMode.oldestFirst) {
+          _mode = _RequestViewMode.newestFirst;
+        }
+        _query = '';
+      }
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _offboarding.addListener(_offboardingChanged);
+    if (_offboarding.focusResignationId != null) {
+      _mode = _RequestViewMode.newestFirst;
+    }
+    unawaited(_offboarding.revalidate());
+  }
+
+  /// A pull: the requests and the resignations, both read again.
+  Future<void> _pullToRefresh() async {
+    widget.bloc.refreshRequestsNow();
+    await _offboarding.refresh();
+  }
+
+  @override
+  void dispose() {
+    _offboarding.removeListener(_offboardingChanged);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
@@ -1459,54 +1616,79 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
 
     return ColoredBox(
       color: const Color(0xFFF7F7F9),
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Team Requests',
-                style: TextStyle(
-                  color: Color(0xFF222222),
-                  fontWeight: FontWeight.w600,
-                  fontSize: 20,
-                  letterSpacing: 0.4,
+      child: RefreshIndicator(
+        onRefresh: _pullToRefresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Team Requests',
+                  style: TextStyle(
+                    color: Color(0xFF222222),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 20,
+                    letterSpacing: 0.4,
+                  ),
                 ),
-              ),
-              _ViewByButton(
-                mode: _mode,
-                onChanged: (mode) => setState(() => _mode = mode),
-              ),
-            ],
-          ),
+                _ViewByButton(
+                  mode: _mode,
+                  onChanged: (mode) => setState(() => _mode = mode),
+                ),
+              ],
+            ),
 
-          const SizedBox(height: 14),
-          _FeedbackSearchField(
-            query: _query,
-            onChanged: (value) => setState(() => _query = value),
-            onClear: () => setState(() => _query = ''),
-            hint: 'Search employee',
-          ),
-          const SizedBox(height: 14),
-          if (filtered.isEmpty)
-            _RequestsEmptyState(
-              title: entries.isEmpty
-                  ? 'Currently you have no request'
-                  : 'No matching requests',
-              body: entries.isEmpty
-                  ? 'This is where all your team’s open request would be actionable.'
-                  : _query.isNotEmpty
-                  ? 'No requests match "$_query".'
-                  : 'No requests match this filter.',
-            )
-          else
-            for (final entry in filtered) ...[
-              entry.$4,
-              const SizedBox(height: 12),
-            ],
-        ],
+            const SizedBox(height: 14),
+            _FeedbackSearchField(
+              query: _query,
+              onChanged: (value) => setState(() => _query = value),
+              onClear: () => setState(() => _query = ''),
+              hint: 'Search employee',
+            ),
+            const SizedBox(height: 14),
+            // Resignations are not leave, overtime or corrections: they show
+            // under "All" only.
+            if (_mode == _RequestViewMode.newestFirst ||
+                _mode == _RequestViewMode.oldestFirst)
+              ManagerResignationRequests(store: _offboarding, query: _query),
+            if (filtered.isEmpty && !_showsResignations)
+              _RequestsEmptyState(
+                title: entries.isEmpty
+                    ? 'Currently you have no request'
+                    : 'No matching requests',
+                body: entries.isEmpty
+                    ? 'This is where all your team’s open request would be actionable.'
+                    : _query.isNotEmpty
+                    ? 'No requests match "$_query".'
+                    : 'No requests match this filter.',
+              )
+            else
+              for (final entry in filtered) ...[
+                entry.$4,
+                const SizedBox(height: 12),
+              ],
+          ],
+        ),
       ),
+    );
+  }
+}
+
+extension on _TeamRequestsViewState {
+  /// Whether any resignation card is on screen, so the empty state stays off.
+  bool get _showsResignations {
+    if (_mode != _RequestViewMode.newestFirst &&
+        _mode != _RequestViewMode.oldestFirst) {
+      return false;
+    }
+    final needle = _query.trim().toLowerCase();
+    return _offboarding.managerResignations.any(
+      (r) =>
+          !r.accepted &&
+          (needle.isEmpty || (r.name ?? '').toLowerCase().contains(needle)),
     );
   }
 }
@@ -2091,12 +2273,11 @@ class _TeamDepartmentGroup {
 /// Used only when every one of your reports shares a single department; more
 /// than one and they are grouped into team cards instead (_TeamStack).
 class _DirectReportsTree extends StatelessWidget {
-  const _DirectReportsTree({required this.members, required this.row});
+  const _DirectReportsTree({required this.children});
 
-  final List<TeamMember> members;
-
-  /// Draws one person: the Team tab's row, or a profile's.
-  final Widget Function(TeamMember member) row;
+  /// One card per person, top to bottom: the Team tab's rows (joiners
+  /// first), or a profile's.
+  final List<Widget> children;
 
   /// 28 to the cards, 16 above the first, 12 between them (node 3459:61996:
   /// pl-[28px] pt-[16px] gap-[12px]).
@@ -2111,7 +2292,7 @@ class _DirectReportsTree extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final (index, member) in members.indexed)
+          for (final (index, child) in children.indexed)
             IntrinsicHeight(
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2119,8 +2300,8 @@ class _DirectReportsTree extends StatelessWidget {
                   CustomPaint(
                     painter: _BranchLinePainter(
                       first: index == 0,
-                      last: index == members.length - 1,
-                      gap: index == members.length - 1 ? 0 : _gap,
+                      last: index == children.length - 1,
+                      gap: index == children.length - 1 ? 0 : _gap,
                       leadIn: _leadIn,
                     ),
                     child: const SizedBox(width: _indent),
@@ -2128,9 +2309,9 @@ class _DirectReportsTree extends StatelessWidget {
                   Expanded(
                     child: Padding(
                       padding: EdgeInsets.only(
-                        bottom: index == members.length - 1 ? 0 : _gap,
+                        bottom: index == children.length - 1 ? 0 : _gap,
                       ),
-                      child: row(member),
+                      child: child,
                     ),
                   ),
                 ],

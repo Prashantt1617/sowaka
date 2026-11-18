@@ -1,0 +1,13 @@
+{
+  "status": 401,
+  "body": {
+    "success": false,
+    "message": "User is not active",
+    "requestId": "fixture",
+    "accountClosed": {
+      "company": "Fixture Works",
+      "lastWorkingDay": "2026-11-21",
+      "hrEmail": "people@fixture.test"
+    }
+  }
+}

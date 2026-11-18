@@ -23,6 +23,9 @@ export interface AdminLists {
 }
 
 /** `AdminLists` that each read at most once, whoever asks first. */
+/** Only waiting requests: Suwi's lists never need the decided ones. */
+const PENDING = { status: 'pending' } as const;
+
 export function sharedAdminLists(): AdminLists {
   const once = <T>(read: (userId: string) => Promise<T>) => {
     const kept = new Map<string, Promise<T>>();
@@ -31,14 +34,15 @@ export function sharedAdminLists(): AdminLists {
       return kept.get(userId)!;
     };
   };
-  return { leave: once(listAllLeavesForAdmin), claims: once(listAllReimbursementsForAdmin) };
+  // Pending only, filtered in the database: the whole history was most of a cold read (≈400 KB at Convrse).
+  return { leave: once((id) => listAllLeavesForAdmin(id, PENDING)), claims: once((id) => listAllReimbursementsForAdmin(id, PENDING)) };
 }
 
 /** Every pending request this person may see, newest last. */
 export async function pendingRows(
   ctx: { userId: string; today: string; user: { dashboardAdmin?: boolean; dashboardTabs?: string[] } },
   type: string,
-  lists: AdminLists = { leave: listAllLeavesForAdmin, claims: listAllReimbursementsForAdmin },
+  lists: AdminLists = { leave: (id) => listAllLeavesForAdmin(id, PENDING), claims: (id) => listAllReimbursementsForAdmin(id, PENDING) },
 ): Promise<PendingRow[]> {
   const out: PendingRow[] = [];
   const day = (d: Date | string | number | undefined) => (d == null ? '' : new Date(d).toISOString().slice(0, 10));
@@ -47,8 +51,8 @@ export async function pendingRows(
   // The four lists are independent; fetch them side by side.
   const [leaveList, otList, regList, claimList] = await Promise.all([
     want('leave', INSIGHT_ROUTE.leave) ? lists.leave(ctx.userId) : null,
-    want('overtime', INSIGHT_ROUTE.overtime) ? listAllOvertimeForAdmin(ctx.userId) : null,
-    wantRegs ? listAllRegularizationsForAdmin(ctx.userId) : null,
+    want('overtime', INSIGHT_ROUTE.overtime) ? listAllOvertimeForAdmin(ctx.userId, PENDING) : null,
+    wantRegs ? listAllRegularizationsForAdmin(ctx.userId, PENDING) : null,
     want('claims', INSIGHT_ROUTE.claim) ? lists.claims(ctx.userId) : null,
   ]);
   if (leaveList) {
@@ -81,6 +85,16 @@ export async function pendingRows(
   return out;
 }
 
+const TYPE_LABEL: Record<PendingRow['type'], string> = { leave: 'Leave', overtime: 'Overtime', correction: 'Correction', checkin: 'Check-in', claim: 'Claim' };
+
+/** The waiting pile as the panel's table, oldest first (at most 50 rows). */
+export function pendingTable(rows: PendingRow[]) {
+  return { title: 'Waiting on a decision', columns: ['Who', 'Type', 'What', 'Dates', 'Waiting'], rows: rows.slice(0, 50).map((r) => [r.name, TYPE_LABEL[r.type], r.what, r.dates, `${r.daysWaiting} d`]) };
+}
+
+/** The tool's type names to the rows' own. */
+const TYPE_OF: Record<string, PendingRow['type']> = { leave: 'leave', overtime: 'overtime', corrections: 'correction', checkins: 'checkin', claims: 'claim' };
+
 export const REQUEST_LINKS: Record<string, { label: string; view: string }> = {
   leave: { label: 'Open leave requests', view: 'leave' },
   overtime: { label: 'Open overtime', view: 'overtime' },
@@ -99,10 +113,17 @@ defineTools({
   async run(ctx, i) {
     const type = str(i.type);
     const minWait = num(i.minDaysWaiting, 0, 0);
-    const rows = (await pendingRows(ctx, type)).filter((x) => x.daysWaiting >= minWait).sort((a, b) => b.daysWaiting - a.daysWaiting);
+    // The company's waiting pile is read once and shared (orgData.ts: kept in memory, dropped on every
+    // write that decides or makes a request), then narrowed to what this person's tabs allow.
+    // When no copy is kept (just after a write), its own narrower read answers and the bundle refreshes behind it.
+    const { keptOrgSuwiDataAsync, pendingFor } = await import('../orgData');
+    const kind = type ? TYPE_OF[type] : null;
+    const all = (await keptOrgSuwiDataAsync(ctx.org, ctx.today, ctx.userId))?.pending ?? (await pendingRows(ctx, type));
+    const rows = pendingFor(ctx.user, all).filter((x) => (!kind || x.type === kind) && x.daysWaiting >= minWait).sort((a, b) => b.daysWaiting - a.daysWaiting);
     const counts = rows.reduce<Record<string, number>>((m, x) => ({ ...m, [x.type]: (m[x.type] ?? 0) + 1 }), {});
     return {
       data: { total: rows.length, counts, oldest: rows[0] ?? null, rows: rows.slice(0, num(i.limit, 20, 1, 200)) },
+      tables: rows.length ? [pendingTable(rows)] : undefined,
       links: Object.entries(REQUEST_LINKS).filter(([k]) => !type || type === k).map(([, l]) => l),
     };
   },

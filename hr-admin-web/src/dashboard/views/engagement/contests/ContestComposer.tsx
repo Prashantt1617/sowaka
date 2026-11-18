@@ -61,7 +61,7 @@ export const FORMATS: Format[] = [
     type: 'photo_story_challenge',
     label: 'Best Photo',
     icon: `${ICONS}/contest_photo.png`,
-    defaultTitle: 'Caught red handed',
+    defaultTitle: '',
   },
   {
     type: 'most_likely',
@@ -177,9 +177,8 @@ export function ContestComposer({ onPublished }: { onPublished: () => Promise<vo
     try {
       await publishCaptionChallenge({
         type: format.type,
-        // ContestDraft.body: Best Photo falls back to its default name.
-        title:
-          format.type === 'photo_story_challenge' ? name || format.defaultTitle : name,
+        // Best Photo has no name box: the card leads with its task, with no made-up title above it.
+        title: format.type === 'photo_story_challenge' ? '' : name,
         task: task.trim(),
         closesAt,
         pointsPerVote: pointsValue,

@@ -125,6 +125,18 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M18 8.5l1.4 1.4L22 7.3" />
     </svg>
   ),
+  bulkassign: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M4 6h10M4 12h10M4 18h7" />
+      <path d="m15 16 2 2 4-4" />
+    </svg>
+  ),
+  setup: (
+    <svg {...base(18, 'currentColor')}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+    </svg>
+  ),
   overview: (
     <svg {...base(18, 'currentColor')}>
       <rect x="3" y="3" width="7" height="9" rx="1.5" />
@@ -240,9 +252,29 @@ export const navIcon: Record<View, ReactElement> = {
   ),
   onboarding: (
     <svg {...base(18, 'currentColor')}>
-      <path d="M16 19v-1.5A3.5 3.5 0 0 0 12.5 14h-5A3.5 3.5 0 0 0 4 17.5V19" />
-      <circle cx="10" cy="7.5" r="3.5" />
-      <path d="M19 8v6M22 11h-6" />
+      <path d="M12 21v-9" />
+      <path d="M12 12c0-4 2.5-6.5 7-6.5 0 4.2-2.6 6.5-7 6.5z" />
+      <path d="M12 14.5C12 11.3 9.9 9.3 5.5 9.3c0 3.3 2.3 5.2 6.5 5.2z" />
+      <path d="M7.5 21h9" />
+    </svg>
+  ),
+  // Employee lifecycle; the board's own item is `onboarding` (the sprout) above.
+  lifecycle_documents: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3v5h5M9 13h6M9 17h4" />
+    </svg>
+  ),
+  lifecycle_templates: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="4" y="3.5" width="16" height="17" rx="2.5" />
+      <path d="M8 8.5h8M8 12.5h8M8 16.5h5" />
+    </svg>
+  ),
+  lifecycle_letter_templates: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="3" y="5" width="18" height="14" rx="2.5" />
+      <path d="m3.5 6.5 8.5 6 8.5-6" />
     </svg>
   ),
   exit: (
@@ -360,6 +392,50 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M16.5 5.2a3.2 3.2 0 0 1 0 6M18.5 14.7a3.5 3.5 0 0 1 2 3.1V19" />
     </svg>
   ),
+  exits: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M13 4H6.5A1.5 1.5 0 0 0 5 5.5v13A1.5 1.5 0 0 0 6.5 20H13" />
+      <path d="M16 8l4 4-4 4M20 12H10" />
+    </svg>
+  ),
+  exitsettings: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M13 4H6.5A1.5 1.5 0 0 0 5 5.5v13A1.5 1.5 0 0 0 6.5 20H13" />
+      <path d="M16 8l4 4-4 4M20 12H10" />
+    </svg>
+  ),
+  // A bell with a note, for Notification sounds and pictures.
+  notificationlook: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16z" />
+      <path d="M10 20.5a2 2 0 0 0 4 0" />
+    </svg>
+  ),
+  // A door, for the Offboarding board.
+  offboarding: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M5 20.5h14M7 20.5V4.5A1 1 0 0 1 8 3.5h8a1 1 0 0 1 1 1v16" />
+      <circle cx="14" cy="12.5" r="0.9" />
+    </svg>
+  ),
+  exit_insights: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M4 20h16M7 16.5V11M12 16.5V6.5M17 16.5v-3.5" />
+    </svg>
+  ),
+  punchlog: (
+    <svg {...base(18, 'currentColor')}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
+    </svg>
+  ),
+  companycalendar: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
+      <path d="M3 9.5h18M8 2.5v4M16 2.5v4" />
+      <path d="M7.5 13h2M11 13h2M14.5 13h2M7.5 16.5h2M11 16.5h2" />
+    </svg>
+  ),
   attendancereport: (
     <svg {...base(18, 'currentColor')}>
       <path d="M3 3v18h18" />
@@ -443,6 +519,11 @@ export const IconSearch = ({ size = 16, stroke = 'var(--ink-4)' }: IconProps) =>
 export const IconChevronRight = ({ size = 17, stroke = 'var(--ink-4)' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M9 6l6 6-6 6" />
+  </svg>
+);
+export const IconChevronLeft = ({ size = 17, stroke = 'var(--ink-4)' }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M15 6l-6 6 6 6" />
   </svg>
 );
 

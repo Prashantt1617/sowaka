@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../shared/app_toast.dart';
+import '../../shared/face_photo.dart';
 
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
@@ -149,7 +150,10 @@ window.dispatchEvent(new CustomEvent('sowaka-ready'));
                   .map(
                     (entry) => ListTile(
                       dense: true,
-                      leading: CircleAvatar(child: Text('${entry['rank']}')),
+                      leading: _LeaderFace(
+                        rank: '${entry['rank']}',
+                        photoUrl: entry['photoUrl'] is String ? entry['photoUrl'] as String : null,
+                      ),
                       title: Text(
                         '${entry['playerName']}',
                         style: const TextStyle(fontWeight: FontWeight.w700),
@@ -163,6 +167,50 @@ window.dispatchEvent(new CustomEvent('sowaka-ready'));
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A leaderboard row's lead: the player's face with their place on it, or
+/// the place alone in a circle when they have no photo.
+class _LeaderFace extends StatelessWidget {
+  const _LeaderFace({required this.rank, this.photoUrl});
+
+  final String rank;
+  final String? photoUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final plain = CircleAvatar(child: Text(rank));
+    if (!FacePhoto.has(photoUrl)) return plain;
+    return SizedBox(
+      width: 40,
+      height: 40,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          FacePhoto(photoUrl: photoUrl, size: 40, fallback: plain),
+          Positioned(
+            right: -4,
+            bottom: -4,
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 20),
+              height: 20,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white, width: 1.5),
+              ),
+              child: Text(
+                rank,
+                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

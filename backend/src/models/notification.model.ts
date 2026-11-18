@@ -2,6 +2,11 @@ export interface DeviceToken {
   userId: string;
   token: string;
   platform: 'android' | 'ios' | 'web';
+  /**
+   * The notification sounds this phone has, as `key@version` (built in and
+   * downloaded). Absent on app builds before sounds: those get the plain push.
+   */
+  sounds?: string[];
   updatedAt: Date;
   createdAt: Date;
 }
@@ -14,6 +19,11 @@ export interface AppNotification {
   title: string;
   body: string;
   data: Record<string, string>;
+  /**
+   * The person whose doing it is (who liked, asked, decided, challenged), for
+   * their face on the row. Absent on rows about no one and on older rows.
+   */
+  actorUserId?: string;
   /** Whether it also went out as a push; false for inbox-only entries. */
   pushed?: boolean;
   readAt?: Date;

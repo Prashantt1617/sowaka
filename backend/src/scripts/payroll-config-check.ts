@@ -85,6 +85,7 @@ const tdsBodyOf = (regime: 'new' | 'old') => {
     person('payhr', 'Pavan Payroll', ORG, { dashboardAccess: true, dashboardTabs: ['payruns'] }),
     // Sowaka HR limited to Leave: no payroll access at all.
     person('leavehr', 'Lata Leave', ORG, { dashboardAccess: true, dashboardTabs: ['leave'] }),
+    person('stathr', 'Sita Statutory', ORG, { dashboardAccess: true, dashboardTabs: ['statutorycomponents'] }),
     // Another company's own admin: reads, never writes another company's figures.
     person('otheradmin', 'Omar Other', 'otherco', { dashboardAccess: true, dashboardAdmin: true }),
     person('emp', 'Esha Employee', ORG, { state: 'Karnataka', location: 'Bengaluru' }),
@@ -121,9 +122,11 @@ const tdsBodyOf = (regime: 'new' | 'old') => {
   check('another company\'s admin cannot PUT (403, every company\'s figures)', await refused(() => putStatutoryConfig('otheradmin', '2026-27', bodyOf('2026-27')), 403, /every company/));
   check('another company\'s admin cannot copy a year (403)', await refused(() => copyTdsConfig('otheradmin', '2027-28', '2026-27'), 403));
   check('HR without payroll access cannot read (403)', await refused(() => getStatutoryConfig('leavehr', '2026-27'), 403));
+  check('Statutory & tax HR reads the law figures', (await getStatutoryConfig('stathr', '2026-27')).config.fy === '2026-27');
+  check('Statutory & tax HR cannot change them (403)', await refused(() => putStatutoryConfig('stathr', '2026-27', bodyOf('2026-27')), 403));
   check('HR without payroll access cannot list income tax years (403)', await refused(() => listTdsConfigs('leavehr'), 403));
-  check('dashboard tabs: reading the rows needs a payroll tab', JSON.stringify(tabsForRequest('GET', '/admin/payroll/statutory-config')) === JSON.stringify(['payruns', 'salarydetails']));
-  check('dashboard tabs: Statutory Components alone does not open them', !(tabsForRequest('PUT', '/admin/payroll/tds-config') ?? []).includes('statutorycomponents'));
+  check('dashboard tabs: reading the rows needs a payroll tab or Statutory & tax', JSON.stringify(tabsForRequest('GET', '/admin/payroll/statutory-config')) === JSON.stringify(['payruns', 'salarydetails', 'statutorycomponents']));
+  check('dashboard tabs: Statutory & tax alone cannot change them', !(tabsForRequest('PUT', '/admin/payroll/tds-config') ?? []).includes('statutorycomponents'));
 
   // —— read ——
   const got = await getStatutoryConfig('admin', '2026-27');

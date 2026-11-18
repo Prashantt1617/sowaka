@@ -75,6 +75,11 @@
 }
 .pd-inp:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 textarea.pd-inp { height: auto; padding: 10px 12px; min-height: 84px; line-height: 1.5; }
+/* A form dropdown: the field's own look with the app's chevron, not the browser's arrow. */
+.pd-pick { position: relative; display: block; min-width: 0; }
+.pd-pick select { appearance: none; -webkit-appearance: none; width: 100%; padding-right: 34px; cursor: pointer; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+.pd-pick::after { content: ''; position: absolute; right: 15px; top: 50%; width: 6px; height: 6px; border-right: 1.6px solid var(--ink-2); border-bottom: 1.6px solid var(--ink-2); transform: translateY(-70%) rotate(45deg); pointer-events: none; }
+.pd-pick select:disabled { cursor: default; opacity: 0.6; }
 
 /* Segmented control */
 .pd-seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 4px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; }
@@ -157,13 +162,15 @@ table.pd-t { width: 100%; border-collapse: separate !important; border-spacing: 
 .pd-row-hover:hover { background: var(--surface-2); }
 
 /* Focus ring on form fields inside the People and Shifts dialogs and forms */
-.pd-form input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
+.pd-form input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(.ds-inp-bare):focus,
 .pd-form select:focus,
 .pd-form textarea:focus,
-.pd-modal input:not([type="checkbox"]):not([type="radio"]):focus,
+.pd-modal input:not([type="checkbox"]):not([type="radio"]):not(.ds-inp-bare):focus,
 .pd-modal select:focus {
   outline: none; border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-soft);
 }
+/* A search box's own text field: the rounded box around it shows the focus, not the field. */
+.pd-form .ds-inp-bare:focus, .pd-modal .ds-inp-bare:focus { outline: none; box-shadow: none; }
 
 /* Person cell */
 .pd-who { display: flex; align-items: center; gap: 12px; min-width: 150px; }
@@ -215,7 +222,7 @@ table.pd-t { width: 100%; border-collapse: separate !important; border-spacing: 
 .pd-phead { padding: 18px 20px; margin-bottom: 20px; }
 .pd-phead .ph-id { display: flex; align-items: center; gap: 16px; }
 .pd-phead .pn { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.pd-phead .pn h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; color: var(--ink); }
+.pd-phead .pn h1, .pd-phead .pn h2 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; color: var(--ink); }
 .pd-phead .sub { display: block; font-size: 13px; font-weight: 400; color: var(--ink-3); margin-top: 2px; }
 .pd-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 16px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
 .pd-fact { display: flex; flex-direction: column; gap: 4px; min-width: 0; }

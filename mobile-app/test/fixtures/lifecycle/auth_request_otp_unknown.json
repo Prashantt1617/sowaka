@@ -1,0 +1,8 @@
+{
+  "status": 403,
+  "body": {
+    "success": false,
+    "message": "This email is not registered. Contact HR for access",
+    "requestId": "fixture"
+  }
+}

@@ -1,0 +1,90 @@
+/* Employee lifecycle › Offboarding: the board's lanes and cards, the drawer's track. Looks only. */
+.ob-tabs { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.ob-tabnote { font-size: 12.5px; color: var(--ink-3); }
+.ob-lanes { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(250px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 6px; }
+.ob-lane { background: var(--surface-2); border: 1px solid var(--line); border-radius: 18px; padding: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 160px; }
+.ob-lane-h { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 2px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.ob-lane-h b { font-weight: 700; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.ob-empty { font-size: 12.5px; color: var(--ink-4); padding: 10px 6px; }
+.ob-card {
+  display: grid; gap: 8px; text-align: left; width: 100%; padding: 12px; border-radius: 14px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--line); font-family: inherit; color: var(--ink);
+  box-shadow: 0 1px 2px rgba(20, 20, 22, 0.04); transition: border-color .15s, box-shadow .15s, opacity .15s;
+}
+.ob-card:hover { border-color: var(--line-2); }
+.ob-card.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.ob-card.dim, .ob-card-wrap.dim { opacity: .35; }
+.ob-card-wrap { position: relative; }
+.ob-card.has-nudge { padding-bottom: 44px; }
+.ob-nudge {
+  position: absolute; left: 12px; bottom: 10px; height: 26px; padding: 0 10px; border-radius: 99px; font: inherit; font-size: 11.5px; font-weight: 500;
+  border: 1px solid var(--line-2); background: var(--surface); color: var(--accent-ink); cursor: pointer;
+}
+.ob-nudge.late { border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); color: var(--bad); }
+.ob-nudge:disabled { color: var(--ink-4); cursor: default; border-color: var(--line); }
+.ob-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ob-who b { display: block; font-size: 13.5px; font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ob-who span { display: block; font-size: 11.5px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ob-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
+.ob-type { font-size: 11px; padding: 2px 8px; border-radius: 99px; background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line); }
+.ob-next { font-size: 12.5px; color: var(--ink); line-height: 1.45; }
+.ob-foot { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; font-size: 11.5px; color: var(--ink-3); }
+/* The due text stays on one line; the flag wraps below it when the card is narrow. */
+.ob-foot .due { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.ob-foot .due.late { color: var(--bad); font-weight: 600; }
+.ob-owner { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
+.ob-flag { margin-left: auto; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
+.ob-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.ob-filters .sp { flex: 1; }
+.ob-filters label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-3); }
+.ob-filters input[type="date"] { height: 36px; }
+
+/* The drawer */
+.ob-dr-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--ink-3); flex: none; }
+.ob-dr-body { padding: 20px; display: grid; gap: 20px; flex: 1; align-content: start; }
+.ob-dr-id { display: flex; align-items: center; gap: 14px; }
+.ob-dr-id h2 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
+.ob-dr-id .sub { font-size: 12.5px; color: var(--ink-3); }
+.ob-dr-id .st { font-size: 12.5px; color: var(--accent-ink); font-weight: 500; margin-top: 2px; }
+.ob-track { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.ob-track div { display: grid; gap: 6px; font-size: 10.5px; color: var(--ink-3); text-align: center; }
+.ob-track i { display: block; height: 5px; border-radius: 99px; background: var(--line-2); }
+.ob-track .done i { background: var(--ok-solid); }
+.ob-track .cur i { background: var(--accent); }
+.ob-track .cur { color: var(--accent-ink); font-weight: 600; }
+.ob-sec h4 { margin: 0 0 8px; font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.ob-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.ob-row:first-of-type { border-top: 0; }
+.ob-row .t { flex: 1; min-width: 0; }
+.ob-row .t small { display: block; font-size: 11.5px; color: var(--ink-3); }
+.ob-row .d { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.ob-row .d.late { color: var(--bad); font-weight: 600; }
+.ob-dl { display: grid; grid-template-columns: 150px 1fr; gap: 6px 12px; margin: 0; font-size: 13px; }
+.ob-dl dt { color: var(--ink-3); }
+.ob-dl dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.ob-privacy { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--ink-3); line-height: 1.5; }
+.ob-dr-foot { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid var(--line); flex: none; position: sticky; bottom: 0; background: var(--surface); }
+
+/* Start an exit, the settlement, insights */
+.ob-two { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 1000px) { .ob-two { grid-template-columns: 1fr; } }
+/* Final settlement's statement and PDF preview: the statement gets the room its Amount column needs; one above the other when the window is narrower. */
+.ob-two.settle { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
+@media (max-width: 1360px) { .ob-two.settle { grid-template-columns: 1fr; } }
+.ob-form { display: grid; gap: 16px; }
+.ob-form label.f { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink); }
+.ob-form .hint { font-size: 12.5px; color: var(--ink-3); font-weight: 400; }
+.ob-plan { display: grid; }
+.ob-plan div { display: grid; grid-template-columns: 120px 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.ob-plan div:first-child { border-top: 0; }
+.ob-plan b { font-weight: 500; color: var(--ink-3); font-size: 12px; }
+.ob-check { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.ob-check:first-of-type { border-top: 0; }
+.ob-check .s { margin-left: auto; color: var(--ink-3); font-size: 12.5px; text-align: right; }
+.ob-banner { display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 14px; background: var(--warn-bg); color: var(--warn); font-size: 13px; margin-bottom: 20px; }
+.ob-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.ob-bars { display: grid; gap: 10px; }
+.ob-bar { display: grid; grid-template-columns: 150px 1fr 80px; gap: 10px; align-items: center; font-size: 13px; }
+.ob-bar .track { height: 10px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.ob-bar .fill { height: 100%; border-radius: 99px; }
+.ob-bar .n { text-align: right; color: var(--ink-3); font-variant-numeric: tabular-nums; }

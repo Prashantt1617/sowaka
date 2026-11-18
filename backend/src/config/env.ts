@@ -19,6 +19,10 @@ const defaultCorsOrigins = [
   'https://dkikczh1847dh.cloudfront.net', // HR admin dashboard
 ];
 
+/** The pre-boarding portal (candidates, before they are employees): links in lifecycle emails, and a CORS origin. */
+// Unset on a server it stays empty: no localhost origin in a live CORS list (local runs default to the dev portal).
+const portalBaseUrl = (process.env.PORTAL_BASE_URL ?? (DEV_ENVIRONMENTS.has(process.env.NODE_ENV ?? '') ? 'http://localhost:5181' : '')).trim().replace(/\/+$/, '');
+
 const configuredCorsOrigins = (process.env.CORS_ORIGIN ?? '')
   .split(',')
   .map((origin) => origin.trim())
@@ -93,10 +97,25 @@ export const env = {
    */
   isLocal: DEV_ENVIRONMENTS.has(process.env.NODE_ENV ?? ''),
   port: Number(process.env.PORT ?? 4000),
-  corsOrigins: [...new Set([...defaultCorsOrigins, ...configuredCorsOrigins])],
+  // A per-company portal address ({org} pattern) is covered by the dashboard domain rule, not listed here.
+  corsOrigins: [...new Set([...defaultCorsOrigins, ...configuredCorsOrigins, ...(portalBaseUrl && !portalBaseUrl.includes('{org}') ? [portalBaseUrl] : [])])],
+  portalBaseUrl,
+  dashboardDomain,
+  /**
+   * Signs the portal's candidate sessions (JWT, aud 'portal'). Unset, a key is
+   * derived from the Mongo connection string, as Scribble tickets do; set it in
+   * production so the database credentials and this key are not one secret.
+   */
+  portalJwtSecret: (process.env.PORTAL_JWT_SECRET ?? '').trim(),
   /** True for an origin the dashboard may call from; see [isDashboardOrigin]. */
   isDashboardOrigin,
   mobileAppApiBaseUrl: process.env.MOBILE_APP_API_BASE_URL ?? 'http://10.0.2.2:4000',
+  /**
+   * This API as a phone reaches it from anywhere (PUBLIC_API_URL): the base of
+   * the picture links a push carries, which the phone fetches with no sign-in
+   * (`/media/<key>`). The app's own default host unless set.
+   */
+  publicApiUrl: (process.env.PUBLIC_API_URL ?? 'https://d3lwup4rvo6csf.cloudfront.net').trim().replace(/\/+$/, ''),
   // The app's link domain: notification emails point their "view this" links at `${appWebUrl}/open?...`,
   // which opens the app where it is installed (see services/app-link.ts) and the dashboard's /open page where not.
   appWebUrl: process.env.APP_WEB_URL ?? 'https://go.getsowaka.com',

@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { MongoServerError } from 'mongodb';
 import { companies, gameCatalog, gameScores } from '../config/db';
+import { cachedLifecycle, lifecycleReadCacheOn } from './lifecycle/readCache';
 import { noteLaunchScore } from './game-launch.service';
 import { env } from '../config/env';
 import { Company } from '../models/company.model';
@@ -14,6 +15,7 @@ import {
 } from '../models/game-catalog.model';
 import { User } from '../models/user.model';
 import { challengeRewardsOf } from './game-challenge-rules';
+import { keptFaceUrlsFor } from './face-photos';
 
 export class GameCatalogError extends Error {
   constructor(
@@ -109,16 +111,32 @@ function toPublic(entry: GameCatalogEntry & { hasPage: boolean }): PublicGame {
 
 /** The viewer's company's games, active ones only, in order. Without their pages. */
 export async function catalogFor(viewer: GameViewer): Promise<PublicGame[]> {
-  // Two small indexed reads, the company row by its unique id and then only its
-  // games by their unique key. Each catalog entry carries its whole page
-  // (hundreds of KB), and the cluster loads a document whole whatever the
-  // projection, so reading every active entry to pick the company's out after
-  // (#159, one $unionWith call) loaded every game's page and took seconds; the
-  // extra round trip costs a few milliseconds.
-  const keys = await gamesForOrg(viewer.org);
-  if (keys.length === 0) return [];
-  const rows = await gameCatalog()
-    .aggregate<GameCatalogEntry & { hasPage: boolean }>([
+  const load = async () => {
+    const keys = await gamesForOrg(viewer.org);
+    if (keys.length === 0) return [];
+    const rows = lifecycleReadCacheOn() ? await keptCatalogRows(keys) : await readCatalogRows(keys);
+    // A web game with nowhere to open it would be a card that does nothing.
+    return rows.filter((row) => row.kind === 'native' || row.hasPage || !!row.hostedUrl).map(toPublic);
+  };
+  // Kept per company (swr-cache: fresh a minute, then served while a refresh runs behind the reader).
+  // A refresh reads the company's list and each game's version from an index, and a game's row again
+  // only when its version moved, so keeping it fresh costs a few hundred bytes, not every page.
+  return viewer.org ? cachedLifecycle(viewer.org, 'games-catalog', null, load) : load();
+}
+
+type CatalogRow = GameCatalogEntry & { hasPage: boolean };
+
+/**
+ * The games' rows, everything but the page. Two small indexed reads, the company row by its unique id and then only its
+ * games by their unique key. Each catalog entry carries its whole page
+ * (hundreds of KB), and the cluster loads a document whole whatever the
+ * projection, so reading every active entry to pick the company's out after
+ * (#159, one $unionWith call) loaded every game's page and took seconds; the
+ * extra round trip costs a few milliseconds.
+ */
+function readCatalogRows(keys: string[]): Promise<CatalogRow[]> {
+  return gameCatalog()
+    .aggregate<CatalogRow>([
       { $match: { key: { $in: keys }, active: true } },
       { $sort: { order: 1, name: 1 } },
       {
@@ -135,8 +153,48 @@ export async function catalogFor(viewer: GameViewer): Promise<PublicGame[]> {
       { $project: { _id: 0, html: 0 } },
     ])
     .toArray();
-  // A web game with nowhere to open it would be a card that does nothing.
-  return rows.filter((row) => row.kind === 'native' || row.hasPage || !!row.hostedUrl).map(toPublic);
+}
+
+/** Each game's row as last read, with the version it was read at; shared by every company that has the game. */
+const catalogRowsByKey = new Map<string, { version: string; row: CatalogRow }>();
+
+/** As `$sort: { order: 1, name: 1 }` orders them (a missing value first). */
+function byOrderThenName(a: CatalogRow, b: CatalogRow): number {
+  const rank = (v: unknown) => (v === undefined || v === null ? 0 : 1);
+  for (const [x, y] of [[a.order, b.order], [a.name, b.name]] as [unknown, unknown][]) {
+    if (rank(x) !== rank(y)) return rank(x) - rank(y);
+    if (x === y || rank(x) === 0) continue;
+    if (typeof x === 'number' && typeof y === 'number') return x - y;
+    const xs = String(x);
+    const ys = String(y);
+    if (xs !== ys) return xs < ys ? -1 : 1;
+  }
+  return 0;
+}
+
+/**
+ * `readCatalogRows`, with a game's row read again only when its version moved: the versions come from
+ * the { key, active, updatedAt } index alone (no page is loaded), and Sowaka's catalog script stamps
+ * `updatedAt` on every change it makes.
+ */
+async function keptCatalogRows(keys: string[]): Promise<CatalogRow[]> {
+  const versions = await gameCatalog()
+    .find({ key: { $in: keys } }, { projection: { _id: 0, key: 1, active: 1, updatedAt: 1 } })
+    .toArray() as Pick<GameCatalogEntry, 'key' | 'active' | 'updatedAt'>[];
+  const live = versions.filter((v) => v.active === true);
+  const stale = live.filter((v) => catalogRowsByKey.get(v.key)?.version !== versionOf(v)).map((v) => v.key);
+  if (stale.length) {
+    for (const row of await readCatalogRows(stale)) catalogRowsByKey.set(row.key, { version: versionOf(row), row });
+  }
+  return live
+    .map((v) => catalogRowsByKey.get(v.key)?.row)
+    .filter((row): row is CatalogRow => Boolean(row))
+    .sort(byOrderThenName);
+}
+
+/** For checks: forget every game row read. */
+export function forgetCatalogRows(): void {
+  catalogRowsByKey.clear();
 }
 
 /**
@@ -286,6 +344,8 @@ export interface LeaderboardRow {
   score: number;
   achievedAt: Date;
   isMe: boolean;
+  /** Their face; null for no photo (the initials stand in). */
+  photoUrl: string | null;
 }
 
 export interface Leaderboard {
@@ -319,6 +379,7 @@ async function boardFor(key: string, org: string, viewerId: string, scoring: Gam
     });
     me = { rank: ahead + 1, score: mine.score, achievedAt: mine.achievedAt };
   }
+  const faces = await keptFaceUrlsFor(rows.map((row) => row.userId)).catch(() => new Map<string, string | null>());
   return {
     scoring: { higherIsBetter, label: scoring.label || 'points' },
     leaderboard: rows.map((row, index) => ({
@@ -328,6 +389,7 @@ async function boardFor(key: string, org: string, viewerId: string, scoring: Gam
       score: row.score,
       achievedAt: row.achievedAt,
       isMe: row.userId === viewerId,
+      photoUrl: faces.get(row.userId) ?? null,
     })),
     me,
   };

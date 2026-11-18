@@ -26,6 +26,7 @@ import type { User } from '../models/user.model';
 import { blockedUserIdsFor } from './connect-blocks.service';
 import { feedAudienceFilter } from './audience-list-rules';
 import { catalogFor, GameCatalogError, type PublicGame } from './game-catalog.service';
+import { lifecycleReadCacheOn } from './lifecycle/readCache';
 import {
   contestIsLive,
   firstNameOf,
@@ -58,6 +59,7 @@ import { cupEvents } from './cup.service';
 import { eventFor as pokerEventFor } from './poker-room.service';
 import { phaseOf as pokerPhaseOf } from './poker-floor';
 import { optional } from '../utils/optional';
+import { keptFaceUrlsFor } from './face-photos';
 import { requestViewer } from '../middleware/request-viewer';
 
 const CONTEST_TYPES: ConnectPostType[] = ['caption_challenge', 'photo_story_challenge', 'most_likely'];
@@ -585,7 +587,7 @@ async function playedGamesFor(viewer: User, games: PublicGame[], allMine: ScoreR
 export interface PlayingNow {
   count: number;
   /** The first few, each with their userId so the page can open their profile. */
-  people: { userId: string; name: string; initials: string }[];
+  people: { userId: string; name: string; initials: string; photoUrl: string | null }[];
 }
 
 /**
@@ -637,12 +639,15 @@ async function playingNowFor(
   }
   active.delete(viewer.userId);
   const colleagues = roster.filter((person) => active.has(person.userId));
+  const shown = colleagues.slice(0, PLAYING_FACES);
+  const faces = await keptFaceUrlsFor(shown.map((person) => person.userId)).catch(() => new Map<string, string | null>());
   return {
     count: colleagues.length,
-    people: colleagues.slice(0, PLAYING_FACES).map((person) => ({
+    people: shown.map((person) => ({
       userId: person.userId,
       name: person.name,
       initials: initialsOf(person.name),
+      photoUrl: faces.get(person.userId) ?? null,
     })),
   };
 }
@@ -875,6 +880,9 @@ const homeCatalogs = new Map<string, { at: number; games: Promise<PublicGame[]> 
 
 /** `catalogFor`, kept per company for `HOME_CATALOG_MS`. A failed read is not kept. */
 export function homeCatalogFor(viewer: Pick<User, 'userId' | 'name' | 'org'>, at = Date.now()): Promise<PublicGame[]> {
+  // On the API server the catalog is kept per company, served at once and checked behind the reader
+  // (catalogFor): before, once a minute a home waited seconds for the company's games to be read again.
+  if (lifecycleReadCacheOn()) return catalogFor(viewer);
   const key = viewer.org ?? '';
   const kept = homeCatalogs.get(key);
   if (kept && at - kept.at < HOME_CATALOG_MS) return kept.games;

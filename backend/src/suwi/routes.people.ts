@@ -7,6 +7,7 @@ import { NextFunction, Request, Response, Router } from 'express';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess } from '../middleware/admin.middleware';
 import { importRiskFor } from './importRisk';
+import { searchPeople } from './peopleSearch';
 
 export const suwiPeopleRouter = Router();
 suwiPeopleRouter.use(requireAuth, requireDashboardAccess);
@@ -19,4 +20,9 @@ const fail = (res: Response, e: unknown, next: NextFunction) => {
 
 suwiPeopleRouter.get('/import-risk/:importId', async (req: Request, res, next) => {
   try { res.json({ success: true, ...(await importRiskFor(req.auth!.user!.userId, String(req.params.importId))) }); } catch (e) { fail(res, e, next); }
+});
+
+// A people search in plain words, read into profile filters (template Edit employees, and anywhere else people are picked).
+suwiPeopleRouter.post('/people-search', async (req: Request, res, next) => {
+  try { res.json({ success: true, ...(await searchPeople(req.auth!.user!, req.body ?? {})) }); } catch (e) { fail(res, e, next); }
 });

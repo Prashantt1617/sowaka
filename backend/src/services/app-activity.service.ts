@@ -29,6 +29,15 @@ export interface AppActivityDay {
   hours: number[];
   did: AppActivityScreen[];
   firstAt: Date;
+  /**
+   * A day before tracking began, estimated from what the person did in the
+   * app (punches, requests, posts, games…) by scripts/app-opens-backfill.
+   * Such a row has no screens (`did` is empty) and its `hours` are the hours
+   * of those actions, not of every request.
+   */
+  inferred?: true;
+  /** On an estimated row: the signals behind it. */
+  sources?: string[];
 }
 
 /** Requests that only go out when the person opens that screen. */
@@ -47,6 +56,8 @@ export function appActivity(): Collection<AppActivityDay> {
       col.createIndex({ org: 1, day: 1 }),
       // Engagement › App usage: an org's days for a set of people (a department, a location).
       col.createIndex({ org: 1, day: 1, userId: 1 }),
+      // The last estimated day and the first tracked one, per org (App usage marks estimated days).
+      col.createIndex({ org: 1, inferred: 1, day: 1 }),
     ]).catch((error) => {
       indexed = null;
       logger.warn('appActivity indexes not created', { error: String(error) });

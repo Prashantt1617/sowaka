@@ -5,9 +5,16 @@ part of '../../manager/presentation/manager_screen.dart';
 /// The profile's tabs, in the order they are laid out: who the person is
 /// first, then their requests, then the rest.
 enum ProfileTab {
+  /// A new joiner's onboarding (A1b): first on their own profile while
+  /// onboarding or probation runs, where the lifecycle is on.
+  onboarding('Onboarding'),
   workDetail('Work detail'),
   request('Request'),
   attendance('Attendance'),
+
+  /// A resignation: one's own while it is open (R2a/R2b), or a report's for
+  /// their manager (R8b). Only where the lifecycle is on.
+  resignation('Resignation'),
   orgChart('Org chart'),
   grow('Grow'),
   rank('Rank'),
@@ -61,12 +68,14 @@ List<ProfileTab> memberProfileTabs({
   required bool inViewerChain,
   required bool viewerCanManage,
   required bool hasDocuments,
+  bool hasResignation = false,
 }) {
   if (!inViewerChain) return colleagueProfileTabs;
   return [
     ProfileTab.workDetail,
     if (viewerCanManage) ProfileTab.request,
     ProfileTab.attendance,
+    if (viewerCanManage && hasResignation) ProfileTab.resignation,
     ProfileTab.orgChart,
     ProfileTab.grow,
     ProfileTab.rank,
@@ -82,10 +91,14 @@ List<ProfileTab> memberProfileTabs({
 List<ProfileTab> ownProfileTabs({
   required bool hasManager,
   required bool showsHelp,
+  bool showsResignation = false,
+  bool showsOnboarding = false,
 }) => [
+  if (showsOnboarding) ProfileTab.onboarding,
   ProfileTab.workDetail,
   ProfileTab.request,
   ProfileTab.attendance,
+  if (showsResignation) ProfileTab.resignation,
   ProfileTab.orgChart,
   if (hasManager) ProfileTab.grow,
   ProfileTab.rank,
@@ -218,6 +231,15 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
   /// Their posts; null, and no Post tab, where the company has no Connect.
   _ProfilePosts? _posts;
 
+  /// Their resignation, when the viewer is their manager (R8b).
+  late final OffboardingStore _offboarding = OffboardingStore.of(
+    widget.bloc.service.session,
+  );
+
+  void _offboardingChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
@@ -228,10 +250,13 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
         if (mounted) setState(() {});
       });
     }
+    _offboarding.addListener(_offboardingChanged);
+    unawaited(_offboarding.revalidate());
   }
 
   @override
   void dispose() {
+    _offboarding.removeListener(_offboardingChanged);
     _posts?.dispose();
     super.dispose();
   }
@@ -443,6 +468,7 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
                   inViewerChain: member.inViewerChain,
                   viewerCanManage: widget.canManage,
                   hasDocuments: member.documents.isNotEmpty,
+                  hasResignation: _offboarding.hasLeaverTab(member.userId),
                 ))
         if (tab != ProfileTab.posts || posts != null) tab,
     ], widget.openOn);
@@ -544,6 +570,14 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
           person: member,
         ),
       ],
+      ProfileTab.resignation => [
+        ManagerLeaverTab(
+          key: ValueKey('leaver-${member.userId}'),
+          store: _offboarding,
+          userId: member.userId,
+          name: member.name,
+        ),
+      ],
       ProfileTab.rank => [
         _RankHistory(service: _profileService, userId: member.userId),
       ],
@@ -556,6 +590,7 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
       // Never on someone else's profile.
       ProfileTab.counselor => const <Widget>[],
       ProfileTab.settings => const <Widget>[],
+      ProfileTab.onboarding => const <Widget>[],
     };
 
     return Scaffold(
@@ -599,13 +634,23 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
                 ].where((value) => value.isNotEmpty).join(' • '),
                 recognition: _nonEmpty(member.recognitionLabel),
               ),
-              tabs: [for (final tab in tabs) tab.label],
+              tabs: [
+                for (final tab in tabs)
+                  tab == ProfileTab.resignation &&
+                          _offboarding.resignationOf(member.userId) == null
+                      ? 'Exit'
+                      : tab.label,
+              ],
               counts: [
                 for (final tab in tabs)
                   tab == ProfileTab.posts ? posts?.total : null,
               ],
               selected: selected,
               onChanged: (index) => setState(() => _tab = tabs[index]),
+              // The Resignation tab reads again on a pull (R8b).
+              onRefresh: tabs[selected] == ProfileTab.resignation
+                  ? _offboarding.refresh
+                  : null,
               children: content,
             ),
           ),
@@ -775,10 +820,14 @@ class _ProfileScrollFrame extends StatelessWidget {
     required this.selected,
     required this.onChanged,
     required this.children,
+    this.onRefresh,
   });
 
   final Widget hero;
   final List<String> tabs;
+
+  /// A pull to refresh, for the tabs that read from the server as they show.
+  final Future<void> Function()? onRefresh;
 
   /// A count to wear beside each tab's label, in the tabs' order; null (or
   /// missing) for none.
@@ -797,7 +846,20 @@ class _ProfileScrollFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Always the same tree, so switching tabs keeps the scroll where it is;
+    // the pull only answers on a tab that has one.
+    final refresh = onRefresh;
+    return RefreshIndicator(
+      onRefresh: refresh ?? () async {},
+      notificationPredicate: (notification) =>
+          refresh != null && notification.depth == 0,
+      child: _scroll(context, refresh != null),
+    );
+  }
+
+  Widget _scroll(BuildContext context, bool pullable) {
     return CustomScrollView(
+      physics: pullable ? const AlwaysScrollableScrollPhysics() : null,
       slivers: [
         SliverToBoxAdapter(
           child: _column(
@@ -1120,10 +1182,14 @@ class _ProfileScreen extends StatefulWidget {
     required this.onOpenComposer,
     required this.onProfilePhotoUpdated,
     this.openOn,
+    this.onOpenDocuments,
   });
 
   /// The tab to open on, from where the profile was opened ([openingTabFor]).
   final ProfileTab? openOn;
+
+  /// "Save your documents" on the Resignation tab: Action › Payroll.
+  final VoidCallback? onOpenDocuments;
   final AuthSession session;
   final ManagerDashboard dashboard;
   final ManagerBloc bloc;
@@ -1150,9 +1216,20 @@ class _ProfileScreenState extends State<_ProfileScreen> {
   /// Connect.
   _ProfilePosts? _posts;
 
+  /// Resigning and the Resignation tab (R0, R2a/R2b).
+  late final OffboardingStore _offboarding = OffboardingStore.of(
+    widget.session,
+  );
+
+  void _offboardingChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    _offboarding.addListener(_offboardingChanged);
+    unawaited(_offboarding.revalidate());
     final session = widget.session;
     final enabled = session.user.enabledTabs;
     // A company whose app is Help alone has no tabs to show them in.
@@ -1163,10 +1240,18 @@ class _ProfileScreenState extends State<_ProfileScreen> {
         if (mounted) setState(() {});
       });
     }
+    LifecycleMeStore.instance.addListener(_onLifecycleChanged);
+  }
+
+  /// The Onboarding tab comes and goes with what `/lifecycle/me` says.
+  void _onLifecycleChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _offboarding.removeListener(_offboardingChanged);
+    LifecycleMeStore.instance.removeListener(_onLifecycleChanged);
     _posts?.dispose();
     super.dispose();
   }
@@ -1362,13 +1447,19 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     final helpHere = profileShowsHelp(user.enabledTabs);
     final helpOnly = !worksHere && helpHere;
     final posts = _posts;
+    final showsOnboarding = LifecycleMeStore.instance.value.showsOnboarding;
     final tabs = profileTabsOpeningOn([
       for (final tab in ownProfileTabs(
         hasManager: dashboard.hasManager,
         showsHelp: helpHere,
+        showsResignation: _offboarding.showsResignationTab,
+        showsOnboarding: showsOnboarding,
       ))
         if (tab != ProfileTab.posts || posts != null) tab,
-    ], widget.openOn);
+    // Onboarding leads while it runs: the usual opening (Work detail) gives
+    // way to it; a profile opened on purpose elsewhere (Post, Org chart)
+    // still opens there.
+    ], showsOnboarding && widget.openOn == ProfileTab.workDetail ? ProfileTab.onboarding : widget.openOn);
     final selected = _shownTab(tabs, _tab);
     final today = DateTime.now();
     final todayRecord = dashboard.attendance
@@ -1462,6 +1553,17 @@ class _ProfileScreenState extends State<_ProfileScreen> {
             label: 'Date of birth',
             value: _formatDate(user.birthday),
           ),
+        // R0: the only way to resign, at the bottom of one's own details.
+        ResignEntryRow(
+          store: _offboarding,
+          onSent: () => setState(() => _tab = ProfileTab.resignation),
+        ),
+      ],
+      ProfileTab.resignation => [
+        OwnResignationTab(
+          store: _offboarding,
+          onOpenDocuments: widget.onOpenDocuments,
+        ),
       ],
       // Their manager, them and the people they lead — the Team tab's own
       // team without the peers.
@@ -1501,6 +1603,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
       ProfileTab.settings => [
         ProfileSettingsTab(session: session, onLogOut: widget.onLogout),
       ],
+      ProfileTab.onboarding => [const OnboardingProfileCard()],
     };
 
     return ColoredBox(
@@ -1527,13 +1630,22 @@ class _ProfileScreenState extends State<_ProfileScreen> {
             child: worksHere
                 ? _ProfileScrollFrame(
                     hero: hero,
-                    tabs: [for (final tab in tabs) tab.label],
+                    tabs: [
+                      for (final tab in tabs)
+                        tab == ProfileTab.resignation
+                            ? _offboarding.resignationTabLabel
+                            : tab.label,
+                    ],
                     counts: [
                       for (final tab in tabs)
                         tab == ProfileTab.posts ? posts?.total : null,
                     ],
                     selected: selected,
                     onChanged: (index) => setState(() => _tab = tabs[index]),
+                    // The Resignation tab reads again on a pull (R2a / R2b).
+                    onRefresh: tabs[selected] == ProfileTab.resignation
+                        ? _offboarding.refresh
+                        : null,
                     children: content,
                   )
                 : SingleChildScrollView(

@@ -7,12 +7,15 @@ import { env } from './config/env';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 import { requestContext } from './middleware/request-context.middleware';
 import { router } from './routes';
+import { trackLiveRequests } from './services/background-pace';
 import { redactTicket } from './services/scribble-ticket.service';
 import { runWithRequestId } from './utils/optional';
 
 export const app = express();
 
 app.use(requestContext);
+// Counts the requests in flight, so the background warm-up waits for a quiet moment (background-pace.ts).
+app.use(trackLiveRequests);
 app.use(helmet());
 app.use(
   cors({
@@ -37,6 +40,10 @@ app.use(compression());
 app.use('/admin/employees/import', express.json({ limit: '5mb' }));
 // A question to Suwi may carry one file: an image up to 5 MB (base64) or a spreadsheet's rows.
 app.use('/suwi/ask', express.json({ limit: '8mb' }));
+// A drawn signature on the portal is an image (base64).
+app.use('/portal/letters', express.json({ limit: '2mb' }));
+// The final settlement PDF HR emails from the Offboarding board (base64, up to 10 MB).
+app.use('/admin/lifecycle/offboarding', express.json({ limit: '15mb' }));
 app.use(express.json());
 morgan.token('request-id', (req) => (req as Request).requestId ?? '-');
 // A Scribble page reloads itself with a credential in its query string

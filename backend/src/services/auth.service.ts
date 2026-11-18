@@ -158,7 +158,7 @@ export async function getCurrentAuthUser(
     preloaded ? managerNameFor(preloaded.managerUserId) : undefined,
   ]);
   if (!user || user.lifecycleStatus === 'offboarded' || user.lifecycleStatus === 'terminated') {
-    throw new AuthError(401, 'User is not active');
+    throw new AuthError(401, 'User is not active', { accountClosed: await accountClosedFor(user) });
   }
 
   const role = reports ? 'manager' : 'employee';
@@ -184,9 +184,59 @@ async function requireEligibleUser(email: string, projection?: Record<string, 0 
     throw new AuthError(403, 'This email is not registered. Contact HR for access');
   }
   if (user.lifecycleStatus === 'offboarded' || user.lifecycleStatus === 'terminated') {
-    throw new AuthError(403, 'This employee account is not active');
+    const ended = projection ? await users().findOne({ email }, { projection: ACCOUNT_CLOSED_FIELDS }) : user;
+    throw new AuthError(403, 'This employee account is not active', { accountClosed: await accountClosedFor(ended) });
   }
   return user;
+}
+
+/** What the app's account-closed screen (R6) needs; nothing else about the person. */
+export interface AccountClosed { company: string; lastWorkingDay: string; hrEmail: string }
+
+const ACCOUNT_CLOSED_FIELDS = { _id: 0, org: 1, lifecycleStatus: 1, exit: 1, hrPrimaryUserId: 1 } as const;
+
+/**
+ * R6: an ended employee of a company with the lifecycle on is told the company, their last
+ * working day and where to write for documents. Anyone else (no exit recorded, the lifecycle
+ * off, an account that is still active) gets nothing, so a refusal says no more than before.
+ */
+/**
+ * Who a person whose account has closed can write to when the company has no
+ * reply-to or contact email: their HR contact, then the HR who recorded the
+ * exit, then a dashboard admin of the company (never a hidden support account).
+ */
+async function hrContactEmail(user: Pick<User, 'org' | 'exit' | 'hrPrimaryUserId'>): Promise<string> {
+  for (const userId of [user.hrPrimaryUserId, user.exit?.recordedByUserId]) {
+    if (!userId) continue;
+    const hr = await users().findOne({ userId, org: user.org, hiddenFromDirectory: { $ne: true } }, { projection: { _id: 0, email: 1 } });
+    if (hr?.email?.trim()) return hr.email.trim();
+  }
+  const admin = await users().find(
+    { org: user.org, dashboardAdmin: true, hiddenFromDirectory: { $ne: true }, lifecycleStatus: { $nin: ['offboarded', 'terminated'] }, email: { $ne: '', $not: /^support@/i } },
+    { projection: { _id: 0, email: 1 } },
+  ).sort({ createdAt: 1 }).limit(1).next();
+  return admin?.email?.trim() ?? '';
+}
+
+export async function accountClosedFor(
+  user: Pick<User, 'org' | 'lifecycleStatus' | 'exit' | 'hrPrimaryUserId'> | null | undefined,
+): Promise<AccountClosed | undefined> {
+  try {
+    if (!user?.org || !user.exit?.lastWorkingDay) return undefined;
+    if (user.lifecycleStatus !== 'offboarded' && user.lifecycleStatus !== 'terminated') return undefined;
+    const company = await companies().findOne({ id: user.org }, { projection: { _id: 0, name: 1, features: 1, profile: 1 } });
+    if (company?.features?.lifecycle !== true) return undefined;
+    const companyEmail = company.profile?.replyToEmail?.trim() || company.profile?.primaryContactEmail?.trim() || '';
+    return {
+      company: company.profile?.displayName?.trim() || company.name?.trim() || user.org,
+      lastWorkingDay: user.exit.lastWorkingDay,
+      hrEmail: companyEmail || (await hrContactEmail(user)),
+    };
+  } catch (error) {
+    // The refusal stands without it.
+    logger.warn('Account closed: the details could not be read', { error: error instanceof Error ? error.message : String(error) });
+    return undefined;
+  }
 }
 
 async function completeLogin(user: User): Promise<{ user: AuthUser; record: User }> {
@@ -424,6 +474,10 @@ async function toAuthUser(
     // their screens only there; the server refuses their routes elsewhere.
     features: {
       placements: placementsFeatureOf(company),
+      // Exits (People › Exits, Exit settings, Record exit): only where Sowaka switched it on.
+      exits: company?.features?.exits === true,
+      // Employee lifecycle (onboarding and offboarding boards, resigning in the app).
+      lifecycle: company?.features?.lifecycle === true,
       // Payroll in the app, once HR switches it on (PUT /admin/payroll/employee-app-settings).
       payroll: payrollAppEnabledFrom(company?.payrollEmployee),
     },
@@ -446,10 +500,15 @@ function timingSafeEqualHex(a: string, b: string): boolean {
 }
 
 export class AuthError extends Error {
+  /** An ended account's R6 details (lifecycle companies only); sent beside the message. */
+  public readonly accountClosed?: AccountClosed;
+
   constructor(
     public readonly statusCode: number,
     message: string,
+    extra?: { accountClosed?: AccountClosed },
   ) {
     super(message);
+    if (extra?.accountClosed) this.accountClosed = extra.accountClosed;
   }
 }

@@ -90,7 +90,8 @@ const type = (key: string, name: string, extra: Record<string, unknown> = {}) =>
   const balance = await getMyLeaveBalance('lwp', 2026, new Date('2026-09-01T00:00:00Z'));
   const lwpItem = balance.types.find((t) => t.key === 'lwp') as Record<string, unknown> | undefined;
   ok('unlimited and unpaid, with no count', lwpItem?.unlimited === true && lwpItem?.unpaid === true && lwpItem?.total === 0, lwpItem);
-  ok('a paid type keeps its balance', balance.types.find((t) => t.key === 'casual')?.total === 12, balance.types);
+  // Credited monthly: 1 a month, January to September.
+  ok('a paid type keeps its balance', balance.types.find((t) => t.key === 'casual')?.total === 9, balance.types);
   // Eleven days of a type with no balance at all, while two more are pending.
   const big = await applyForLeave('lwp', { type: 'lwp', startDate: '2026-08-03', endDate: '2026-08-14', reason: 'Travel' });
   ok('never refused for lack of balance', big.status === 'pending' && big.days === 11, big);

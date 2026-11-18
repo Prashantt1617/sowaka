@@ -2,6 +2,19 @@ import { attendanceRegularizations, overtimeRequests, reimbursementClaims, users
 import { User } from '../models/user.model';
 import { invalidateAttendanceReport } from './attendance-report.service';
 import { logActivity, nameOfUser } from './employee-activity.service';
+import { movePersonJourneysToManager } from './lifecycle/engine';
+import { forgetLifecycleReads } from './lifecycle/readCache';
+import { logger } from '../utils/logger';
+
+/** A person's manager changed: their open lifecycle journeys move to the new manager; never fails the change itself. */
+export async function followManagerChange(org: string, userId: string, managerUserId: string): Promise<void> {
+  try {
+    const moved = await movePersonJourneysToManager(org, userId, managerUserId);
+    if (moved.length) forgetLifecycleReads(org);
+  } catch (error) {
+    logger.warn('Manager change: the lifecycle journeys were not moved', { org, userId, reason: error instanceof Error ? error.message : String(error) });
+  }
+}
 
 const inactiveStatuses = new Set(['offboarded', 'terminated']);
 
@@ -112,6 +125,9 @@ export async function assignManager(
     throw new ReportingError(404, 'Employee not found');
   }
   const movedRequests = await movePendingRequests(employeeUserId, managerUserId);
+  // The person's open onboarding/offboarding journeys follow the new manager (tasks, meetings,
+  // people to meet, the offer, letters not sent yet), and the kept boards are worked out again.
+  if (org && previousManagerUserId !== managerUserId) await followManagerChange(org, employeeUserId, managerUserId);
   // The attendance report names each person's manager.
   if (org) invalidateAttendanceReport(org);
   if (previousManagerUserId !== managerUserId) {

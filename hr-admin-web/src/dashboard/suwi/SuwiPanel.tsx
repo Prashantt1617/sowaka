@@ -7,7 +7,7 @@ import { useStore, type SuwiBulkArea } from '../store';
 import type { View } from '../theme';
 import { IconClose } from '../icons';
 import { ApiError } from '../../services/http';
-import { askSuwi, cancelSuwiAction, confirmSuwiAction, undoSuwiAction, type SuwiAnswer, type SuwiHistoryTurn, type SuwiProposal } from '../../services/suwi';
+import { askSuwi, cancelSuwiAction, confirmSuwiAction, undoSuwiAction, type SuwiAnswer, type SuwiHistoryTurn, type SuwiProposal, type SuwiTable } from '../../services/suwi';
 import { Markdown } from './markdown';
 import { BULK_GUIDES } from './bulkGuide';
 import { ATTACH_ACCEPT, AttachError, fileSize, readAttachment, type Attached, type ShownFile } from './attach';
@@ -47,6 +47,8 @@ export function SuwiPanel() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState('');
+  const [partial, setPartial] = useState('');
   const panelRef = useRef<HTMLElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -129,13 +131,16 @@ export function SuwiPanel() {
     setMsgs((m) => [...m, { role: 'user', text: question, ...(file ? { file: file.shown } : {}) }]);
     setBusy(true);
     try {
-      const answer = await askSuwi(question, bulk ? `bulk:${bulk}` : s.view, history, file?.send);
+      setChecking('');
+      setPartial('');
+      const answer = await askSuwi(question, bulk ? `bulk:${bulk}` : s.view, history, file?.send, setChecking, setPartial);
       setMsgs((m) => [...m, { role: 'assistant', answer }]);
     } catch (e) {
       const text = e instanceof ApiError ? e.message : 'Suwi could not answer just now. Try again in a moment.';
       setMsgs((m) => [...m, { role: 'assistant', error: true, answer: { text, checked: [], links: [], proposals: [], costUsd: 0 } }]);
     } finally {
       setBusy(false);
+      setPartial('');
     }
   };
   // A question handed over from elsewhere (Suwi's notices): ask it as soon as the panel is open.
@@ -204,6 +209,7 @@ export function SuwiPanel() {
               <div className="sm-col">
                 <div className={m.error ? 'sm-b err' : 'sm-b'}>
                   <Markdown text={m.answer.text} onPerson={(id) => s.openProfile(id)} />
+                  {(m.answer.tables ?? []).map((t) => <AnswerTable key={t.title} t={t} />)}
                   {m.answer.links.length > 0 && (
                     <div className="sora-acts">
                       {m.answer.links.map((l) => <button key={l.label} type="button" onClick={() => openLink(l)} className="suwi-btn">{l.label} ›</button>)}
@@ -220,10 +226,16 @@ export function SuwiPanel() {
               </div>
             </div>
           )))}
-          {busy && (
+          {busy && partial && (
+            <div className="sm sora-a" aria-live="polite">
+              <SuwiOrb size={20} />
+              <div className="sm-col"><div className="sm-b"><Markdown text={partial} onPerson={(id) => s.openProfile(id)} /></div></div>
+            </div>
+          )}
+          {busy && !partial && (
             <div className="suwi-typing" role="status">
               <SuwiOrb size={20} />
-              <span className="suwi-typing-b"><span className="suwi-typing-d" aria-hidden><span /><span /><span /></span>Looking that up…</span>
+              <span className="suwi-typing-b"><span className="suwi-typing-d" aria-hidden><span /><span /><span /></span>{checking ? `Checking: ${checking}…` : 'Looking that up…'}</span>
             </div>
           )}
         </div>
@@ -304,6 +316,24 @@ function BulkGuideCard({ area, onPick }: { area: SuwiBulkArea; onPick: (text: st
 }
 
 /** A bulk card's people: current and new value each, then who was left out and why. */
+/** A list from the data, under the answer: the first 8 rows, then all on request. */
+function AnswerTable({ t }: { t: SuwiTable }) {
+  const [all, setAll] = useState(false);
+  const rows = all ? t.rows : t.rows.slice(0, 8);
+  return (
+    <div className="suwi-prev">
+      <div className="suwi-prev-h">{t.title}</div>
+      <div className="suwi-prev-s">
+        <table>
+          <thead><tr>{t.columns.map((c) => <th key={c}>{c}</th>)}</tr></thead>
+          <tbody>{rows.map((r, i) => <tr key={i}>{r.map((v, j) => <td key={j}>{v}</td>)}</tr>)}</tbody>
+        </table>
+      </div>
+      {t.rows.length > 8 && <button type="button" className="suwi-whyb" onClick={() => setAll(!all)}>{all ? 'Show fewer' : `Show all ${t.rows.length}`}</button>}
+    </div>
+  );
+}
+
 function PreviewTable({ preview }: { preview: NonNullable<SuwiProposal['preview']> }) {
   const [all, setAll] = useState(false);
   const rows = all ? preview.rows : preview.rows.slice(0, 8);

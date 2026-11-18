@@ -4,13 +4,11 @@
  * matters, and the question to ask Suwi to see the detail. Only areas this
  * person can open are looked at, with the same tab rules as the API.
  */
-import { connectPosts, relayEvents, reimbursementTypes } from '../config/db';
+import { cachedLifecycle, refreshLifecycle } from '../services/lifecycle/readCache';
 import { tabsForRequest } from '../models/dashboard-tabs';
 import { hasAllDashboardTabs } from '../middleware/admin.middleware';
-import { peopleTasks } from '../services/peopleTasks.service';
 import { SuwiContext } from './tools';
-import { leaveSafety } from './insight';
-import { pendingRows, sharedAdminLists } from './tools/requests';
+import { orgSuwiData, pendingFor } from './orgData';
 import { attendanceReport } from '../services/attendance-report.service';
 
 /** Days a request may wait before Suwi calls it overdue (Sowaka has no escalation setting of its own). */
@@ -29,7 +27,6 @@ export interface SuwiNotice {
   count: number;
 }
 
-const DAY = 86_400_000;
 /** Minutes past midnight, IST. */
 const istMinutes = (d: Date) => { const t = new Date(d.getTime() + 330 * 60_000); return t.getUTCHours() * 60 + t.getUTCMinutes(); };
 /** "09:30" → 570; null when unreadable. */
@@ -49,44 +46,37 @@ async function quietly<T>(work: () => Promise<T>): Promise<T | null> {
   try { return await work(); } catch { return null; }
 }
 
-const CACHE = new Map<string, { at: number; notices: SuwiNotice[] }>();
-const CACHE_MS = 3 * 60_000;
-
-/** The notices for this person, computed at most every three minutes. */
+/**
+ * The notices for this person, kept in memory (lifecycle/readCache: served at once and refreshed
+ * behind the reader after a minute, dropped on every write, so a decided request leaves the count
+ * at once). `fresh` works them out now and keeps them.
+ */
 export async function suwiNotices(ctx: SuwiContext, fresh = false): Promise<SuwiNotice[]> {
-  const key = `${ctx.org}|${ctx.userId}|${ctx.payroll}|${ctx.today}`;
-  const hit = CACHE.get(key);
-  if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return hit.notices;
-  const notices = await computeNotices(ctx);
-  CACHE.set(key, { at: Date.now(), notices });
-  if (CACHE.size > 500) CACHE.delete(CACHE.keys().next().value!);
-  return notices;
+  const params = { userId: ctx.userId, payroll: ctx.payroll, today: ctx.today };
+  if (fresh) return refreshLifecycle(ctx.org, 'suwi-notices', params, () => computeNotices(ctx));
+  return cachedLifecycle(ctx.org, 'suwi-notices', params, () => computeNotices(ctx));
 }
 
 async function computeNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {
   const out: SuwiNotice[] = [];
   const today = ctx.today;
   const seesPeople = hasAllDashboardTabs(ctx.user) || Boolean(ctx.user.dashboardTabs?.includes('employees'));
-  // The leave safety checks are the slowest part and need only the pending
-  // leave, so they start as soon as the leave list is in rather than after
-  // every list (overtime is the slowest): the same leave rows pendingRows
-  // gives below, read on their own.
-  //
-  // The leave and the claims lists are each wanted twice here (the pile, and
-  // the safety checks or the claims notice), so each is read once and shared.
-  const lists = sharedAdminLists();
-  const leaveSafe = quietly(() => pendingRows(ctx, 'leave', lists)).then((rows) => (rows ? quietly(() => leaveSafety(ctx.org, ctx.userId, today, rows)) : null));
-  // Every list at once: each is a few round trips to the database.
-  // The waiting pile is the same rows pending_requests and review_requests read, so the counts agree.
-  const [pending, claims, types, tasks, relay, recent, todayReport] = await Promise.all([
-    quietly(() => pendingRows(ctx, '', lists)),
-    may(ctx, '/admin/reimbursements') ? quietly(() => lists.claims(ctx.userId)) : null,
-    may(ctx, '/admin/reimbursements') ? quietly(() => reimbursementTypes().find({ org: ctx.org }).project<{ name: string; maxLimit: number }>({ name: 1, maxLimit: 1 }).toArray()) : null,
-    seesPeople ? quietly(() => peopleTasks(ctx.userId)) : null,
-    may(ctx, '/admin/relay') ? quietly(() => relayEvents().countDocuments({ org: ctx.org, status: { $in: ['scheduled', 'live'] } })) : null,
-    may(ctx, '/admin/relay') ? quietly(() => connectPosts().countDocuments({ org: ctx.org, systemKey: { $exists: false }, type: { $in: ['relay_game', 'live_game', 'survey', 'event', 'caption_challenge'] }, publishedAt: { $gte: new Date(Date.now() - 14 * DAY) } })) : null,
+  // The company's lists are read once and shared by every viewer (orgData.ts); this viewer keeps
+  // only what their tabs allow. Today's attendance comes from the report's own short-lived copy.
+  const [org, todayReport] = await Promise.all([
+    orgSuwiData(ctx.org, today, ctx.userId),
     may(ctx, '/admin/reports/attendance') ? quietly(() => attendanceReport(ctx.userId, { from: today, to: today })) : null,
   ]);
+  const pending = org.pending ? pendingFor(ctx.user, org.pending) : null;
+  const seesClaims = may(ctx, '/admin/reimbursements');
+  const claims = seesClaims ? org.claims : null;
+  const types = seesClaims ? org.claimTypes : null;
+  const tasks = seesPeople && org.tasks ? { payroll: org.tasks.payroll, people: org.tasks.people.map((p) => ({ userId: p.userId, tasks: p.keys.map((key) => ({ key })) })) } : null;
+  const seesRelay = may(ctx, '/admin/relay');
+  const relay = seesRelay ? org.relayScheduled : null;
+  const recent = seesRelay ? org.engagementPostsRecent : null;
+  // The viewer's own leave is never "fine to approve" for them (the review_requests rule).
+  const leaveSafe = org.leaveSafe && may(ctx, '/admin/leaves') ? { safe: org.leaveSafe.safe.filter((r) => r.userId !== ctx.userId) } : null;
 
   // Today: who is on leave, and who should have punched in by now and hasn't.
   // Count 0: these are for reading, not a badge on the sidebar.
@@ -129,7 +119,7 @@ async function computeNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {
     }
 
     // Leave that looks fine: the same checks review_requests makes for its safe-to-approve list.
-    const easy = (await leaveSafe)?.safe.length ?? 0;
+    const easy = leaveSafe?.safe.length ?? 0;
     if (easy > 0) {
       out.push({
         key: 'leave_easy', icon: 'check', view: 'leave', count: easy,

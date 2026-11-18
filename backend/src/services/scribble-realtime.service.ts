@@ -28,6 +28,7 @@ import {
   tickScribble,
 } from './scribble-room.service';
 import { initScribbleTickets, verifyTicket } from './scribble-ticket.service';
+import { InFlight } from '../utils/inflight';
 import { logger } from '../utils/logger';
 
 /**
@@ -45,6 +46,7 @@ const TICK_MS = 250;
 
 let namespace: Namespace | undefined;
 let timer: NodeJS.Timeout | undefined;
+const passes = new InFlight();
 
 const userRoom = (userId: string) => `scribble:user:${userId}`;
 const roomChannel = (org: string, code: string) => `scribble:room:${org}:${code}`;
@@ -314,15 +316,17 @@ function listen(socket: Socket, seated: Promise<Seat | null>) {
 function start() {
   if (timer) return;
   timer = setInterval(() => {
-    void tickScribble().catch((error) => logger.error('Scribble tick failed', {}, error));
+    void passes.track(tickScribble().catch((error) => logger.error('Scribble tick failed', {}, error)));
   }, TICK_MS);
   timer.unref?.();
 }
 
-export function closeScribbleRealtime(): void {
+/** Stops the clock and the namespace; resolves once a pass under way has finished (it reads the database). */
+export async function closeScribbleRealtime(): Promise<void> {
   if (timer) clearInterval(timer);
   timer = undefined;
   namespace = undefined;
   setScribbleEmitter(null);
   people.clear();
+  await passes.settle();
 }

@@ -21,8 +21,12 @@ import '../../manager/bloc/manager_bloc.dart';
 import '../../manager/data/manager_models.dart';
 import '../../requests/presentation/request_summary.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
+import '../../manager_shell/presentation/app_bottom_nav.dart';
+import '../../lifecycle/offboarding/offboarding.dart'
+    show OffboardingChrome, OffboardingPage, OffboardingStore, shortDay;
 import '../../payroll/data/payroll_api_service.dart';
 import '../../payroll/data/payroll_models.dart';
+import '../../payroll/presentation/payroll_lock.dart';
 import '../../placements/data/placements_api_service.dart';
 import '../../placements/data/placements_models.dart';
 import '../../policies/data/policies_api_service.dart';
@@ -32,6 +36,7 @@ import '../../shared/app_toast.dart';
 import '../../shared/attachment_picker.dart';
 import '../../shared/image_source_sheet.dart' show ImageSourceChoice;
 import '../../support/presentation/support_desk_screen.dart';
+import '../../lifecycle/onboarding/onboarding_launcher.dart';
 
 part 'placements_screen.dart';
 part 'payroll_screen.dart';
@@ -68,6 +73,14 @@ class QuickActionsController extends ChangeNotifier {
   /// The attendance calendar, for a notification about a punch or a
   /// correction of their own.
   void openCalendar() => _state?._open(_QuickPage.calendar);
+
+  /// Payroll, for "Save your documents" (payslips and Form 16) elsewhere.
+  void openPayroll() => _state?._open(_QuickPage.payroll);
+
+  /// Action › Off-boarding (R3), for a push about it; [section] `handover`
+  /// or `exit_interview` opens that screen over it.
+  void openOffboarding({String? section}) =>
+      _state?._openOffboarding(section: section);
 
   void _attach(_QuickActionsScreenState state) {
     _state = state;
@@ -615,6 +628,7 @@ class QuickActionsScreen extends StatefulWidget {
     this.placements,
     this.payroll,
     this.pickPayrollFile,
+    this.payrollLock,
   });
 
   final ManagerBloc bloc;
@@ -639,6 +653,9 @@ class QuickActionsScreen extends StatefulWidget {
   /// Picks an investment proof. Supplied by tests; the system picker
   /// otherwise.
   final PayrollFilePicker? pickPayrollFile;
+
+  /// The phone's lock Payroll opens behind; tests hand in their own (the app uses the system's).
+  final DeviceLock? payrollLock;
 
   @override
   State<QuickActionsScreen> createState() => _QuickActionsScreenState();
@@ -749,6 +766,56 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     _reimbursementAmount.addListener(_onReimbursementFieldChanged);
     _reimbursementDescription.addListener(_onReimbursementFieldChanged);
     _leaveReason.addListener(_onLeaveFieldChanged);
+    _offboarding.addListener(_onOffboardingChanged);
+    unawaited(_offboarding.revalidate());
+    LifecycleMeStore.instance.addListener(_onLifecycleChanged);
+  }
+
+  /// The Onboarding tile comes and goes with what `/lifecycle/me` says.
+  void _onLifecycleChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// The Off-boarding tile and page (R3), while someone is on notice.
+  late final OffboardingStore _offboarding = OffboardingStore.of(
+    widget.bloc.session,
+  );
+
+  void _onOffboardingChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// R3, with the shell's header and tabs; "Save your documents" comes back
+  /// here and opens Payroll, where the payslips and Form 16 are.
+  void _openOffboarding({String? section}) {
+    unawaited(
+      Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => OffboardingPage(
+            store: _offboarding,
+            openSection: section,
+            chrome: OffboardingChrome(
+              header: AppHomeHeader(
+                profileAction: widget.profileAction,
+                onNotifications: widget.onNotifications,
+              ),
+              bottomNav: AppBottomNav(
+                tabs: visibleTabs(widget.bloc.session.user.enabledTabs),
+                selected: widget.bloc.state.tab,
+                onSelect: (tab) {
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                  widget.bloc.add(ChangeManagerTab(tab, fresh: true));
+                },
+              ),
+              onOpenDocuments: () {
+                Navigator.of(context).popUntil((route) => route.isFirst);
+                _open(_QuickPage.payroll);
+              },
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _onLeaveFieldChanged() {
@@ -757,6 +824,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   @override
   void dispose() {
+    _offboarding.removeListener(_onOffboardingChanged);
+    LifecycleMeStore.instance.removeListener(_onLifecycleChanged);
     widget.controller._detach(this);
     _text.dispose();
     _leaveReason.dispose();
@@ -971,16 +1040,22 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         _QuickPage.overtime => _overtimeHub(),
         _QuickPage.applyOvertime => _applyOvertimeForm(),
         _QuickPage.reimbursements => _reimbursementHub(),
-        _QuickPage.payroll => PayrollScreen(
-          key: _payrollKey,
-          api: _payrollApi,
+        // Payroll shows salary: it opens only after the phone's own lock (Face ID, fingerprint or passcode).
+        _QuickPage.payroll => PayrollLockGate(
+          key: const ValueKey('payroll-gate'),
           onClose: _back,
-          profileAction: widget.profileAction,
-          onNotifications: widget.onNotifications,
-          onQuickCreate: _showQuickCreateComingSoon,
-          onFixPunchDay: _fixPunchDay,
-          onRaiseTicket: _openSupportDesk,
-          pickFile: widget.pickPayrollFile,
+          lock: widget.payrollLock,
+          child: PayrollScreen(
+            key: _payrollKey,
+            api: _payrollApi,
+            onClose: _back,
+            profileAction: widget.profileAction,
+            onNotifications: widget.onNotifications,
+            onQuickCreate: _showQuickCreateComingSoon,
+            onFixPunchDay: _fixPunchDay,
+            onRaiseTicket: _openSupportDesk,
+            pickFile: widget.pickPayrollFile,
+          ),
         ),
         _QuickPage.applyReimbursement => _applyReimbursementForm(),
         _QuickPage.policies => _policies(),
@@ -1156,6 +1231,18 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     mainAxisExtent: 123.185,
                   ),
                   children: [
+                    // A new joiner's onboarding, first while it runs (until
+                    // probation ends), only where the lifecycle is on.
+                    if (LifecycleMeStore.instance.value.showsOnboarding)
+                      _HomeActionCard(
+                        key: const ValueKey('onboarding-card'),
+                        icon: Icons.waving_hand_rounded,
+                        color: const Color(0xFF0571A6),
+                        tint: const Color(0xFFE8F4FA),
+                        title: 'Onboarding',
+                        subtitle: onboardingTileSubtitle(LifecycleMeStore.instance.value),
+                        onTap: () => openOnboardingHome(context),
+                      ),
                     // Someone marked present automatically has no attendance to
                     // manage: no leave to balance against days worked, and no
                     // overtime to claim beyond hours nobody records. What is
@@ -1245,6 +1332,21 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                       imageAsset:
                           'assets/icons/connect_icon_my_post_pencil.png',
                     ),
+                    // Off-boarding (R3): someone serving notice, where the
+                    // lifecycle is on. Last, and quiet.
+                    if (_offboarding.showsOffboardingPage)
+                      _HomeActionCard(
+                        key: const ValueKey('offboarding-card'),
+                        icon: Icons.door_front_door_outlined,
+                        color: const Color(0xFF0571A6),
+                        tint: const Color(0xFFEAF3F8),
+                        title: 'Off-boarding',
+                        subtitle: switch (_offboarding.me.offboarding?.tl) {
+                          final tl? => 'Last day ${shortDay(tl)}',
+                          null => 'Before you go',
+                        },
+                        onTap: _openOffboarding,
+                      ),
                   ],
                 ),
               ],

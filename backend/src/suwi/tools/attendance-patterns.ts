@@ -8,6 +8,7 @@ import { attendanceReport } from '../../services/attendance-report.service';
 import { listOutOfLocationForAdmin } from '../../services/attendance.service';
 import { placeLabel } from '../../services/geofence.service';
 import { defineTools, num, str, SuwiContext } from '../tools';
+import { peopleWith } from '../toolCache';
 import { countReport, DEVICE_SYNC_NOTE } from './attendance';
 import { ACTIVE, addDays, isDate, rangeOf, weekdayOf } from './team';
 
@@ -15,7 +16,7 @@ type FarPunch = { userId: string; date: string; punch: 'in' | 'out'; place: stri
 
 /** Each active person's reporting manager's userId, so answers can link managers too. */
 async function managerIds(ctx: SuwiContext): Promise<Map<string, string>> {
-  const rows = await users().find({ org: ctx.org, ...ACTIVE } as never, { projection: { _id: 0, userId: 1, managerUserId: 1 } }).toArray();
+  const rows = await peopleWith<{ userId: string; managerUserId?: string }>(ctx.org, ['userId', 'managerUserId']);
   return new Map(rows.filter((u) => u.managerUserId).map((u) => [u.userId, u.managerUserId!]));
 }
 
@@ -31,8 +32,8 @@ async function farPunches(ctx: SuwiContext, from: string, to: string): Promise<M
   const ool = await listOutOfLocationForAdmin(ctx.userId, from, to);
   for (const r of ool) add({ userId: r.userId, date: r.workDate, punch: r.punchType, place: r.place, distanceMeters: r.distanceMeters ?? null, reason: r.reason, status: r.outcome === 'present' ? 'marked present' : r.status });
   const radius = new Map((await offices().find({ org: ctx.org }).toArray()).map((o) => [o.id, o.radiusMeters]));
-  const ids = (await users().find({ org: ctx.org, ...ACTIVE } as never, { projection: { _id: 0, userId: 1 } }).toArray()).map((u) => u.userId);
-  const located = await attendanceRecords().find({ userId: { $in: ids }, workDate: { $gte: from, $lte: to }, $or: [{ punchInLocation: { $exists: true } }, { punchOutLocation: { $exists: true } }] }, { projection: { userId: 1, workDate: 1, punchInLocation: 1, punchOutLocation: 1 } }).toArray();
+  const ids = (await peopleWith<{ userId: string }>(ctx.org, ['userId'])).map((u) => u.userId);
+  const located = await attendanceRecords().find({ userId: { $in: ids }, workDate: { $gte: from, $lte: to }, $or: [{ punchInLocation: { $exists: true } }, { punchOutLocation: { $exists: true } }] }, { projection: { _id: 0, userId: 1, workDate: 1, 'punchInLocation.offsite': 1, 'punchInLocation.officeId': 1, 'punchInLocation.distanceMeters': 1, 'punchInLocation.officeName': 1, 'punchOutLocation.offsite': 1, 'punchOutLocation.officeId': 1, 'punchOutLocation.distanceMeters': 1, 'punchOutLocation.officeName': 1 } }).toArray();
   for (const rec of located) {
     for (const [punch, loc] of [['in', rec.punchInLocation], ['out', rec.punchOutLocation]] as const) {
       if (!loc) continue;

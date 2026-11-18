@@ -35,6 +35,9 @@ export interface Leave {
   /** When the employee cancelled it, and what they told their manager, if anything. */
   cancelledAt?: Date;
   cancelNote?: string;
+  /** Set when HR cancelled it from the dashboard rather than the employee asking. */
+  cancelledByUserId?: string;
+  cancelledByRole?: 'admin';
   /**
    * The employee asked to cancel this leave after it was approved. Until the approver decides, the
    * leave stays approved; approving it cancels the leave, declining it leaves it approved.

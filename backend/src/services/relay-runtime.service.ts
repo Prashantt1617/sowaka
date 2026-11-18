@@ -29,6 +29,7 @@ import {
 } from './relay-engine';
 import { itemsForTeam } from './relay-pool';
 import { presignConnectMedia } from './s3-connect-media.service';
+import { keptFaceUrlsFor } from './face-photos';
 import { RelayError } from './relay-import.service';
 import { notifyLiveGameStarted } from './connect-notifications.service';
 import { logger } from '../utils/logger';
@@ -122,9 +123,13 @@ export interface PlayerSnapshot {
     hasClue: boolean;
     /** Marks the viewer's own row, which the roster labels "(You)". */
     isYou: boolean;
+    /** Their face; null for no photo (the initials stand in). */
+    photoUrl: string | null;
   }[];
   /** Named on every player's screen, because they are who to shout the clue at. */
   leadName: string;
+  /** The lead's face beside their name; null for no photo. */
+  leadPhotoUrl: string | null;
   /** Drives "Your team lead is answering" — true while they are typing. */
   leadIsAnswering: boolean;
   standings: { rank: number; name: string; points: number }[];
@@ -457,6 +462,8 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
 
   const players = await presentPlayers(event, team);
   const leader = currentLeader(players, config, now);
+  // Polled every second or two: faces are kept a few minutes, never read per poll.
+  const faces = await keptFaceUrlsFor(players.map((player) => player.userId)).catch(() => new Map<string, string | null>());
   const teammatesOf = (holders: Set<string>) =>
     players.map((player) => ({
       name: player.name,
@@ -464,6 +471,7 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
       present: now - player.lastSeenAt.getTime() < config.presenceWindowSeconds * 1000,
       hasClue: holders.has(player.userId),
       isYou: player.userId === userId,
+      photoUrl: faces.get(player.userId) ?? null,
     }));
   const teammates = teammatesOf(new Set());
 
@@ -480,6 +488,7 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
       pieces: [],
       teammates,
       leadName: leader?.name ?? '',
+      leadPhotoUrl: leader ? (faces.get(leader.userId) ?? null) : null,
       leadIsAnswering: false,
       standings: [],
       secondsUntilStart: secondsUntil(event.startsAt, now),
@@ -518,6 +527,7 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
       phase === 'playing' ? holdersOf(item, players, config, question.elapsedSec, now) : new Set(),
     ),
     leadName: leader?.name ?? '',
+    leadPhotoUrl: leader ? (faces.get(leader.userId) ?? null) : null,
     leadIsAnswering: (await answeringTeams(event.id, [team.id])).has(team.id),
     standings: table,
     secondsUntilStart: 0,
@@ -873,7 +883,11 @@ export async function eventTick(eventId: string): Promise<Map<string, PlayerSnap
     event.status === 'live' ? poolFor(event, event.currentRound) : Promise.resolve([]),
   ]);
   const everyone = teams.flatMap((team) => team.members.map((member) => member.userId));
-  const seen = await presenceFor(eventId, everyone);
+  const [seen, faces] = await Promise.all([
+    presenceFor(eventId, everyone),
+    // Every tick: faces are kept a few minutes rather than read each time.
+    keptFaceUrlsFor(everyone).catch(() => new Map<string, string | null>()),
+  ]);
   const lastSeen = new Map([...seen].map(([userId, at]) => [userId, new Date(at)]));
 
   // Settling can write, so it happens once per team here rather than per player.
@@ -936,6 +950,7 @@ export async function eventTick(eventId: string): Promise<Map<string, PlayerSnap
       isLeader: player.userId === leader?.userId,
       present: now - player.lastSeenAt.getTime() < config.presenceWindowSeconds * 1000,
       hasClue: holders.has(player.userId),
+      photoUrl: faces.get(player.userId) ?? null,
     }));
     const phase: PlayerSnapshot['phase'] =
       event.status === 'finished'
@@ -972,6 +987,7 @@ export async function eventTick(eventId: string): Promise<Map<string, PlayerSnap
             : [],
         teammates: roster.map(({ userId: id, ...rest }) => ({ ...rest, isYou: id === member.userId })),
         leadName: leader?.name ?? '',
+        leadPhotoUrl: leader ? (faces.get(leader.userId) ?? null) : null,
         leadIsAnswering: answering.has(team.id),
         standings: table,
         secondsUntilStart: phase === 'lobby' ? secondsUntil(event.startsAt, now) : 0,
@@ -1033,6 +1049,9 @@ export async function liveEventIds(): Promise<string[]> {
  */
 export async function playerCard(userId: string) {
   const { event, team } = await membership(userId);
+  const faces = team
+    ? await keptFaceUrlsFor(team.members.map((member) => member.userId)).catch(() => new Map<string, string | null>())
+    : new Map<string, string | null>();
   return {
     event: {
       id: event.id,
@@ -1053,6 +1072,7 @@ export async function playerCard(userId: string) {
             name: member.name,
             isLeader: member.isLeader,
             isYou: member.userId === userId,
+            photoUrl: faces.get(member.userId) ?? null,
           })),
         }
       : null,

@@ -47,6 +47,8 @@ async function orgFilterFor(adminUserId: string): Promise<{ org?: string; hidden
  *   records can carry inline profile photos.
  * - `alsoLookup` appends further `$lookup` stages over the same people; what
  *   they find stays on each employee under its `as`.
+ * - `rowMatch` filters the rows in the database (e.g. `{ status: 'pending' }`),
+ *   so a caller that wants a few rows doesn't read everyone's whole history.
  *
  * Rows come back in no promised order: sort them with `sortLikeMongo`.
  */
@@ -58,6 +60,7 @@ export async function orgUsersWithRows<Row extends Document>(
     onlyWithRows?: boolean;
     userFields?: string[];
     alsoLookup?: Document[];
+    rowMatch?: Document;
   } = {},
 ): Promise<{ employees: User[]; rows: WithId<Row>[] }> {
   const filter = await orgFilterFor(adminUserId);
@@ -71,7 +74,7 @@ export async function orgUsersWithRows<Row extends Document>(
       [
         { $match: filter },
         ...(projection ? [{ $project: projection }] : []),
-        { $lookup: { from: rows.collectionName, localField: 'userId', foreignField: options.foreignField ?? 'userId', as } },
+        { $lookup: { from: rows.collectionName, localField: 'userId', foreignField: options.foreignField ?? 'userId', ...(options.rowMatch ? { pipeline: [{ $match: options.rowMatch }] } : {}), as } },
         ...(options.alsoLookup ?? []),
         ...(options.onlyWithRows ? [{ $match: { [`${as}.0`]: { $exists: true } } }] : []),
       ],

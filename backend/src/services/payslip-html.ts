@@ -19,6 +19,8 @@ export interface PayslipForHtml {
   /** The structure's reimbursements; the rest of reimbursementsPaise is approved claims. */
   reimbursementLines?: { name: string; amountPaise: number; hidden?: boolean }[];
   netPayablePaise: number;
+  /** On notice: this pay is held and paid with the final settlement. */
+  held?: { reason: 'notice'; since: string };
   inputs: {
     workingDays: number;
     lopDays: number;
@@ -126,7 +128,7 @@ export function payslipHtml(slip: PayslipForHtml, company: { name: string; addre
     <table><thead><tr><th>Earnings</th><th class="r">Amount</th></tr></thead><tbody>${earningRows}${otRow}${reimb}<tr class="tot"><td>Gross earnings</td><td class="r">${inr(grossFull)}</td></tr></tbody></table>
     <table><thead><tr><th>Deductions</th><th class="r">Amount</th></tr></thead><tbody>${deductionRows}<tr class="tot"><td>Total deductions</td><td class="r">${inr(totalDeductions)}</td></tr></tbody></table>
   </div>
-  <div class="payable"><div><div class="t">Total net payable</div><div class="sub">Gross ${inr(grossFull)} − deductions ${inr(totalDeductions)}</div></div><div class="amt">${inr(net)}</div></div>
+  <div class="payable"><div><div class="t">Total net payable</div><div class="sub">Gross ${inr(grossFull)} − deductions ${inr(totalDeductions)}</div></div><div class="amt">${inr(net)}</div></div>${slip.held ? `<div class="sub" style="margin-top:8px">Held: paid with your final settlement after your last working day.</div>` : ''}
   <div class="words">Amount in words: <b>${esc(rupeesInWords(net))}</b></div>
   <div class="foot">This is a system generated document and does not require a signature.</div>
 </div></body></html>`;

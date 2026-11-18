@@ -1,5 +1,6 @@
-// Payroll › Statutory & tax settings: every statutory and income-tax figure
-// payroll uses, per financial year, as stored in the database
+// The law's figures on Setup › Statutory & tax: every statutory and income-tax
+// figure payroll uses, per financial year, as stored in the database. Each tab
+// of that page shows its part (LawFigures) under the company's own choices
 // (docs/payroll-config-api.md). Nothing falls back to a figure in code: a year
 // without its rows cannot be paid, and this page says so.
 //
@@ -22,11 +23,13 @@ import {
   copyStatutoryConfig, copyTdsConfig, getStatutoryConfig, getTdsConfig, listStatutoryConfigYears, listTdsConfigYears, saveStatutoryConfig, saveTdsConfig,
 } from '../../services/payroll';
 import type { ConfigStatus, LwfRule, StatutoryConfig, TaxRegime, TdsConfig, TdsConfigYear } from '../../services/payroll';
-import { Card, LoadError, Pill, SelectBox, SkeletonForm, StatusTabs } from '../ui';
+import { Card, LoadError, Pill, SelectBox, SkeletonForm } from '../ui';
 import * as Lk from './look';
 import './look.css';
 
-type Tab = 'tax' | 'pf' | 'other' | 'states';
+/** Which part of the law's figures a tab of Statutory & tax shows. */
+export type LawSection = 'tax' | 'epf' | 'esi' | 'pt' | 'lwf' | 'bonus';
+type StatSection = Exclude<LawSection, 'tax'> | 'meal';
 type Errors = Record<string, string>;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -273,11 +276,10 @@ function readTds(f: TdsForm): { errors: Errors; value: Omit<TdsConfig, 'fy' | 'r
 // —— The page ——
 type Loaded<T> = { state: 'loading' } | { state: 'error'; message: string } | { state: 'missing'; message: string } | { state: 'ready'; data: T };
 
-export function PayrollConfig() {
+export function LawFigures({ section }: { section: LawSection }) {
   const { flash } = useStore();
   const thisFy = fyOf(new Date());
   const [fy, setFy] = useState(thisFy);
-  const [tab, setTab] = useState<Tab>('tax');
   const [years, setYears] = useState<{ stat: string[]; tds: string[]; canEdit: boolean } | null>(null);
   const [stat, setStat] = useState<Loaded<StatutoryConfig>>({ state: 'loading' });
   const [tds, setTds] = useState<Loaded<TdsConfigYear>>({ state: 'loading' });
@@ -335,17 +337,18 @@ export function PayrollConfig() {
   return (
     <div style={{ display: 'grid', gap: 20, animation: 'fade .3s ease both' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ ...Lk.cardTitle, marginRight: 4 }}>The law&rsquo;s figures</div>
         <SelectBox value={fy} onChange={setFy}>
           {fyOptions.map((f) => <option key={f} value={f}>FY {f}{f === thisFy ? ' (this year)' : ''}</option>)}
         </SelectBox>
-        {statusPill('Income tax', tds)}
+        {section === 'tax' && statusPill('Income tax', tds)}
         {statusPill('Statutory', stat)}
         <span style={{ marginLeft: 'auto', fontSize: 12.5, color: 'var(--ink-3)' }}>
-          {canEdit ? 'The same figures for every company on Sowaka.' : 'Read only: these figures are the same for every company and are kept by Sowaka.'}
+          {canEdit ? 'The same figures for every company on Sowaka.' : 'Read only: the same for every company, kept by Sowaka.'}
         </span>
       </div>
 
-      {[{ key: 'tds' as const, l: tds, name: 'Income tax settings' }, { key: 'stat' as const, l: stat, name: 'Statutory settings' }].map(({ key, l, name }) => l.state === 'missing' && (
+      {[...(section === 'tax' ? [{ key: 'tds' as const, l: tds, name: 'Income tax settings' }] : []), { key: 'stat' as const, l: stat, name: 'Statutory settings' }].map(({ key, l, name }) => l.state === 'missing' && (
         <div key={key} role="alert" style={{ ...Lk.note, background: 'var(--bad-bg)', borderColor: 'transparent', color: 'var(--ink)', alignItems: 'center' }}>
           <span aria-hidden style={{ fontWeight: 700, color: 'var(--bad)' }}>!</span>
           <span style={{ flex: 1 }}>
@@ -358,18 +361,8 @@ export function PayrollConfig() {
         </div>
       ))}
 
-      <div>
-        <StatusTabs<Tab>
-          options={['tax', 'pf', 'other', 'states']}
-          active={tab}
-          onSelect={setTab}
-          labels={{ tax: 'Income tax', pf: 'PF & ESI', other: 'Bonus & meal card', states: 'Professional tax & LWF' }}
-        />
-      </div>
-
-      {tab === 'tax'
-        ? <TaxTab fy={fy} loaded={tds} canEdit={canEdit} onSaved={(d) => setTds({ state: 'ready', data: d })} onRetry={() => setAttempt((n) => n + 1)} />
-        : <StatTab key={`${fy}-${stat.state}`} fy={fy} tab={tab} loaded={stat} canEdit={canEdit} onSaved={(c) => setStat({ state: 'ready', data: c })} onRetry={() => setAttempt((n) => n + 1)} />}
+      {section === 'tax' && <TaxTab fy={fy} loaded={tds} canEdit={canEdit} onSaved={(d) => setTds({ state: 'ready', data: d })} onRetry={() => setAttempt((n) => n + 1)} />}
+      <StatTab key={`${fy}-${stat.state}`} fy={fy} section={section === 'tax' ? 'meal' : section} loaded={stat} canEdit={canEdit} onSaved={(c) => setStat({ state: 'ready', data: c })} onRetry={() => setAttempt((n) => n + 1)} />
     </div>
   );
 }
@@ -507,7 +500,7 @@ function TdsEditor({ fy, regime, config, canEdit, onSaved }: { fy: string; regim
 }
 
 // —— Statutory tabs (one row: saved together) ——
-function StatTab({ fy, tab, loaded, canEdit, onSaved, onRetry }: { fy: string; tab: Exclude<Tab, 'tax'>; loaded: Loaded<StatutoryConfig>; canEdit: boolean; onSaved: (c: StatutoryConfig) => void; onRetry: () => void }) {
+function StatTab({ fy, section, loaded, canEdit, onSaved, onRetry }: { fy: string; section: StatSection; loaded: Loaded<StatutoryConfig>; canEdit: boolean; onSaved: (c: StatutoryConfig) => void; onRetry: () => void }) {
   const { flash } = useStore();
   const config = loaded.state === 'ready' ? loaded.data : null;
   const blank: StatForm = {
@@ -544,7 +537,7 @@ function StatTab({ fy, tab, loaded, canEdit, onSaved, onRetry }: { fy: string; t
   const save = async () => {
     const { errors: errs, value } = readStat(fy, form);
     setErrors(errs);
-    if (Object.keys(errs).length) return flash(`${Object.keys(errs).length === 1 ? 'One figure needs' : `${Object.keys(errs).length} figures need`} fixing${Object.keys(errs).some((k) => tabOfPath(k) !== tab) ? ', some on the other tabs' : ''}`, 'error');
+    if (Object.keys(errs).length) return flash(`${Object.keys(errs).length === 1 ? 'One figure needs' : `${Object.keys(errs).length} figures need`} fixing${Object.keys(errs).some((k) => sectionOfPath(k) !== section) ? ', some on the other tabs' : ''}`, 'error');
     setSaving(true);
     try {
       const r = await saveStatutoryConfig(fy, value);
@@ -559,8 +552,7 @@ function StatTab({ fy, tab, loaded, canEdit, onSaved, onRetry }: { fy: string; t
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
-      {tab === 'pf' && (
-        <>
+      {section === 'epf' && (
           <Card padded>
             <SectionHead title="Provident fund (EPF)" note="Rates on the PF wage. EPS is carved out of the employer's share and always on the capped wage; EDLI too." />
             <Grid>
@@ -583,6 +575,8 @@ function StatTab({ fy, tab, loaded, canEdit, onSaved, onRetry }: { fy: string; t
             {errors['epf.ceilings'] && <Err text={errors['epf.ceilings']} />}
             <div style={{ ...Lk.cardNote, marginTop: 8 }}>A month with a change is paid day-weighted. The first ceiling starts on 1 April {fyStart(fy)}.</div>
           </Card>
+      )}
+      {section === 'esi' && (
           <Card padded>
             <SectionHead title="Employees' State Insurance (ESI)" note="On gross pay, for people whose monthly wage is at or under the ceiling." />
             <Grid>
@@ -591,11 +585,9 @@ function StatTab({ fy, tab, loaded, canEdit, onSaved, onRetry }: { fy: string; t
               <Num label="Gross ceiling" prefix="₹" suffix="a month" value={form.esi.grossCeiling} onChange={(v) => setEsi({ grossCeiling: v })} error={errors['esi.grossCeiling']} disabled={ro} />
             </Grid>
           </Card>
-        </>
       )}
 
-      {tab === 'other' && (
-        <>
+      {section === 'bonus' && (
           <Card padded>
             <SectionHead title="Statutory bonus" note="Payment of Bonus Act. A company's bonus rate must stay within the band." />
             <Grid>
@@ -605,23 +597,24 @@ function StatTab({ fy, tab, loaded, canEdit, onSaved, onRetry }: { fy: string; t
               <Num label="Eligible up to" prefix="₹" suffix="Basic a month" hint="No bonus when Basic is above this" value={form.bonus.eligibilityCeiling} onChange={(v) => setBonus({ eligibilityCeiling: v })} error={errors['bonus.eligibilityCeiling']} disabled={ro} />
             </Grid>
           </Card>
+      )}
+      {section === 'meal' && (
           <Card padded>
             <SectionHead title="Meal Card" note="The part of a Meal Card that is tax free each month." />
             <Grid>
               <Num label="Tax free" prefix="₹" suffix="a month" value={form.meal} onChange={(v) => setForm({ ...form, meal: v })} error={errors.meal} disabled={ro} />
             </Grid>
           </Card>
-        </>
       )}
 
-      {tab === 'states' && (
+      {(section === 'pt' || section === 'lwf') && (
         <>
-          {form.states.length === 0 && <Card padded><div style={{ fontSize: 13, color: 'var(--ink-3)' }}>No state has Professional Tax or LWF here yet.</div></Card>}
-          {form.states.map((s, i) => (
-            <StateCard key={s.key} s={s} i={i} errors={errors} ro={ro} onChange={(p) => setState(i, p)} onRemove={() => setForm({ ...form, states: form.states.filter((_, j) => j !== i) })} />
-          ))}
-          {!ro && <div><button type="button" onClick={() => setForm({ ...form, states: [...form.states, { key: stateKey++, state: '', pt: [{ upTo: '', amount: '', overrideMonth: '', overrideAmount: '' }], lwf: null }] })} className="lk-btn" style={Lk.btn}>+ Add a state</button></div>}
-          <div style={Lk.cardNote}>A company can still set its own rule for a state in Statutory Components; that wins over this row for that company.</div>
+          {!form.states.some((s) => s[section] !== null) && <Card padded><div style={{ fontSize: 13, color: 'var(--ink-3)' }}>No state has {section === 'pt' ? 'Professional Tax' : 'Labour Welfare Fund'} here yet.</div></Card>}
+          {form.states.map((s, i) => ((ro && s[section] === null) ? null : (
+            <StateCard key={s.key} s={s} i={i} only={section} errors={errors} ro={ro} onChange={(p) => setState(i, p)} onRemove={() => setForm({ ...form, states: form.states.filter((_, j) => j !== i) })} />
+          )))}
+          {!ro && <div><button type="button" onClick={() => setForm({ ...form, states: [...form.states, { key: stateKey++, state: '', pt: section === 'pt' ? [{ upTo: '', amount: '', overrideMonth: '', overrideAmount: '' }] : null, lwf: section === 'lwf' ? blankLwf() : null }] })} className="lk-btn" style={Lk.btn}>+ Add a state</button></div>}
+          <div style={Lk.cardNote}>A company rule for a state (above) wins over this one for that company.</div>
         </>
       )}
 
@@ -637,9 +630,10 @@ function StatTab({ fy, tab, loaded, canEdit, onSaved, onRetry }: { fy: string; t
 /** A statutory form as text to compare, without the list keys React needs. */
 const sameStat = (f: StatForm | null) => JSON.stringify(f && { ...f, states: f.states.map((st) => ({ state: st.state, pt: st.pt, lwf: st.lwf })) });
 /** Which tab a field's error is on. */
-const tabOfPath = (path: string): Exclude<Tab, 'tax'> => (path.startsWith('epf') || path.startsWith('esi') ? 'pf' : path.startsWith('states') ? 'states' : 'other');
+const sectionOfPath = (path: string): StatSection => (path.startsWith('epf') ? 'epf' : path.startsWith('esi') ? 'esi' : path.startsWith('bonus') ? 'bonus' : path === 'meal' ? 'meal' : path.includes('.lwf') ? 'lwf' : 'pt');
+const blankLwf = (): LwfForm => ({ cycle: 'monthly', months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], employee: blankShare('flat'), employer: blankShare('multiple_of_employee') });
 
-function StateCard({ s, i, errors, ro, onChange, onRemove }: { s: StateForm; i: number; errors: Errors; ro: boolean; onChange: (p: Partial<StateForm>) => void; onRemove: () => void }) {
+function StateCard({ s, i, only, errors, ro, onChange, onRemove }: { s: StateForm; i: number; only: 'pt' | 'lwf'; errors: Errors; ro: boolean; onChange: (p: Partial<StateForm>) => void; onRemove: () => void }) {
   const e = (k: string) => errors[`states.${i}.${k}`];
   const setSlab = (j: number, p: Partial<PtSlabForm>) => onChange({ pt: s.pt!.map((x, k) => (k === j ? { ...x, ...p } : x)) });
   const lwf = s.lwf;
@@ -651,12 +645,12 @@ function StateCard({ s, i, errors, ro, onChange, onRemove }: { s: StateForm; i: 
           <Text label="State" value={s.state} onChange={(v) => onChange({ state: v })} disabled={ro} error={e('state')} placeholder="e.g. karnataka" />
         </div>
         <div style={{ display: 'flex', gap: 18, marginTop: 28 }}>
-          <Tick checked={s.pt !== null} disabled={ro} onChange={(v) => onChange({ pt: v ? [{ upTo: '', amount: '', overrideMonth: '', overrideAmount: '' }] : null })} label="Professional Tax" />
-          <Tick checked={lwf !== null} disabled={ro} onChange={(v) => onChange({ lwf: v ? { cycle: 'monthly', months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], employee: blankShare('flat'), employer: blankShare('multiple_of_employee') } : null })} label="Labour Welfare Fund" />
+          {only === 'pt' && <Tick checked={s.pt !== null} disabled={ro} onChange={(v) => onChange({ pt: v ? [{ upTo: '', amount: '', overrideMonth: '', overrideAmount: '' }] : null })} label="Professional Tax" />}
+          {only === 'lwf' && <Tick checked={lwf !== null} disabled={ro} onChange={(v) => onChange({ lwf: v ? blankLwf() : null })} label="Labour Welfare Fund" />}
         </div>
         {!ro && <button type="button" onClick={onRemove} className="lk-btn" style={{ ...Lk.btnDanger, marginLeft: 'auto', marginTop: 24 }}>Remove state</button>}
       </div>
-      {s.pt && (
+      {only === 'pt' && s.pt && (
         <>
           <div style={{ ...Lk.eyebrow, margin: '6px 0 10px' }}>Professional Tax · on monthly gross</div>
           <RowsTable
@@ -677,7 +671,7 @@ function StateCard({ s, i, errors, ro, onChange, onRemove }: { s: StateForm; i: 
           {e('pt') && <Err text={e('pt')!} />}
         </>
       )}
-      {lwf && (
+      {only === 'lwf' && lwf && (
         <>
           <div style={{ ...Lk.eyebrow, margin: '16px 0 10px' }}>Labour Welfare Fund</div>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>

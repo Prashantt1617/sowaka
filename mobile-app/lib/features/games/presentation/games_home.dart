@@ -9,6 +9,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../auth/data/auth_models.dart';
 import '../../shared/app_toast.dart';
+import '../../shared/face_photo.dart';
 import '../../shared/org_branding.dart';
 import '../data/games_api_service.dart';
 import '../data/games_home_models.dart';

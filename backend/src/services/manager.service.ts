@@ -1,3 +1,5 @@
+import { cachedLifecycle, lifecycleReadCacheOn, refreshLifecycle } from './lifecycle/readCache';
+import { peekSwr } from './swr-cache';
 import {
   attendanceRecords,
   feedbackRecords,
@@ -272,6 +274,76 @@ export async function getFeedbackSnapshot(
 /** A roster record as the workspace reads it: an inline photo left behind, and marked. */
 type RosterUser = User & { hasInlinePhoto?: boolean };
 
+/**
+ * The whole company's roster as the workspace reads it: each record bar an inline photo and the
+ * exit record. An older account keeps its photo as a base64 data URI of hundreds of KB, and the
+ * whole company's of those made this the slowest call the app makes: a photo kept as a link stays,
+ * an inline one is marked and read later only for the people shown. The exit record (clearance,
+ * settlement notes) is the biggest field on a leaver and nothing here reads it.
+ */
+async function loadWorkspaceRoster(org: string): Promise<RosterUser[]> {
+  return users()
+    .aggregate<RosterUser>(
+      [
+        // Scoped to the company: `managerUserId` alone is not unique across orgs.
+        { $match: { org } },
+        { $unset: ['exit'] },
+        {
+          $set: {
+            hasInlinePhoto: { $regexMatch: { input: { $ifNull: ['$profilePhotoUrl', ''] }, regex: '^data:' } },
+            profilePhotoUrl: {
+              $cond: [
+                { $regexMatch: { input: { $ifNull: ['$profilePhotoUrl', ''] }, regex: '^data:' } },
+                '$$REMOVE',
+                '$profilePhotoUrl',
+              ],
+            },
+          },
+        },
+      ],
+      // Every batch at once: a roster past the default first batch of 101 went back for the rest.
+      { batchSize: 100_000 },
+    )
+    .toArray();
+}
+
+/**
+ * The roster changes slowly (people, managers, photos, shifts) and is most of what the workspace
+ * reads, so it is kept per company in memory (lifecycle/readCache: dropped by every write that can
+ * touch people, refreshed behind the reader after a minute, warmed with the boards). Today's
+ * punches and marks are never kept: they are read fresh on every request. Each request gets its own
+ * shallow copies, because the workspace fills in inline photos on the records it shows.
+ */
+export async function workspaceRoster(org: string, opts: { fresh?: boolean } = {}): Promise<RosterUser[]> {
+  const kept = opts.fresh ? await loadWorkspaceRoster(org) : await cachedLifecycle(org, 'mgr-roster', null, () => loadWorkspaceRoster(org));
+  return kept.map((user) => ({ ...user }));
+}
+
+/**
+ * The inline photos (base64 in the record, an older account's) of these people: each kept per person
+ * at the company on the API server (`mgr-photos`, dropped like the roster by every write that can touch
+ * people). Three people with one were ~370 KB on every open of the workspace, the most it read once the
+ * roster was kept.
+ */
+async function inlinePhotosOf(org: string, userIds: string[]): Promise<Pick<User, 'userId' | 'profilePhotoUrl'>[]> {
+  const read = (ids: string[]) => users()
+    .find({ userId: { $in: ids } }, { projection: { _id: 0, userId: 1, profilePhotoUrl: 1 } })
+    .toArray() as Promise<Pick<User, 'userId' | 'profilePhotoUrl'>[]>;
+  if (!lifecycleReadCacheOn() || !org) return read(userIds);
+  const each = await Promise.all(userIds.map((userId) => cachedLifecycle(org, 'mgr-photos', { userId }, () => read([userId]).then((rows) => rows[0] ?? null))));
+  return each.filter((row): row is Pick<User, 'userId' | 'profilePhotoUrl'> => row !== null);
+}
+
+/** The kept roster if there is a usable one, without reading anything (shared: callers must not change it). */
+export function keptWorkspaceRoster(org: string): RosterUser[] | undefined {
+  return peekSwr<RosterUser[]>(org, 'mgr-roster', null);
+}
+
+/** The kept roster worked out again now (the warm-up). */
+export function refreshWorkspaceRoster(org: string): Promise<RosterUser[]> {
+  return refreshLifecycle(org, 'mgr-roster', null, () => loadWorkspaceRoster(org));
+}
+
 export async function getManagerWorkspace(
   managerUserId: string,
   /** The viewer as the auth check already read them, photo aside. */
@@ -281,8 +353,13 @@ export async function getManagerWorkspace(
   if (!manager) throw new ManagerError(404, 'Manager not found');
   // Everything that depends only on who is asking goes out together: the
   // reads below used to run one after another, and each is a round trip.
+  // The company's roster: kept in memory (workspaceRoster), each request on its own copies.
+  const rosterFuture = workspaceRoster(manager.org ?? '');
+  // Their own manager from that roster (whole records bar the exit and an inline photo, which is
+  // filled in below like any shown person's): before, their whole record was read every time, an
+  // older account's inline photo with it. Someone the roster does not hold is read as before.
   const approverFuture = manager.managerUserId
-    ? users().findOne({ userId: manager.managerUserId })
+    ? rosterFuture.then((roster): User | Promise<User | null> => roster.find((user) => user.userId === manager.managerUserId) ?? users().findOne({ userId: manager.managerUserId! }))
     : Promise.resolve(null);
 
   // Scoped to the manager's own company: `managerUserId` alone is not unique
@@ -304,26 +381,7 @@ export async function getManagerWorkspace(
       // a base64 data URI of hundreds of KB, and the whole company's of those
       // made this the slowest call the app makes. A photo kept as a link stays;
       // an inline one is marked, and read below only for the people shown.
-      users()
-        .aggregate<RosterUser>(
-          [
-            { $match: orgFilter },
-            {
-              $set: {
-                hasInlinePhoto: { $regexMatch: { input: { $ifNull: ['$profilePhotoUrl', ''] }, regex: '^data:' } },
-                profilePhotoUrl: {
-                  $cond: [
-                    { $regexMatch: { input: { $ifNull: ['$profilePhotoUrl', ''] }, regex: '^data:' } },
-                    '$$REMOVE',
-                    '$profilePhotoUrl',
-                  ],
-                },
-              },
-            },
-          ],
-          { batchSize: 100_000 },
-        )
-        .toArray(),
+      rosterFuture,
       cycleInfoFor(manager.org ?? ''),
       // Company config for the overtime apply flow: which weekdays are
       // week-offs, whether overtime is enabled for this user's department.
@@ -408,9 +466,7 @@ export async function getManagerWorkspace(
   const inlinePhotosPromise = inlinePhotoIds.length
     ? optional(
         'Workspace inline photos',
-        () => users()
-          .find({ userId: { $in: inlinePhotoIds } }, { projection: { _id: 0, userId: 1, profilePhotoUrl: 1 } })
-          .toArray(),
+        () => inlinePhotosOf(manager.org ?? '', inlinePhotoIds),
         [] as Pick<User, 'userId' | 'profilePhotoUrl'>[],
         { userId: managerUserId },
       )
@@ -492,6 +548,8 @@ export async function getManagerWorkspace(
             .sort({ period: 1 })
             .toArray()
         : Promise.resolve([]),
+      // Today's punches, read fresh every time (never kept): only what a row shows, on the
+      // {userId, workDate} and {employeeId, workDate} indexes.
       reportIds.length
         ? attendanceRecords()
             .find({
@@ -500,7 +558,7 @@ export async function getManagerWorkspace(
                 { userId: { $in: reportIds } },
                 ...(reportEmployeeIds.length ? [{ employeeId: { $in: reportEmployeeIds } }] : []),
               ],
-            })
+            }, { projection: { _id: 0, userId: 1, employeeId: 1, punchIn: 1, punchOut: 1, dayType: 1, 'outsideLocation.punchType': 1, 'outsideLocation.reason': 1 } })
             .toArray()
         : Promise.resolve([]),
 
@@ -936,6 +994,7 @@ export async function upsertFeedback(
       scenario: 'feedback_shared',
       title: `Your manager shared your ${month} feedback`,
       body: 'Tap to read it',
+      actorUserId: managerUserId,
       data: { destination: 'grow_feedback', view: 'mine', period, feedbackId: String(record?._id ?? '') },
     }).catch(() => undefined);
   }

@@ -1,5 +1,7 @@
+import { forgetCorrectionsListOf } from './timeOfficeDrop';
 import { ObjectId, type WithId } from 'mongodb';
 import { attendanceRecords, attendanceRegularizations, companies, offices, users } from '../config/db';
+import { forgetSwrExcept } from './swr-cache';
 import { PunchLocation } from '../models/office.model';
 import { User } from '../models/user.model';
 import { locateForPunch, officeView, placeLabel, punchLocationFrom } from './geofence.service';
@@ -59,7 +61,8 @@ async function getAttendanceForEmployee(
   // grade it. Imported here, not at the top: the report imports this module.
   const { employeeDayStatuses } = await import('./attendance-report.service');
   const [records, regularizations, days] = await Promise.all([
-    attendanceRecords().find(recordFilter).sort({ workDate: 1 }).toArray(),
+    // Only what the rows below show: whole records carry both punches' locations and the face check.
+    attendanceRecords().find(recordFilter, { projection: { _id: 1, workDate: 1, punchIn: 1, punchOut: 1, dayType: 1, outsideLocation: 1 } }).sort({ workDate: 1 }).toArray(),
     attendanceRegularizations()
       .find({ userId, workDate: { $gte: fromInput, $lte: toInput } })
       .sort({ createdAt: -1 }).toArray(),
@@ -322,6 +325,7 @@ async function writePunch(
       if (pending) {
         if (pending.punchOut) throw new AttendanceError(409, 'Already punched out today');
         await attendanceRegularizations().updateOne({ _id: pending._id }, { $set: { punchOut: now } });
+        void forgetCorrectionsListOf(userId);
         return {
           workDate,
           punchOut: now.toISOString(),
@@ -421,6 +425,7 @@ async function requestOutOfLocation(
     note: '', status: 'pending', createdAt: note.at,
   };
   const result = await attendanceRegularizations().insertOne(row);
+  void forgetCorrectionsListOf(userId);
   void location;
   // The employee and their approver hear once the request is saved, after the
   // punch has answered: finding the approver and their rules is a few round
@@ -437,7 +442,7 @@ async function requestOutOfLocation(
 
 /** The remark as the app and the dashboard show it, with the pin and a readable place. */
 /** What an outside punch with no reason given reads as, everywhere it shows. */
-export const DEFAULT_AWAY_REASON = 'Work from home';
+export const DEFAULT_AWAY_REASON = 'Working from home';
 
 export function outsideLocationView(note?: OutsideLocationNote) {
   if (!note) return undefined;
@@ -483,7 +488,7 @@ const DAY_TYPE_LABELS: Record<string, string> = {
   full_day: 'Full day',
   half_day: 'Half day',
   leave: 'Leave',
-  wfh: 'Work from home',
+  wfh: 'Working from home',
   client_visit: 'Client visit',
   office_visit: 'Client visit',
 };
@@ -821,13 +826,15 @@ export async function getManagerRegularizations(managerUserId: string) {
  * is waiting on anyone", so this is scoped by org rather than by approver.
  * Pending first, then newest, because the queue is the reason to open it.
  */
-export async function listAllRegularizationsForAdmin(adminUserId: string) {
+export async function listAllRegularizationsForAdmin(adminUserId: string, opts: { status?: string } = {}) {
   // The roster and its requests in one round trip, and of the roster only
   // what the rows name: the whole company's records, inline photos and all,
   // were most of this page's wait. Everyone is kept, not only those with a
   // request, since a row names its manager too.
   const { employees, rows } = await orgUsersWithRows(adminUserId, attendanceRegularizations(), {
     userFields: ['userId', 'name', 'employeeId'],
+    // Only these statuses, filtered in the database (Suwi's pending lists), when asked.
+    ...(opts.status ? { rowMatch: { status: opts.status } } : {}),
   });
   if (employees.length === 0) return [];
   const byUserId = new Map(employees.map((employee) => [employee.userId, employee]));
@@ -840,6 +847,13 @@ export async function listAllRegularizationsForAdmin(adminUserId: string) {
     manager: byUserId.get(value.managerUserId)?.name ?? '',
     employeeCode: byUserId.get(value.userId)?.employeeId ?? value.employeeId,
   }));
+}
+
+/** Drop the kept Punch log / out-of-location answers of this person's company (swr-cache). */
+async function forgetTimeOfficeFor(userId: string): Promise<void> {
+  const org = (await users().findOne({ userId }, { projection: { _id: 0, org: 1 } }))?.org;
+  // Not Suwi's company bundle: the decision's write hook patches it (lifecycle/readCache.ts).
+  if (org) forgetSwrExcept(org, ['suwi-org-data']);
 }
 
 export async function decideRegularization(
@@ -876,6 +890,8 @@ export async function decideRegularization(
   if (!result) throw new AttendanceError(404, 'Pending regularization request not found');
 
   await applyRegularizationDecision(result, decision, decidedAt, managerNote);
+  // A decided request shows on the Time office pages at once, not after their cache's minute.
+  await forgetTimeOfficeFor(result.userId);
   return (await enrichRegularizations([result]))[0];
 }
 
@@ -924,6 +940,8 @@ export async function adminDecideRegularization(
   if (!result) throw new AttendanceError(409, 'Correction request has already been decided');
 
   await applyRegularizationDecision(result, decision, decidedAt, managerNote);
+  // A decided request shows on the Time office pages at once, not after their cache's minute.
+  await forgetTimeOfficeFor(result.userId);
   return (await enrichRegularizations([result]))[0];
 }
 
@@ -968,7 +986,8 @@ async function applyRegularizationDecision(
     await attendanceRecords().updateOne(
       { employeeId: result.employeeId, workDate: result.workDate },
       {
-        $set: { employeeId: result.employeeId, userId: result.userId, workDate: result.workDate, ...punchUpdate, ...outside },
+        // updatedAt too: the Punch log reloads only the rows changed since its last read.
+        $set: { employeeId: result.employeeId, userId: result.userId, workDate: result.workDate, ...punchUpdate, ...outside, updatedAt: decidedAt },
         $setOnInsert: {
           source: 'manual',
           sourceKey: `regularization|${result.employeeId}|${result.workDate}`,

@@ -84,8 +84,9 @@ export const celebrantOf = (post: ConnectPost): string =>
     ? String((post.body as { personUserId?: unknown }).personUserId ?? '')
     : '';
 
+/** A post's title; a contest with none goes by its task (Best Photo has no title of its own). */
 const titleOf = (post: ConnectPost): string =>
-  String(post.body.title ?? post.body.text ?? 'a post').slice(0, 80);
+  String(post.body.title || (post.body as { task?: unknown }).task || post.body.text || 'a post').trim().slice(0, 80);
 
 /**
  * Everyone who can see the post — the audience a notification may reach.
@@ -124,6 +125,8 @@ async function send(
   scenario: string,
   data: Record<string, string>,
   actorUserId: string,
+  /** The post's own picture, which the kind's look may put on the push. */
+  picture?: string | null,
 ): Promise<number> {
   const deliverable = recipients.filter((r) => r.copy && r.user.userId !== actorUserId);
   // Per recipient, and never rethrowing: publishing a post or leaving a comment
@@ -135,9 +138,12 @@ async function send(
         title: r.copy!.title,
         body: r.copy!.body,
         data,
+        // Their face on the row: the person who posted, liked, commented or voted.
+        ...(actorUserId ? { actorUserId } : {}),
         push: r.copy!.push !== false,
         // Inbox-only likes, comments and votes on a post: the latest row stands for the rest.
         latestOnly: LATEST_ONLY.has(scenario),
+        picture,
       }),
     ),
   );
@@ -152,6 +158,12 @@ async function send(
 // -------------------------------------------------------------- publication
 
 const CONTESTS = new Set(['caption_challenge', 'photo_story_challenge', 'most_likely']);
+
+/** A post's first picture (a Connect media key), for a push's look. */
+export function postPicture(post: ConnectPost): string | null {
+  const keys = Array.isArray(post.body.mediaObjectKeys) ? post.body.mediaObjectKeys : [post.body.mediaObjectKey];
+  return keys.find((key): key is string => typeof key === 'string' && key.length > 0) ?? null;
+}
 
 /** Inbox only: the same entry, no push. */
 const quietly = (copy: Copy): Copy => ({ ...copy, push: false });
@@ -188,10 +200,11 @@ export async function notifyPostPublished(post: ConnectPost): Promise<number> {
   if (CONTESTS.has(post.type)) {
     const closesAt = post.body.closesAt ? new Date(String(post.body.closesAt)) : null;
     const copy: Copy = {
-      title: `New contest: ${titleOf(post)}`,
+      // The title HR gave the contest, as they typed it.
+      title: String(post.body.title ?? '').trim() || titleOf(post),
       body: closesAt && !Number.isNaN(closesAt.getTime()) ? `Enter by ${shortDate(closesAt)}` : 'Join in',
     };
-    return send(audience.map((user) => ({ user, copy })), scenario, data, post.author.userId ?? '');
+    return send(audience.map((user) => ({ user, copy })), scenario, data, post.author.userId ?? '', postPicture(post));
   }
 
   const tagged = taggedIn(post);
@@ -401,7 +414,7 @@ async function grouped(
 ): Promise<void> {
   if (!recipientUserId || recipientUserId === actor.userId) return;
   try {
-    await notifyGrouped({ recipientUserId, kind, entityId: post.id, actorName: actor.name, data });
+    await notifyGrouped({ recipientUserId, kind, entityId: post.id, actorName: actor.name, actorUserId: actor.userId, data });
   } catch (error) {
     logger.error('Grouped feed notification failed', { kind, postId: post.id }, error);
   }

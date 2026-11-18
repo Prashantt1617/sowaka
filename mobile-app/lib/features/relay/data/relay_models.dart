@@ -8,6 +8,9 @@
 /// as empty rather than crashing the game in the middle of a round.
 int _int(Object? value) => value is num ? value.toInt() : int.tryParse('$value') ?? 0;
 String _str(Object? value) => value is String ? value : '';
+
+/// A face's address, or null for none.
+String? _photo(Object? value) => value is String && value.trim().isNotEmpty ? value : null;
 bool _bool(Object? value) => value == true;
 List<Object?> _list(Object? value) => value is List ? value : const [];
 Map<String, dynamic> _map(Object? value) =>
@@ -23,6 +26,7 @@ class RelayState {
     required this.points,
     required this.isLeader,
     required this.leadName,
+    this.leadPhotoUrl,
     required this.leadIsAnswering,
     required this.prompt,
     required this.questionNumber,
@@ -54,6 +58,9 @@ class RelayState {
   /// Only the leader has an answer box; everyone else holds pieces.
   final bool isLeader;
   final String leadName;
+
+  /// The lead's face beside their name; null for no photo.
+  final String? leadPhotoUrl;
 
   /// Drives "Your team lead is answering" while they type.
   final bool leadIsAnswering;
@@ -114,6 +121,7 @@ class RelayState {
         points: next.points,
         isLeader: isLeader,
         leadName: leadName,
+        leadPhotoUrl: leadPhotoUrl,
         leadIsAnswering: false,
         prompt: prompt,
         questionNumber: questionNumber,
@@ -147,6 +155,7 @@ class RelayState {
       points: _int(team['points']),
       isLeader: _bool(json['isLeader']),
       leadName: _str(json['leadName']),
+      leadPhotoUrl: _photo(json['leadPhotoUrl']),
       leadIsAnswering: _bool(json['leadIsAnswering']),
       prompt: _str(json['prompt']),
       questionNumber: _int(json['questionNumber']),
@@ -213,9 +222,13 @@ class RelayTeammate {
     required this.isLeader,
     required this.hasClue,
     required this.isYou,
+    this.photoUrl,
   });
 
   final String name;
+
+  /// Their face; null for no photo (the initial stands in).
+  final String? photoUrl;
   final bool present;
   final bool isLeader;
 
@@ -231,6 +244,7 @@ class RelayTeammate {
     isLeader: _bool(json['isLeader']),
     hasClue: _bool(json['hasClue']),
     isYou: _bool(json['isYou']),
+    photoUrl: _photo(json['photoUrl']),
   );
 }
 
@@ -311,6 +325,7 @@ class RelayCard {
               name: _str(member['name']),
               isLeader: _bool(member['isLeader']),
               isYou: _bool(member['isYou']),
+              photoUrl: _photo(member['photoUrl']),
             ),
       ],
       podium: [
@@ -322,11 +337,14 @@ class RelayCard {
 }
 
 class RelayCardMember {
-  const RelayCardMember({required this.name, required this.isLeader, required this.isYou});
+  const RelayCardMember({required this.name, required this.isLeader, required this.isYou, this.photoUrl});
 
   final String name;
   final bool isLeader;
   final bool isYou;
+
+  /// Their face; null for no photo (the initials stand in).
+  final String? photoUrl;
 }
 
 /// A question the team just got right.

@@ -318,7 +318,9 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, margin: '16px 0 20px' }}>
         <SummaryCard label="Gross pay" value={inr(t.grossPaise)} />
         <SummaryCard label="Employee deductions" value={inr(t.employeeDeductionsPaise)} color="var(--bad)" />
-        <SummaryCard label="Net payout" value={inr(t.netPaise + t.reimbursementsPaise)} color="var(--ok)" />
+        {/* Held pay (people on notice) goes with their final settlement, not this payout. */}
+        <SummaryCard label="Net payout" value={inr(t.netPaise + t.reimbursementsPaise - (t.heldPaise ?? 0))} color="var(--ok)" />
+        {(t.heldCount ?? 0) > 0 && <SummaryCard label={`Held · ${t.heldCount} on notice`} value={inr(t.heldPaise ?? 0)} color="var(--warn)" />}
         <SummaryCard label="Cost to company" value={inr(t.employerCostPaise)} />
       </div>
 
@@ -393,7 +395,10 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
                       </div>
                     </Td>
                     <Td right mono><span style={{ color: 'var(--bad)' }}>{money2(p.employeeDeductionsPaise)}</span></Td>
-                    <Td right mono><strong style={{ fontWeight: 500 }}>{money2(p.netPayablePaise)}</strong></Td>
+                    <Td right mono>
+                      <strong style={{ fontWeight: 500 }}>{money2(p.netPayablePaise)}</strong>
+                      {p.held && <div title="On notice: paid with their final settlement, not with this run" style={{ fontSize: 11.5, color: 'var(--warn)', marginTop: 2, fontFamily: 'inherit' }}>Held · on notice</div>}
+                    </Td>
                     <Td right>
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                         <button type="button" onClick={() => setOpen(expanded ? null : p.userId)} className="lk-btn" style={slipBtn}>{expanded ? 'Hide' : 'Details'}</button>
@@ -552,6 +557,7 @@ function SlipNumbers({ p }: { p: PayslipDTO }) {
         {row('Total deductions', p.employeeDeductionsPaise, { strong: true })}
         <div style={{ height: 10 }} />
         {row('Net pay', p.netPayablePaise, { strong: true })}
+        {p.held && <div style={{ fontSize: 12, color: 'var(--warn)', marginTop: 4 }}>Held since notice began ({p.held.since}): paid with their final settlement, not with this run.</div>}
         <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 6 }}>
           {p.inputs.workingDays} days · {p.inputs.payableDays} paid · {p.inputs.lopDays} loss of pay · PF wage {money2(p.pfWagePaise)}
         </div>

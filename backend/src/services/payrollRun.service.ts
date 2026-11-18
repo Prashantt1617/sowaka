@@ -27,14 +27,15 @@ import {
   anyApprovedLeave,
   computeWorkingDays,
   getEmployeePeriodInputs,
+  parsePeriod,
   payrollPeriodRange,
 } from './payroll-inputs.service';
 import type { PeriodRange } from './payroll-inputs.service';
 import { resolveRuleSet } from './statutory.service';
 import { attendanceCountsForPeriod, payrollDeductions, unpaidLeaveDeduction } from './deduction.service';
 import { payslipHtml } from './payslip-html';
-import { employeeCalendar, invalidateAttendanceSetup, joinedOn } from './attendance-report.service';
-import { companies } from '../config/db';
+import { employeeCalendar, invalidateAttendanceSetup, joinedOn, leftOn } from './attendance-report.service';
+import { companies, exitSettlements } from '../config/db';
 import { declarationsFor, runTds, ytdFor } from './tds.service';
 import { requireTdsConfigs, statutoryConfigForPeriod } from './payrollConfig.service';
 import type { StatutoryConfig } from '../shared/payroll/statutory-config';
@@ -43,6 +44,7 @@ import { paidDaysResolver } from './paidDaysTemplate.service';
 import { addInto, billCategories, billsByComponent, ReimbursementTax, reimbursementTax, reimbursementsPaidBefore } from './reimbursementBills.service';
 import { decryptField, fieldKeyConfigured } from './fieldCrypto';
 import { splitAmountsFor, splitsByUser } from './employeePayroll.split';
+import { cachedLifecycle } from './lifecycle/readCache';
 
 export class PayrollRunError extends Error {
   constructor(
@@ -215,17 +217,21 @@ async function buildRunPayslips(
   // days are before joining, and payroll counts those itself below.
   // (An estimate reads the setup as it is cached: it runs on every app home.)
   if (readsAttendance && !scope) invalidateAttendanceSetup(org);
+  // An estimate counts its one person's days alone (graded as the run's report grades them), not
+  // the whole company's pay period: the same counts for them, from their own rows.
   let attendance = readsAttendance
-    ? await attendanceCountsForPeriod(adminUserId, period, range, scope?.today)
+    ? await attendanceCountsForPeriod(adminUserId, period, range, scope?.today, scope?.userId)
     : new Map();
   // Not on the cached roster (just joined, or just given a structure): read it afresh, as a run would.
   if (readsAttendance && scope && !attendance.has(scope.userId)) {
     invalidateAttendanceSetup(org);
-    attendance = await attendanceCountsForPeriod(adminUserId, period, range, scope.today);
+    attendance = await attendanceCountsForPeriod(adminUserId, period, range, scope.today, scope.userId);
   }
 
+  // Whole records bar what a payslip never reads: an older account's inline photo (hundreds of KB),
+  // uploaded documents and the help desk's notes.
   const employees = await users()
-    .find({ userId: { $in: structures.map((s) => s.userId) } })
+    .find({ userId: { $in: structures.map((s) => s.userId) } }, { projection: { profilePhotoUrl: 0, documents: 0, helpIntake: 0, helpMatch: 0, counsellor: 0 } })
     .toArray();
   // The TDS engine, when the org has switched it on: the FY's income tax rows, else 409.
   const { fy } = fyOf(period);
@@ -239,9 +245,10 @@ async function buildRunPayslips(
   // (An estimate stands in for this period's run, so that run's own claims stay its to pay.)
   const otherRuns = await payrollRuns().find({ org, status: { $ne: 'rejected' }, ...(scope ? { period: { $ne: period } } : {}) } as never, { projection: { _id: 1 } }).toArray();
   const otherRunIds = otherRuns.map((r) => r._id.toHexString()).filter((id) => id !== runIdHex);
+  // An estimate's one person: only their own payslips can hold their claims (a claim is one person's).
   const reservedClaimIds = new Set(
     otherRunIds.length
-      ? (await payslips().find({ org, runId: { $in: otherRunIds } }, { projection: { 'inputs.reimbursementClaimIds': 1 } }).toArray()).flatMap((s) => s.inputs?.reimbursementClaimIds ?? [])
+      ? (await payslips().find({ org, runId: { $in: otherRunIds }, ...(scope ? { userId: scope.userId } : {}) }, { projection: { 'inputs.reimbursementClaimIds': 1 } }).toArray()).flatMap((s) => s.inputs?.reimbursementClaimIds ?? [])
       : [],
   );
   const [reimbPaidBefore, bills] = tdsOn
@@ -251,12 +258,28 @@ async function buildRunPayslips(
   // Each person's flexible split (app › Payroll), month by month, over their structure's own values.
   const splits = await splitsByUser(org, userIds);
 
+  // The pay dates of the months still to come this year, for the tax of someone who leaves in one of them.
+  const laterRanges = new Map<string, { from: string; to: string }>();
+  if (tdsOn && employees.some((e) => e.exit)) {
+    for (const p of periodsAfter(period)) {
+      try { const r = await payrollPeriodRange(org, p); laterRanges.set(p, { from: r.from, to: r.to }); }
+      catch { const r = parsePeriod(p); laterRanges.set(p, { from: r.from, to: r.to }); }
+    }
+  }
+
+  // People whose final settlement already paid this period from its own working (no payslip
+  // existed when it was approved): the run leaves them out, so the month is not paid twice.
+  const settledHere = scope
+    ? new Set<string>()
+    : new Set((await exitSettlements().find({ org, status: { $in: ['approved', 'paid'] }, lines: { $elemMatch: { period, estimated: true } } }, { projection: { _id: 0, userId: 1 } }).toArray()).map((r) => r.userId));
+
   const now = new Date();
   const slips: Payslip[] = [];
 
   for (const structure of structures) {
     const employee = employeeById.get(structure.userId);
     if (!employee) continue; // structure orphaned from its user; skip defensively
+    if (settledHere.has(structure.userId)) continue;
 
     // Resolve the assigned salary template; skip employees without one (SS-3).
     const template = structure.salaryTemplateCode
@@ -286,8 +309,20 @@ async function buildRunPayslips(
     // calendar month (joined the 27th, paid 27th to 31st in a 26th-to-25th
     // cycle) puts them on the run that way.
     if (joined && joined > range.to && (lopOverrides[structure.userId] === undefined || joined > calendarEnd(period))) continue;
+    // Left before this period began (an exit HR recorded): no payslip.
+    const left = leftOn(employee);
+    if (left && left < range.from) continue;
     const employedFrom = joined && joined > range.from ? joined : undefined;
     const notYetEmployedDays = employedFrom ? Math.round((Date.parse(employedFrom) - Date.parse(range.from)) / 86_400_000) : 0;
+    // Notice began (an exit HR recorded; the day it was recorded when no date was given): pay is held from then.
+    // (Unless this exit's rules say not to hold pay.)
+    // Recorded after they had already gone (an absconding found out later): held from their last working day.
+    const recordedOn = employee.exit ? new Date(employee.exit.recordedAt).toISOString().slice(0, 10) : '';
+    const noticeStart = employee.exit && employee.exit.rules?.holdPay !== false
+      ? (employee.exit.noticeFrom ?? (recordedOn < employee.exit.lastWorkingDay ? recordedOn : employee.exit.lastWorkingDay))
+      : undefined;
+    // Left during it: the days after the last working day are not paid, like the days before joining.
+    const leftDays = left && left < range.to ? Math.round((Date.parse(range.to) - Date.parse(left)) / 86_400_000) : 0;
     const salaryFor = (p: string, from?: string) => calculateSalaryStructure({
       monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
       payHeads: resolvedComponents,
@@ -319,7 +354,7 @@ async function buildRunPayslips(
     const allowance = paidDaysOn ? paidDays?.monthlyPaidLeaveDays ?? 0 : 0;
     // Days before joining are not paid either: attendance leaves them out, so
     // they come on top of what it docks from the joining day on.
-    const attendanceLopDays = Math.min(Math.max(0, docked.days - allowance) + unpaidLeave.days + notYetEmployedDays, workingDays);
+    const attendanceLopDays = Math.min(Math.max(0, docked.days - allowance) + unpaidLeave.days + notYetEmployedDays + leftDays, workingDays);
     const lopEnteredByHr = lopOverrides[structure.userId] !== undefined;
     const lopDays = lopEnteredByHr ? clampLop(lopOverrides[structure.userId], workingDays) : attendanceLopDays;
     // Overtime: what HR typed on the run, else the template's rule applied to
@@ -364,9 +399,13 @@ async function buildRunPayslips(
       // their salary reimbursements count as taxable (no bills for them yet).
       const taxableReimb = (lines: { code: string; monthlyPaise: number }[]) =>
         lines.filter((l) => catalogByCode.get(l.code)?.taxable !== false).reduce((t, l) => t + l.monthlyPaise, 0);
+      // Someone leaving earns nothing after their last working day, and only part of the month it falls in:
+      // the year's tax is worked out on what they will really earn, so the months left take less (often none).
       const futureTaxablePaise = periodsAfter(period).reduce((t, p) => {
+        const share = left ? shareBeforeLeaving(laterRanges.get(p), left) : 1;
+        if (share === 0) return t;
         const later = salaryFor(p);
-        return t + projectedTaxable(later, config.mealCard.exemptMonthlyPaise) + taxableReimb(later.reimbursements ?? []);
+        return t + Math.round((projectedTaxable(later, config.mealCard.exemptMonthlyPaise) + taxableReimb(later.reimbursements ?? [])) * share);
       }, 0);
       // This year's reimbursements so far less the bills approved so far: a late bill lowers the tax from now on.
       reimbTax = reimbursementTax(addInto(new Map(reimbPaidBefore.get(structure.userId) ?? []), slip.reimbursementLines), bills.get(structure.userId), catalogByCode);
@@ -402,6 +441,8 @@ async function buildRunPayslips(
       employeeId: employee.employeeId,
       designation: employee.designation,
       joiningDate: employee.joiningDate,
+      // On notice by the end of this period: the pay is held for the final settlement.
+      ...(noticeStart && noticeStart <= range.to ? { held: { reason: 'notice' as const, since: noticeStart } } : {}),
       annualCtcPaise: structure.annualCtcPaise,
       monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
       earnings: slip.earnings.map((e) => ({
@@ -437,7 +478,7 @@ async function buildRunPayslips(
         ...(tds ? { tds } : {}),
         ...(reimbTax && reimbTax.paidPaise > 0 ? { reimbursementTax: { paidPaise: reimbTax.paidPaise, exemptPaise: reimbTax.exemptPaise, taxablePaise: reimbTax.taxablePaise } } : {}),
         // The days before joining as a line of their own, so the lines add up to the loss of pay.
-        attendanceDeductions: [...docked.lines, ...unpaidLeave.lines, ...(notYetEmployedDays > 0 ? [{ label: 'Before joining', count: notYetEmployedDays, days: notYetEmployedDays, trigger: 'absent' as const, every: 1, deductDays: 1 }] : [])],
+        attendanceDeductions: [...docked.lines, ...unpaidLeave.lines, ...(notYetEmployedDays > 0 ? [{ label: 'Before joining', count: notYetEmployedDays, days: notYetEmployedDays, trigger: 'absent' as const, every: 1, deductDays: 1 }] : []), ...(leftDays > 0 ? [{ label: 'After leaving', count: leftDays, days: leftDays, trigger: 'absent' as const, every: 1, deductDays: 1 }] : [])],
         paidLeaveDaysApplied: Math.min(allowance, docked.days),
         payableDays: slip.payableDays,
         approvedLeaveDays: periodInputs.approvedLeaveDays,
@@ -454,6 +495,15 @@ async function buildRunPayslips(
     throw new PayrollRunError(409, 'No payslips could be generated for this period');
   }
   return slips;
+}
+
+/** The part of a later month someone is still employed for: 1 until they leave, 0 after, the days up to the last one in between. */
+function shareBeforeLeaving(range: { from: string; to: string } | undefined, left: string): number {
+  if (!range) return 1;
+  if (left < range.from) return 0;
+  if (left >= range.to) return 1;
+  const day = 86_400_000;
+  return (Math.round((Date.parse(left) - Date.parse(range.from)) / day) + 1) / (Math.round((Date.parse(range.to) - Date.parse(range.from)) / day) + 1);
 }
 
 /** One person's payslip as a run made now would compute it (the app's estimate). */
@@ -489,14 +539,28 @@ export async function getRun(adminUserId: string, runIdInput: string) {
   // The run, its payslips, the company and the approver count do not depend
   // on one another, so they are asked for together rather than in turn.
   const runHex = ObjectId.isValid(runIdInput) ? new ObjectId(runIdInput).toHexString() : '';
-  const [run, slips, company, approvers] = await Promise.all([
+  const [run, shown, company, approvers] = await Promise.all([
     findOwnedRun(org, runIdInput),
-    runHex ? payslips().find({ org, runId: runHex }).toArray() : Promise.resolve([]),
+    // The payslips with their year to date (whole payslips, read for every open of the run) are kept
+    // per run (keptReads: dropped by any write at the company, which is how a run or a payslip changes);
+    // the bank accounts are kept as stored, encrypted, and shown per request.
+    runHex ? cachedLifecycle(org, 'pay-run', { runId: runHex }, () => runSlipsShown(org, runHex)) : Promise.resolve({ views: [], banks: [] }),
     companyOf(org),
     otherRunApprovers(org, adminUserId),
   ]);
   const creatorMayApprove = run.createdByUserId === adminUserId && approvers === 0;
-  return { run: { ...runView(run), creatorMayApprove }, payslips: await slipsForDisplay(org, slips, true), company };
+  const banks = bankAccountsOf(shown.banks, true);
+  return { run: { ...runView(run), creatorMayApprove }, payslips: shown.views.map((v) => ({ ...v, bankAccountNo: banks.get(v.userId) })), company };
+}
+
+/** A run's payslips as the run page shows them (with YTD), and its people's stored bank rows. */
+async function runSlipsShown(org: string, runHex: string) {
+  const slips = await payslips().find({ org, runId: runHex }).toArray();
+  const [views, banks] = await Promise.all([
+    withYtd(org, slips.map(payslipView)),
+    bankRows(org, [...new Set(slips.map((s) => s.userId))]),
+  ]);
+  return { views, banks };
 }
 
 /**
@@ -574,7 +638,11 @@ async function withYtd<T extends ReturnType<typeof payslipView>>(org: string, vi
   // The org's live runs (one a month) come with the rows rather than after
   // them: a payslip belongs to a run of its own org, so the answer is the same.
   const [rows, liveRuns] = await Promise.all([
-    payslips().find({ org, userId: { $in: userIds }, period: { $gte: from, $lte: periods[periods.length - 1] } }).toArray(),
+    // Only the figures summed below: a whole payslip is a few KB, and a run's people over a year are
+    // thousands of them (most of the 8.7 s a run took to open).
+    payslips()
+      .find({ org, userId: { $in: userIds }, period: { $gte: from, $lte: periods[periods.length - 1] } }, { projection: YTD_FIELDS })
+      .toArray() as Promise<Payslip[]>,
     payrollRuns().find({ org, status: { $ne: 'rejected' } }, { projection: { _id: 1 } }).toArray(),
   ]);
   const live = new Set(liveRuns.map((r) => r._id.toHexString()));
@@ -593,9 +661,22 @@ async function withYtd<T extends ReturnType<typeof payslipView>>(org: string, vi
   });
 }
 
+/** What the YTD column sums off each payslip of the year. */
+const YTD_FIELDS = { _id: 0, userId: 1, period: 1, runId: 1, 'earnings.code': 1, 'earnings.paidPaise': 1, 'deductions.key': 1, 'deductions.amountPaise': 1, reimbursementsPaise: 1 } as const;
+
+type BankRow = { userId: string; accountNumber?: string; accountLast4?: string };
+
+/** The people's stored bank rows: the number still encrypted, as it is kept. */
+async function bankRows(org: string, userIds: string[]): Promise<BankRow[]> {
+  return employeePaymentDetails().find({ org, userId: { $in: userIds } } as never, { projection: { _id: 0, userId: 1, accountNumber: 1, accountLast4: 1 } }).toArray() as unknown as Promise<BankRow[]>;
+}
+
 /** Each person's bank account number for their payslip, in full only to payroll people (and to them). */
 async function bankAccounts(org: string, userIds: string[], reveal: boolean): Promise<Map<string, string>> {
-  const docs = await employeePaymentDetails().find({ org, userId: { $in: userIds } } as never).toArray() as unknown as { userId: string; accountNumber?: string; accountLast4?: string }[];
+  return bankAccountsOf(await bankRows(org, userIds), reveal);
+}
+
+function bankAccountsOf(docs: BankRow[], reveal: boolean): Map<string, string> {
   const out = new Map<string, string>();
   for (const d of docs) {
     if (!d.accountNumber) continue;
@@ -649,22 +730,28 @@ export async function myPayslip(userId: string, payslipId: string) {
 
 /** The person's released payslip for a month, if there is one (the newest run's). */
 export async function myReleasedPayslipFor(userId: string, period: string) {
-  const slips = await payslips().find({ userId, period }).sort({ createdAt: -1 }).toArray();
-  for (const slip of slips) {
-    if (!ObjectId.isValid(slip.runId)) continue;
-    const run = await payrollRuns().findOne({ _id: new ObjectId(slip.runId), status: { $in: RELEASED } }, { projection: { _id: 1 } });
-    if (run) return slip;
-  }
-  return null;
+  return firstReleased(userId, { userId, period }, { createdAt: -1 });
 }
 
 /** The person's latest released payslip before a month, for an estimate's income tax. */
 export async function myLatestReleasedPayslipBefore(userId: string, period: string) {
-  const slips = await payslips().find({ userId, period: { $lt: period } }).sort({ period: -1, createdAt: -1 }).limit(6).toArray();
-  for (const slip of slips) {
+  return firstReleased(userId, { userId, period: { $lt: period } }, { period: -1, createdAt: -1 }, 6);
+}
+
+/**
+ * The first of these payslips (in this order) whose run is released, read whole; the others are
+ * looked at by their run alone. Before, every candidate came whole (a payslip is a few KB) and all
+ * but one were thrown away, on every Payroll home, twice.
+ */
+async function firstReleased(userId: string, filter: Record<string, unknown>, sort: Record<string, 1 | -1>, limit = 0) {
+  const ids = await payslips().find(filter as never, { projection: { _id: 1, runId: 1 } }).sort(sort).limit(limit).toArray();
+  for (const slip of ids) {
     if (!ObjectId.isValid(slip.runId)) continue;
     const run = await payrollRuns().findOne({ _id: new ObjectId(slip.runId), status: { $in: RELEASED } }, { projection: { _id: 1 } });
-    if (run) return slip;
+    if (!run) continue;
+    // Read whole by its id; gone in the moment between (a run recomputed): as if it had not been found.
+    const whole = await payslips().findOne({ _id: slip._id, userId });
+    if (whole) return whole;
   }
   return null;
 }
@@ -842,8 +929,10 @@ function sumTotals(slips: Payslip[]): PayrollRunTotals {
       netPaise: acc.netPaise + slip.netPaise,
       reimbursementsPaise: acc.reimbursementsPaise + slip.reimbursementsPaise,
       employerCostPaise: acc.employerCostPaise + slip.employerCostPaise,
+      heldPaise: (acc.heldPaise ?? 0) + (slip.held ? slip.netPayablePaise : 0),
+      heldCount: (acc.heldCount ?? 0) + (slip.held ? 1 : 0),
     }),
-    { grossPaise: 0, employeeDeductionsPaise: 0, netPaise: 0, reimbursementsPaise: 0, employerCostPaise: 0 },
+    { grossPaise: 0, employeeDeductionsPaise: 0, netPaise: 0, reimbursementsPaise: 0, employerCostPaise: 0, heldPaise: 0, heldCount: 0 },
   );
 }
 
@@ -954,6 +1043,7 @@ function payslipView(slip: Payslip & { _id?: ObjectId }) {
     designation: slip.designation,
     joiningDate: slip.joiningDate ? slip.joiningDate.toISOString().slice(0, 10) : undefined,
     period: slip.period,
+    ...(slip.held ? { held: slip.held } : {}),
     monthlyCtcPaise: slip.monthlyCtcPaise,
     earnings: slip.earnings,
     deductions: slip.deductions,
