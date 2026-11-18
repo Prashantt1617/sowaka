@@ -33,6 +33,7 @@ import type { CupDecision, CupEntrant, CupEvent, CupMatch, CupRound, CupBet } fr
 import { catalogScoreId } from '../models/game-catalog.model';
 import type { User } from '../models/user.model';
 import { hasAllDashboardTabs } from '../middleware/admin.middleware';
+import { InFlight } from '../utils/inflight';
 import { logger } from '../utils/logger';
 import {
   buildDraw,
@@ -794,26 +795,31 @@ async function tickOnce(id: string, again: boolean): Promise<void> {
  */
 function kick(rt: Runtime) {
   if (!ticker || !runnerMoves(rt.event.org) || !rt.event.active) return;
-  void tickOnce(rt.event.id, true);
+  void runnerPasses.track(tickOnce(rt.event.id, true));
 }
+
+/** The runner's passes and kicks still running, for `stopCupRunner` to wait on. */
+const runnerPasses = new InFlight();
 
 export function startCupRunner(intervalMs = 1000) {
   if (ticker || !env.cupRunner) return;
   ticker = setInterval(() => {
     if (ticking) return;
     ticking = true;
-    tickCups()
+    void runnerPasses.track(tickCups()
       .catch((error) => logger.error('Cup runner failed', {}, error))
       .finally(() => {
         ticking = false;
-      });
+      }));
   }, intervalMs);
   ticker.unref();
 }
 
-export function stopCupRunner() {
+/** Stops the runner; resolves once the pass under way (and any kick) has finished, so the database can close. */
+export async function stopCupRunner(): Promise<void> {
   if (ticker) clearInterval(ticker);
   ticker = undefined;
+  await runnerPasses.settle();
 }
 
 /**

@@ -155,13 +155,16 @@ export async function warmTimeOffice(org: string): Promise<Record<string, number
   return took;
 }
 
-async function round(): Promise<void> {
+async function round(opts: { spread?: boolean } = {}): Promise<void> {
   const t0 = Date.now();
   const orgs = await orgsToWarm();
   const perOrg: Record<string, Record<string, number | string>> = {};
   // Spread over the round rather than one company straight after another: the cluster's bandwidth is
-  // shared with every live request.
-  const between = Math.min(MAX_BETWEEN_ORGS_MS, Math.max(BETWEEN_ORGS_MS, Math.floor((ROUND_MS * SPREAD_SHARE) / Math.max(1, orgs.length))));
+  // shared with every live request. The boot round (`warmEngagementNow`) is not: nothing is waiting on it
+  // but the deploy, and the process is not taking traffic yet.
+  const between = opts.spread === false
+    ? BETWEEN_ORGS_MS
+    : Math.min(MAX_BETWEEN_ORGS_MS, Math.max(BETWEEN_ORGS_MS, Math.floor((ROUND_MS * SPREAD_SHARE) / Math.max(1, orgs.length))));
   takePaceStats();
   for (const [i, org] of orgs.entries()) {
     if (stopping) break;
@@ -169,7 +172,23 @@ async function round(): Promise<void> {
     perOrg[org] = { ...(await warmOrg(org)), ...(await warmTimeOffice(org)), ...(await warmLifecycle(org, () => stopping)) };
   }
   // `waited`: how often and how long the steps held back for live requests.
-  logger.info('Engagement warm-up', { orgs: orgs.length, ms: Date.now() - t0, waited: takePaceStats(), perOrg });
+  logger.info('Engagement warm-up', { orgs: orgs.length, ms: Date.now() - t0, waited: takePaceStats(), boot: opts.spread === false, perOrg });
+}
+
+/**
+ * One round straight away, companies back to back: what a new process runs before it says it is
+ * ready (server.ts, readiness.ts), so the first HR page after a blue/green switch is served warm.
+ * Joins the round already running rather than starting a second.
+ */
+export async function warmEngagementNow(): Promise<void> {
+  if (running) return running;
+  stopping = false;
+  running = round({ spread: false })
+    .catch((error) => logger.error('Engagement warm-up failed', {}, error))
+    .finally(() => {
+      running = null;
+    });
+  return running;
 }
 
 function schedule(ms: number): void {

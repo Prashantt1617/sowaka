@@ -49,6 +49,7 @@ import {
 } from './poker-rooms.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import { verifyTicket } from './scribble-ticket.service';
+import { InFlight } from '../utils/inflight';
 import { logger } from '../utils/logger';
 
 /**
@@ -71,6 +72,7 @@ const TICK_MS = 500;
 
 let namespace: Namespace | undefined;
 let timer: NodeJS.Timeout | undefined;
+const passes = new InFlight();
 
 const userRoom = (userId: string) => `poker:user:${userId}`;
 const eventRoom = (eventId: string) => `poker:event:${eventId}`;
@@ -315,17 +317,24 @@ function listen(socket: Socket, ready: Promise<PokerIdentity | null>) {
 function start() {
   if (timer) return;
   timer = setInterval(() => {
-    void tickPoker().catch((error) => logger.error('Poker tick failed', {}, error));
-    void tickPokerRooms().catch((error) => logger.error('Poker room tick failed', {}, error));
+    void passes.track(tickPoker().catch((error) => logger.error('Poker tick failed', {}, error)));
+    void passes.track(tickPokerRooms().catch((error) => logger.error('Poker room tick failed', {}, error)));
   }, TICK_MS);
   timer.unref?.();
 }
 
-export function closePokerRealtime(): void {
+/**
+ * Stops the clock and the namespace; resolves once a pass under way has finished (it reads the database).
+ *
+ * Shutdown used to close the database straight after clearing the interval, under a pass already
+ * reading live events: the "Poker tick failed: MongoClientClosedError" at every restart.
+ */
+export async function closePokerRealtime(): Promise<void> {
   if (timer) clearInterval(timer);
   timer = undefined;
   namespace = undefined;
   setPokerEmitter(null);
   setPokerRoomEmitter(null);
   people.clear();
+  await passes.settle();
 }
