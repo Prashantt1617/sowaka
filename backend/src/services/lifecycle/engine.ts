@@ -145,25 +145,39 @@ function newTask(j: Journey, t: TemplateTask, month: number | undefined): Journe
 
 /**
  * Brings the month tasks in line with the probation length: missing months
- * are added, months past the end (open ones) cancelled. Done tasks stay.
+ * are added, months past the end (open ones) cancelled, and a month back in
+ * range (an extension past a shorter offer's end) gets its cancelled task back,
+ * undated so the refresh dates and opens it. Done tasks stay. A closed or
+ * confirmed journey's cancelled tasks stay cancelled: those were cancelled by
+ * the close or the Confirm, not by the length.
  */
-function syncMonthTasks(j: Journey, tasks: JourneyTask[]): { added: JourneyTask[]; cancelled: string[] } {
+function syncMonthTasks(j: Journey, tasks: JourneyTask[]): { added: JourneyTask[]; cancelled: string[]; reopened: string[] } {
   const total = totalProbationMonths(j);
   const added: JourneyTask[] = [];
   const cancelled: string[] = [];
+  const reopened: string[] = [];
+  const mayReopen = !j.closedAt && j.status !== 'confirmed';
   for (const t of j.templateSnapshot.tasks) {
     if (!runs(t)) continue;
     const months = monthsOfRule(t.opensRule, total) ?? monthsOfRule(t.dueRule, total);
     if (!months) continue;
     const mine = tasks.filter((task) => task.templateTaskId === t.id);
     for (const month of months) {
-      if (!mine.some((task) => task.month === month)) added.push(newTask(j, t, month));
+      const ofMonth = mine.filter((task) => task.month === month);
+      if (!ofMonth.length) added.push(newTask(j, t, month));
+      else if (mayReopen && ofMonth.every((task) => task.status === 'cancelled')) reopened.push(ofMonth[0].id);
     }
     for (const task of mine) {
       if (task.month && !months.includes(task.month) && OPEN_STATUSES.includes(task.status)) cancelled.push(task.id);
     }
   }
-  return { added, cancelled };
+  return { added, cancelled, reopened };
+}
+
+/** A month task back in range: locked and undated again (the refresh dates and opens it), with today's owners. */
+function reopenedMonthTask(task: JourneyTask, j: Journey): JourneyTask {
+  const owner = ownerFor(task.ownerRole, j);
+  return { ...task, status: 'locked', opensAt: null, dueAt: null, ...(owner ? { ownerUserId: owner } : {}) };
 }
 
 function materialise(j: Journey): JourneyTask[] {
@@ -908,8 +922,11 @@ export async function onJoined(journeyId: string, userId: string): Promise<void>
     if (task.ownerRole === 'employee' && OPEN_STATUSES.includes(task.status)) task.ownerUserId = userId;
     if (managerUserId && MANAGER_ROLES.includes(task.ownerRole) && OPEN_STATUSES.includes(task.status)) task.ownerUserId = managerUserId;
   }
-  const { added, cancelled } = syncMonthTasks(joined, tasks);
-  for (const task of tasks) if (cancelled.includes(task.id)) task.status = 'cancelled';
+  const { added, cancelled, reopened } = syncMonthTasks(joined, tasks);
+  for (const task of tasks) {
+    if (cancelled.includes(task.id)) task.status = 'cancelled';
+    if (reopened.includes(task.id)) Object.assign(task, reopenedMonthTask(task, joined));
+  }
   for (const task of added) {
     if (task.ownerRole === 'employee') task.ownerUserId = userId;
     if (managerUserId && MANAGER_ROLES.includes(task.ownerRole)) task.ownerUserId = managerUserId;
@@ -1004,15 +1021,22 @@ export async function rematerialiseDraft(journeyId: string): Promise<void> {
 export async function syncProbationTasks(journeyId: string): Promise<void> {
   const j = await loadJourney(journeyId);
   const tasks = await tasksOf(journeyId);
-  const { added, cancelled } = syncMonthTasks(j, tasks);
+  const { added, cancelled, reopened } = syncMonthTasks(j, tasks);
   for (const task of added) {
     if (task.ownerRole === 'employee' && j.userId) task.ownerUserId = j.userId;
     if (MANAGER_ROLES.includes(task.ownerRole) && j.managerUserId) task.ownerUserId = j.managerUserId;
   }
-  const changed = [...added, ...tasks.filter((t) => cancelled.includes(t.id)).map((t) => ({ ...t, status: 'cancelled' as const }))];
-  await writeTasks(changed);
   // The tasks as now saved, for the refresh (no second read of the journey and its tasks).
-  const now = [...tasks.map((t) => (cancelled.includes(t.id) ? { ...t, status: 'cancelled' as const } : t)), ...added];
+  const now = [
+    ...tasks.map((t) => {
+      if (cancelled.includes(t.id)) return { ...t, status: 'cancelled' as const };
+      if (reopened.includes(t.id)) return reopenedMonthTask(t, j);
+      return t;
+    }),
+    ...added,
+  ];
+  const touched = new Set([...cancelled, ...reopened]);
+  await writeTasks([...added, ...now.filter((t) => touched.has(t.id))]);
   await refreshJourney(journeyId, undefined, { journey: j, tasks: now });
 }
 
