@@ -115,6 +115,8 @@ or move to a t3.medium.
    (the upstream now `include`s that file), `nginx -t`, reload. Nothing moves: still :4000.
 3. First `bluegreen.sh deploy`: builds `dist-green`, holds the lease in the old app's name
    (`lease.js hold-legacy`: the old `sowaka-backend` runs its jobs without asking), starts
+   (skipped when the single app already runs the lease-aware code and holds the lease itself:
+   its `/health` names a `leader`, and it hands the lease over when it stops)
    `sowaka-green` on :4001, switches, stops and deletes `sowaka-backend`, releases the hold,
    `pm2 save`.
 4. pm2 now has `sowaka-green` from `deploy/bluegreen/ecosystem.config.js` (`kill_timeout` 75 s,
