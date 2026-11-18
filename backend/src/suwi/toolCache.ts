@@ -23,6 +23,7 @@ import { logger } from '../utils/logger';
 import { lifecycleReadCacheOn } from '../services/lifecycle/readCache';
 import { hashOf, keptGet, keptSet, suwiDataVersion, suwiPeopleVersion } from './kept';
 import type { SuwiContext, SuwiTool, ToolOutput } from './tools';
+import { yieldToLive } from '../services/background-pace';
 
 const MAX_KEEP_CHARS = 400_000;
 const MAX_MEMORY_ENTRIES = 3_000;
@@ -195,6 +196,8 @@ export async function prerunTools(
   for (const ctx of people) {
     for (const t of prerunnable(toolsFor(ctx)).filter((x) => !withinGap || FROM_BUNDLE.has(x.name))) {
       if (isStopping()) return ran;
+      // One tool at a time, each after a quiet moment: live requests first (background-pace.ts).
+      await yieldToLive(isStopping);
       try { await t.run(ctx, {}); ran++; } catch { /* a tool that needs its input after all: skipped */ }
     }
   }

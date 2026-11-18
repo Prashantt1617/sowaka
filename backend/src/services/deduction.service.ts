@@ -9,7 +9,7 @@
 import { DEDUCTION_TRIGGER_LABELS, DeductionTrigger, SalaryDeductionRule, daysDeducted } from '../models/deduction.model';
 import { users } from '../config/db';
 import { DayMark } from '../models/shift.model';
-import { attendanceReport, employeeDayStatuses } from './attendance-report.service';
+import { attendanceReport, employeeDayStatuses, reportDaysOfPerson, reportOrgOf } from './attendance-report.service';
 import { todayIso } from './shift.service';
 
 export type DeductionCounts = Record<DeductionTrigger, number> & {
@@ -35,8 +35,12 @@ const emptyCounts = (): DeductionCounts => ({ late: 0, early: 0, absent: 0, half
 /**
  * Everyone's counts for a YYYY-MM period, keyed by userId: the calendar month,
  * or the pay dates given (a company paying 26th to 25th). A future period counts nothing.
+ *
+ * `onlyUserId`: that one person's counts alone (an estimate of their pay), from their own rows graded
+ * as the report grades them (reportDaysOfPerson), not the whole company's report: the same figures
+ * for them, from a few KB instead of the company's whole pay period of punches.
  */
-export async function attendanceCountsForPeriod(adminUserId: string, period: string, dates?: { from: string; to: string }, asOf?: string): Promise<Map<string, DeductionCounts>> {
+export async function attendanceCountsForPeriod(adminUserId: string, period: string, dates?: { from: string; to: string }, asOf?: string, onlyUserId?: string): Promise<Map<string, DeductionCounts>> {
   const [year, month] = period.split('-').map(Number);
   const from = dates?.from ?? `${period}-01`;
   // Counted to today (or the day given, for an estimate worked out as of then).
@@ -45,7 +49,9 @@ export async function attendanceCountsForPeriod(adminUserId: string, period: str
   if (from > today) return counts;
   const periodEnd = dates?.to ?? new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
   const to = periodEnd < today ? periodEnd : today;
-  const report = await attendanceReport(adminUserId, { from, to });
+  const report = onlyUserId
+    ? (await reportDaysOfPerson(await reportOrgOf(adminUserId), onlyUserId, from, to)) ?? { days: [], halfDayLeave: [] }
+    : await attendanceReport(adminUserId, { from, to });
   const missedPunchMarks = await missedPunchMarksFor(adminUserId, report.days, from, to);
   const halfDayLeave = new Set(report.halfDayLeave);
   // Only graded working days are in the report: week offs and holidays are

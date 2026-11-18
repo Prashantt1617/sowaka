@@ -25,6 +25,7 @@ import { SUWI_SMALL_MODEL } from './digest';
 import { auditCol, settingsFor, spentThisMonthUsd } from './store';
 import { users } from '../config/db';
 import { User } from '../models/user.model';
+import { yieldToLive } from '../services/background-pace';
 
 export type PlanIntent = 'attention' | 'period';
 type Call = { name: string; input: Record<string, unknown> };
@@ -270,6 +271,7 @@ export async function prepareRecent(org: string, today: string, isStopping: () =
   let made = 0;
   for (const u of await recentSuwiUsers(org)) {
     if (isStopping()) break;
+    await yieldToLive(isStopping);
     try { if (await prepareAttention(u, today)) made++; } catch { /* the next round tries again */ }
   }
   return made;

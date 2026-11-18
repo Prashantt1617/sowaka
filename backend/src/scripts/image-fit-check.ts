@@ -119,10 +119,10 @@ async function picture(width: number, height: number, format: 'jpeg' | 'png', al
   const clip = { originalName: 'v.mp4', contentType: 'video/mp4', size: 3, bytes: Buffer.from('abc') };
   check('a video is kept exactly as it came', (await withoutMetadata(clip)) === clip);
 
-  const year = 'private, max-age=31536000, immutable';
-  check('a copy is kept a year, privately', mediaCacheControl({ key: `${key}@w720`, copy: true }, 700, key) === year);
+  const year = 'public, max-age=31536000, immutable';
+  check('a copy is kept a year, by CloudFront too', mediaCacheControl({ key: `${key}@w720`, copy: true }, 700, key) === year);
   check('an original asked for is kept a year', mediaCacheControl({ key, copy: false }, 'original', key) === year);
-  check('an original standing in for a missing copy is kept a week', mediaCacheControl({ key, copy: false }, 700, key) === 'private, max-age=604800');
+  check('an original standing in for a missing copy is kept a week', mediaCacheControl({ key, copy: false }, 700, key) === 'public, max-age=604800');
   check('a video is kept a year', mediaCacheControl({ key: 'connect/c.mp4', copy: false }, undefined, 'connect/c.mp4') === year);
 
   console.log(failed ? `\n${failed} failed` : '\nall passed');

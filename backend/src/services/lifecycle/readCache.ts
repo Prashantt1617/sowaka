@@ -29,14 +29,23 @@
  * the board's records leaves it alone.
  */
 import type { NextFunction, Request, Response } from 'express';
-import { cachedSwr, dropSwr, refreshSwr, type SwrKind } from '../swr-cache';
+import { cachedSwr, dropSwr, dropSwrForPerson, refreshSwr, type SwrKind } from '../swr-cache';
 import { bumpSuwiVersion } from '../../suwi/kept';
 import { noWrites, takeWrites, trackWrites, untracked, wroteAnything, type WritesSeen } from '../../config/writeTrack';
 
 /** Time office lists (timeOfficeLists.ts): dropped by the same writes as the boards. */
 export const TIME_OFFICE_LIST_KINDS: SwrKind[] = ['adm-regs', 'adm-leaves', 'adm-overtime', 'adm-feedback'];
-export const LIFECYCLE_READ_KINDS: SwrKind[] = ['lc-board-data', 'off-board-data', 'suwi-notices', 'suwi-org-data', 'mgr-roster', ...TIME_OFFICE_LIST_KINDS];
+/**
+ * Kept by keptReads.ts and the services it lists, dropped by the same writes: People › Employees' rows,
+ * a payroll run's payslips, each person's own payroll screens, and the Games list (whose kept rows make
+ * a drop cheap: the company's list and the games' versions are read again, not the games).
+ */
+export const PER_PERSON_KINDS: SwrKind[] = ['pay-home', 'pay-salary', 'pay-earnings'];
+export const KEPT_READ_KINDS: SwrKind[] = ['adm-employees', 'pay-run', 'games-catalog', 'mgr-photos', ...PER_PERSON_KINDS];
+export const LIFECYCLE_READ_KINDS: SwrKind[] = ['lc-board-data', 'off-board-data', 'suwi-notices', 'suwi-org-data', 'mgr-roster', ...TIME_OFFICE_LIST_KINDS, ...KEPT_READ_KINDS];
 const SUWI_KINDS: SwrKind[] = ['suwi-notices', 'suwi-org-data'];
+/** What a new, edited or deleted feed post can change: the lifecycle boards (never Suwi's or the payroll copies). */
+const POST_KINDS: SwrKind[] = ['lc-board-data', 'off-board-data', 'mgr-roster', ...TIME_OFFICE_LIST_KINDS];
 
 /**
  * Off until the API server switches it on (server.ts). Scripts and checks call the services
@@ -109,16 +118,25 @@ const READS = new Set(['GET', 'HEAD', 'OPTIONS']);
  * Writes that can change none of these answers, left alone so a busy company's punches, games,
  * likes and pushes do not empty its kept boards every few seconds: punching, games and rooms,
  * notifications, uploads of media, sign-in, help and support, and Suwi's read-only POSTs (a question,
- * a people search: they change no data; a confirmed Suwi action does, and still drops). Connect writes can complete a
- * lifecycle task (the welcome post), so they drop the boards, but not Suwi's notices.
+ * a people search: they change no data; a confirmed Suwi action does, and still drops).
+ *
+ * The feed: making, editing or deleting a post drops the boards (POST_KINDS), as it always has; the
+ * rest of Connect (a like, a comment, a caption, a vote, a block, an audience list, a game score) reads
+ * into none of these answers, and dropping on every like had a busy company's boards, Employees, Time
+ * office lists and manager roster cold most of the time (the offboarding count's 2.5 s median), and
+ * started a rebuild of them (with Suwi's notices and tools) after nearly every like. A person's own
+ * payroll screens are still dropped by a punch of theirs (OWN_PAYROLL_WRITES, forgetReadsOnWrite).
  */
 const NEVER_LIFECYCLE = /^\/(attendance\/punch|games|play|notifications|relay|cup|poker|squad|talk|garden|face|media|app(\/|$)|care|help|support|auth|suwi\/ask|suwi\/people-search)(\/|$)/;
-const NOT_SUWI = /^\/connect(\/|$)/;
+const CONNECT = /^\/connect(\/|$)/;
+/** Writes among those that drop nothing company-wide which can change the writer's own payroll: punches (the app's, and Face ID's). */
+const OWN_PAYROLL_WRITES = /^\/(attendance|face)(\/|$)/;
+const CONNECT_POST = /^\/connect\/posts(\/[^/]+)?\/?$/;
 
 /** Which kept answers a write to this path can change. */
 export function kindsChangedBy(path: string): SwrKind[] {
   if (NEVER_LIFECYCLE.test(path)) return [];
-  if (NOT_SUWI.test(path)) return LIFECYCLE_READ_KINDS.filter((k) => !SUWI_KINDS.includes(k));
+  if (CONNECT.test(path)) return CONNECT_POST.test(path) ? POST_KINDS : [];
   return LIFECYCLE_READ_KINDS;
 }
 
@@ -172,7 +190,19 @@ export function setSuwiOrgDataPatch(fn: OrgDataPatch | null): void {
 export function forgetReadsOnWrite(req: Request, res: Response, next: NextFunction): void {
   if (READS.has(req.method)) { next(); return; }
   const kinds = kindsChangedBy(req.path);
-  if (!kinds.length) { next(); return; }
+  if (!kinds.length) {
+    if (!OWN_PAYROLL_WRITES.test(req.path)) { next(); return; }
+    // Nothing company-wide, but the writer's own payroll screens still go (a punch moves their missing
+    // punches and the month's estimate), before the response is out, so their next open shows it.
+    const own = (): void => {
+      const auth = (req as Request & { auth?: { userId?: string; user?: { org?: string } } }).auth;
+      if (auth?.userId && auth.user?.org) dropSwrForPerson(auth.user.org, PER_PERSON_KINDS, String(auth.userId));
+    };
+    const endOwn = res.end.bind(res) as (...args: unknown[]) => Response;
+    (res as unknown as { end: (...args: unknown[]) => Response }).end = (...args: unknown[]) => { own(); return endOwn(...args); };
+    next();
+    return;
+  }
   // Read now: by the time the response ends, routing may have rewritten the path.
   const requestsOnly = changesOnlyRequests(req.path);
   // What this request writes to the board's records (journeys, tasks, offers, people).

@@ -149,6 +149,7 @@ export async function readConnectMedia(objectKey: string, range?: string) {
     contentLength: object.ContentLength,
     // Present only for a ranged read, as "bytes 0-999/22880555".
     contentRange: object.ContentRange,
+    etag: object.ETag,
   };
 }
 

@@ -73,10 +73,14 @@ export async function missingPunchesFor(org: string, userId: string, employeeId:
 
   const [graded, records, requests] = await Promise.all([
     employeeDayStatuses(org, userId, from, to),
+    // Only the punches and the requests' state: whole rows carry locations, face checks and notes.
     attendanceRecords()
-      .find(employeeId ? { $or: [{ userId }, { employeeId }], workDate: { $gte: from, $lte: to } } : { userId, workDate: { $gte: from, $lte: to } })
+      .find(employeeId ? { $or: [{ userId }, { employeeId }], workDate: { $gte: from, $lte: to } } : { userId, workDate: { $gte: from, $lte: to } }, { projection: { _id: 0, workDate: 1, punchIn: 1, punchOut: 1 } })
       .toArray(),
-    attendanceRegularizations().find({ userId, workDate: { $gte: from, $lte: to } }).sort({ createdAt: -1 }).toArray(),
+    attendanceRegularizations()
+      .find({ userId, workDate: { $gte: from, $lte: to } }, { projection: { _id: 1, workDate: 1, kind: 1, status: 1, requestedDayType: 1, createdAt: 1 } })
+      .sort({ createdAt: -1 })
+      .toArray(),
   ]);
   const recordOn = new Map(records.map((r) => [r.workDate, r]));
   const requestOn = new Map<string, (typeof requests)[number]>();
@@ -349,7 +353,11 @@ async function salaryCard(org: string, userId: string, joined: string | undefine
 
 /** The person's released payslips of the months from..to, the newest run's for each month. */
 async function releasedPayslipsBetween(org: string, userId: string, from: string, to: string) {
-  const slips = await payslips().find({ org, userId, period: { $gte: from, $lte: to } }).sort({ createdAt: -1 }).toArray();
+  // Only what the tax card reads (each month's income tax line), not whole payslips.
+  const slips = await payslips()
+    .find({ org, userId, period: { $gte: from, $lte: to } }, { projection: { _id: 0, runId: 1, period: 1, createdAt: 1, 'deductions.key': 1, 'deductions.amountPaise': 1 } })
+    .sort({ createdAt: -1 })
+    .toArray() as Payslip[];
   const runIds = [...new Set(slips.map((s) => s.runId))].filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
   const runs = runIds.length
     ? await payrollRuns().find({ _id: { $in: runIds }, status: { $in: RELEASED_RUN_STATUSES } }, { projection: { _id: 1 } }).toArray()

@@ -645,6 +645,9 @@ async function ensureIndexes(database: Db): Promise<void> {
   await scoresCollection.createIndex({ gameId: 1, userId: 1 }, { unique: true });
   await scoresCollection.createIndex({ gameId: 1, score: -1, achievedAt: 1 });
   await database.collection<GameCatalogEntry>('game_catalog').createIndex({ key: 1 }, { unique: true });
+  // Which version each game is at, read from the index alone (keptReads.ts): a game's document carries its
+  // whole page, and the Games list only needs to know whether one changed.
+  await database.collection<GameCatalogEntry>('game_catalog').createIndex({ key: 1, active: 1, updatedAt: 1 });
   // One document per policy per company, and how a company's are found.
   await database.collection<PolicyDocument>('policy_documents').createIndex({ org: 1, key: 1 }, { unique: true });
   const challengesCollection = database.collection<GameChallenge>('game_challenges');

@@ -26,6 +26,7 @@ import type { User } from '../models/user.model';
 import { blockedUserIdsFor } from './connect-blocks.service';
 import { feedAudienceFilter } from './audience-list-rules';
 import { catalogFor, GameCatalogError, type PublicGame } from './game-catalog.service';
+import { lifecycleReadCacheOn } from './lifecycle/readCache';
 import {
   contestIsLive,
   firstNameOf,
@@ -875,6 +876,9 @@ const homeCatalogs = new Map<string, { at: number; games: Promise<PublicGame[]> 
 
 /** `catalogFor`, kept per company for `HOME_CATALOG_MS`. A failed read is not kept. */
 export function homeCatalogFor(viewer: Pick<User, 'userId' | 'name' | 'org'>, at = Date.now()): Promise<PublicGame[]> {
+  // On the API server the catalog is kept per company, served at once and checked behind the reader
+  // (catalogFor): before, once a minute a home waited seconds for the company's games to be read again.
+  if (lifecycleReadCacheOn()) return catalogFor(viewer);
   const key = viewer.org ?? '';
   const kept = homeCatalogs.get(key);
   if (kept && at - kept.at < HOME_CATALOG_MS) return kept.games;

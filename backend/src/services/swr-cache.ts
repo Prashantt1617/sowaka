@@ -19,15 +19,24 @@ export type SwrKind = 'ool'
   | 'lc-board-data' | 'off-board-data' | 'suwi-notices'
   // Suwi's company-wide inputs (suwi/orgData.ts): the waiting requests and today's lists, shared by every viewer.
   | 'suwi-org-data'
-  // The manager workspace's company roster (manager.service.ts workspaceRoster).
-  | 'mgr-roster'
+  // The manager workspace's company roster (manager.service.ts workspaceRoster), and the inline photos it leaves out, per person.
+  | 'mgr-roster' | 'mgr-photos'
   // Time office lists (timeOfficeLists.ts): corrections, leave requests, overtime, feedback.
-  | 'adm-regs' | 'adm-leaves' | 'adm-overtime' | 'adm-feedback';
+  | 'adm-regs' | 'adm-leaves' | 'adm-overtime' | 'adm-feedback'
+  // People › Employees' rows (keptReads.ts), and a payroll run's payslips with the year to date behind them.
+  | 'adm-employees' | 'pay-run'
+  // One person's own payroll screens (keptReads.ts): kept per person, params carry the userId.
+  | 'pay-home' | 'pay-salary' | 'pay-earnings'
+  // The Games list and the Games home page (keptReads.ts): Sowaka's scripts change them, so they are checked by version.
+  | 'games-catalog' | 'app-page';
 
 const FRESH_MS = 60_000;
 const MAX_STALE_MS = 15 * 60_000;
-/** A ceiling, not a working size: an org has a handful of keys at a time. */
-const MAX_ENTRIES = 2_000;
+/**
+ * A ceiling, not a working size: an org has a handful of company-wide keys, plus one per person
+ * for each of their own payroll screens they opened in the last quarter hour.
+ */
+const MAX_ENTRIES = 20_000;
 
 /**
  * `pending`: a load or refresh under way. `patching`: a write's patch of the kept value under way
@@ -42,7 +51,16 @@ const kept = new Map<string, Entry>();
  */
 const generation = new Map<string, number>();
 const kindOf = (key: string) => key.split('\u0000')[1];
-const genOf = (org: string, kind: string) => (generation.get(org) ?? 0) + (generation.get(`${org}\u0000${kind}`) ?? 0);
+/** The person an answer is kept for (params with a `userId`: their own payroll screens), else ''. */
+const personOf = (key: string): string => {
+  const params = key.split('\u0000').slice(2).join('\u0000');
+  if (!params.startsWith('{"userId":')) return '';
+  const parsed = JSON.parse(params) as { userId?: unknown };
+  return typeof parsed.userId === 'string' ? parsed.userId : '';
+};
+const personGenKey = (org: string, kind: string, userId: string) => `${org}\u0000${kind}\u0000@${userId}`;
+const genOf = (org: string, kind: string, person = '') => (generation.get(org) ?? 0) + (generation.get(`${org}\u0000${kind}`) ?? 0)
+  + (person ? generation.get(personGenKey(org, kind, person)) ?? 0 : 0);
 const bump = (genKey: string) => generation.set(genKey, (generation.get(genKey) ?? 0) + 1);
 
 const keyOf = (org: string, kind: SwrKind, params: unknown) => `${org}\u0000${kind}\u0000${JSON.stringify(params ?? null)}`;
@@ -51,15 +69,23 @@ function makeRoom(): void {
   if (kept.size < MAX_ENTRIES) return;
   const now = Date.now();
   for (const [k, v] of kept) if (!v.pending && now - v.at > MAX_STALE_MS) kept.delete(k);
-  if (kept.size >= MAX_ENTRIES) kept.clear();
+  // Still full: the oldest tenth goes (a Map iterates in the order keys were first kept), never all of it.
+  let over = kept.size - Math.floor(MAX_ENTRIES * 0.9);
+  for (const [k, v] of kept) {
+    if (over <= 0) break;
+    if (v.pending) continue;
+    kept.delete(k);
+    over -= 1;
+  }
 }
 
 function start<T>(org: string, key: string, load: () => Promise<T>): Promise<T> {
-  const gen = genOf(org, kindOf(key));
+  const person = personOf(key);
+  const gen = genOf(org, kindOf(key), person);
   const entry = kept.get(key) ?? { at: 0 };
   const pending = load().then(
     (value) => {
-      if (genOf(org, kindOf(key)) === gen) {
+      if (genOf(org, kindOf(key), person) === gen) {
         makeRoom();
         kept.set(key, { at: Date.now(), value });
       } else if (kept.get(key)?.pending === pending) {
@@ -198,6 +224,22 @@ export function dropSwr(org: string | null, kinds: SwrKind[]): void {
     for (const k of kinds) bump(`${o}\u0000${k}`);
     const prefixes = kinds.map((k) => `${o}\u0000${k}\u0000`);
     for (const key of kept.keys()) if (prefixes.some((p) => key.startsWith(p))) kept.delete(key);
+  }
+}
+
+/**
+ * Drop these kinds of kept answers for one person of an org (answers kept with `userId` in their
+ * params): for a write of theirs that can change only their own (a punch). A refresh of that kind
+ * already under way for the org is not kept when it lands.
+ */
+export function dropSwrForPerson(org: string, kinds: SwrKind[], userId: string): void {
+  for (const k of kinds) {
+    const prefix = `${org}\u0000${k}\u0000`;
+    for (const key of [...kept.keys()]) {
+      if (key.startsWith(prefix) && personOf(key) === userId) kept.delete(key);
+    }
+    // A load of theirs may be under way: their own counter keeps it from landing (no one else's).
+    bump(personGenKey(org, k, userId));
   }
 }
 
