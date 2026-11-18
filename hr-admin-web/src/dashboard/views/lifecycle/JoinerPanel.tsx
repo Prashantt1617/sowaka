@@ -109,6 +109,34 @@ function journeyLine(status: string, tj: string | undefined, dayLabel: string | 
   return dayLabel || STATUS_LABEL[status] || status;
 }
 
+const addr = (a?: { line: string; city: string; state: string; pin: string }) => (a ? `${a.line}, ${a.city}, ${a.state} ${a.pin}` : '');
+const month = (m?: string) => (m ? new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'now');
+
+/** What the candidate filled in on the portal's Employee profile (the secrets as their last four). */
+function ProfileFacts({ profile: p, emergency, pf, onPhoto }: {
+  profile: NonNullable<JourneyDetail['journey']['profile']>; emergency?: { name: string; relation: string; phone: string }; pf?: { firstJob: boolean; uan?: string }; onPhoto: (id: string) => void;
+}) {
+  return (
+    <>
+      <Sub>Employee profile</Sub>
+      <Facts strong={false} rows={[
+        ['Full name', p.personal ? `${p.personal.fullName}${p.personal.preferredName ? ` (${p.personal.preferredName})` : ''}` : ''],
+        ['Date of birth', p.personal?.dob ? longDay(p.personal.dob) : ''],
+        ['Gender', p.personal?.gender], ['Marital status', p.personal?.maritalStatus], ['Nationality', p.personal?.nationality],
+        ['Mobile', p.contact?.mobile], ['Current address', addr(p.contact?.current)],
+        ['Permanent address', p.contact ? (p.contact.permanentSame ? 'Same as current' : addr(p.contact.permanent)) : ''],
+        ['Emergency contact', emergency ? `${emergency.name} (${emergency.relation}) · ${emergency.phone}` : ''],
+        ['Bank', p.bank ? `${p.bank.holderName} · •••• ${p.bank.accountLast4} · ${p.bank.ifsc}${p.bank.bankName ? ` · ${p.bank.bankName}` : ''}` : ''],
+        ['PF', pf ? (pf.firstJob ? 'First job: no UAN yet' : `UAN ${pf.uan ?? ''}`) : ''],
+        ['Education', p.education ? `${p.education.qualification}, ${p.education.institution} (${p.education.year})` : ''],
+        ['Experience', p.experience ? (p.experience.firstJob ? 'First job' : p.experience.jobs.map((j) => `${j.role} at ${j.company} (${month(j.from)} – ${month(j.to)})`).join('; ')) : ''],
+        ['Aadhaar', p.ids?.aadhaarLast4 ? `•••• ${p.ids.aadhaarLast4}` : ''], ['PAN', p.ids?.panLast4 ? `••••••${p.ids.panLast4}` : ''],
+        ['Photo', p.photoFileId ? <button key="ph" type="button" className="pd-btn sm" onClick={() => onPhoto(p.photoFileId!)}>View photo</button> : ''],
+      ]} />
+    </>
+  );
+}
+
 const doneOf = (list: TaskView[]) => list.filter((t) => t.status === 'done' || t.status === 'skipped').length;
 
 export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: string; onClose: () => void; onChanged: () => void }) {
@@ -338,6 +366,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
               </span>
               <span style={{ height: 8, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}><i style={{ display: 'block', height: '100%', width: `${profilePct}%`, borderRadius: 99, background: pctColour(profilePct) }} /></span>
             </span>
+            {journey.profile && <ProfileFacts profile={journey.profile} emergency={journey.aboutYou?.emergencyContact} pf={journey.aboutYou?.pf} onPhoto={(id) => setDialog({ kind: 'file', id, name: `Photo – ${name}` })} />}
             {documents.length > 0 && <Sub>Documents</Sub>}
             {documents.length > 0 && !seesDocuments && <div className="pd-note">Only HR opens candidates’ documents and ID proofs. You see where each one is.</div>}
             {documents.map((d) => <DocumentRow key={d.id} doc={d} busy={busy === `doc:${d.id}`} canReview={seesDocuments}

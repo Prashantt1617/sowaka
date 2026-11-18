@@ -1150,6 +1150,15 @@ export function sanitiseJourney(j: Journey): Omit<Journey, 'templateSnapshot'> {
     const { accountNumberEnc: _a, uanEnc: _u, ...changes } = rest.bankPfRequest.changes;
     rest.bankPfRequest = { ...rest.bankPfRequest, changes };
   }
+  // The profile's secrets never leave the server: their last four stand for them.
+  if (rest.profile) {
+    const { bank, ids, ...open } = rest.profile;
+    rest.profile = {
+      ...open,
+      ...(bank ? { bank: { holderName: bank.holderName, ifsc: bank.ifsc, accountLast4: bank.accountLast4, ...(bank.bankName ? { bankName: bank.bankName } : {}) } } : {}),
+      ...(ids ? { ids: { ...(ids.aadhaarLast4 ? { aadhaarLast4: ids.aadhaarLast4 } : {}), ...(ids.panLast4 ? { panLast4: ids.panLast4 } : {}) } } : {}),
+    };
+  }
   return rest;
 }
 

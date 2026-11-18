@@ -26,6 +26,7 @@ type PathKey = 'offer' | 'docs' | 'about' | 'meet' | 'letter' | 'pass';
 type StepState = 'done' | 'current' | 'todo' | 'locked' | 'waiting';
 
 export interface PortalHome {
+  personalEmail?: string;
   status: string;
   view: 'tasks_open' | 'offer_updated' | 'letter_ready' | 'pass_unlocked' | 'joined' | 'closed';
   candidateName: string;
@@ -213,9 +214,9 @@ export async function portalPassOrLocked(journey: Journey, now = new Date()): Pr
   return { state: 'open', ...(await portalPass(journey, now)) };
 }
 
-export async function portalPass(journey: Journey, now = new Date()): Promise<PortalPass> {
+export async function portalPass(journey: Journey, now = new Date(), opts: { anyDay?: boolean } = {}): Promise<PortalPass> {
   if (!journey.tj) throw new LifecycleOfferError(403, 'Your Day-1 pass is not ready yet');
-  if (!passOpen(journey, now)) throw new LifecycleOfferError(403, `Your Day-1 pass opens on ${formatDay(addDays(journey.tj, -PASS_OPENS_DAYS))}`);
+  if (!opts.anyDay && !passOpen(journey, now)) throw new LifecycleOfferError(403, `Your Day-1 pass opens on ${formatDay(addDays(journey.tj, -PASS_OPENS_DAYS))}`);
   const [manager, buddy, company] = await Promise.all([
     journey.managerUserId ? users().findOne({ userId: journey.managerUserId }, { projection: { _id: 0, name: 1 } }) : null,
     journey.buddyUserId ? users().findOne({ userId: journey.buddyUserId }, { projection: { _id: 0, name: 1 } }) : null,
@@ -237,8 +238,8 @@ const icsText = (s: string) => s.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').re
 const icsStamp = (at: Date) => at.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 
 /** The Day-1 event (reporting time to the last agenda item + 1 h, else 8 hours), in UTC. */
-export async function portalPassIcs(journey: Journey, now = new Date()): Promise<string> {
-  const pass = await portalPass(journey, now);
+export async function portalPassIcs(journey: Journey, now = new Date(), opts: { anyDay?: boolean } = {}): Promise<string> {
+  const pass = await portalPass(journey, now, opts);
   const at = (hhmm: string | undefined) => new Date(Date.parse(`${pass.date}T${/^\d{2}:\d{2}$/.test(hhmm ?? '') ? hhmm : '09:30'}:00+05:30`));
   const start = at(pass.reportingTime);
   const lastAgenda = (pass.agenda ?? []).map((a) => at(a.time)).filter((d) => d > start).sort((a, b) => b.getTime() - a.getTime())[0];
@@ -259,6 +260,35 @@ export async function portalPassIcs(journey: Journey, now = new Date()): Promise
   ].join('\r\n');
 }
 
+// ─── Joining details (the portal's Joining details tile) ───────────────────
+
+/**
+ * The first day, whenever the candidate looks: reporting time and place, who they
+ * report to, their buddy, what to bring, and when the Day-1 pass opens. The pass
+ * itself (with its agenda) still opens a week before.
+ */
+export async function joiningDetails(journey: Journey, now = new Date()) {
+  const pass = journey.day1Pass ?? {};
+  const [manager, buddy, pending] = await Promise.all([
+    journey.managerUserId ? users().findOne({ userId: journey.managerUserId }, { projection: { _id: 0, name: 1, designation: 1 } }) : null,
+    journey.buddyUserId ? users().findOne({ userId: journey.buddyUserId }, { projection: { _id: 0, name: 1, designation: 1 } }) : null,
+    dateChangeRequests().findOne({ journeyId: journey.id, status: 'pending' }, { projection: { _id: 0, requestedTj: 1 } }),
+  ]);
+  const date = pass.date ?? journey.tj;
+  return {
+    ...(date ? { date, daysToGo: daysBetween(istDate(now), date) } : {}),
+    ...(pass.reportingTime ? { reportingTime: pass.reportingTime } : {}),
+    ...(pass.place ? { place: pass.place } : {}), ...(pass.mapLink ? { mapLink: pass.mapLink } : {}), ...(pass.meetingLink ? { meetingLink: pass.meetingLink } : {}),
+    ...(manager ? { manager: { name: manager.name, ...(manager.designation ? { designation: manager.designation } : {}) } } : {}),
+    ...(buddy ? { buddy: { name: buddy.name, ...(buddy.designation ? { designation: buddy.designation } : {}) } } : {}),
+    ...(pass.askFor ? { askFor: pass.askFor } : {}),
+    ...(journey.department ? { department: journey.department } : {}), ...(journey.designation ? { designation: journey.designation } : {}),
+    bring: pass.bring ?? [],
+    ...(journey.tj ? { passOpensOn: addDays(journey.tj, -PASS_OPENS_DAYS), passOpen: passOpen(journey, now) } : {}),
+    ...(pending ? { pendingDateRequest: { requestedTj: pending.requestedTj } } : {}),
+  };
+}
+
 // ─── Home ───────────────────────────────────────────────────────────────────
 
 export async function portalHome(journey: Journey, now = new Date()): Promise<PortalHome> {
@@ -277,6 +307,7 @@ export async function portalHome(journey: Journey, now = new Date()): Promise<Po
   const company = await companyRead;
   const base = {
     status, candidateName: journey.candidate?.name ?? '',
+    ...(journey.candidate?.personalEmail ? { personalEmail: journey.candidate.personalEmail } : {}),
     company: { name: companyDisplayName(company, journey.org), ...(company?.lifecyclePortal?.logoUrl ? { logoUrl: company.lifecyclePortal.logoUrl } : {}) },
     tj: journey.tj, daysToGo: journey.tj ? daysBetween(today, journey.tj) : null,
     hrContact: await hrContactFor(journey, company),

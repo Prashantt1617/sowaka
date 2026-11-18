@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { portal } from '../api/portal';
@@ -6,8 +6,9 @@ import type { ClosedSignIn } from '../api/types';
 import { Page, useLastClient } from '../components/Shell';
 import { Icon } from '../components/Icon';
 import { BottomBar, Eyebrow, Field, PrimaryButton } from '../components/ui';
-import { useFocusHeading, useWide } from '../lib/hooks';
+import { useFocusHeading } from '../lib/hooks';
 import { ClosedScreen } from './Closed';
+import { A1Frame, A1Icon, A1Logo, WebHeader } from '../components/A1';
 
 function PasswordInput({ id, value, onChange, autoComplete }: { id: string; value: string; onChange: (v: string) => void; autoComplete: string }) {
   const [show, setShow] = useState(false);
@@ -29,30 +30,53 @@ function PasswordInput({ id, value, onChange, autoComplete }: { id: string; valu
   );
 }
 
-/** P6 / W6 · Sign in — the email and password HR's finalise emailed. */
+const EMAIL_KEY = 'sowaka.portal.email';
+function lastEmail(): string {
+  try { return localStorage.getItem(EMAIL_KEY) ?? ''; } catch { return ''; }
+}
+function rememberEmail(email: string) {
+  try { localStorage.setItem(EMAIL_KEY, email.trim()); } catch { /* not kept: they type it next time */ }
+}
+
+/** Web · 1 and 2 (18 Nov design) · Sign in: the personal email the portal was sent to, then the 6-digit code emailed to it (no password). */
 export function SignIn() {
-  const wide = useWide();
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  // The portal mail's link carries the address it went to (?email=); else the one last used on this device.
+  const [email, setEmail] = useState(() => params.get('email')?.trim() || lastEmail());
+  const [code, setCode] = useState('');
+  // Once the code is on its way, the form asks for it.
+  const [sent, setSent] = useState(false);
   const [error, setError] = useState<string>();
   const [closed, setClosed] = useState<ClosedSignIn>();
   const [busy, setBusy] = useState(false);
+  const [wait, setWait] = useState(0);
   const client = useLastClient();
   const emailId = useId();
-  const pwId = useId();
-  const h1 = useFocusHeading<HTMLHeadingElement>('sign-in');
+  const h1 = useFocusHeading<HTMLHeadingElement>(sent ? 'code' : 'email');
   const from = (location.state as { from?: string } | null)?.from;
+  useEffect(() => {
+    if (wait <= 0) return undefined;
+    const t = window.setTimeout(() => setWait((n) => n - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [wait]);
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
+  const sendCode = async () => {
+    await portal.sendCode(email.trim());
+    setSent(true);
+    setCode('');
+    setWait(30);
+  };
+  const submit = async (e?: FormEvent) => {
+    e?.preventDefault();
     setBusy(true);
     setError(undefined);
     try {
-      const out = await portal.signIn(email.trim(), password);
+      if (!sent) { await sendCode(); return; }
+      const out = await portal.verifyCode(email.trim(), code.trim());
       if ('closed' in out) { setClosed(out.closed); return; }
+      rememberEmail(email);
       navigate(from && from !== '/sign-in' ? from : '/', { replace: true });
     } catch (err) {
       // A server from before the closed answer was 200 says it with a 403: the same closed screen.
@@ -65,68 +89,83 @@ export function SignIn() {
   };
 
   if (closed) return <ClosedScreen state={closed.state} company={closed.company} hr={closed.hrContact} />;
-
-  // 6Zs P6: "Header: light, help" (the help sheet needs the client's HR, known from the offer link or the mail's link).
-  const header = { ...client, help: true };
-  const form = (
-    <form className="form" onSubmit={submit} noValidate={false} aria-describedby={error ? 'signin-err' : undefined}>
-      <h1 className="display" ref={h1} tabIndex={-1}>
-        Sign in
-      </h1>
-      <p className="body sub">Use the email and password HR sent you</p>
-      {params.get('expired') && (
-        <p className="banner banner--blue body" role="status">
-          You were signed out. Please sign in again.
-        </p>
-      )}
-      <Field label="Email" htmlFor={emailId}>
-        <input id={emailId} className="input" type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-      </Field>
-      <Field label="Password" htmlFor={pwId}>
-        <PasswordInput id={pwId} value={password} onChange={setPassword} autoComplete="current-password" />
-      </Field>
-      <Link to="/forgot" className="text-link">
-        Forgot password?
-      </Link>
-      {error && (
-        <p id="signin-err" className="field__error" role="alert">
-          {error}
-        </p>
-      )}
-      <BottomBar>
-        <PrimaryButton type="submit" disabled={busy || !email || !password}>
-          {busy ? 'Signing in…' : 'Sign in'}
-        </PrimaryButton>
-      </BottomBar>
-    </form>
-  );
-
-  if (wide)
-    return (
-      <Page header={header} layout="wide">
-        <div className="two-col two-col--even signin-web">
-          <section className="signin-web__intro card">
-            <h2 className="display">Your joining portal</h2>
-            <p className="body">Everything you need before Day 1, in one place.</p>
-            <ul className="check-list">
-              {['Upload your documents', 'Meet your team', 'Sign your appointment letter', 'Get your Day-1 pass'].map((t) => (
-                <li key={t}>
-                  <span className="node node--done" aria-hidden="true">
-                    <Icon name="check" size={14} />
-                  </span>
-                  <span className="body">{t}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-          <section className="card signin-web__form">{form}</section>
-        </div>
-      </Page>
-    );
+  const company = client.company;
   return (
-    <Page header={header} layout="narrow" bg="white">
-      {form}
-    </Page>
+    <A1Frame white>
+      <WebHeader company={company} />
+      <form className="a1-signin" onSubmit={submit} noValidate aria-describedby={error ? 'signin-err' : undefined}>
+        <div className="a1-signin__top">
+          {sent && <button type="button" className="a1-icon-btn a1-icon-btn--ink" aria-label="Back to email" onClick={() => { setSent(false); setError(undefined); }}><A1Icon name="back" size={22} width={2} /></button>}
+        </div>
+        <div className="a1-signin__body" style={{ paddingTop: 8 }}>
+          {sent
+            ? <span className="a1-signin__mark a1-signin__mark--mail"><A1Icon name="mail" size={32} width={1.6} /></span>
+            : <A1Logo company={company} className="a1-signin__mark" />}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <h1 ref={h1} tabIndex={-1}>{sent ? 'Check your email' : `Welcome to ${company?.name ?? 'your joining portal'}`}</h1>
+            <p className="a1-intro">
+              {sent
+                ? <>Enter the 6-digit code we sent to your personal email, <b style={{ fontWeight: 600, color: 'var(--a1-ink)' }}>{email.trim()}</b> <button type="button" className="a1-link" onClick={() => { setSent(false); setError(undefined); }}>Change</button></>
+                : 'Sign in to see your offer, joining details and profile. We’ll email you a code, so there’s no password to remember.'}
+            </p>
+          </div>
+          {params.get('expired') && !sent && <p className="a1-info" role="status"><A1Icon name="info" size={16} /><span>You were signed out. Please sign in again.</span></p>}
+          {!sent ? (
+            <label className="a1-field" htmlFor={emailId}>Personal email
+              <input id={emailId} className="a1-input" type="email" inputMode="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus={!email} />
+              <span className="a1-help">Use the email your offer letter was sent to.</span>
+            </label>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <CodeBoxes value={code} onChange={(c) => { setCode(c); if (c.length === 6) setError(undefined); }} />
+              <span className="a1-small">
+                Didn’t get it? Check your spam folder, or{' '}
+                {wait > 0
+                  ? <>resend in <b style={{ fontWeight: 600, color: 'var(--a1-ink)' }}>0:{String(wait).padStart(2, '0')}</b></>
+                  : <button type="button" className="a1-link" style={{ fontSize: 12 }} onClick={() => { setError(undefined); void sendCode().catch((err) => setError((err as Error).message)); }}>send a new code</button>}
+              </span>
+            </div>
+          )}
+          {error && <p id="signin-err" className="a1-error" role="alert">{error}</p>}
+        </div>
+        <div className="a1-signin__foot">
+          <button type="submit" className="a1-btn a1-btn--primary" disabled={busy || !email.trim() || (sent && code.length !== 6)}>
+            {busy ? (sent ? 'Checking…' : 'Sending…') : sent ? 'Verify and continue' : 'Send me a code'}
+          </button>
+          <span className="a1-small" style={{ textAlign: 'center', fontSize: 11 }}>
+            Trouble signing in? {client.hr ? <a className="a1-link" style={{ fontSize: 11 }} href={`mailto:${client.hr.email}`}>Write to HR</a> : 'Reply to the email from HR.'}
+          </span>
+        </div>
+      </form>
+    </A1Frame>
+  );
+}
+
+/** Six boxes for the code: typing moves along, Backspace moves back, a pasted code fills them all. */
+function CodeBoxes({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const refs = useRef<Array<HTMLInputElement | null>>([]);
+  useEffect(() => { refs.current[Math.min(value.length, 5)]?.focus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const put = (at: number, digits: string) => {
+    const clean = digits.replace(/\D/g, '');
+    if (!clean) return;
+    const next = (value.slice(0, at) + clean).slice(0, 6);
+    onChange(next);
+    refs.current[Math.min(next.length, 5)]?.focus();
+  };
+  return (
+    <div className="a1-otp" role="group" aria-label="6-digit code">
+      {Array.from({ length: 6 }, (_, k) => (
+        <input key={k} ref={(el) => { refs.current[k] = el; }} inputMode="numeric" autoComplete={k === 0 ? 'one-time-code' : 'off'} aria-label={`Digit ${k + 1}`}
+          className={value[k] ? 'has-value' : ''} value={value[k] ?? ''} maxLength={k === 0 ? 6 : 1}
+          onChange={(e) => put(k, e.target.value)}
+          onPaste={(e) => { e.preventDefault(); onChange(e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6)); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Backspace') { e.preventDefault(); const at = value[k] ? k : Math.max(0, k - 1); onChange(value.slice(0, at)); refs.current[at]?.focus(); }
+            if (e.key === 'ArrowLeft' && k > 0) refs.current[k - 1]?.focus();
+            if (e.key === 'ArrowRight' && k < 5) refs.current[k + 1]?.focus();
+          }} />
+      ))}
+    </div>
   );
 }
 

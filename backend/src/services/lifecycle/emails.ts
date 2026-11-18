@@ -259,24 +259,33 @@ export const portalLink = (pathAndQuery: string, org?: string) => {
   return `${base}${pathAndQuery}${pathAndQuery.includes('?') ? '&' : '?'}c=${clientToken(org)}`;
 };
 
+/** The portal's sign-in, with their email already in the box (the link goes only to that address). */
+export const signInLink = (email: string, org?: string) => portalLink(`/sign-in?email=${encodeURIComponent(email.trim())}`, org);
+
 export const mails = {
   offer(company: string, body: string, link: string | null) {
     return layout(company, textToHtml(body), link ? { label: 'View and accept your offer', url: link } : undefined);
   },
-  loginDetails(company: string, name: string, email: string, password: string, org?: string) {
+  /** Finalise: the portal's link. They sign in with this same email and a code we send then: no password to keep. */
+  portalReady(company: string, name: string, email: string, org?: string) {
     return layout(company,
       p(`Hi ${escapeHtml(firstName(name))},`)
       + p(`HR has confirmed your offer. Your joining portal is ready: upload your documents, meet the team and get your Day-1 pass, all before you join.`)
-      + p(`<b>Email:</b> ${escapeHtml(email)}<br /><b>Password:</b> <span style="font-family:monospace">${escapeHtml(password)}</span>`)
-      + p(`Keep this password to yourself. You can change it any time with <i>Forgot password</i> on the sign-in page.`),
-      { label: 'Sign in to your portal', url: portalLink('/sign-in', org) });
+      + p(`Sign in with this email address, <b>${escapeHtml(email)}</b>. We'll email you a one-time code each time; there's no password to remember.`),
+      { label: 'Open your joining portal', url: signInLink(email, org) });
   },
-  loginReminder(company: string, name: string, email: string, sentOn: string, org?: string) {
+  /** The sign-in code itself. */
+  portalCode(company: string, code: string, minutes: number) {
+    return layout(company,
+      p(`Your code to sign in to your ${escapeHtml(company)} joining portal is:`)
+      + p(`<span style="font-family:monospace;font-size:26px;letter-spacing:6px;font-weight:700">${escapeHtml(code)}</span>`)
+      + p(`It works for ${minutes} minutes. If you didn't ask for it, ignore this email.`));
+  },
+  loginReminder(company: string, name: string, email: string, _sentOn: string, org?: string) {
     return layout(company,
       p(`Hi ${escapeHtml(firstName(name))},`)
-      + p(`Your joining portal is waiting for you. Sign in with <b>${escapeHtml(email)}</b> and the password in our email of ${escapeHtml(sentOn)}.`)
-      + p(`Can't find it? Use <i>Forgot password</i> on the sign-in page and we'll send you a link to set a new one.`),
-      { label: 'Sign in', url: portalLink('/sign-in', org) });
+      + p(`Your joining portal is waiting for you. Sign in with <b>${escapeHtml(email)}</b>; we'll email you a one-time code.`),
+      { label: 'Open your joining portal', url: signInLink(email, org) });
   },
   quietNudge(company: string, name: string, upNext: string | undefined, org?: string) {
     return layout(company,

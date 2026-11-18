@@ -181,7 +181,7 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
   }
   let portalToken = '';
   /** The portal keeps a 12-hour session: like the portal, sign in again when it has run out. */
-  let portalCreds: { email: string; password: string } | null = null;
+  let portalCreds: { email: string } | null = null;
   interface Res { status: number; body: Json }
   /** `as`: a user id (app/dashboard session), 'portal' (the candidate), or null (no login). */
   async function call(as: string | null, method: string, path: string, body?: unknown, form?: FormData): Promise<Res> {
@@ -194,9 +194,9 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
     else if (body !== undefined) { headers['content-type'] = 'application/json'; payload = JSON.stringify(body); }
     let res = await fetch(`${base}${path}`, { method, headers, body: payload });
     if (as === 'portal' && res.status === 401 && portalCreds) {
-      const again = await fetch(`${base}/portal/auth/sign-in`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(portalCreds) });
-      if (again.status === 200) {
-        portalToken = ((await again.json()) as { token: string }).token;
+      const again = await portalSignIn(portalCreds.email);
+      if (again) {
+        portalToken = again;
         headers.authorization = `Bearer ${portalToken}`;
         res = await fetch(`${base}${path}`, { method, headers, body: form ?? payload });
       }
@@ -228,7 +228,13 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
   const drain = () => { for (const m of lifecycleOutbox()) mail.push(m as unknown as Mail); clearLifecycleOutbox(); };
   const lastMailTo = (to: string) => { drain(); return [...mail].reverse().find((m) => m.to === to); };
   const tokenIn = (html: string) => /\/o\/([A-Za-z0-9_-]+)/.exec(html)?.[1] ?? '';
-  const passwordIn = (html: string) => /monospace">([^<]+)</.exec(html)?.[1]?.replace(/&amp;/g, '&') ?? '';
+  /** The portal's sign-in now: a code emailed to the candidate (read off the code email), then the code. */
+  async function portalSignIn(email: string): Promise<string | null> {
+    await fetch(`${base}/portal/auth/code`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) });
+    const code = /^(\d{6}) is your/.exec(lastMailTo(email)?.subject ?? '')?.[1] ?? '';
+    const res = await fetch(`${base}/portal/auth/verify`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, code }) });
+    return res.status === 200 ? ((await res.json()) as { token?: string }).token ?? null : null;
+  }
 
   // ─── The calendar the test computes due dates with (independently of the product) ──
   const HOLIDAYS = ['2027-03-17', '2027-03-25', '2027-07-28'];
@@ -575,8 +581,8 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
   await advanceTo(T('2027-03-02', '14:00'));
   heading('1 · Finalised');
   await send('hr', 'POST', `/admin/lifecycle/offers/${A}/finalise`);
-  const passA = passwordIn(lastMailTo(KABIR)!.html);
-  ok('the login email carries a password', passA.length >= 8);
+  ok('the portal email carries the link and no password (sign-in is a code to this email)', /joining portal is ready/.test(lastMailTo(KABIR)!.subject) && !/Password:/i.test(lastMailTo(KABIR)!.html));
+  ok('…and its link fills in their email on the sign-in page', lastMailTo(KABIR)!.html.includes(`/sign-in?email=${encodeURIComponent(KABIR)}`), lastMailTo(KABIR)!.html.match(/href="[^"]*sign-in[^"]*"/)?.[0]);
   v = await onboardingViews(A, { link: linkA });
   compareOnboarding('finalised', v);
   ok('the manager sees Kabir in pre-boarding now', v.mgr?.list.preboarding === true, v.mgr?.list);
@@ -584,9 +590,9 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
   // ── Step 4: signed in
   await advanceTo(T('2027-03-04', '10:00'));
   heading('1 · Signed in to the portal');
-  const signIn = await send(null, 'POST', '/portal/auth/sign-in', { email: KABIR, password: passA });
-  portalToken = signIn.token;
-  portalCreds = { email: KABIR, password: passA };
+  const signIn = { token: await portalSignIn(KABIR) };
+  portalToken = signIn.token ?? '';
+  portalCreds = { email: KABIR };
   ok('an app token is not a portal token, nor the reverse', (await call('hr', 'GET', '/portal/me')).status === 401 && (await call('portal', 'GET', '/lifecycle/me')).status === 401);
   v = await onboardingViews(A, { link: linkA, portal: true });
   compareOnboarding('signed in', v);
@@ -753,10 +759,9 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
   const linkB = tokenIn(lastMailTo(BINA)!.html);
   await send(null, 'POST', `/portal/offer/${linkB}/accept`);
   await send('hr', 'POST', `/admin/lifecycle/offers/${B}/finalise`);
-  const passB = passwordIn(lastMailTo(BINA)!.html);
   const portalA = { token: portalToken, creds: portalCreds };
-  portalToken = (await send(null, 'POST', '/portal/auth/sign-in', { email: BINA, password: passB })).token;
-  portalCreds = { email: BINA, password: passB };
+  portalToken = (await portalSignIn(BINA)) ?? '';
+  portalCreds = { email: BINA };
   for (const d of ((await get('portal', '/portal/documents')).documents as Json[]).filter((x) => x.required)) {
     await send('portal', 'POST', `/portal/documents/${d.id}/upload`, undefined, pdfForm(`${d.docKey}.pdf`, 'files'));
     await send('hr', 'POST', `/admin/lifecycle/documents/${d.id}/review`, { decision: 'approve' });
@@ -808,8 +813,9 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
   heading('1 · Month 2: the portal closed into the app');
   current = 'template';
   const closedHome = await call('portal', 'GET', '/portal/me');
-  const signInNow = await call(null, 'POST', '/portal/auth/sign-in', { email: KABIR, password: passA });
-  // The right password on a closed portal answers 200 with the closed screen and no session (a wrong one stays 401).
+  await call(null, 'POST', '/portal/auth/code', { email: KABIR });
+  const signInNow = await call(null, 'POST', '/portal/auth/verify', { email: KABIR, code: /^(\d{6}) is your/.exec(lastMailTo(KABIR)?.subject ?? '')?.[1] ?? '' });
+  // The right code on a closed portal answers 200 with the closed screen and no session (a wrong one stays 401).
   ok('the portal closed the day the template says (a month after Tj): sign-in shows the closed screen, no session, home says closed', signInNow.status === 200 && !!signInNow.body?.closed && !signInNow.body?.token && (closedHome.status !== 200 || closedHome.body.view === 'closed'), { signIn: signInNow.status, closed: !!signInNow.body?.closed, token: !!signInNow.body?.token, home: closedHome.status === 200 ? closedHome.body.view : closedHome.status });
   current = 'same_truth';
   v = await onboardingViews(A, { joiner: joinerId });
@@ -1410,8 +1416,8 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
     await send(null, 'POST', `/portal/offer/${tokenIn(lastMailTo(MIRA)!.html)}/accept`);
     await send('hr', 'POST', `/admin/lifecycle/offers/${nm.journeyId}/finalise`);
     const savedPortal = { token: portalToken, creds: portalCreds };
-    portalCreds = { email: MIRA, password: passwordIn(lastMailTo(MIRA)!.html) };
-    portalToken = (await send(null, 'POST', '/portal/auth/sign-in', portalCreds)).token;
+    portalCreds = { email: MIRA };
+    portalToken = (await portalSignIn(MIRA)) ?? '';
     const miraHome = await get('portal', '/portal/me');
     const miraTasks = (await get('hr', `/admin/lifecycle/journeys/${nm.journeyId}`)).tasks as Json[];
     eq('the journey has no Meet us task', miraTasks.some((t) => t.systemKey === 'meet_us'), false);

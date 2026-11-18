@@ -134,6 +134,7 @@ export function resetRateLimits(): void { buckets.clear(); }
 
 export const LIMITS = {
   signIn: { max: 20, windowMs: 15 * 60 * 1000 },
+  code: { max: 8, windowMs: 15 * 60 * 1000 },
   forgot: { max: 5, windowMs: 15 * 60 * 1000 },
   offerLink: { max: 60, windowMs: 15 * 60 * 1000 },
 };
@@ -185,16 +186,24 @@ export async function signIn(emailInput: unknown, passwordInput: unknown, ip: st
     await candidateAccounts().updateOne({ email }, { $set: { failedTries: tries } });
     throw wrong();
   }
+  return finishSignIn(account, now, wrong);
+}
+
+
+type SignedIn = { token: string } | { closed: Awaited<ReturnType<typeof closedScreen>> };
+
+/** The account's owner is proven (password or code): a session, or which closed screen. */
+async function finishSignIn(account: CandidateAccount, now: Date, wrong: () => Error): Promise<SignedIn> {
   const journey = await journeys().findOne({ id: account.journeyId });
   if (!journey || !(await lifecycleEnabled(journey.org))) throw wrong();
   if (CLOSED_STATUSES.has(String(journey.status))) {
     // The right password on a closed portal: a normal answer naming which closed screen (P16, PX, P3b, P3c);
     // not an error (the screen is the right one, and a 403 had the browser log a failed call). No session.
-    await candidateAccounts().updateOne({ email }, { $set: { failedTries: 0 }, $unset: { lockedUntil: '' } });
+    await candidateAccounts().updateOne({ email: account.email }, { $set: { failedTries: 0 }, $unset: { lockedUntil: '' } });
     return { closed: await closedScreen(journey) };
   }
   const first = !account.lastSignInAt;
-  await candidateAccounts().updateOne({ email }, { $set: { failedTries: 0, lastSignInAt: now }, $unset: { lockedUntil: '' } });
+  await candidateAccounts().updateOne({ email: account.email }, { $set: { failedTries: 0, lastSignInAt: now }, $unset: { lockedUntil: '' } });
   if (first && journey.status === 'finalised') {
     await setJourneyStatus(journey.id, 'active', { lastActivityAt: now });
   } else {
@@ -284,4 +293,63 @@ export async function journeyForPortalToken(authorization: string | undefined, n
   if (!(await lifecycleEnabled(journey.org))) throw new LifecycleOfferError(404, 'Not available');
   if (!(await candidateAccounts().findOne({ journeyId: journey.id }, { projection: { _id: 1 } }))) throw new LifecycleOfferError(401, 'Please sign in again');
   return journey;
+}
+
+// ─── Sign-in by a code to their email (no password) ─────────────────────────
+
+const CODE_TTL_MINUTES = 10;
+const isTestEmail = (email: string) => env.otpTestEmails.includes(email);
+
+/**
+ * Emails a one-time sign-in code to a portal's email. Always answers the same,
+ * so the page does not tell whether an email has a portal. Test addresses
+ * (OTP_TEST_EMAILS) take the fixed code 123456 and get no mail.
+ */
+export async function requestSignInCode(emailInput: unknown, ip: string, now = new Date()): Promise<{ ok: true }> {
+  rateLimit('portal-code', ip, LIMITS.code.max, LIMITS.code.windowMs, now.getTime());
+  const email = String(emailInput ?? '').trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(email)) throw new LifecycleOfferError(400, 'Enter the email your joining portal was sent to');
+  const account = await candidateAccounts().findOne({ email });
+  if (!account) return { ok: true };
+  const journey = await journeys().findOne({ id: account.journeyId }, { projection: { _id: 0, org: 1 } });
+  if (!journey || !(await lifecycleEnabled(journey.org))) return { ok: true };
+  if (isTestEmail(email)) return { ok: true };
+  const code = String(randomInt(100000, 1000000));
+  await candidateAccounts().updateOne({ email }, { $set: { codeHash: sha256(`${email}:${code}`), codeExpiresAt: new Date(now.getTime() + CODE_TTL_MINUTES * 60_000), codeTries: 0 } });
+  const company = await companyOf(journey.org);
+  const name = companyDisplayName(company, journey.org);
+  await sendLifecycleEmail(journey.org, email, `${code} is your ${name} joining portal code`, mails.portalCode(name, code, CODE_TTL_MINUTES));
+  return { ok: true };
+}
+
+/** The code from the email: a session (or the closed screen). Five wrong codes lock it for 15 minutes. */
+export async function signInWithCode(emailInput: unknown, codeInput: unknown, ip: string, now = new Date()): Promise<SignedIn> {
+  rateLimit('portal-sign-in', ip, LIMITS.signIn.max, LIMITS.signIn.windowMs, now.getTime());
+  const email = String(emailInput ?? '').trim().toLowerCase();
+  const code = String(codeInput ?? '').replace(/\s+/g, '');
+  const wrong = () => new LifecycleOfferError(401, 'That code doesn’t match. Check the latest email, or send a new code.');
+  if (!email || !/^\d{6}$/.test(code)) throw new LifecycleOfferError(400, 'Enter the 6-digit code from the email');
+  const account = await candidateAccounts().findOne({ email });
+  if (!account) throw wrong();
+  if (account.lockedUntil && account.lockedUntil.getTime() > now.getTime()) {
+    const minutes = Math.ceil((account.lockedUntil.getTime() - now.getTime()) / 60_000);
+    throw new LifecycleOfferError(403, `Too many wrong codes. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`);
+  }
+  const testOk = isTestEmail(email) && code === '123456';
+  if (testOk) logger.warn('Portal sign-in with a fixed code', { email: email.replace(/^(.{2}).*@/, '$1***@') });
+  const live = Boolean(account.codeHash && account.codeExpiresAt && account.codeExpiresAt.getTime() > now.getTime());
+  const matches = testOk || (live && sha256(`${email}:${code}`) === account.codeHash);
+  if (!matches) {
+    const tries = (account.codeTries ?? 0) + 1;
+    if (tries >= MAX_WRONG_TRIES) {
+      await candidateAccounts().updateOne({ email }, { $set: { codeTries: 0, lockedUntil: new Date(now.getTime() + LOCK_MINUTES * 60_000) }, $unset: { codeHash: '', codeExpiresAt: '' } });
+      throw new LifecycleOfferError(403, `Too many wrong codes. Try again in ${LOCK_MINUTES} minutes.`);
+    }
+    await candidateAccounts().updateOne({ email }, { $set: { codeTries: tries } });
+    if (!live && !testOk) throw new LifecycleOfferError(401, 'That code has expired. Send a new one.');
+    throw wrong();
+  }
+  // A code works once.
+  await candidateAccounts().updateOne({ email }, { $set: { codeTries: 0 }, $unset: { codeHash: '', codeExpiresAt: '' } });
+  return finishSignIn(account, now, wrong);
 }

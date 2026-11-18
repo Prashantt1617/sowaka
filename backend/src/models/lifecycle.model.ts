@@ -244,6 +244,8 @@ export interface Journey {
   boardColumn?: OnboardingBoardColumn;
   /** The portal's About you (emergency contact, PF), editable until Tj − 1. */
   aboutYou?: AboutYou;
+  /** The portal's Employee profile (services/lifecycle/profile.ts), editable until Tj − 1. */
+  profile?: CandidateProfile;
   /** Last time the candidate did anything on the portal (for the Quiet flag). */
   lastActivityAt?: Date;
   closedAt?: Date;
@@ -343,6 +345,10 @@ export interface CandidateAccount {
   loginSentAt?: Date;
   resetTokenHash?: string;
   resetTokenExpiresAt?: Date;
+  /** The one-time sign-in code emailed to `email` (hashed), when it stops working, and wrong tries at it. */
+  codeHash?: string;
+  codeExpiresAt?: Date;
+  codeTries?: number;
   createdAt: Date;
 }
 
@@ -416,6 +422,19 @@ export interface Letter {
 
 /** An extra file on a letter's email. `salary_breakup` states pay: only for people who may see it. */
 export interface LetterAttachment { fileId: string; name: string; kind: 'salary_breakup' | 'joining_checklist' | 'policies' | 'other' }
+
+export interface ProfileAddress { line: string; city: string; state: string; pin: string }
+/** The candidate's own details from the portal's Employee profile. Secrets are kept encrypted (`*Enc`) with their last four. */
+export interface CandidateProfile {
+  personal?: { fullName: string; preferredName?: string; dob: string; gender: string; maritalStatus?: string; nationality?: string };
+  contact?: { mobile: string; current: ProfileAddress; permanentSame: boolean; permanent?: ProfileAddress };
+  bank?: { holderName: string; ifsc: string; accountLast4: string; accountNumberEnc?: string; bankName?: string };
+  education?: { qualification: string; institution: string; year: string };
+  experience?: { firstJob: boolean; jobs: Array<{ company: string; role: string; from: string; to?: string }> };
+  ids?: { aadhaarLast4?: string; aadhaarEnc?: string; panLast4?: string; panEnc?: string };
+  photoFileId?: string;
+  savedAt?: Date;
+}
 
 export interface AboutYou {
   emergencyContact?: { name: string; relation: 'Parent' | 'Partner' | 'Sibling' | 'Friend'; phone: string };

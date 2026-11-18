@@ -18,8 +18,10 @@ import {
 } from '../services/lifecycle/offers';
 import {
   aboutYouView, markMeetSeen, meetItems, portalDocuments, portalHome, portalPassIcs, portalPassOrLocked, saveAboutYou,
+  joiningDetails,
 } from '../services/lifecycle/portal';
-import { CLOSED_STATUSES, forgotPassword, journeyForPortalToken, resetPassword, signIn, verifyMediaToken } from '../services/lifecycle/portalAuth';
+import { profileView, saveProfileSection, saveProfilePhoto } from '../services/lifecycle/profile';
+import { CLOSED_STATUSES, forgotPassword, journeyForPortalToken, resetPassword, signIn, verifyMediaToken, requestSignInCode, signInWithCode } from '../services/lifecycle/portalAuth';
 import { sendLifecycleError } from './lifecycle-offer.routes';
 import { env } from '../config/env';
 
@@ -122,6 +124,15 @@ r.post('/auth/sign-in', handle(async (req) => {
   }
   return out;
 }));
+// Sign-in by a one-time code to the portal's email (the portal's way in; the password route stays for older pages).
+r.post('/auth/code', handle(async (req) => requestSignInCode(body(req).email, clientIp(req))));
+r.post('/auth/verify', handle(async (req) => {
+  const out = await signInWithCode(body(req).email, body(req).code, clientIp(req));
+  if (out && typeof out === 'object' && 'token' in out && typeof (out as { token: unknown }).token === 'string') {
+    assertCompany(req, (await journeyForPortalToken(`Bearer ${(out as { token: string }).token}`)).org);
+  }
+  return out;
+}));
 r.post('/auth/forgot', handle(async (req) => forgotPassword(body(req).email, clientIp(req))));
 r.post('/auth/reset', handle(async (req) => resetPassword(body(req).token, body(req).password)));
 
@@ -202,6 +213,9 @@ r.get('/files/:id', requirePortal, handle(async (req, res) => {
   return undefined;
 }));
 
+r.get('/profile', requirePortal, handle(async (_req, res) => profileView(journeyOf(res))));
+r.put('/profile/:section', requirePortal, handle(async (req, res) => saveProfileSection(journeyOf(res), param(req, 'section'), body(req))));
+r.post('/profile/photo', requirePortal, files, handle(async (req, res) => saveProfilePhoto(journeyOf(res), ((req.files as Express.Multer.File[] | undefined) ?? [])[0])));
 r.get('/about', requirePortal, handle(async (_req, res) => aboutYouView(journeyOf(res))));
 r.put('/about', requirePortal, handle(async (req, res) => saveAboutYou(journeyOf(res), body(req))));
 
@@ -217,8 +231,10 @@ r.get('/letters/:id/pdf', requirePortal, handle(async (req, res) => sendPdf(res,
 
 // Before it opens: 200 { state: 'locked', opensOn } (a normal screen, not an error the browser logs).
 r.get('/pass', requirePortal, handle(async (_req, res) => portalPassOrLocked(journeyOf(res))));
-r.get('/pass.ics', requirePortal, handle(async (_req, res) => {
-  const ics = await portalPassIcs(journeyOf(res));
+r.get('/joining', requirePortal, handle(async (_req, res) => joiningDetails(journeyOf(res))));
+/** The first day in a calendar, from the Joining details tile (any day; the pass's own agenda is in it once set). */
+r.get('/pass.ics', requirePortal, handle(async (req, res) => {
+  const ics = await portalPassIcs(journeyOf(res), new Date(), { anyDay: req.query.anyDay === '1' });
   res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="day-1.ics"');
   res.send(ics);

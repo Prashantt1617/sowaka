@@ -11,6 +11,9 @@ import type {
   PortalLetter,
   PortalOfferView,
   PortalPass,
+  ProfileSectionKey,
+  ProfileView,
+  JoiningDetails,
 } from './types';
 
 const enc = encodeURIComponent;
@@ -46,6 +49,15 @@ export const portal = {
     setSession(out.token!);
     return { token: out.token! };
   },
+  /** Emails a one-time sign-in code to the portal's email (the same answer whether or not it has a portal). */
+  sendCode: (email: string) => request<{ ok: true }>('/portal/auth/code', { method: 'POST', auth: false, body: { email } }),
+  /** The code from the email: a session, or (a closed portal) which closed screen to show. */
+  async verifyCode(email: string, code: string): Promise<{ token: string } | { closed: ClosedSignIn }> {
+    const out = await request<{ token?: string; closed?: ClosedSignIn }>('/portal/auth/verify', { method: 'POST', auth: false, body: { email, code } });
+    if (out.closed?.state) return { closed: out.closed };
+    setSession(out.token!);
+    return { token: out.token! };
+  },
   forgot: (email: string) => request<{ ok: true }>('/portal/auth/forgot', { method: 'POST', auth: false, body: { email } }),
   reset: (token: string, password: string) =>
     request<{ ok: true }>('/portal/auth/reset', { method: 'POST', auth: false, body: { token, password } }),
@@ -67,6 +79,18 @@ export const portal = {
 
   about: () => request<AboutYou>('/portal/about'),
   saveAbout: (body: Pick<AboutYou, 'emergencyContact' | 'pf'>) => request<AboutYou>('/portal/about', { method: 'PUT', body }),
+
+  // ── Employee profile, joining details (the A1 portal) ─────────────────
+  profile: () => request<ProfileView>('/portal/profile'),
+  saveProfile: (section: ProfileSectionKey, body: Record<string, unknown>) => request<ProfileView>(`/portal/profile/${section}`, { method: 'PUT', body }),
+  uploadPhoto: (file: File, onProgress?: (f: number) => void) => {
+    const form = new FormData();
+    form.append('files', file);
+    return upload<ProfileView>('/portal/profile/photo', form, onProgress);
+  },
+  joining: () => request<JoiningDetails>('/portal/joining'),
+  file: (id: string) => request<ArrayBuffer>(`/portal/files/${enc(id)}`, { binary: true }),
+  joiningIcs: () => request<ArrayBuffer>('/portal/pass.ics?anyDay=1', { binary: true }),
 
   meet: () => request<{ items: MeetItem[] }>('/portal/meet'),
   meetSeen: (itemId: string) => request<{ ok?: boolean }>('/portal/meet/seen', { method: 'POST', body: { itemId } }),

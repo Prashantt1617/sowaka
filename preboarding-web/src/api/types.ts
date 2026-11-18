@@ -103,6 +103,8 @@ export interface PortalHome {
   status: OnboardingStatus;
   view: HomeView;
   candidateName: string;
+  /** not in CONTRACT: the address the portal was sent to (the web header shows it). */
+  personalEmail?: string;
   company: Company;
   tj: string;
   daysToGo: number;
@@ -222,4 +224,49 @@ export interface DateRequestView {
   note?: string;
   status: DateChangeRequest['status'];
   createdAt: string;
+}
+
+/** The portal's Employee profile (GET /portal/profile): seven sections, the secrets as their last four. */
+export type ProfileSectionKey = 'personal' | 'contact' | 'emergency' | 'bank' | 'education' | 'ids' | 'photo';
+export interface ProfileAddress { line: string; city: string; state: string; pin: string }
+export interface ProfileView {
+  sections: Array<{ key: ProfileSectionKey; title: string; done: boolean; documentIds: string[] }>;
+  done: number;
+  total: number;
+  profile: {
+    personal?: { fullName: string; preferredName?: string; dob: string; gender: string; maritalStatus?: string; nationality?: string };
+    contact?: { mobile: string; current: ProfileAddress; permanentSame: boolean; permanent?: ProfileAddress };
+    bank?: { holderName: string; ifsc: string; accountLast4: string; bankName?: string };
+    education?: { qualification: string; institution: string; year: string };
+    experience?: { firstJob: boolean; jobs: Array<{ company: string; role: string; from: string; to?: string }> };
+    ids?: { aadhaarLast4?: string; panLast4?: string };
+    photoFileId?: string;
+  };
+  emergencyContact?: { name: string; relation: string; phone: string };
+  pf?: { firstJob: boolean; uan?: string };
+  personalEmail?: string;
+  phone?: string;
+  candidateName?: string;
+  options: { genders: string[]; marital: string[]; qualifications: string[] };
+  editableUntil?: string;
+  finishBy?: string;
+}
+
+/** GET /portal/joining: the first day, whenever the candidate looks. */
+export interface JoiningDetails {
+  date?: string;
+  daysToGo?: number;
+  reportingTime?: string;
+  place?: string;
+  mapLink?: string;
+  meetingLink?: string;
+  manager?: { name: string; designation?: string };
+  buddy?: { name: string; designation?: string };
+  askFor?: { name: string; phone?: string };
+  department?: string;
+  designation?: string;
+  bring: string[];
+  passOpensOn?: string;
+  passOpen?: boolean;
+  pendingDateRequest?: { requestedTj: string };
 }
