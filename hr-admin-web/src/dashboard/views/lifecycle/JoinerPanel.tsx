@@ -15,7 +15,7 @@ import {
 import type {
   BankPfRequest, CandidateDocumentView, ConfirmationDecision, Day1Pass, JourneyDetail, LetterKind, LetterView, TaskView, TemplateListItem,
 } from '../../../services/lifecycle';
-import { FilePreview, NoteDialog, NudgeButton, OwnerChip, Pick, Plant, Field } from './shared';
+import { FilePreview, NoteDialog, NudgeButton, OwnerChip, Pick, PlantFace, Field } from './shared';
 import {
   DOCS_OPEN_KEY, PHASES, areaStyle, changedFieldsText, nudgeLabel, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, longDay, rupees, sectionLabel, shortDay, todayKey,
 } from './format';
@@ -212,7 +212,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
       </div>
 
       <div style={{ padding: '18px 20px', display: 'flex', gap: 14, alignItems: 'center' }}>
-        <Plant plant={journey.plant} size={66} />
+        <PlantFace plant={journey.plant} size={66} name={name} userId={journey.userId} />
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.02em', lineHeight: 1.2, overflowWrap: 'anywhere' }}>{name}</div>
           {role && <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 2 }}>{role}</div>}

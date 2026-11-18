@@ -8,6 +8,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../shared/face_photo.dart';
 import 'offboarding_dates.dart';
 
 /// Each value is one the app already uses (main.dart's theme, or two or more
@@ -409,15 +410,20 @@ class OffOutlineButton extends StatelessWidget {
   );
 }
 
-/// Initials on a soft blue disc: people show initials here.
+/// A person's face: their photo, or their initials on a soft blue disc
+/// when they have none.
 class OffAvatar extends StatelessWidget {
-  const OffAvatar(this.initials, {super.key, this.size = 40});
+  const OffAvatar(this.initials, {super.key, this.size = 40, this.photoUrl});
 
   final String initials;
   final double size;
+  final String? photoUrl;
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) =>
+      FacePhoto(photoUrl: photoUrl, size: size, fallback: _initials());
+
+  Widget _initials() => Container(
     width: size,
     height: size,
     alignment: Alignment.center,

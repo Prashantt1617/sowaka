@@ -1,7 +1,8 @@
 // Who's playing, who isn't, and when: for every game together or for one.
 import { useMemo, useState } from 'react';
 import type { GameLine, GamePerson } from '../../../../services/engagement-games';
-import { Avatar, SearchInput, SelectBox } from '../../../ui';
+import { SearchInput, SelectBox } from '../../../ui';
+import { PersonAvatar } from '../../../PersonAvatar';
 import { LookTable, Td, Th } from '../../lookUi';
 import * as L from '../../look';
 import { IconDownload } from '../../../icons';
@@ -362,11 +363,11 @@ export function PlayAnalytics({
   );
 }
 
-export function PersonCell({ person, sub }: { person: { name: string; department?: string; location?: string }; sub?: string }) {
+export function PersonCell({ person, sub }: { person: { name: string; department?: string; location?: string; id?: string; userId?: string }; sub?: string }) {
   const line = sub ?? [person.department, person.location].filter(Boolean).join(' · ');
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <Avatar name={person.name} size={30} font={12} />
+      <PersonAvatar name={person.name} userId={person.userId ?? person.id} size={30} font={12} />
       <div style={{ minWidth: 0 }}>
         <div style={L.cellName}>{person.name}</div>
         {line && <div style={L.cellSub}>{line}</div>}

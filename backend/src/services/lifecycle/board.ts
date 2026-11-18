@@ -12,7 +12,7 @@ import type {
   Day1Pass, Journey, JourneyFlag, JourneyTask, OnboardingBoardColumn, OnboardingBoardTab, OwnerRole, SurveyKind,
 } from '../../models/lifecycle.model';
 import { decryptField, fieldKeyConfigured } from '../fieldCrypto';
-import { resolveProfilePhoto } from '../s3-connect-media.service';
+import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
 import { setPaymentDetails } from '../employeePayment.service';
 import { companyTimeZone, isDateKey, keyOfDay, todayKey } from './dueRules';
 import {
@@ -212,7 +212,8 @@ export async function groupTasks(ids: string[], slim = false): Promise<Map<strin
 async function people(ids: Array<string | undefined>) {
   const list = [...new Set(ids.filter((id): id is string => !!id))];
   if (!list.length) return new Map<string, { name: string; designation?: string; department?: string; profilePhotoKey?: string }>();
-  const rows = await users().find({ userId: { $in: list } }, { projection: { _id: 0, userId: 1, name: 1, designation: 1, department: 1, profilePhotoKey: 1 } }).toArray();
+  // The face read lean (services/face-photos): a link or an older inline photo shows on the card too.
+  const rows = await users().find({ userId: { $in: list } }, { projection: { _id: 0, name: 1, designation: 1, department: 1, ...FACE_PROJECTION } }).toArray();
   return new Map(rows.map((row) => [row.userId, row]));
 }
 
@@ -368,7 +369,7 @@ export async function onboardingBoard(org: string, viewerUserId: string, query: 
     }
     counts[derived.tab] += 1;
     if (derived.tab !== tab) continue;
-    const photoUrl = who?.profilePhotoKey ? await resolveProfilePhoto({ profilePhotoKey: who.profilePhotoKey }) : undefined;
+    const photoUrl = (who ? faceUrlOf(who as unknown as FaceFields) : null) ?? undefined;
     const card = cardFor(j, tasks, derived, names, now, who, photoUrl);
     if (filter && !matchesFilter(card, filter as QuickFilter, tasks, viewerUserId)) continue;
     columns.find((c) => c.key === derived.column)?.cards.push(card);

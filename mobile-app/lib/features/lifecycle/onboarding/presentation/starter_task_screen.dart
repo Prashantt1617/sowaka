@@ -7,6 +7,7 @@ import '../../../shared/app_toast.dart';
 import '../data/onboarding_api.dart';
 import '../data/onboarding_models.dart';
 import 'links.dart';
+import '../../../shared/face_photo.dart';
 import 'onboarding_kit.dart';
 
 /// A9 · a starter task from the manager (6Zs §5.3): who it is from, how long
@@ -81,6 +82,7 @@ class _StarterTaskScreenState extends State<StarterTaskScreen> {
               assignedAt: task.assignedAt,
               assignedByName: task.assignedByName,
               assignedByDesignation: task.assignedByDesignation,
+              assignedByPhotoUrl: task.assignedByPhotoUrl,
               doneAt: _shell.now(),
               doneNote: _note.text.trim().isEmpty ? null : _note.text.trim(),
             );
@@ -205,14 +207,19 @@ class _TaskCard extends StatelessWidget {
           Row(
             children: [
               // The manager's initial on the brand blue, as drawn.
-              Container(
-                width: 40,
-                height: 40,
-                decoration: const BoxDecoration(color: OnbColors.primary, shape: BoxShape.circle),
-                alignment: Alignment.center,
-                child: Text(
-                  OnbAvatar.initials(manager).substring(0, 1),
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+              // Their photo; the initial on the brand blue without one.
+              FacePhoto(
+                photoUrl: task.assignedByPhotoUrl,
+                size: 40,
+                fallback: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: const BoxDecoration(color: OnbColors.primary, shape: BoxShape.circle),
+                  alignment: Alignment.center,
+                  child: Text(
+                    OnbAvatar.initials(manager).substring(0, 1),
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+                  ),
                 ),
               ),
               const SizedBox(width: 10),

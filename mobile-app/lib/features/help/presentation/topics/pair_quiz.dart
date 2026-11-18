@@ -8,6 +8,7 @@ import '../../../../services/api_config.dart';
 import '../../../care/data/care_api_service.dart';
 import '../../../care/presentation/care_theme.dart';
 import '../../../shared/app_toast.dart';
+import '../../../shared/face_photo.dart';
 
 /// The quizzes for two on Time for two of you: love languages and attachment
 /// styles. Each person answers on their own phone, then both results show
@@ -1269,7 +1270,17 @@ class _PairQuizCardState extends State<PairQuizCard> {
           CareCopy(spec.line, size: 13),
           const SizedBox(height: 14),
           _PersonRow(
-            face: const _Face('P', partner: false),
+            // The viewer's own photo; their initial without one.
+            face: FacePhoto(
+              photoUrl: widget.care.session.user.profilePhotoUrl,
+              size: 40,
+              fallback: _Face(
+                widget.care.session.user.name.trim().isEmpty
+                    ? 'P'
+                    : widget.care.session.user.name.trim().characters.first.toUpperCase(),
+                partner: false,
+              ),
+            ),
             title: 'You',
             status: mine == null ? spec.length : spec.summary(mine),
             done: mine != null,

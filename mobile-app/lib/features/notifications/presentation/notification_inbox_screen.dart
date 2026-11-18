@@ -10,6 +10,7 @@ import '../../../services/api_config.dart';
 import '../../../services/notification_service.dart';
 import '../../auth/data/auth_models.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
+import '../../shared/face_photo.dart';
 import '../notification_badge.dart';
 import '../notification_look.dart';
 
@@ -512,6 +513,7 @@ class NotificationRow extends StatelessWidget {
                 ago: ago,
                 unread: unread,
                 divider: divider,
+                photoUrl: _actorPhoto(item),
               )
             : _Card(
                 look: look,
@@ -521,6 +523,7 @@ class NotificationRow extends StatelessWidget {
                 // when there is no message ("9 min ago" on a challenge).
                 subtitle: body.isNotEmpty ? body : ago,
                 unread: unread,
+                photoUrl: _actorPhoto(item),
               ),
       ),
     );
@@ -577,6 +580,7 @@ class _Card extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.unread,
+    this.photoUrl,
   });
 
   final NotificationLook look;
@@ -584,6 +588,9 @@ class _Card extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool unread;
+
+  /// The sender's face in place of the glyph; null for none.
+  final String? photoUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -599,7 +606,7 @@ class _Card extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.only(left: 12),
-            child: _Avatar(glyph: look.glyph, disc: palette.disc),
+            child: _Avatar(glyph: look.glyph, disc: palette.disc, photoUrl: photoUrl),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -677,6 +684,7 @@ class _WhiteRow extends StatelessWidget {
     required this.ago,
     required this.unread,
     required this.divider,
+    this.photoUrl,
   });
 
   final NotificationLook look;
@@ -685,6 +693,9 @@ class _WhiteRow extends StatelessWidget {
   final String ago;
   final bool unread;
   final bool divider;
+
+  /// The sender's face in place of the glyph; null for none.
+  final String? photoUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -723,7 +734,7 @@ class _WhiteRow extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.only(left: 12),
-            child: _Avatar(glyph: look.glyph, disc: look.disc),
+            child: _Avatar(glyph: look.glyph, disc: look.disc, photoUrl: photoUrl),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -796,13 +807,30 @@ class _Dot extends StatelessWidget {
   }
 }
 
-/// The 40px disc. People get their initial on one of the profile discs'
-/// gradients, as the design's comment row does.
+/// The face of the person a row is about (who liked, asked, decided or
+/// challenged), when the server sent one.
+String? _actorPhoto(Map<String, dynamic> item) {
+  final url = item['actorPhotoUrl'];
+  return url is String && url.trim().isNotEmpty ? url : null;
+}
+
+/// The 40px disc. A row about someone with a photo wears their face; any
+/// other keeps its kind's glyph (and a person without one, their initial on
+/// one of the profile discs' gradients, as the design's comment row does).
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.glyph, required this.disc});
+  const _Avatar({required this.glyph, required this.disc, this.photoUrl});
 
   final NotificationGlyph glyph;
   final Color disc;
+  final String? photoUrl;
+
+  @override
+  Widget build(BuildContext context) => FacePhoto(
+    key: const ValueKey('notification-sender-photo'),
+    photoUrl: photoUrl,
+    size: 40,
+    fallback: _glyph(),
+  );
 
   static const _gradients = [
     [Color(0xFF059669), Color(0xFF34D399)],
@@ -812,8 +840,7 @@ class _Avatar extends StatelessWidget {
     [Color(0xFFDB2777), Color(0xFFF472B6)],
   ];
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _glyph() {
     final glyph = this.glyph;
     if (glyph is InitialGlyph) {
       final name = glyph.name.trim();

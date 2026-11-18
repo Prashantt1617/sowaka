@@ -11,7 +11,7 @@ import { IconDownload } from '../../icons';
 import { downloadCsv } from '../../export';
 import { getBoard, getClosedJourneys, isNotAvailable } from '../../../services/lifecycle';
 import type { BoardCard, BoardDTO, BoardFilter, BoardTab, ClosedJourneyRow } from '../../../services/lifecycle';
-import { FlagPill, NotSwitchedOn, NudgeButton, OwnerChip, Plant } from './shared';
+import { FlagPill, NotSwitchedOn, NudgeButton, OwnerChip, PlantFace } from './shared';
 import { OWNER_LABEL, dueText, errText, firstName, flagLabel, longDay } from './format';
 import { refreshOnboardingBadge } from '../../onboardingBadge';
 import { JoinerPanel } from './JoinerPanel';
@@ -220,7 +220,7 @@ function JoinerCard({ card, stage, selected, dim, onOpen, onNudged }: { card: Bo
       <button type="button" onClick={onOpen} aria-pressed={selected} data-journey-card={card.journeyId}
         style={{ textAlign: 'left', font: 'inherit', color: 'inherit', cursor: 'pointer', width: '100%', minWidth: 0, background: 'none', border: 0, borderRadius: 14, padding: 12, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 8 }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
-          <Plant plant={card.plant} size={30} />
+          <PlantFace plant={card.plant} size={30} name={card.name} photoUrl={card.photoUrl} />
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{card.name}</div>
             {role && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', lineHeight: 1.35, overflowWrap: 'anywhere' }}>{role}</div>}

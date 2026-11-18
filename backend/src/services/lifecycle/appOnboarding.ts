@@ -12,12 +12,11 @@ import {
 import type {
   AboutYou, IntroPost, Journey, JourneyTask, Meeting, OnboardingStage, SurveyKind, SystemTaskKey, Week1Reels,
 } from '../../models/lifecycle.model';
-import type { User } from '../../models/user.model';
 import { createConnectPost } from '../connect.service';
 import { saveMyDeclaration } from '../employeePayroll.declaration';
 import { encryptField, fieldKeyConfigured, maskTail } from '../fieldCrypto';
 import { policiesFor } from '../policy-document.service';
-import { resolveProfilePhoto } from '../s3-connect-media.service';
+import { FACE_PROJECTION, faceUrlOf, faceUrlsFor, type FaceFields } from '../face-photos';
 import { logger } from '../../utils/logger';
 import {
   addDaysKey, companyTimeZone, dateKeyOf, dayDate, daysBetween, humanDay, isDateKey, keyOfDay, probationMonthEnd, probationMonthOn, todayKey,
@@ -40,8 +39,9 @@ const strip = <T extends object>(doc: T & { _id?: unknown }): T => {
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join('');
 
-async function photoOf(user?: Pick<User, 'profilePhotoKey'> | null): Promise<string | undefined> {
-  return user?.profilePhotoKey ? resolveProfilePhoto({ profilePhotoKey: user.profilePhotoKey }) : undefined;
+/** A face read with FACE_PROJECTION (an upload, a link, or an older inline photo by its address). */
+async function photoOf(user?: Partial<FaceFields> | null): Promise<string | undefined> {
+  return (user?.userId ? faceUrlOf(user as FaceFields) : null) ?? undefined;
 }
 
 /** The signed-in person's own onboarding journey (joined, not closed). */
@@ -144,11 +144,16 @@ const EXPECT: Partial<Record<SystemTaskKey, string[]>> = {
   vision_culture: ['Where the company is going and why', 'How we work together', 'Questions are welcome'],
 };
 
-type Person = { name: string; designation?: string };
+type Person = { name: string; designation?: string; photoUrl?: string };
 
 async function peopleOf(ids: string[]): Promise<Map<string, Person>> {
-  const rows = ids.length ? await users().find({ userId: { $in: [...new Set(ids)] } }, { projection: { _id: 0, userId: 1, name: 1, designation: 1 } }).toArray() : [];
-  return new Map(rows.map((r) => [r.userId, { name: r.name, ...(r.designation ? { designation: r.designation } : {}) }]));
+  const rows = ids.length
+    ? await users().find<FaceFields & { name: string; designation?: string }>({ userId: { $in: [...new Set(ids)] } }, { projection: { _id: 0, name: 1, designation: 1, ...FACE_PROJECTION } }).toArray()
+    : [];
+  return new Map(rows.map((r) => {
+    const photoUrl = faceUrlOf(r);
+    return [r.userId, { name: r.name, ...(r.designation ? { designation: r.designation } : {}), ...(photoUrl ? { photoUrl } : {}) }];
+  }));
 }
 
 type MeetingCtx = { joinerId?: string; managerId?: string; buddyId?: string; task?: JourneyTask; managerName?: string; journey?: Pick<Journey, 'day1Pass'> };
@@ -163,7 +168,7 @@ function meetingView(m: Meeting, people: Map<string, Person>, ctx: MeetingCtx = 
     // The manager meeting names the journey's manager as it is now, as the Day-1 pass does (not the name stored when it was made).
     ...((w) => (w ? { with: w } : {}))(meetingWithName(isManagerMeetingRow(m, ctx.task, ctx.journey ?? {}), m.with, ctx.managerName)),
     canConfirm,
-    attendees: m.attendeeUserIds.map((id) => ({ userId: id, name: people.get(id)?.name ?? '', ...(people.get(id)?.designation ? { designation: people.get(id)!.designation } : {}), role: role(id) })),
+    attendees: m.attendeeUserIds.map((id) => ({ userId: id, name: people.get(id)?.name ?? '', ...(people.get(id)?.designation ? { designation: people.get(id)!.designation } : {}), ...(people.get(id)?.photoUrl ? { photoUrl: people.get(id)!.photoUrl } : {}), role: role(id) })),
     expect: (ctx.task?.systemKey && EXPECT[ctx.task.systemKey]) ?? [],
     mustDo: ctx.task?.mustDo ?? false,
     ...(ctx.task?.systemKey ? { systemKey: ctx.task.systemKey } : {}),
@@ -469,12 +474,13 @@ export async function introView(me: Me) {
   // Once posted: how it is doing on Connect (likes, comments, the latest two).
   const post = j.intro?.connectPostId ? await connectPosts().findOne({ id: j.intro.connectPostId }, { projection: { _id: 0, likedBy: 1, comments: 1 } }) : null;
   const comments = (post?.comments ?? []).filter((c) => !c.parentId);
+  const commentFaces = await faceUrlsFor(comments.slice(-2).map((c) => c.userId));
   return {
     ...(j.intro ?? { line: '', funFacts: [] }), name: user?.name ?? me.name, designation: j.designation ?? user?.designation, department: j.department ?? user?.department,
     ...(j.intro?.line ? { message: introMessage(j.intro.line) } : {}),
     ...(post ? {
       likes: post.likedBy?.length ?? 0, commentCount: comments.length,
-      comments: comments.slice(-2).map((c) => ({ name: c.name, text: c.text, at: c.createdAt })),
+      comments: comments.slice(-2).map((c) => ({ name: c.name, text: c.text, at: c.createdAt, ...(commentFaces.get(c.userId) ? { photoUrl: commentFaces.get(c.userId)! } : {}) })),
     } : {}),
   };
 }
@@ -530,7 +536,7 @@ async function peopleClosed(journeyId: string): Promise<boolean> {
 
 async function peopleViews(j: Pick<Journey, 'id' | 'managerUserId' | 'buddyUserId'>) {
   const rows = (await peopleToMeet().find({ journeyId: j.id }, { projection: { _id: 0 } }).toArray()).map(strip);
-  const folks = await users().find({ userId: { $in: rows.map((r) => r.personUserId) } }, { projection: { _id: 0, userId: 1, name: 1, designation: 1, profilePhotoKey: 1 } }).toArray();
+  const folks = await users().find({ userId: { $in: rows.map((r) => r.personUserId) } }, { projection: { _id: 0, name: 1, designation: 1, ...FACE_PROJECTION } }).toArray();
   const by = new Map(folks.map((f) => [f.userId, f]));
   return Promise.all(rows.map(async (r) => {
     const person = by.get(r.personUserId);
@@ -574,6 +580,7 @@ export async function starterTasksForJoiner(me: Me) {
   return { tasks: rows.map((r) => ({
     ...r, assignedByName: people.get(r.assignedByUserId)?.name ?? '',
     ...(people.get(r.assignedByUserId)?.designation ? { assignedByDesignation: people.get(r.assignedByUserId)!.designation } : {}),
+    ...(people.get(r.assignedByUserId)?.photoUrl ? { assignedByPhotoUrl: people.get(r.assignedByUserId)!.photoUrl } : {}),
   })) };
 }
 
@@ -599,9 +606,13 @@ export async function starterDone(me: Me, id: string, body: Record<string, unkno
 
 async function notesFor(journeyId: string, sharedOnly: boolean) {
   const rows = await oneOnOneNotes().find({ journeyId, ...(sharedOnly ? { shared: true } : {}) }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray();
-  const names = await namesOf(rows.flatMap((r) => [r.authorUserId, ...(r.replies ?? []).map((x) => x.byUserId)]));
+  const [names, faces] = await Promise.all([
+    namesOf(rows.flatMap((r) => [r.authorUserId, ...(r.replies ?? []).map((x) => x.byUserId)])),
+    faceUrlsFor(rows.map((r) => r.authorUserId)),
+  ]);
   return rows.map((r) => ({
-    id: r.id, authorUserId: r.authorUserId, authorName: names.get(r.authorUserId) ?? '', text: r.text, shared: r.shared,
+    id: r.id, authorUserId: r.authorUserId, authorName: names.get(r.authorUserId) ?? '',
+    ...(faces.get(r.authorUserId) ? { authorPhotoUrl: faces.get(r.authorUserId)! } : {}), text: r.text, shared: r.shared,
     ...(r.sharedAt ? { sharedAt: r.sharedAt } : {}), ...(r.seenAt ? { seenAt: r.seenAt } : {}), createdAt: r.createdAt,
     replies: (r.replies ?? []).map((x) => ({ ...x, byName: names.get(x.byUserId) ?? '' })),
   }));
@@ -852,7 +863,7 @@ export async function joinersForManager(me: Me, now = new Date(), opts: { fullTa
   const ids = rows.map((j) => j.id);
   const [allTasks, folks] = await Promise.all([
     opts.fullTasks ? groupTasks(ids) : listTasks(ids, now),
-    users().find({ userId: { $in: rows.map((j) => j.userId).filter((u): u is string => !!u) } }, { projection: { _id: 0, userId: 1, name: 1, designation: 1, profilePhotoKey: 1 } }).toArray(),
+    users().find({ userId: { $in: rows.map((j) => j.userId).filter((u): u is string => !!u) } }, { projection: { _id: 0, name: 1, designation: 1, ...FACE_PROJECTION } }).toArray(),
   ]);
   const by = new Map(folks.map((f) => [f.userId, f]));
   const out = await Promise.all(rows.map(async (j) => {
@@ -882,7 +893,7 @@ export async function joinerForManager(me: Me, journeyId: string, now = new Date
   // Everything that needs only the journey, at once (the database link is slow; one wait, not eight).
   const [tasks, person, people, starters, notes, meetings, summaries, probation] = await Promise.all([
     tasksOf(j.id),
-    j.userId ? users().findOne({ userId: j.userId }, { projection: { _id: 0, name: 1, designation: 1, department: 1, profilePhotoKey: 1 } }) : Promise.resolve(null),
+    j.userId ? users().findOne({ userId: j.userId }, { projection: { _id: 0, name: 1, designation: 1, department: 1, ...FACE_PROJECTION } }) : Promise.resolve(null),
     peopleViews(j),
     starterTasks().find({ journeyId: j.id }, { projection: { _id: 0 } }).sort({ assignedAt: 1 }).toArray(),
     notesFor(j.id, false),
@@ -892,11 +903,12 @@ export async function joinerForManager(me: Me, journeyId: string, now = new Date
   ]);
   const derived = deriveJourney(j, tasks, now);
   // Then the names and photo those point to, at once too.
-  const [names, meetingPeople, starterNames, photoUrl] = await Promise.all([
+  const [names, meetingPeople, starterNames, photoUrl, buddyFace] = await Promise.all([
     namesOf([j.userId, j.buddyUserId, j.managerUserId, ...tasks.map((t) => t.ownerUserId)]),
     peopleOf(meetings.flatMap((m) => m.attendeeUserIds)),
     namesOf(starters.map((s) => s.assignedByUserId)),
     photoOf(person),
+    j.buddyUserId ? faceUrlsFor([j.buddyUserId]).then((faces) => faces.get(j.buddyUserId!) ?? null) : Promise.resolve(null),
   ]);
   const visible = tasks.filter((t) => visibleTo('manager', t));
   const meetingCtx = (m: Meeting) => ({ joinerId: j.userId, managerId: j.managerUserId, buddyId: j.buddyUserId, task: tasks.find((t) => t.id === m.journeyTaskId), managerName: j.managerUserId ? names.get(j.managerUserId) : undefined, journey: j });
@@ -932,7 +944,7 @@ export async function joinerForManager(me: Me, journeyId: string, now = new Date
     },
     setup: {
       people,
-      ...(j.buddyUserId ? { buddy: { userId: j.buddyUserId, name: names.get(j.buddyUserId) ?? '' } } : {}),
+      ...(j.buddyUserId ? { buddy: { userId: j.buddyUserId, name: names.get(j.buddyUserId) ?? '', ...(buddyFace ? { photoUrl: buddyFace } : {}) } } : {}),
       ...(j.meetUs?.managerNote ? { welcomeNote: j.meetUs.managerNote } : {}),
       goals: j.probation?.goals ?? [],
       goalsLocked: goalsLocked(j, now),

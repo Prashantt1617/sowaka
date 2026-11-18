@@ -5,6 +5,7 @@ import { connectPosts, deviceTokens, getDb, notifications, users } from '../conf
 import { env } from '../config/env';
 import { sendNotificationEmail } from './email.service';
 import { withAppLink } from './app-link';
+import { faceUrlsFor } from './face-photos';
 import { logger } from '../utils/logger';
 import type { AppNotification } from '../models/notification.model';
 import { buildPushMessages, kindOfScenario, lookForPush } from './notification-look.service';
@@ -100,6 +101,22 @@ export async function listNotifications(userId: string) {
   return withoutDeletedPosts(await listNotificationRows(userId));
 }
 
+/**
+ * Each row with the face of the person it is about (`actorPhotoUrl`, from
+ * its `actorUserId`), read lean in one go for the whole inbox. A row with no
+ * one behind it, or whose person has no photo, comes back as it was.
+ */
+export async function withActorFaces<T extends { actorUserId?: string; userId?: string }>(
+  rows: T[],
+): Promise<Array<T & { actorPhotoUrl?: string }>> {
+  const faces = await faceUrlsFor(rows.map((row) => (row.actorUserId && row.actorUserId !== row.userId ? row.actorUserId : null)));
+  if (faces.size === 0) return rows;
+  return rows.map((row) => {
+    const face = row.actorUserId ? faces.get(row.actorUserId) : null;
+    return face && row.actorUserId !== row.userId ? { ...row, actorPhotoUrl: face } : row;
+  });
+}
+
 /** The newest hundred rows of someone's inbox, as stored. */
 export function listNotificationRows(userId: string) {
   return notifications().find({ userId }).sort({ createdAt: -1 }).limit(100).toArray();
@@ -177,6 +194,8 @@ export interface NotificationEmail {
 
 export interface NotificationInput {
   scenario: string; title: string; body: string; data: Record<string, string>;
+  /** Whose doing it is, for their face on the inbox row (see AppNotification.actorUserId). */
+  actorUserId?: string;
   /** Email copy to send alongside the push. Omit for in-app-only scenarios. */
   email?: NotificationEmail;
   /**

@@ -247,6 +247,7 @@ class _JoinerScreenState extends State<JoinerScreen> {
                         starterTaskId: task.id,
                         initial: task,
                         joinerName: joiner.name,
+                        joinerPhotoUrl: joiner.photoUrl,
                       ),
                     ),
                   )

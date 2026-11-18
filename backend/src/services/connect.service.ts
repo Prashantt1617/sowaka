@@ -45,6 +45,7 @@ import {
   type ConnectMediaFile,
   uploadConnectMedia,
 } from './s3-connect-media.service';
+import { keptFaceUrlsFor } from './face-photos';
 
 export class ConnectError extends Error {
   constructor(
@@ -1835,10 +1836,13 @@ async function viewPost(
           (a, b) => (b.taggedAt?.getTime() ?? 0) - (a.taggedAt?.getTime() ?? 0),
         );
       }
+      // Each person tagged, with their face (the app's caption and photo boards read `authorPhotoUrl`).
+      const taggedFaces = await keptFaceUrlsFor([...board.keys()]).catch(() => new Map<string, string | null>());
       body.leaderboard = [...board.values()]
         .sort((a, b) => b.votes - a.votes)
         .map((row, index) => ({
           ...row,
+          authorPhotoUrl: taggedFaces.get(row.userId) ?? null,
           id: row.userId,
           text: row.designation,
           points: row.votes * pointsPerVote,
@@ -1885,11 +1889,14 @@ async function viewPost(
       .sort({ score: -1, achievedAt: 1 })
       .limit(3)
       .toArray();
+    // The top three's faces, kept a few minutes: every feed read shows this card.
+    const faces = await keptFaceUrlsFor(leaders.map((entry) => entry.userId)).catch(() => new Map<string, string | null>());
     body.leaderboard = leaders.map((entry, index) => ({
       rank: index + 1,
       userId: entry.userId,
       playerName: entry.playerName,
       score: entry.score,
+      photoUrl: faces.get(entry.userId) ?? null,
     }));
   }
   // A blocked colleague's comments go too, and the replies underneath them —

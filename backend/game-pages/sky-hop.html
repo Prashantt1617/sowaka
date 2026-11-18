@@ -575,7 +575,7 @@ html.app .howto{padding-top:20px}
   let board = null; // the last company board seen
   function shapeBoard(r) {
     r = r || {};
-    const rows = (Array.isArray(r.entries) ? r.entries : []).map(x => ({ rank: +x.rank || 0, userId: x.userId ? String(x.userId) : '', name: String(x.name || 'Player'), score: +x.score || 0, me: !!x.me }));
+    const rows = (Array.isArray(r.entries) ? r.entries : []).map(x => ({ rank: +x.rank || 0, userId: x.userId ? String(x.userId) : '', name: String(x.name || 'Player'), score: +x.score || 0, me: !!x.me, photoUrl: typeof x.photoUrl === 'string' ? x.photoUrl : '' }));
     const me = r.me && typeof r.me.score === 'number' ? { rank: +r.me.rank || 0, score: r.me.score } : null;
     return { rows, me, total: +r.total || 0, title: r.company ? 'Top at ' + r.company : 'Leaderboard', company: r.company ? String(r.company) : '', shared: true };
   }
@@ -617,7 +617,7 @@ html.app .howto{padding-top:20px}
     const list = el('div', 'ranks'), you = (Board.name() || 'You') + ' (you)';
     const row = (r, name) => {
       const w = el('div', 'rank' + (r.me ? ' me' : '') + (r.rank >= 1 && r.rank <= 3 ? ' p' + r.rank : '')), left = el('span');
-      left.append(el('i', 'pos', String(r.rank)), document.createTextNode(name)); w.append(left, el('b', '', fmtn(r.score)));
+      left.append(el('i', 'pos', String(r.rank)), ...(b.shared && r.name ? [boardFace(r)] : []), document.createTextNode(name)); w.append(left, el('b', '', fmtn(r.score)));
       if (opensProfile(r)) {
         w.classList.add('tap'); w.setAttribute('role', 'button'); w.tabIndex = 0; w.setAttribute('aria-label', r.name + '’s profile');
         w.onclick = () => openProfile(r); w.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openProfile(r); } };
@@ -760,6 +760,8 @@ html.app .howto{padding-top:20px}
     a.textContent = ([...(s.trim().split(/\s+/)[0] || '?')][0] || '?').toUpperCase();
     if (photo) { const img = new Image(); img.alt = ''; img.onload = () => { a.textContent = ''; a.appendChild(img); }; img.src = photo; } a.setAttribute('aria-hidden', 'true'); return a;
   }
+  /* A company leaderboard row's face, small beside the place: their photo, else the letter (avatar's own fallback). */
+  function boardFace(r){ const a=avatar(r.name,r.photoUrl); a.style.cssText+=';width:20px;height:20px;min-width:20px;font-size:10px;line-height:1;display:inline-grid;place-items:center;vertical-align:middle;margin:0 7px 0 0;border-radius:50%;overflow:hidden;flex:none'; return a; }
   function mini(label, fn, yes) { const b = el('button', 'mini' + (yes ? ' yes' : ''), label); b.type = 'button'; b.onclick = e => { e.stopPropagation(); sfx.ui(); fn(b); }; return b; }
   function linkRow(items) { const r = el('div', 'links'); items.forEach(([label, fn]) => { const b = el('button', 'link', label); b.type = 'button'; b.onclick = () => { sfx.ui(); fn(); }; r.append(b); }); return r; }
   /* A live countdown to when a challenge runs out: h:mm:ss, ticking every second; red in the last hour. */

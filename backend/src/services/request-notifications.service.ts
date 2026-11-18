@@ -263,6 +263,7 @@ export async function notifyLeaveSubmitted(input: {
       scenario: 'leave_requested',
       title: `${employee.name} · ${leaveLabel(input.type)}`,
       body: `${range} (${days(input.days)})`,
+      actorUserId: employee.userId,
       data: { type: 'leave', view: 'inbox', requestId },
       email: leaveSubmittedApproverEmail(approver, employee, input.type, longDates, input.days, input.reason),
     });
@@ -297,6 +298,7 @@ export async function notifyLeaveCancelled(input: {
       scenario: 'leave_cancelled',
       title: `${employee.name} cancelled ${leaveLabel(input.type)}`,
       body: `${range} (${days(input.days)})${input.note ? ` · “${input.note}”` : ''}`,
+      actorUserId: employee.userId,
       data: { type: 'leave', view: 'inbox', requestId },
     });
   }
@@ -328,6 +330,7 @@ export async function notifyLeaveCancellationRequested(input: {
       scenario: 'leave_cancel_requested',
       title: `${employee.name} asked to cancel their approved leave`,
       body: `${leaveLabel(input.type)}, ${range} (${days(input.days)})${input.note ? ` · “${input.note}”` : ''}`,
+      actorUserId: employee.userId,
       data: { type: 'leave', view: 'inbox', requestId, kind: 'cancellation' },
     });
   }
@@ -348,6 +351,7 @@ export async function notifyLeaveCancellationDecided(input: {
     body: input.approved
       ? `${approver} approved cancelling your ${leaveLabel(input.type)}, ${range}; the days are back in your balance`
       : quoted(approver, input.comment) || `${approver} kept your ${leaveLabel(input.type)}, ${range} (${days(input.days)}) approved`,
+    ...(input.decidedByUserId ? { actorUserId: input.decidedByUserId } : {}),
     data: { type: 'leave', view: 'mine', requestId: input.requestId ?? '', from: decidedBy(employee, input.decidedByUserId) },
   });
 }
@@ -369,6 +373,7 @@ export async function notifyLeaveDecided(input: {
     body: input.approved
       ? `${approver} approved your ${leaveLabel(input.type)}, ${range}${count ? ` (${days(count)})` : ''}`
       : quoted(approver, input.comment) || `${approver} didn't approve your ${leaveLabel(input.type)}, ${range}`,
+    ...(input.decidedByUserId ? { actorUserId: input.decidedByUserId } : {}),
     data: { type: 'leave', view: 'mine', requestId: input.requestId ?? '', from: decidedBy(employee, input.decidedByUserId) },
     email: input.approved
       ? leaveApprovedEmail(employee, input.type, longDates)
@@ -402,6 +407,7 @@ export async function notifyOvertimeSubmitted(input: {
       scenario: 'overtime_requested',
       title: `${employee.name} · Overtime`,
       body: `${input.duration} on ${date}${input.compensation ? ` · prefers ${input.compensation}` : ''}`,
+      actorUserId: employee.userId,
       data: { type: 'overtime', view: 'inbox', requestId },
       email: overtimeSubmittedApproverEmail(approver, employee, input.duration, longDate(input.workDate), input.reason, input.compensation),
     });
@@ -427,6 +433,7 @@ export async function notifyOvertimeDecided(input: {
     body: input.approved
       ? `${approver} approved your ${input.duration.toLowerCase().replace(' ', '-')} overtime on ${date}${compensationNote(input.compensation, input.preferred)}`
       : quoted(approver, input.comment) || `${approver} didn't approve your overtime on ${date}`,
+    ...(input.decidedByUserId ? { actorUserId: input.decidedByUserId } : {}),
     data: { type: 'overtime', view: 'mine', requestId: input.requestId ?? '', from: decidedBy(employee, input.decidedByUserId) },
     email: input.approved
       ? overtimeApprovedEmail(employee, input.duration, longDate(input.workDate), input.compensation, input.preferred)
@@ -458,6 +465,7 @@ export async function notifyCorrectionSubmitted(input: {
       scenario: 'correction_requested',
       title: `${employee.name} · Attendance correction`,
       body: `Wants ${date} marked Present`,
+      actorUserId: employee.userId,
       data: { type: 'attendance', view: 'inbox', requestId },
       email: presentSubmittedApproverEmail(approver, employee, longDate(input.workDate), input.reason),
     });
@@ -477,6 +485,7 @@ export async function notifyCorrectionDecided(input: {
     scenario: 'correction_decided',
     title: input.approved ? 'Attendance fixed ✓' : 'Attendance not changed',
     body: input.approved ? `${date} is now marked Present` : `${date} stays Absent.${reason ? ` ${reason}` : ''}`,
+    ...(input.decidedByUserId ? { actorUserId: input.decidedByUserId } : {}),
     data: { type: 'attendance', view: 'mine', workDate: input.workDate, from: decidedBy(employee, input.decidedByUserId) },
     email: input.approved
       ? presentApprovedEmail(employee, longDate(input.workDate))
@@ -508,6 +517,7 @@ export async function notifyOutOfLocationSubmitted(input: {
       scenario: 'correction_requested',
       title: `${employee.name} · Out-of-office punch`,
       body: `${input.place} on ${date}`,
+      actorUserId: employee.userId,
       data: { type: 'attendance', view: 'inbox', requestId },
       email: {
         subject: `Out-of-office punch from ${employee.name} — ${longDate(input.workDate)}`,
@@ -535,6 +545,7 @@ export async function notifyOutOfLocationDecided(input: {
     scenario: 'correction_decided',
     title: input.approved ? 'Punch approved ✓' : 'Punch not approved',
     body: input.approved ? `${date} is marked Present` : `${date} is marked Absent.${reason ? ` ${reason}` : ''}`,
+    ...(input.decidedByUserId ? { actorUserId: input.decidedByUserId } : {}),
     data: { type: 'attendance', view: 'mine', workDate: input.workDate, from: decidedBy(employee, input.decidedByUserId) },
     email: {
       subject: input.approved ? `Out-of-office punch approved for ${longDate(input.workDate)}` : `Out-of-office punch not approved for ${longDate(input.workDate)}`,
