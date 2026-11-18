@@ -11,6 +11,9 @@ import type {
   PortalLetter,
   PortalOfferView,
   PortalPass,
+  ProfileSectionKey,
+  ProfileView,
+  JoiningDetails,
 } from './types';
 
 const enc = encodeURIComponent;
@@ -76,6 +79,18 @@ export const portal = {
 
   about: () => request<AboutYou>('/portal/about'),
   saveAbout: (body: Pick<AboutYou, 'emergencyContact' | 'pf'>) => request<AboutYou>('/portal/about', { method: 'PUT', body }),
+
+  // ── Employee profile, joining details (the A1 portal) ─────────────────
+  profile: () => request<ProfileView>('/portal/profile'),
+  saveProfile: (section: ProfileSectionKey, body: Record<string, unknown>) => request<ProfileView>(`/portal/profile/${section}`, { method: 'PUT', body }),
+  uploadPhoto: (file: File, onProgress?: (f: number) => void) => {
+    const form = new FormData();
+    form.append('files', file);
+    return upload<ProfileView>('/portal/profile/photo', form, onProgress);
+  },
+  joining: () => request<JoiningDetails>('/portal/joining'),
+  file: (id: string) => request<ArrayBuffer>(`/portal/files/${enc(id)}`, { binary: true }),
+  joiningIcs: () => request<ArrayBuffer>('/portal/pass.ics?anyDay=1', { binary: true }),
 
   meet: () => request<{ items: MeetItem[] }>('/portal/meet'),
   meetSeen: (itemId: string) => request<{ ok?: boolean }>('/portal/meet/seen', { method: 'POST', body: { itemId } }),

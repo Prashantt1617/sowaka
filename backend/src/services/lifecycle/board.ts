@@ -86,12 +86,12 @@ export function decisionWithoutPay<T extends { salary?: number } | undefined>(de
 }
 
 /** A journey as someone without pay access (or without HR's view) may see it. */
-export function journeyForViewer<T extends Partial<Pick<Journey, 'probation' | 'aboutYou' | 'bankPfRequest'>>>(journey: T, viewer: PanelViewer): T {
+export function journeyForViewer<T extends Partial<Pick<Journey, 'probation' | 'aboutYou' | 'bankPfRequest' | 'profile'>>>(journey: T, viewer: PanelViewer): T {
   let out = journey;
   if (!viewer.seesPay && out.probation?.decision) out = { ...out, probation: { ...out.probation, decision: decisionWithoutPay(out.probation.decision) } };
   if (!viewer.seesDocuments) {
-    // Emergency contact, PF and bank details are HR's, like the documents.
-    const { aboutYou: _a, bankPfRequest: _b, ...rest } = out;
+    // Emergency contact, PF, bank details and the profile are HR's, like the documents.
+    const { aboutYou: _a, bankPfRequest: _b, profile: _p, ...rest } = out;
     out = rest as T;
   }
   return out;
