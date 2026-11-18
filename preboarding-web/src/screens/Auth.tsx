@@ -29,20 +29,22 @@ function PasswordInput({ id, value, onChange, autoComplete }: { id: string; valu
   );
 }
 
-/** P6 / W6 · Sign in — the email and password HR's finalise emailed. */
+/** P6 / W6 · Sign in — the email the portal was sent to, then a one-time code emailed to it (no password). */
 export function SignIn() {
   const wide = useWide();
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  // Once the code is on its way, the form asks for it.
+  const [sent, setSent] = useState(false);
   const [error, setError] = useState<string>();
   const [closed, setClosed] = useState<ClosedSignIn>();
   const [busy, setBusy] = useState(false);
   const client = useLastClient();
   const emailId = useId();
-  const pwId = useId();
+  const codeId = useId();
   const h1 = useFocusHeading<HTMLHeadingElement>('sign-in');
   const from = (location.state as { from?: string } | null)?.from;
 
@@ -51,7 +53,12 @@ export function SignIn() {
     setBusy(true);
     setError(undefined);
     try {
-      const out = await portal.signIn(email.trim(), password);
+      if (!sent) {
+        await portal.sendCode(email.trim());
+        setSent(true);
+        return;
+      }
+      const out = await portal.verifyCode(email.trim(), code.trim());
       if ('closed' in out) { setClosed(out.closed); return; }
       navigate(from && from !== '/sign-in' ? from : '/', { replace: true });
     } catch (err) {
@@ -73,29 +80,38 @@ export function SignIn() {
       <h1 className="display" ref={h1} tabIndex={-1}>
         Sign in
       </h1>
-      <p className="body sub">Use the email and password HR sent you</p>
+      <p className="body sub">{sent ? `We sent a 6-digit code to ${email.trim()}` : 'Use the email your joining portal was sent to. We’ll email you a code.'}</p>
       {params.get('expired') && (
         <p className="banner banner--blue body" role="status">
           You were signed out. Please sign in again.
         </p>
       )}
-      <Field label="Email" htmlFor={emailId}>
-        <input id={emailId} className="input" type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-      </Field>
-      <Field label="Password" htmlFor={pwId}>
-        <PasswordInput id={pwId} value={password} onChange={setPassword} autoComplete="current-password" />
-      </Field>
-      <Link to="/forgot" className="text-link">
-        Forgot password?
-      </Link>
+      {!sent ? (
+        <Field label="Email" htmlFor={emailId}>
+          <input id={emailId} className="input" type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        </Field>
+      ) : (
+        <>
+          <Field label="Code" htmlFor={codeId}>
+            <input id={codeId} className="input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} required autoFocus />
+          </Field>
+          <span style={{ display: 'flex', gap: 16 }}>
+            <button type="button" className="text-link" style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer' }}
+              onClick={() => { setError(undefined); void portal.sendCode(email.trim()).catch((err) => setError((err as Error).message)); }}>Send a new code</button>
+            <button type="button" className="text-link" style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer' }}
+              onClick={() => { setSent(false); setCode(''); setError(undefined); }}>Use another email</button>
+          </span>
+        </>
+      )}
       {error && (
         <p id="signin-err" className="field__error" role="alert">
           {error}
         </p>
       )}
       <BottomBar>
-        <PrimaryButton type="submit" disabled={busy || !email || !password}>
-          {busy ? 'Signing in…' : 'Sign in'}
+        <PrimaryButton type="submit" disabled={busy || !email || (sent && code.length !== 6)}>
+          {busy ? (sent ? 'Signing in…' : 'Sending…') : sent ? 'Sign in' : 'Send code'}
         </PrimaryButton>
       </BottomBar>
     </form>

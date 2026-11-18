@@ -46,6 +46,15 @@ export const portal = {
     setSession(out.token!);
     return { token: out.token! };
   },
+  /** Emails a one-time sign-in code to the portal's email (the same answer whether or not it has a portal). */
+  sendCode: (email: string) => request<{ ok: true }>('/portal/auth/code', { method: 'POST', auth: false, body: { email } }),
+  /** The code from the email: a session, or (a closed portal) which closed screen to show. */
+  async verifyCode(email: string, code: string): Promise<{ token: string } | { closed: ClosedSignIn }> {
+    const out = await request<{ token?: string; closed?: ClosedSignIn }>('/portal/auth/verify', { method: 'POST', auth: false, body: { email, code } });
+    if (out.closed?.state) return { closed: out.closed };
+    setSession(out.token!);
+    return { token: out.token! };
+  },
   forgot: (email: string) => request<{ ok: true }>('/portal/auth/forgot', { method: 'POST', auth: false, body: { email } }),
   reset: (token: string, password: string) =>
     request<{ ok: true }>('/portal/auth/reset', { method: 'POST', auth: false, body: { token, password } }),

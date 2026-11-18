@@ -166,9 +166,13 @@ async function refusal(work: () => Promise<unknown>): Promise<string> {
     && !result.portalLogins.some((l) => ['Aarav Kulkarni', 'Ishita Rao', 'Kabir Malhotra', 'Meera Pillai'].includes(l.name)), result.portalLogins.map((l) => l.name));
   const auth = await import('../services/lifecycle/portalAuth');
   const ready = result.portalLogins.find((l) => l.name === 'Nisha Agarwal')!;
-  ok('the printed portal password signs in', 'token' in (await auth.signIn(ready.email, ready.password, '198.51.100.7')));
+  // The portal signs in with a code to the email now; a test address takes the fixed code.
+  const { env: envCfg } = await import('../config/env');
+  envCfg.otpTestEmails.push(ready.email);
+  ok('a portal login signs in with a code to its email', 'token' in (await auth.signInWithCode(ready.email, '123456', '198.51.100.7')));
   scope.setScriptScope(null);
-  const offMsg = await refusal(() => auth.signIn(ready.email, ready.password, '198.51.100.8'));
+  const offMsg = await refusal(() => auth.signInWithCode(ready.email, '123456', '198.51.100.8'));
+  envCfg.otpTestEmails.splice(envCfg.otpTestEmails.indexOf(ready.email), 1);
   ok(`outside the seed the portal stays off for Sowaka Test (the feature was not switched on): "${offMsg}"`, offMsg !== '(no refusal)');
 
   console.log('\nExit insights');

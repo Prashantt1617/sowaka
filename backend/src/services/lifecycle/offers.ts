@@ -559,8 +559,8 @@ export async function finaliseOffer(hr: HrActor, journeyId: string, now = new Da
   const companyName = companyDisplayName(company, journey.org);
   if (created) {
     await setJourneyStatus(journeyId, 'finalised');
-    await sendLifecycleEmail(journey.org, created.account.email, `Your ${companyName} joining portal: login details`,
-      mails.loginDetails(companyName, journey.candidate?.name ?? '', created.account.email, created.password, journey.org));
+    await sendLifecycleEmail(journey.org, created.account.email, `Your ${companyName} joining portal is ready`,
+      mails.portalReady(companyName, journey.candidate?.name ?? '', created.account.email, journey.org));
     await candidateAccounts().updateOne({ journeyId }, { $set: { loginSentAt: now } });
     // The manager's set-up to-do arrives in the app (the task itself opens on the finalised anchor).
     if (journey.managerUserId) {

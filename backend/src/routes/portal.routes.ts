@@ -19,7 +19,7 @@ import {
 import {
   aboutYouView, markMeetSeen, meetItems, portalDocuments, portalHome, portalPassIcs, portalPassOrLocked, saveAboutYou,
 } from '../services/lifecycle/portal';
-import { CLOSED_STATUSES, forgotPassword, journeyForPortalToken, resetPassword, signIn, verifyMediaToken } from '../services/lifecycle/portalAuth';
+import { CLOSED_STATUSES, forgotPassword, journeyForPortalToken, resetPassword, signIn, verifyMediaToken, requestSignInCode, signInWithCode } from '../services/lifecycle/portalAuth';
 import { sendLifecycleError } from './lifecycle-offer.routes';
 import { env } from '../config/env';
 
@@ -117,6 +117,15 @@ r.post('/offer/:token/accept', handle(offerHost(async (req) => acceptOffer(param
 r.post('/auth/sign-in', handle(async (req) => {
   const out = await signIn(body(req).email, body(req).password, clientIp(req));
   // Signed in under another company's address: refuse rather than hand over a session for the wrong portal.
+  if (out && typeof out === 'object' && 'token' in out && typeof (out as { token: unknown }).token === 'string') {
+    assertCompany(req, (await journeyForPortalToken(`Bearer ${(out as { token: string }).token}`)).org);
+  }
+  return out;
+}));
+// Sign-in by a one-time code to the portal's email (the portal's way in; the password route stays for older pages).
+r.post('/auth/code', handle(async (req) => requestSignInCode(body(req).email, clientIp(req))));
+r.post('/auth/verify', handle(async (req) => {
+  const out = await signInWithCode(body(req).email, body(req).code, clientIp(req));
   if (out && typeof out === 'object' && 'token' in out && typeof (out as { token: unknown }).token === 'string') {
     assertCompany(req, (await journeyForPortalToken(`Bearer ${(out as { token: string }).token}`)).org);
   }

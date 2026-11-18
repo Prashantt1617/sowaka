@@ -312,7 +312,6 @@ export async function seedLifecycleDemo(opts: Opts): Promise<SeedResult> {
   console.error = (...a: unknown[]) => { productErrors.push(a.map(String).join(' ').slice(0, 400)); };
 
   const tokenIn = (html: string) => /\/o\/([A-Za-z0-9_-]+)/.exec(html)?.[1] ?? '';
-  const passwordIn = (html: string) => /monospace">([^<]+)</.exec(html)?.[1]?.replace(/&amp;/g, '&') ?? '';
   const lastMailTo = (to: string) => [...mails].reverse().find((m) => m.to === to);
 
   const HR = { userId: hrUser.userId, name: hrUser.name, org, seesPay: true };
@@ -399,9 +398,16 @@ export async function seedLifecycleDemo(opts: Opts): Promise<SeedResult> {
     }),
     finalise: (p: PersonSpec, day: string) => add(p, day, '11:30', 'finalised by HR', async (s) => {
       await offersSvc.finaliseOffer(HR, s.journeyId!);
-      s.password = passwordIn(lastMailTo(personalEmailOf(p.name))?.html ?? '');
+      // The portal is a code to their email now (no password): the login list says so.
+      s.password = 'code by email';
     }),
-    signIn: (p: PersonSpec, day: string) => add(p, day, '20:10', 'signed in to the portal', async (s) => { await auth.signIn(personalEmailOf(p.name), s.password!, s.ip); }),
+    signIn: (p: PersonSpec, day: string) => add(p, day, '20:10', 'signed in to the portal', async (s) => {
+      const email = personalEmailOf(p.name);
+      await auth.requestSignInCode(email, s.ip);
+      // A test address gets no mail and takes the fixed code; any other reads the code off the email.
+      const code = /^(\d{6}) is your/.exec(lastMailTo(email)?.subject ?? '')?.[1] ?? '123456';
+      await auth.signInWithCode(email, code, s.ip);
+    }),
     setup: (p: PersonSpec, day: string) => add(p, day, '12:00', 'manager set-up', async (s) => {
       const people = colleagues.filter((c) => c !== s.manager.userId).slice(s.i % 3, (s.i % 3) + 2).map((userId, k) => ({ userId, why: k ? 'Sits next to you and knows the pipeline' : 'Reviews your shots in dailies' }));
       await app.saveSetup(mgrMe(s.manager), s.journeyId!, { people, welcomeNote: { kind: 'text', text: `Welcome aboard, ${p.name.split(' ')[0]}! Your first shots are lined up.` }, goals: ['Learn the studio pipeline and review process', `Deliver first approved shots in ${p.department}`] });

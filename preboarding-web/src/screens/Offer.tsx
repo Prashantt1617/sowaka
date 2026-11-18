@@ -394,12 +394,12 @@ function Accepted({ view, src, signedIn }: { view: PortalOfferView; src: OfferSo
     ? [
         { title: 'You accepted', sub: wide && view.acceptedAt ? fmtWeekday(view.acceptedAt) : undefined, state: 'done' as const },
         { title: 'HR confirms', sub: wide && view.finalisedAt ? fmtWeekday(view.finalisedAt) : undefined, state: 'done' as const },
-        { title: wide ? 'Sign-in details emailed' : 'Login details emailed', sub: wide ? 'Check your inbox' : undefined, state: 'done' as const },
+        { title: wide ? 'Portal link emailed' : 'Portal link emailed', sub: wide ? 'Check your inbox' : undefined, state: 'done' as const },
       ]
     : [
         { title: 'You accepted', sub: wide && view.acceptedAt ? fmtWeekday(view.acceptedAt) : undefined, state: 'done' as const },
         { title: 'HR confirms', sub: wide ? 'Usually within a day' : undefined, state: 'current' as const },
-        { title: wide ? 'Sign-in details emailed' : 'Login details emailed', sub: wide ? 'After HR confirms' : undefined, state: 'todo' as const },
+        { title: wide ? 'Portal link emailed' : 'Portal link emailed', sub: wide ? 'After HR confirms' : undefined, state: 'todo' as const },
       ];
 
   const title = wide ? (confirmed ? 'You’re all set' : 'Offer accepted') : confirmed ? 'You’re all set!' : 'Offer accepted!';

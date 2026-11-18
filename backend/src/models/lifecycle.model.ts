@@ -343,6 +343,10 @@ export interface CandidateAccount {
   loginSentAt?: Date;
   resetTokenHash?: string;
   resetTokenExpiresAt?: Date;
+  /** The one-time sign-in code emailed to `email` (hashed), when it stops working, and wrong tries at it. */
+  codeHash?: string;
+  codeExpiresAt?: Date;
+  codeTries?: number;
   createdAt: Date;
 }
 
