@@ -19,10 +19,10 @@ import { htmlToPdfBlob } from '../../pdf';
 import { BlobPreview, FilePreview, Field, NotSwitchedOn, Pick } from './shared';
 import { DOCS_OPEN_KEY, LETTER_TEMPLATE_OPEN_KEY, errText, firstName, inputStyle, readHandoff } from './format';
 import {
-  KIND_LABEL, LETTER_KINDS, LETTER_TITLE, annexureHtml, checklistHtml, fieldLabel, filled, letterFileName, letterInner, letterPdf, missingFields, placeholders,
-  simpleDocument, takesAnnexure, valueName,
+  KIND_LABEL, LETTER_KINDS, LETTER_TITLE, annexureHtml, checklistHtml, fieldLabel, fillBody, filled, letterFileName, letterInner, letterPdf, missingFields, placeholders,
+  simpleDocument, takesAnnexure, valueName, sanitizeHtml,
 } from './letterDoc';
-import { useCompanyName } from './hooks';
+import { pushDocState, replaceDocState, useCompanyName, useFormStash, useMailStep } from './hooks';
 import { AUTO_KEYS, DetailsHead, DocActions, downloadFile, showFirstMissing, logoSrc, EarlierLetters, EmailCard, FieldGrid, MailPanel, NEEDED, PreviewCard, missingInput } from './DocumentParts';
 import type { MailOut, Person } from './DocumentParts';
 import { OfferWorkbench, NEW_JOINER } from './OfferWorkbench';
@@ -56,6 +56,20 @@ export function LifecycleDocuments() {
   // The workbench is made again when HR picks someone else, not when a new offer gets its journey.
   const [benchKey, setBenchKey] = useState(startKey);
   const pick = useCallback((key: string) => { setPersonKey(key); setBenchKey(key); }, []);
+  // Back and Forward walk through the letter tabs and joiners HR chose here (each choice is a history step).
+  const chooseKind = (k: LetterKind) => { if (k === kind) return; pushDocState({ kind: k, personKey }); setKind(k); };
+  const choosePerson = useCallback((key: string) => { pushDocState({ kind, personKey: key }); pick(key); }, [kind, pick]);
+  useEffect(() => { replaceDocState({ kind, personKey }); }, [kind, personKey]);
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      const st = (e.state as { docs?: { kind?: LetterKind; personKey?: string } } | null)?.docs;
+      if (!st?.kind) return;
+      setKind(st.kind);
+      if (st.personKey !== undefined) pick(st.personKey);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [pick]);
 
   // Everyone on the onboarding board, for the joiner letters. One light call (who and where on the board), not the three full boards.
   const loadPicks = useCallback(() => getJoinerPicks()
@@ -94,18 +108,18 @@ export function LifecycleDocuments() {
   return (
     <div className="pd-form" style={{ animation: 'fade .3s ease both' }}>
       <div style={{ marginBottom: 20 }} role="tablist" aria-label="Document">
-        <StatusTabs<LetterKind> options={LETTER_KINDS} active={kind} onSelect={setKind} labels={KIND_LABEL} />
+        <StatusTabs<LetterKind> options={LETTER_KINDS} active={kind} onSelect={chooseKind} labels={KIND_LABEL} />
       </div>
       {!cards && kind !== 'relieving' ? (
         <section className="pd-card"><SkeletonLines lines={6} /></section>
       ) : kind === 'offer' ? (
-        <OfferWorkbench key={`offer|${benchKey}`} person={person} people={people} onPerson={pick}
+        <OfferWorkbench key={`offer|${benchKey}`} person={person} people={people} onPerson={choosePerson}
           pay={pay} company={company} logo={logo} hrName={user?.name ?? 'HR'} managerEmail={managerEmail}
           canEditTemplates={canEditTemplates} onEditTemplate={onEditTemplate} flash={flash}
           openMail={Boolean(handoff?.mail) && benchKey === startKey}
           onCreated={(journeyId) => { void loadPicks().then(() => setPersonKey(`j:${journeyId}`)); }} />
       ) : (
-        <LetterWorkbench key={`${kind}|${benchKey}`} kind={kind} person={person} people={people} onPerson={pick}
+        <LetterWorkbench key={`${kind}|${benchKey}`} kind={kind} person={person} people={people} onPerson={choosePerson}
           pay={pay} company={company} logo={logo} hrName={user?.name ?? 'HR'} managerEmail={managerEmail}
           canEditTemplates={canEditTemplates} onEditTemplate={onEditTemplate} flash={flash} />
       )}
@@ -126,13 +140,15 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, h
   const [base, setBase] = useState<Record<string, string> | null>(null);
   const [serverMissing, setServerMissing] = useState<string[]>([]);
   const [edits, setEdits] = useState<Record<string, string>>({});
+  // This document's own words (Edit document): never written back to the template.
+  const [bodyEdit, setBodyEdit] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [letter, setLetter] = useState<LetterView | null>(null);
   const [savedKey, setSavedKey] = useState('');
   const [pdf, setPdf] = useState<{ blob: Blob; key: string } | null>(null);
   const [busy, setBusy] = useState('');
-  const [mailOpen, setMailOpen] = useState(false);
+  const [mailOpen, showMail, closeMail] = useMailStep();
   const [preview, setPreview] = useState<{ blob?: Blob; fileId?: string; name: string } | null>(null);
   const [earlier, setEarlier] = useState<LetterView[]>([]);
   const [candidate, setCandidate] = useState<{ email?: string; managerUserId?: string; docs?: Array<{ label: string; required: boolean }>; bring?: string[]; tj?: string }>({});
@@ -148,6 +164,8 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, h
   }, [kind, attempt]);
 
   const journeyId = person?.journeyId;
+  // What HR typed stays until it is saved, generated or sent, also across leaving the page.
+  const dropStash = useFormStash(`lf-docs:${kind}:${person?.key ?? ''}`, Boolean(base), { edits, bodyEdit }, (k) => { setEdits(k.edits ?? {}); setBodyEdit(k.bodyEdit ?? null); });
   const userId = person?.userId;
   useEffect(() => {
     if (!journeyId && !userId) return;
@@ -187,7 +205,8 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, h
     // What the system fills (company, date, reference) stays off the form unless it came empty.
     return list.filter((k) => !AUTO_KEYS.has(k) || !filled(base ?? {}, k));
   }, [template, serverMissing, base]);
-  const missing = template ? missingFields(template.body, values, serverMissing) : [];
+  const docBody = bodyEdit ?? template?.body ?? '';
+  const missing = template ? missingFields(docBody, values, serverMissing) : [];
   // Missing details show only once HR presses Generate PDF or Send, never on first look.
   const [tried, setTried] = useState(false);
   const needsFilling = () => {
@@ -199,7 +218,7 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, h
   const name = valueName(values) || person?.name || '';
   const withAnnex = Boolean(template && takesAnnexure(kind, template.body));
   const annex = withAnnex && breakup?.breakup ? annexureHtml(breakup.breakup, name) : '';
-  const valuesKey = JSON.stringify([templateId, values, annex]);
+  const valuesKey = JSON.stringify([templateId, values, annex, bodyEdit]);
   const first = firstName(name);
   const head = { company: values.companyName || company, address: values.companyAddress, refNo: letter?.refNo || values.refNo, title: LETTER_TITLE[kind], date: values.letterDate || undefined, logo: logoSrc(logo) };
   const fileName = letterFileName(kind, name);
@@ -225,7 +244,7 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, h
   const saveDraft = async () => {
     if (!template || !person) return;
     setBusy('draft');
-    try { const l = await ensureLetter(); flash(`Draft saved${l.refNo ? ` · ${l.refNo}` : ''}`); void reloadEarlier(); } catch (e) { flash(errText(e, 'Could not save the draft'), 'error'); } finally { setBusy(''); }
+    try { const l = await ensureLetter(); dropStash(); flash(`Draft saved${l.refNo ? ` · ${l.refNo}` : ''}`); void reloadEarlier(); } catch (e) { flash(errText(e, 'Could not save the draft'), 'error'); } finally { setBusy(''); }
   };
   /** Save draft in the email panel: the letter's values and the email (to, cc, subject, body, link, extras) are kept. */
   const saveEmailDraft = async (mail: MailOut) => {
@@ -256,11 +275,12 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, h
     setBusy('pdf');
     try {
       const l = await ensureLetter();
-      const blob = await letterPdf(template.body, values, { ...head, refNo: l.refNo || head.refNo }, fileName, annex);
+      const blob = await letterPdf(docBody, values, { ...head, refNo: l.refNo || head.refNo }, fileName, annex);
       const up = await uploadLetterPdf(l.id, blob, fileName);
       setLetter(up); setPdf({ blob, key: valuesKey });
       downloadFile(blob, fileName);
       flash(`${KIND_LABEL[kind]} generated`);
+      dropStash();
       return true;
     } catch (e) { flash(errText(e, 'Could not make the PDF'), 'error'); return false; } finally { setBusy(''); }
   };
@@ -288,6 +308,7 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, h
       const sent = await sendLetter(l.id, { to: mail.to, cc: mail.cc, subject: mail.subject, body: mail.body, withPortalLink: mail.withPortalLink, attachments: mail.attachments });
       setLetter(sent);
       flash(`${KIND_LABEL[kind]} sent to ${first || mail.to}`);
+      dropStash();
       void reloadEarlier();
       return true;
     } catch (e) { flash(errText(e, 'Could not send the email'), 'error'); return false; } finally { setBusy(''); }
@@ -296,7 +317,7 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, h
   return (
     <>
       <DocActions onSave={() => void saveDraft()} saving={busy === 'draft'} canSave={Boolean(template && base)}
-        onMail={() => setMailOpen(true)} canMail={Boolean(template && base)}
+        onMail={() => showMail()} canMail={Boolean(template && base)}
         onGenerate={() => { if (needsFilling()) return; void generate(); }} generating={busy === 'pdf'} generated={pdfReady} missing={missing.length} disabled={Boolean(busy) || !template || !base} />
 
       <div className="lf-doc-grid">
@@ -346,13 +367,14 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, h
           )}
           {template && base && (
             <EmailCard kind={kind} first={first} to={to} values={values} company={company} hrName={hrName} manager={manager}
-              draft={savedDraft?.email} missing={missing.length} busy={busy} onSend={sendMail} onOpen={() => setMailOpen(true)} />
+              draft={savedDraft?.email} missing={missing.length} busy={busy} onSend={sendMail} onOpen={() => showMail()} />
           )}
           <EarlierLetters earlier={earlier} first={first} name={name} onView={(fileId, n) => setPreview({ fileId, name: n })} />
         </section>
 
         <PreviewCard templateName={template?.name} loading={!template || !base}
-          html={template ? letterInner(template.body, shown, head, 'preview', annex) : ''} />
+          html={template ? letterInner(docBody, shown, head, 'preview', annex) : ''}
+          edit={template ? { html: fillBody(docBody, values, 'pdf'), edited: bodyEdit !== null, onSave: (h) => setBodyEdit(sanitizeHtml(h)), onReset: () => setBodyEdit(null) } : undefined} />
       </div>
 
       {mailOpen && template && base && (
@@ -364,8 +386,8 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, logo, h
           makeExtra={makeExtra}
           onPreview={() => pdf && setPreview({ blob: pdf.blob, name: fileName })}
           onSaveDraft={(mail) => void saveEmailDraft(mail)}
-          onClose={() => setMailOpen(false)}
-          onSend={async (mail) => { if (await sendMail(mail)) setMailOpen(false); }} />
+          onClose={() => closeMail()}
+          onSend={async (mail) => { if (await sendMail(mail)) closeMail(); }} />
       )}
       {preview?.blob && <BlobPreview blob={preview.blob} name={preview.name} onClose={() => setPreview(null)} />}
       {preview?.fileId && <FilePreview fileId={preview.fileId} name={preview.name} onClose={() => setPreview(null)} />}
