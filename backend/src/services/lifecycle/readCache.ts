@@ -17,10 +17,21 @@
  * kept when it lands (swr-cache's generation). What can still lag, by at most
  * the minute: a change made outside the API (a script) or by the clock alone
  * in data no request touches.
+ *
+ * The onboarding board's data is the exception to "drops": it is the costly one
+ * (every journey's tasks), and dropping it made the first board, count or joiner
+ * list after any write read it all again (3–11 s on the database link). A write
+ * request notes which journeys it wrote (config/writeTrack.ts), and the kept
+ * data is patched for those journeys only (board.ts patchBoardData: their
+ * journey, tasks and offer, a few KB) before anyone reads it again; readers wait
+ * for the patch, so the writer sees the change at once. A write it cannot place
+ * (a filter naming no journey) drops it as before; a write that touched none of
+ * the board's records leaves it alone.
  */
 import type { NextFunction, Request, Response } from 'express';
 import { cachedSwr, dropSwr, refreshSwr, type SwrKind } from '../swr-cache';
 import { bumpSuwiVersion } from '../../suwi/kept';
+import { noWrites, takeWrites, trackWrites, untracked, wroteAnything, type WritesSeen } from '../../config/writeTrack';
 
 /** Time office lists (timeOfficeLists.ts): dropped by the same writes as the boards. */
 export const TIME_OFFICE_LIST_KINDS: SwrKind[] = ['adm-regs', 'adm-leaves', 'adm-overtime', 'adm-feedback'];
@@ -71,10 +82,11 @@ export function scheduleRewarm(org: string): void {
   if (!enabled || !rewarm) return;
   const before = rewarmTimers.get(org);
   if (before) clearTimeout(before);
-  const timer = setTimeout(() => {
+  // Not part of the request that scheduled it: its reads and writes are the warm-up's own.
+  const timer = untracked(() => setTimeout(() => {
     rewarmTimers.delete(org);
     rewarm?.(org).catch(() => undefined);
-  }, REWARM_MS);
+  }, REWARM_MS));
   timer.unref();
   rewarmTimers.set(org, timer);
 }
@@ -122,6 +134,25 @@ const REQUEST_WRITES = /^\/(leaves|overtime|reimbursements|attendance\/regulariz
 export const changesOnlyRequests = (path: string): boolean => REQUEST_WRITES.test(path);
 
 /**
+ * Patches the kept onboarding board data for what a write touched (registered by board.ts, which
+ * keeps this file free of imports). Without it the board data is dropped like the rest.
+ */
+export type BoardWrites = Omit<WritesSeen, 'onWrite'>;
+type BoardPatch = (org: string | null, writes: BoardWrites) => void;
+let boardPatch: BoardPatch | null = null;
+export function setBoardPatch(fn: BoardPatch | null): void {
+  boardPatch = fn;
+}
+const BOARD_KIND: SwrKind = 'lc-board-data';
+
+/** The kept board data after a write: left alone (nothing of it written), patched, or dropped (a write it cannot place). */
+function settleBoard(org: string | null, writes: BoardWrites): void {
+  if (!wroteAnything(writes)) return;
+  if (writes.unknown || !enabled || !boardPatch) { dropSwr(org, [BOARD_KIND]); return; }
+  boardPatch(org, writes);
+}
+
+/**
  * Patches Suwi's company bundle after a request write (registered by suwi/orgData.ts, which keeps this
  * file free of imports). Called before the drop, so it can take the kept bundle; returns what to start
  * once the drop is done (a refresh readers join), or null when there is nothing kept to patch.
@@ -144,18 +175,30 @@ export function forgetReadsOnWrite(req: Request, res: Response, next: NextFuncti
   if (!kinds.length) { next(); return; }
   // Read now: by the time the response ends, routing may have rewritten the path.
   const requestsOnly = changesOnlyRequests(req.path);
+  // What this request writes to the board's records (journeys, tasks, offers, people).
+  const writes = noWrites();
+  const orgOf = () => (req as Request & { auth?: { user?: { org?: string } } }).auth?.user?.org;
   let dropped = false;
   const drop = (): Promise<void> | null => {
     if (dropped) return null;
     dropped = true;
-    const org = (req as Request & { auth?: { user?: { org?: string } } }).auth?.user?.org;
+    const org = orgOf();
+    const board = kinds.includes(BOARD_KIND);
+    if (board) settleBoard(org || null, takeWrites(writes));
+    // A write still running after the answer went out (one left unawaited) patches again when it lands.
+    let later: NodeJS.Timeout | null = null;
+    writes.onWrite = () => {
+      if (later || !board) return;
+      later = setTimeout(() => { later = null; settleBoard(org || null, takeWrites(writes)); }, 0);
+      later.unref();
+    };
     // Suwi's copies in Redis (suwi/kept.ts) are keyed by a data version: bump it before the response
     // goes out, so the next question anywhere misses them. Waits at most a moment for Redis.
     const patchOnly = requestsOnly || (res.locals as { suwiRequestsOnly?: boolean } | undefined)?.suwiRequestsOnly === true;
     const bump = kinds.some((k) => SUWI_KINDS.includes(k)) ? bumpSuwiVersion(org || null, { requestsOnly: patchOnly && Boolean(org) }) : null;
     // Taken before the drop (it needs the kept bundle), started after it (so it lands as the new copy).
     const patch = enabled && org && bump && patchOnly && orgDataPatch ? orgDataPatch(org, bump) : null;
-    dropSwr(org || null, kinds);
+    dropSwr(org || null, kinds.filter((k) => k !== BOARD_KIND));
     patch?.();
     if (org) scheduleRewarm(org);
     return bump;
@@ -168,5 +211,5 @@ export function forgetReadsOnWrite(req: Request, res: Response, next: NextFuncti
     void Promise.race([bump, new Promise((r) => setTimeout(r, 300))]).then(() => end(...args));
     return res;
   };
-  next();
+  trackWrites(writes, next);
 }

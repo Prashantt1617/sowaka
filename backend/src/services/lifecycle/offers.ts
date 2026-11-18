@@ -20,7 +20,7 @@
 import { randomUUID } from 'node:crypto';
 import { candidateAccounts, dateChangeRequests, getDb, journeys, lifecycleFiles, offers, users } from '../../config/db';
 import type {
-  DateChangeRequest, Journey, Offer, OfferFields, OfferVersion,
+  DateChangeRequest, Journey, JourneyTask, Offer, OfferFields, OfferVersion,
 } from '../../models/lifecycle.model';
 import { AdminError, createEmployeeForAdmin } from '../admin.service';
 import { notifyUsers } from '../notification.service';
@@ -29,7 +29,7 @@ import {
   addDays, companyDisplayName, companyOf, formatDay, hrContactFor, isDay, istDate, lifecycleEnabled, mails, portalLink, sendLifecycleEmail,
 } from './emails';
 import type { LifecycleAttachment } from './emails';
-import { closeJourney, completeTask, createOnboardingJourney, moveTj, onJoined, reopenTask, setJourneyStatus, syncProbationTasks } from './engine';
+import { closeJourney, completeTask, createOnboardingJourney, moveTj, onJoined, refreshJourney, reopenTask, setJourneyStatus, syncProbationTasks } from './engine';
 import { checkUpload, LifecycleOfferError, pdfPageCount, readFileBytes, storeFile } from './files';
 import { regenerateAppointmentLetters, outdateChangedLetters } from './letters';
 import { noticeDaysFor } from './templates';
@@ -77,8 +77,9 @@ const current = (offer: Offer) => offer.versions[offer.versions.length - 1];
 /** The newest version HR has sent: what the candidate sees and accepts (a draft revision is still HR's). */
 const latestSent = (offer: Offer): OfferVersion => [...offer.versions].reverse().find((v) => v.status !== 'draft') ?? current(offer);
 
-async function journeyOf(org: string, journeyId: string): Promise<Journey> {
-  const journey = await journeys().findOne({ id: journeyId, org, kind: 'onboarding' });
+/** `lean`: without the template snapshot's task list (most of a journey's bytes), for callers that never read it. */
+async function journeyOf(org: string, journeyId: string, lean = false): Promise<Journey> {
+  const journey = await journeys().findOne({ id: journeyId, org, kind: 'onboarding' }, lean ? { projection: { _id: 0, 'templateSnapshot.tasks': 0 } } : {});
   if (!journey) throw new LifecycleOfferError(404, 'Joiner not found');
   return journey;
 }
@@ -254,10 +255,11 @@ export async function createOffer(hr: HrActor, input: { candidate?: { name?: unk
   if (open) throw new LifecycleOfferError(409, 'This candidate already has an open offer');
   const fields = await cleanFields(hr.org, input.fields, {}, await fieldDefaults(hr.org));
   const templateId = typeof input.templateId === 'string' && input.templateId ? input.templateId : undefined;
+  const made: { tasks?: JourneyTask[] } = {};
   const journey = await createOnboardingJourney(hr.org, hr.userId, {
     candidate: { name, personalEmail, ...(phone ? { phone } : {}) }, tj: fields.tj, managerUserId: fields.managerUserId,
     designation: fields.designation, department: fields.department, location: fields.location, templateId,
-  });
+  }, made);
   // The template's probation, when HR did not give one.
   if (!(input.fields && typeof input.fields === 'object' && 'probationMonths' in input.fields) && journey.templateSnapshot.settings.probationMonths) {
     fields.probationMonths = journey.templateSnapshot.settings.probationMonths;
@@ -269,8 +271,12 @@ export async function createOffer(hr: HrActor, input: { candidate?: { name?: unk
     createdAt: now, updatedAt: now,
   };
   await offers().insertOne({ ...offer });
-  await setJourneyStatus(journey.id, 'draft', { offerId: offer.id });
-  await applyOfferProbation(journey.id, fields.probationMonths);
+  // Still a draft (setJourneyStatus 'draft' implies no anchor and no task): the offer id, then one
+  // refresh with the offer there (its valid-till dates accepting it). Syncing the probation refreshes too.
+  await journeys().updateOne({ id: journey.id }, { $set: { offerId: offer.id, updatedAt: now } });
+  if (!(await applyOfferProbation(journey.id, fields.probationMonths))) {
+    await refreshJourney(journey.id, now, made.tasks ? { journey: { ...journey, offerId: offer.id, updatedAt: now }, tasks: made.tasks } : undefined);
+  }
   return { journeyId: journey.id, offer: (await offerView(journey.id))! };
 }
 
@@ -281,7 +287,7 @@ export async function createOffer(hr: HrActor, input: { candidate?: { name?: unk
  */
 export async function reviseOffer(hr: HrActor | null, journeyId: string, input: unknown, org?: string): Promise<OfferView> {
   if (hr && !hr.seesPay) throw new LifecycleOfferError(403, 'Changing an offer needs access to pay');
-  const journey = await journeyOf(hr?.org ?? org ?? '', journeyId);
+  const journey = await journeyOf(hr?.org ?? org ?? '', journeyId, true);
   if (!PRE_JOIN_OPEN.has(String(journey.status))) throw new LifecycleOfferError(409, 'This offer can no longer be changed');
   const offer = await offerOf(journeyId);
   const v = current(offer);
@@ -319,12 +325,13 @@ async function applyOfferTerms(journey: Journey, fields: OfferFields, now: Date)
  * takes it from the start, with its month tasks, so the board, the panel, the portal and the app
  * say the same length before joining as Mark joined (`onJoined`) does after. Same range as there.
  */
-async function applyOfferProbation(journeyId: string, months: number | undefined): Promise<void> {
-  if (!Number.isInteger(months) || months! < 1 || months! > 12) return;
+async function applyOfferProbation(journeyId: string, months: number | undefined): Promise<boolean> {
+  if (!Number.isInteger(months) || months! < 1 || months! > 12) return false;
   const j = await journeys().findOne({ id: journeyId }, { projection: { _id: 0, probation: 1, userId: 1 } });
-  if (!j || j.userId || j.probation?.months === months) return;
+  if (!j || j.userId || j.probation?.months === months) return false;
   await journeys().updateOne({ id: journeyId }, { $set: { 'probation.months': months } });
   await syncProbationTasks(journeyId);
+  return true;
 }
 
 /**

@@ -56,6 +56,19 @@ const TASK_KEY: Partial<Record<PathKey, string>> = { offer: 'accept_offer', docs
 /** Due dates when the template's task has none (CONTRACT decision 4). */
 const DEFAULT_DUE: Partial<Record<PathKey, number>> = { docs: -5, about: -3, meet: -1, letter: -2 };
 
+/**
+ * Whether the journey's template keeps a path step: the offer and the Day-1 pass always; the others
+ * only while their task runs in the template snapshot (a template that turns off "Meet us videos"
+ * has no Team step). A snapshot without a task list (never the case for a real journey) keeps them all.
+ */
+export function pathStepOn(journey: Pick<Journey, 'templateSnapshot'>, key: PathKey): boolean {
+  if (key === 'offer' || key === 'pass') return true;
+  const systemKey = TASK_KEY[key];
+  const tasks = journey.templateSnapshot?.tasks;
+  if (!systemKey || !Array.isArray(tasks)) return true;
+  return tasks.some((t) => t.systemKey === systemKey && t.enabled && (!t.recommended || t.recommended.added));
+}
+
 const isoDay = (iso: string | null | undefined) => (iso ? istDate(new Date(iso)) : undefined);
 const CHANGED_LABEL: Partial<Record<keyof OfferFields, string>> = {
   tj: 'joining date', ctc: 'salary', designation: 'role', department: 'team', location: 'location', managerUserId: 'manager',
@@ -182,6 +195,19 @@ const passOpen = (journey: Journey, now: Date) => Boolean(journey.tj && daysBetw
 
 export type PortalPass = Day1Pass & { date: string; candidateName: string; designation?: string; department?: string; managerName?: string; buddyName?: string; companyName: string };
 
+/** Before it opens (Tj − 7) the pass is a normal "not yet" answer, not an error: the portal shows the day it opens. */
+export type PortalPassLocked = { state: 'locked'; opensOn?: string; message: string };
+
+/** GET /portal/pass: the pass once it is open (`state: 'open'`), else when it opens (200 either way). */
+export async function portalPassOrLocked(journey: Journey, now = new Date()): Promise<(PortalPass & { state: 'open' }) | PortalPassLocked> {
+  if (!journey.tj) return { state: 'locked', message: 'Your Day-1 pass is not ready yet' };
+  if (!passOpen(journey, now)) {
+    const opensOn = addDays(journey.tj, -PASS_OPENS_DAYS);
+    return { state: 'locked', opensOn, message: `Your Day-1 pass opens on ${formatDay(opensOn)}` };
+  }
+  return { state: 'open', ...(await portalPass(journey, now)) };
+}
+
 export async function portalPass(journey: Journey, now = new Date()): Promise<PortalPass> {
   if (!journey.tj) throw new LifecycleOfferError(403, 'Your Day-1 pass is not ready yet');
   if (!passOpen(journey, now)) throw new LifecycleOfferError(403, `Your Day-1 pass opens on ${formatDay(addDays(journey.tj, -PASS_OPENS_DAYS))}`);
@@ -296,14 +322,15 @@ export async function portalHome(journey: Journey, now = new Date()): Promise<Po
     const offset = DEFAULT_DUE[key];
     return journey.tj && offset !== undefined ? addDays(journey.tj, offset) : undefined;
   };
-  const steps: Array<{ key: PathKey; done: boolean; locked: boolean; started: boolean; waiting?: boolean }> = [
+  type Step = { key: PathKey; done: boolean; locked: boolean; started: boolean; waiting?: boolean };
+  const steps = ([
     { key: 'offer', done: offerDone, locked: false, started: true },
     { key: 'docs', done: docsDone, locked: false, started: docs.some((d) => d.fileIds.length > 0), waiting: docsWaiting },
     { key: 'about', done: aboutDone, locked: false, started: Boolean(about.emergencyContact || about.pf) },
     { key: 'meet', done: meetDone, locked: false, started: meet.some((i) => i.seen) },
     ...(onDay1 ? [] : [{ key: 'letter' as const, done: lettersDone, locked: !lettersReady && !lettersDone, started: portalLetterList.some((l) => l.state === 'opened') }]),
     { key: 'pass', done: passUnlocked && today >= (journey.tj ?? '9999'), locked: !passUnlocked, started: false },
-  ];
+  ] as Step[]).filter((s) => pathStepOn(journey, s.key));
 
   // Up next: sent back → due soonest → not started. A step waiting on HR is not the candidate's to do.
   const open = steps.filter((s) => !s.done && !s.locked && !s.waiting);

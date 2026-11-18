@@ -199,6 +199,10 @@ export interface PortalLetter {
 }
 
 export type PortalPass = Day1Pass & {
+  /** not in CONTRACT: 'open' (the pass), or 'locked' before Tj − 7 with the day it opens (200, not a 403). */
+  state?: 'open' | 'locked';
+  opensOn?: string;
+  message?: string;
   managerName?: string;
   buddyName?: string;
   /** not in CONTRACT: the pass shows the joiner's name, role and team. */

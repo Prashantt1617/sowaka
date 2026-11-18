@@ -493,8 +493,11 @@ export async function handleMock(method: string, path: string, body: unknown, au
   if ((m = p.match(/^\/portal\/letters\/([^/]+)\/pdf$/))) return letterPdf(m[1]);
 
   if (p === '/portal/pass') {
-    if (db.scenario !== 'pass_unlocked' && db.scenario !== 'joined') throw new ApiError(403, `Your Day-1 pass opens on ${fmtShort(addDays(db.tj, -7))}`);
+    if (db.scenario !== 'pass_unlocked' && db.scenario !== 'joined') {
+      return { state: 'locked', opensOn: addDays(db.tj, -7), message: `Your Day-1 pass opens on ${fmtShort(addDays(db.tj, -7))}` } as PortalPass;
+    }
     const pass: PortalPass = {
+      state: 'open',
       date: db.tj,
       reportingTime: '09:30',
       place: 'Floor 4, Lumen Labs, 100 Feet Road, Indiranagar, Bengaluru',

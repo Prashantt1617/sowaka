@@ -10,7 +10,7 @@ import { useAsync, useFocusHeading, useWide } from '../lib/hooks';
 import { buildIcs, directionsUrl, downloadBlob } from '../lib/links';
 import { useMe } from '../session';
 
-/** P14 / W14 · Day-1 pass (+ Add to calendar .ics, directions). Opens at Tj − 7 (403 before). */
+/** P14 / W14 · Day-1 pass (+ Add to calendar .ics, directions). Opens at Tj − 7 (before: 200 `{ state: 'locked', opensOn }`). */
 export function Pass() {
   const { header, me } = useMe();
   const wide = useWide();
@@ -20,9 +20,11 @@ export function Pass() {
   const h1 = useFocusHeading<HTMLHeadingElement>(state.data ? 'pass' : 'loading');
   const hdr = header({ back: '/' });
 
-  if (state.error) {
-    const locked = state.error instanceof ApiError && state.error.status === 403;
-    const opens = me.tasks.find((t) => t.systemKey === 'day1_pass')?.opensAt?.slice(0, 10) ?? addDays(me.tj, -7);
+  // Not open yet: the server answers 200 { state: 'locked', opensOn } (an older server answered 403).
+  const lockedData = state.data && state.data.state === 'locked' ? state.data : undefined;
+  if (state.error || lockedData) {
+    const locked = Boolean(lockedData) || (state.error instanceof ApiError && state.error.status === 403);
+    const opens = lockedData?.opensOn ?? me.tasks.find((t) => t.systemKey === 'day1_pass')?.opensAt?.slice(0, 10) ?? addDays(me.tj, -7);
     return (
       <Page header={hdr}>
         {locked ? (
@@ -36,7 +38,7 @@ export function Pass() {
             <p className="body sub">It will show where to go, when, and who to ask for. We’ll email you the reporting details too.</p>
           </section>
         ) : (
-          <ErrorNote error={state.error} onRetry={state.reload} />
+          <ErrorNote error={state.error ?? new Error("Could not load your Day-1 pass")} onRetry={state.reload} />
         )}
         <BottomBar>
           <PrimaryButton onClick={() => navigate('/')}>Back to home</PrimaryButton>

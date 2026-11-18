@@ -12,7 +12,7 @@
  * Their records (attendance, leave, payslips, documents) all stay.
  * A recorded exit can be withdrawn while access has not ended yet.
  */
-import { authSessions, companies, deviceTokens, exitSettlements, journeys, users } from '../config/db';
+import { authSessions, companies, deviceTokens, exitSettlements, journeys, resignations, users } from '../config/db';
 import { AdminError } from './admin.service';
 import { forgetAuthUser } from './auth-cache';
 import { invalidateAttendanceSetup } from './attendance-report.service';
@@ -377,6 +377,20 @@ async function moveTeam(org: string, leaverUserId: string, now: Date) {
     await moveJourneysToManager(org, leaverUserId, to, now);
   } catch (error) {
     logger.warn('Exit: the joiners could not be moved to the new manager', { org, leaverUserId, reason: error instanceof Error ? error.message : String(error) });
+  }
+  // Their reports' resignations still waiting on the manager (or HR) go to the successor too: the card
+  // is theirs to answer now, and the HR drawer names them. An accepted or withdrawn one stays as it was.
+  const open = await resignations()
+    .find({ org, managerUserId: leaverUserId, userId: { $ne: to }, status: { $in: ['with_manager', 'with_hr'] } }, { projection: { _id: 0, id: 1, userId: 1, status: 1 } })
+    .toArray();
+  if (open.length) {
+    await resignations().updateMany({ org, id: { $in: open.map((r) => r.id) } }, { $set: { managerUserId: to } });
+    const waiting = open.filter((r) => r.status === 'with_manager').length;
+    if (waiting) {
+      const { tellOffboarding } = await import('./lifecycle/offboarding');
+      await tellOffboarding([to], 'lifecycle_resignation', 'lifecycle_resignation_request', waiting === 1 ? 'A resignation is waiting for you' : `${waiting} resignations are waiting for you`,
+        `${firstName(leaver.name)}'s team now reports to you. Open Team › Requests.`, waiting === 1 ? { resignationId: open.find((r) => r.status === 'with_manager')!.id } : {}, 'lifecycle_resignation');
+    }
   }
   if (!team.length) return 0;
   const ids = team.map((t) => t.userId).filter((id) => id !== to);

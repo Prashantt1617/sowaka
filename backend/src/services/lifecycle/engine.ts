@@ -566,10 +566,17 @@ async function recomputeAndSave(j: Journey, tasks: JourneyTask[], opts: { now?: 
   if (opts.tellOwners && dueMoved.size) await tellDueMoved(j, dueMoved);
 }
 
-/** Recomputes flags, plant, stage, board column/tab (and re-dates open tasks). Cheap; call after any change. */
-export async function refreshJourney(journeyId: string, now = new Date()): Promise<Journey> {
-  const j = await loadJourney(journeyId);
-  const tasks = await tasksOf(journeyId);
+/** The order tasksOf reads tasks in (order, then month; no month first). */
+const byTaskOrder = (a: JourneyTask, b: JourneyTask) => a.order - b.order || (a.month ?? -1) - (b.month ?? -1);
+
+/**
+ * Recomputes flags, plant, stage, board column/tab (and re-dates open tasks). Cheap; call after any change.
+ * `loaded`: the journey and its tasks as they now are in the database, when the caller has just read
+ * and written them (a journey is ~17 KB with its template snapshot: not read twice in one change).
+ */
+export async function refreshJourney(journeyId: string, now = new Date(), loaded?: { journey: Journey; tasks: JourneyTask[] }): Promise<Journey> {
+  const j = loaded?.journey.id === journeyId ? loaded.journey : await loadJourney(journeyId);
+  const tasks = loaded?.journey.id === journeyId ? [...loaded.tasks].sort(byTaskOrder) : await tasksOf(journeyId);
   if (!j.closedAt) await recomputeAndSave(j, tasks, { now });
   const set: Partial<Journey> = { updatedAt: now };
   if (j.kind === 'onboarding') {
@@ -605,7 +612,7 @@ async function requireColleague(org: string, userId: string | undefined, what: s
 export async function createOnboardingJourney(org: string, byUserId: string, input: {
   candidate: CandidateDetails; tj: string; managerUserId?: string; designation?: string;
   department?: string; location?: string; templateId?: string; offerId?: string;
-}): Promise<Journey> {
+}, out?: { tasks?: JourneyTask[] }): Promise<Journey> {
   if (!isDateKey(input.tj)) throw new LifecycleError(400, 'The joining date must be YYYY-MM-DD');
   const candidate = cleanCandidate(input.candidate);
   await requireColleague(org, input.managerUserId, 'manager');
@@ -629,7 +636,10 @@ export async function createOnboardingJourney(org: string, byUserId: string, inp
   await journeys().insertOne({ ...j });
   await recomputeAndSave(j, tasks, { now });
   await writeTasks(tasks);
-  return refreshJourney(j.id, now);
+  // Just written: no need to read them back. The caller may go on from the same tasks (`out`).
+  const journey = await refreshJourney(j.id, now, { journey: j, tasks });
+  if (out) out.tasks = tasks;
+  return journey;
 }
 
 const IMPLIED_ANCHOR: Partial<Record<Journey['status'], 'offer_sent' | 'accepted' | 'finalised'>> = {
@@ -642,7 +652,9 @@ const IMPLIED_DONE: Partial<Record<Journey['status'], SystemTaskKey[]>> = {
 
 /** Sets the status, stamps the event anchor it implies (offer_sent / accepted / finalised), merges `extra`, recomputes dates + flags. */
 export async function setJourneyStatus(journeyId: string, status: OnboardingStatus | OffboardingStatus, extra: Partial<Journey> = {}): Promise<Journey> {
-  const j = await loadJourney(journeyId);
+  // Only the status it had is needed here (refreshJourney reads the whole journey once, after the change).
+  const j = await journeys().findOne({ id: journeyId }, { projection: { _id: 0, status: 1 } });
+  if (!j) throw new LifecycleError(404, 'Journey not found');
   const now = new Date();
   const { id: _id, org: _org, kind: _kind, templateSnapshot: _snap, anchors: extraAnchors, ...rest } = extra;
   const set: Record<string, unknown> = { ...rest, status, updatedAt: now };
@@ -670,11 +682,13 @@ async function moveAnchorDay(journeyId: string, field: 'tj' | 'tl', day: string)
   if (!isDateKey(day)) throw new LifecycleError(400, `${field === 'tj' ? 'The joining date' : 'The last working day'} must be YYYY-MM-DD`);
   const j = await loadJourney(journeyId);
   if (j[field] === day) return;
-  const moved: Journey = { ...j, [field]: day };
-  await journeys().updateOne({ id: journeyId }, { $set: { [field]: day, updatedAt: new Date() } });
+  const at = new Date();
+  const moved: Journey = { ...j, [field]: day, updatedAt: at };
+  await journeys().updateOne({ id: journeyId }, { $set: { [field]: day, updatedAt: at } });
   const tasks = await tasksOf(journeyId);
+  // Re-dates the tasks in place (and saves them): the refresh goes on from these, not a second read.
   await recomputeAndSave(moved, tasks, { tellOwners: true });
-  await refreshJourney(journeyId);
+  await refreshJourney(journeyId, undefined, { journey: moved, tasks });
 }
 
 /** Moves Tj; every open (not done/skipped/cancelled) task's opensAt/dueAt is recomputed; owners whose due date changed are told once. */
@@ -803,14 +817,23 @@ export async function reassignManager(journeyId: string, managerUserId: string |
 }
 
 /**
- * A leaving manager's joiners (pre-boarding and onboarding, not closed) move to their successor: the
+ * A leaving manager's joiners (pre-boarding and onboarding, not closed) and their reports' offboarding
+ * journeys under way move to their successor: the
  * journey's manager, its open manager tasks, the Day-1 meetings not yet held and the people to meet.
  * Returns the journeys moved.
  */
 export async function moveJourneysToManager(org: string, fromUserId: string, toUserId: string, now = new Date()): Promise<string[]> {
   if (!toUserId || toUserId === fromUserId) return [];
-  const list = await journeys().find({ org, kind: 'onboarding', managerUserId: fromUserId, closedAt: { $exists: false } }, { projection: { _id: 0, id: 1 } }).toArray();
-  for (const { id } of list) await moveJourneyToManager(id, fromUserId, toUserId, now);
+  // Their reports' offboarding journeys under way move too (an accepted resignation of someone in the
+  // team): the manager's handover and clearance tasks are the successor's now. Never the leaver's own.
+  const list = await journeys().find({ org, kind: { $in: ['onboarding', 'offboarding'] }, managerUserId: fromUserId, userId: { $ne: fromUserId }, closedAt: { $exists: false } }, { projection: { _id: 0, id: 1, kind: 1 } }).toArray();
+  for (const j of list) {
+    if (j.kind === 'onboarding') await moveJourneyToManager(j.id, fromUserId, toUserId, now);
+    else {
+      await journeys().updateOne({ id: j.id }, { $set: { managerUserId: toUserId, updatedAt: now } });
+      await reassignManager(j.id, toUserId, fromUserId);
+    }
+  }
   return list.map((j) => j.id);
 }
 
@@ -988,7 +1011,9 @@ export async function syncProbationTasks(journeyId: string): Promise<void> {
   }
   const changed = [...added, ...tasks.filter((t) => cancelled.includes(t.id)).map((t) => ({ ...t, status: 'cancelled' as const }))];
   await writeTasks(changed);
-  await refreshJourney(journeyId);
+  // The tasks as now saved, for the refresh (no second read of the journey and its tasks).
+  const now = [...tasks.map((t) => (cancelled.includes(t.id) ? { ...t, status: 'cancelled' as const } : t)), ...added];
+  await refreshJourney(journeyId, undefined, { journey: j, tasks: now });
 }
 
 // ─── Day-1 meetings ─────────────────────────────────────────────────────────

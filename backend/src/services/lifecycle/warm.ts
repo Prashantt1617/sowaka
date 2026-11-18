@@ -11,6 +11,7 @@ import { refreshBoardData } from './board';
 import { refreshOffBoardData } from './offboarding';
 import { refreshWorkspaceRoster } from '../manager.service';
 import { lifecycleReadCacheOn, setLifecycleRewarm } from './readCache';
+import { peekSwr } from '../swr-cache';
 import { listReaderFor, warmTimeOfficeLists } from '../timeOfficeLists';
 import { settingsFor } from '../../suwi/store';
 import { contextFor, toolsFor } from '../../suwi/tools';
@@ -22,14 +23,17 @@ import { prepareRecent, recentSuwiUsers } from '../../suwi/planner';
 import { prepareFrequent } from '../../suwi/prepared';
 import { logger } from '../../utils/logger';
 
-export async function warmLifecycle(org: string, isStopping: () => boolean = () => false): Promise<Record<string, number | string>> {
+/** `afterWrite`: the rebuild a few seconds after a change (readCache.scheduleRewarm), not the warm-up round. */
+export async function warmLifecycle(org: string, isStopping: () => boolean = () => false, opts: { afterWrite?: boolean } = {}): Promise<Record<string, number | string>> {
   const took: Record<string, number | string> = {};
   if (!lifecycleReadCacheOn()) return took;
   const company = await companies().findOne({ id: org }, { projection: { _id: 0, features: 1 } });
   // The manager home's roster: every company (the app's manager home is not a lifecycle feature).
   const steps: [string, () => Promise<unknown>][] = [['mgr-roster', () => refreshWorkspaceRoster(org)]];
   if (company?.features?.lifecycle === true) {
-    steps.push(['lc-board', () => refreshBoardData(org)]);
+    // After a write the kept board data was patched, not dropped (readCache.ts): reading it all again
+    // now would only repeat the cost the patch saved. Only when it is gone (a write it could not place).
+    if (!opts.afterWrite || peekSwr(org, 'lc-board-data', null) === undefined) steps.push(['lc-board', () => refreshBoardData(org)]);
     steps.push(['off-board', () => refreshOffBoardData(org)]);
   }
   steps.push(['suwi-notices', async () => {
@@ -66,7 +70,7 @@ export async function warmLifecycle(org: string, isStopping: () => boolean = () 
 
 // A company's kept answers dropped by a change are rebuilt shortly after (readCache.scheduleRewarm).
 setLifecycleRewarm(async (org) => {
-  await warmLifecycle(org);
+  await warmLifecycle(org, () => false, { afterWrite: true });
   // The Time office lists the same change may have dropped (timeOfficeLists.ts).
   const who = await listReaderFor(org);
   if (who) await warmTimeOfficeLists(org, who);

@@ -29,7 +29,11 @@ const MAX_STALE_MS = 15 * 60_000;
 /** A ceiling, not a working size: an org has a handful of keys at a time. */
 const MAX_ENTRIES = 2_000;
 
-type Entry = { at: number; value?: unknown; pending?: Promise<unknown> };
+/**
+ * `pending`: a load or refresh under way. `patching`: a write's patch of the kept value under way
+ * (patchSwr): readers wait for it (a few small reads), so a change shows to whoever made it at once.
+ */
+type Entry = { at: number; value?: unknown; pending?: Promise<unknown>; patching?: Promise<unknown> };
 const kept = new Map<string, Entry>();
 /**
  * Bumped by a forget or drop, so a refresh that began before a change does not put the old answer back:
@@ -82,6 +86,8 @@ export function cachedSwr<T>(org: string, kind: SwrKind, params: unknown, load: 
   const key = keyOf(org, kind, params);
   const hit = kept.get(key);
   const now = Date.now();
+  // A write's patch is landing: its answer, as soon as it is there (a failed patch drops the entry: load).
+  if (hit?.patching) return (hit.patching as Promise<T>).catch(() => cachedSwr(org, kind, params, load));
   if (hit?.value !== undefined && now - hit.at < MAX_STALE_MS) {
     if (now - hit.at >= FRESH_MS && !hit.pending) {
       // Old but usable: answer now, refresh once in the background.
@@ -114,6 +120,52 @@ export function keptOfKind<T>(org: string, kind: SwrKind): { params: unknown; va
     out.push({ params: JSON.parse(key.slice(prefix.length)), value: entry.value as T });
   }
   return out;
+}
+
+/**
+ * A write changed part of what is kept: `patch` works the new value out from the kept one (reading
+ * only what the write touched) instead of the whole answer being dropped and read again. Readers
+ * wait for the patch; patches from writes in a row apply one after the other. A load or refresh that
+ * began before the write is not kept when it lands (it may have read the old data). The entry keeps
+ * its age, so it is still refreshed whole behind the reader after its minute, which mends anything a
+ * patch could not see. With nothing usable kept (or only a first load under way) there is nothing to
+ * patch: the entry is dropped as `dropSwr` would, and false is returned.
+ */
+export function patchSwr<T>(org: string, kind: SwrKind, params: unknown, patch: (value: T) => Promise<T>): boolean {
+  const key = keyOf(org, kind, params);
+  const hit = kept.get(key);
+  bump(`${org}\u0000${kind}`);
+  const usable = hit && (hit.patching || (hit.value !== undefined && Date.now() - hit.at < MAX_STALE_MS));
+  if (!hit || !usable) {
+    kept.delete(key);
+    return false;
+  }
+  const gen = genOf(org, kind);
+  const base = (hit.patching ?? Promise.resolve(hit.value)) as Promise<T>;
+  const patching: Promise<T> = base.then(patch).then(
+    (value) => {
+      // A later patch carries on from this one and keeps its own result; a drop since then wins.
+      if (kept.get(key)?.patching === patching && genOf(org, kind) === gen) kept.set(key, { at: hit.at, value });
+      return value;
+    },
+    (error: unknown) => {
+      if (kept.get(key)?.patching === patching) kept.delete(key);
+      throw error;
+    },
+  );
+  patching.catch(() => undefined);
+  kept.set(key, { at: hit.at, value: hit.value, patching });
+  return true;
+}
+
+/** The orgs keeping any answer of this kind (a write with no company patches each of them). */
+export function orgsKeeping(kind: SwrKind): string[] {
+  const orgs = new Set<string>();
+  for (const key of kept.keys()) {
+    const [o, k] = key.split('\u0000');
+    if (k === kind) orgs.add(o);
+  }
+  return [...orgs];
 }
 
 /** Work this one out again now and keep it (the warm-up's way in); readers keep the old answer meanwhile. */

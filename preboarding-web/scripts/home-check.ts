@@ -43,6 +43,10 @@ ok('pass unlocked, letters not ready, About you open: About you first, then Ask 
 const day1Signing = home('tasks_open', ['done', 'done', 'done', 'done', 'locked', 'locked']);
 day1Signing.path = day1Signing.path.filter((p) => p.key !== 'letter');
 ok('no letter step (letters signed on Day 1): no letter tile, the pass and Ask HR', JSON.stringify(titles(day1Signing).map((t) => t.split(' · ')[0])) === JSON.stringify(['Day-1 pass', 'Ask HR']), titles(day1Signing));
+// The template turns off "Meet us videos": the server leaves the Team step out of the path (portal.ts pathStepOn).
+const noMeet = home('tasks_open', ['done', 'current', 'todo', 'todo', 'locked', 'locked']);
+noMeet.path = noMeet.path.filter((p) => p.key !== 'meet');
+ok('no Team step (Meet us turned off in the template): no "Meet the team" tile, even with videos counted', !titles(noMeet, 4).some((t) => t.startsWith('Meet the team')), titles(noMeet, 4));
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
