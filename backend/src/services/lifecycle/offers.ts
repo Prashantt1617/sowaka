@@ -659,6 +659,15 @@ export async function markJoined(hr: HrActor, journeyId: string, input: { workEm
   await journeys().updateOne({ id: journeyId }, { $set: { 'candidate.workEmail': workEmail, updatedAt: now } });
   await completeTask(journeyId, 'mark_joined', { userId: hr.userId, name: hr.name });
   await onJoined(journeyId, userId);
+  // The joiner hears where to go next: the app, signed in with the new work email. To the personal
+  // address they have been reading all along, the work address copied (it may not be set up yet).
+  const personal = journey.candidate?.personalEmail;
+  if (personal) {
+    const company = await companyOf(journey.org);
+    await sendLifecycleEmail(journey.org, personal, `Welcome to ${companyDisplayName(company, journey.org)}: sign in to the Sowaka app`,
+      mails.joinedWelcome(companyDisplayName(company, journey.org), journey.candidate?.name ?? '', workEmail),
+      [], personal.toLowerCase() === workEmail ? {} : { cc: [workEmail] }).catch(() => { /* a mail that fails never undoes the joining */ });
+  }
   return { journey: (await journeys().findOne({ id: journeyId }, { projection: { _id: 0, templateSnapshot: 0 } }))!, userId };
 }
 

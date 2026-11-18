@@ -271,6 +271,15 @@ export const mails = {
       + p(`Keep this password to yourself. You can change it any time with <i>Forgot password</i> on the sign-in page.`),
       { label: 'Sign in to your portal', url: portalLink('/sign-in', org) });
   },
+  /** Mark joined: the app is theirs now, signed in with the new work email (a code by email, no password). */
+  joinedWelcome(company: string, name: string, workEmail: string) {
+    return layout(company,
+      p(`Hi ${escapeHtml(firstName(name))},`)
+      + p(`Welcome to ${escapeHtml(company)}! You're all set up. From today, your first week, your tasks and everything else are in the Sowaka app.`)
+      + p(`<b>Sign in with your work email:</b> ${escapeHtml(workEmail)}<br />We'll email a sign-in code to that address each time; there's no password to remember.`)
+      + p(`Don't have the app yet? The button below opens it, or takes you to the App Store or Google Play.`),
+      { label: 'Open the Sowaka app', url: 'https://go.getsowaka.com/open' });
+  },
   loginReminder(company: string, name: string, email: string, sentOn: string, org?: string) {
     return layout(company,
       p(`Hi ${escapeHtml(firstName(name))},`)

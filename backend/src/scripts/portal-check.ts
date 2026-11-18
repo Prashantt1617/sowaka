@@ -570,6 +570,10 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   const user = (await db.users().findOne({ userId: joined.userId }))!;
   ok('the employee is created from the accepted offer', user.email === 'kabir.mehta@sowaka.test' && user.org === ORG && user.designation === 'Product Designer' && user.managerUserId === 'mgr' && user.employeeId === 'SWT-101' && user.joiningDate?.toISOString().slice(0, 10) === newTj, user);
   ok('with the personal email kept for later', user.personalEmail === KABIR);
+  const welcome = lastMail(KABIR);
+  ok('Mark joined emails the joiner: sign in to the app with the work email, the work address copied',
+    Boolean(welcome?.subject.includes('sign in to the Sowaka app') && welcome.html.includes('kabir.mehta@sowaka.test') && welcome.html.includes('go.getsowaka.com/open')
+      && JSON.stringify(welcome).includes('kabir.mehta@sowaka.test')), welcome?.subject);
   journeyA = (await db.journeys().findOne({ id: A }))!;
   ok('journey joined, userId bound, work email shown', journeyA.status === 'joined' && journeyA.userId === user.userId && journeyA.candidate?.workEmail === 'kabir.mehta@sowaka.test');
   home = await portalSvc.portalHome(journeyA);
