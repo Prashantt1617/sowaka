@@ -56,6 +56,8 @@ export interface BoardCard {
   quietDays?: number; expiresInDays?: number;
   /** Optional documents the joiner sent that HR has not looked at yet: they never hold Documents open, so the card says so. */
   optionalWaiting?: number;
+  /** Pre-boarding cards: when the current offer went out, when it was accepted, and its reply-by day (the design's card rows). */
+  offerSentAt?: string; acceptedAt?: string; replyBy?: string; offerVersion?: number;
 }
 
 // ─── Who is asking ──────────────────────────────────────────────────────────
@@ -168,6 +170,25 @@ async function boardJourneys(org: string, now: Date, full = false, only?: string
     ...(only ? { id: { $in: only } } : {}),
   }, { projection: full ? { _id: 0 } : BOARD_JOURNEY_PROJECTION }).toArray();
   return rows as Journey[];
+}
+
+/** Each journey's offer dates, from its current offer (the last version that went out). */
+export async function offerDates(ids: string[]): Promise<Map<string, { offerSentAt?: string; acceptedAt?: string; replyBy?: string; offerVersion?: number }>> {
+  const out = new Map<string, { offerSentAt?: string; acceptedAt?: string; replyBy?: string; offerVersion?: number }>();
+  if (!ids.length) return out;
+  const rows = await offers().find({ journeyId: { $in: ids } }, { projection: { _id: 0, journeyId: 1, 'versions.version': 1, 'versions.sentAt': 1, 'versions.acceptedAt': 1, 'versions.fields.validTill': 1 } }).toArray();
+  for (const row of rows) {
+    const versions = row.versions ?? [];
+    const sent = [...versions].reverse().find((v) => v.sentAt);
+    const accepted = [...versions].reverse().find((v) => v.acceptedAt);
+    const till = versions.at(-1)?.fields?.validTill;
+    out.set(row.journeyId, {
+      ...(sent?.sentAt ? { offerSentAt: new Date(sent.sentAt).toISOString(), offerVersion: sent.version } : {}),
+      ...(accepted?.acceptedAt ? { acceptedAt: new Date(accepted.acceptedAt).toISOString() } : {}),
+      ...(till && isDateKey(till) ? { replyBy: till } : {}),
+    });
+  }
+  return out;
 }
 
 async function validTills(ids: string[]): Promise<Map<string, string>> {
@@ -385,6 +406,8 @@ export async function onboardingBoard(org: string, viewerUserId: string, query: 
     ]).toArray() : [];
     const by = new Map(waiting.map((w) => [w._id, w.n]));
     for (const card of cards) if (by.get(card.journeyId)) card.optionalWaiting = by.get(card.journeyId);
+    const dates = await offerDates(cards.map((c) => c.journeyId));
+    for (const card of cards) Object.assign(card, dates.get(card.journeyId) ?? {});
   }
   await markNudged(columns.flatMap((c) => c.cards.flatMap((card) => card.waitingOn)), now);
   return { tab, columns, counts };
@@ -638,7 +661,7 @@ export { isJoined };
 const CLOSED_LIST_STATUSES = ['declined', 'expired', 'not_joining'] as const;
 export interface ClosedJourneyRow {
   journeyId: string; name: string; designation?: string; department?: string;
-  status: (typeof CLOSED_LIST_STATUSES)[number]; closedAt?: string; closedReason?: string; tj?: string;
+  status: (typeof CLOSED_LIST_STATUSES)[number]; closedAt?: string; closedReason?: string; tj?: string; offerSentAt?: string;
 }
 
 /**
@@ -655,6 +678,7 @@ export async function closedJourneys(org: string, query: Record<string, unknown>
   const rows = await journeys().find(filter, {
     projection: { _id: 0, id: 1, 'candidate.name': 1, designation: 1, department: 1, status: 1, closedAt: 1, closedReason: 1, tj: 1, updatedAt: 1 },
   }).sort({ closedAt: -1, updatedAt: -1 }).limit(200).toArray();
+  const dates = await offerDates(rows.map((j) => String(j.id)));
   return {
     journeys: rows.map((j) => ({
       journeyId: String(j.id), name: String(j.candidate?.name ?? 'Joiner'),
@@ -662,6 +686,7 @@ export async function closedJourneys(org: string, query: Record<string, unknown>
       status: j.status as ClosedJourneyRow['status'],
       ...(j.closedAt ? { closedAt: new Date(j.closedAt as Date).toISOString() } : {}),
       ...(j.closedReason ? { closedReason: String(j.closedReason) } : {}), ...(j.tj ? { tj: String(j.tj) } : {}),
+      ...(dates.get(String(j.id))?.offerSentAt ? { offerSentAt: dates.get(String(j.id))!.offerSentAt } : {}),
     })),
   };
 }
