@@ -105,7 +105,7 @@ String taskMeta(TaskView task, DateTime now, {bool forManager = false}) {
 /// right — done tick, lock, MUST-DO, a count, Needs water, or an empty ring.
 /// The tile behind a task's icon (A2): one tint per kind, as the artboard colours them.
 Color taskTint(TaskView task) => switch (task.systemKey) {
-  'meet_team' || 'starter_task' || 'probation_goals' || 'monthly_goals' => const Color(0xFFF3EEFF),
+  'meet_team' || 'starter_task' || 'probation_goals' || 'monthly_goals' => const Color(0xFFEEF0FF),
   'register_face' || 'day7_survey' || 'pulse_survey' || 'intro_post' => OnbColors.mustTint,
   'people_to_meet' || 'week1_done' || 'monthly_checkin' => OnbColors.doneTint,
   'app_tour' || 'laptop_setup' || 'check_logins' => OnbColors.screen,

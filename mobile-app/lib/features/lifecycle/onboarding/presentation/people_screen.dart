@@ -145,13 +145,13 @@ class _PeopleToMeetScreenState extends State<PeopleToMeetScreen> {
                         : meetBy == null
                         ? 'Meet them this month'
                         : 'Meet them by ${onbDay(meetBy)}',
-                    style: const TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.text3),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.text3),
                   ),
                 ),
                 Text(
                   '$met of ${people.length} met',
                   key: const ValueKey('people-count'),
-                  style: const TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w700, color: OnbColors.primary),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: OnbColors.primary),
                 ),
               ],
             ),
@@ -191,20 +191,20 @@ class _PeopleToMeetScreenState extends State<PeopleToMeetScreen> {
                                       alignment: Alignment.center,
                                       child: Text(
                                         OnbAvatar.initials(person.name).substring(0, 1),
-                                        style: const TextStyle(fontFamily: 'Sora', fontSize: 40, fontWeight: FontWeight.w800, color: Colors.white),
+                                        style: const TextStyle(fontSize: 40, fontWeight: FontWeight.w800, color: Colors.white),
                                       ),
                                     ),
                               const SizedBox(height: 10),
                               Text(
                                 person.name,
                                 textAlign: TextAlign.center,
-                                style: const TextStyle(fontFamily: 'Sora', fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.52, color: OnbColors.text),
+                                style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.52, color: OnbColors.text),
                               ),
                               const SizedBox(height: 6),
                               Text(
                                 [person.designation, meetingRoleLabel(person.role)].nonNulls.join(' · '),
                                 textAlign: TextAlign.center,
-                                style: const TextStyle(fontFamily: 'Sora', fontSize: 13, color: OnbColors.text2),
+                                style: const TextStyle(fontSize: 13, color: OnbColors.text2),
                               ),
                               if (person.why != null) ...[
                                 const SizedBox(height: 16),
@@ -217,10 +217,10 @@ class _PeopleToMeetScreenState extends State<PeopleToMeetScreen> {
                                     children: [
                                       const Text(
                                         'WHY MEET',
-                                        style: TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.9, color: OnbColors.primary),
+                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.9, color: OnbColors.primary),
                                       ),
                                       const SizedBox(height: 4),
-                                      Text(person.why!, style: const TextStyle(fontFamily: 'Sora', fontSize: 14, height: 1.5, color: OnbColors.text)),
+                                      Text(person.why!, style: const TextStyle(fontSize: 14, height: 1.5, color: OnbColors.text)),
                                     ],
                                   ),
                                 ),
@@ -286,10 +286,10 @@ class _PeopleToMeetScreenState extends State<PeopleToMeetScreen> {
   static const _looks = [
     (avatar: OnbColors.primary, bg: OnbColors.tint),
     (avatar: OnbColors.green, bg: OnbColors.doneTint),
-    (avatar: Color(0xFFFF6B6B), bg: Color(0xFFFFF0F0)),
-    (avatar: Color(0xFF8A63D2), bg: Color(0xFFF3EEFF)),
-    (avatar: Color(0xFFE39B17), bg: OnbColors.mustTint),
-    (avatar: Color(0xFF0B8A8A), bg: Color(0xFFE6F6F6)),
+    (avatar: Color(0xFFFF5A5F), bg: Color(0xFFFCEDEE)),
+    (avatar: Color(0xFF8B5CF6), bg: Color(0xFFEEF0FF)),
+    (avatar: Color(0xFFE0A526), bg: OnbColors.mustTint),
+    (avatar: Color(0xFF147381), bg: Color(0xFFE8F2F8)),
   ];
 
   Widget _done(int count) => OnbScaffold(
@@ -350,7 +350,7 @@ class _PersonTile extends StatelessWidget {
                     ? const Icon(Icons.check_rounded, size: 18, color: Colors.white)
                     : Text(
                         OnbAvatar.initials(person.name).substring(0, 1),
-                        style: TextStyle(fontFamily: 'Sora', fontSize: 13, fontWeight: FontWeight.w700, color: fg),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: fg),
                       ),
               ),
             ),

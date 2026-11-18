@@ -1,6 +1,8 @@
-/// The pieces every offboarding screen is drawn from (canvas Y1R §7 and the
-/// Kit, 6Zs §8): Sora, the Connect app's brand blue, white cards on the grey
-/// page, amber for "With HR" and "Held", and nothing that celebrates.
+/// The pieces every offboarding screen is drawn from (canvas Y1R §7), on the
+/// app's design system: the theme's font (no family set here, so every style
+/// inherits Plus Jakarta Sans from [sowakaTheme]), the app's brand blue and
+/// palette, white cards on the grey page, amber for "With HR" and "Held", and
+/// nothing that celebrates.
 library;
 
 import 'package:flutter/material.dart';
@@ -8,23 +10,25 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'offboarding_dates.dart';
 
+/// Each value is one the app already uses (main.dart's theme, or two or more
+/// of the older feature screens).
 abstract final class OffColors {
   static const brand = Color(0xFF0571A6);
-  static const brandPressed = Color(0xFF045A85);
-  static const tint = Color(0xFFEAF3F8);
+  static const brandPressed = Color(0xFF075985);
+  static const tint = Color(0xFFE8F2F8);
   static const ink = Color(0xFF222222);
   static const secondary = Color(0xFF484848);
   static const tertiary = Color(0xFF717171);
   static const page = Color(0xFFF7F7F9);
-  static const inset = Color(0xFFEFEFF2);
+  static const inset = Color(0xFFF0F0F2);
   static const line = Color(0xFFEBEBEB);
-  static const ring = Color(0xFFC9CDD3);
-  static const track = Color(0xFFE3E5E9);
-  static const amber = Color(0xFF8A5300);
-  static const amberTint = Color(0xFFFFF4E0);
-  static const green = Color(0xFF1E8E3E);
+  static const ring = Color(0xFFC8C8CE);
+  static const track = Color(0xFFE4E4EA);
+  static const amber = Color(0xFF996300);
+  static const amberTint = Color(0xFFFFF5DC);
+  static const green = Color(0xFF15803D);
   static const greenTint = Color(0xFFEAFFE6);
-  static const red = Color(0xFFD93036);
+  static const red = Color(0xFFDF2C2C);
 }
 
 TextStyle offText(
@@ -34,7 +38,6 @@ TextStyle offText(
   double? height,
   double spacing = 0,
 }) => TextStyle(
-  fontFamily: 'Sora',
   fontSize: size,
   fontWeight: weight,
   color: color,
@@ -419,7 +422,7 @@ class OffAvatar extends StatelessWidget {
     height: size,
     alignment: Alignment.center,
     decoration: const BoxDecoration(
-      color: Color(0xFFDCE9F1),
+      color: Color(0xFFE3F0F7),
       shape: BoxShape.circle,
     ),
     child: Text(

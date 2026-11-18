@@ -545,7 +545,7 @@ class _RevealScreenState extends State<RevealScreen> {
                 key: const ValueKey('reveal-tap'),
                 onPressed: _tapReveal,
                 style: TextButton.styleFrom(foregroundColor: OnbColors.primary),
-                child: const Text('TAP TO REVEAL', style: TextStyle(fontFamily: 'Sora', fontWeight: FontWeight.w600, letterSpacing: 1.2)),
+                child: const Text('TAP TO REVEAL', style: TextStyle(fontWeight: FontWeight.w600, letterSpacing: 1.2)),
               ),
             )
           else ...[

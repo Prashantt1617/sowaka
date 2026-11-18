@@ -103,22 +103,24 @@ export function missingFields(body: string, values: Record<string, string>, serv
 
 export type Letterhead = { company: string; address?: string; refNo?: string; date?: string; title: string };
 
-/** The letter's own CSS: a white A4 page, letterhead with a 2px rule, the highlighted fields for the preview. */
+/** The letter's own CSS: a white A4 page, letterhead with a 2px rule, the highlighted fields for the preview.
+ *  Colours are the dashboard theme's light values (--ink, --ink-2, --ink-3, --line, --line-2, --surface-2,
+ *  --t-sky, --t-peach), written out because the PDF is drawn without the dashboard's stylesheet. */
 export const LETTER_CSS = `
-  .lf-page { font-family: "Sora", "Noto Sans", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #222; background: #fff; font-size: 13px; line-height: 1.65; }
+  .lf-page { font-family: "Sora", "Noto Sans", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #141416; background: #fff; font-size: 13px; line-height: 1.65; }
   .lf-head { display: flex; justify-content: space-between; gap: 16px; padding-bottom: 12px; border-bottom: 2px solid #141416; margin-bottom: 18px; }
-  .lf-co b { display: block; font-size: 17px; font-weight: 600; } .lf-co span { color: #555; font-size: 12px; }
-  .lf-ref { text-align: right; color: #555; font-size: 12px; white-space: nowrap; }
+  .lf-co b { display: block; font-size: 17px; font-weight: 600; } .lf-co span { color: #4E4E56; font-size: 12px; }
+  .lf-ref { text-align: right; color: #4E4E56; font-size: 12px; white-space: nowrap; }
   .lf-title { font-size: 15px; font-weight: 600; margin: 0 0 14px; }
-  .lf-body p { margin: 0 0 12px; } .lf-body table { border-collapse: collapse; width: 100%; margin: 10px 0 14px; } .lf-body td, .lf-body th { border: 1px solid #E3E3E3; padding: 7px 10px; text-align: left; }
+  .lf-body p { margin: 0 0 12px; } .lf-body table { border-collapse: collapse; width: 100%; margin: 10px 0 14px; } .lf-body td, .lf-body th { border: 1px solid #E9E9EC; padding: 7px 10px; text-align: left; }
   .lf-body img { max-width: 100%; }
   mark.lf-on { background: #E5F2FF; color: inherit; border-radius: 4px; padding: 0 2px; }
   mark.lf-miss { background: #FFEDE4; color: #C2562A; border-radius: 4px; padding: 0 2px; }
-  .lf-annex { margin-top: 28px; padding-top: 18px; border-top: 1px dashed #D5D5D5; page-break-before: always; break-before: page; }
-  .lf-annex table { border-collapse: collapse; width: 100%; margin: 10px 0 14px; } .lf-annex td, .lf-annex th { border: 1px solid #E3E3E3; padding: 7px 10px; text-align: left; }
+  .lf-annex { margin-top: 28px; padding-top: 18px; border-top: 1px dashed #DADADF; page-break-before: always; break-before: page; }
+  .lf-annex table { border-collapse: collapse; width: 100%; margin: 10px 0 14px; } .lf-annex td, .lf-annex th { border: 1px solid #E9E9EC; padding: 7px 10px; text-align: left; }
   .lf-annex td.n, .lf-annex th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .lf-annex tr.t td { font-weight: 600; background: #F7F7F9; }
-  .lf-annex p.s { color: #555; font-size: 11.5px; }
+  .lf-annex tr.t td { font-weight: 600; background: #F5F5F6; }
+  .lf-annex p.s { color: #4E4E56; font-size: 11.5px; }
 `;
 
 /** The page inside (letterhead, title, filled body, then any annexure) as HTML, for the preview and the PDF. */
@@ -180,7 +182,7 @@ export function checklistHtml(name: string, docs: Array<{ label: string; require
   return `<div class="lf-annex">
   <h2 class="lf-title">Joining checklist</h2>
   <p>${name ? `Hi ${esc(firstName(name))}, ` : ''}here is what to keep ready${joining ? ` before you join on ${esc(joining)}` : ''}. You upload the documents on your joining portal.</p>
-  ${docs.length ? `<p><b>Documents</b></p><ul style="list-style:none;padding:0;margin:0 0 14px">${docs.map((d) => li(`${esc(d.label)}${d.required ? '' : ' <span style="color:#777">(optional)</span>'}`)).join('')}</ul>` : ''}
+  ${docs.length ? `<p><b>Documents</b></p><ul style="list-style:none;padding:0;margin:0 0 14px">${docs.map((d) => li(`${esc(d.label)}${d.required ? '' : ' <span style="color:#8A8A93">(optional)</span>'}`)).join('')}</ul>` : ''}
   ${bring.length ? `<p><b>On your first day, bring</b></p><ul style="list-style:none;padding:0;margin:0 0 14px">${bring.map((b) => li(esc(b))).join('')}</ul>` : ''}
   <p class="s">Questions? Reply to the email this came with.</p>
 </div>`;

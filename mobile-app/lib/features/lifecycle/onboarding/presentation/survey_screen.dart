@@ -127,7 +127,7 @@ class _SurveyScreenState extends State<SurveyScreen> {
               children: [
                 Text(
                   'Question ${_question + 1} of 4',
-                  style: const TextStyle(fontFamily: 'Sora', fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.text3),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.text3),
                 ),
                 const SizedBox(height: 4),
                 OnbRise(child: _questionBody(survey)),
@@ -264,5 +264,5 @@ class _SurveyScreenState extends State<SurveyScreen> {
 }
 
 abstract final class _SurveyText {
-  static const title = TextStyle(fontFamily: 'Sora', fontSize: 28, height: 1.1, fontWeight: FontWeight.w800, letterSpacing: -0.56, color: OnbColors.text);
+  static const title = TextStyle(fontSize: 28, height: 1.1, fontWeight: FontWeight.w800, letterSpacing: -0.56, color: OnbColors.text);
 }

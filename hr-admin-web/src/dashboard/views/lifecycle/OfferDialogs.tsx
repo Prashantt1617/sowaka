@@ -340,7 +340,7 @@ export function OfferWizard({ mode, journey, offer, start, onClose, onDone }: {
                   </div>
                   {missing.map((k) => (
                     <Field key={k} label={fieldLabel(k)} hint="Needed for this letter">
-                      <input value={values[k] ?? ''} onChange={(e) => { setValues((v) => ({ ...v, [k]: e.target.value })); setUploaded(false); }} style={{ ...inputStyle, borderColor: '#E7B9A6', background: 'color-mix(in srgb, #FFF8F5 70%, var(--surface))' }} />
+                      <input value={values[k] ?? ''} onChange={(e) => { setValues((v) => ({ ...v, [k]: e.target.value })); setUploaded(false); }} style={{ ...inputStyle, borderColor: 'var(--t-peach-i)', background: 'var(--t-peach)' }} />
                     </Field>
                   ))}
                   {uploaded && pdf && <button type="button" className="pd-btn" onClick={() => setPreviewing(true)}>Preview the PDF</button>}
@@ -398,7 +398,7 @@ export function LetterPreview({ html, caption = true }: { html: string; caption?
   return (
     <div style={{ minWidth: 0 }}>
       <style>{LETTER_CSS}</style>
-      <div style={{ background: '#fff', color: '#222', borderRadius: 6, border: '1px solid var(--line)', boxShadow: 'var(--shadow)', padding: '28px 30px', maxHeight: '62vh', overflowY: 'auto', colorScheme: 'light', overflowWrap: 'anywhere' }}
+      <div style={{ background: '#fff', color: '#141416', borderRadius: 6, border: '1px solid var(--line)', boxShadow: 'var(--shadow)', padding: '28px 30px', maxHeight: '62vh', overflowY: 'auto', colorScheme: 'light', overflowWrap: 'anywhere' }}
         dangerouslySetInnerHTML={{ __html: html }} />
       {caption && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 8 }}>Highlighted text comes from the details on the left. Orange means it is still missing.</div>}
     </div>

@@ -168,12 +168,12 @@ class _MeetingScreenState extends State<MeetingScreen> {
             children: [
               Text(
                 _eyebrow(meeting),
-                style: const TextStyle(fontFamily: 'Sora', fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.brandBorder),
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.brandBorder),
               ),
               const SizedBox(height: 8),
               Text(
                 meeting.title,
-                style: const TextStyle(fontFamily: 'Sora', fontSize: 26, height: 1.15, fontWeight: FontWeight.w800, letterSpacing: -0.52, color: Colors.white),
+                style: const TextStyle(fontSize: 26, height: 1.15, fontWeight: FontWeight.w800, letterSpacing: -0.52, color: Colors.white),
               ),
               const SizedBox(height: 16),
               Row(
@@ -232,7 +232,7 @@ class _MeetingScreenState extends State<MeetingScreen> {
         ],
         if (expect.isNotEmpty) ...[
           const SizedBox(height: 18),
-          const Text('What to expect', style: TextStyle(fontFamily: 'Sora', fontSize: 16, fontWeight: FontWeight.w700, color: OnbColors.text)),
+          const Text('What to expect', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: OnbColors.text)),
           const SizedBox(height: 8),
           for (final line in expect)
             Padding(
@@ -353,7 +353,7 @@ class _Avatar extends StatelessWidget {
           alignment: Alignment.center,
           child: Text(
             OnbAvatar.initials(name).substring(0, 1),
-            style: const TextStyle(fontFamily: 'Sora', fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
           ),
         );
 }
@@ -372,9 +372,9 @@ class _HeroFact extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontFamily: 'Sora', fontSize: 11, color: OnbColors.brandBorder)),
+        Text(label, style: const TextStyle(fontSize: 11, color: OnbColors.brandBorder)),
         const SizedBox(height: 2),
-        Text(value, style: const TextStyle(fontFamily: 'Sora', fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+        Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
       ],
     ),
   );

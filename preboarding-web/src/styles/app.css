@@ -238,7 +238,7 @@ a {
   border: 1px solid var(--border);
   border-radius: var(--r-card);
   box-shadow: var(--shadow-card);
-  padding: 18px;
+  padding: var(--gutter);
 }
 .stack {
   display: flex;
@@ -340,7 +340,7 @@ a {
   align-items: center;
   min-height: 44px;
   padding: 0 4px;
-  border-radius: 10px;
+  border-radius: var(--r-input);
 }
 .client-logo {
   display: inline-flex;
@@ -453,7 +453,7 @@ a {
   background: none;
   font: inherit;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--r-input);
   cursor: pointer;
 }
 .joiner-menu__item:hover,
@@ -505,7 +505,7 @@ a {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #ff3b30;
+  background: var(--red-text);
   border: 2px solid var(--card);
 }
 .bell__panel {
@@ -525,7 +525,7 @@ a {
   display: flex;
   flex-direction: column;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--r-input);
   text-decoration: none;
   min-height: 44px;
 }
@@ -712,7 +712,7 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 10px;
+  padding: 4px 10px;
   border-radius: var(--r-pill);
   font-size: 12px;
   font-weight: 600;
@@ -884,7 +884,7 @@ a {
   color: var(--brand);
   font-weight: 600;
   cursor: pointer;
-  border-radius: 10px;
+  border-radius: var(--r-input);
 }
 .chips legend {
   padding: 0;
@@ -998,7 +998,7 @@ a {
   place-items: center;
   color: transparent;
   flex: none;
-  margin-top: 1px;
+  margin-top: 2px;
   background: var(--card);
 }
 .agree input:checked + .agree__box {
@@ -1022,7 +1022,7 @@ a {
 .story-seg {
   flex: 1;
   height: 4px;
-  border-radius: 2px;
+  border-radius: var(--r-pill);
   background: var(--border);
   overflow: hidden;
   position: relative;
@@ -1381,7 +1381,7 @@ a {
 }
 .letter-art__line {
   height: 10px;
-  border-radius: 5px;
+  border-radius: var(--r-pill);
   background: #fff;
 }
 .letter-art__line.short {
@@ -1494,8 +1494,8 @@ a {
   font-weight: 700;
   letter-spacing: 0.06em;
   color: #fff;
-  background: #e5484d;
-  border-radius: 6px;
+  background: var(--red-text);
+  border-radius: var(--r-pill);
   padding: 4px 6px;
   flex: none;
 }
@@ -1578,7 +1578,7 @@ a {
 .sheet__grabber {
   width: 40px;
   height: 4px;
-  border-radius: 2px;
+  border-radius: var(--r-pill);
   background: var(--border-dark);
   align-self: center;
 }
@@ -1614,7 +1614,7 @@ a {
 }
 .accepted-hero.is-confirmed {
   background: var(--done-tint);
-  border-color: #d3f2dc;
+  border-color: var(--done-tint);
 }
 .accepted-hero .steps {
   margin-top: 12px;
@@ -1802,7 +1802,7 @@ a {
   color: var(--text);
   min-height: 44px;
   padding: 2px 0;
-  border-radius: 12px;
+  border-radius: var(--r-input);
 }
 .path__link .node {
   width: 44px;
@@ -1830,7 +1830,7 @@ a {
   background: var(--brand);
   color: #fff;
   border-radius: var(--r-card);
-  padding: 18px 18px 18px 20px;
+  padding: 16px 16px 16px 20px;
   text-decoration: none;
   box-shadow: 0 8px 20px rgba(5, 113, 166, 0.22);
 }
@@ -1880,7 +1880,7 @@ a {
 .tile__icon {
   width: 36px;
   height: 36px;
-  border-radius: 12px;
+  border-radius: var(--r-input);
   background: var(--brand-tint);
   color: var(--brand);
   display: grid;
@@ -1946,7 +1946,7 @@ a {
 .task-row__icon {
   width: 36px;
   height: 36px;
-  border-radius: 12px;
+  border-radius: var(--r-input);
   background: var(--surface);
   color: var(--text-2);
   display: grid;
@@ -2193,7 +2193,7 @@ input.sr-only:focus-visible + .dropzone {
   aspect-ratio: 9 / 12;
   max-height: 52vh;
   object-fit: cover;
-  background: #111;
+  background: var(--text);
 }
 .quote,
 .meet-card {
@@ -2241,7 +2241,7 @@ input.sr-only:focus-visible + .dropzone {
   position: relative;
 }
 .side-action.is-on {
-  color: #e5484d;
+  color: var(--red-text);
 }
 .side-action.is-on svg path {
   fill: currentColor;
@@ -2377,7 +2377,7 @@ input.sr-only:focus-visible + .dropzone {
   background: var(--brand);
   color: #fff;
   border-radius: var(--r-hero);
-  padding: 22px 20px 20px;
+  padding: 24px 20px 20px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -2459,7 +2459,7 @@ input.sr-only:focus-visible + .dropzone {
   flex: none;
   font-weight: 600;
   color: var(--brand);
-  padding-top: 1px;
+  padding-top: 2px;
 }
 
 /* ── Mock bar (dev only) ───────────────────────────────────────────────── */
@@ -2502,7 +2502,7 @@ input.sr-only:focus-visible + .dropzone {
 }
 .mockbar__panel a {
   padding: 4px 6px;
-  border-radius: 6px;
+  border-radius: var(--r-input);
   text-decoration: none;
 }
 .mockbar__panel a:hover {

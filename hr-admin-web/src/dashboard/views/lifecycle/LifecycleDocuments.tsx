@@ -314,7 +314,7 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
               <Field key={k} label={fieldLabel(k)} hint={miss ? 'Needed for this letter' : undefined}>
                 <input value={values[k] ?? ''} onChange={(e) => setEdits((x) => ({ ...x, [k]: e.target.value }))}
                   placeholder={k.toLowerCase().includes('valid') ? 'e.g. Fri 5 Dec 2026' : k.toLowerCase().includes('last') ? 'e.g. Fri 30 Jan 2027' : undefined}
-                  style={{ ...inputStyle, ...(miss ? { borderColor: '#E7B9A6', background: 'color-mix(in srgb, #FFF8F5 70%, var(--surface))' } : null) }} />
+                  style={{ ...inputStyle, ...(miss ? { borderColor: 'var(--t-peach-i)', background: 'var(--t-peach)' } : null) }} />
               </Field>
             );
           })}
