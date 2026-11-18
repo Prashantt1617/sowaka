@@ -259,6 +259,9 @@ export const portalLink = (pathAndQuery: string, org?: string) => {
   return `${base}${pathAndQuery}${pathAndQuery.includes('?') ? '&' : '?'}c=${clientToken(org)}`;
 };
 
+/** The portal's sign-in, with their email already in the box (the link goes only to that address). */
+export const signInLink = (email: string, org?: string) => portalLink(`/sign-in?email=${encodeURIComponent(email.trim())}`, org);
+
 export const mails = {
   offer(company: string, body: string, link: string | null) {
     return layout(company, textToHtml(body), link ? { label: 'View and accept your offer', url: link } : undefined);
@@ -269,7 +272,7 @@ export const mails = {
       p(`Hi ${escapeHtml(firstName(name))},`)
       + p(`HR has confirmed your offer. Your joining portal is ready: upload your documents, meet the team and get your Day-1 pass, all before you join.`)
       + p(`Sign in with this email address, <b>${escapeHtml(email)}</b>. We'll email you a one-time code each time; there's no password to remember.`),
-      { label: 'Open your joining portal', url: portalLink('/sign-in', org) });
+      { label: 'Open your joining portal', url: signInLink(email, org) });
   },
   /** The sign-in code itself. */
   portalCode(company: string, code: string, minutes: number) {
@@ -282,7 +285,7 @@ export const mails = {
     return layout(company,
       p(`Hi ${escapeHtml(firstName(name))},`)
       + p(`Your joining portal is waiting for you. Sign in with <b>${escapeHtml(email)}</b>; we'll email you a one-time code.`),
-      { label: 'Open your joining portal', url: portalLink('/sign-in', org) });
+      { label: 'Open your joining portal', url: signInLink(email, org) });
   },
   quietNudge(company: string, name: string, upNext: string | undefined, org?: string) {
     return layout(company,

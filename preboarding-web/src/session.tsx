@@ -82,7 +82,9 @@ export function SignedIn() {
     };
   }, [me, reload, navigate]);
 
-  if (!hasSession) return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />;
+  // A mail's link that lands signed out keeps its ?email= for the sign-in box.
+  const linkEmail = new URLSearchParams(location.search).get('email');
+  if (!hasSession) return <Navigate to={linkEmail ? `/sign-in?email=${encodeURIComponent(linkEmail)}` : '/sign-in'} replace state={{ from: location.pathname }} />;
   if (error && !me)
     return (
       <div className="page page--narrow page--bg-surface">

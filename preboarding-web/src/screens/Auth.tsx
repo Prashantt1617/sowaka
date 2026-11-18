@@ -29,13 +29,22 @@ function PasswordInput({ id, value, onChange, autoComplete }: { id: string; valu
   );
 }
 
+const EMAIL_KEY = 'sowaka.portal.email';
+function lastEmail(): string {
+  try { return localStorage.getItem(EMAIL_KEY) ?? ''; } catch { return ''; }
+}
+function rememberEmail(email: string) {
+  try { localStorage.setItem(EMAIL_KEY, email.trim()); } catch { /* not kept: they type it next time */ }
+}
+
 /** P6 / W6 · Sign in — the email the portal was sent to, then a one-time code emailed to it (no password). */
 export function SignIn() {
   const wide = useWide();
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
-  const [email, setEmail] = useState('');
+  // The portal mail's link carries the address it went to (?email=); else the one last used on this device.
+  const [email, setEmail] = useState(() => params.get('email')?.trim() || lastEmail());
   const [code, setCode] = useState('');
   // Once the code is on its way, the form asks for it.
   const [sent, setSent] = useState(false);
@@ -60,6 +69,7 @@ export function SignIn() {
       }
       const out = await portal.verifyCode(email.trim(), code.trim());
       if ('closed' in out) { setClosed(out.closed); return; }
+      rememberEmail(email);
       navigate(from && from !== '/sign-in' ? from : '/', { replace: true });
     } catch (err) {
       // A server from before the closed answer was 200 says it with a 403: the same closed screen.

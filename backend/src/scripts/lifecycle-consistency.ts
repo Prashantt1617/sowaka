@@ -582,6 +582,7 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
   heading('1 · Finalised');
   await send('hr', 'POST', `/admin/lifecycle/offers/${A}/finalise`);
   ok('the portal email carries the link and no password (sign-in is a code to this email)', /joining portal is ready/.test(lastMailTo(KABIR)!.subject) && !/Password:/i.test(lastMailTo(KABIR)!.html));
+  ok('…and its link fills in their email on the sign-in page', lastMailTo(KABIR)!.html.includes(`/sign-in?email=${encodeURIComponent(KABIR)}`), lastMailTo(KABIR)!.html.match(/href="[^"]*sign-in[^"]*"/)?.[0]);
   v = await onboardingViews(A, { link: linkA });
   compareOnboarding('finalised', v);
   ok('the manager sees Kabir in pre-boarding now', v.mgr?.list.preboarding === true, v.mgr?.list);
