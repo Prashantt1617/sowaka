@@ -39,6 +39,7 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" />
     </svg>
   ),
+  // Suwi › Response times (main's build lacked this entry).
   support: (
     <svg {...base(18, 'currentColor')}>
       <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
