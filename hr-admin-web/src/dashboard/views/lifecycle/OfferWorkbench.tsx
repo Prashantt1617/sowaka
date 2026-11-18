@@ -17,14 +17,14 @@ import {
 import type { JourneyDetail, LetterTemplateDTO, LetterView, OfferFields, SalaryBreakup, TemplateListItem } from '../../../services/lifecycle';
 import { htmlToPdfBlob } from '../../pdf';
 import { BlobPreview, FilePreview, Field, Pick } from './shared';
-import { OFFER_FIELD_LABEL, areaStyle, errText, firstName, inputStyle, longDay, shortDay, todayKey } from './format';
+import { OFFER_FIELD_LABEL, areaStyle, errText, firstName, inputStyle, longDay, todayKey } from './format';
 import {
-  LETTER_TITLE, annexureHtml, checklistHtml, fieldLabel, filled, letterFileName, letterInner, letterPdf, missingFields, placeholders, simpleDocument, takesAnnexure,
+  LETTER_TITLE, annexureHtml, checklistHtml, fieldLabel, fillBody, filled, sanitizeHtml, letterFileName, letterInner, letterPdf, missingFields, placeholders, simpleDocument,
 } from './letterDoc';
-import { useOfferChoices } from './hooks';
+import { useFormStash, useMailStep, useOfferChoices } from './hooks';
 import { OFFER_VALUE_FIELD, blankOfferFields, cleanOfferFields, formatDay, offerFormValues, validateOffer } from './offerValues';
 import type { OfferFormKey } from './offerValues';
-import { AUTO_KEYS, DetailsHead, DocActions, EarlierLetters, EmailCard, FieldGrid, MailPanel, NEEDED, PreviewCard, SourceNote, logoSrc, missingInput } from './DocumentParts';
+import { AUTO_KEYS, DetailsHead, DocActions, downloadFile, showFirstMissing, EarlierLetters, EmailCard, FieldGrid, MailPanel, NEEDED, PreviewCard, logoSrc, missingInput } from './DocumentParts';
 import type { MailOut, Person } from './DocumentParts';
 
 /** The Joiner picker's "New joiner": a new offer, saved as a draft on the board. */
@@ -36,7 +36,7 @@ const OPEN = new Set(['draft', 'offer_sent', 'accepted', 'finalised', 'active', 
 type Errors = Partial<Record<OfferFormKey | 'email', string>>;
 type Retry = (tj: string) => void;
 
-export function OfferWorkbench({ person, people, onPerson, pay, company, logo, hrName, managerEmail, canEditTemplates, onEditTemplate, flash, openMail, onCreated }: {
+export function OfferWorkbench({ person, people, onPerson, pay, company, logo, hrName, managerEmail, flash, openMail, onCreated }: {
   person: Person | null; people: Person[]; onPerson: (key: string) => void;
   pay: boolean; company: string; logo?: string; hrName: string;
   managerEmail: (id?: string) => { name: string; email: string } | undefined;
@@ -74,13 +74,15 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
   const [base, setBase] = useState<Record<string, string> | null>(null);
   const [serverMissing, setServerMissing] = useState<string[]>([]);
   const [edits, setEdits] = useState<Record<string, string>>({});
+  // This document's own words (Edit document): never written back to the template.
+  const [bodyEdit, setBodyEdit] = useState<string | null>(null);
   const [breakup, setBreakup] = useState<SalaryBreakup | null>(null);
   const [breakupTemplate, setBreakupTemplate] = useState('');
   const [earlier, setEarlier] = useState<LetterView[]>([]);
 
   const [pdf, setPdf] = useState<{ blob: Blob; key: string } | null>(null);
   const [busy, setBusy] = useState('');
-  const [mailOpen, setMailOpen] = useState(false);
+  const [mailOpen, showMail, closeMail] = useMailStep();
   const [mailOpened, setMailOpened] = useState(false);
   const [preview, setPreview] = useState<{ blob?: Blob; fileId?: string; name: string } | null>(null);
   // The server refused the joining date (a week-off or holiday): what it said, and what to send again.
@@ -88,6 +90,9 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
   const [allowedTj, setAllowedTj] = useState('');
 
   const isNew = !journeyId;
+  // What HR typed stays until it is saved, generated or sent, also across leaving the page.
+  const dropStash = useFormStash(`lf-docs:offer:${journeyId || 'new'}`, Boolean(isNew || detail), { name, email, phone, fields, edits, bodyEdit },
+    (k) => { setName(k.name ?? ''); setEmail(k.email ?? ''); setPhone(k.phone ?? ''); setFields((f) => ({ ...f, ...k.fields })); setEdits(k.edits ?? {}); setBodyEdit(k.bodyEdit ?? null); });
 
   // The joiner, their offer and their documents (for the joining checklist).
   useEffect(() => {
@@ -157,7 +162,8 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
   }, [journeyId, pay, rev, attempt]);
 
   const template = letterTemplates?.find((t) => t.id === letterId);
-  const withAnnex = Boolean(template && takesAnnexure('offer', template.body));
+  // The salary breakup is part of the offer letter itself (its Annexure A page), whatever the template says.
+  const withAnnex = Boolean(template);
   // Annexure A: the saved CTC split by the company's salary template.
   useEffect(() => {
     if (!journeyId || !pay || !withAnnex) { setBreakup(null); return; }
@@ -180,13 +186,22 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
   const localBase = { companyName: company, companyAddress: address, letterDate: today, offerDate: today, hrName, refNo: '' };
   const baseValues = isNew ? localBase : base;
   const values: Record<string, string> = { ...(baseValues ?? {}), ...formValues, ...edits };
-  const missing = template ? missingFields(template.body, values, serverMissing) : [];
+  const docBody = bodyEdit ?? template?.body ?? '';
+  const missing = template ? missingFields(docBody, values, serverMissing) : [];
   const formMissing = new Set(missing.map((k) => OFFER_VALUE_FIELD[k]).filter(Boolean));
+  // Missing details show only once HR presses Generate PDF or Send, never on first look.
+  const [tried, setTried] = useState(false);
+  const needsFilling = () => {
+    if (!missing.length) return false;
+    setTried(true); showFirstMissing();
+    flash(`Fill ${missing.length === 1 ? 'the missing detail' : `the ${missing.length} missing details`} first`, 'error');
+    return true;
+  };
   // Fields the template needs that the offer does not carry (and the system did not fill): typed here, for the letter only.
   const extraKeys = [...new Set([...(template ? placeholders(template.body) : []), ...serverMissing])]
     .filter((k) => !OFFER_VALUE_FIELD[k] && (!AUTO_KEYS.has(k) || !filled(baseValues ?? {}, k)));
   const annex = withAnnex && breakup?.breakup ? annexureHtml(breakup.breakup, name) : '';
-  const valuesKey = JSON.stringify([letterId, values, annex]);
+  const valuesKey = JSON.stringify([letterId, values, annex, bodyEdit]);
   const first = firstName(name) || person?.name.split(' ')[0] || '';
   const head = { company: values.companyName || company, address: values.companyAddress, refNo: offer?.refNo || values.refNo, title: LETTER_TITLE.offer, date: values.letterDate || undefined, logo: logoSrc(logo) };
   const fileName = letterFileName('offer', name);
@@ -199,8 +214,8 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
 
   // Send offer from the joiner panel opens the email once the letter is there.
   useEffect(() => {
-    if (openMail && !mailOpened && ready) { setMailOpen(true); setMailOpened(true); }
-  }, [openMail, mailOpened, ready]);
+    if (openMail && !mailOpened && ready) { showMail(); setMailOpened(true); }
+  }, [openMail, mailOpened, ready, showMail]);
 
   const set = <K extends keyof OfferFields>(k: K, v: OfferFields[K]) => {
     setFields((f) => ({ ...f, [k]: v }));
@@ -251,6 +266,7 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
     try {
       const wasNew = !idRef.current;
       const id = await persist({ allowTj, retry: (tj) => void saveDraft(tj) });
+      if (id) dropStash();
       if (id) flash(wasNew ? `Draft saved. ${first || 'They'} ${first ? 'is' : 'are'} on the board` : sentVersion ? 'Saved as a new version. Send it when you are ready' : 'Draft saved');
     } catch (e) { flash(errText(e, 'Could not save the offer'), 'error'); } finally { setBusy(''); }
   };
@@ -265,18 +281,20 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
       if (!id) return false;
       const m = await getMergeValues({ kind: 'offer', journeyId: id });
       const v = { ...m.values, ...formValues, ...edits };
-      const still = missingFields(template.body, v, m.missing);
+      const still = missingFields(bodyEdit ?? template.body, v, m.missing);
       if (still.length) { flash(`Fill ${still.map(fieldLabel).join(', ')} first`, 'error'); return false; }
       let ann = annex;
       if (withAnnex && pay) {
         const b = await getSalaryBreakup(id, breakupTemplate || undefined).catch(() => null);
         ann = b?.breakup ? annexureHtml(b.breakup, name) : '';
       }
-      const blob = await letterPdf(template.body, v, { ...head, company: v.companyName || company, address: v.companyAddress, refNo: v.refNo || head.refNo }, fileName, ann);
+      const blob = await letterPdf(bodyEdit ?? template.body, v, { ...head, company: v.companyName || company, address: v.companyAddress, refNo: v.refNo || head.refNo }, fileName, ann);
       await uploadOfferPdf(id, blob, fileName);
-      setPdf({ blob, key: JSON.stringify([letterId, v, ann]) });
+      setPdf({ blob, key: JSON.stringify([letterId, v, ann, bodyEdit]) });
+      downloadFile(blob, fileName);
       setRev((n) => n + 1);
       flash('Offer letter generated');
+      dropStash();
       return true;
     } catch (e) { flash(errText(e, 'Could not make the PDF'), 'error'); return false; } finally { setBusy(''); }
   };
@@ -288,6 +306,7 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
     try {
       await sendOffer(idRef.current, { subject: mail.subject, body: mail.body, cc: mail.cc, withPortalLink: mail.withPortalLink, attachments: mail.attachments });
       flash(`Offer sent to ${first || mail.to}`);
+      dropStash();
       setRev((n) => n + 1);
       return true;
     } catch (e) { flash(errText(e, 'Could not send the offer'), 'error'); return false; } finally { setBusy(''); }
@@ -337,32 +356,25 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
   }
 
   const lock = closed || Boolean(busy);
-  const err = (k: OfferFormKey) => errors[k] ?? (formMissing.has(k) ? NEEDED : undefined);
+  const err = (k: OfferFormKey) => errors[k] ?? (tried && formMissing.has(k) ? NEEDED : undefined);
   const style = (k: OfferFormKey) => ({ ...inputStyle, ...(err(k) ? missingInput : null) });
   const managers = emps.filter((e) => !e.exit?.left).sort((a, b) => a.name.localeCompare(b.name));
   const probationChoices = [...new Set([6, 3, fields.probationMonths].filter((n) => n > 0))].sort((a, b) => b - a);
-  const source = isNew
-    ? `A new offer. The offer, the portal link and their login go to their personal email; Save draft adds ${first || 'them'} to the board as a draft.`
-    : closed ? `${first || 'Their'}’s offer is closed, so it can no longer change.`
-      : sentVersion && offer
-        ? `Version ${offer.version} went to ${first || 'them'}${offer.sentAt ? ` on ${shortDay(offer.sentAt)}` : ''}${offer.acceptedAt ? ' and was accepted' : ''}. Saving a change makes version ${offer.version + 1}: they see what changed and accept again${offer.finalisedAt ? ', and you finalise again' : ''}.`
-        : `Filled from the offer HR created for ${first || 'them'}${offer && offer.version > 1 ? ` (version ${offer.version}, not sent yet)` : ''}. Edit here; Save draft keeps it.`;
 
   return (
     <>
       <DocActions onSave={() => void saveDraft()} saving={busy === 'draft'} canSave={dirty && !closed}
-        onMail={() => setMailOpen(true)} canMail={Boolean(template) && !closed}
-        onGenerate={() => void generate()} generating={busy === 'pdf'} generated={pdfReady} missing={missing.length} disabled={lock || !ready} />
+        onMail={() => showMail()} canMail={Boolean(template) && !closed}
+        onGenerate={() => { if (needsFilling()) return; void generate(); }} generating={busy === 'pdf'} generated={pdfReady} missing={missing.length} disabled={lock || !ready} />
 
       <div className="lf-doc-grid">
         <section className="pd-card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <DetailsHead missing={missing.length} ready={ready} />
+          <DetailsHead missing={missing.length} ready={ready && tried} />
           <Field label="Joiner">
             <Pick value={person.key} onChange={onPerson} ariaLabel="Joiner">
               {people.map((p) => <option key={p.key} value={p.key}>{p.key === NEW_JOINER ? '+ New joiner' : `${p.name}${p.sub ? ` · ${p.sub}` : ''}`}</option>)}
             </Pick>
           </Field>
-          <SourceNote>{source}</SourceNote>
           {loadError && <LoadError compact text={loadError} onRetry={() => setAttempt((n) => n + 1)} />}
           {!isNew && !detail ? <SkeletonLines lines={8} /> : (
             <FieldGrid>
@@ -450,7 +462,7 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
                 <textarea value={fields.responsibilities ?? ''} onChange={(e) => set('responsibilities', e.target.value)} disabled={closed} style={{ ...areaStyle, minHeight: 64 }} />
               </Field>
               {extraKeys.map((k) => {
-                const miss = !filled(values, k);
+                const miss = tried && !filled(values, k);
                 return (
                   <Field key={k} label={fieldLabel(k)} error={miss ? NEEDED : undefined} hint="For this letter only">
                     <input value={values[k] ?? ''} onChange={(e) => { setEdits((x) => ({ ...x, [k]: e.target.value })); }} style={{ ...inputStyle, ...(miss ? missingInput : null) }} />
@@ -475,14 +487,14 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
           )}
           {template && !closed && (isNew || detail) && (
             <EmailCard kind="offer" first={first} to={to} toFixed values={values} company={company} hrName={hrName} manager={manager}
-              draft={savedDraft?.email} missing={missing.length} busy={busy} onSend={(mail) => sendMail(mail)} onOpen={() => setMailOpen(true)} />
+              draft={savedDraft?.email} missing={missing.length} busy={busy} onSend={(mail) => sendMail(mail)} onOpen={() => showMail()} />
           )}
           <EarlierLetters earlier={earlier} first={first} name={name} onView={(fileId, n) => setPreview({ fileId, name: n })} />
         </section>
 
         <PreviewCard templateName={template?.name} loading={!ready}
-          onEdit={template && canEditTemplates ? () => onEditTemplate(template.id) : undefined}
-          html={template ? letterInner(template.body, values, head, 'preview', annex) : ''} />
+          html={template ? letterInner(docBody, values, head, 'preview', annex) : ''}
+          edit={template && !closed ? { html: fillBody(docBody, values, 'pdf'), edited: bodyEdit !== null, onSave: (h) => setBodyEdit(sanitizeHtml(h)), onReset: () => setBodyEdit(null) } : undefined} />
       </div>
 
       {mailOpen && template && (
@@ -496,8 +508,8 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
             else if (offer?.pdfFileId) setPreview({ fileId: offer.pdfFileId, name: fileName });
           }}
           onSaveDraft={(mail) => void saveEmailDraft(mail)}
-          onClose={() => setMailOpen(false)}
-          onSend={async (mail) => { if (await sendMail(mail)) setMailOpen(false); }} />
+          onClose={() => closeMail()}
+          onSend={async (mail) => { if (await sendMail(mail)) closeMail(); }} />
       )}
       {preview?.blob && <BlobPreview blob={preview.blob} name={preview.name} onClose={() => setPreview(null)} />}
       {preview?.fileId && <FilePreview fileId={preview.fileId} name={preview.name} onClose={() => setPreview(null)} />}

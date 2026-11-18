@@ -1,7 +1,7 @@
 // The pieces Documents' two workbenches share (H3, H3b, H3c): the Details
 // card's head and source note, the letter preview card, the "Email this letter"
 // card under the details, the full email panel, and the letters made before.
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../../store';
 import { DrawerShell, CloseButton } from '../../drawers/shell';
@@ -33,7 +33,7 @@ const MailIcon = ({ size = 15, stroke = 'currentColor' }: { size?: number; strok
 );
 
 /** Save draft, Draft email and Generate PDF, in the page head beside the title. */
-export function DocActions({ onSave, saving, canSave, onMail, canMail, onGenerate, generating, generated, missing, disabled }: {
+export function DocActions({ onSave, saving, canSave, onMail, canMail, onGenerate, generating, generated, disabled }: {
   onSave?: () => void; saving: boolean; canSave: boolean; onMail: () => void; canMail: boolean;
   onGenerate: () => void; generating: boolean; generated: boolean; missing: number; disabled: boolean;
 }) {
@@ -41,10 +41,26 @@ export function DocActions({ onSave, saving, canSave, onMail, canMail, onGenerat
     <PageActions>
       {onSave && <button type="button" className="pd-btn" onClick={onSave} disabled={disabled || !canSave}>{saving ? 'Saving…' : 'Save draft'}</button>}
       <button type="button" className="pd-btn" onClick={onMail} disabled={!canMail}><MailIcon />Draft email</button>
-      <button type="button" className="pd-btn primary" onClick={onGenerate} disabled={disabled || missing > 0 || generated} aria-disabled={missing > 0}
-        title={missing ? 'Fill the missing details first' : undefined}><IconDownload stroke="currentColor" />{generating ? 'Generating…' : generated ? 'PDF generated' : 'Generate PDF'}</button>
+      <button type="button" className="pd-btn primary" onClick={onGenerate} disabled={disabled || generated}><IconDownload stroke="currentColor" />{generating ? 'Generating…' : generated ? 'PDF generated' : 'Generate PDF'}</button>
     </PageActions>
   );
+}
+
+/** Saves a made PDF to the computer (Generate PDF downloads it as well as attaching it). */
+export function downloadFile(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** After a press with details missing: the first missing field comes into view. */
+export function showFirstMissing() {
+  requestAnimationFrame(() => {
+    const el = document.querySelector<HTMLElement>('[data-missing="1"]');
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el?.querySelector<HTMLElement>('input, select, textarea')?.focus({ preventScroll: true });
+  });
 }
 
 /** "Details" and how many fields the letter still needs. */
@@ -67,23 +83,55 @@ export function FieldGrid({ children }: { children: ReactNode }) {
   return <div className="lf-doc-fields">{children}</div>;
 }
 
-/** The preview: the letter on a white page, inside a grey card with the template's name and Edit template. */
-export function PreviewCard({ templateName, onEdit, html, loading }: { templateName?: string; onEdit?: () => void; html: string; loading: boolean }) {
+/** Opens the preview's Edit document (from the email panel's PDF row). */
+const EDIT_DOCUMENT_EVENT = 'lf-edit-document';
+
+/** This document's own words: an edit made here changes this letter only, never the template. */
+export type DocEdit = { html: string; edited: boolean; onSave: (html: string) => void; onReset: () => void };
+
+/** The preview: the letter on a white page, inside a grey card with the template's name and Edit document. */
+export function PreviewCard({ templateName, html, loading, edit }: { templateName?: string; html: string; loading: boolean; edit?: DocEdit }) {
+  const [editing, setEditing] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const card = useRef<HTMLElement>(null);
+  // The email panel's "Edit" on the PDF lands here: the document opens for editing, in view.
+  useEffect(() => {
+    if (!edit) return;
+    const go = () => { setEditing(true); requestAnimationFrame(() => card.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })); };
+    window.addEventListener(EDIT_DOCUMENT_EVENT, go);
+    return () => window.removeEventListener(EDIT_DOCUMENT_EVENT, go);
+  }, [edit]);
+  const link = { border: 0, background: 'none', padding: 0, font: 'inherit', fontSize: 12.5, color: 'var(--accent-ink)', cursor: 'pointer' } as const;
   return (
-    <section className="pd-card" style={{ padding: 16, background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <section ref={card} className="pd-card" style={{ padding: 16, background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '0 4px', minHeight: 24 }}>
-        <span style={{ fontSize: 12.5, color: 'var(--ink-2)', minWidth: 0 }}>Preview · <b style={{ fontWeight: 500, color: 'var(--ink)' }}>{templateName ?? '…'}</b></span>
-        {onEdit && <button type="button" onClick={onEdit} style={{ border: 0, background: 'none', padding: 0, font: 'inherit', fontSize: 12.5, color: 'var(--accent-ink)', cursor: 'pointer' }}>Edit template</button>}
+        <span style={{ fontSize: 12.5, color: 'var(--ink-2)', minWidth: 0 }}>Preview · <b style={{ fontWeight: 500, color: 'var(--ink)' }}>{templateName ?? '…'}</b>{edit?.edited && !editing ? ' · edited for this document' : ''}</span>
+        {edit && !loading && (editing ? (
+          <span style={{ display: 'flex', gap: 14 }}>
+            <button type="button" style={{ ...link, color: 'var(--ink-2)' }} onClick={() => setEditing(false)}>Cancel</button>
+            <button type="button" style={link} onClick={() => { edit.onSave(box.current?.innerHTML ?? edit.html); setEditing(false); }}>Done</button>
+          </span>
+        ) : (
+          <span style={{ display: 'flex', gap: 14 }}>
+            {edit.edited && <button type="button" style={{ ...link, color: 'var(--ink-2)' }} onClick={edit.onReset}>Undo edits</button>}
+            <button type="button" style={link} onClick={() => setEditing(true)}>Edit document</button>
+          </span>
+        ))}
       </div>
       {loading ? (
         <div style={{ background: '#fff', borderRadius: 6, minHeight: 420, display: 'grid', placeItems: 'center' }}><Spinner label="Filling in the letter…" /></div>
+      ) : editing && edit ? (
+        <>
+          <style>{LETTER_CSS}</style>
+          <div ref={box} role="textbox" aria-multiline="true" aria-label="Edit this document" contentEditable suppressContentEditableWarning
+            className="lf-doc-page" style={{ outline: '2px solid var(--accent)', outlineOffset: 2, cursor: 'text' }} dangerouslySetInnerHTML={{ __html: edit.html }} />
+        </>
       ) : (
         <>
           <style>{LETTER_CSS}</style>
           <div role="document" aria-label="Letter preview" className="lf-doc-page" dangerouslySetInnerHTML={{ __html: html }} />
         </>
       )}
-      <span style={{ fontSize: 12, color: 'var(--ink-3)', padding: '0 4px' }}>Highlighted text comes from the details on the left. Orange means it is still missing.</span>
     </section>
   );
 }
@@ -172,9 +220,8 @@ export function EmailCard({ kind, first, to: toStart, toFixed, values, company, 
     </div>
   );
 }
-type Suggestion = { kind: AttachmentKind; title: string; sub: string };
 
-export function MailPanel({ kind, values, name, to: toStart, manager, company, hrName, missing, pdfReady, fileName, busy, draft, annexInLetter, journeyId, canBreakup, canChecklist, makeExtra, onPreview, onSaveDraft, onClose, onSend }: {
+export function MailPanel({ kind, values, name, to: toStart, manager, company, hrName, missing, pdfReady, fileName, busy, draft, annexInLetter, journeyId, onPreview, onSaveDraft, onClose, onSend }: {
   kind: LetterKind; values: Record<string, string>; name: string; to: string; manager?: { name: string; email: string };
   company: string; hrName: string; missing: number; pdfReady: boolean; fileName: string; busy: string;
   /** HR's saved draft of this email, if any (it opens instead of the template's words). */
@@ -192,6 +239,10 @@ export function MailPanel({ kind, values, name, to: toStart, manager, company, h
   const start = emailDraft(kind, values, { company, hrName, withLink });
   const [to, setTo] = useState(draft?.to || toStart);
   const [ccManager, setCcManager] = useState(draft ? Boolean(manager?.email && draft.cc?.includes(manager.email.toLowerCase())) : Boolean(manager?.email));
+  // Anyone else HR wants copied: addresses separated by commas or spaces.
+  const [ccMore, setCcMore] = useState((draft?.cc ?? []).filter((e) => e.toLowerCase() !== manager?.email?.toLowerCase()).join(', '));
+  const extraCc = ccMore.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean);
+  const badCc = extraCc.filter((e) => !/^\S+@\S+\.\S+$/.test(e));
   const [subject, setSubject] = useState(draft?.subject || start.subject);
   const [body, setBody] = useState(draft?.body || start.body);
   const [edited, setEdited] = useState(Boolean(draft?.body));
@@ -204,32 +255,19 @@ export function MailPanel({ kind, values, name, to: toStart, manager, company, h
     if (!edited) setBody(emailDraft(kind, values, { company, hrName, withLink: v }).body);
   };
   const mail = (): MailOut => ({
-    to: to.trim(), cc: ccManager && manager?.email ? [manager.email] : undefined, subject: subject.trim(), body,
+    to: to.trim(), cc: (() => { const list = [...(ccManager && manager?.email ? [manager.email] : []), ...extraCc]; return list.length ? [...new Set(list.map((e) => e.toLowerCase()))] : undefined; })(), subject: subject.trim(), body,
     withPortalLink: portalSwitch ? withLink : undefined, attachments: extras.length ? extras : undefined,
   });
   const send = () => {
     if (!isOffer && !/^\S+@\S+\.\S+$/.test(to.trim())) { setError('Enter who it goes to'); return; }
     if (!subject.trim() || !body.trim()) { setError('Write a subject and a message'); return; }
+    if (badCc.length) { setError(`Check the Cc address${badCc.length === 1 ? '' : 'es'}: ${badCc.join(', ')}`); return; }
     setError('');
     void onSend(mail());
   };
-  const suggestions: Suggestion[] = [
-    ...(canBreakup ? [{ kind: 'salary_breakup' as const, title: 'Salary breakup (Annexure A)', sub: annexInLetter ? '1 page · also the letter’s last page' : '1 page · from the offer' }] : []),
-    ...(canChecklist ? [{ kind: 'joining_checklist' as const, title: 'Joining checklist', sub: '1 page · documents to keep ready' }] : []),
-    ...(!isOffer ? [{ kind: 'policies' as const, title: 'Company policies', sub: 'The handbook · a PDF from your computer' }] : []),
-  ].filter((x) => !extras.some((e) => e.kind === x.kind));
   const upload = async (blob: Blob, filename: string, k: AttachmentKind) => {
     const r = await uploadLetterAttachment(blob, filename, k, journeyId);
     setExtras((list) => [...list, r.attachment]);
-  };
-  const attach = async (sg: Suggestion) => {
-    if (sg.kind === 'policies') { fileInput.current?.click(); return; }
-    setAdding(sg.kind);
-    try {
-      const made = await makeExtra(sg.kind as 'salary_breakup' | 'joining_checklist');
-      if (!made) { flash('That can’t be made yet', 'error'); return; }
-      await upload(made.blob, made.name, sg.kind);
-    } catch (e) { flash(errText(e, 'Could not attach it'), 'error'); } finally { setAdding(''); }
   };
   const chip = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 99, background: 'var(--surface-2)', border: '1px solid var(--line)', fontSize: 12.5, maxWidth: '100%', overflowWrap: 'anywhere' } as const;
   return (
@@ -251,6 +289,7 @@ export function MailPanel({ kind, values, name, to: toStart, manager, company, h
           </>}
         </div>
         {kind === 'relieving' && values.personalEmail && to.trim().toLowerCase() === values.personalEmail.toLowerCase() && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: -4 }}>Their personal email: the work email closes when they leave.</div>}
+        <Field label="Add people to Cc"><input value={ccMore} onChange={(e) => setCcMore(e.target.value)} placeholder="name@company.com, another@company.com" aria-label="Add people to Cc" style={inputStyle} /></Field>
         <Field label="Subject"><input value={subject} onChange={(e) => setSubject(e.target.value)} style={inputStyle} /></Field>
         <Field label="Email body"><textarea value={body} onChange={(e) => { setBody(e.target.value); setEdited(true); }} style={{ ...areaStyle, minHeight: 240 }} /></Field>
         {portalSwitch && (
@@ -267,6 +306,7 @@ export function MailPanel({ kind, values, name, to: toStart, manager, company, h
               <span className="pd-li-i" aria-hidden style={{ fontSize: 10, fontWeight: 600 }}>PDF</span>
               <span className="grow"><b style={{ overflowWrap: 'anywhere' }}>{fileName}</b><span className="s">{pdfReady ? `Generated from the details${annexInLetter ? ', with Annexure A' : ''}` : missing ? 'Not generated yet' : 'Generated when you send'}</span></span>
               {pdfReady && <button type="button" className="pd-btn sm" onClick={onPreview}>Preview</button>}
+              <button type="button" className="pd-btn sm ghost" onClick={() => { onClose(); window.dispatchEvent(new Event(EDIT_DOCUMENT_EVENT)); }}>Edit</button>
             </div>
             {extras.map((x) => (
               <div key={x.fileId} className="pd-li" style={{ border: '1px solid var(--line)', borderRadius: 14, padding: '10px 12px' }}>
@@ -275,12 +315,7 @@ export function MailPanel({ kind, values, name, to: toStart, manager, company, h
                 <button type="button" className="pd-btn sm ghost" onClick={() => setExtras((list) => list.filter((e) => e.fileId !== x.fileId))}>Remove</button>
               </div>
             ))}
-            {suggestions.map((sg) => (
-              <div key={sg.kind} className="pd-li" style={{ border: '1px dashed var(--line-2)', borderRadius: 14, padding: '10px 12px' }}>
-                <span className="grow"><b style={{ overflowWrap: 'anywhere' }}><span style={{ color: 'var(--ink-3)', fontWeight: 400 }}>Suggested · </span>{sg.title}</b><span className="s">{sg.sub}</span></span>
-                <button type="button" className="pd-btn sm" onClick={() => void attach(sg)} disabled={Boolean(adding) || Boolean(busy)}>{adding === sg.kind ? 'Attaching…' : 'Attach'}</button>
-              </div>
-            ))}
+            <button type="button" className="pd-btn sm ghost" style={{ justifySelf: 'start' }} onClick={() => fileInput.current?.click()} disabled={Boolean(adding) || Boolean(busy)}>{adding ? 'Attaching…' : 'Attach a file'}</button>
             <input ref={fileInput} type="file" accept="application/pdf" hidden onChange={(e) => {
               const f = e.target.files?.[0];
               e.target.value = '';
