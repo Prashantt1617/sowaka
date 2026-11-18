@@ -327,8 +327,17 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
   // The dashboard's offer form (OfferDialogs.tsx): the template's probation fills the form when the template is picked.
   const offerFields = (tj: string, extra: Record<string, unknown> = {}) => ({
     designation: 'Product Designer', department: 'Design', location: 'Bengaluru', ctc: 1_400_000, tj, managerUserId: 'mgr',
-    probationMonths: 3, noticeDays: 30, validTill: '2027-03-08', responsibilities: 'Own the onboarding experience.', employeeType: 'full_time', ...extra,
+    probationMonths: 3, noticeDays: 30, validTill: '2027-03-08', responsibilities: 'Own the onboarding experience.', employeeType: 'full_time',
+    // These dates are picked for the rules under test, not the weekday; the non-working-day rule has its own checks below.
+    allowNonWorkingDay: true, ...extra,
   });
+  {
+    // A week-off or holiday as the joining date: refused with the reason; HR can keep it on purpose.
+    const sunday = await call('hr', 'POST', '/admin/lifecycle/offers', { candidate: { name: 'Sunny Weekoff', personalEmail: 'sunny.weekoff@example.com' }, fields: offerFields('2027-03-14', { allowNonWorkingDay: false }), templateId: tplA.id });
+    eq('a Sunday joining date is refused with its reason (non_working_day)', [sunday.status, (sunday.body as Json)?.code, String((sunday.body as Json)?.error ?? '').includes('Sunday')], [409, 'non_working_day', true]);
+    const kept = await call('hr', 'POST', '/admin/lifecycle/offers', { candidate: { name: 'Sunny Weekoff', personalEmail: 'sunny.weekoff@example.com' }, fields: offerFields('2027-03-14'), templateId: tplA.id });
+    eq('…and accepted when HR keeps it on purpose (allowNonWorkingDay)', kept.status, 200);
+  }
   const created = await send('hr', 'POST', '/admin/lifecycle/offers', { candidate: { name: 'Kabir Mehta', personalEmail: KABIR, phone: '+91 98765 43210' }, fields: offerFields(TJ), templateId: tplA.id });
   const A = created.journeyId as string;
   await send('hr', 'POST', `/admin/lifecycle/offers/${A}/pdf`, undefined, pdfForm('Offer - Kabir Mehta.pdf'));
@@ -1210,7 +1219,7 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
     const pickBefore = await get('hr', '/admin/lifecycle/joiners');
     const made = await send('hr', 'POST', '/admin/lifecycle/offers', {
       candidate: { name: 'Kavi Cache', personalEmail: 'kavi.cache@example.com' },
-      fields: { designation: 'Designer', department: 'Design', location: 'Bengaluru', ctc: 1_000_000, tj: addDays(today, 35), managerUserId: 'mgr', probationMonths: 3, noticeDays: 30, validTill: addDays(today, 10), employeeType: 'full_time' },
+      fields: { designation: 'Designer', department: 'Design', location: 'Bengaluru', ctc: 1_000_000, tj: addDays(today, 35), managerUserId: 'mgr', probationMonths: 3, noticeDays: 30, validTill: addDays(today, 10), employeeType: 'full_time', allowNonWorkingDay: true },
     });
     const K = made.journeyId as string;
     const after = await get('hr', '/admin/lifecycle/board?tab=pre_boarding');
@@ -1320,7 +1329,7 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
     // A new offer draft through the API (as the dashboard saves it), then the board, counts and joiners.
     const draft = await measure(() => send('hr', 'POST', '/admin/lifecycle/offers', {
       candidate: { name: 'Pia Patch', personalEmail: 'pia.patch@example.com' },
-      fields: { designation: 'Designer', department: 'Design', location: 'Bengaluru', ctc: 1_000_000, tj: addDays(today, 40), managerUserId: 'mgr', probationMonths: 3, noticeDays: 30, validTill: addDays(today, 12), employeeType: 'full_time' },
+      fields: { designation: 'Designer', department: 'Design', location: 'Bengaluru', ctc: 1_000_000, tj: addDays(today, 40), managerUserId: 'mgr', probationMonths: 3, noticeDays: 30, validTill: addDays(today, 12), employeeType: 'full_time', allowNonWorkingDay: true },
     }));
     const P = draft.value.journeyId as string;
     // Each of these is ~17 KB (a journey with its template snapshot) and ~20 KB (its tasks) here, more in a real company.
@@ -1338,7 +1347,7 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
     await keptIsWhole('after an offer draft');
 
     // Saving the draft again (the offer form's Save): a revise by journey id.
-    const revised = await measure(() => send('hr', 'PUT', `/admin/lifecycle/offers/${P}`, { fields: { designation: 'Senior Designer', department: 'Design', location: 'Bengaluru', ctc: 1_100_000, tj: addDays(today, 41), managerUserId: 'mgr', probationMonths: 3, noticeDays: 30, validTill: addDays(today, 12), employeeType: 'full_time' } }));
+    const revised = await measure(() => send('hr', 'PUT', `/admin/lifecycle/offers/${P}`, { fields: { designation: 'Senior Designer', department: 'Design', location: 'Bengaluru', ctc: 1_100_000, tj: addDays(today, 41), managerUserId: 'mgr', probationMonths: 3, noticeDays: 30, validTill: addDays(today, 12), employeeType: 'full_time', allowNonWorkingDay: true } }));
     say(`  ·    saving the draft again (new date): ${revised.bytes} bytes back in ${revised.rows.length} commands, ${revised.ms} ms (heaviest: ${heaviest(revised.rows)})`);
     eq('saving the draft again reads the journey and its tasks at most once each', [bigReads(revised.rows, 'lifecycle_journeys') <= 1, bigReads(revised.rows, 'lifecycle_journey_tasks') <= 1], [true, true]);
     const revCard = cardsIn(await get('hr', '/admin/lifecycle/board?tab=pre_boarding')).find((c) => c.journeyId === P);
@@ -1395,7 +1404,7 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
     noMeetTpl = (await send('hr', 'PUT', `/admin/lifecycle/templates/${noMeetTpl.id}`, { tasks: (noMeetTpl.tasks as Json[]).map((t) => (t.systemKey === 'meet_us' ? { ...t, enabled: false } : t)) })).template;
     eq('saved: Meet us is off in the template', (noMeetTpl.tasks as Json[]).find((t) => t.systemKey === 'meet_us')?.enabled, false);
     const MIRA = 'mira.nomeet@example.com';
-    const nm = await send('hr', 'POST', '/admin/lifecycle/offers', { candidate: { name: 'Mira Nomeet', personalEmail: MIRA }, fields: { designation: 'Designer', department: 'Design', location: 'Bengaluru', ctc: 900_000, tj: addDays(today, 30), managerUserId: 'mgr', probationMonths: 3, noticeDays: 30, validTill: addDays(today, 10), employeeType: 'full_time' }, templateId: noMeetTpl.id });
+    const nm = await send('hr', 'POST', '/admin/lifecycle/offers', { candidate: { name: 'Mira Nomeet', personalEmail: MIRA }, fields: { designation: 'Designer', department: 'Design', location: 'Bengaluru', ctc: 900_000, tj: addDays(today, 30), managerUserId: 'mgr', probationMonths: 3, noticeDays: 30, validTill: addDays(today, 10), employeeType: 'full_time', allowNonWorkingDay: true }, templateId: noMeetTpl.id });
     await send('hr', 'POST', `/admin/lifecycle/offers/${nm.journeyId}/pdf`, undefined, pdfForm('Offer - Mira.pdf'));
     await send('hr', 'POST', `/admin/lifecycle/offers/${nm.journeyId}/send`, { subject: 'Your offer', body: 'Hello Mira' });
     await send(null, 'POST', `/portal/offer/${tokenIn(lastMailTo(MIRA)!.html)}/accept`);

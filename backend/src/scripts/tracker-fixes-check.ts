@@ -314,7 +314,7 @@ const HR = { userId: 'hr', name: 'Hema HR' };
   ok('a joining date in the past is refused with a reason', past.status === 400 && /after today/.test(past.message), past);
   const early = await refusal(() => createOffer(HRA, { candidate: { name: 'Early Eva', personalEmail: 'eva@example.com' }, fields: { designation: 'Artist', ctc: 600000, tj: addDays(T, 5), validTill: addDays(T, 9) } }));
   ok('a joining date before the valid-till is refused with a reason', early.status === 400 && /before the offer’s valid-till/.test(early.message), early);
-  const soon = await createOffer(HRA, { candidate: { name: 'Soon Sam', personalEmail: 'sam@example.com' }, fields: { designation: 'Artist', ctc: 600000, tj: addDays(T, 3) } });
+  const soon = await createOffer(HRA, { candidate: { name: 'Soon Sam', personalEmail: 'sam@example.com' }, fields: { designation: 'Artist', ctc: 600000, tj: addDays(T, 3), allowNonWorkingDay: true } });
   ok('with no valid-till given it is never past the joining day', soon.offer.fields.validTill <= addDays(T, 3), soon.offer.fields);
 
   console.log('round 2: a template\'s settings when it is made, and when access ends');
@@ -335,7 +335,7 @@ const HR = { userId: 'hr', name: 'Hema HR' };
   ok('an unsent letter names the successor; a sent one stays as sent', (await letters().findOne({ id: 'L-sid' }))?.values.managerName === 'Max Next' && (await letters().findOne({ id: 'L-sid-sent' }))?.values.managerName === 'Lou Lead');
 
   console.log('round 2: a revision only outdates letters whose own fields changed');
-  const ro = await createOffer(HRA, { candidate: { name: 'Nia Nda', personalEmail: 'nia@example.com' }, fields: { designation: 'Artist', ctc: 600000, tj: addDays(T, 20) } });
+  const ro = await createOffer(HRA, { candidate: { name: 'Nia Nda', personalEmail: 'nia@example.com' }, fields: { designation: 'Artist', ctc: 600000, tj: addDays(T, 20), allowNonWorkingDay: true } });
   const nda = await createLetter({ org: ORG, name: 'Hema HR' }, { kind: 'nda', journeyId: ro.journeyId, values: { companyAddress: 'Typed Address, Gurgaon' } });
   await letters().updateOne({ id: nda.id }, { $set: { signature: { method: 'type', typedName: 'Nia Nda', signedAt: now } } });
   const none = await outdateChangedLetters(ro.journeyId, now);

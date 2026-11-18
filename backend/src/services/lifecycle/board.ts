@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { cachedLifecycle, refreshLifecycle, setBoardPatch, type BoardWrites } from './readCache';
 import { orgsKeeping, patchSwr } from '../swr-cache';
-import { dateChangeRequests, journeys, journeyTasks, offers, surveyResponses, users } from '../../config/db';
+import { candidateDocuments, dateChangeRequests, journeys, journeyTasks, offers, surveyResponses, users } from '../../config/db';
 import type {
   Day1Pass, Journey, JourneyFlag, JourneyTask, OnboardingBoardColumn, OnboardingBoardTab, OwnerRole, SurveyKind,
 } from '../../models/lifecycle.model';
@@ -54,6 +54,8 @@ export interface BoardCard {
   dayLabel: string; status: Journey['status']; statusLabel: string; column: OnboardingBoardColumn; flags: JourneyFlag[];
   waitingOn: WaitingOn[]; progress: { done: number; total: number }; plant: Derived['plant'];
   quietDays?: number; expiresInDays?: number;
+  /** Optional documents the joiner sent that HR has not looked at yet: they never hold Documents open, so the card says so. */
+  optionalWaiting?: number;
 }
 
 // ─── Who is asking ──────────────────────────────────────────────────────────
@@ -375,6 +377,15 @@ export async function onboardingBoard(org: string, viewerUserId: string, query: 
     columns.find((c) => c.key === derived.column)?.cards.push(card);
   }
   for (const column of columns) column.cards.sort((a, b) => urgency(a) - urgency(b) || (a.tj ?? '').localeCompare(b.tj ?? '') || a.name.localeCompare(b.name));
+  if (tab === 'pre_boarding') {
+    const cards = columns.flatMap((c) => c.cards);
+    const waiting = cards.length ? await candidateDocuments().aggregate<{ _id: string; n: number }>([
+      { $match: { journeyId: { $in: cards.map((c) => c.journeyId) }, required: { $ne: true }, status: 'in_review' } },
+      { $group: { _id: '$journeyId', n: { $sum: 1 } } },
+    ]).toArray() : [];
+    const by = new Map(waiting.map((w) => [w._id, w.n]));
+    for (const card of cards) if (by.get(card.journeyId)) card.optionalWaiting = by.get(card.journeyId);
+  }
   await markNudged(columns.flatMap((c) => c.cards.flatMap((card) => card.waitingOn)), now);
   return { tab, columns, counts };
 }
