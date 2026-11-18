@@ -33,6 +33,13 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" />
     </svg>
   ),
+  // SUWI › Response times (a stopwatch).
+  suwitimings: (
+    <svg {...base(18, 'currentColor')}>
+      <circle cx="12" cy="13" r="8" />
+      <path d="M12 9v4l2.5 1.5M10 2h4" />
+    </svg>
+  ),
   support: (
     <svg {...base(18, 'currentColor')}>
       <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
