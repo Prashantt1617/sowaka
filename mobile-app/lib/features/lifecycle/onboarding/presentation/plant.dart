@@ -144,8 +144,8 @@ class _PlantPainter extends CustomPainter {
   static const _clayRim = Color(0xFFD98B60);
   static const _soil = Color(0xFF6B4A33);
   static const _stem = Color(0xFF2FA84F);
-  static const _leaf = Color(0xFF30D158);
-  static const _leafDark = Color(0xFF1F9D45);
+  static const _leaf = Color(0xFF34C759);
+  static const _leafDark = Color(0xFF16A34A);
   static const _droopLeaf = Color(0xFF8DBF6A);
   static const _petal = Color(0xFFFFB3C7);
   static const _petalCentre = Color(0xFFFFD166);
