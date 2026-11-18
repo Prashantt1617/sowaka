@@ -205,7 +205,8 @@ export function OnboardingBoard() {
 
 function JoinerCard({ card, stage, selected, dim, onOpen, onNudged }: { card: BoardCard; stage?: string; selected: boolean; dim: boolean; onOpen: () => void; onNudged: () => void }) {
   const next = card.waitingOn[0];
-  const late = Boolean(next?.dueAt) && (card.flags.includes('late') || dueText(next?.dueAt).endsWith('late'));
+  // The lead step's own lateness: a card flagged late for an older task can lead with a step not yet due.
+  const late = Boolean(next?.dueAt) && (Boolean(next?.late) || dueText(next?.dueAt).endsWith('late'));
   const role = [card.designation, card.department].filter(Boolean).join(' · ');
   const pct = card.progress.total ? Math.round((card.progress.done / card.progress.total) * 100) : 0;
   return (

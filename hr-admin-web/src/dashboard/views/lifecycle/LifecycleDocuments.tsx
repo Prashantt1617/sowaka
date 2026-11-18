@@ -274,6 +274,22 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
   const managerId = person.managerUserId ?? candidate.managerUserId;
   const manager = managerEmail(managerId);
   const to = candidate.email || values.personalEmail || values.email || person.email || '';
+  /** Sends the letter (the PDF is made first): from the email card and from the full email panel. */
+  const sendMail = async (mail: MailOut): Promise<boolean> => {
+    if (!(await generate())) return false;
+    setBusy('send');
+    try {
+      if (isOffer) await sendOffer(person.journeyId!, { subject: mail.subject, body: mail.body, cc: mail.cc, withPortalLink: mail.withPortalLink, attachments: mail.attachments });
+      else {
+        const l = await ensureLetter();
+        const sent = await sendLetter(l.id, { to: mail.to, cc: mail.cc, subject: mail.subject, body: mail.body, withPortalLink: mail.withPortalLink, attachments: mail.attachments });
+        setLetter(sent);
+      }
+      flash(`${KIND_LABEL[kind]} sent to ${first || mail.to}`);
+      void reloadEarlier();
+      return true;
+    } catch (e) { flash(errText(e, 'Could not send the email'), 'error'); return false; } finally { setBusy(''); }
+  };
 
   return (
     <>
@@ -329,11 +345,10 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
               {breakup && !breakup.breakup && <div style={{ fontSize: 12, color: 'var(--warn)', marginTop: 4 }}>{breakup.reason ?? 'The salary breakup could not be worked out'}. The letter goes without Annexure A.</div>}
             </Field>
           )}
-          <button type="button" onClick={() => setMailOpen(true)} disabled={!template || !base}
-            style={{ textAlign: 'left', border: '1px solid var(--line)', borderRadius: 14, padding: '12px 14px', background: 'var(--surface)', cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
-            <b style={{ display: 'block', fontSize: 13.5, fontWeight: 500 }}>Email this letter to {first || 'them'}</b>
-            <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{savedDraft ? `Your draft from ${shortDay(savedDraft.email?.savedAt)} opens` : `Opens a draft with the PDF attached${isOffer || kind === 'appointment' || kind === 'nda' ? ' and the portal link' : ''}`}</span>
-          </button>
+          {template && base && (
+            <EmailCard kind={kind} first={first} to={to} values={values} company={company} hrName={hrName} manager={manager}
+              draft={savedDraft?.email} missing={missing.length} busy={busy} onSend={sendMail} onOpen={() => setMailOpen(true)} />
+          )}
           {earlier.length > 0 && (
             <div>
               <div style={{ fontSize: 11.5, color: 'var(--ink-2)', margin: '4px 0 6px' }}>Letters for {first}</div>
@@ -372,21 +387,7 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
           onPreview={() => pdf && setPreview({ blob: pdf.blob, name: fileName })}
           onSaveDraft={(mail) => void saveEmailDraft(mail)}
           onClose={() => setMailOpen(false)}
-          onSend={async (mail) => {
-            if (!(await generate())) return;
-            setBusy('send');
-            try {
-              if (isOffer) await sendOffer(person.journeyId!, { subject: mail.subject, body: mail.body, cc: mail.cc, withPortalLink: mail.withPortalLink, attachments: mail.attachments });
-              else {
-                const l = await ensureLetter();
-                const sent = await sendLetter(l.id, { to: mail.to, cc: mail.cc, subject: mail.subject, body: mail.body, withPortalLink: mail.withPortalLink, attachments: mail.attachments });
-                setLetter(sent);
-              }
-              flash(`${KIND_LABEL[kind]} sent to ${first || mail.to}`);
-              setMailOpen(false);
-              void reloadEarlier();
-            } catch (e) { flash(errText(e, 'Could not send the email'), 'error'); } finally { setBusy(''); }
-          }} />
+          onSend={async (mail) => { if (await sendMail(mail)) setMailOpen(false); }} />
       )}
       {preview?.blob && <BlobPreview blob={preview.blob} name={preview.name} onClose={() => setPreview(null)} />}
       {preview?.fileId && <FilePreview fileId={preview.fileId} name={preview.name} onClose={() => setPreview(null)} />}
@@ -395,6 +396,63 @@ function LetterWorkbench({ kind, person, people, onPerson, pay, company, hrName,
 }
 
 type MailOut = { to: string; cc?: string[]; subject: string; body: string; withPortalLink?: boolean; attachments?: LetterAttachment[] };
+
+/**
+ * H3's "Email this letter to …" card under the details: the recipient (their personal email,
+ * editable), a short message and Send, through the same send as the full email panel. A saved
+ * draft fills it; Edit full email opens the panel (subject, Cc, attachments).
+ */
+function EmailCard({ kind, first, to: toStart, values, company, hrName, manager, draft, missing, busy, onSend, onOpen }: {
+  kind: LetterKind; first: string; to: string; values: Record<string, string>; company: string; hrName: string;
+  manager?: { name: string; email: string }; draft?: LetterEmail; missing: number; busy: string;
+  onSend: (mail: MailOut) => Promise<boolean>; onOpen: () => void;
+}) {
+  const isOffer = kind === 'offer';
+  const portalLink = isOffer || kind === 'appointment' || kind === 'nda';
+  const withLink = draft?.withPortalLink ?? true;
+  const start = emailDraft(kind, values, { company, hrName, withLink });
+  // Untouched, they follow the details as they load and change; typed, they are HR's own.
+  const [toTyped, setTo] = useState<string | null>(null);
+  const [noteTyped, setNote] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const to = toTyped ?? (draft?.to || toStart);
+  const note = noteTyped ?? (draft?.body || start.body);
+  const cc = draft ? draft.cc : manager?.email ? [manager.email] : undefined;
+  const ccName = !cc?.length ? '' : manager?.email && cc.some((x) => x.toLowerCase() === manager.email.toLowerCase()) ? manager.name : cc.join(', ');
+  const send = async () => {
+    if (!isOffer && !/^\S+@\S+\.\S+$/.test(to.trim())) { setError('Enter who it goes to'); return; }
+    if (!note.trim()) { setError('Write a short message'); return; }
+    setError('');
+    const sent = await onSend({
+      to: to.trim(), cc, subject: draft?.subject || start.subject, body: note,
+      withPortalLink: portalLink ? withLink : undefined, attachments: draft?.attachments?.length ? draft.attachments : undefined,
+    });
+    if (sent) { setTo(null); setNote(null); }
+  };
+  return (
+    <div style={{ border: '1px solid var(--line)', borderRadius: 14, padding: '12px 14px', background: 'var(--surface)', display: 'grid', gap: 10 }}>
+      <div>
+        <b style={{ display: 'block', fontSize: 13.5, fontWeight: 500 }}>Email this letter to {first || 'them'}</b>
+        <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
+          {draft?.savedAt ? `Your draft from ${shortDay(draft.savedAt)}. ` : ''}The PDF goes attached{portalLink && withLink ? ' with the portal link' : ''}{ccName ? `; ${ccName} is copied` : ''}.
+        </span>
+      </div>
+      <Field label="To" hint={isOffer ? 'Their personal email from the offer. Change it in the offer.' : 'Their personal email. Change it if it should go elsewhere.'}>
+        {isOffer ? <input value={to} readOnly aria-label="To" style={{ ...inputStyle, color: 'var(--ink-2)' }} />
+          : <input type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="name@example.com" aria-label="To" style={inputStyle} />}
+      </Field>
+      <Field label="Message"><textarea value={note} onChange={(e) => setNote(e.target.value)} rows={5} style={areaStyle} /></Field>
+      {missing > 0 && <div style={{ fontSize: 12, color: 'var(--bad)' }}>Fill the missing details first: the PDF is made when you send.</div>}
+      {error && <div role="alert" style={{ fontSize: 12, color: 'var(--bad)' }}>{error}</div>}
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+        <button type="button" className="pd-btn ghost sm" onClick={onOpen} disabled={Boolean(busy)}>Edit full email</button>
+        <button type="button" className="pd-btn primary sm" onClick={() => void send()} disabled={Boolean(busy) || missing > 0}>
+          {busy === 'send' ? 'Sending…' : busy === 'pdf' ? 'Generating…' : 'Send'}
+        </button>
+      </div>
+    </div>
+  );
+}
 type Suggestion = { kind: AttachmentKind; title: string; sub: string };
 
 function MailPanel({ kind, values, name, to: toStart, manager, company, hrName, missing, pdfReady, fileName, busy, draft, annexInLetter, journeyId, canBreakup, canChecklist, makeExtra, onPreview, onSaveDraft, onClose, onSend }: {

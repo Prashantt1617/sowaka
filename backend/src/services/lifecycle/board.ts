@@ -26,6 +26,7 @@ import { offerView } from './offers';
 import { probationOf, sentDecisionLetter } from './probation';
 import { templateForJourney } from './templates';
 import { nudgedToday, nudgeTarget } from './nudges';
+import { leadWithStageStep } from './stageStep';
 
 export const BOARD_COLUMNS: Record<OnboardingBoardTab, Array<{ key: OnboardingBoardColumn; label: string }>> = {
   pre_boarding: [
@@ -184,7 +185,8 @@ async function validTills(ids: string[]): Promise<Map<string, string>> {
  * or one not yet opened (most of a probation journey) comes as its status alone: the whole board
  * then moves a fraction of the bytes over the database link.
  */
-const ifOpen = (field: string) => ({ $cond: [{ $in: ['$status', ACTIVE_STATUSES] }, `$${field}`, '$$REMOVE'] });
+// The month's check-in is the one exception: a probation card leads with it before it opens (stageStep.ts).
+const ifOpen = (field: string) => ({ $cond: [{ $or: [{ $in: ['$status', ACTIVE_STATUSES] }, { $and: [{ $eq: ['$status', 'locked'] }, { $eq: ['$systemKey', 'monthly_checkin'] }] }] }, `$${field}`, '$$REMOVE'] });
 const BOARD_TASK_STAGES = [
   { $sort: { order: 1, month: 1 } },
   { $project: {
@@ -223,7 +225,7 @@ function cardFor(j: Journey, tasks: JourneyTask[], derived: Derived, names: Map<
     ...((j.department ?? who?.department) ? { department: j.department ?? who?.department } : {}),
     ...(managerName ? { managerName } : {}), ...(photoUrl ? { photoUrl } : {}), ...(j.tj ? { tj: j.tj } : {}),
     dayLabel: derived.dayLabel, status: j.status, statusLabel: derived.statusLabel, column: derived.column, flags: derived.flags,
-    waitingOn: waitingOnOf(j, tasks, names, now, 3, { tab: derived.tab, column: derived.column }), progress: progressOf(tasks, derived.tab), plant: derived.plant,
+    waitingOn: leadWithStageStep(j, tasks, names, now, derived.column, waitingOnOf(j, tasks, names, now, 3, { tab: derived.tab, column: derived.column })), progress: progressOf(tasks, derived.tab), plant: derived.plant,
     ...(derived.quietDays !== undefined ? { quietDays: derived.quietDays } : {}),
     ...(derived.expiresInDays !== undefined ? { expiresInDays: derived.expiresInDays } : {}),
   };
