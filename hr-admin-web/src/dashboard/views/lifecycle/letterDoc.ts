@@ -101,17 +101,38 @@ export function missingFields(body: string, values: Record<string, string>, serv
   return [...new Set(need)].filter((k) => !filled(values, k));
 }
 
-export type Letterhead = { company: string; address?: string; refNo?: string; date?: string; title: string };
+/** `logo`: the company's mark (an absolute URL, so the PDF can draw it); without one, its initials on a tile. */
+export type Letterhead = { company: string; address?: string; refNo?: string; date?: string; title: string; logo?: string };
+
+/** "ACMT" for "ACMT Group of Colleges", "ST" for "Sowaka Test": the tile beside the name when there is no logo. */
+export function monogram(company: string): string {
+  const words = company.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return '';
+  if (/^[A-Z0-9]{2,5}$/.test(words[0])) return words[0];
+  return words.slice(0, 2).map((w) => w[0]!.toUpperCase()).join('');
+}
+
+/** The letterhead: the logo (or initials), the name and address; the reference and the date on the right. */
+function letterheadHtml(head: Letterhead): string {
+  const mark = head.logo ? `<img class="lf-logo" src="${esc(head.logo)}" alt="">` : `<span class="lf-mono">${esc(monogram(head.company))}</span>`;
+  return `<div class="lf-head">
+    <div class="lf-brand">${mark}<div class="lf-co"><b>${esc(head.company)}</b>${head.address ? `<span>${esc(head.address)}</span>` : ''}</div></div>
+    <div class="lf-ref">${head.refNo ? `Ref ${esc(head.refNo)}<br>` : ''}${esc(head.date ?? longDay(todayKey()))}</div>
+  </div>`;
+}
 
 /** The letter's own CSS: a white A4 page, letterhead with a 2px rule, the highlighted fields for the preview.
  *  Colours are the dashboard theme's light values (--ink, --ink-2, --ink-3, --line, --line-2, --surface-2,
  *  --t-sky, --t-peach), written out because the PDF is drawn without the dashboard's stylesheet. */
 export const LETTER_CSS = `
   .lf-page { font-family: "Sora", "Noto Sans", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #141416; background: #fff; font-size: 13px; line-height: 1.65; }
-  .lf-head { display: flex; justify-content: space-between; gap: 16px; padding-bottom: 12px; border-bottom: 2px solid #141416; margin-bottom: 18px; }
-  .lf-co b { display: block; font-size: 17px; font-weight: 600; } .lf-co span { color: #4E4E56; font-size: 12px; }
-  .lf-ref { text-align: right; color: #4E4E56; font-size: 12px; white-space: nowrap; }
-  .lf-title { font-size: 15px; font-weight: 600; margin: 0 0 14px; }
+  .lf-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid #E9E9EC; margin-bottom: 18px; }
+  .lf-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .lf-logo { width: 36px; height: 36px; border-radius: 10px; object-fit: contain; flex: none; }
+  .lf-mono { width: 36px; height: 36px; border-radius: 10px; background: #141416; color: #FFFFFF; font-size: 10px; font-weight: 700; letter-spacing: .02em; display: flex; align-items: center; justify-content: center; flex: none; }
+  .lf-co { line-height: 1.35; min-width: 0; } .lf-co b { display: block; font-size: 13px; font-weight: 600; } .lf-co span { display: block; color: #8A8A93; font-size: 11.5px; }
+  .lf-ref { text-align: right; color: #8A8A93; font-size: 11.5px; line-height: 1.5; white-space: nowrap; }
+  .lf-title { font-size: 18px; font-weight: 600; letter-spacing: -.01em; margin: 0 0 14px; }
   .lf-body p { margin: 0 0 12px; } .lf-body table { border-collapse: collapse; width: 100%; margin: 10px 0 14px; } .lf-body td, .lf-body th { border: 1px solid #E9E9EC; padding: 7px 10px; text-align: left; }
   .lf-body img { max-width: 100%; }
   mark.lf-on { background: #E5F2FF; color: inherit; border-radius: 4px; padding: 0 2px; }
@@ -126,10 +147,7 @@ export const LETTER_CSS = `
 /** The page inside (letterhead, title, filled body, then any annexure) as HTML, for the preview and the PDF. */
 export function letterInner(body: string, values: Record<string, string>, head: Letterhead, mode: 'preview' | 'pdf', annex = ''): string {
   return `<div class="lf-page">
-  <div class="lf-head">
-    <div class="lf-co"><b>${esc(head.company)}</b>${head.address ? `<span>${esc(head.address)}</span>` : ''}</div>
-    <div class="lf-ref">${head.refNo ? `Ref ${esc(head.refNo)}<br>` : ''}${esc(head.date ?? longDay(todayKey()))}</div>
-  </div>
+  ${letterheadHtml(head)}
   <h1 class="lf-title">${esc(head.title)}</h1>
   <div class="lf-body">${fillBody(body, values, mode)}</div>${annex}
 </div>`;
@@ -171,7 +189,7 @@ export function annexureHtml(b: NonNullable<SalaryBreakup['breakup']>, name: str
 /** A one-page document (Annexure A on its own, the joining checklist) on the letterhead, ready for html2pdf. */
 export function simpleDocument(head: Letterhead, inner: string): string {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(head.title)}</title><style>${LETTER_CSS} body { margin: 0; padding: 24px; background: #fff; } .lf-annex { margin-top: 0; padding-top: 0; border-top: 0; page-break-before: auto; break-before: auto; }</style></head><body><div class="lf-page">
-  <div class="lf-head"><div class="lf-co"><b>${esc(head.company)}</b>${head.address ? `<span>${esc(head.address)}</span>` : ''}</div><div class="lf-ref">${head.refNo ? `Ref ${esc(head.refNo)}<br>` : ''}${esc(head.date ?? longDay(todayKey()))}</div></div>
+  ${letterheadHtml(head)}
   ${inner}
 </div></body></html>`;
 }

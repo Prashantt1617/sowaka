@@ -19,7 +19,7 @@ import { FilePreview, NoteDialog, NudgeButton, OwnerChip, Pick, PlantFace, Field
 import {
   DOCS_OPEN_KEY, PHASES, areaStyle, changedFieldsText, nudgeLabel, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, longDay, rupees, sectionLabel, shortDay, todayKey,
 } from './format';
-import { FinaliseDialog, MarkJoinedDialog, OfferWizard } from './OfferDialogs';
+import { FinaliseDialog, MarkJoinedDialog } from './OfferDialogs';
 import { DecisionDialog, ProbationMonths } from './Probation';
 import { KIND_LABEL } from './letterDoc';
 
@@ -58,7 +58,6 @@ const OPEN = new Set(['todo', 'in_review', 'sent_back']);
 const PRE_JOIN = new Set(['draft', 'offer_sent', 'accepted', 'finalised', 'active', 'docs_approved']);
 
 type Dialog =
-  | { kind: 'offer'; mode: 'revise' | 'send'; start?: 'details' | 'letter' | 'email' }
   | { kind: 'finalise' } | { kind: 'joined' } | { kind: 'decision' }
   | { kind: 'status'; action: 'decline' | 'reopen' | 'not-joining' }
   | { kind: 'task'; task: TaskView; action: 'done' | 'skip' | 'reopen' }
@@ -94,9 +93,9 @@ function Facts({ rows }: { rows: [string, ReactNode][] }) {
   );
 }
 
-/** Opens Documents on a letter kind for this joiner. */
-function openDocuments(setView: (v: 'lifecycle_documents') => void, kind: LetterKind, journeyId: string) {
-  try { sessionStorage.setItem(DOCS_OPEN_KEY, JSON.stringify({ kind, journeyId })); } catch { /* Documents opens on its own first choice */ }
+/** Opens Documents on a letter kind for this joiner (the offer letter is where an offer is edited and sent; `mail` opens its email). */
+function openDocuments(setView: (v: 'lifecycle_documents') => void, kind: LetterKind, journeyId: string, mail?: boolean) {
+  try { sessionStorage.setItem(DOCS_OPEN_KEY, JSON.stringify({ kind, journeyId, ...(mail ? { mail: true } : {}) })); } catch { /* Documents opens on its own first choice */ }
   setView('lifecycle_documents');
 }
 
@@ -169,9 +168,9 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   // A revision (or an approved new joining date) stays HR's draft until sent: the candidate still sees the last version they got.
   const revisionWaiting = Boolean(offer && offer.status === 'draft' && offer.version > 1);
   if (closed) primary = { label: 'Reopen', go: () => setDialog({ kind: 'status', action: 'reopen' }) };
-  else if (revisionWaiting && pay) primary = { label: 'Send revised offer', go: () => setDialog({ kind: 'offer', mode: 'send', start: 'letter' }) };
-  else if (status === 'draft') primary = { label: 'Send offer', go: () => setDialog({ kind: 'offer', mode: 'send', start: offer?.pdfFileId ? 'email' : 'letter' }) };
-  else if (status === 'offer_sent') primary = { label: 'Resend offer email', go: () => setDialog({ kind: 'offer', mode: 'send', start: offer?.pdfFileId ? 'email' : 'letter' }) };
+  else if (revisionWaiting && pay) primary = { label: 'Send revised offer', go: () => openDocuments(s.setView, 'offer', journey.id) };
+  else if (status === 'draft') primary = { label: 'Send offer', go: () => openDocuments(s.setView, 'offer', journey.id, Boolean(offer?.pdfFileId)) };
+  else if (status === 'offer_sent') primary = { label: 'Resend offer email', go: () => openDocuments(s.setView, 'offer', journey.id, Boolean(offer?.pdfFileId)) };
   else if (status === 'accepted') primary = { label: 'Finalise', go: () => setDialog({ kind: 'finalise' }) };
   else if (canJoin) primary = { label: 'Mark joined', go: () => setDialog({ kind: 'joined' }) };
   else if (reviewQueue > 0) primary = { label: 'Review documents', go: () => document.getElementById('lf-panel-docs')?.scrollIntoView({ behavior: 'smooth' }) };
@@ -181,7 +180,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
 
   const secondary: { label: string; go: () => void; danger?: boolean }[] = [];
   if (journey.userId) secondary.push({ label: 'Open profile', go: () => { onClose(); s.openProfile(journey.userId!); } });
-  if (offer && PRE_JOIN.has(status) && pay) secondary.push({ label: status === 'draft' ? 'Edit offer' : 'Revise offer', go: () => setDialog({ kind: 'offer', mode: 'revise', start: 'details' }) });
+  if (offer && PRE_JOIN.has(status) && pay) secondary.push({ label: status === 'draft' ? 'Edit offer' : 'Revise offer', go: () => openDocuments(s.setView, 'offer', journey.id) });
   if (status === 'offer_sent') secondary.push({ label: 'Mark declined', go: () => setDialog({ kind: 'status', action: 'decline' }), danger: true });
   if (['accepted', 'finalised', 'active', 'docs_approved'].includes(status)) secondary.push({ label: 'Not joining', go: () => setDialog({ kind: 'status', action: 'not-joining' }), danger: true });
   if (journey.column === 'final_month' && decision) secondary.push({ label: 'Change decision', go: () => setDialog({ kind: 'decision' }) });
@@ -382,10 +381,6 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
 
       <div style={{ height: 24, flexShrink: 0 }} />
 
-      {dialog?.kind === 'offer' && (
-        <OfferWizard mode={dialog.mode} start={dialog.start} journey={journey} offer={offer} onClose={() => setDialog(null)}
-          onDone={() => { setDialog(null); changed(); }} />
-      )}
       {dialog?.kind === 'finalise' && <FinaliseDialog journey={journey} onClose={() => setDialog(null)} onDone={() => { setDialog(null); changed(); }} />}
       {dialog?.kind === 'joined' && <MarkJoinedDialog journey={journey} onClose={() => setDialog(null)} onDone={() => { setDialog(null); changed(); }} />}
       {dialog?.kind === 'decision' && <DecisionDialog journey={journey} onClose={() => setDialog(null)} onDone={() => { setDialog(null); changed(); }} />}

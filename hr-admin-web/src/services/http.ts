@@ -16,12 +16,17 @@ export function setToken(token: string | null) {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** A machine-readable reason some routes send beside the message (e.g. `non_working_day`). */
+  code?: string;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    if (code) this.code = code;
   }
 }
+
+const codeOf = (data: Record<string, unknown>) => (typeof data.code === 'string' && data.code ? data.code : undefined);
 
 type Options = Omit<RequestInit, 'body'> & { body?: unknown };
 
@@ -104,7 +109,7 @@ async function request<T>(path: string, opts: Options): Promise<T> {
   if (!res.ok) {
     // Most routes answer { message }; the lifecycle routes answer { error }.
     const message = (data.message as string) || (data.error as string) || `Request failed (${res.status})`;
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, codeOf(data));
   }
   return data as T;
 }
@@ -134,7 +139,7 @@ async function upload<T>(path: string, form: FormData): Promise<T> {
   });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
-    throw new ApiError(res.status, (data.message as string) || (data.error as string) || `Request failed (${res.status})`);
+    throw new ApiError(res.status, (data.message as string) || (data.error as string) || `Request failed (${res.status})`, codeOf(data));
   }
   return data as T;
 }

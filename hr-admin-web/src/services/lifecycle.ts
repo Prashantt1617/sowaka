@@ -253,6 +253,7 @@ export interface OfferView {
   status: OfferVersionStatus | string;
   fields: OfferFields & { managerName?: string };
   changedFields?: Array<keyof OfferFields>;
+  refNo?: string;
   sentAt?: string;
   acceptedAt?: string;
   finalisedAt?: string;
@@ -405,10 +406,20 @@ export const recordDecision = (id: string, body: Omit<ConfirmationDecision, 'dec
   api<{ decision: ConfirmationDecision }>(`${L}/journeys/${id}/decision`, json('POST', body)).then((r) => r.decision);
 
 // Offers
-export const createOffer = (input: { candidate: { name: string; personalEmail: string; phone?: string }; fields: OfferFields; templateId?: string }) =>
-  api<{ journeyId: string; offer: OfferView }>(`${L}/offers`, json('POST', input));
-export const updateOffer = (journeyId: string, fields: OfferFields) =>
-  api<{ offer: OfferView }>(`${L}/offers/${journeyId}`, json('PUT', { fields })).then((r) => r.offer);
+/**
+ * A new joining date on a week-off or holiday is refused (409, code `non_working_day`, with `day`, `why`
+ * and the sentence in `error`); `allowNonWorkingDay: true` inside `fields` sends it anyway, once HR has
+ * said to use that date.
+ */
+export const NON_WORKING_DAY = 'non_working_day';
+type OfferSave = { allowNonWorkingDay?: boolean };
+const withAllow = (fields: OfferFields, opts: OfferSave) => (opts.allowNonWorkingDay ? { ...fields, allowNonWorkingDay: true } : fields);
+export const createOffer = (input: { candidate: { name: string; personalEmail: string; phone?: string }; fields: OfferFields; templateId?: string }, opts: OfferSave = {}) =>
+  api<{ journeyId: string; offer: OfferView }>(`${L}/offers`, json('POST', { ...input, fields: withAllow(input.fields, opts) }));
+export const updateOffer = (journeyId: string, fields: OfferFields, opts: OfferSave = {}) =>
+  api<{ offer: OfferView }>(`${L}/offers/${journeyId}`, json('PUT', { fields: withAllow(fields, opts) })).then((r) => r.offer);
+export const getOffer = (journeyId: string) =>
+  api<{ offer: OfferView | null }>(`${L}/offers/${journeyId}`).then((r) => r.offer);
 const pdfForm = (pdf: Blob, filename: string) => {
   const form = new FormData();
   form.append('file', new File([pdf], filename, { type: 'application/pdf' }));
