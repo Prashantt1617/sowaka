@@ -27,6 +27,12 @@ export const Logo = ({ stroke = 'var(--on-accent)', size = 19 }: { stroke?: stri
 
 // ---- Nav / section icons (18px, currentColor) ----
 export const navIcon: Record<View, ReactElement> = {
+  suwitimings: (
+    <svg {...base(18, 'currentColor')}>
+      <circle cx="12" cy="13" r="8" />
+      <path d="M12 9v4l2.5 2.5M10 2h4M12 2v3" />
+    </svg>
+  ),
   suwi: (
     <svg {...base(18, 'currentColor')}>
       <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
