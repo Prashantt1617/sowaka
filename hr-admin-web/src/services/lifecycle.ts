@@ -114,6 +114,11 @@ export interface BoardCard {
   /** Days since the candidate last did anything (the Quiet flag) and days left on the offer (Expires soon). */
   quietDays?: number;
   expiresInDays?: number;
+  /** Pre-boarding cards: when the current offer went out (and its version), when it was accepted, and its reply-by day. */
+  offerSentAt?: string;
+  offerVersion?: number;
+  acceptedAt?: string;
+  replyBy?: string;
 }
 
 export interface BoardDTO {
@@ -388,7 +393,7 @@ export const getJoinerPicks = () => api<{ joiners: JoinerPick[] }>(`${L}/joiners
 /** Offers that ended before joining: the board's Closed view (declined, expired, not joining). */
 export interface ClosedJourneyRow {
   journeyId: string; name: string; designation?: string; department?: string;
-  status: 'declined' | 'expired' | 'not_joining'; closedAt?: string; closedReason?: string; tj?: string;
+  status: 'declined' | 'expired' | 'not_joining'; closedAt?: string; closedReason?: string; tj?: string; offerSentAt?: string;
 }
 export const getClosedJourneys = (q?: string) => api<{ journeys: ClosedJourneyRow[] }>(`${L}/closed${qs({ q })}`).then((r) => r.journeys);
 export const getJourney = (id: string) => api<JourneyDetail>(`${L}/journeys/${id}`);
