@@ -36,7 +36,9 @@ Everything is in `deploy/bluegreen/bluegreen.sh` (`status`, `deploy`, `rollback`
 `backend/src/services/leader.ts`: one document in Mongo (`leases`, `_id: "background-jobs"`) with
 its holder and expiry. The holder renews every 5 s (TTL 30 s); another process takes it only once it
 has expired or been released. A holder whose renewals fail for 18 s stops its jobs, well before
-anyone may take over. Mongo rather than Redis because the server cannot run without Mongo but runs
+anyone may take over, and `isLeader()` turns false the moment its last renewal could have lapsed.
+Starting and stopping the jobs never holds up a renewal, and the lease is still renewed while a
+stopping holder's last runs finish. Mongo rather than Redis because the server cannot run without Mongo but runs
 on without Redis, and this Redis evicts keys with a TTL under memory pressure (`volatile-lru`).
 
 `leader-jobs.ts` / `background-jobs.ts` run, on the lease holder only:

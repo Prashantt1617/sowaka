@@ -80,8 +80,9 @@ async function leaseAndLedger(mongo: MongoClient): Promise<void> {
       slotJobs: [{ name: 'probe', periodMs: 1000, offsetMs: 0, graceMs: 1000, run: async (at) => { ran.push({ slot: at.getTime() / 1000, by: holder }); await sleep(30); } }],
       loopJobs: [],
     });
-    runner.attach(leader);
+    // Conservative bounds on when this one may run a job: from before its jobs start to after they have stopped.
     leader.whenAcquired(() => { intervals.push({ by: holder, from: Date.now(), to: null }); });
+    runner.attach(leader);
     leader.whenReleased(() => { for (const i of intervals) if (i.by === holder && i.to === null) i.to = Date.now(); });
     return leader;
   };
@@ -127,6 +128,22 @@ async function leaseAndLedger(mongo: MongoClient): Promise<void> {
   const gaps: number[] = [];
   for (let s = slots[0]; s <= slots[slots.length - 1]; s++) if (!slots.includes(s)) gaps.push(s);
   check(`every slot ran exactly once across three handovers (${slots.length} slots, by ${[...new Set(ran.map((r) => r.by))].join(', ')})`, dupes.length === 0 && gaps.length === 0, `dupes ${dupes.length}, skipped ${gaps.length}`);
+  // Jobs slow to start (an index build on a busy cluster) must not let the lease lapse under them.
+  {
+    const slow = new Leader({ name: 'check-slow', holder: 'S', ttlMs: 600, renewMs: 150, pollMs: 100, collection: () => leases });
+    slow.whenAcquired(() => sleep(1500));
+    const rival = new Leader({ name: 'check-slow', holder: 'R', ttlMs: 600, renewMs: 150, pollMs: 100, collection: () => leases });
+    await leases.deleteMany({ _id: 'check-slow' });
+    slow.start();
+    await sleep(100);
+    rival.start();
+    let rivalLed = false;
+    const end = Date.now() + 1800;
+    while (Date.now() < end) { if (rival.isLeader()) rivalLed = true; await sleep(20); }
+    check('a holder whose jobs take longer than the TTL to start keeps the lease (renewal is not held up)', slow.isLeader() && !rivalLed);
+    await slow.release();
+    await rival.release();
+  }
   const ledger = await runsCol.countDocuments({});
   check('the ledger has one claim per slot run', ledger === ran.length, `${ledger} claims, ${ran.length} runs`);
 }
@@ -384,7 +401,13 @@ async function twoServers(mongo: MongoClient): Promise<void> {
   // The room survived: both players reconnected to green, and the game goes on there.
   check('Tile Up sockets reconnected to green', await until(() => tA.connected && tB.connected && reconnects.A > 0 && reconnects.B > 0, 10_000), JSON.stringify(reconnects));
   const roomAfter = await new Redis(REDIS).get(`tileup:room:${ORG}:${code}`);
-  check('the room record is the same after the switch', Boolean(roomBefore) && roomAfter === roomBefore);
+  // The game itself, not who is online: each player went offline and came back (offlineAt, updatedAt).
+  const game = (raw: string | null) => {
+    if (!raw) return null;
+    const r = JSON.parse(raw) as Record<string, unknown> & { players: { userId: string }[] };
+    return JSON.stringify([r.code, r.status, r.gameId, r.hostId, r.board, r.bag, r.racks, r.order, r.players.map((p) => p.userId)]);
+  };
+  check('the room carries on after the switch: same game, board, bag, racks and turn order', Boolean(roomBefore) && game(roomAfter) === game(roomBefore), `${(roomBefore ?? '').length} / ${(roomAfter ?? '').length} bytes`);
   await sleep(500);
   // Whoever is to move passes; the other is refused as not their turn. Either way the room answered from green.
   const passA = await emitAck(tA, 'tileup:pass');

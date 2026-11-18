@@ -71,6 +71,12 @@ export class Leader {
   private stopped = false;
   /** One step (acquire, renew, step down) at a time. */
   private stepping: Promise<void> = Promise.resolve();
+  /**
+   * The jobs starting and stopping, one after another, apart from the steps: starting them can be
+   * slow (indexes), and a renewal must never wait behind it or the lease would lapse under a holder
+   * that still believes it leads.
+   */
+  private transitions: Promise<void> = Promise.resolve();
   private readonly onAcquire: Listener[] = [];
   private readonly onRelease: Listener[] = [];
 
@@ -85,9 +91,13 @@ export class Leader {
     this.port = options.port ?? null;
   }
 
-  /** True while this process holds the lease and its jobs may run. */
+  /**
+   * True while this process holds the lease and its jobs may run: only while its last renewal is
+   * recent enough that nobody else can have taken it (a process stalled past that point, a long GC
+   * or a frozen event loop, stops counting itself the leader before the lease can lapse).
+   */
   isLeader(): boolean {
-    return this.leading;
+    return this.leading && Date.now() - this.lastRenewed < this.stepDownAfterMs;
   }
 
   /** Runs when this process takes the lease (the jobs start). */
@@ -117,7 +127,7 @@ export class Leader {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
     await this.stepping;
-    if (!this.leading) return;
+    if (!this.leading) { await this.transitions; return; }
     await this.stepDown('shutdown');
     try {
       await this.collection().updateOne(
@@ -157,9 +167,11 @@ export class Leader {
       this.leading = true;
       this.lastRenewed = now;
       logger.info('Background jobs lease taken: this process runs the jobs', { holder: this.holder, port: this.port, color: appColor });
-      for (const listener of this.onAcquire) {
-        try { await listener(); } catch (error) { logger.error('Background jobs failed to start', {}, error); }
-      }
+      this.transitions = this.transitions.then(async () => {
+        for (const listener of this.onAcquire) {
+          try { await listener(); } catch (error) { logger.error('Background jobs failed to start', {}, error); }
+        }
+      });
     }
     this.schedule(this.leading ? this.renewMs : this.pollMs);
   }
@@ -199,9 +211,21 @@ export class Leader {
   private async stepDown(why: string): Promise<void> {
     if (!this.leading) return;
     logger.info('Background jobs stopping on this process', { why, holder: this.holder });
-    for (const listener of this.onRelease) {
-      try { await listener(); } catch (error) { logger.error('Background jobs failed to stop cleanly', {}, error); }
-    }
+    // After any start still under way, so a stop never runs before the start it undoes.
+    const stop = this.transitions.then(async () => {
+      for (const listener of this.onRelease) {
+        try { await listener(); } catch (error) { logger.error('Background jobs failed to stop cleanly', {}, error); }
+      }
+    });
+    this.transitions = stop;
+    // Still renewing while the last runs finish (up to JOBS_STOP_WAIT_MS, longer than the TTL), so the
+    // lease cannot lapse to another process while a job here is part-way through. Fails harmlessly
+    // when the lease is already lost.
+    const keepAlive = setInterval(() => {
+      void this.renew(Date.now()).then((outcome) => { if (outcome === 'renewed') this.lastRenewed = Date.now(); });
+    }, this.renewMs);
+    keepAlive.unref();
+    try { await stop; } finally { clearInterval(keepAlive); }
     this.leading = false;
   }
 }

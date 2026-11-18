@@ -86,6 +86,8 @@ export class JobRunner {
   private readonly busy = new Set<string>();
   private readonly passes = new InFlight();
   private running = false;
+  /** Whether this process still holds the lease, asked before every claim. */
+  private stillLeading: () => boolean = () => true;
   private indexed: Promise<void> | null = null;
 
   constructor(options: JobRunnerOptions) {
@@ -98,6 +100,7 @@ export class JobRunner {
 
   /** Ties the jobs to the lease: they start when it is taken and stop before it is let go. */
   attach(leader: Leader): void {
+    this.stillLeading = () => leader.isLeader();
     leader.whenAcquired(() => this.start());
     leader.whenReleased(() => this.stop());
   }
@@ -177,7 +180,7 @@ export class JobRunner {
 
   /** Claims the slot and runs it, unless this job is still running its last slot or someone already claimed this one. */
   private async fire(job: SlotJob, slot: number): Promise<void> {
-    if (!this.running) return;
+    if (!this.running || !this.stillLeading()) return;
     if (this.busy.has(job.name)) {
       logger.info('Background job skipped: the last slot is still running', { job: job.name });
       return;
