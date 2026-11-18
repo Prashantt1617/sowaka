@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { keptForCompanyOf } from './keptReads';
 import { forgetAuthUser } from './auth-cache';
 import { authSessions, companies, deviceTokens, employeePaymentDetails, feedbackRecords, salaryStructures, users } from '../config/db';
 import { invalidateAttendanceSetup } from './attendance-report.service';
@@ -58,7 +59,9 @@ const EMPLOYEE_LIST_FIELDS = [
 ];
 
 export async function listAllEmployeesForAdmin(adminUserId: string) {
-  const employees = await orgUsers(adminUserId, EMPLOYEE_LIST_FIELDS);
+  // The records are kept per company (keptReads: an inline photo or two and everyone's documents made
+  // this ~2 MB a read); the links below are signed afresh every time.
+  const employees = await keptForCompanyOf(adminUserId, 'adm-employees', null, () => orgUsers(adminUserId, EMPLOYEE_LIST_FIELDS));
   const nameById = new Map(employees.map((e) => [e.userId, e.name]));
   // Presigning is local arithmetic, not a round trip, so the whole roster's
   // photos resolve in one pass without slowing the directory down.

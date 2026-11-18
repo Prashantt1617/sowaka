@@ -330,15 +330,49 @@ export async function ptAnnualReturn(viewer: string, fyIn: unknown, opts: Opts) 
 export async function paymentDetails(viewer: string, runIdIn: string) {
   const org = await requireAdminOrg(viewer);
   if (!ObjectId.isValid(runIdIn)) throw new PayrollRunError(400, 'Invalid run ID');
-  const run = await payrollRuns().findOne({ _id: new ObjectId(runIdIn), org });
+  const [run, reveal] = await Promise.all([
+    payrollRuns().findOne({ _id: new ObjectId(runIdIn), org }, { projection: { _id: 1, period: 1, status: 1 } }),
+    // Full account numbers only for payroll access; anyone else sees the last four.
+    payrollAccessOf(viewer),
+  ]);
   if (!run) throw new PayrollRunError(404, 'Payroll run not found');
-  const register = await salaryRegister(viewer, run.period, { includeDrafts: true });
+  // The month's run as the salary register picks it (the best of the month's runs), and only what the
+  // bank file shows: each payslip's person and net pay, and their bank row. Before, the whole register
+  // was built for it (whole payslips and whole user records of everyone paid: 7 s on the cluster).
+  const [best] = await runsBetween(org, run.period, run.period, { includeDrafts: true });
+  const slips = best
+    ? await payslips().find({ org, runId: best._id.toHexString() }, { projection: { _id: 0, userId: 1, employeeId: 1, employeeName: 1, held: 1, netPayablePaise: 1 } }).toArray()
+    : [];
+  const payments = await employeePaymentDetails()
+    .find({ org, userId: { $in: slips.map((s) => s.userId) } } as never, { projection: { _id: 0, userId: 1, payMode: 1, bankName: 1, ifsc: 1, accountNumber: 1, accountLast4: 1 } })
+    .toArray() as unknown as { userId: string; payMode?: string; bankName?: string; ifsc?: string; accountNumber?: string; accountLast4?: string }[];
+  const payBy = new Map(payments.map((p) => [p.userId, p]));
+  const account = (p?: { accountNumber?: string; accountLast4?: string }) => {
+    if (reveal && p?.accountNumber && fieldKeyConfigured()) { try { return decryptField(p.accountNumber); } catch { /* masked below */ } }
+    return p?.accountLast4 ? `XXXX${p.accountLast4}` : '';
+  };
+  // In the register's order: by employee id, numbers as numbers.
+  const rows = slips
+    .map((s) => {
+      const pay = payBy.get(s.userId);
+      return {
+        employeeId: s.employeeId ?? '',
+        name: s.employeeName,
+        paymentMode: PAY_MODES[pay?.payMode ?? ''] ?? '',
+        bankName: pay?.bankName ?? '',
+        accountNumber: account(pay),
+        ifsc: pay?.ifsc ?? '',
+        netPayPaise: s.netPayablePaise,
+        held: s.held ? true : false,
+      };
+    })
+    .sort((a, b) => a.employeeId.localeCompare(b.employeeId, undefined, { numeric: true }));
   return {
     period: run.period,
     status: run.status,
     // Held pay (people on notice) is not paid with the run: it stays out of the bank file, listed apart.
-    rows: register.rows.filter((r) => !r.held).map((r) => ({ employeeId: r.employeeId, name: r.name, paymentMode: r.paymentMode || 'Not set', bankName: r.bankName, accountNumber: r.accountNumber, ifsc: r.ifsc, netPayPaise: r.netPayPaise })),
-    held: register.rows.filter((r) => r.held).map((r) => ({ employeeId: r.employeeId, name: r.name, netPayPaise: r.netPayPaise })),
+    rows: rows.filter((r) => !r.held).map((r) => ({ employeeId: r.employeeId, name: r.name, paymentMode: r.paymentMode || 'Not set', bankName: r.bankName, accountNumber: r.accountNumber, ifsc: r.ifsc, netPayPaise: r.netPayPaise })),
+    held: rows.filter((r) => r.held).map((r) => ({ employeeId: r.employeeId, name: r.name, netPayPaise: r.netPayPaise })),
   };
 }
 

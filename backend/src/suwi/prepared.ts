@@ -14,6 +14,7 @@ import { askSuwi } from './agent';
 import { normalQuestion } from './kept';
 import { recentSuwiUsers } from './planner';
 import { auditCol, settingsFor, spentThisMonthUsd } from './store';
+import { yieldToLive } from '../services/background-pace';
 
 const GAP_MS = 5 * 60_000;
 const MAX_PER_PERSON = 3;
@@ -53,6 +54,7 @@ export async function prepareFrequent(org: string, isStopping: () => boolean = (
     lastMade.set(gapKey, Date.now());
     for (const q of await frequentQuestions(org, u.userId)) {
       if (isStopping()) break;
+      await yieldToLive(isStopping);
       try { await askSuwi(u, { question: q.question, page: q.page }, undefined, undefined, { prepare: true }); made++; } catch { /* the next round tries again */ }
     }
   }

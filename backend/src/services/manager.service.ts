@@ -1,4 +1,5 @@
-import { cachedLifecycle, refreshLifecycle } from './lifecycle/readCache';
+import { cachedLifecycle, lifecycleReadCacheOn, refreshLifecycle } from './lifecycle/readCache';
+import { peekSwr } from './swr-cache';
 import {
   attendanceRecords,
   feedbackRecords,
@@ -318,6 +319,26 @@ export async function workspaceRoster(org: string, opts: { fresh?: boolean } = {
   return kept.map((user) => ({ ...user }));
 }
 
+/**
+ * The inline photos (base64 in the record, an older account's) of these people: each kept per person
+ * at the company on the API server (`mgr-photos`, dropped like the roster by every write that can touch
+ * people). Three people with one were ~370 KB on every open of the workspace, the most it read once the
+ * roster was kept.
+ */
+async function inlinePhotosOf(org: string, userIds: string[]): Promise<Pick<User, 'userId' | 'profilePhotoUrl'>[]> {
+  const read = (ids: string[]) => users()
+    .find({ userId: { $in: ids } }, { projection: { _id: 0, userId: 1, profilePhotoUrl: 1 } })
+    .toArray() as Promise<Pick<User, 'userId' | 'profilePhotoUrl'>[]>;
+  if (!lifecycleReadCacheOn() || !org) return read(userIds);
+  const each = await Promise.all(userIds.map((userId) => cachedLifecycle(org, 'mgr-photos', { userId }, () => read([userId]).then((rows) => rows[0] ?? null))));
+  return each.filter((row): row is Pick<User, 'userId' | 'profilePhotoUrl'> => row !== null);
+}
+
+/** The kept roster if there is a usable one, without reading anything (shared: callers must not change it). */
+export function keptWorkspaceRoster(org: string): RosterUser[] | undefined {
+  return peekSwr<RosterUser[]>(org, 'mgr-roster', null);
+}
+
 /** The kept roster worked out again now (the warm-up). */
 export function refreshWorkspaceRoster(org: string): Promise<RosterUser[]> {
   return refreshLifecycle(org, 'mgr-roster', null, () => loadWorkspaceRoster(org));
@@ -332,8 +353,13 @@ export async function getManagerWorkspace(
   if (!manager) throw new ManagerError(404, 'Manager not found');
   // Everything that depends only on who is asking goes out together: the
   // reads below used to run one after another, and each is a round trip.
+  // The company's roster: kept in memory (workspaceRoster), each request on its own copies.
+  const rosterFuture = workspaceRoster(manager.org ?? '');
+  // Their own manager from that roster (whole records bar the exit and an inline photo, which is
+  // filled in below like any shown person's): before, their whole record was read every time, an
+  // older account's inline photo with it. Someone the roster does not hold is read as before.
   const approverFuture = manager.managerUserId
-    ? users().findOne({ userId: manager.managerUserId })
+    ? rosterFuture.then((roster): User | Promise<User | null> => roster.find((user) => user.userId === manager.managerUserId) ?? users().findOne({ userId: manager.managerUserId! }))
     : Promise.resolve(null);
 
   // Scoped to the manager's own company: `managerUserId` alone is not unique
@@ -355,8 +381,7 @@ export async function getManagerWorkspace(
       // a base64 data URI of hundreds of KB, and the whole company's of those
       // made this the slowest call the app makes. A photo kept as a link stays;
       // an inline one is marked, and read below only for the people shown.
-      // The company's roster: kept in memory (workspaceRoster), each request on its own copies.
-      workspaceRoster(manager.org ?? ''),
+      rosterFuture,
       cycleInfoFor(manager.org ?? ''),
       // Company config for the overtime apply flow: which weekdays are
       // week-offs, whether overtime is enabled for this user's department.
@@ -441,9 +466,7 @@ export async function getManagerWorkspace(
   const inlinePhotosPromise = inlinePhotoIds.length
     ? optional(
         'Workspace inline photos',
-        () => users()
-          .find({ userId: { $in: inlinePhotoIds } }, { projection: { _id: 0, userId: 1, profilePhotoUrl: 1 } })
-          .toArray(),
+        () => inlinePhotosOf(manager.org ?? '', inlinePhotoIds),
         [] as Pick<User, 'userId' | 'profilePhotoUrl'>[],
         { userId: managerUserId },
       )

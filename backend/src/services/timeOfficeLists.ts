@@ -33,6 +33,7 @@ import { listAllLeavesForAdmin } from './leave.service';
 import { listAllOvertimeForAdmin } from './overtime.service';
 import { listAllFeedbackForAdmin } from './admin.service';
 import type { SwrKind } from './swr-cache';
+import { yieldToLive } from './background-pace';
 
 const IST_OFFSET_MS = 330 * 60_000;
 const DAY_MS = 86_400_000;
@@ -111,6 +112,7 @@ export async function warmTimeOfficeLists(org: string, who: string, isStopping: 
   ];
   for (const [name, run] of steps) {
     if (isStopping()) break;
+    await yieldToLive(isStopping);
     const t0 = Date.now();
     try { await run(); took[name] = Date.now() - t0; } catch (error) { took[name] = `failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 200); }
   }

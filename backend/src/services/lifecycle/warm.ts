@@ -21,6 +21,7 @@ import { istToday } from '../../suwi/digest';
 import { prepareRecent, recentSuwiUsers } from '../../suwi/planner';
 import { prepareFrequent } from '../../suwi/prepared';
 import { logger } from '../../utils/logger';
+import { yieldToLive } from '../background-pace';
 
 export async function warmLifecycle(org: string, isStopping: () => boolean = () => false): Promise<Record<string, number | string>> {
   const took: Record<string, number | string> = {};
@@ -44,12 +45,15 @@ export async function warmLifecycle(org: string, isStopping: () => boolean = () 
     const viewer = await users().findOne(
       { org, dashboardAccess: true, lifecycleStatus: { $nin: ['offboarded', 'terminated'] }, hiddenFromDirectory: { $ne: true }, $or: [{ dashboardAdmin: true }, { dashboardTabs: { $exists: false } }] },
     );
+    await yieldToLive(isStopping);
     if (viewer) await suwiNotices(contextFor(viewer, settings.levels, today), true);
     // "What needs my attention today?" made ahead for the people who use Suwi (planner.ts): once per
     // data version, at most once a minute each, so asking it is usually instant.
+    await yieldToLive(isStopping);
     await prepareRecent(org, today, isStopping);
     // The people bundle every people tool reads, then the heavier no-input tools asked ahead as the
     // people who use Suwi (toolCache.ts): once per data version, at most every five minutes.
+    await yieldToLive(isStopping);
     await peopleBundle(org);
     const recent = (await recentSuwiUsers(org, 3)).map((u) => contextFor(u, settings.levels, today));
     await prerunTools(org, recent, toolsFor, isStopping);
@@ -58,6 +62,7 @@ export async function warmLifecycle(org: string, isStopping: () => boolean = () 
   }]);
   for (const [name, run] of steps) {
     if (isStopping()) break;
+    await yieldToLive(isStopping);
     const t0 = Date.now();
     try { await run(); took[name] = Date.now() - t0; } catch (error) { took[name] = `failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 200); }
   }

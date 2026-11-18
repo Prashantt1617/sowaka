@@ -18,11 +18,14 @@ import { startGameChallengeSweeper, stopGameChallengeSweeper } from './services/
 import { startCupRunner, stopCupRunner } from './services/cup.service';
 import { startEngagementWarmup, stopEngagementWarmup } from './services/engagement-warmup.service';
 import { enableLifecycleReadCache } from './services/lifecycle/readCache';
+import { enableBackgroundPace } from './services/background-pace';
 
 async function start(): Promise<void> {
   await connectDb();
   // Lifecycle boards and Suwi notices from memory, dropped on every write (lifecycle/readCache.ts).
   enableLifecycleReadCache();
+  // The background warm-up waits for a quiet moment before each step (background-pace.ts).
+  enableBackgroundPace();
   logger.info('Connected to MongoDB', { database: env.mongoDbName });
   startConnectScheduler();
   startNotificationScheduler();

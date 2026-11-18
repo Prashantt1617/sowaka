@@ -61,7 +61,8 @@ async function getAttendanceForEmployee(
   // grade it. Imported here, not at the top: the report imports this module.
   const { employeeDayStatuses } = await import('./attendance-report.service');
   const [records, regularizations, days] = await Promise.all([
-    attendanceRecords().find(recordFilter).sort({ workDate: 1 }).toArray(),
+    // Only what the rows below show: whole records carry both punches' locations and the face check.
+    attendanceRecords().find(recordFilter, { projection: { _id: 1, workDate: 1, punchIn: 1, punchOut: 1, dayType: 1, outsideLocation: 1 } }).sort({ workDate: 1 }).toArray(),
     attendanceRegularizations()
       .find({ userId, workDate: { $gte: fromInput, $lte: toInput } })
       .sort({ createdAt: -1 }).toArray(),

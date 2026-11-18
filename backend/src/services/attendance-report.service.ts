@@ -164,6 +164,24 @@ const setupCache = new Map<string, { expires: number; value: OrgSetup }>();
 // effect tomorrow anyway. Five minutes stale costs nothing a reader would
 // notice and saves the slowest round trip the report makes.
 const SETUP_TTL_MS = 5 * 60_000;
+/**
+ * Past its five minutes but within this, a setup is still answered at once while one read of it runs
+ * behind the reader. Before, whoever came first after the five minutes waited for the company's
+ * roster, templates and assignments (the p95 of a month's GET /attendance/mine, 1.3 s, and part of
+ * every Payroll home), and everyone who came at the same moment read them again alongside.
+ * A change that must show at once still drops the setup (dropSetup), and the next reader waits.
+ */
+const SETUP_STALE_MS = 15 * 60_000;
+/** The read under way per org, so readers at the same moment share it. */
+const setupLoads = new Map<string, Promise<OrgSetup>>();
+/** Bumped by a drop: a read that began before it is not kept. */
+const setupGeneration = new Map<string, number>();
+
+function dropSetup(org: string): void {
+  setupCache.delete(org);
+  setupLoads.delete(org);
+  setupGeneration.set(org, (setupGeneration.get(org) ?? 0) + 1);
+}
 
 // Which org an admin belongs to never changes, and looking it up was a whole
 // round trip before any real work could start.
@@ -187,7 +205,7 @@ const reportPatches = new Map<string, Promise<void>>();
 // A template edit, an assignment or a new default has to show on the next
 // refresh; a finished report for that org is just as stale as its setup.
 onShiftSetupChanged((org) => {
-  setupCache.delete(org);
+  dropSetup(org);
   invalidateAttendanceReport(org);
 });
 
@@ -199,7 +217,7 @@ export function invalidateAttendanceReport(org: string): void {
 
 /** The report and the roster behind it, after a change to who someone is (a joining date). */
 export function invalidateAttendanceSetup(org: string): void {
-  setupCache.delete(org);
+  dropSetup(org);
   invalidateAttendanceReport(org);
 }
 
@@ -228,7 +246,31 @@ const HR_STATUS_LABEL: Record<HrDayStatus, string> = {
 
 async function orgSetup(org: string): Promise<OrgSetup> {
   const hit = setupCache.get(org);
-  if (hit && hit.expires > Date.now()) return hit.value;
+  const now = Date.now();
+  if (hit && hit.expires > now) return hit.value;
+  if (hit && now < hit.expires + SETUP_STALE_MS) {
+    void loadSetup(org).catch(() => undefined);
+    return hit.value;
+  }
+  return loadSetup(org);
+}
+
+/** One read of the org's setup at a time; kept unless a drop came while it read. */
+function loadSetup(org: string): Promise<OrgSetup> {
+  const running = setupLoads.get(org);
+  if (running) return running;
+  const generation = setupGeneration.get(org) ?? 0;
+  const load = readSetup(org).then((value) => {
+    if ((setupGeneration.get(org) ?? 0) === generation) setupCache.set(org, { expires: Date.now() + SETUP_TTL_MS, value });
+    return value;
+  }).finally(() => {
+    if (setupLoads.get(org) === load) setupLoads.delete(org);
+  });
+  setupLoads.set(org, load);
+  return load;
+}
+
+async function readSetup(org: string): Promise<OrgSetup> {
   const [roster, templates, orgPolicy, assignments] = await Promise.all([
     users()
       .find(
@@ -249,9 +291,7 @@ async function orgSetup(org: string): Promise<OrgSetup> {
     // shift that covered it rather than the one they are on today.
     shiftAssignments().find({ org }).sort({ effectiveFrom: -1 }).batchSize(BATCH).toArray(),
   ]);
-  const value = setupOf({ roster, templates, orgPolicy, assignments });
-  setupCache.set(org, { expires: Date.now() + SETUP_TTL_MS, value });
-  return value;
+  return setupOf({ roster, templates, orgPolicy, assignments });
 }
 
 /**
@@ -611,6 +651,24 @@ export async function attendanceReport(
   return report;
 }
 
+/**
+ * One person's rows of the report for a range, graded exactly as the whole report grades them (the
+ * same setup, grader and gradePerson a patch uses), from their own punches, leave and marks alone:
+ * a few KB, where the report reads the whole company's range (≈300 KB for a hundred people over a
+ * pay period, a megabyte at Convrse). Null when they are not on the roster the report is built from,
+ * or left before the range. For payroll's estimate of one person's pay (deduction.service).
+ */
+export async function reportDaysOfPerson(org: string, userId: string, from: string, to: string): Promise<Pick<AttendanceReport, 'days' | 'halfDayLeave'> | null> {
+  if (!DATE.test(from) || !DATE.test(to)) throw new ReportError(400, 'from and to must be YYYY-MM-DD');
+  if (from > to) throw new ReportError(400, 'from must not be after to');
+  const setup = await orgSetup(org);
+  const user = setup.roster.find((u) => u.userId === userId);
+  if (!user) return null;
+  const grader = graderFor(setup, await rangeData(org, { roster: [user] }, from, to));
+  const part = gradePerson(grader, user, from, to, Date.now());
+  return part ? { days: part.days, halfDayLeave: part.halfDayLeave } : null;
+}
+
 /** One person's part of a report: their row, graded days, days off and half-day leave. Null when they left before the range. */
 type PersonPart = { userId: string; person: ReportPerson; days: ReportDay[]; offDays: AttendanceReport['offDays']; halfDayLeave: string[] } | null;
 
@@ -746,6 +804,9 @@ export function patchAttendanceReport(org: string, userIds: string[]): void {
 }
 
 
+/** The company whose report someone reads (their own): as `attendanceReport` finds it. */
+export const reportOrgOf = (userId: string): Promise<string> => adminOrg(userId);
+
 async function adminOrg(adminUserId: string): Promise<string> {
   const hit = adminOrgCache.get(adminUserId);
   if (hit && hit.expires > Date.now()) return hit.org;
@@ -795,12 +856,13 @@ export interface EmployeeCalendar {
 async function gradeEmployeeDays(org: string, setup: OrgSetup, user: Person, from: string, to: string): Promise<CalendarDay[]> {
   const policyOn = dayPolicyResolver(setup);
   const [records, approvedLeaves, holidayRows, marks, removals] = await Promise.all([
+    // Only what grading reads off a punch row (PUNCH_FIELDS), not its locations and face checks.
     attendanceRecords()
       .find({
         workDate: { $gte: from, $lte: to },
         $or: [{ userId: user.userId }, ...(user.employeeId ? [{ employeeId: user.employeeId }] : [])],
-      })
-      .toArray(),
+      }, { projection: PUNCH_FIELDS })
+      .toArray() as Promise<PunchRow[]>,
     leaves()
       .find({ userId: user.userId, status: 'approved', startDate: { $lte: dayOf(to) }, endDate: { $gte: dayOf(from) } })
       .toArray(),

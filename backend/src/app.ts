@@ -7,12 +7,15 @@ import { env } from './config/env';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 import { requestContext } from './middleware/request-context.middleware';
 import { router } from './routes';
+import { trackLiveRequests } from './services/background-pace';
 import { redactTicket } from './services/scribble-ticket.service';
 import { runWithRequestId } from './utils/optional';
 
 export const app = express();
 
 app.use(requestContext);
+// Counts the requests in flight, so the background warm-up waits for a quiet moment (background-pace.ts).
+app.use(trackLiveRequests);
 app.use(helmet());
 app.use(
   cors({

@@ -30,12 +30,16 @@ import { payCycleForAdmin, warmPunchLog } from './punch-log.service';
 import { refreshSwr } from './swr-cache';
 import { warmLifecycle } from './lifecycle/warm';
 import { warmTimeOfficeLists } from './timeOfficeLists';
+import { takePaceStats, yieldToLive } from './background-pace';
 
 const ROUND_MS = 4 * 60_000;
 /** After the server starts, so boot is not slowed by it. */
 const FIRST_ROUND_MS = 30_000;
-/** Between one company and the next. */
+/** Between one company and the next, at the least. */
 const BETWEEN_ORGS_MS = 2_000;
+/** And at the most: the companies are spread over this share of the round, not run back to back. */
+const MAX_BETWEEN_ORGS_MS = 15_000;
+const SPREAD_SHARE = 0.4;
 const IST_OFFSET_MS = 330 * 60_000;
 const DAY_MS = 86_400_000;
 
@@ -93,6 +97,8 @@ export async function warmOrg(org: string): Promise<Record<string, number | stri
   const took: Record<string, number | string> = {};
   for (const [name, ask] of steps) {
     if (stopping) break;
+    // Live requests first (background-pace.ts).
+    await yieldToLive(() => stopping);
     const t0 = Date.now();
     try {
       await refreshEngagement(ask);
@@ -137,6 +143,7 @@ export async function warmTimeOffice(org: string): Promise<Record<string, number
   steps.push(['lists', () => warmTimeOfficeLists(org, who, () => stopping)]);
   for (const [name, ask] of steps) {
     if (stopping) break;
+    await yieldToLive(() => stopping);
     const t0 = Date.now();
     try {
       await ask();
@@ -152,12 +159,17 @@ async function round(): Promise<void> {
   const t0 = Date.now();
   const orgs = await orgsToWarm();
   const perOrg: Record<string, Record<string, number | string>> = {};
+  // Spread over the round rather than one company straight after another: the cluster's bandwidth is
+  // shared with every live request.
+  const between = Math.min(MAX_BETWEEN_ORGS_MS, Math.max(BETWEEN_ORGS_MS, Math.floor((ROUND_MS * SPREAD_SHARE) / Math.max(1, orgs.length))));
+  takePaceStats();
   for (const [i, org] of orgs.entries()) {
     if (stopping) break;
-    if (i > 0) await pause(BETWEEN_ORGS_MS);
+    if (i > 0) await pause(between);
     perOrg[org] = { ...(await warmOrg(org)), ...(await warmTimeOffice(org)), ...(await warmLifecycle(org, () => stopping)) };
   }
-  logger.info('Engagement warm-up', { orgs: orgs.length, ms: Date.now() - t0, perOrg });
+  // `waited`: how often and how long the steps held back for live requests.
+  logger.info('Engagement warm-up', { orgs: orgs.length, ms: Date.now() - t0, waited: takePaceStats(), perOrg });
 }
 
 function schedule(ms: number): void {
