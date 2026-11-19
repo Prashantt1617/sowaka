@@ -299,6 +299,41 @@ export async function journeyForPortalToken(authorization: string | undefined, n
   return journey;
 }
 
+// ─── The portal inside the app (an app user's own journey, no code) ─────────
+
+/**
+ * The signed-in app user's own onboarding journey while its portal is still
+ * open: bound to them at Mark joined, not closed, a candidate account behind
+ * it (journeyForPortalToken needs one) and not yet moved to the app (Tj + 7 or
+ * the end of month 1). Null otherwise.
+ */
+export async function openPortalJourneyForUser(userId: string, org: string): Promise<Journey | null> {
+  if (!userId || !org) return null;
+  const journey = await journeys().find({ userId, org, kind: 'onboarding', closedAt: { $exists: false } }).sort({ createdAt: -1 }).limit(1).next();
+  if (!journey || CLOSED_STATUSES.has(String(journey.status))) return null;
+  if (!(await candidateAccounts().findOne({ journeyId: journey.id }, { projection: { _id: 1 } }))) return null;
+  return journey;
+}
+
+/**
+ * A portal session for the app user's own journey: the app opens the portal in
+ * its own page, signed in without a code (POST /lifecycle/portal-session). The
+ * token is the portal's usual one (aud 'portal', sub journeyId, 12 hours); the
+ * portal's `/app` entry reads it from the URL's fragment, which never reaches a
+ * server or a log.
+ */
+export async function portalSessionForAppUser(me: { userId: string; org: string }, now = new Date()): Promise<{ token: string; expiresAt: string; url: string }> {
+  const journey = await openPortalJourneyForUser(me.userId, me.org);
+  if (!journey) throw new LifecycleOfferError(404, 'No joining portal for you');
+  const token = signPortalToken(journey.id, journey.org, now);
+  await journeys().updateOne({ id: journey.id }, { $set: { lastActivityAt: now } });
+  return {
+    token,
+    expiresAt: new Date((Math.floor(now.getTime() / 1000) + PORTAL_TOKEN_TTL_SECONDS) * 1000).toISOString(),
+    url: `${portalLink('/app', journey.org)}#t=${token}`,
+  };
+}
+
 // ─── Sign-in by a code to their email (no password) ─────────────────────────
 
 const CODE_TTL_MINUTES = 10;

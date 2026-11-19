@@ -9,6 +9,7 @@ import {
 import { LifecycleError } from '../services/lifecycle/engine';
 import { contentDisposition } from '../services/lifecycle/files';
 import { letterPdfForEmployee } from '../services/lifecycle/letters';
+import { portalSessionForAppUser } from '../services/lifecycle/portalAuth';
 import { lifecycleGate, lifecycleHandler } from './lifecycle-admin.routes';
 
 /**
@@ -39,6 +40,8 @@ lifecycleAppRouter.use(lifecycleGate);
 lifecycleAppRouter.get('/onboarding', lifecycleHandler(async (req) => onboardingHome(me(req))));
 lifecycleAppRouter.post('/onboarding/tasks/:taskId', lifecycleHandler(async (req) => actOnOwnTask(me(req), param(req, 'taskId'), body(req))));
 lifecycleAppRouter.post('/onboarding/week-done/seen', lifecycleHandler(async (req) => markWeekDoneSeen(me(req))));
+// The joining portal inside the app: a portal session for their own journey while its portal is open (no code).
+lifecycleAppRouter.post('/portal-session', lifecycleHandler(async (req) => portalSessionForAppUser(me(req))));
 lifecycleAppRouter.get('/onboarding/week1', lifecycleHandler(async (req) => week1View(me(req))));
 lifecycleAppRouter.put('/onboarding/week1', lifecycleHandler(async (req) => saveWeek1Step(me(req), body(req), String(req.get('user-agent') ?? ''))));
 lifecycleAppRouter.get('/onboarding/intro', lifecycleHandler(async (req) => introView(me(req))));

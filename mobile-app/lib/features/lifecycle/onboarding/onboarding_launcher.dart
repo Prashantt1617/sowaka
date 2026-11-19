@@ -12,6 +12,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'data/lifecycle_me_store.dart';
 import 'data/onboarding_models.dart';
 import 'presentation/manager/joiner_screen.dart';
 import 'presentation/manager/probation_review_screen.dart';
@@ -21,6 +22,7 @@ import 'presentation/notes_screen.dart';
 import 'presentation/onboarding_home_screen.dart';
 import 'presentation/onboarding_kit.dart';
 import 'presentation/people_screen.dart';
+import 'presentation/portal_page_screen.dart';
 import 'presentation/probation_screens.dart';
 import 'presentation/intro_post_screen.dart';
 import 'presentation/starter_task_screen.dart';
@@ -52,9 +54,17 @@ Future<T?> _push<T>(BuildContext context, Widget Function(OnboardingShell shell)
   return Navigator.of(context).push<T>(MaterialPageRoute(builder: (_) => page(resolved)));
 }
 
-/// A2, the joiner's onboarding home.
+/// A2, the joiner's onboarding home; while their joining portal is still
+/// open (`/lifecycle/me` says `portal`), the portal itself in the app's page
+/// (header, portal, tabs) instead of the app's own cards.
 Future<void> openOnboardingHome(BuildContext context, {OnboardingShell? shell}) =>
-    _push(context, (s) => OnboardingHomeScreen(shell: s), shell: shell);
+    _push(
+      context,
+      (s) => LifecycleMeStore.instance.value.onboarding?.portal ?? false
+          ? PortalPageScreen(shell: s)
+          : OnboardingHomeScreen(shell: s),
+      shell: shell,
+    );
 
 /// M2, a joiner's week as their manager sees it.
 /// [summary]: the Team tab's row, so M2's card paints at once.

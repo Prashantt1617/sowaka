@@ -5,6 +5,7 @@
  * intro post, people to meet, starter tasks, 1:1 notes, meetings, surveys).
  */
 import { offboardingMe } from './offboarding';
+import { openPortalJourneyForUser } from './portalAuth';
 import { randomUUID } from 'node:crypto';
 import {
   connectPosts, employeePaymentDetails, journeyTasks, journeys, lifecycleMeetings, oneOnOneNotes, peopleToMeet, starterTasks, surveyResponses, users,
@@ -76,6 +77,8 @@ export async function lifecycleMe(me: Me, now = new Date()) {
     out.onboarding = {
       journeyId: j.id, stage: derived.stage, dayLabel: derived.dayLabel, plant: derived.plant, tileVisible: tileVisible(j),
       progress, subtitle: tileSubtitle(j, tasks, derived, progress, now),
+      // The joining portal is still open for them: the app's Onboarding opens it in its own page.
+      portal: (await openPortalJourneyForUser(me.userId, me.org))?.id === j.id,
     };
   }
   // Resigning / on notice: the Resignation tab and the Off-boarding page (offboarding.ts).

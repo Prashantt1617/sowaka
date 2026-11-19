@@ -3,6 +3,7 @@ import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom';
 import { MOCK } from './api/client';
 import { portal } from './api/portal';
 import { SignedIn } from './session';
+import { AppEntry } from './appEntry';
 import { Page, rememberClient } from './components/Shell';
 import { OfferLink } from './screens/Offer';
 import { Forgot, Reset, SignIn } from './screens/Auth';
@@ -57,6 +58,7 @@ export function App() {
       <Routes>
         <Route path="/o/:token" element={<OfferLink />} />
         <Route path="/o/:token/letter" element={<OfferLink letter />} />
+        <Route path="/app" element={<AppEntry />} />
         <Route path="/sign-in" element={<SignIn />} />
         <Route path="/forgot" element={<Forgot />} />
         <Route path="/reset/:token" element={<Reset />} />

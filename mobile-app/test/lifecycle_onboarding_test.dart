@@ -22,6 +22,7 @@ import 'package:mobile_app/features/lifecycle/onboarding/presentation/task_row.d
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/onboarding_home_screen.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/onboarding_kit.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/plant.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/presentation/portal_page_screen.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/probation_screens.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/profile_onboarding_card.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/survey_screen.dart';
@@ -91,6 +92,17 @@ class FakeOnboardingApi implements OnboardingApi {
 
   @override
   Future<LifecycleMe> fetchMe() async => me;
+
+  /// What `POST /lifecycle/portal-session` answers; a failure when null.
+  Uri? portalUrl = Uri.parse('https://acme.getsowaka.com/onboarding/app?c=ct#t=tok');
+
+  @override
+  Future<Uri> portalSessionUrl() async {
+    calls.add('portal-session');
+    final url = portalUrl;
+    if (url == null) throw const OnboardingApiException('No joining portal for you', statusCode: 404);
+    return url;
+  }
 
   @override
   Future<OnboardingHome> fetchHome() async => home;
@@ -229,6 +241,27 @@ class FakeOnboardingApi implements OnboardingApi {
   }) async => calls.add('month:$month${feedback == null ? '' : ':${feedback.join('+')}'}${nextGoals == null ? '' : ':next=${nextGoals.join('+')}'}');
   @override
   Future<List<DirectoryPerson>> fetchDirectory() async => directory;
+}
+
+class FakePortalSurface implements PortalSurface {
+  FakePortalSurface(this.onMessage, this.stays, this.onLoaded);
+
+  final void Function(String message) onMessage;
+  final bool Function(Uri to) stays;
+  final VoidCallback onLoaded;
+  final loads = <Uri?>[];
+
+  @override
+  Future<void> load(Uri url) async {
+    loads.add(url);
+    onLoaded();
+  }
+
+  @override
+  Future<bool> back() async => false;
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.expand(key: ValueKey('fake-portal'));
 }
 
 OnboardingShell shellFor(FakeOnboardingApi api, DateTime now, {String name = 'Kabir Mehta'}) => OnboardingShell(
@@ -875,6 +908,112 @@ void main() {
     expect(openOnboardingDestination(context, {'destination': 'lifecycle_notes'}), isTrue);
     await tester.pumpAndSettle();
     expect(find.byType(NotesScreen), findsOneWidget);
+  });
+
+  group('the joining portal in the app', () {
+    test('/lifecycle/me says whether the portal is still open', () {
+      final me = LifecycleMe.fromJson({
+        'enabled': true,
+        'onboarding': {'journeyId': 'j1', 'tileVisible': true, 'portal': true},
+      });
+      expect(me.onboarding!.portal, isTrue);
+      expect(me.withProgress(const TaskProgress(1, 4)).onboarding!.portal, isTrue);
+      expect(LifecycleMe.fromJson({'enabled': true, 'onboarding': {'journeyId': 'j1'}}).onboarding!.portal, isFalse);
+    });
+
+    testWidgets('Onboarding opens the portal page while the portal is open, the app\'s home after', (tester) async {
+      final api = FakeOnboardingApi();
+      final shell = shellFor(api, DateTime(2026, 12, 2));
+      OnboardingShell maker() => shell;
+      registerOnboardingShell(maker);
+      addTearDown(() => unregisterOnboardingShell(maker));
+      addTearDown(LifecycleMeStore.instance.clear);
+      PortalPageScreen.debugSurfaceFactory = ({required onMessage, required stays, required onLoaded}) =>
+          FakePortalSurface(onMessage, stays, onLoaded);
+      addTearDown(() => PortalPageScreen.debugSurfaceFactory = null);
+      late BuildContext context;
+      await pumpPage(tester, Builder(builder: (c) {
+        context = c;
+        return const Scaffold(body: Text('shell'));
+      }));
+      LifecycleMeStore.instance.value = LifecycleMe.fromJson({
+        'enabled': true,
+        'onboarding': {'journeyId': 'j1', 'tileVisible': true, 'portal': true},
+      });
+      unawaited(openOnboardingHome(context));
+      await tester.pumpAndSettle();
+      expect(find.byType(PortalPageScreen), findsOneWidget);
+      expect(find.byType(OnboardingHomeScreen), findsNothing);
+      Navigator.of(context).pop();
+      await tester.pumpAndSettle();
+      LifecycleMeStore.instance.value = LifecycleMe.fromJson({
+        'enabled': true,
+        'onboarding': {'journeyId': 'j1', 'tileVisible': true, 'portal': false},
+      });
+      unawaited(openOnboardingHome(context));
+      await tester.pumpAndSettle();
+      expect(find.byType(OnboardingHomeScreen), findsOneWidget);
+      expect(find.byType(PortalPageScreen), findsNothing);
+    });
+
+    testWidgets('the page: the app header, the portal, no title row; signed in by the session\'s address', (tester) async {
+      final api = FakeOnboardingApi();
+      late FakePortalSurface surface;
+      await pumpPage(
+        tester,
+        PortalPageScreen(
+          shell: shellFor(api, DateTime(2026, 12, 2)),
+          surfaceFactory: ({required onMessage, required stays, required onLoaded}) =>
+              surface = FakePortalSurface(onMessage, stays, onLoaded),
+        ),
+      );
+      expect(api.calls.where((c) => c == 'portal-session'), hasLength(1));
+      expect(surface.loads, [api.portalUrl]);
+      expect(find.byKey(const ValueKey('fake-portal')), findsOneWidget);
+      // No back + title row: the portal has its own heading.
+      expect(find.text('Onboarding'), findsNothing);
+      // The portal's own pages stay; another site goes outside the app.
+      expect(surface.stays(Uri.parse('https://acme.getsowaka.com/onboarding/profile')), isTrue);
+      expect(surface.stays(Uri.parse('blob:https://acme.getsowaka.com/1')), isTrue);
+    });
+
+    testWidgets('a session that ran out is renewed once; again at once shows the error; sign out leaves', (tester) async {
+      final api = FakeOnboardingApi();
+      late FakePortalSurface surface;
+      await pumpPage(
+        tester,
+        PortalPageScreen(
+          shell: shellFor(api, DateTime(2026, 12, 2)),
+          surfaceFactory: ({required onMessage, required stays, required onLoaded}) =>
+              surface = FakePortalSurface(onMessage, stays, onLoaded),
+        ),
+      );
+      surface.onMessage('expired');
+      await tester.pumpAndSettle();
+      expect(surface.loads, hasLength(2));
+      surface.onMessage('expired');
+      await tester.pumpAndSettle();
+      expect(surface.loads, hasLength(2));
+      expect(find.textContaining('couldn’t sign you in'), findsOneWidget);
+      surface.onMessage('signed-out');
+      await tester.pumpAndSettle();
+      expect(find.byType(PortalPageScreen), findsNothing);
+      expect(find.text('root'), findsOneWidget);
+    });
+
+    testWidgets('a portal that has closed shows the error, not a blank page', (tester) async {
+      final api = FakeOnboardingApi()..portalUrl = null;
+      await pumpPage(
+        tester,
+        PortalPageScreen(
+          shell: shellFor(api, DateTime(2026, 12, 2)),
+          surfaceFactory: ({required onMessage, required stays, required onLoaded}) =>
+              FakePortalSurface(onMessage, stays, onLoaded),
+        ),
+      );
+      expect(find.text('No joining portal for you'), findsOneWidget);
+      expect(find.byKey(const ValueKey('fake-portal')), findsNothing);
+    });
   });
 
   // ─────────────────────────────────────────────────────────────── the coverage audit's gaps
