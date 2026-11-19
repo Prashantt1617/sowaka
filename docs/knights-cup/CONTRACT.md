@@ -77,3 +77,15 @@ Rules for every agent: never merge, never deploy, never upsert pages or catalog 
 (the server, Atlas, S3). Work and test locally only. Heavy commands (tsc on the whole backend, builds, test
 suites) run under `lockf -k /tmp/sowaka-heavy.lock <cmd>` (8 GB Mac). Local test servers get their own port
 and a scratch DB name. Commit on your branch with a clear message and push it; report what you checked.
+
+## Theme (from the user's GIF, docs/knights-cup/assets/knights-tournament.gif + theme-frame.png)
+Deep navy background (~#060B26 → #0B1440), pale ice-blue text (~#CFE6FF), cobalt tiles (~#1F56D8, #2E77D0) with
+a white ×, the cobalt knight (knight-source.png) as the piece, a heavy rounded geometric sans for headings
+(e.g. Figtree 800 / Plus Jakarta Sans 800, inlined or system fallback — no external font loads in the app
+WebView unless the page already does so). Region colours must stay clearly distinct on navy: use a cool
+palette (cobalts, sky, teal, indigo, violet, ice) with enough lightness steps that 9 regions read apart, and a
+light outline or gap between regions. Clash "!" in amber. Same look on the TV boards.
+
+## Date
+**Today, Thu 19 Nov 2026**: lobby 17:30 IST, first match 18:00 IST on Convrse (the GIF says "19 Nov · 6PM onwards").
+Speed matters: build the smallest correct version first, report as soon as it works end to end.
