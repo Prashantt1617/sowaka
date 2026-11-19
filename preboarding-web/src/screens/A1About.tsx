@@ -10,12 +10,12 @@ import { firstName, fmtShort, fmtTime, fmtWeekday, initials } from '../lib/forma
 import { mailto } from '../lib/links';
 import { useMe } from '../session';
 import { WebPage } from './A1Shell';
-import { G4StoryChevron } from '../components/fig/icons/g4-story-chevron';
-import { G4StoryClose } from '../components/fig/icons/g4-story-close';
-import { G4StoryDirections } from '../components/fig/icons/g4-story-directions';
-import { G4StoryHeart } from '../components/fig/icons/g4-story-heart';
-import { G4StoryPlay } from '../components/fig/icons/g4-story-play';
-import pin3d from '../components/fig/icons/g4-3d-pin.png';
+import { FigPlay } from '../components/fig/icons';
+import { G4StoryChevron } from '../components/fig/icons/g4-StoryChevron';
+import { G4StoryClose } from '../components/fig/icons/g4-StoryClose';
+import { G4StoryDirections } from '../components/fig/icons/g4-StoryDirections';
+import { G4StoryHeart } from '../components/fig/icons/g4-StoryHeart';
+import pin3d from '../components/fig/icons/g4-pin-3d.png';
 import '../styles/fig-g4.css';
 
 type StoryKey = 'welcome' | 'manager' | 'team' | 'day1' | 'policies' | 'role';
@@ -224,7 +224,7 @@ function Story({ order, at, onMove, onClose, company, candidate, hr, tj, j, note
                 </div>
                 {video?.videoUrl && (playing
                   ? <video className="a1-story__video" src={video.videoUrl} controls autoPlay playsInline />
-                  : <button type="button" className="g4-story__cta" onClick={() => setPlaying(true)}><G4StoryPlay />Watch the welcome video</button>)}
+                  : <button type="button" className="g4-story__cta" onClick={() => setPlaying(true)}><FigPlay size={20} />Watch the welcome video</button>)}
               </div>
             )}
             {at === 'manager' && managerName && (
@@ -235,7 +235,7 @@ function Story({ order, at, onMove, onClose, company, candidate, hr, tj, j, note
                 <p className="g4-story__line">{managerLine}</p>
                 {note?.videoUrl && (playing
                   ? <video className="a1-story__video" src={note.videoUrl} controls autoPlay playsInline />
-                  : <button type="button" className="g4-story__cta" onClick={() => setPlaying(true)}><G4StoryPlay />Watch {firstName(managerName)}’s hello</button>)}
+                  : <button type="button" className="g4-story__cta" onClick={() => setPlaying(true)}><FigPlay size={20} />Watch {firstName(managerName)}’s hello</button>)}
               </div>
             )}
             {at === 'team' && (
