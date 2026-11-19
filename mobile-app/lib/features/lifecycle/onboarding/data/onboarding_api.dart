@@ -49,6 +49,11 @@ abstract class OnboardingApi {
 
   // Joiner
   Future<LifecycleMe> fetchMe();
+
+  /// The joining portal's address, signed in as them (`POST
+  /// /lifecycle/portal-session`): the portal's `/app` entry with a fresh
+  /// portal session in its fragment. Fails once the portal has closed.
+  Future<Uri> portalSessionUrl();
   Future<OnboardingHome> fetchHome();
   Future<TaskView?> taskAction(String taskId, String action, {String? note});
   Future<Week1Data> fetchWeek1();
@@ -208,6 +213,13 @@ class HttpOnboardingApi implements OnboardingApi {
       if (error.isOff) return LifecycleMe.off;
       rethrow;
     }
+  }
+
+  @override
+  Future<Uri> portalSessionUrl() async {
+    final url = Uri.tryParse('${(await _json('POST', '/lifecycle/portal-session'))['url'] ?? ''}');
+    if (url == null || !url.hasScheme) throw const OnboardingApiException(OnboardingApiException.failed);
+    return url;
   }
 
   @override

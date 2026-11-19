@@ -153,7 +153,8 @@ class OnboardingShell {
 
 /// An onboarding page as Leave and the Support desk are laid out: the app
 /// header, a back + title row, the page, an optional footer, and the app's
-/// tabs under it ([showNav] off on reels, which hide the nav).
+/// tabs under it ([showNav] off on reels, which hide the nav; [showTitleRow]
+/// off for the joining portal, a web page with its own heading).
 class OnbScaffold extends StatelessWidget {
   const OnbScaffold({
     super.key,
@@ -163,6 +164,7 @@ class OnbScaffold extends StatelessWidget {
     this.footer,
     this.trailing,
     this.showNav = true,
+    this.showTitleRow = true,
     this.onBack,
     this.background = OnbColors.screen,
     this.offline = false,
@@ -174,6 +176,7 @@ class OnbScaffold extends StatelessWidget {
   final Widget? footer;
   final Widget? trailing;
   final bool showNav;
+  final bool showTitleRow;
   final VoidCallback? onBack;
   final Color background;
 
@@ -204,7 +207,7 @@ class OnbScaffold extends StatelessWidget {
             ),
             onNotifications: shell.onNotifications,
           ),
-          Container(
+          if (showTitleRow) Container(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             decoration: const BoxDecoration(
               color: Colors.white,

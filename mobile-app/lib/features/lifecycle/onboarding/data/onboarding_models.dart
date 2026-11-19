@@ -182,6 +182,7 @@ class OnboardingMe {
     this.tileVisible = false,
     this.progress,
     this.subtitle,
+    this.portal = false,
   });
 
   factory OnboardingMe.fromJson(Map<String, dynamic> json) => OnboardingMe(
@@ -192,6 +193,7 @@ class OnboardingMe {
     tileVisible: _bool(json['tileVisible']),
     progress: TaskProgress.maybe(json['progress']),
     subtitle: _str(json['subtitle']),
+    portal: _bool(json['portal']),
   );
 
   final String journeyId;
@@ -208,6 +210,11 @@ class OnboardingMe {
   /// 9 steps done" in week 1, "Week 6 · check-in due Fri 9 Jan" after).
   final String? subtitle;
 
+  /// Signed in to the app BEFORE Day 1 with their pre-boarding portal open:
+  /// the Action tab is the portal itself (the server says false from the
+  /// joining day, IST, and the tab is the usual Actions tab again).
+  final bool portal;
+
   OnboardingMe withProgress(TaskProgress? value) => OnboardingMe(
     journeyId: journeyId,
     stage: stage,
@@ -216,6 +223,7 @@ class OnboardingMe {
     tileVisible: tileVisible,
     progress: value ?? progress,
     subtitle: subtitle,
+    portal: portal,
   );
 }
 

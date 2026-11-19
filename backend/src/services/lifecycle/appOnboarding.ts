@@ -5,6 +5,7 @@
  * intro post, people to meet, starter tasks, 1:1 notes, meetings, surveys).
  */
 import { offboardingMe } from './offboarding';
+import { portalJourneyForAppUser } from './portalAuth';
 import { randomUUID } from 'node:crypto';
 import {
   attendanceRecords, connectPosts, employeePaymentDetails, journeyTasks, journeys, lifecycleMeetings, oneOnOneNotes, peopleToMeet, starterTasks, surveyResponses, users,
@@ -76,7 +77,13 @@ export async function lifecycleMe(me: Me, now = new Date()) {
     out.onboarding = {
       journeyId: j.id, stage: derived.stage, dayLabel: derived.dayLabel, plant: derived.plant, tileVisible: tileVisible(j),
       progress, subtitle: tileSubtitle(j, tasks, derived, progress, now),
+      // Before Day 1 the Action tab is their joining portal (portalJourneyForAppUser); from Tj on, never.
+      portal: (await portalJourneyForAppUser(me.userId, me.org, now))?.id === j.id,
     };
+  } else {
+    // Signed in to the app before Mark joined binds the journey: only the portal, until Day 1.
+    const pre = await portalJourneyForAppUser(me.userId, me.org, now);
+    if (pre) out.onboarding = { journeyId: pre.id, stage: 'pre_boarding', ...(pre.tj ? { tj: pre.tj } : {}), tileVisible: false, portal: true };
   }
   // Resigning / on notice: the Resignation tab and the Off-boarding page (offboarding.ts).
   const leaving = await offboardingMe(me.userId);

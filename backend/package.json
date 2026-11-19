@@ -20,6 +20,7 @@
     "shutdown:check": "tsx src/scripts/shutdown-check.ts",
     "bluegreen:check": "tsx src/scripts/bluegreen-check.ts",
     "tracker:check": "MONGODB_DB=el_off_tracker NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=trackfix AWS_S3_BUCKET= tsx src/scripts/tracker-fixes-check.ts",
+    "portal-app:check": "tsx src/scripts/portal-in-app-check.ts",
     "portal:check": "MONGODB_DB=el_offer_check tsx src/scripts/portal-check.ts",
     "relay:check": "tsx src/scripts/relay-engine-check.ts",
     "relay:runtime": "tsx src/scripts/relay-runtime-check.ts",
