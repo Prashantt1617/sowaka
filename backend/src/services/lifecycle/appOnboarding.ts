@@ -785,7 +785,7 @@ export async function revealSeenForMe(me: Me) {
 
 // ─── Manager (M0–M3) ────────────────────────────────────────────────────────
 
-const MANAGER_OWNED = ['manager', 'manager_employee', 'hr_manager'];
+export const MANAGER_OWNED = ['manager', 'manager_employee', 'hr_manager'];
 
 /** What a manager has to do on M0's card: their own tasks (HR's decision is HR's, not counted as theirs to tick). */
 const managerToDo = (t: JourneyTask) => MANAGER_OWNED.includes(t.ownerRole) && ACTIVE_STATUSES.includes(t.status);
@@ -1132,7 +1132,7 @@ const MANAGER_SCREEN_KEYS = new Set<SystemTaskKey>(['starter_task', 'one_on_one_
  * Confirmation discussion) are HR's to record in the dashboard: ticking one here would close the
  * decision window and lock HR out.
  */
-function managerMayTick(t: JourneyTask): boolean {
+export function managerMayTick(t: JourneyTask): boolean {
   if (t.ownerRole !== 'manager' && t.ownerRole !== 'manager_employee') return false;
   if (t.systemKey && MANAGER_SCREEN_KEYS.has(t.systemKey)) return false;
   return t.status === 'todo' || t.status === 'sent_back';
