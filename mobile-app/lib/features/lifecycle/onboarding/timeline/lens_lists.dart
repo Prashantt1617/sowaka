@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../data/onboarding_models.dart';
 import '../presentation/onboarding_kit.dart';
 import '../presentation/task_row.dart' show taskMeta;
-import 'stage_hero.dart' show LensColors;
 import 'stage_lens.dart';
 
 /// The Tasks and Meetings lists through the lens (artifact: "Tasks for you",
@@ -101,16 +100,16 @@ class _Head extends StatelessWidget {
 /// document amber, policies blue, people green, a post or survey purple or
 /// blue, goals blue, the confirmation green).
 (IconData, Color, Color) lensIcon(TaskView task) => switch (task.systemKey) {
-  'week1_reels' => (Icons.fact_check_outlined, const Color(0xFFEAF1FE), const Color(0xFF2563EB)),
-  'intro_post' => (Icons.chat_bubble_outline_rounded, const Color(0xFFF3EEFF), const Color(0xFF6B4FBB)),
-  'day7_survey' || 'pulse_survey' => (Icons.chat_bubble_outline_rounded, const Color(0xFFEAF1FE), const Color(0xFF2563EB)),
-  'probation_goals' || 'monthly_goals' || 'starter_task' => (Icons.track_changes_rounded, const Color(0xFFEAF1FE), const Color(0xFF2563EB)),
-  'confirmation_reveal' || 'confirmation_letter' => (Icons.description_outlined, LensColors.doneTint, const Color(0xFF15803D)),
-  'register_face' || 'about_you' => (Icons.person_outline_rounded, LensColors.doneTint, const Color(0xFF15803D)),
-  'app_tour' => (Icons.explore_outlined, const Color(0xFFFDECEC), const Color(0xFFB23500)),
+  'week1_reels' => (Icons.fact_check_outlined, OnbColors.blueTint, OnbColors.blue),
+  'intro_post' => (Icons.chat_bubble_outline_rounded, OnbColors.violetTint, OnbColors.violet),
+  'day7_survey' || 'pulse_survey' => (Icons.chat_bubble_outline_rounded, OnbColors.blueTint, OnbColors.blue),
+  'probation_goals' || 'monthly_goals' || 'starter_task' => (Icons.track_changes_rounded, OnbColors.blueTint, OnbColors.blue),
+  'confirmation_reveal' || 'confirmation_letter' => (Icons.description_outlined, OnbColors.successTint, const Color(0xFF15803D)),
+  'register_face' || 'about_you' => (Icons.person_outline_rounded, OnbColors.successTint, const Color(0xFF15803D)),
+  'app_tour' => (Icons.explore_outlined, OnbColors.rustTint, OnbColors.rust),
   _ => switch (task.kind) {
-    'survey' => (Icons.chat_bubble_outline_rounded, const Color(0xFFEAF1FE), const Color(0xFF2563EB)),
-    _ => (Icons.description_outlined, LensColors.amberTint, LensColors.amberText),
+    'survey' => (Icons.chat_bubble_outline_rounded, OnbColors.blueTint, OnbColors.blue),
+    _ => (Icons.description_outlined, OnbColors.amberTint, OnbColors.amber),
   },
 };
 
@@ -127,12 +126,12 @@ class _Pill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: amber ? LensColors.amberTint : OnbColors.screen,
+        color: amber ? OnbColors.amberTint : OnbColors.screen,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         item.pillText ?? '',
-        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: amber ? LensColors.amberText : OnbColors.text2),
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: amber ? OnbColors.amber : OnbColors.text2),
       ),
     );
   }
@@ -152,7 +151,7 @@ class _Trailing extends StatelessWidget {
       return Container(
         width: 26,
         height: 26,
-        decoration: const BoxDecoration(color: LensColors.tick, shape: BoxShape.circle),
+        decoration: const BoxDecoration(color: OnbColors.successDot, shape: BoxShape.circle),
         child: const Icon(Icons.check_rounded, size: 16, color: Colors.white, semanticLabel: 'Done'),
       );
     }

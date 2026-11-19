@@ -5,17 +5,6 @@ import '../presentation/onboarding_kit.dart';
 import '../presentation/plant.dart';
 import 'stage_lens.dart';
 
-/// The artifact's timeline colours that the kit has no name for (its done
-/// green on the stage chips and the ticks, the amber "From Week 1" pill).
-abstract final class LensColors {
-  static const doneTint = Color(0xFFEAF9EE);
-  static const doneText = Color(0xFF1F9D45);
-  static const tick = Color(0xFF30D158);
-  static const amberTint = Color(0xFFFFF4E5);
-  static const amberText = Color(0xFFB45309);
-  static const plantTile = Color(0xFFE8F4FA);
-}
-
 /// The onboarding hero (New joiner artifact, Main): the plant on its tile,
 /// YOU ARE HERE and the stage, and under it the stage row. Tapping a stage
 /// looks ahead or back ([onPick]); her own stage stays filled blue, the one
@@ -79,12 +68,12 @@ class _StageHeroState extends State<StageHero> {
     final lens = widget.lens;
     final now = lens.mode == LensMode.now;
     final confirmed = now && lens.isConfirmed;
-    final eyebrowColor = now ? (confirmed ? LensColors.doneText : OnbColors.primary) : OnbColors.text3;
+    final eyebrowColor = now ? (confirmed ? OnbColors.successText : OnbColors.primary) : OnbColors.text3;
     return Container(
       key: const ValueKey('stage-hero'),
       padding: const EdgeInsets.symmetric(vertical: 14),
       decoration: BoxDecoration(
-        color: confirmed ? LensColors.doneTint : Colors.white,
+        color: confirmed ? OnbColors.successTint : Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: OnbColors.line),
       ),
@@ -99,7 +88,7 @@ class _StageHeroState extends State<StageHero> {
                   width: 60,
                   height: 68,
                   decoration: BoxDecoration(
-                    color: confirmed ? Colors.white : LensColors.plantTile,
+                    color: confirmed ? Colors.white : OnbColors.skyTint,
                     borderRadius: BorderRadius.circular(16),
                   ),
                   alignment: Alignment.bottomCenter,
@@ -233,8 +222,8 @@ class _StepChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = current ? OnbColors.primary : (done ? LensColors.doneTint : Colors.white);
-    final fg = current ? Colors.white : (done ? LensColors.doneText : OnbColors.text3);
+    final bg = current ? OnbColors.primary : (done ? OnbColors.successTint : Colors.white);
+    final fg = current ? Colors.white : (done ? OnbColors.successText : OnbColors.text3);
     final ring = selected && !current;
     return Semantics(
       button: true,
@@ -262,7 +251,7 @@ class _StepChip extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (done) ...[
-                    const Icon(Icons.check_rounded, size: 12, color: LensColors.doneText),
+                    const Icon(Icons.check_rounded, size: 12, color: OnbColors.successText),
                     const SizedBox(width: 4),
                   ],
                   Text(
