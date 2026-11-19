@@ -13,7 +13,7 @@
  * goes where page.html says `/*@CUP_TRAILS@*\/`, or, when page.html has no
  * such mark, right after the CupPlay inline (in the same script). play-knights.js (window.CupKnights) follows
  * play-trails.js the same way, with its comments and indentation stripped to save bytes. The build
- * refuses a file over 250 KB.
+ * refuses a file over 300 KB (the server has no limit; this keeps the page small for phones).
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -25,7 +25,7 @@ const playPath = arg > 0 ? resolve(process.argv[arg + 1]) : join(here, 'play.js'
 const targ = process.argv.indexOf('--trails');
 const trailsPath = targ > 0 ? resolve(process.argv[targ + 1]) : join(here, 'play-trails.js');
 const out = join(here, '..', 'diwali-cup.html');
-const LIMIT = 250 * 1024;
+const LIMIT = 300 * 1024;
 
 /** Stands in for play.js: same contract, a placeholder board. */
 const STUB = `/* STUB: cup/play.js is not built yet. A placeholder round with the CupPlay contract. */

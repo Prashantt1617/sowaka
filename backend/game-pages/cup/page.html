@@ -256,6 +256,7 @@ button.bm{min-height:44px}
 @keyframes sh{to{background-position:-200% 0}}
 #play{position:fixed;inset:0;z-index:50;background:var(--bg)}
 html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#CFE6FF;--yd:#5D86C9;--yl:#fff;--co:#63A9F7;--cod:#2E77D0;--cy:#7FC4FF;--tx:#EAF3FF;--mu:#A9C3E6;--mu2:#7F9CC8}
+.tabs.t5{gap:2px;padding:5px}.tabs.t5 .tab{padding:0 3px;font-size:12px}.how-demo{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;width:176px;margin:6px auto 14px;padding:6px;border-radius:16px;background:var(--p3)}.how-demo span{aspect-ratio:1;border-radius:7px;display:grid;place-items:center}.how-demo img{width:72%}.how-rules{list-style:none;margin:0;padding:0;display:grid;gap:14px}.how-rules li{display:grid;grid-template-columns:40px 1fr;gap:12px;align-items:start}.how-rules svg{width:40px;height:40px}.how-rules b{display:block;color:var(--tx);font-size:15px}.how-rules span{color:var(--mu);font-size:14px;line-height:1.45}
 #play[hidden]{display:none}
 .play-mount{position:absolute;inset:0}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -1013,6 +1014,18 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
   }
 
   /* ---------- Tipsters ---------- */
+  /* How to play (Knights): a small solved board and the rules, as Meow shows them. */
+  function viewHow() {
+    var g = [0, 0, 1, 1, 0, 2, 2, 1, 3, 2, 2, 1, 3, 3, 3, 1], k = [1, 7, 8, 14], C = ['#63A9F7', '#2E77D0', '#8E7BF0', '#2BB3A8'];
+    var kn = (window.CupKnights && window.CupKnights.knight) || '';
+    var demo = g.map(function (r, i) { return '<span style="background:' + C[r] + '">' + (k.indexOf(i) >= 0 && kn ? '<img alt="" src="' + kn + '">' : '') + '</span>'; }).join('');
+    var art = ['<path fill="#2E77D0" d="M1 1h26v26H1z"/><path fill="#63A9F7" d="M10 1h8v26h-8zM1 10h26v8H1z"/>', '<path fill="#8E7BF0" d="M1 1h26v26H1z"/><path fill="#2BB3A8" d="M1 1h18v9h-9v9H1z"/><path fill="#63A9F7" d="M1 19h9v-9h17v17H1z"/>', '<path fill="#2E77D0" d="M1 1h26v26H1z"/><path d="M14 1v26M1 14h26" stroke="#CFE6FF" stroke-width="1.3"/><circle cx="7.5" cy="7.5" r="3.2" fill="#CFE6FF"/><circle cx="20.5" cy="20.5" r="3.2" fill="#F5B82E"/>', '<path fill="#2E77D0" d="M1 1h26v26H1z"/><path d="M8 8l12 12M20 8L8 20" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>', '<path fill="#2E77D0" d="M1 1h26v26H1z"/><path d="M6 15l5 5 11-12" stroke="#7FE0A8" stroke-width="2.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'];
+    var rules = [['One per row and column', 'Every row and every column gets exactly one knight.'], ['One per colour', 'Each coloured patch gets exactly one knight too.'], ['Knights can’t touch', 'Not even corner to corner. A knight that clashes shows !.'], ['Tap and slide', 'Tap a square once for ×, twice for a knight, a third time to clear it. Slide across squares to cross them all.'], ['First right board wins', 'Both of you get the same board. The one who places all the knights correctly first moves on. Stuck? Tap Resign.']];
+    return '<section class="card" aria-label="How to play"><p class="lbl">How to play</p><div class="how-demo" role="img" aria-label="A solved 4 by 4 board with four knights">' + demo + '</div><ol class="how-rules">' +
+      rules.map(function (r, i) { return '<li><svg aria-hidden="true" viewBox="0 0 28 28">' + art[i] + '</svg><span><b>' + r[0] + '</b>' + r[1] + '</span></li>'; }).join('') + '</ol></section>' +
+      '<section class="card" aria-label="Practise"><p class="note" style="margin:0">Practise on Meow from the Games tab: same rules, with cats.</p></section>';
+  }
+
   function viewTipsters() {
     var t = (S.tipsters || []).slice().sort(function (a, b) { return b.won - a.won; }), u = meId();
     var onPod = t.filter(function (x) { return x.won > 0; }).length;
@@ -1075,12 +1088,13 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     var tabs = [['me', e.phase === 'done' ? 'Results' : 'Home'], ['bracket', 'Matches'], ['watch', 'Watch &amp; Bet']];
     // Tipsters from the top N on (the server may send an empty list from the start).
     if (S.tipsters && (S.tipsters.length || isTopN() || e.phase === 'done')) tabs.push(['tipsters', 'Tipsters']);
+    if (isKnights()) tabs.push(['how', tabs.length > 3 ? 'Rules' : 'How to play']);
     if (!tabs.some(function (t) { return t[0] === ui.tab; })) ui.tab = 'me';
     var liveN = liveMatches().length;
-    var tabHtml = '<div class="tabs" role="tablist" aria-label="' + esc(cupName()) + '">' + tabs.map(function (t) {
+    var tabHtml = '<div class="tabs' + (tabs.length > 4 ? ' t5' : '') + '" role="tablist" aria-label="' + esc(cupName()) + '">' + tabs.map(function (t) {
       return '<button type="button" role="tab" id="tab-' + t[0] + '" aria-controls="panel" class="tab' + (ui.tab === t[0] ? ' on' : '') + '" aria-selected="' + (ui.tab === t[0]) + '" data-act="tab" data-v="' + t[0] + '">' + t[1] + (t[0] === 'watch' && liveN && ui.tab !== 'watch' ? '<span class="dot" aria-label="' + liveN + ' live"></span>' : '') + '</button>';
     }).join('') + '</div>';
-    var body = ui.tab === 'bracket' ? viewBracket() : ui.tab === 'watch' ? viewWatch() : ui.tab === 'tipsters' ? viewTipsters() : viewMe();
+    var body = ui.tab === 'bracket' ? viewBracket() : ui.tab === 'watch' ? viewWatch() : ui.tab === 'tipsters' ? viewTipsters() : ui.tab === 'how' ? viewHow() : viewMe();
     return '<div class="wrap"><header class="top">' + wordmark() + '<span class="tr">' + phaseChip() +
       (showBalance() ? '<span class="bal" aria-label="Your balance: ' + num(S.me.balance) + ' points"><span class="coin" aria-hidden="true"></span>' + num(S.me.balance) + '</span>' : '') + '</span></header>' +
       tabHtml + '<main class="body" id="panel" role="tabpanel" aria-labelledby="tab-' + ui.tab + '">' + body + '</main></div>' +

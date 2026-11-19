@@ -306,5 +306,5 @@
   }
   function drawBoard(mount, kn, o) { var el = typeof mount === 'string' ? document.querySelector(mount) : mount; if (el) el.innerHTML = boardHtml(kn, o); return el; }
 
-  window.CupKnights = { start: start, unlockAudio: unlockAudio, bets: bets, boardHtml: boardHtml, drawBoard: drawBoard, version: 1 };
+  window.CupKnights = { start: start, unlockAudio: unlockAudio, bets: bets, boardHtml: boardHtml, drawBoard: drawBoard, knight: KNIGHT, version: 1 };
 })();
