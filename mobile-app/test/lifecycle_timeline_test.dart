@@ -182,9 +182,12 @@ void main() {
       await pumpPage(tester, OnboardingHomeScreen(shell: shellFor(api, DateTime(2026, 12, 3, 10))));
       expect(find.text('YOU ARE HERE'), findsOneWidget);
       expect(tester.widget<Text>(find.byKey(const ValueKey('stage-title'))).data, 'Week 1');
-      // Her own stage's list tags what Day 1 left behind.
+      // Her own stage's list tags what Day 1 left behind (below the tiles).
+      await tester.dragUntilVisible(find.text('From Day 1'), find.byType(Scrollable).first, const Offset(0, -200));
       expect(find.text('From Day 1'), findsWidgets);
 
+      await tester.dragUntilVisible(find.byKey(const ValueKey('stage-step-Month 1')), find.byType(Scrollable).first, const Offset(0, 200));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('stage-step-Month 1')));
       await tester.pumpAndSettle();
       expect(find.text('A LOOK AHEAD'), findsOneWidget);

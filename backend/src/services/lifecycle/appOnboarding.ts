@@ -321,6 +321,9 @@ async function firstPunchOf(userId: string, tj: string | undefined): Promise<{ a
   ]);
   const faceEnrolled = Boolean((user as { faceId?: { faceId?: string } } | null)?.faceId?.faceId);
   return { ...(punch?.punchIn ? { at: new Date(punch.punchIn).toISOString() } : {}), faceEnrolled };
+}
+
+/**
  * The Sowaka tour (new-joiner artifact, "Sowaka tour"): one lesson a day in
  * this order; the app holds each lesson's steps. Managers also get
  * [TOUR_MANAGER_LESSONS]. All of [TOUR_LESSONS] done completes `app_tour`.

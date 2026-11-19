@@ -104,6 +104,11 @@ void main() {
     await bloc.add(const LoadManagerDashboard());
     await tester.pumpWidget(
       MaterialApp(
+        // The Day-1 tile pulses forever otherwise, and nothing would settle.
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(disableAnimations: true),
+          child: child!,
+        ),
         home: ManagerScreen(session: session, bloc: bloc),
       ),
     );

@@ -13,7 +13,6 @@ import 'first_punch.dart';
 import 'notes_screen.dart';
 import 'onboarding_kit.dart';
 import 'onboarding_tiles.dart';
-import 'plant.dart';
 import 'starter_task_screen.dart';
 import 'task_row.dart';
 import 'week_done_screen.dart';

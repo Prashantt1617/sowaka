@@ -568,6 +568,8 @@ class FirstPunch {
 
   final DateTime? at;
   final bool faceEnrolled;
+}
+
 /// One of "Devices and accesses": the laptop, the work email, this app.
 class OnbDevice {
   const OnbDevice({required this.key, required this.title, this.ready = false});
