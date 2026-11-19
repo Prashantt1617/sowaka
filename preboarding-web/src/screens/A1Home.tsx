@@ -9,7 +9,6 @@ import { Link } from 'react-router-dom';
 import { portal } from '../api/portal';
 import type { PortalHome, PortalOfferView, ProfileView } from '../api/types';
 import { A1Icon, A1Logo } from '../components/A1';
-import { CopyButton } from '../components/ui';
 import { firstName, fmtShort, fmtWeekday } from '../lib/format';
 import { useFocusHeading } from '../lib/hooks';
 import { APP_LINK } from '../lib/links';
@@ -29,6 +28,20 @@ export function noticesFor(me: PortalHome): Array<{ title: string; to: string; b
   if (me.view === 'letter_ready') out.push({ title: 'Your appointment letter is ready to sign', to: '/letters', brand: true });
   if (me.view === 'pass_unlocked') out.push({ title: `Your Day-1 pass is ready · ${fmtWeekday(me.tj)}`, to: '/pass' });
   return out;
+}
+
+/** The design's copy icon: copies the work email, and turns green with a tick once copied. */
+function CopyIcon({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(text); setDone(true); window.setTimeout(() => setDone(false), 2000); } catch { /* the address is on screen to select */ }
+  };
+  return (
+    <button type="button" className={`a1-copy${done ? ' is-done' : ''}`} aria-label={done ? 'Work email copied' : 'Copy work email'} title={done ? 'Copied' : 'Copy work email'} onClick={() => void copy()}>
+      {done ? <A1Icon name="check" size={20} width={2.2} />
+        : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" /></svg>}
+    </button>
+  );
 }
 
 export function A1Home() {
@@ -65,14 +78,14 @@ export function A1Home() {
             <span style={{ fontSize: 22, lineHeight: '28px', fontWeight: 700 }}>Sowaka Connect</span>
           </div>
           <ol>
-            <li className="step"><b>1</b>Install</li>
+            <li className="step"><b>1</b><span>Install</span></li>
             <li aria-hidden="true" style={{ display: 'flex', color: 'rgba(255,255,255,.8)' }}><A1Icon name="chevron" size={18} width={2} /></li>
-            <li className="step"><b>2</b>Log in with work email</li>
+            <li className="step"><b>2</b><span>Log in with work email</span></li>
           </ol>
           {me.workEmail && (
             <div className="a1-install__email">
               <span className="a1-strong" style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{me.workEmail}</span>
-              <CopyButton text={me.workEmail} label="Copy work email" />
+              <CopyIcon text={me.workEmail} />
             </div>
           )}
           <a className="a1-install__cta" href={APP_LINK}><A1Icon name="download" size={20} width={2} />Install the app</a>

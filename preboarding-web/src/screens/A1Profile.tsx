@@ -82,6 +82,31 @@ export function A1Profile() {
 }
 
 type Values = Record<string, unknown>;
+const FIRST_JOB = 'No, this is my first job';
+const firstJobOf = (v: Values) => String(v.worked ?? 'Yes').startsWith('No');
+/** 'YYYY-MM' as the form shows it, "MM / YYYY". */
+const monthText = (key?: string) => (key && /^\d{4}-\d{2}$/.test(key) ? `${key.slice(5)} / ${key.slice(0, 4)}` : key ?? '');
+/** What was typed ("03 / 2021", "3/2021", "2021-03") as 'YYYY-MM' for the server; anything else goes as typed, for the server to explain. */
+function monthKey(text?: string): string {
+  const t = String(text ?? '').trim();
+  if (!t) return '';
+  const a = /^(\d{1,2})\s*[/\-.\s]\s*(\d{4})$/.exec(t); if (a) return `${a[2]}-${a[1].padStart(2, '0')}`;
+  const b = /^(\d{4})-(\d{2})$/.exec(t); if (b) return t;
+  return t;
+}
+/** Where a template document sits in its section: under the field it belongs to. */
+function slotOf(d: CandidateDocumentView): 'aadhaar' | 'pan' | 'ids' | 'work' | 'degree' | 'address' | 'bank' | 'photo' {
+  const t = `${d.docKey} ${d.label}`.toLowerCase();
+  const aadhaar = /aadha?ar/.test(t); const pan = /\bpan\b/.test(t);
+  if (/photo|picture|selfie/.test(t)) return 'photo';
+  if (/cheque|check|passbook|bank/.test(t)) return 'bank';
+  if (/address/.test(t)) return 'address';
+  if (/payslip|pay slip|relieving|experience|employ/.test(t)) return 'work';
+  if (/educat|degree|certificate|marksheet/.test(t)) return 'degree';
+  if (aadhaar && !pan) return 'aadhaar';
+  if (pan && !aadhaar) return 'pan';
+  return 'ids';
+}
 const draftKey = (k: ProfileSectionKey) => `sowaka.portal.profile.${k}`;
 function readDraft(k: ProfileSectionKey): Values | null { try { const raw = localStorage.getItem(draftKey(k)); return raw ? (JSON.parse(raw) as Values) : null; } catch { return null; } }
 function writeDraft(k: ProfileSectionKey, v: Values | null) { try { if (v) localStorage.setItem(draftKey(k), JSON.stringify(v)); else localStorage.removeItem(draftKey(k)); } catch { /* not kept */ } }
@@ -92,9 +117,16 @@ function savedValues(k: ProfileSectionKey, v: ProfileView): Values {
   switch (k) {
     case 'personal': return { fullName: p.personal?.fullName ?? v.candidateName ?? '', preferredName: p.personal?.preferredName ?? '', dob: p.personal?.dob ?? '', gender: p.personal?.gender ?? '', maritalStatus: p.personal?.maritalStatus ?? '', nationality: p.personal?.nationality ?? 'Indian' };
     case 'contact': return { mobile: p.contact?.mobile ?? v.phone ?? '', current: p.contact?.current ?? { line: '', city: '', state: '', pin: '' }, permanentSame: p.contact?.permanentSame ?? true, permanent: p.contact?.permanent ?? { line: '', city: '', state: '', pin: '' } };
-    case 'emergency': return { name: v.emergencyContact?.name ?? '', relation: v.emergencyContact?.relation ?? '', phone: v.emergencyContact?.phone ?? '' };
-    case 'bank': return { holderName: p.bank?.holderName ?? v.candidateName ?? '', accountNumber: '', accountNumberAgain: '', ifsc: p.bank?.ifsc ?? '', bankName: p.bank?.bankName ?? '', hasUan: v.pf ? (v.pf.firstJob ? 'No' : 'Yes') : '', uan: v.pf?.uan ?? '' };
-    case 'education': return { qualification: p.education?.qualification ?? '', institution: p.education?.institution ?? '', year: p.education?.year ?? '', worked: p.experience ? (p.experience.firstJob ? 'No' : 'Yes') : 'Yes', jobs: p.experience?.jobs?.length ? p.experience.jobs : [{ company: '', role: '', from: '', to: '' }] };
+    case 'emergency': {
+      const c = v.emergencyContact; const c2 = v.emergencyContact2;
+      return { name: c?.name ?? '', relation: c?.relation ?? '', phone: c?.phone ?? '', altPhone: c?.altPhone ?? '', c2: c2 ? { name: c2.name, relation: c2.relation, phone: c2.phone, altPhone: c2.altPhone ?? '' } : null };
+    }
+    case 'bank': return { holderName: p.bank?.holderName ?? v.candidateName ?? '', accountNumber: '', accountNumberAgain: '', ifsc: p.bank?.ifsc ?? '', hasUan: v.pf ? (v.pf.firstJob ? 'No' : 'Yes') : '', uan: v.pf?.uan ?? '' };
+    case 'education': return {
+      qualification: p.education?.qualification ?? '', institution: p.education?.institution ?? '', year: p.education?.year ?? '',
+      worked: p.experience?.firstJob ? FIRST_JOB : 'Yes',
+      jobs: p.experience?.jobs?.length ? p.experience.jobs.map((j) => ({ ...j, from: monthText(j.from), to: monthText(j.to) })) : [{ company: '', role: '', from: '', to: '' }],
+    };
     case 'ids': return { aadhaar: '', pan: '' };
     default: return {};
   }
@@ -128,6 +160,13 @@ function SectionForm({ k }: { k: ProfileSectionKey }) {
   const i = ORDER.indexOf(k);
   const sec = view?.sections.find((s) => s.key === k);
   const myDocs = useMemo(() => docs.filter((d) => sec?.documentIds.includes(d.id)), [docs, sec]);
+  // Each document goes under its own field; the slots a section's form draws are listed here, and anything else falls to the end.
+  const SLOTS: Record<ProfileSectionKey, string[]> = { personal: [], contact: ['address'], emergency: [], bank: ['bank'], education: ['degree', 'work'], ids: ['aadhaar', 'pan', 'ids'], photo: [] };
+  const docsIn = (slot: string) => {
+    const list = myDocs.filter((d) => slotOf(d) === slot);
+    return list.length ? list.map((d) => <DocUpload key={d.id} doc={d} onChange={setDocs} />) : null;
+  };
+  const leftover = myDocs.filter((d) => !SLOTS[k].includes(slotOf(d)) && !(k === 'education' && firstJobOf(v) && slotOf(d) === 'work'));
   const segs = ORDER.map((key, n) => (n === i ? 'on' : view?.sections.find((s) => s.key === key)?.done ? 'done' : 'todo') as 'done' | 'on' | 'todo');
   const last = i === ORDER.length - 1;
   const goNext = () => navigate(last ? '/profile' : `/profile/${ORDER[i + 1]}`);
@@ -136,12 +175,21 @@ function SectionForm({ k }: { k: ProfileSectionKey }) {
     setBusy(true);
     setError('');
     try {
-      if (k === 'emergency') await portal.saveAbout({ emergencyContact: { name: String(v.name ?? ''), relation: v.relation as never, phone: String(v.phone ?? '') } });
-      else if (k === 'bank') {
+      if (k === 'emergency') {
+        const c2 = v.c2 as Values | null;
+        await portal.saveAbout({
+          emergencyContact: { name: v.name, relation: v.relation, phone: v.phone, altPhone: v.altPhone },
+          ...(c2 ? { emergencyContact2: c2 } : view?.emergencyContact2 ? { emergencyContact2: null } : {}),
+        });
+      } else if (k === 'bank') {
         if (!v.hasUan) throw new Error('Choose whether you have a UAN from a previous job');
         await portal.saveProfile('bank', v);
-        await portal.saveAbout({ pf: v.hasUan === 'No' ? { firstJob: true } : { firstJob: false, uan: String(v.uan ?? '') } });
-      } else if (k === 'education') await portal.saveProfile('education', { ...v, firstJob: v.worked === 'No' });
+        const uan = String(v.uan ?? '').replace(/\s/g, '');
+        await portal.saveAbout({ pf: v.hasUan === 'No' ? { firstJob: true } : uan ? { firstJob: false, uan } : { firstJob: false } });
+      } else if (k === 'education') {
+        const jobs = ((v.jobs as Array<Record<string, string>>) ?? []).map((j) => ({ ...j, from: monthKey(j.from), to: monthKey(j.to) }));
+        await portal.saveProfile('education', { ...v, jobs, firstJob: firstJobOf(v) });
+      }
       else if (k !== 'photo') await portal.saveProfile(k, v);
       writeDraft(k, null);
       typed.current = false;
@@ -176,7 +224,7 @@ function SectionForm({ k }: { k: ProfileSectionKey }) {
         <div className="a1-seg">{options.map((o) => <button key={o} type="button" role="radio" aria-checked={v[name] === o} onClick={() => set({ [name]: o })}>{o}</button>)}</div>
       </div>
     );
-    const addr = (name: 'current' | 'permanent', title: string) => {
+    const addr = (name: 'current' | 'permanent', title: string, extra?: ReactNode) => {
       const a = (v[name] ?? { line: '', city: '', state: '', pin: '' }) as Record<string, string>;
       const put = (patch: Record<string, string>) => set({ [name]: { ...a, ...patch } });
       return (
@@ -185,9 +233,11 @@ function SectionForm({ k }: { k: ProfileSectionKey }) {
           {T(`${name}.city`, 'City', { value: a.city, onChange: (s) => put({ city: s }) })}
           {S(`${name}.state`, 'State', STATES, { value: a.state, onChange: (s) => put({ state: s }) })}
           {T(`${name}.pin`, 'PIN code', { ph: '6 digits', inputMode: 'numeric', max: 6, value: a.pin, onChange: (s) => put({ pin: s.replace(/\D/g, '') }) })}
+          {extra}
         </Group>
       );
     };
+    const addrWithDocs = addr('current', 'Current address', docsIn('address'));
     switch (k) {
       case 'personal': return (
         <Group>
@@ -205,7 +255,7 @@ function SectionForm({ k }: { k: ProfileSectionKey }) {
             {T('email', 'Personal email', { readOnly: true, value: view.personalEmail ?? '', help: 'From your offer. Write to HR if it needs to change.' })}
             {T('mobile', 'Mobile number', { ph: '+91', inputMode: 'tel' })}
           </Group>
-          {addr('current', 'Current address')}
+          {addrWithDocs}
           <Group title="Permanent address">
             <button type="button" role="checkbox" aria-checked={v.permanentSame !== false} className="a1-check" onClick={() => set({ permanentSame: v.permanentSame === false })}>
               <span className="a1-check__box"><A1Icon name="check" size={14} width={3} /></span>Same as my current address
@@ -214,13 +264,31 @@ function SectionForm({ k }: { k: ProfileSectionKey }) {
           {v.permanentSame === false && addr('permanent', 'Permanent address, if different')}
         </>
       );
-      case 'emergency': return (
-        <Group title="Contact 1">
-          {T('name', 'Full name', { ph: 'e.g. Anil Menon' })}
-          {S('relation', 'Relationship', RELATIONS)}
-          {T('phone', 'Mobile number', { ph: '+91', inputMode: 'tel', help: 'Someone else’s number, not your own' })}
-        </Group>
-      );
+      case 'emergency': {
+        const c2 = v.c2 as Record<string, string> | null;
+        const put2 = (patch: Record<string, string>) => set({ c2: { ...(c2 ?? { name: '', relation: '', phone: '', altPhone: '' }), ...patch } });
+        return (
+          <>
+            <Group title="Contact 1">
+              {T('name', 'Full name', { ph: 'e.g. Anil Menon' })}
+              {S('relation', 'Relationship', RELATIONS)}
+              {T('phone', 'Mobile number', { ph: '+91', inputMode: 'tel', help: 'Someone else’s number, not your own' })}
+              {T('altPhone', 'Another number (optional)', { ph: '+91', inputMode: 'tel' })}
+            </Group>
+            {c2 ? (
+              <Group title="Contact 2">
+                {T('c2.name', 'Full name', { ph: 'e.g. Leela Menon', value: c2.name, onChange: (x) => put2({ name: x }) })}
+                {S('c2.relation', 'Relationship', RELATIONS, { value: c2.relation, onChange: (x) => put2({ relation: x }) })}
+                {T('c2.phone', 'Mobile number', { ph: '+91', inputMode: 'tel', value: c2.phone, onChange: (x) => put2({ phone: x }) })}
+                {T('c2.altPhone', 'Another number (optional)', { ph: '+91', inputMode: 'tel', value: c2.altPhone ?? '', onChange: (x) => put2({ altPhone: x }) })}
+                <button type="button" className="a1-link" style={{ alignSelf: 'flex-start', minHeight: 40 }} onClick={() => set({ c2: null })}>Remove this contact</button>
+              </Group>
+            ) : (
+              <div className="a1-card"><button type="button" className="a1-link" style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 40 }} onClick={() => put2({})}><A1Icon name="plus" size={18} width={2} />Add another contact</button></div>
+            )}
+          </>
+        );
+      }
       case 'bank': {
         const kept = view.profile.bank?.accountLast4;
         return (
@@ -230,12 +298,11 @@ function SectionForm({ k }: { k: ProfileSectionKey }) {
               {T('accountNumber', 'Account number', { ph: kept ? `Saved: •••• ${kept}. Type it again to change it` : 'Enter your account number', inputMode: 'numeric' })}
               {T('accountNumberAgain', 'Re-enter account number', { ph: 'Type it again to check', inputMode: 'numeric' })}
               {T('ifsc', 'IFSC code', { ph: 'e.g. HDFC0001234', help: 'Printed on your cheque book and passbook', onChange: (s) => set({ ifsc: s.toUpperCase() }), max: 11 })}
-              {T('bankName', 'Bank name (optional)')}
+              {docsIn('bank')}
             </Group>
             <Group title="Provident fund (PF)">
               {G('hasUan', 'Do you have a UAN from a previous job?', ['Yes', 'No'])}
-              {v.hasUan === 'Yes' && T('uan', 'UAN', { ph: '12-digit number', inputMode: 'numeric', max: 12 })}
-              {v.hasUan === 'No' && <span className="a1-help">HR will create one for you.</span>}
+              {T('uan', 'UAN (optional)', { ph: '12-digit number', inputMode: 'numeric', max: 14, help: 'If this is your first job, choose No and HR will create one for you.' })}
             </Group>
           </>
         );
@@ -249,21 +316,21 @@ function SectionForm({ k }: { k: ProfileSectionKey }) {
               {S('qualification', 'Highest qualification', view.options.qualifications)}
               {T('institution', 'College or university', { ph: 'e.g. Savitribai Phule Pune University' })}
               {T('year', 'Year of passing', { ph: 'e.g. 2020', inputMode: 'numeric', max: 4 })}
+              {docsIn('degree')}
             </Group>
             <Group title="Work experience">
-              {G('worked', 'Have you worked before?', ['Yes', 'No'])}
-              {v.worked !== 'No' && jobs.map((j, n) => (
+              {G('worked', 'Have you worked before?', ['Yes', FIRST_JOB])}
+              {!firstJobOf(v) && jobs.map((j, n) => (
                 <div key={n} style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingTop: n ? 12 : 0, borderTop: n ? '1px solid var(--a1-line)' : 0 }}>
                   {T(`job${n}.company`, n ? `Company ${n + 1}` : 'Last company', { ph: 'Company name', value: j.company, onChange: (s) => putJob(n, { company: s }) })}
                   {T(`job${n}.role`, 'Your role', { ph: 'e.g. Admissions counsellor', value: j.role, onChange: (s) => putJob(n, { role: s }) })}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    {T(`job${n}.from`, 'From', { type: 'month', value: j.from, onChange: (s) => putJob(n, { from: s }) })}
-                    {T(`job${n}.to`, 'To', { type: 'month', value: j.to ?? '', onChange: (s) => putJob(n, { to: s }) })}
-                  </div>
+                  {T(`job${n}.from`, 'From', { ph: 'MM / YYYY', inputMode: 'numeric', value: j.from, onChange: (s) => putJob(n, { from: s }), max: 9 })}
+                  {T(`job${n}.to`, 'To', { ph: 'MM / YYYY', inputMode: 'numeric', value: j.to ?? '', onChange: (s) => putJob(n, { to: s }), max: 9, help: n === 0 ? 'Leave it empty if you still work there.' : undefined })}
                   {n > 0 && <button type="button" className="a1-link" style={{ alignSelf: 'flex-start' }} onClick={() => set({ jobs: jobs.filter((_, m) => m !== n) })}>Remove this job</button>}
                 </div>
               ))}
-              {v.worked !== 'No' && jobs.length < 5 && <button type="button" className="a1-link" style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 40 }} onClick={() => set({ jobs: [...jobs, { company: '', role: '', from: '', to: '' }] })}><A1Icon name="plus" size={18} width={2} />Add another job</button>}
+              {!firstJobOf(v) && docsIn('work')}
+              {!firstJobOf(v) && jobs.length < 5 && <button type="button" className="a1-link" style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 40 }} onClick={() => set({ jobs: [...jobs, { company: '', role: '', from: '', to: '' }] })}><A1Icon name="plus" size={18} width={2} />Add another job</button>}
             </Group>
           </>
         );
@@ -274,9 +341,12 @@ function SectionForm({ k }: { k: ProfileSectionKey }) {
           <>
             <Group title="Aadhaar card">
               {T('aadhaar', 'Aadhaar number', { ph: ids?.aadhaarLast4 ? `Saved: •••• ${ids.aadhaarLast4}` : '12-digit number', inputMode: 'numeric', max: 14 })}
+              {docsIn('aadhaar')}
+              {docsIn('ids')}
             </Group>
             <Group title="PAN card">
               {T('pan', 'PAN', { ph: ids?.panLast4 ? `Saved: ••••••${ids.panLast4}` : 'e.g. ABCDE1234F', onChange: (s) => set({ pan: s.toUpperCase() }), max: 10 })}
+              {docsIn('pan')}
             </Group>
           </>
         );
@@ -294,9 +364,9 @@ function SectionForm({ k }: { k: ProfileSectionKey }) {
           {done && <div className="a1-info a1-info--green"><A1Icon name="tick-circle" size={18} width={2.2} /><span>You’ve finished this section. You can still change anything before you join.</span></div>}
           <p className="a1-intro">{INTRO[k]}</p>
           <div className="a1-form">{body}</div>
-          {myDocs.length > 0 && (
-            <Group title={k === 'ids' ? 'Upload your ID documents' : 'Documents'}>
-              {myDocs.map((d) => <DocUpload key={d.id} doc={d} onChange={setDocs} />)}
+          {leftover.length > 0 && (
+            <Group title="Documents">
+              {leftover.map((d) => <DocUpload key={d.id} doc={d} onChange={setDocs} />)}
             </Group>
           )}
           {k === 'ids' && <div className="a1-info"><A1Icon name="lock" size={16} /><span>Only HR can see your ID documents. They’re never shown to your manager or team.</span></div>}

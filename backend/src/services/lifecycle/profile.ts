@@ -185,6 +185,7 @@ export async function profileView(journey: Journey, docs?: CandidateDocumentView
       ...(ids ? { ids: { aadhaarLast4: ids.aadhaarLast4, panLast4: ids.panLast4 } } : {}),
     },
     emergencyContact: about.emergencyContact,
+    ...(about.emergencyContact2 ? { emergencyContact2: about.emergencyContact2 } : {}),
     pf: about.pf,
     personalEmail: journey.candidate?.personalEmail,
     phone: indianMobile(journey.candidate?.phone) ?? undefined,

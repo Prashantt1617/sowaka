@@ -12,6 +12,13 @@ import { useMe } from '../session';
 import { WebPage } from './A1Shell';
 
 type StoryKey = 'welcome' | 'manager' | 'team' | 'day1' | 'policies' | 'role';
+const WHEN: Record<StoryKey, string> = { welcome: 'Pinned by HR', manager: 'Your manager', team: 'Your team', day1: 'Your first day', policies: 'Quick reads', role: 'Your role' };
+const REPLY: Record<StoryKey, (manager?: string) => string> = {
+  welcome: () => 'Say hi to HR', manager: (m) => (m ? `Reply to ${m}` : 'Ask HR a question'), team: () => 'Say hi to the team',
+  day1: () => 'Ask about your first day', policies: () => 'Ask HR a question', role: () => 'Ask about your role',
+};
+const LIKED_KEY = 'sowaka.portal.storyLikes';
+function readLikes(): Record<string, boolean> { try { return JSON.parse(localStorage.getItem(LIKED_KEY) ?? '{}') as Record<string, boolean>; } catch { return {}; } }
 const BG: Record<StoryKey, string> = { welcome: '#0571A6', manager: '#15803D', team: '#2563EB', day1: '#B45309', policies: '#045A85', role: '#2E3139' };
 const SEEN_ITEM: Partial<Record<StoryKey, string>> = { welcome: 'company_video', manager: 'manager_note', policies: 'policies', role: 'role' };
 const FACE_TONES = [['#E8F7EE', '#15803D'], ['#FEF4E2', '#B45309'], ['#EAF1FE', '#2563EB'], ['#FDECEA', '#D92D20']];
@@ -95,7 +102,9 @@ export function A1About() {
                   <span className="a1-stack" style={{ gap: 4 }}><span style={{ fontSize: 18, lineHeight: '24px', fontWeight: 600 }}>{managerName}</span><span className="a1-intro">{[j?.manager?.designation ?? note?.authorRole, 'your manager'].filter(Boolean).join(' · ')}</span></span>
                 </div>
                 <span className="a1-row" style={{ gap: 8, fontSize: 14, lineHeight: '20px' }}><span style={{ color: 'var(--a1-green)', display: 'flex' }}><A1Icon name="pin" size={18} /></span>{j?.place ? `Meets you at ${j.place}` : 'Meets you on your first day'}</span>
-                {note && <button type="button" className="a1-meet__btn" onClick={() => show('manager')}><A1Icon name={note.videoUrl ? 'play' : 'mail'} size={18} />{note.videoUrl ? `Watch ${firstName(managerName)}’s hello` : `Read ${firstName(managerName)}’s note`}</button>}
+                {j?.manager?.email
+                  ? <a className="a1-meet__btn" href={mailto(j.manager.email, `Hello from ${firstName(me.candidateName)}`)}><A1Icon name="mail" size={18} />Say hi to {firstName(managerName)}</a>
+                  : note && <button type="button" className="a1-meet__btn" onClick={() => show('manager')}><A1Icon name={note.videoUrl ? 'play' : 'mail'} size={18} />{note.videoUrl ? `Watch ${firstName(managerName)}’s hello` : `Read ${firstName(managerName)}’s note`}</button>}
               </div>
             </section>
           )}
@@ -168,7 +177,14 @@ function Story({ order, at, onMove, onClose, company, candidate, hr, tj, j, note
   }, [i, order, onMove, onClose]);
   const time = fmtTime(j?.reportingTime);
   const directions = j?.mapLink ?? (j?.place ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(j.place)}` : undefined);
-  const reply = at === 'manager' ? 'Ask HR to pass a message on' : at === 'day1' ? 'Ask HR about your first day' : 'Ask HR a question';
+  const managerEmail = j?.manager?.email;
+  const reply = REPLY[at](at === 'manager' && managerEmail && managerName ? firstName(managerName) : undefined);
+  const [msg, setMsg] = useState('');
+  useEffect(() => setMsg(''), [at]);
+  // A like is kept on this device only: the story is HR's, and nothing is sent.
+  const [likes, setLikes] = useState(readLikes);
+  const liked = Boolean(likes[at]);
+  const toggleLike = () => { const next = { ...likes, [at]: !liked }; setLikes(next); try { localStorage.setItem(LIKED_KEY, JSON.stringify(next)); } catch { /* not kept */ } };
   return (
     <div className="a1-story" role="dialog" aria-modal="true" aria-label={`Story ${i + 1} of ${order.length}`}>
       <div className="a1-story__panel" style={{ background: bg }}>
@@ -178,7 +194,7 @@ function Story({ order, at, onMove, onClose, company, candidate, hr, tj, j, note
           </div>
           <div className="a1-row">
             <A1Logo company={company} className="a1-story__logo" />
-            <span className="a1-stack"><span className="a1-strong">{company.name} HR</span><span style={{ fontSize: 12, lineHeight: '16px', color: 'rgba(255,255,255,.85)' }}>Before you join</span></span>
+            <span className="a1-stack"><span className="a1-strong">{company.name} HR</span><span style={{ fontSize: 12, lineHeight: '16px', color: 'rgba(255,255,255,.85)' }}>{WHEN[at]}</span></span>
             <button type="button" className="a1-icon-btn" style={{ color: '#fff', width: 44, height: 44 }} aria-label="Close" onClick={onClose}><A1Icon name="close" size={24} width={2} /></button>
           </div>
         </div>
@@ -216,8 +232,10 @@ function Story({ order, at, onMove, onClose, company, candidate, hr, tj, j, note
             {at === 'day1' && (
               <>
                 <span style={{ width: 96, height: 96, borderRadius: 999, background: 'rgba(255,255,255,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><A1Icon name="pin" size={48} width={1.6} /></span>
-                <h2 className="a1-story__title">{j?.place ?? fmtWeekday(tj)}</h2>
-                <p className="a1-story__line">{[fmtWeekday(j?.date ?? tj), time ? `see you at ${time}` : ''].filter(Boolean).join(' · ')}</p>
+                <h2 className="a1-story__title">{j?.place ?? fmtWeekday(j?.date ?? tj)}</h2>
+                <p className="a1-story__line">{j?.place
+                  ? [fmtWeekday(j?.date ?? tj), time ? `see you at ${time}` : ''].filter(Boolean).join(' · ')
+                  : [time ? `See you at ${time}` : '', 'HR will share the place soon'].filter(Boolean).join(' · ')}</p>
                 {directions && <a className="a1-story__cta" style={{ color: bg }} href={directions} target="_blank" rel="noreferrer"><A1Icon name="send" size={20} width={2} />Get directions</a>}
               </>
             )}
@@ -238,9 +256,15 @@ function Story({ order, at, onMove, onClose, company, candidate, hr, tj, j, note
             )}
           </div>
         </div>
-        <div className="a1-story__foot">
-          <a className="a1-story__reply" href={mailto(hr, 'Question before I join')}>{reply}</a>
-        </div>
+        <form className="a1-story__foot" onSubmit={(e) => { e.preventDefault(); const to = at === 'manager' && managerEmail ? managerEmail : hr; window.location.href = `${mailto(to, at === 'manager' ? 'Hello before I join' : 'Question before I join')}&body=${encodeURIComponent(msg)}`; setMsg(''); }}>
+          <label style={{ flex: 1, display: 'flex' }}>
+            <span className="sr-only">{reply}</span>
+            <input className="a1-story__input" value={msg} onChange={(e) => setMsg(e.target.value)} placeholder={reply} enterKeyHint="send" />
+          </label>
+          {msg.trim()
+            ? <button type="submit" className="a1-story__icon" aria-label="Send"><A1Icon name="send" size={24} width={2} /></button>
+            : <button type="button" className="a1-story__icon" aria-label={liked ? 'Liked' : 'Like'} aria-pressed={liked} onClick={toggleLike}><svg width="28" height="28" viewBox="0 0 24 24" fill={liked ? '#FFFFFF' : 'none'} stroke="#FFFFFF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10z" /></svg></button>}
+        </form>
       </div>
     </div>
   );

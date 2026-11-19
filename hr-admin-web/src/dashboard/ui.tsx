@@ -80,12 +80,15 @@ export function Pill({
   fontSize = 11.5,
   padding = '3px 10px',
   fontWeight = 500,
+  dot = true,
 }: {
   label: ReactNode;
   tone: PillT;
   fontSize?: number;
   padding?: string;
   fontWeight?: number;
+  /** The small leading dot (on by default); the onboarding board's pills go without it, as its design draws them. */
+  dot?: boolean;
 }) {
   return (
     <span
@@ -106,7 +109,7 @@ export function Pill({
         verticalAlign: 'middle',
       }}
     >
-      <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', opacity: 0.85, flexShrink: 0 }} />
+      {dot && <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', opacity: 0.85, flexShrink: 0 }} />}
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{label}</span>
     </span>
   );

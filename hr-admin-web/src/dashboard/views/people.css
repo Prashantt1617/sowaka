@@ -143,6 +143,9 @@ table.pd-t { width: 100%; border-collapse: separate !important; border-spacing: 
 .pd-t > thead > tr > th:first-child { border-radius: 12px 0 0 12px; }
 .pd-t > thead > tr > th:last-child { border-radius: 0 12px 12px 0; }
 .pd-t > thead > tr > th:only-child { border-radius: 12px; }
+/* A table inside its own bordered box (the onboarding lists): the head is a flat band, no rounded ends. */
+.pd-t--boxed > thead > tr > th, .pd-t--boxed > thead > tr > th:first-child, .pd-t--boxed > thead > tr > th:last-child { border-radius: 0; }
+.pd-t--boxed > thead > tr > th:first-child, .pd-t--boxed > tbody > tr > td:first-child { padding-left: 14px !important; }
 .pd-t > tbody > tr > td {
   padding: 10px 12px !important; border-bottom: 1px solid var(--line) !important; font-size: 13.5px;
   line-height: 1.5; vertical-align: middle; font-weight: 400;
