@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { portal, type OfferSource } from '../api/portal';
 import type { JoiningDetails, PortalLetter, PortalOfferView } from '../api/types';
-import { FigBackHeader, FigLoading, FigPage } from '../components/fig/FigShell';
+import { FigLoading, FigPage, isAppHost } from '../components/fig/FigShell';
+import { G3SectionHead, G3WebBottom, G3WebTop } from '../components/fig/G3WebShell';
 import { FigChip, FigIntro, FigKv, FigList, FigNote, FigPdf } from '../components/fig/FigUi';
-import { FigCalendarPlus, FigChevronRight, FigClock, FigDownload, FigEye, FigPass, FigPin } from '../components/fig/icons';
+import { FigCalendarPlus, FigCheckSmall, FigChevronRight, FigClock, FigDownload, FigEye, FigPass, FigPin } from '../components/fig/icons';
 import { PdfViewer } from '../components/PdfViewer';
 import { Sheet } from '../components/ui';
 import { fmtTime, fmtWeekday, fmtWeekdayYear, initials } from '../lib/format';
@@ -52,6 +53,7 @@ export function A1Offer() {
   const shown = rows.filter((r): r is [string, string] => Boolean(r[1]));
   const toSign = letters.filter((l) => l.state === 'ready' || l.state === 'opened');
   const accepted = view && ['accepted', 'finalised'].includes(view.state);
+  const app = isAppHost();
   const fileSub = view ? [
     `Version ${view.version}`,
     view.pdfPages ? `${view.pdfPages} ${view.pdfPages === 1 ? 'page' : 'pages'}` : '',
@@ -60,7 +62,8 @@ export function A1Offer() {
 
   return (
     <FigPage>
-      <FigBackHeader title="Offer letter" />
+      <G3WebTop />
+      <G3SectionHead title="Offer letter" />
       <main id="main" className="fig-main">
         {!view && !error ? <FigLoading /> : (
           <div className="fig-body-col">
@@ -73,12 +76,22 @@ export function A1Offer() {
             {view && (
               <>
                 <div className="fig-card fig-offer-card">
-                  <div className="fig-offer-card__top">
-                    {accepted
-                      ? <FigChip tone="success">Accepted</FigChip>
-                      : <FigChip tone="neutral">{view.state === 'replaced' ? 'Replaced by a new version' : 'Sent'}</FigChip>}
-                    {view.acceptedAt && <span className="fig-label fig-t3">{fmtWeekday(view.acceptedAt)}</span>}
-                  </div>
+                  {app ? (
+                    <div className="fig-offer-card__top">
+                      {accepted
+                        ? <FigChip tone="success">Accepted</FigChip>
+                        : <FigChip tone="neutral">{view.state === 'replaced' ? 'Replaced by a new version' : 'Sent'}</FigChip>}
+                      {view.acceptedAt && <span className="fig-label fig-t3">{fmtWeekday(view.acceptedAt)}</span>}
+                    </div>
+                  ) : (
+                    // Web · 5: a canvas chip with a tick, and "You replied yes on …" beside it.
+                    <div className="fig-offer-card__top fig-offer-card__top--web">
+                      {accepted
+                        ? <span className="fig-chip g1-chip-web"><FigCheckSmall />Accepted</span>
+                        : <span className="fig-chip g1-chip-web g1-chip-web--grey">{view.state === 'replaced' ? 'Replaced by a new version' : 'Sent'}</span>}
+                      {view.acceptedAt && <span className="fig-label fig-t3">You replied yes on {fmtWeekday(view.acceptedAt)}</span>}
+                    </div>
+                  )}
                   <div className="fig-offer-card__file">
                     <FigPdf />
                     <span className="fig-row__text">
@@ -110,6 +123,7 @@ export function A1Offer() {
           </div>
         )}
       </main>
+      <G3WebBottom />
       <Sheet open={pdf} onClose={() => setPdf(false)} title="Your offer letter" wide>
         <PdfViewer load={load} fileName="Offer letter.pdf" toolbar label="Your offer letter" className="pdf--sheet" />
       </Sheet>
@@ -132,7 +146,8 @@ export function A1Joining() {
   const when = days === undefined ? '' : days > 1 ? `In ${days} days` : days === 1 ? 'Tomorrow' : days === 0 ? 'Today' : 'Started';
   return (
     <FigPage>
-      <FigBackHeader title="Joining details" />
+      <G3WebTop />
+      <G3SectionHead title="Joining details" />
       <main id="main" className="fig-main">
         {!j && !error ? <FigLoading /> : (
           <div className="fig-body-col">
@@ -201,6 +216,7 @@ export function A1Joining() {
           </div>
         )}
       </main>
+      <G3WebBottom />
     </FigPage>
   );
 }

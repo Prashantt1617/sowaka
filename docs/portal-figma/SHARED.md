@@ -42,4 +42,24 @@ Paths copied from the frames' SVG exports; `size` scales, `stroke` overrides the
   Need another 3D icon? Download it (192 px, `sips -Z 192`) into `src/assets/fig3d/` and add it to `Icon3D.tsx` — tell G1.
 - Your own icons: `icons/g<N>-Name.tsx` using `FigSvg` from `icons/svg.tsx`.
 
-More pieces are added here as G1 builds them (upload tile, step segments if not already yours, etc.).
+## Host (app WebView vs browser)
+- `isAppHost()` (FigShell) — true under `<html data-host="app">`. Use it only where the App and Web frames draw
+  different content (sign-in copy, offer reply chip, About first-person card, buddy label, "Step N of 7").
+- CSS: `fig-g3.css` hides `.g3-web` in the app and `.g3-app-only` on the web; on the web `FigHomeHeader` and
+  `FigPowered` give way to G3's header/footer.
+- Fields: `.fig-input` is canvas on white pages (sign in); white inside cards (`.fig-card .fig-input`,
+  `.fig-input--white`, G2's `.g2-card .fig-input`); `[readonly]` is subtle grey. `.fig-link`'s padding reset is
+  zero-specificity (`:where`), so screen CSS can pad links.
+
+## G2 pieces (shared)
+- `components/fig/G2Steps.tsx` — `G2Steps segs` (7 × 4 px segments): `<FigBackHeader below={<G2Steps segs={…} />} />`.
+- `components/fig/G2Upload.tsx` — `G2UploadTile` (dashed upload tile), `G2FileRow` (uploaded file + status + action),
+  `G2DocUpload` (a template document: rows, HR's note, upload/replace).
+- `components/fig/G2ProfileSections.tsx` — `G2SectionForm`: all seven profile sections (step header, done note,
+  intro, cards, Save and continue / Save and finish later). Personal, contact and emergency were added by G1.
+- `components/fig/G2Profile.tsx` — `G2PrivacyNote`, `G2PhotoTip`, `G2MonthInput`; `G2Story.tsx` — the stories.
+
+## G3 pieces (web-only chrome; each hides itself in the app)
+- `components/fig/G3WebShell.tsx` — `G3WebHeader` (sign in, code), `G3WebTop` / `G3WebBottom` (signed-in pages),
+  `G3Crumb`, `G3SectionHead` (crumb on the web, `FigBackHeader` in the app; `white` for About).
+- `components/fig/G3Install.tsx` — the web install page when `me.view === 'joined'` (home returns it on the web).

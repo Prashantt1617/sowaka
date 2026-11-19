@@ -7,7 +7,8 @@ import { useEffect, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { portal } from '../api/portal';
 import type { ProfileSectionKey, ProfileView } from '../api/types';
-import { FigBackHeader, FigLoading, FigPage } from '../components/fig/FigShell';
+import { FigLoading, FigPage } from '../components/fig/FigShell';
+import { G3SectionHead, G3WebBottom, G3WebTop } from '../components/fig/G3WebShell';
 import { FigIntro, FigProgress, FigRow } from '../components/fig/FigUi';
 import { FigCheckSmall, FigIcon3D, type Fig3DName } from '../components/fig/icons';
 import { fmtWeekday } from '../lib/format';
@@ -45,7 +46,8 @@ export function A1Profile() {
   const hint = (s: ProfileView['sections'][number]) => (s.key === 'ids' && s.documentIds.length ? `Upload ${s.documentIds.length} file${s.documentIds.length === 1 ? '' : 's'}` : HINT[s.key]);
   return (
     <FigPage>
-      <FigBackHeader title="Employee profile" />
+      <G3WebTop />
+      <G3SectionHead title="Employee profile" />
       <main id="main" className="fig-main">
         {!view && !error ? <FigLoading /> : (
           <div className="fig-body-col" style={{ paddingBottom: 12 }}>
@@ -80,6 +82,7 @@ export function A1Profile() {
           </div>
         )}
       </main>
+      <G3WebBottom />
     </FigPage>
   );
 }

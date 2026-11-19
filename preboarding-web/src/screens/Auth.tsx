@@ -8,7 +8,8 @@ import { Icon } from '../components/Icon';
 import { BottomBar, Eyebrow, Field, PrimaryButton } from '../components/ui';
 import { useFocusHeading } from '../lib/hooks';
 import { ClosedScreen } from './Closed';
-import { FigLogo, FigPage } from '../components/fig/FigShell';
+import { FigLogo, FigPage, isAppHost } from '../components/fig/FigShell';
+import { G3WebHeader } from '../components/fig/G3WebShell';
 import { FigActions, FigField, FigNote } from '../components/fig/FigUi';
 import { FigMail } from '../components/fig/icons';
 import '../styles/fig-g1.css';
@@ -98,8 +99,11 @@ export function SignIn() {
   if (closed) return <ClosedScreen state={closed.state} company={closed.company} hr={closed.hrContact} />;
   const company = client.company;
   const change = () => { setSent(false); setError(undefined); };
+  // App · 1 asks for the work email; Web · 1 (the browser portal) for the personal email the offer went to.
+  const app = isAppHost();
   return (
     <FigPage surface>
+      <G3WebHeader company={company} />
       <form className="fig-signin" onSubmit={submit} noValidate aria-describedby={error ? 'signin-err' : undefined}>
         <div className="fig-signin__lead">
           {!sent && <div className="fig-signin__top" />}
@@ -108,7 +112,7 @@ export function SignIn() {
               ? <span className="fig-signin__mark fig-signin__mark--mail"><FigMail /></span>
               : <FigLogo company={company} className="fig-signin__mark" />}
             <div className="fig-signin__text">
-              <h1 ref={h1} tabIndex={-1} className="fig-display">{sent ? 'Check your email' : 'Log in with your work email'}</h1>
+              <h1 ref={h1} tabIndex={-1} className="fig-display">{sent ? 'Check your email' : app ? 'Log in with your work email' : `Welcome to ${company?.name ?? 'your joining portal'}`}</h1>
               {sent ? (
                 <div className="fig-signin__sent">
                   <p className="fig-body fig-t2">Enter the 6-digit code we sent to your personal email.</p>
@@ -117,11 +121,11 @@ export function SignIn() {
                     <button type="button" className="fig-link" onClick={change}>Change</button>
                   </div>
                 </div>
-              ) : <p className="fig-body fig-t2">The one HR set up for you.</p>}
+              ) : <p className="fig-body fig-t2">{app ? 'The one HR set up for you.' : 'Sign in to see your offer, joining details and profile. We’ll email you a code, so there’s no password to remember.'}</p>}
             </div>
             {params.get('expired') && !sent && <FigNote>You were signed out. Please sign in again.</FigNote>}
             {!sent ? (
-              <FigField id={emailId} label="Work email" help="It’s on your pre-boarding page." type="email" inputMode="email" autoComplete="email" placeholder="you@company.com"
+              <FigField id={emailId} label={app ? 'Work email' : 'Personal email'} help={app ? 'It’s on your pre-boarding page.' : 'Use the email your offer letter was sent to.'} type="email" inputMode="email" autoComplete="email" placeholder={app ? 'you@company.com' : 'you@example.com'}
                 value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus={!email} />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

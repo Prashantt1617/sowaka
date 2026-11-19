@@ -8,7 +8,8 @@ import { portal } from '../../api/portal';
 import type { CandidateDocumentView, ProfileSectionKey, ProfileView } from '../../api/types';
 import { useMe } from '../../session';
 import { INTRO, ORDER, TITLE, readDraft, savedValues, writeDraft } from '../../screens/A1Profile';
-import { FigBackHeader, FigLoading, FigPage } from './FigShell';
+import { FigBackHeader, FigLoading, FigPage, isAppHost } from './FigShell';
+import { G3WebTop } from './G3WebShell';
 import { FigField, FigIntro } from './FigUi';
 import { FigCheckCircle, FigCheckSmall, type Fig3DName } from './icons';
 import '../../styles/fig-g1.css';
@@ -222,7 +223,8 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
   const icon = ICON[k];
   return (
     <FigPage>
-      <FigBackHeader title={TITLE[k]} back="/profile" backLabel="Back to employee profile" side={i === 0 ? <span className="fig-brand">Step {i + 1} of {ORDER.length}</span> : undefined} below={<G2Steps segs={segs} />} />
+      <G3WebTop />
+      <FigBackHeader title={TITLE[k]} back="/profile" backLabel="Back to employee profile" side={i === 0 || !isAppHost() ? <span className="fig-brand">Step {i + 1} of {ORDER.length}</span> : undefined} below={<G2Steps segs={segs} />} />
       <main id="main" className="g2-sec">
         {!view && !error ? <FigLoading /> : (
           <>

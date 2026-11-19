@@ -4,7 +4,8 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { portal } from '../api/portal';
 import type { JoiningDetails, MeetItem } from '../api/types';
-import { FigBackHeader, FigLoading, FigPage } from '../components/fig/FigShell';
+import { FigLoading, FigPage, isAppHost } from '../components/fig/FigShell';
+import { G3SectionHead, G3WebBottom, G3WebTop } from '../components/fig/G3WebShell';
 import { FigRow } from '../components/fig/FigUi';
 import { FigCalendar, FigClock, FigFileText, FigIcon3D, FigMessageCircle, FigPass, FigPin, FigPlay, FigShield } from '../components/fig/icons';
 import { firstName, initials } from '../lib/format';
@@ -70,11 +71,13 @@ export function A1About() {
     ...(managerName ? [{ name: managerName, sub: 'Manager', photo: note?.authorPhotoUrl, buddy: false }] : []),
     ...(j?.buddy ? [{ name: j.buddy.name, sub: j.buddy.designation ?? '', photo: undefined, buddy: true }] : []),
   ];
+  const app = isAppHost();
   const POLICY_ICON = [<FigShield key="s" />, <FigCalendar key="c" />, <FigClock key="k" size={22} />];
 
   return (
     <FigPage>
-      <FigBackHeader title="About the company" flat />
+      <G3WebTop />
+      <G3SectionHead title="About the company" flat white />
       <main id="main" className="fig-main">
         {!items ? <FigLoading /> : (
           <div className="g1-about">
@@ -92,7 +95,7 @@ export function A1About() {
             {managerName && (
               <section className="g1-about__sec">
                 <h2 className="fig-title">The first person you’ll meet</h2>
-                <div className="g1-meet">
+                <div className={`g1-meet${app ? '' : ' g1-meet--web'}`}>
                   <div className="g1-meet__who">
                     <Face name={managerName} photo={note?.authorPhotoUrl} className="g1-meet__face" />
                     <span className="g1-meet__text">
@@ -100,7 +103,7 @@ export function A1About() {
                       <span className="fig-body fig-t2">{[j?.manager?.designation ?? note?.authorRole, 'your manager'].filter(Boolean).join(' · ')}</span>
                     </span>
                   </div>
-                  <span className="g1-meet__where"><FigPin size={18} />Meets you at reception on your first day</span>
+                  {app && <span className="g1-meet__where"><FigPin size={18} />Meets you at reception on your first day</span>}
                   <button type="button" className="g1-meet__btn" onClick={() => show('manager')}><FigMessageCircle />Say hi to {firstName(managerName)}</button>
                 </div>
               </section>
@@ -114,7 +117,7 @@ export function A1About() {
                     <span key={p.name} className="g1-person">
                       <Face name={p.name} photo={p.photo} className="g1-person__face" tone={n} />
                       <span className="fig-body-strong">{firstName(p.name)}</span>
-                      {p.buddy ? <span className="g1-person__buddy">Your buddy</span> : <span className="fig-label fig-t3">{p.sub}</span>}
+                      {p.buddy ? (app ? <span className="g1-person__buddy">Your buddy</span> : <span className="fig-label fig-t3">Your Buddy</span>) : <span className="fig-label fig-t3">{p.sub}</span>}
                     </span>
                   ))}
                   {me.batch.count > 0 && (
@@ -150,6 +153,7 @@ export function A1About() {
           </div>
         )}
       </main>
+      <G3WebBottom />
       {open && (
         <G2Story order={stories} at={open} onMove={show} onClose={() => setOpen(null)}
           company={me.company} candidate={me.candidateName} hr={me.hrContact.email} tj={me.tj} j={j} note={note} managerName={managerName} video={video} role={role} policies={policies} />

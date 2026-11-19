@@ -7,6 +7,9 @@ import { initials } from '../../lib/format';
 import { FigBack } from './icons';
 import '../../styles/fig.css';
 
+/** Inside the app's WebView (the /app entry sets <html data-host="app">): the App frames; else the Web frames. */
+export const isAppHost = () => typeof document !== 'undefined' && document.documentElement.dataset.host === 'app';
+
 /** The phone column every Figma screen sits in. `surface` = white page (sign in); default canvas grey. */
 export function FigPage({ children, surface }: { children: ReactNode; surface?: boolean }) {
   return (

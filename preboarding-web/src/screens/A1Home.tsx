@@ -8,14 +8,13 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { portal } from '../api/portal';
 import type { PortalHome, PortalOfferView, ProfileView } from '../api/types';
-import { A1Icon, A1Logo } from '../components/A1';
-import { CopyButton } from '../components/ui';
 import { firstName, fmtShort, fmtWeekday } from '../lib/format';
 import { useFocusHeading } from '../lib/hooks';
-import { APP_LINK } from '../lib/links';
 import { useMe } from '../session';
 import { ClosedScreen } from './Closed';
-import { FigHomeHeader, FigPage, FigPowered } from '../components/fig/FigShell';
+import { FigHomeHeader, FigPage, FigPowered, isAppHost } from '../components/fig/FigShell';
+import { G3WebBottom, G3WebTop } from '../components/fig/G3WebShell';
+import { G3Install } from '../components/fig/G3Install';
 import { FigProgress } from '../components/fig/FigUi';
 import { FigCheck, FigChevronRight, FigIcon3D, FigWavingHand } from '../components/fig/icons';
 import '../styles/fig-g1.css';
@@ -52,44 +51,22 @@ export function A1Home() {
     return <ClosedScreen state={state} company={me.company} hr={me.hrContact} />;
   }
 
-  // App access: HR marked them joined and made their work email.
+  // App access: HR marked them joined and made their work email. On the web: the install page (Web · 4); the app is that app.
   const access = me.view === 'joined';
   const notices = access ? [] : noticesFor(me);
   const accepted = offer ? ['accepted', 'finalised'].includes(offer.state) : me.path.find((p) => p.key === 'offer')?.state === 'done';
   const offerSub = offer?.sentAt ? `Sent ${fmtShort(offer.sentAt)}` : offer?.acceptedAt ? `Accepted ${fmtShort(offer.acceptedAt)}` : offer?.validTill ? `Reply by ${fmtShort(offer.validTill)}` : 'Your offer from HR';
   const pct = profile && profile.total ? Math.round((profile.done / profile.total) * 100) : 0;
 
+  if (access && !isAppHost()) return <G3Install workEmail={me.workEmail} />;
   return (
     <FigPage>
+      <G3WebTop />
       <FigHomeHeader company={me.company} />
       <main id="main" className="fig-main">
-        {access && (
-          // App access (HR marked them joined): the install card first. Not in the Figma set; kept from the A1 look.
-          <div className="a1" style={{ minHeight: 0, background: 'none' }}>
-            <section className="a1-install" aria-label="Install the Sowaka Connect app">
-              <div className="a1-row" style={{ gap: 16 }}>
-                <A1Logo company={me.company} className="a1-install__mark" />
-                <span style={{ fontSize: 22, lineHeight: '28px', fontWeight: 700 }}>Sowaka Connect</span>
-              </div>
-              <ol>
-                <li className="step"><b>1</b>Install</li>
-                <li aria-hidden="true" style={{ display: 'flex', color: 'rgba(255,255,255,.8)' }}><A1Icon name="chevron" size={18} width={2} /></li>
-                <li className="step"><b>2</b>Log in with work email</li>
-              </ol>
-              {me.workEmail && (
-                <div className="a1-install__email">
-                  <span className="a1-strong" style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{me.workEmail}</span>
-                  <CopyButton text={me.workEmail} label="Copy work email" />
-                </div>
-              )}
-              <a className="a1-install__cta" href={APP_LINK}><A1Icon name="download" size={20} width={2} />Install the app</a>
-            </section>
-          </div>
-        )}
-
         <div className="fig-hello">
-          <h1 className="fig-display" ref={h1} tabIndex={-1}>{access ? 'Or keep going here' : `Hello, ${firstName(me.candidateName)}`}</h1>
-          {!access && <FigWavingHand />}
+          <h1 className="fig-display" ref={h1} tabIndex={-1}>Hello, {firstName(me.candidateName)}</h1>
+          <FigWavingHand />
         </div>
         {notices.map((n) => (
           <Link key={n.title} to={n.to} className="fig-home-notice"><span>{n.title}</span><FigChevronRight /></Link>
@@ -135,6 +112,7 @@ export function A1Home() {
         </div>
       </main>
       <FigPowered />
+      <G3WebBottom />
     </FigPage>
   );
 }
