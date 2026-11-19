@@ -515,7 +515,8 @@ void main() {
       expect(find.descendant(of: upNext, matching: find.text('Meet your manager')), findsOneWidget);
       expect(find.descendant(of: upNext, matching: find.textContaining('11:00 AM · Room 4B · with Neha R.')), findsOneWidget);
       expect(find.byKey(const ValueKey('task-mgr')), findsNothing);
-      // The list: the 4 PM meeting first, then the untimed ones as "Any time".
+      // The list (under the tiles): the 4 PM meeting first, then the untimed ones as "Any time".
+      await tester.scrollUntilVisible(find.byKey(const ValueKey('task-face')), 200, scrollable: find.byType(Scrollable).first);
       final team = tester.getTopLeft(find.byKey(const ValueKey('task-team'))).dy;
       final face = tester.getTopLeft(find.byKey(const ValueKey('task-face'))).dy;
       expect(team, lessThan(face));
@@ -936,12 +937,15 @@ void main() {
           ],
         });
       await pumpPage(tester, OnboardingHomeScreen(shell: shellFor(api, DateTime(2026, 12, 1, 9))));
+      await tester.scrollUntilVisible(find.byKey(const ValueKey('task-laptop')), 200, scrollable: find.byType(Scrollable).first);
       expect(find.byKey(const ValueKey('task-vision')), findsOneWidget);
       expect(find.byKey(const ValueKey('task-laptop')), findsOneWidget);
       expect(find.descendant(of: find.byKey(const ValueKey('task-laptop')), matching: find.text('IT')), findsOneWidget);
       expect(find.text('Any time · 2 min · needed to punch in'), findsOneWidget);
       expect(find.text('0 of 3 done'), findsOneWidget, reason: 'they count toward the day');
       // Opening one never offers "Mark as done".
+      await tester.ensureVisible(find.byKey(const ValueKey('task-laptop')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('task-laptop')));
       await tester.pumpAndSettle();
       expect(find.text('IT and Admin do this'), findsOneWidget);

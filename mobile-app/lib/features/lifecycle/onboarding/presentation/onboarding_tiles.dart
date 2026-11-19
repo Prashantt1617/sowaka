@@ -60,7 +60,7 @@ class OnbTileGrid extends StatelessWidget {
         _Tile(
           key: const ValueKey('tile-tasks'),
           onTap: () => _push(context, OnbTasksScreen(shell: shell)),
-          icon: const _IconChip(icon: Icons.checklist_rounded, tint: Color(0xFFF3EEFF), color: Color(0xFF6B4FBB)),
+          icon: const _IconChip(icon: Icons.checklist_rounded, tint: OnbColors.violetTint, color: OnbColors.violet),
           name: 'Tasks',
           eyebrow: 'UP NEXT',
           title: openTasks.isEmpty ? 'All done' : openTasks.first.title,
@@ -69,7 +69,7 @@ class OnbTileGrid extends StatelessWidget {
       _Tile(
         key: const ValueKey('tile-tour'),
         onTap: () => _push(context, OnbTourScreen(shell: shell, done: home.tourDone)),
-        gradient: _tourGradient,
+        gradient: OnbColors.tourGradient,
         light: true,
         icon: const _IconChip(icon: Icons.explore_outlined, tint: Color(0x38FFFFFF), color: Colors.white),
         name: 'Sowaka tour',
@@ -101,7 +101,7 @@ class OnbTileGrid extends StatelessWidget {
             onTap: () => _push(context, OnbDevicesScreen(shell: shell, devices: home.devices)),
             child: Row(
               children: [
-                const _IconChip(icon: Icons.laptop_outlined, tint: Color(0xFFEAF1FE), color: Color(0xFF2563EB), size: 48, radius: 14, iconSize: 24),
+                const _IconChip(icon: Icons.laptop_outlined, tint: OnbColors.blueTint, color: OnbColors.blue, size: 48, radius: 14, iconSize: 24),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
@@ -111,7 +111,7 @@ class OnbTileGrid extends StatelessWidget {
                       const SizedBox(height: 6),
                       Row(
                         children: [
-                          Expanded(child: _Bar(value: ready / home.devices.length, color: const Color(0xFF2563EB))),
+                          Expanded(child: _Bar(value: ready / home.devices.length, color: OnbColors.blue)),
                           const SizedBox(width: 8),
                           Text('$ready of ${home.devices.length} ready', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: OnbColors.text2)),
                         ],
@@ -129,11 +129,6 @@ class OnbTileGrid extends StatelessWidget {
   }
 }
 
-const _tourGradient = LinearGradient(
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-  colors: [Color(0xFFCC4A12), Color(0xFFB23500), Color(0xFF872800)],
-);
 
 /// The joiner's meetings in the home: their timed items, done ones too.
 List<TaskView> joinerMeetings(OnboardingHome home) => [
@@ -434,8 +429,8 @@ class _OnbTasksScreenState extends _HomeListState<OnbTasksScreen> {
                       _TaskLine(
                         key: const ValueKey('task-policies'),
                         icon: Icons.fact_check_outlined,
-                        tint: const Color(0xFFEAF1FE),
-                        color: const Color(0xFF2563EB),
+                        tint: OnbColors.blueTint,
+                        color: OnbColors.blue,
                         title: 'Acknowledge policies',
                         meta: '${pol.done} of ${pol.total} done',
                         done: !polOpen,
@@ -479,11 +474,11 @@ class _OnbTasksScreenState extends _HomeListState<OnbTasksScreen> {
 }
 
 (IconData, Color, Color) _taskLook(TaskView t) => switch (t.kind) {
-  'survey' => (Icons.chat_bubble_outline_rounded, const Color(0xFFEAF1FE), const Color(0xFF2563EB)),
-  'post' => (Icons.chat_bubble_outline_rounded, const Color(0xFFF3EEFF), const Color(0xFF6B4FBB)),
-  'checkin' || 'review' => (Icons.track_changes_rounded, const Color(0xFFEAF1FE), const Color(0xFF2563EB)),
-  'face' => (Icons.face_outlined, const Color(0xFFEAF9EE), const Color(0xFF15803D)),
-  _ => (Icons.description_outlined, const Color(0xFFFFF4E5), const Color(0xFFB45309)),
+  'survey' => (Icons.chat_bubble_outline_rounded, OnbColors.blueTint, OnbColors.blue),
+  'post' => (Icons.chat_bubble_outline_rounded, OnbColors.violetTint, OnbColors.violet),
+  'checkin' || 'review' => (Icons.track_changes_rounded, OnbColors.blueTint, OnbColors.blue),
+  'face' => (Icons.face_outlined, OnbColors.successTint, const Color(0xFF15803D)),
+  _ => (Icons.description_outlined, OnbColors.amberTint, OnbColors.amber),
 };
 
 List<Widget> _withLines(List<Widget> rows) => [
@@ -569,7 +564,7 @@ class _TaskLine extends StatelessWidget {
                   Container(
                     width: 26,
                     height: 26,
-                    decoration: const BoxDecoration(color: Color(0xFF30D158), shape: BoxShape.circle),
+                    decoration: const BoxDecoration(color: OnbColors.successDot, shape: BoxShape.circle),
                     child: const Icon(Icons.check_rounded, size: 16, color: Colors.white),
                   )
                 else
@@ -667,7 +662,7 @@ class _LessonLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (tint, fg) = done
-        ? (const Color(0xFFEAF9EE), const Color(0xFF1F9D45))
+        ? (OnbColors.successTint, OnbColors.successText)
         : today
         ? (OnbColors.primary, Colors.white)
         : (OnbColors.screen, OnbColors.text2);
@@ -719,11 +714,11 @@ class _LessonLine extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: today ? OnbColors.primary : Colors.white,
                     borderRadius: BorderRadius.circular(999),
-                    border: today ? null : Border.all(color: done ? const Color(0xFFCFE3D6) : OnbColors.lineDark),
+                    border: today ? null : Border.all(color: done ? OnbColors.successLine : OnbColors.lineDark),
                   ),
                   child: Text(
                     cta,
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: today ? Colors.white : (done ? const Color(0xFF1F9D45) : OnbColors.text2)),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: today ? Colors.white : (done ? OnbColors.successText : OnbColors.text2)),
                   ),
                 ),
               ],
@@ -779,12 +774,12 @@ class OnbDevicesScreen extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: d.ready ? const Color(0xFFEAF9EE) : const Color(0xFFFFF4E5),
+                          color: d.ready ? OnbColors.successTint : OnbColors.amberTint,
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
                           d.ready ? 'Ready' : 'Setting up',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: d.ready ? const Color(0xFF1F9D45) : const Color(0xFFB45309)),
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: d.ready ? OnbColors.successText : OnbColors.amber),
                         ),
                       ),
                     ],
@@ -909,10 +904,10 @@ class _IconChip extends StatelessWidget {
 }
 
 const _faceTints = [
-  (Color(0xFFEAF1FE), Color(0xFF2563EB)),
-  (Color(0xFFEAF9EE), Color(0xFF15803D)),
-  (Color(0xFFFFF4E5), Color(0xFFB45309)),
-  (Color(0xFFF3EEFF), Color(0xFF6B4FBB)),
+  (OnbColors.blueTint, OnbColors.blue),
+  (OnbColors.successTint, Color(0xFF15803D)),
+  (OnbColors.amberTint, OnbColors.amber),
+  (OnbColors.violetTint, OnbColors.violet),
 ];
 
 class _Initials extends StatelessWidget {
@@ -945,7 +940,7 @@ class _TickBox extends StatelessWidget {
     width: 26,
     height: 26,
     decoration: BoxDecoration(
-      color: on ? const Color(0xFF30D158) : Colors.white,
+      color: on ? OnbColors.successDot : Colors.white,
       borderRadius: BorderRadius.circular(8),
       border: on ? null : Border.all(color: OnbColors.lineDark, width: 2),
     ),

@@ -85,7 +85,7 @@ const joinerTourLessons = <TourLesson>[
     blocks: [
       TourCard('Attendance', 'Today', Icons.calendar_today_outlined),
       TourSlider('Slide to Punch In'),
-      TourRow('Punched in', '9:31 AM', 'Done', Color(0xFFEAF9EE), Color(0xFF1F9D45)),
+      TourRow('Punched in', '9:31 AM', 'Done', OnbColors.successTint, OnbColors.successText),
     ],
     steps: [
       TourStep(0, 'Find Attendance', 'It’s at the top of Actions.'),
@@ -100,9 +100,9 @@ const joinerTourLessons = <TourLesson>[
     screen: 'ATTENDANCE',
     blocks: [
       TourCard('Attendance', 'This month', Icons.calendar_today_outlined),
-      TourRow('Yesterday', 'In 9:30 · Out —', 'Missed', Color(0xFFFDECEC), Color(0xFFB23500)),
+      TourRow('Yesterday', 'In 9:30 · Out —', 'Missed', OnbColors.rustTint, OnbColors.rust),
       TourButton('Request a correction'),
-      TourRow('Sent to your manager', 'Waiting for approval', 'Pending', Color(0xFFFFF4E5), Color(0xFFB45309)),
+      TourRow('Sent to your manager', 'Waiting for approval', 'Pending', OnbColors.amberTint, OnbColors.amber),
     ],
     steps: [
       TourStep(1, 'Spot the missed punch', 'Days with a missing punch are marked Missed.'),
@@ -155,7 +155,7 @@ const managerTourLessons = <TourLesson>[
     screen: 'TEAMS',
     blocks: [
       TourCard('Requests', 'From your team', Icons.group_outlined),
-      TourRow('A teammate', '2 days · Casual', 'New', Color(0xFFE8F4FA), Color(0xFF0571A6)),
+      TourRow('A teammate', '2 days · Casual', 'New', OnbColors.skyTint, Color(0xFF0571A6)),
       TourButton('Approve'),
     ],
     steps: [
@@ -171,7 +171,7 @@ const managerTourLessons = <TourLesson>[
     screen: 'TEAMS',
     blocks: [
       TourCard('Requests', 'From your team', Icons.group_outlined),
-      TourRow('A teammate', '2 h overtime', 'New', Color(0xFFE8F4FA), Color(0xFF0571A6)),
+      TourRow('A teammate', '2 h overtime', 'New', OnbColors.skyTint, Color(0xFF0571A6)),
       TourButton('Approve'),
     ],
     steps: [
@@ -270,9 +270,15 @@ class _TourLessonScreenState extends State<TourLessonScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('SOWAKA TOUR', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: Color(0xFFBEEDFF))),
+                        const Text(
+                          'SOWAKA TOUR',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: Color(0xFFBEEDFF)),
+                        ),
                         const SizedBox(height: 2),
-                        Text(_l.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+                        Text(
+                          _l.title,
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+                        ),
                       ],
                     ),
                   ),
@@ -310,31 +316,37 @@ class _TourLessonScreenState extends State<TourLessonScreen> {
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(color: OnbColors.screen, borderRadius: BorderRadius.circular(28)),
                   clipBehavior: Clip.antiAlias,
+                  // A short screen scrolls the drawing rather than clipping the lit block.
                   child: ExcludeSemantics(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(_l.screen, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1, color: OnbColors.icon)),
-                        for (final (i, block) in _l.blocks.indexed) ...[
-                          const SizedBox(height: 12),
-                          AnimatedOpacity(
-                            duration: reduce ? Duration.zero : const Duration(milliseconds: 250),
-                            opacity: i == step.lit ? 1 : 0.25,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: i == step.lit
-                                    ? const [
-                                        BoxShadow(color: OnbColors.primary, spreadRadius: 3),
-                                        BoxShadow(color: Color(0x730571A6), blurRadius: 28, offset: Offset(0, 12), spreadRadius: -8),
-                                      ]
-                                    : null,
-                              ),
-                              child: _block(block),
-                            ),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            _l.screen,
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1, color: OnbColors.icon),
                           ),
+                          for (final (i, block) in _l.blocks.indexed) ...[
+                            const SizedBox(height: 12),
+                            AnimatedOpacity(
+                              duration: reduce ? Duration.zero : const Duration(milliseconds: 250),
+                              opacity: i == step.lit ? 1 : 0.25,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: i == step.lit
+                                      ? const [
+                                          BoxShadow(color: OnbColors.primary, spreadRadius: 3),
+                                          BoxShadow(color: Color(0x730571A6), blurRadius: 28, offset: Offset(0, 12), spreadRadius: -8),
+                                        ]
+                                      : null,
+                                ),
+                                child: _block(block),
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -347,9 +359,15 @@ class _TourLessonScreenState extends State<TourLessonScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Step ${_at + 1} of $n', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.9, color: OnbColors.primary)),
+                    Text(
+                      'Step ${_at + 1} of $n',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.9, color: OnbColors.primary),
+                    ),
                     const SizedBox(height: 4),
-                    Text(step.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: -0.2, color: OnbColors.text)),
+                    Text(
+                      step.title,
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: -0.2, color: OnbColors.text),
+                    ),
                     const SizedBox(height: 4),
                     Text(step.text, style: const TextStyle(fontSize: 13, color: OnbColors.text2)),
                     const SizedBox(height: 14),
@@ -399,20 +417,27 @@ class _TourLessonScreenState extends State<TourLessonScreen> {
                   key: const ValueKey('lesson-finished'),
                   margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-                  decoration: BoxDecoration(color: const Color(0xFFEAF9EE), borderRadius: BorderRadius.circular(28)),
+                  decoration: BoxDecoration(color: OnbColors.successTint, borderRadius: BorderRadius.circular(28)),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Container(
                         width: 96,
                         height: 96,
-                        decoration: const BoxDecoration(color: Color(0xFF30D158), shape: BoxShape.circle),
+                        decoration: const BoxDecoration(color: OnbColors.successDot, shape: BoxShape.circle),
                         child: const Icon(Icons.check_rounded, size: 48, color: Colors.white),
                       ),
                       const SizedBox(height: 12),
-                      const Text('You’ve got it', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: OnbColors.text)),
+                      const Text(
+                        'You’ve got it',
+                        style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: OnbColors.text),
+                      ),
                       const SizedBox(height: 12),
-                      Text(_l.title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, color: OnbColors.text2)),
+                      Text(
+                        _l.title,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 14, color: OnbColors.text2),
+                      ),
                       const SizedBox(height: 24),
                       SizedBox(
                         width: double.infinity,
@@ -434,11 +459,14 @@ class _TourLessonScreenState extends State<TourLessonScreen> {
                         height: 48,
                         child: OutlinedButton.icon(
                           key: const ValueKey('lesson-replay'),
-                          onPressed: () => setState(() { _at = 0; _finished = false; }),
+                          onPressed: () => setState(() {
+                            _at = 0;
+                            _finished = false;
+                          }),
                           icon: const Icon(Icons.replay_rounded, size: 18),
                           label: const Text('Replay'),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF1F9D45),
+                            foregroundColor: OnbColors.successText,
                             backgroundColor: Colors.white,
                             side: const BorderSide(color: Color(0xFFCFE3D6)),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -465,7 +493,11 @@ class _TourLessonScreenState extends State<TourLessonScreen> {
           Container(
             width: 40,
             height: 40,
-            decoration: BoxDecoration(color: OnbColors.screen, shape: BoxShape.circle, border: Border.all(color: OnbColors.line)),
+            decoration: BoxDecoration(
+              color: OnbColors.screen,
+              shape: BoxShape.circle,
+              border: Border.all(color: OnbColors.line),
+            ),
             child: Icon(icon, size: 20, color: OnbColors.text),
           ),
           const SizedBox(width: 12),
@@ -473,7 +505,10 @@ class _TourLessonScreenState extends State<TourLessonScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: OnbColors.text)),
+                Text(
+                  title,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: OnbColors.text),
+                ),
                 Text(meta, style: const TextStyle(fontSize: 12, color: OnbColors.text3)),
               ],
             ),
@@ -490,9 +525,16 @@ class _TourLessonScreenState extends State<TourLessonScreen> {
         children: [
           Align(
             alignment: Alignment.centerLeft,
-            child: Container(width: 44, height: 44, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle)),
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+            ),
           ),
-          Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white),
+          ),
         ],
       ),
     ),
@@ -505,7 +547,10 @@ class _TourLessonScreenState extends State<TourLessonScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: OnbColors.text)),
+                Text(
+                  title,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: OnbColors.text),
+                ),
                 Text(meta, style: const TextStyle(fontSize: 12, color: OnbColors.text3)),
               ],
             ),
@@ -515,7 +560,10 @@ class _TourLessonScreenState extends State<TourLessonScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 9),
             alignment: Alignment.center,
             decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(999)),
-            child: Text(pill, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: pillFg)),
+            child: Text(
+              pill,
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: pillFg),
+            ),
           ),
         ],
       ),
@@ -531,7 +579,10 @@ class _TourLessonScreenState extends State<TourLessonScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(n, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: OnbColors.primary)),
+                  Text(
+                    n,
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: OnbColors.primary),
+                  ),
                   Text(t, style: const TextStyle(fontSize: 11, color: OnbColors.text3)),
                 ],
               ),
@@ -547,7 +598,10 @@ class _TourLessonScreenState extends State<TourLessonScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: const TextStyle(fontSize: 11, color: OnbColors.text3)),
-          Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: OnbColors.text)),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: OnbColors.text),
+          ),
         ],
       ),
     ),
@@ -555,7 +609,10 @@ class _TourLessonScreenState extends State<TourLessonScreen> {
       height: 52,
       alignment: Alignment.center,
       decoration: BoxDecoration(color: OnbColors.primary, borderRadius: BorderRadius.circular(14)),
-      child: Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white),
+      ),
     ),
   };
 }

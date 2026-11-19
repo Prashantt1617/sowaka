@@ -177,14 +177,14 @@ class _PoliciesAckScreenState extends State<PoliciesAckScreen> {
             Container(
               key: const ValueKey('policies-pending'),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(color: _PolColors.amberTint, borderRadius: BorderRadius.circular(20)),
+              decoration: BoxDecoration(color: OnbColors.amberTint, borderRadius: BorderRadius.circular(20)),
               child: Row(
                 children: [
                   Container(
                     width: 40,
                     height: 40,
                     decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                    child: const Icon(Icons.task_outlined, size: 20, color: _PolColors.amber),
+                    child: const Icon(Icons.task_outlined, size: 20, color: OnbColors.amber),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -242,7 +242,7 @@ class _PoliciesAckScreenState extends State<PoliciesAckScreen> {
           Container(
             key: const ValueKey('policy-what-changed'),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(color: OnbColors.tint, borderRadius: BorderRadius.circular(16)),
+            decoration: BoxDecoration(color: OnbColors.skyTint, borderRadius: BorderRadius.circular(16)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -321,17 +321,17 @@ class _PoliciesAckScreenState extends State<PoliciesAckScreen> {
                   key: const ValueKey('policy-acked'),
                   constraints: const BoxConstraints(minHeight: 52),
                   alignment: Alignment.center,
-                  decoration: BoxDecoration(color: OnbColors.doneTint, borderRadius: BorderRadius.circular(14)),
+                  decoration: BoxDecoration(color: OnbColors.successTint, borderRadius: BorderRadius.circular(14)),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.check_rounded, size: 18, color: OnbColors.doneText),
+                      const Icon(Icons.check_rounded, size: 18, color: OnbColors.successText),
                       const SizedBox(width: 8),
                       Text(
                         _ackedNow.contains(p.key) || p.acknowledgedAt == null
                             ? 'Acknowledged today'
                             : 'Acknowledged ${policyDateLabel(p.acknowledgedAt!)}',
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: OnbColors.doneText),
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: OnbColors.successText),
                       ),
                     ],
                   ),
@@ -408,11 +408,11 @@ class _PolicyRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = policy;
     final (label, bg, fg) = p.isAcknowledged
-        ? ('Acknowledged', OnbColors.doneTint, OnbColors.doneText)
+        ? ('Acknowledged', OnbColors.successTint, OnbColors.successText)
         : p.isUpdatedSinceAck
         ? ('Updated', OnbColors.tint, OnbColors.primary)
         : p.ackRequired
-        ? ('Acknowledge', _PolColors.amberTint, _PolColors.amber)
+        ? ('Acknowledge', OnbColors.amberTint, OnbColors.amber)
         : ('Read', OnbColors.screen, OnbColors.text2);
     final meta = p.isAcknowledged
         ? 'Acknowledged ${ackedToday || p.acknowledgedAt == null ? 'today' : policyDateLabel(p.acknowledgedAt!)}'
@@ -485,10 +485,4 @@ class _Retry extends StatelessWidget {
       ),
     ),
   );
-}
-
-/// The artifact's amber "to do" pair, which the kit does not have.
-abstract final class _PolColors {
-  static const amberTint = Color(0xFFFFF4E5);
-  static const amber = Color(0xFFB45309);
 }
