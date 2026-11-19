@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cup Knights demo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<style>html,body{margin:0;height:100%;background:#060B26;color:#CFE6FF;font-family:system-ui,sans-serif}#stage{position:fixed;inset:0}</style>
+</head>
+<body class="kn">
+<div id="stage"></div>
+<script src="play-knights.js"></script>
+<script>
+/* A Knights round on its own, against mocked endpoints: the state (a board from src/content/knights-boards.json), POST live
+   ({ knights }: a right board decides it at once, as the server does) and POST resign. The opponent places a knight every 10 s.
+   Query: ?n=6|8|9 &b=0 (board index) &delay=3000 &round=300 &opp=Priya (empty: solo).
+   Serve backend/ over http (the board bank is fetched): npx http-server backend -p 5392 → /game-pages/cup/play-knights-demo.html
+   Everything sent is logged to the console and kept in window.__events. */
+const P = new URLSearchParams(location.search), num = (k, d) => (P.has(k) && isFinite(+P.get(k)) ? +P.get(k) : d);
+window.__events = [];
+fetch('../../src/content/knights-boards.json').then((r) => r.json()).then((bank) => {
+  const n = num('n', 6), b = bank[String(n)][num('b', 0) % bank[String(n)].length];
+  const opp = P.has('opp') ? P.get('opp') : 'Priya Raman', me = 'me', oid = 'opp';
+  const startAt = Date.now() + num('delay', 3000), round = num('round', 300);
+  const match = { id: 'demo', label: 'Round 1 · Match 1', status: 'live', knights: { n, g: b.g }, placed: {} };
+  let right = 0;
+  function decide(winnerId, decidedBy) {
+    Object.assign(match, { status: 'done', winnerId, decidedBy, right: { [me]: right, [oid]: Math.max(0, (match.placed[oid] || 0) - 1) }, knights: { n, g: b.g, solution: b.s } });
+    match.result = { winnerId, decidedBy, right: match.right };
+    setTimeout(() => h.result(match, me), 300);
+  }
+  const h = CupKnights.start({
+    mount: '#stage', knights: match.knights, startAt, serverNow: Date.now(), roundSec: round,
+    me: { name: 'Tanvi Shah', userId: me }, opponent: opp ? { name: opp, userId: oid } : null, solo: !opp,
+    getOpponentLive: () => match.placed[oid] ?? null,
+    onLive: (placed, p) => {
+      __events.push({ live: p.knights }); console.log('[knights] POST live ' + JSON.stringify({ knights: p.knights }));
+      if (match.status !== 'live') return;
+      match.placed[me] = p.knights.length; right = p.knights.filter((i) => b.s.includes(i)).length;
+      if (p.knights.join() === b.s.join()) decide(me, 'finished');
+    },
+    onResign: () => new Promise((ok) => setTimeout(() => { __events.push({ resign: true }); console.log('[knights] POST resign'); decide(oid, 'resigned'); ok(); }, 300)),
+    onClose: () => { console.log('[knights] closed'); h.stop(); },
+  });
+  window.__h = h;
+  setInterval(() => { if (match.status === 'live' && Date.now() > startAt) match.placed[oid] = Math.min(n - 1, Math.floor((Date.now() - startAt) / 10000)); }, 500);
+  setInterval(() => { if (match.status === 'live' && Date.now() > startAt + round * 1000 + 3000) decide(right >= Math.max(0, (match.placed[oid] || 0) - 1) ? me : oid, 'cap'); }, 500);
+});
+</script>
+</body>
+</html>

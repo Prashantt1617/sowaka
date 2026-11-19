@@ -2,7 +2,7 @@
 /**
  * Builds the Diwali Cup's one uploadable file:
  *
- *   cup/page.html  +  cup/play.js  +  cup/play-trails.js  →  game-pages/diwali-cup.html
+ *   cup/page.html  +  cup/play.js  +  cup/play-trails.js  +  cup/play-knights.js  →  game-pages/diwali-cup.html
  *
  *   node backend/game-pages/cup/build.mjs [--play <path to play.js>] [--trails <path to play-trails.js>]
  *
@@ -11,7 +11,8 @@
  * placeholder with the same start() contract, so the page can be tried end to
  * end. play-trails.js (a Trails round, window.CupTrails, the same contract)
  * goes where page.html says `/*@CUP_TRAILS@*\/`, or, when page.html has no
- * such mark, right after the CupPlay inline (in the same script). The build
+ * such mark, right after the CupPlay inline (in the same script). play-knights.js (window.CupKnights) follows
+ * play-trails.js the same way, with its comments and indentation stripped to save bytes. The build
  * refuses a file over 250 KB.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -53,7 +54,7 @@ window.CupPlay = window.CupPlay || { stub: true, start: function (o) {
   return { stop: function () { done = true; clearInterval(iv); m.innerHTML = ''; } };
 } };`;
 
-const page = readFileSync(join(here, 'page.html'), 'utf8');
+let page = readFileSync(join(here, 'page.html'), 'utf8');
 const MARK = '/*@CUP_PLAY@*/';
 if (!page.includes(MARK)) throw new Error(`page.html has no ${MARK}`);
 const hasPlay = existsSync(playPath);
@@ -61,10 +62,25 @@ const hasPlay = existsSync(playPath);
 const play = (hasPlay ? readFileSync(playPath, 'utf8') : STUB).replace(/<\/(script)/gi, '<\\/$1');
 const TMARK = '/*@CUP_TRAILS@*/';
 const trails = readFileSync(trailsPath, 'utf8').replace(/<\/(script)/gi, '<\\/$1');
+// Whole-line /* comments */ go from page.html and play-knights.js (never a /*@MARK@*/), to stay under the limit; play-knights.js
+// is also minified with esbuild when it resolves (the repo's root node_modules), else only its indentation goes.
+const COMMENT = /^[ \t]*\/\*(?!@)(?:(?!\*\/)[\s\S])*\*\/[ \t]*\n/gm;
+const knightsSrc = readFileSync(join(here, 'play-knights.js'), 'utf8');
+let knights, minified = false;
+try {
+  const esbuild = await import('esbuild');
+  knights = (await esbuild.transform(knightsSrc, { minify: true, target: 'es2017', charset: 'utf8' })).code;
+  minified = true;
+} catch {
+  knights = knightsSrc.replace(COMMENT, '').replace(/^[ \t]+/gm, '');
+}
+knights = knights.replace(/<\/(script)/gi, '<\\/$1');
+// page.html has no template literals or multi-line strings, so its whole-line // comments and indentation can go too.
+page = page.replace(COMMENT, '').replace(/^[ \t]*\/\/.*\n/gm, '').replace(/^[ \t]+/gm, '');
 const html = page.includes(TMARK)
-  ? page.replace(MARK, () => play).replace(TMARK, () => trails)
-  : page.replace(MARK, () => play + '\n' + trails);
+  ? page.replace(MARK, () => play).replace(TMARK, () => trails + '\n' + knights)
+  : page.replace(MARK, () => play + '\n' + trails + '\n' + knights);
 const bytes = Buffer.byteLength(html);
 if (bytes > LIMIT) throw new Error(`diwali-cup.html is ${(bytes / 1024).toFixed(1)} KB, over the 250 KB limit`);
 writeFileSync(out, html);
-console.log(`${out}: ${(bytes / 1024).toFixed(1)} KB, play.js ${hasPlay ? `from ${playPath}` : 'STUB (cup/play.js not found)'}, play-trails.js from ${trailsPath} (${page.includes(TMARK) ? TMARK : 'after CupPlay'})`);
+console.log(`${out}: ${(bytes / 1024).toFixed(1)} KB, play.js ${hasPlay ? `from ${playPath}` : 'STUB (cup/play.js not found)'}, play-trails.js from ${trailsPath} (${page.includes(TMARK) ? TMARK : 'after CupPlay'}), play-knights.js ${minified ? 'minified' : 'stripped (no esbuild)'}`);

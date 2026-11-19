@@ -16,6 +16,10 @@
  * boards can be watched; `&boards=0` leaves them out (an old page's scores only).
  *
  * `&name=<text>` gives the event another name (the page shows event.name).
+ * `&game=knights&n=6` turns the fixture into a Knights Tournament: every match gets a board from
+ * src/content/knights-boards.json (`knights: {n, g}`), the opponent places a knight every ~10 s
+ * (`placed`), a right board (`POST live {knights}`) decides it at once, `POST resign` gives it away,
+ * and at the cap more right wins (`&opp=fast` lets the opponent finish first at ~40 s).
  * Special fixtures: expired (the ticket is refused), flaky (watch, with the
  * network failing from 3 s to 9 s), down (never answers), noticket (no __CUP).
  */
@@ -59,14 +63,34 @@ function simBoard(seed, uid, el) {
   return { board, tap: boardAt(seed, board - 1).at, ok: true };
 }
 
+const KBANK = JSON.parse(readFileSync(join(here, '..', '..', 'src', 'content', 'knights-boards.json'), 'utf8'));
+function knightsify(d, n) {
+  d.event.gameKey = 'knights'; d.event.name = 'Knights Tournament'; d.event.roundSec = 300; d.event.startWindowSec = 30; d.event.wallet = 1000; d.event.lobbyDraw = true;
+  const bank = KBANK[String(n)] || KBANK['6'];
+  const board = (m) => { const b = bank[Math.abs(hash(m.id + ':' + (m.attempt || 0))) % bank.length]; return b; };
+  for (const m of [...matchesOf(d), ...(d.me && d.me.match ? [d.me.match] : [])]) {
+    if (!['live', 'solo', 'done'].includes(m.status) && m !== d.me.match) continue;
+    const b = board(m);
+    m.knights = { n: Math.round(Math.sqrt(b.g.length)), g: b.g };
+    m._sol = b.s;
+    m.placed = m.placed || {};
+  }
+}
+function decideKnights(d, mm, rm, winnerId, decidedBy, right) {
+  const result = { winnerId, decidedBy, right };
+  for (const m of [mm, rm]) if (m) Object.assign(m, { status: 'done', winnerId, decidedBy, result, right, knights: { ...m.knights, solution: mm._sol } });
+  if (winnerId !== d.me.userId) { d.me.alive = false; d.me.eliminatedIn = d.event.rounds[mm.round - 1].label; }
+}
+
 function newSession(fx, name, boards) {
   const real = fx === 'flaky' ? 'watch' : fx;
   const raw = JSON.parse(readFileSync(join(here, 'fixtures', `${real}.json`), 'utf8'));
   const data = shiftDates(raw, Date.now() - Date.parse(raw.serverNow));
   // ?name= tries the page with another tournament name (?name= with nothing: no name, the page's fallback).
   if (name != null && data.event) data.event.name = name;
+  if (boards && boards.game === 'knights' && data.event) knightsify(data, boards.n);
   const ticket = `fx:${fx}:${Math.random().toString(36).slice(2, 8)}`;
-  sessions.set(ticket, { fx, data, anchor: Date.now(), bump: 0, boards });
+  sessions.set(ticket, { fx, data, anchor: Date.now(), bump: 0, boards: boards && boards.on, knights: boards && boards.game === 'knights', opp: boards && boards.opp });
   return ticket;
 }
 
@@ -87,6 +111,21 @@ function advance(s) {
     const rm = matchesOf(d).find((m) => m.id === mm.id);
     if (rm) Object.assign(rm, { status: 'live', startAt: mm.startAt, live: { [meId]: 0, [mm.opponent.userId]: 0 } });
     s.bump += 1;
+  }
+  if (s.knights) {
+    const rm = mm && matchesOf(d).find((m) => m.id === mm.id);
+    if (mm && mm.status === 'live' && mm.startAt && mm.knights) {
+      const el = (now - Date.parse(mm.startAt)) / 1000, n = mm.knights.n, oid = mm.opponent.userId;
+      const pl = Math.max(0, Math.min(s.opp === 'fast' ? n : n - 1, Math.floor(el / (s.opp === 'fast' ? 40 / n : 10))));
+      if (mm.placed[oid] !== pl) { mm.placed[oid] = pl; if (rm) rm.placed = { ...mm.placed }; s.bump += 1; }
+      if (s.opp === 'fast' && pl === n) decideKnights(d, mm, rm, oid, 'finished', { [d.me.userId]: mm._right || 0, [oid]: n });
+      else if (el > d.event.roundSec + 3) {
+        const mine = mm._right || 0, theirs = Math.max(0, pl - 2);
+        decideKnights(d, mm, rm, mine >= theirs ? d.me.userId : oid, 'cap', { [d.me.userId]: mine, [oid]: theirs });
+        s.bump += 1;
+      }
+    }
+    return d.version + s.bump + Math.floor((now - s.anchor) / 1500);
   }
   let anyLive = false;
   for (const m of matchesOf(d)) {
@@ -127,7 +166,7 @@ const readBody = (req) =>
     });
   });
 
-function page(fx, from, name, boards) {
+function page(fx, from, name, boards) { // boards: { on, game, n, opp }
   let html = readFileSync(BUILT, 'utf8');
   if (fx === 'noticket') return html;
   const ticket = fx === 'expired' ? 'expired' : fx === 'down' ? 'down' : newSession(fx, name, boards);
@@ -146,7 +185,7 @@ const server = createServer(async (req, res) => {
       return send(res, 200, `<!doctype html><meta name=viewport content="width=device-width"><body style="font:16px system-ui;background:#15122B;color:#fff;padding:20px"><h1>Cup mock</h1>${all.map((n) => `<p><a style="color:#F5B82E" href="/play/diwali-cup?fx=${n}">${n}</a></p>`).join('')}`);
     }
     if (path === '/play/diwali-cup' || /^\/cup\/[^/]+$/.test(path)) {
-      return send(res, 200, page(url.searchParams.get('fx') || 'lobby', path.startsWith('/cup/') ? 'feed' : 'games', url.searchParams.get('name'), url.searchParams.get('boards') !== '0'));
+      return send(res, 200, page(url.searchParams.get('fx') || 'lobby', path.startsWith('/cup/') ? 'feed' : 'games', url.searchParams.get('name'), { on: url.searchParams.get('boards') !== '0', game: url.searchParams.get('game'), n: Number(url.searchParams.get('n')) || 6, opp: url.searchParams.get('opp') }));
     }
     if (!path.startsWith('/cup/api/')) return send(res, 404, { success: false, message: 'Not found' });
     const ticket = req.headers['x-cup-ticket'] || '';
@@ -168,7 +207,7 @@ const server = createServer(async (req, res) => {
     const body = req.method === 'POST' ? await readBody(req) : {};
     const mm = d.me && d.me.match;
     const rm = mm && matchesOf(d).find((m) => m.id === mm.id);
-    const mt = /^\/cup\/api\/matches\/([^/]+)\/(join|solo|live|final|void)$/.exec(path);
+    const mt = /^\/cup\/api\/matches\/([^/]+)\/(join|solo|live|final|void|resign)$/.exec(path);
     if (mt) {
       const [, id, what] = mt;
       if (!mm || mm.id !== id) return send(res, 403, { success: false, message: 'This is not your match' });
@@ -191,6 +230,24 @@ const server = createServer(async (req, res) => {
         if (rm) rm.startAt = mm.startAt;
         s.bump += 1;
         return send(res, 200, { success: true, match: mm });
+      }
+      if (s.knights && what === 'resign') {
+        if (mm.status !== 'live' && mm.status !== 'solo') return send(res, 409, { success: false, message: 'This match is not on' });
+        decideKnights(d, mm, rm, mm.opponent.userId, 'resigned', { [d.me.userId]: mm._right || 0, [mm.opponent.userId]: Math.max(0, (mm.placed[mm.opponent.userId] || 0) - 1) });
+        s.bump += 1;
+        return send(res, 200, { success: true, match: mm });
+      }
+      if (s.knights && what === 'live') {
+        if (!Array.isArray(body.knights)) return send(res, 400, { success: false, message: 'knights missing' });
+        if (mm.status !== 'live' && mm.status !== 'solo') return send(res, 409, { success: false, message: 'This match is not on' });
+        const set = [...new Set(body.knights)].sort((a, b) => a - b);
+        s.lives = (s.lives || 0) + 1; console.log('live', JSON.stringify(set));
+        mm.placed[d.me.userId] = set.length; if (rm) rm.placed = { ...mm.placed };
+        mm._right = set.filter((i) => mm._sol.includes(i)).length;
+        if (set.join() === mm._sol.join()) decideKnights(d, mm, rm, d.me.userId, 'finished', { [d.me.userId]: mm.knights.n, [mm.opponent.userId]: Math.max(0, (mm.placed[mm.opponent.userId] || 0) - 1) });
+        s.bump += 1;
+        res.writeHead(204).end();
+        return;
       }
       if (what === 'live') {
         mm.myLive = Number(body.score) || 0;
