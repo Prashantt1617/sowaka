@@ -236,6 +236,12 @@ export interface Journey {
   week1DoneSeenAt?: Date;
   /** The manager's welcome post on Connect for the joiner (M2 "Post a welcome"), once per joiner. */
   managerWelcome?: { text: string; postedAt: Date; connectPostId?: string };
+  /**
+   * The team side's own ticks (services/lifecycle/teamTasks.ts): the buddy's, the head of
+   * department's and the manager's tasks that have no template row, by team task id. The
+   * manager's recommendation and the head of department's approval carry an outcome and a note.
+   */
+  teamTasks?: Record<string, TeamTaskTick>;
   /** Timed jobs already fired for this journey (each key once). */
   firedJobs?: string[];
   /** Kept by refreshJourney for lists and counts; the board recomputes them on read. */
@@ -253,6 +259,16 @@ export interface Journey {
   createdAt: Date;
   createdByUserId: string;
   updatedAt: Date;
+}
+
+/** One team-side task done (teamTasks.ts). */
+export interface TeamTaskTick {
+  doneAt: Date;
+  byUserId: string;
+  byName?: string;
+  /** The manager's recommendation ('confirm' | 'extend') or the head of department's answer ('approved' | 'discuss'). */
+  outcome?: string;
+  note?: string;
 }
 
 export type JourneyTaskStatus = 'locked' | 'todo' | 'in_review' | 'sent_back' | 'done' | 'skipped' | 'cancelled';
