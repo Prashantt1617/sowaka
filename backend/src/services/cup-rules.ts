@@ -24,6 +24,7 @@ import { randomInt } from 'node:crypto';
 import type {
   CupDecision,
   CupEventConfig,
+  CupKnightsResult,
   CupMatch,
   CupNode,
   CupRef,
@@ -216,7 +217,7 @@ export function matchLabel(round: CupRound, matchNumber: number): string {
 export type MatchTiming = Pick<
   CupEventConfig,
   'startWindowSec' | 'soloStartSec' | 'roundSec' | 'finishGraceSec' | 'minPlaySec' | 'maxReplays' | 'countdownSec' | 'maxScore'
->;
+> & { gameKey?: string };
 
 export type MatchStep =
   | { kind: 'none' }
@@ -226,7 +227,7 @@ export type MatchStep =
   | { kind: 'solo'; userId: string; soloUntil: Date }
   /** A tie: the same two again, on new boards. */
   | { kind: 'replay'; scores: Record<string, number> }
-  | { kind: 'decide'; winnerId: string; decidedBy: CupDecision; result: Record<string, number> };
+  | { kind: 'decide'; winnerId: string; decidedBy: CupDecision; result: Record<string, number> | CupKnightsResult };
 
 /** The better seed of the two: the one with the lower number. */
 export function betterSeed(match: Pick<CupMatch, 'players'>, seedOf: (userId: string) => number): string {
@@ -236,9 +237,9 @@ export function betterSeed(match: Pick<CupMatch, 'players'>, seedOf: (userId: st
 
 const at = (date: Date | undefined) => (date ? new Date(date).getTime() : Number.NaN);
 
-/** When a round that started at `startAt` stops taking finals. */
-export const roundEnds = (startAt: Date, t: Pick<MatchTiming, 'roundSec' | 'finishGraceSec'>) =>
-  new Date(at(startAt) + (t.roundSec + t.finishGraceSec) * 1000);
+/** When a round that started at `startAt` stops taking finals (knights: its cap, plus a moment for the last report). */
+export const roundEnds = (startAt: Date, t: Pick<MatchTiming, 'roundSec' | 'finishGraceSec' | 'gameKey'>) =>
+  new Date(at(startAt) + (t.roundSec + (t.gameKey === KNIGHTS ? KNIGHTS_GRACE_SEC : t.finishGraceSec)) * 1000);
 
 /**
  * What the runner should do with a match now. Pure: the caller applies it
@@ -253,7 +254,8 @@ export const roundEnds = (startAt: Date, t: Pick<MatchTiming, 'roundSec' | 'fini
  *          score) counts against 0. Not started in time, or started and
  *          never scored at all: both absent, so the better seed.
  */
-export function nextStep(match: CupMatch, t: MatchTiming, now: Date, seedOf: (userId: string) => number): MatchStep {
+export function nextStep(match: CupMatch, t: MatchTiming, now: Date, seedOf: (userId: string) => number, solution?: number[]): MatchStep {
+  if (t.gameKey === KNIGHTS) return nextKnightsStep(match, t, now, seedOf, solution ?? []);
   const nowMs = now.getTime();
   const [a, b] = match.players;
   const absent = (): MatchStep => ({ kind: 'decide', winnerId: betterSeed(match, seedOf), decidedBy: 'absent', result: { [a]: 0, [b]: 0 } });
@@ -392,4 +394,149 @@ export function parseLiveBoard(raw: unknown): LiveBoard | null {
     out.ok = r.ok;
   }
   return out;
+}
+
+
+// ---------------------------------------------------------------- knights
+
+/**
+ * The Knights Tournament (Men's Day): an n×n board of n colour regions, one
+ * knight per row, column and region, no two touching. Both players get the
+ * same board, from the bank (`content/knights-boards.json`, one answer each),
+ * picked by the match's seed. The first right board wins at once; a player
+ * may resign; at the cap the one with more knights in the right place wins,
+ * a tie replays on a new board (then the better seed). A lone player goes
+ * through as soon as they start. The solution never leaves the server until
+ * the match is decided.
+ */
+export const KNIGHTS = 'knights';
+/** After the cap, how long the last live report is still taken. */
+export const KNIGHTS_GRACE_SEC = 3;
+
+export interface KnightsBoard {
+  /** Region id per cell, row-major, n*n. */
+  g: number[];
+  /** The solution's cells, sorted, one per row. */
+  s: number[];
+}
+export type KnightsBank = Record<string, KnightsBoard[]>;
+
+/** The grid of a round: the last two rounds 9×9, round 1 6×6, every other 8×8. */
+export function gridFor(round: number, totalRounds: number): 6 | 8 | 9 {
+  if (round === totalRounds || round === totalRounds - 1) return 9;
+  if (round === 1) return 6;
+  return 8;
+}
+
+/** The match's board: `seed % bank[n].length`. */
+export function knightsBoardFor(bank: KnightsBank, n: number, seed: number): KnightsBoard {
+  const boards = bank[String(n)];
+  if (!boards?.length) throw new Error(`No ${n}x${n} knights boards`);
+  return boards[Math.abs(Math.trunc(seed)) % boards.length];
+}
+
+/** A new seed for a replay that lands on another board of the bank (`len` boards). */
+export function newKnightsSeed(oldSeed: number, len: number, fresh: () => number): number {
+  for (let i = 0; i < 50; i += 1) {
+    const seed = fresh();
+    if (len <= 1 || seed % len !== oldSeed % len) return seed;
+  }
+  return oldSeed + 1;
+}
+
+/** The knights a page reported: whole cell indices on an n×n board, deduped and sorted; null for junk. */
+export function parseKnights(raw: unknown, n: number): number[] | null {
+  if (!Array.isArray(raw) || raw.length > n * n) return null;
+  const cells = new Set<number>();
+  for (const v of raw) {
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v >= n * n) return null;
+    cells.add(v);
+  }
+  return [...cells].sort((x, y) => x - y);
+}
+
+/** Knights in the right place. */
+export function rightOf(knights: number[] | undefined | null, solution: number[]): number {
+  if (!knights?.length) return 0;
+  const s = new Set(solution);
+  return knights.reduce((sum, c) => sum + (s.has(c) ? 1 : 0), 0);
+}
+
+/** The board is the answer: exactly the solution's cells. */
+export const isSolved = (knights: number[] | undefined | null, solution: number[]) =>
+  !!knights && solution.length > 0 && knights.length === solution.length && rightOf(knights, solution) === solution.length;
+
+const knightsResult = (winnerId: string, decidedBy: CupDecision, right: Record<string, number>, finishedMs?: number): CupKnightsResult => ({
+  winnerId,
+  decidedBy,
+  right,
+  ...(finishedMs !== undefined ? { finishedMs } : {}),
+});
+
+/**
+ * A knights match's next step. `match.live[p].knights` is each player's
+ * latest board (the runtime's, merged in). Pure, like `nextStep`.
+ *   open:  as for every game (both in → start; window over → solo or absent).
+ *   live:  a right board → that player, `finished`, at once (two at once: the
+ *          earlier report). At the cap (+ grace): more right wins (`cap`); equal
+ *          replays, up to `maxReplays`, then the better seed (`replays`).
+ *   solo:  started → the lone player goes through; never started in time →
+ *          the better seed, as absent.
+ */
+export function nextKnightsStep(match: CupMatch, t: MatchTiming, now: Date, seedOf: (userId: string) => number, solution: number[]): MatchStep {
+  const nowMs = now.getTime();
+  const [a, b] = match.players;
+  const zero = { [a]: 0, [b]: 0 };
+  const absent = (): MatchStep => {
+    const winnerId = betterSeed(match, seedOf);
+    return { kind: 'decide', winnerId, decidedBy: 'absent', result: knightsResult(winnerId, 'absent', zero) };
+  };
+  const right = () => ({ [a]: rightOf(match.live?.[a]?.knights, solution), [b]: rightOf(match.live?.[b]?.knights, solution) });
+  switch (match.status) {
+    case 'open': {
+      const joined = match.players.filter((p) => match.joined?.[p]);
+      if (joined.length === 2) return { kind: 'start', startAt: new Date(nowMs + t.countdownSec * 1000) };
+      if (nowMs < at(match.deadlineAt)) return { kind: 'none' };
+      if (joined.length === 1) return { kind: 'solo', userId: joined[0], soloUntil: new Date(nowMs + t.soloStartSec * 1000) };
+      return absent();
+    }
+    case 'live': {
+      if (!match.startAt) return { kind: 'start', startAt: new Date(nowMs + t.countdownSec * 1000) };
+      const solved = match.players
+        .filter((p) => isSolved(match.live?.[p]?.knights, solution))
+        .sort((x, y) => at(match.live?.[x]?.at) - at(match.live?.[y]?.at));
+      if (solved.length) {
+        const winnerId = solved[0];
+        const finishedMs = Math.max(0, at(match.live?.[winnerId]?.at) - at(match.startAt));
+        return { kind: 'decide', winnerId, decidedBy: 'finished', result: knightsResult(winnerId, 'finished', right(), Number.isFinite(finishedMs) ? finishedMs : undefined) };
+      }
+      if (nowMs < roundEnds(match.startAt, t).getTime()) return { kind: 'none' };
+      const r = right();
+      if (r[a] === r[b]) {
+        if ((match.history?.length ?? 0) < t.maxReplays) return { kind: 'replay', scores: r };
+        const winnerId = betterSeed(match, seedOf);
+        return { kind: 'decide', winnerId, decidedBy: 'replays', result: knightsResult(winnerId, 'replays', r) };
+      }
+      const winnerId = r[a] > r[b] ? a : b;
+      return { kind: 'decide', winnerId, decidedBy: 'cap', result: knightsResult(winnerId, 'cap', r) };
+    }
+    case 'solo': {
+      const lone = match.players.find((p) => match.joined?.[p]);
+      if (!lone) return absent();
+      if (match.startAt) return { kind: 'decide', winnerId: lone, decidedBy: 'solo', result: knightsResult(lone, 'solo', right()) };
+      return nowMs >= at(match.soloUntil) ? absent() : { kind: 'none' };
+    }
+    default:
+      return { kind: 'none' };
+  }
+}
+
+/** A resignation: the other player wins at once. Only a player of the match, only while it is live or solo. */
+export function resignStep(match: CupMatch, userId: string, solution: number[]): MatchStep | Refusal {
+  if (!match.players.includes(userId)) return no(403, 'This is not your match');
+  if (match.status !== 'live' && match.status !== 'solo') return no(409, 'Your match is not on');
+  const [a, b] = match.players;
+  const winnerId = userId === a ? b : a;
+  const right = { [a]: rightOf(match.live?.[a]?.knights, solution), [b]: rightOf(match.live?.[b]?.knights, solution) };
+  return { kind: 'decide', winnerId, decidedBy: 'resigned', result: knightsResult(winnerId, 'resigned', right) };
 }
