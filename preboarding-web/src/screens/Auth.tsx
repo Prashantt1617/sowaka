@@ -9,6 +9,7 @@ import { BottomBar, Eyebrow, Field, PrimaryButton } from '../components/ui';
 import { useFocusHeading } from '../lib/hooks';
 import { ClosedScreen } from './Closed';
 import { A1Frame, A1Icon, A1Logo, WebHeader } from '../components/A1';
+import '../styles/fig-g2.css';
 
 function PasswordInput({ id, value, onChange, autoComplete }: { id: string; value: string; onChange: (v: string) => void; autoComplete: string }) {
   const [show, setShow] = useState(false);
@@ -93,7 +94,7 @@ export function SignIn() {
   return (
     <A1Frame white>
       <WebHeader company={company} />
-      <form className="a1-signin" onSubmit={submit} noValidate aria-describedby={error ? 'signin-err' : undefined}>
+      <form className="a1-signin g2-signin" onSubmit={submit} noValidate aria-describedby={error ? 'signin-err' : undefined}>
         <div className="a1-signin__top">
           {sent && <button type="button" className="a1-icon-btn a1-icon-btn--ink" aria-label="Back to email" onClick={() => { setSent(false); setError(undefined); }}><A1Icon name="back" size={22} width={2} /></button>}
         </div>

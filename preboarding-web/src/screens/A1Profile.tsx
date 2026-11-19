@@ -12,9 +12,10 @@ import { A1Icon, A1Loading, Breadcrumb, StepHeader } from '../components/A1';
 import { fmtBytes, fmtWeekday } from '../lib/format';
 import { useMe } from '../session';
 import { WebPage } from './A1Shell';
+import { G2_SECTIONS, G2SectionForm } from '../components/fig/G2ProfileSections';
 
-const ORDER: ProfileSectionKey[] = ['personal', 'contact', 'emergency', 'bank', 'education', 'ids', 'photo'];
-const TITLE: Record<ProfileSectionKey, string> = {
+export const ORDER: ProfileSectionKey[] = ['personal', 'contact', 'emergency', 'bank', 'education', 'ids', 'photo'];
+export const TITLE: Record<ProfileSectionKey, string> = {
   personal: 'Personal details', contact: 'Contact and address', emergency: 'Emergency contact', bank: 'Bank account and PF',
   education: 'Education and experience', ids: 'ID documents', photo: 'Photo',
 };
@@ -22,7 +23,7 @@ const LIST_TITLE: Record<ProfileSectionKey, string> = { ...TITLE, ids: 'ID docum
 const HINT: Record<ProfileSectionKey, string> = {
   personal: 'About 2 min', contact: 'About 2 min', emergency: 'About 2 min', bank: 'About 3 min', education: 'About 4 min', ids: 'Aadhaar and PAN', photo: 'For your ID card',
 };
-const INTRO: Record<ProfileSectionKey, string> = {
+export const INTRO: Record<ProfileSectionKey, string> = {
   personal: 'Fill these in exactly as they appear on your ID, so your letters and payslips match.',
   contact: 'HR uses these to reach you and to post anything you need before you join.',
   emergency: 'Who should we call if something happens to you at work? Pick someone who usually answers their phone.',
@@ -83,11 +84,11 @@ export function A1Profile() {
 
 type Values = Record<string, unknown>;
 const draftKey = (k: ProfileSectionKey) => `sowaka.portal.profile.${k}`;
-function readDraft(k: ProfileSectionKey): Values | null { try { const raw = localStorage.getItem(draftKey(k)); return raw ? (JSON.parse(raw) as Values) : null; } catch { return null; } }
-function writeDraft(k: ProfileSectionKey, v: Values | null) { try { if (v) localStorage.setItem(draftKey(k), JSON.stringify(v)); else localStorage.removeItem(draftKey(k)); } catch { /* not kept */ } }
+export function readDraft(k: ProfileSectionKey): Values | null { try { const raw = localStorage.getItem(draftKey(k)); return raw ? (JSON.parse(raw) as Values) : null; } catch { return null; } }
+export function writeDraft(k: ProfileSectionKey, v: Values | null) { try { if (v) localStorage.setItem(draftKey(k), JSON.stringify(v)); else localStorage.removeItem(draftKey(k)); } catch { /* not kept */ } }
 
 /** The saved answers of a section, as the form's values (secrets come back empty: only their last four are known). */
-function savedValues(k: ProfileSectionKey, v: ProfileView): Values {
+export function savedValues(k: ProfileSectionKey, v: ProfileView): Values {
   const p = v.profile;
   switch (k) {
     case 'personal': return { fullName: p.personal?.fullName ?? v.candidateName ?? '', preferredName: p.personal?.preferredName ?? '', dob: p.personal?.dob ?? '', gender: p.personal?.gender ?? '', maritalStatus: p.personal?.maritalStatus ?? '', nationality: p.personal?.nationality ?? 'Indian' };
@@ -105,6 +106,8 @@ export function A1ProfileSection() {
   const { section = '' } = useParams();
   const key = ORDER.includes(section as ProfileSectionKey) ? (section as ProfileSectionKey) : null;
   if (!key) return <Navigate to="/profile" replace />;
+  // Bank, education, IDs and photo: the Figma screens (G2).
+  if (G2_SECTIONS.includes(key)) return <G2SectionForm key={key} k={key} />;
   return <SectionForm key={key} k={key} />;
 }
 
