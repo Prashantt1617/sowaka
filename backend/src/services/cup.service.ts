@@ -1192,7 +1192,8 @@ export async function startSolo(viewer: CupViewer, id: string) {
   }
   // Knights: a lone player goes through as soon as they start (nobody to play; a sequential round must not wait 5 minutes).
   if (isKnightsEvent(rt.event) && current.status === 'solo' && current.startAt && runnerMoves(rt.event.org)) {
-    await apply(rt, current, nextStep(withLive(rt, current), rt.event, now, seedLookup(rt.event), solutionOf(rt, current)), now);
+    // A later write time than the start's, so a refresh that read in between cannot put the solo copy back.
+    await apply(rt, current, nextStep(withLive(rt, current), rt.event, now, seedLookup(rt.event), solutionOf(rt, current)), new Date(now.getTime() + 1));
     current = rt.matches.get(id) ?? current;
     if (current.status === 'done') kick(rt);
   }
@@ -1299,6 +1300,17 @@ async function reportKnights(rt: Runtime, match: CupMatch, viewer: CupViewer, ra
   const key = `${match.id}:${match.attempt}:${viewer.userId}`;
   const had = rt.knights.get(key);
   if (had?.solved) return;
+  // The page re-sends an unchanged board every few seconds: written once after its last change, then nothing.
+  const same = !!had && had.knights.length === knights.length && knights.every((cell) => had.knights.includes(cell));
+  if (same && (rt.persisted.get(key) ?? 0) >= had.at) return;
+  if (same) {
+    rt.persisted.set(key, now.getTime());
+    await cupMatches().updateOne(
+      { id: match.id, attempt: match.attempt },
+      { $set: { [`live.${viewer.userId}`]: { score: rightOf(knights, board.s), at: new Date(had.at), knights } } },
+    );
+    return;
+  }
   const solved = isSolved(knights, board.s);
   if (!had || had.knights.length !== knights.length) rt.rev += 1;
   rt.knights.set(key, { knights, at: now.getTime(), ...(solved ? { solved: true } : {}) });
@@ -1335,7 +1347,7 @@ export async function resignMatch(viewer: CupViewer, id: string) {
  * live, solo or done; each player's knights placed; once decided, each
  * player's right ones and the solution. Nothing for any other game.
  */
-function knightsView(rt: Runtime, match: CupMatch): {
+function knightsView(rt: Runtime, match: CupMatch, own = false): {
   knights?: { n: number; g: number[]; solution?: number[] };
   placed?: Record<string, number>;
   right?: Record<string, number>;
@@ -1349,7 +1361,8 @@ function knightsView(rt: Runtime, match: CupMatch): {
   const result = match.result as { right?: Record<string, number> } | undefined;
   const right: Record<string, number> = {};
   for (const p of match.players) right[p] = result?.right?.[p] ?? rightOf(knightsOfPlayer(rt, match, p), board.s);
-  return { knights: { n: board.n, g: board.g, solution: board.s }, placed, right };
+  const roundOver = rt.event.phase === 'done' || match.round < rt.event.round;
+  return { knights: own || roundOver ? { n: board.n, g: board.g, solution: board.s } : { n: board.n, g: board.g }, placed, right };
 }
 
 // ---------------------------------------------------------------- void (for HR, through cup-bets)
@@ -1652,7 +1665,7 @@ function myMatchView(rt: Runtime, match: CupMatch, userId: string) {
   const entrant = event.entrants.find((e) => e.userId === them);
   const live = liveOf(rt, match) ?? {};
   const playing = match.status === 'live' || match.status === 'solo';
-  const kv = knightsView(rt, match);
+  const kv = knightsView(rt, match, true);
   const knightsMine = kv.placed
     ? { myPlaced: kv.placed[userId] ?? 0, opponentPlaced: kv.placed[them] ?? 0, myKnights: knightsOfPlayer(rt, match, userId) ?? [] }
     : {};

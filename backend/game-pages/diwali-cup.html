@@ -1850,13 +1850,13 @@ var dl = ms(m.deadlineAt);
 if (!m.joined) {
 body = '<div class="status">' + (m.opponentJoined ? '<span class="dotg"></span>' + esc(on) + ' is here and waiting' : '<span class="doto"></span>' + esc(on) + ' hasn\'t joined yet') + '</div>' +
 '<button type="button" class="btn" data-act="join"' + (ui.busy === 'join' ? ' disabled' : '') + '>' + (ui.busy === 'join' ? 'JOINING…' : 'I\'M READY · PLAY') + '</button>' +
-(isFinite(dl) ? '<p class="note" style="text-align:center">Join within <b data-cd="' + dl + '">' + left(dl) + '</b>. If ' + esc(on) + ' doesn\'t come, you still play and your score stands against 0.</p>' : '');
+(isFinite(dl) ? '<p class="note" style="text-align:center">Join within <b data-cd="' + dl + '">' + left(dl) + '</b>. If ' + esc(on) + ' doesn\'t come, ' + (isKnights() ? 'you go through.' : 'you still play and your score stands against 0.') + '</p>' : '');
 } else {
 body = '<div class="status"><span class="dotg"></span>You\'re in. Waiting for ' + esc(on) + ' <span class="wait" aria-hidden="true"><i></i><i></i><i></i></span></div>' +
-(isFinite(dl) ? '<p class="note">The round starts the moment ' + esc(on) + ' joins. If they\'re not here in <b data-cd="' + dl + '">' + left(dl) + '</b>, you play alone and your score stands against 0.</p>' : '');
+(isFinite(dl) ? '<p class="note">The round starts the moment ' + esc(on) + ' joins. If they\'re not here in <b data-cd="' + dl + '">' + left(dl) + '</b>, ' + (isKnights() ? 'you go through.' : 'you play alone and your score stands against 0.') + '</p>' : '');
 }
 } else if (m.status === 'solo' && !m.startAt) {
-body = '<div class="banner cy">' + esc(on) + ' didn\'t show up. Play your round; your score stands against 0.</div>' +
+body = '<div class="banner cy">' + esc(on) + ' didn\'t show up. ' + (isKnights() ? 'Tap Start and you go through.' : 'Play your round; your score stands against 0.') + '</div>' +
 '<button type="button" class="btn" data-act="solo"' + (ui.busy === 'solo' ? ' disabled' : '') + '>' + (ui.busy === 'solo' ? 'STARTING…' : 'START MY ROUND') + '</button>';
 } else if (isLive(m)) {
 var fin = finals[key];
@@ -2375,7 +2375,7 @@ var m = S.me.match, key = m.id + ':' + (m.attempt || 0), start = ms(m.startAt), 
 if (ui.playing && ui.handle && ui.handle.result) {
 var pid = ui.playing.slice(0, ui.playing.lastIndexOf(':')), pm = pid === m.id ? m : null;
 (ev().rounds || []).forEach(function (r) { r.matches.forEach(function (x) { if (!pm && x.id === pid) pm = x; }); });
-if (pm && pm.status === 'done') { ui.handle.result(pm, meId()); return; }
+if (pm && pm.status === 'done' && (pid === m.id || m.status === 'done' || m.status === 'scheduled' || m.status === 'betting')) { ui.handle.result(pm, meId()); return; }
 }
 var kn = knightsBoard(m);
 var want = (m.status === 'live' || (m.status === 'solo' && m.startAt)) && isFinite(start) && kn && ui.kclosed !== key && now() < start + (roundSec() + 60) * 1000;
@@ -2395,7 +2395,7 @@ ui.handle = P.start({
 mount: mount, knights: kn, startAt: start, serverNow: now(), clockOffset: offset, roundSec: roundSec(), attempt: m.attempt || 0,
 opponent: m.status === 'solo' ? null : { name: opp.name || 'Your opponent', userId: opp.userId },
 me: { name: S.me.name, userId: meId() }, solo: m.status === 'solo',
-resume: progress[key] || null,
+resume: progress[key] || (m.myKnights && kn.n ? { cells: Array.apply(null, Array(kn.n * kn.n)).map(function (_, i) { return m.myKnights.indexOf(i) >= 0 ? 1 : 0; }) } : null),
 onProgress: function (p) { progress[key] = p; store('cup-live', keepLast(progress, 6)); },
 onLive: function (placed, p) {
 pending = { knights: (p && p.knights) || [], score: Math.max(0, Math.round(Number(placed) || 0)) };
