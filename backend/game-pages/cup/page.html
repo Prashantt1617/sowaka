@@ -255,6 +255,7 @@ button.bm{min-height:44px}
 .skel{height:120px;border-radius:22px;background:linear-gradient(90deg,var(--p1),var(--p2),var(--p1));background-size:200% 100%;animation:sh 1.4s infinite}
 @keyframes sh{to{background-position:-200% 0}}
 #play{position:fixed;inset:0;z-index:50;background:var(--bg)}
+html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#CFE6FF;--yd:#5D86C9;--yl:#fff;--co:#63A9F7;--cod:#2E77D0;--cy:#7FC4FF;--tx:#EAF3FF;--mu:#A9C3E6;--mu2:#7F9CC8}
 #play[hidden]{display:none}
 .play-mount{position:absolute;inset:0}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -453,6 +454,7 @@ button.bm{min-height:44px}
   function isMine(m) { var u = meId(); return !!(m && u && ((m.a && m.a.userId === u) || (m.b && m.b.userId === u))); }
   function scoreOf(m, uid) {
     if (!m || !uid) return null;
+    if (isKnights()) { var rr = m.right || (m.result && m.result.right); return rr ? (rr[uid] != null ? rr[uid] : null) : placedOf(m, uid); }
     if (m.result && m.result[uid] != null) return m.result[uid];
     if (m.live && m.live[uid] != null) return m.live[uid];
     return null;
@@ -488,8 +490,11 @@ button.bm{min-height:44px}
   function seedLbl(p) { return seeded() && p && p.seed ? 'Seed ' + p.seed : ''; }
   /* The game played in each match, as the rules and the round name it. */
   function isTrails() { var e = ev(); return !!(e && e.gameKey === 'trails'); }
-  function gameName() { return isTrails() ? 'Trails' : 'Odd One Out'; }
-  function roundPlay() { return isTrails() ? window.CupTrails : window.CupPlay; }
+  function isKnights() { var e = ev(); return !!(e && e.gameKey === 'knights'); }
+  function gameName() { return isKnights() ? 'Knights' : isTrails() ? 'Trails' : 'Odd One Out'; }
+  function roundPlay() { return isKnights() ? window.CupKnights : isTrails() ? window.CupTrails : window.CupPlay; }
+  /* Knights: the knights each player has on the board now (match.placed). */
+  function placedOf(m, uid) { return m && uid && m.placed && m.placed[uid] != null ? m.placed[uid] : null; }
   function youOr(p) { return p && p.userId === meId() ? 'You' : (p ? esc(p.name) : 'To be decided'); }
   function vsBlock(me, opp, oppText) {
     return '<div class="vs">' +
@@ -501,7 +506,7 @@ button.bm{min-height:44px}
   function raceRows(m, opts) {
     opts = opts || {};
     var a = m.a, b = m.b, sa = scoreOf(m, a && a.userId) || 0, sb = scoreOf(m, b && b.userId) || 0;
-    var scale = Math.max(2000, sa, sb) * 1.15;
+    var scale = isKnights() ? ((m.knights && m.knights.n) || 9) : Math.max(2000, sa, sb) * 1.15;
     function row(p, s, col) {
       var tag = opts.pick && p && opts.pick === p.userId ? '<span class="pk">PICK</span>' : '';
       var w = m.winnerId && p && m.winnerId === p.userId ? ' <span aria-label="winner">✓</span>' : '';
@@ -540,6 +545,7 @@ button.bm{min-height:44px}
     }
     var end = ms(m.startAt) + roundSec() * 1000;
     var secs = isFinite(end) ? Math.max(0, Math.ceil((end - now()) / 1000)) : null;
+    if (isKnights()) return '<p class="lead" style="color:var(--mu)">Knights placed: ' + num(sa) + ' and ' + num(sb) + (secs ? ' · ' + secs + ' s to go' : '') + '</p>';
     if (sa === sb) return '<p class="lead" style="color:var(--mu)">Level at ' + num(sa) + (secs ? ' · ' + secs + ' s to go' : '') + '</p>';
     var lead = sa > sb ? a : b;
     return '<p class="lead">' + (lead.userId === meId() ? 'You lead' : esc(first(lead.name)) + ' leads') + ' by ' + num(Math.abs(sa - sb)) + (secs ? ' with ' + secs + ' seconds to go' : '') + '</p>';
@@ -602,6 +608,8 @@ button.bm{min-height:44px}
     var bet = e.wallet
       ? 'The top ' + top + ' play one at a time on stage. Everyone gets ' + num(e.wallet) + ' points to bet on them, the same for all, for this tournament only.'
       : 'The top ' + top + ' play one at a time on stage, and everyone can bet points on them.';
+    if (isKnights()) return li(1, first) + li(2, 'Each match: you and one colleague get the same Knights board, ' + '6×6 in round 1, 8×8 in the middle rounds, 9×9 in the semi-finals and final' + '. Put one knight in every row, column and colour; knights never touch, not even corner to corner. Tap a square: × → knight → clear.') +
+      li(3, 'The first to get the whole board right wins at once. You can resign any time. After ' + Math.round(secs / 60) + ' minutes, more knights in the right place wins; level replays on a new board. Not there within ' + wait + '? The one who plays goes through.') + li(4, bet);
     return li(1, first) + li(2, match) + li(3, 'A tie replays at once. Not there within ' + wait + '? The one who plays wins with their score.') + li(4, bet);
   }
 
@@ -698,6 +706,7 @@ button.bm{min-height:44px}
     var opp = m.a && m.a.userId === u ? m.b : m.a;
     var mine = scoreOf(m, u) || 0, theirs = scoreOf(m, opp && opp.userId) || 0;
     var won = m.winnerId === u;
+    if (isKnights()) return knightsResult(m, r, opp, won, mine, theirs, big);
     var how = m.decidedBy === 'solo' ? (won ? esc(first(opp.name)) + ' didn\'t show, so your score stood against 0.' : 'You didn\'t make it to the start, so ' + esc(first(opp.name)) + '\'s score stood.') :
       m.decidedBy === 'absent' ? (seeded() ? 'Neither of you started, so the better seed went through.' : 'Neither of you started, so one of you went through by the draw.') :
       mine === theirs ? (seeded() ? 'Level after the replays, so the better seed went through.' : 'Level after the replays, so one of you went through by the draw.') : '';
@@ -707,6 +716,19 @@ button.bm{min-height:44px}
       '<span class="sc">' + num(mine) + ' <span class="mut" style="font-size:20px">to</span> ' + num(theirs) + '</span>' +
       '<p class="note vso">' + av(opp, 'xxs') + '<span>v ' + esc(opp ? opp.name : '') + (seeded() && opp && opp.seed ? ' (seed ' + opp.seed + ')' : '') + '</span></p>' + (how ? '<p class="note">' + how + '</p>' : '') +
       '</div></section>';
+  }
+
+  function knightsResult(m, r, opp, won, mine, theirs, big) {
+    var on = esc(first(opp ? opp.name : '')), d = m.decidedBy || (m.result && m.result.decidedBy), rt = m.right || (m.result && m.result.right);
+    var how = d === 'finished' ? (won ? 'You got the whole board right first.' : on + ' got the whole board right first.') :
+      d === 'resigned' ? (won ? on + ' resigned.' : 'You resigned.') :
+      d === 'solo' ? (won ? on + ' didn\'t show, so you went through.' : 'You didn\'t make it to the start.') :
+      d === 'absent' ? 'Neither of you started, so one of you went through by the draw.' :
+      d === 'replays' || (rt && mine === theirs) ? 'Level after the replays, so one of you went through by the draw.' : rt ? 'At the time, more knights in the right place won.' : '';
+    return '<section class="card ' + (big ? 'edge' : '') + '" aria-label="Your last result"><div class="res' + (won ? '' : ' lost') + '">' +
+      '<p class="lbl">' + esc(r.label) + ' · ' + (won ? 'You won' : 'Knocked out') + '</p>' + (big ? '<h1>' + (won ? 'YOU WON!' : 'KNOCKED OUT') + '</h1>' : '') +
+      (rt ? '<span class="sc">' + num(mine) + ' <span class="mut" style="font-size:20px">to</span> ' + num(theirs) + '</span><p class="note">knights in the right place</p>' : '') +
+      '<p class="note vso">' + av(opp, 'xxs') + '<span>v ' + esc(opp ? opp.name : '') + '</span></p>' + (how ? '<p class="note">' + how + '</p>' : '') + '</div></section>';
   }
 
   /* My slot in a later round's bracket, before the server makes it my match: the label and who I'd meet (or where they come from). */
@@ -835,6 +857,9 @@ button.bm{min-height:44px}
     var bal = me.balance || 0;
     var stake = Math.min(ui.stake, bal);
     var reason = player ? 'You\'re playing in this one, so you can\'t bet on it.' : !open ? 'Betting on this match is closed.' : !bal ? 'You have no points to bet right now.' : '';
+    /* Knights: "place your bets", once per betting window, for a viewer who can bet. */
+    var said = m.id + ':' + (m.attempt || 0) + ':' + (m.bettingEndsAt || '');
+    if (isKnights() && !reason && !mine && ui.betSaid !== said && window.CupKnights) { ui.betSaid = said; setTimeout(function () { try { window.CupKnights.bets(); } catch (e) {} }, 0); }
     function card(p) {
       var on = (mine ? mine.pick : ui.pick) === p.userId;
       var dis = !!(mine || reason);
@@ -1101,6 +1126,7 @@ button.bm{min-height:44px}
     renderQ = true;
     requestAnimationFrame(function () {
       renderQ = false;
+      document.documentElement.classList.toggle('kn', isKnights());
       morph($app, frame());
       syncPlay();
       document.body.style.overflow = ui.duel || ui.playing ? 'hidden' : '';
@@ -1121,6 +1147,7 @@ button.bm{min-height:44px}
   /* ---------- playing a match (cup/play.js) ---------- */
   function syncPlay() {
     if (!S || !S.me || !S.me.match) return;
+    if (isKnights()) return syncKnights();
     var m = S.me.match, key = m.id + ':' + (m.attempt || 0);
     var start = ms(m.startAt);
     if ((m.status === 'live' || m.status === 'solo') && finals[key] != null && !posted[key]) postFinal(m.id, key, finals[key]);
@@ -1175,6 +1202,60 @@ button.bm{min-height:44px}
       });
     } catch (err) {
       console.error('CupPlay failed', err);
+      stopPlay();
+      ui.err = 'The game didn\'t start. Close this screen and open it again.';
+    }
+  }
+  /* A Knights match (cup/play-knights.js): no final score; the server decides on a right board, a resign or the time. The round
+     shows the result itself when the match is decided, and closes when the player taps out of it. */
+  function knightsBoard(m) {
+    if (m.knights) return m.knights;
+    var r = roundOf(m.round), x = r && r.matches.find(function (y) { return y.id === m.id; });
+    return x && x.knights;
+  }
+  function syncKnights() {
+    var m = S.me.match, key = m.id + ':' + (m.attempt || 0), start = ms(m.startAt), P = window.CupKnights;
+    /* The match on screen is decided (it may no longer be my match: the next round can open at once): its result, till the player closes it. */
+    if (ui.playing && ui.handle && ui.handle.result) {
+      var pid = ui.playing.slice(0, ui.playing.lastIndexOf(':')), pm = pid === m.id ? m : null;
+      (ev().rounds || []).forEach(function (r) { r.matches.forEach(function (x) { if (!pm && x.id === pid) pm = x; }); });
+      if (pm && pm.status === 'done') { ui.handle.result(pm, meId()); return; }
+    }
+    var kn = knightsBoard(m);
+    var want = (m.status === 'live' || (m.status === 'solo' && m.startAt)) && isFinite(start) && kn && ui.kclosed !== key && now() < start + (roundSec() + 60) * 1000;
+    if (ui.playing && (ui.playing !== key || !want)) stopPlay();
+    if (!want || ui.playing === key || !P) return;
+    if (ui.playing) stopPlay();
+    ui.playing = key; $play.hidden = false; $play.innerHTML = '';
+    var mount = document.createElement('div'); mount.className = 'play-mount'; $play.appendChild(mount);
+    var matchId = m.id, opp = m.opponent || {}, lastLive = 0, liveT = 0, pending = null;
+    function sendLive() {
+      liveT = 0; if (!pending) return;
+      var body = pending; pending = null; lastLive = Date.now();
+      api('/matches/' + encodeURIComponent(matchId) + '/live', { method: 'POST', body: body }).catch(function () {});
+    }
+    try {
+      ui.handle = P.start({
+        mount: mount, knights: kn, startAt: start, serverNow: now(), clockOffset: offset, roundSec: roundSec(), attempt: m.attempt || 0,
+        opponent: m.status === 'solo' ? null : { name: opp.name || 'Your opponent', userId: opp.userId },
+        me: { name: S.me.name, userId: meId() }, solo: m.status === 'solo',
+        resume: progress[key] || null,
+        onProgress: function (p) { progress[key] = p; store('cup-live', keepLast(progress, 6)); },
+        onLive: function (placed, p) {
+          pending = { knights: (p && p.knights) || [], score: Math.max(0, Math.round(Number(placed) || 0)) };
+          if (!liveT) liveT = setTimeout(sendLive, Math.max(0, 260 - (Date.now() - lastLive)));
+        },
+        getOpponentLive: function () { var mm = S && S.me && S.me.match; return mm && mm.id === matchId ? placedOf(mm, opp.userId) : null; },
+        onResign: function () {
+          return api('/matches/' + encodeURIComponent(matchId) + '/resign', { method: 'POST', body: {} }).then(function (j) {
+            if (j && j.match && S.me.match && S.me.match.id === matchId) Object.assign(S.me.match, j.match);
+            render(); poll();
+          });
+        },
+        onClose: function () { ui.kclosed = key; stopPlay(); render(); }
+      });
+    } catch (err) {
+      console.error('CupKnights failed', err);
       stopPlay();
       ui.err = 'The game didn\'t start. Close this screen and open it again.';
     }
