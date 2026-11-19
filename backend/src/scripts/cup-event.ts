@@ -32,7 +32,8 @@
  * --exclude id,id --include id,id (a test: only these) --seeding leaderboard|lucky
  * --top-n N --start-window S --solo-start S --betting S --countdown S --round S
  * --grace S --min-play S --max-score N --max-replays N --max-stake N --push-at-lobby true|false
- * --game odd-one-out|trails (the game in each match) --lobby-draw true|false (only the people who join
+ * --game odd-one-out|trails|knights (the game in each match; knights also sets its own defaults:
+ * round 300, start window 30, solo start 30, betting 120, top 8, wallet 1000, lobby draw, 2 replays) --lobby-draw true|false (only the people who join
  * the lobby, paired at random when it closes) --wallet N (everyone bets from N points of their own for
  * this tournament, not their points; 0: their points)
  * Times: ISO with an offset (2026-10-23T17:25+05:30), or +Ns / +Nm / +Nh from now.
@@ -96,7 +97,24 @@ const NUMBER_FLAGS: Record<string, [keyof CupEventConfig, number, number]> = {
 };
 
 /** The games a tournament can be played in: each has its round in the tournament page. */
-const CUP_GAMES = ['odd-one-out', 'trails'];
+const CUP_GAMES = ['odd-one-out', 'trails', 'knights'];
+
+/**
+ * The Knights Tournament's own rules (Men's Day): 5-minute boards, a 30 s
+ * start window, a lone player starting within 30 s, 2-minute betting gaps on
+ * the last eight, everyone betting from 1,000 points of their own, drawn from
+ * the lobby. Flags given on `create` still win.
+ */
+const KNIGHTS_DEFAULTS: Partial<CupEventConfig> = {
+  roundSec: 300,
+  startWindowSec: 30,
+  soloStartSec: 30,
+  bettingSec: 120,
+  topN: 8,
+  walletStart: 1000,
+  lobbyDraw: true,
+  maxReplays: 2,
+};
 
 /** The fields the flags set. */
 function fieldsFrom(flags: Flags): Partial<CupEvent> {
@@ -233,6 +251,7 @@ async function main() {
       const game = await gameCatalog().findOne({ key: fields.gameKey ?? DEFAULT_CUP_CONFIG.gameKey }, { projection: { _id: 0, scoring: 1 } });
       const event: CupEvent = {
         ...DEFAULT_CUP_CONFIG,
+        ...(fields.gameKey === 'knights' ? KNIGHTS_DEFAULTS : {}),
         ...(game?.scoring?.max ? { maxScore: game.scoring.max } : {}),
         id: flags.id,
         org: flags.org,
@@ -324,7 +343,7 @@ async function main() {
         org: event.org,
         type: 'live_game',
         tag: 'Live Game',
-        tagIcon: '🪔',
+        tagIcon: event.gameKey === 'knights' ? '♞' : '🪔',
         tagColor: '#E0483B',
         tagTint: '#FBE2DE',
         // Faceless, like the Games announcements: nobody to tap through to.
@@ -336,7 +355,11 @@ async function main() {
           cupLinkBase: event.linkBase,
           cupLinkUntil: event.linkUntil.toISOString(),
           title: flags.title ?? event.name,
-          subtitle: flags.subtitle ?? 'Everyone is in. One Odd One Out knockout, live, with bets on the last eight.',
+          subtitle:
+            flags.subtitle ??
+            (event.gameKey === 'knights'
+              ? 'Join the lobby to play. One Knights knockout, live, with bets on the last eight.'
+              : 'Everyone is in. One Odd One Out knockout, live, with bets on the last eight.'),
           startsAtLabel: flags['starts-label'] ?? `LOBBY OPENS ${event.lobbyAt.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })}`,
           actionLabel: flags.action ?? 'Enter the tournament',
           actionDoneLabel: flags.action ?? 'Enter the tournament',

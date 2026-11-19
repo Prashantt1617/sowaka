@@ -50,6 +50,7 @@ import {
   betVerdict,
   bookOf,
   deltasByUser,
+  betTitlePrefix,
   ledgerRowFor,
   mineOf,
   movesFor,
@@ -263,9 +264,10 @@ function namesOf(event: Pick<CupEvent, 'entrants'> | null): (userId: string) => 
   return (userId) => names.get(userId) ?? 'a player';
 }
 
-const contextFor = (match: Pick<CupMatch, 'label'>, nameOf: (userId: string) => string, pick: string): BetContext => ({
-  label: match.label || 'O-O-O Tournament',
+const contextFor = (match: Pick<CupMatch, 'label'>, nameOf: (userId: string) => string, pick: string, game?: string): BetContext => ({
+  label: match.label || betTitlePrefix(game),
   pickName: nameOf(pick),
+  ...(game ? { game } : {}),
 });
 
 // ---------------------------------------------------------------- placing a bet
@@ -294,7 +296,7 @@ export async function placeBet(viewer: CupViewer, input: PlaceBetInput, now = ne
 /** The write itself, given the match as read. Exported for the check script. */
 export async function placeBetOn(
   viewer: Pick<CupViewer, 'userId' | 'name' | 'org'>,
-  event: Pick<CupEvent, 'id' | 'maxStake' | 'entrants' | 'walletStart'>,
+  event: Pick<CupEvent, 'id' | 'maxStake' | 'entrants' | 'walletStart'> & { gameKey?: string },
   match: CupMatch,
   pick: unknown,
   stake: unknown,
@@ -321,7 +323,7 @@ export async function placeBetOn(
     payout: 0,
     placedAt: now,
   };
-  const row = ledgerRowFor(bet, 'placed', -amount, contextFor(match, namesOf(event), bet.pick), now);
+  const row = ledgerRowFor(bet, 'placed', -amount, contextFor(match, namesOf(event), bet.pick, event.gameKey), now);
   try {
     await inTransaction(stores.db, async (session) => {
       if (wallet) {
@@ -377,6 +379,8 @@ export async function settleMatchBets(
   now = new Date(),
   /** The event bets from a tournament wallet: the bets are the whole record, and nobody's own points move. */
   wallet = false,
+  /** The event's game, for the history rows' title. */
+  game?: string,
 ): Promise<BetMove[]> {
   for (let attempt = 0; ; attempt += 1) {
     try {
@@ -406,7 +410,7 @@ export async function settleMatchBets(
         }
         const rows = moves
           .filter((move) => move.kind !== 'lost')
-          .map((move) => ledgerRowFor(move.bet, move.kind === 'won' ? 'won' : 'refund', move.delta, contextFor(match, nameOf, move.bet.pick), now));
+          .map((move) => ledgerRowFor(move.bet, move.kind === 'won' ? 'won' : 'refund', move.delta, contextFor(match, nameOf, move.bet.pick, game), now));
         if (rows.length) await stores.ledger.insertMany(rows, { session, ordered: true });
         return moves;
       });
@@ -424,7 +428,7 @@ async function reconcileMatch(given: CupMatch, known?: CupEvent): Promise<BetMov
   if (given.kind !== 'sequential' && bookOf(given) === 0) return [];
   const match = (await cupMatches().findOne({ id: given.id }, { projection: { _id: 0 } })) ?? given;
   const event = known ?? (await loadEvent(match.eventId));
-  const moves = await settleMatchBets(match, liveBetStores(), namesOf(event), new Date(), hasWallet(event));
+  const moves = await settleMatchBets(match, liveBetStores(), namesOf(event), new Date(), hasWallet(event), event?.gameKey);
   if (moves.length) {
     forgetBets(match.eventId, moves.map((move) => move.bet.userId));
     await bumpVersion(match.eventId);

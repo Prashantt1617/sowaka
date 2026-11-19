@@ -4,8 +4,17 @@
  */
 import assert from 'node:assert/strict';
 import type { CupMatch, CupRound } from '../models/cup.model';
+import knightsBank from '../content/knights-boards.json';
 import {
   DEFAULT_CUP_CONFIG,
+  gridFor,
+  isSolved,
+  knightsBoardFor,
+  newKnightsSeed,
+  parseKnights,
+  resignStep,
+  rightOf,
+  type KnightsBank,
   bracketOrder,
   buildDraw,
   buildPyramidDraw,
@@ -365,4 +374,133 @@ check('lobby draw: the last eight are one at a time, and the free pass falls any
   assert.deepEqual(buildPyramidDraw(1, 8), []);
 });
 
+
+// ---------------------------------------------------------------- knights (Men's Day)
+const KT = { ...T, gameKey: 'knights', roundSec: 300, startWindowSec: 30, soloStartSec: 30, maxReplays: 2 };
+const bank = knightsBank as unknown as KnightsBank;
+const board = knightsBoardFor(bank, 6, 7);
+const SOL = board.s;
+const kn = (cells: number[], sec: number) => ({ score: 0, at: at(sec), knights: cells });
+const kLive = (over: Partial<CupMatch> = {}) => match({ status: 'live', joined: { hi: at(5), lo: at(9) }, startAt: at(13), ...over });
+
+check('knights: grid per round, 2..7 rounds (last two 9, round 1 6, else 8)', () => {
+  const grids = (total: number) => Array.from({ length: total }, (_, i) => gridFor(i + 1, total));
+  assert.deepEqual(grids(1), [9]);
+  assert.deepEqual(grids(2), [9, 9]);
+  assert.deepEqual(grids(3), [6, 9, 9]);
+  assert.deepEqual(grids(4), [6, 8, 9, 9]);
+  assert.deepEqual(grids(5), [6, 8, 8, 9, 9]);
+  assert.deepEqual(grids(6), [6, 8, 8, 8, 9, 9]);
+  assert.deepEqual(grids(7), [6, 8, 8, 8, 8, 9, 9]);
+});
+
+check('knights: every bank board is n×n with one knight per row, column and region, none touching', () => {
+  for (const n of [6, 8, 9]) {
+    const boards = bank[String(n)];
+    assert.equal(boards.length, 30);
+    for (const b of boards) {
+      assert.equal(b.g.length, n * n);
+      assert.equal(new Set(b.g).size, n);
+      assert.equal(b.s.length, n);
+      const rows = new Set(b.s.map((c) => Math.floor(c / n)));
+      const cols = new Set(b.s.map((c) => c % n));
+      const regions = new Set(b.s.map((c) => b.g[c]));
+      assert.equal(rows.size, n);
+      assert.equal(cols.size, n);
+      assert.equal(regions.size, n);
+      for (const x of b.s) for (const y of b.s) {
+        if (x === y) continue;
+        assert.ok(Math.abs(Math.floor(x / n) - Math.floor(y / n)) > 1 || Math.abs((x % n) - (y % n)) > 1, `touching ${x} ${y}`);
+      }
+    }
+  }
+  assert.equal(knightsBoardFor(bank, 8, 31), bank['8'][1]);
+});
+
+check('knights: a reported board is whole cells on the grid, deduped and sorted', () => {
+  assert.deepEqual(parseKnights([5, 3, 3, 0], 6), [0, 3, 5]);
+  assert.deepEqual(parseKnights([], 6), []);
+  for (const junk of [undefined, null, 'x', 5, {}, [36], [-1], [1.5], ['3'], Array.from({ length: 37 }, () => 0)]) {
+    assert.equal(parseKnights(junk, 6), null);
+  }
+  assert.equal(rightOf([SOL[0], SOL[1], (SOL[2] + 1) % 36], SOL), 2);
+  assert.equal(isSolved([...SOL], SOL), true);
+  assert.equal(isSolved([...SOL, (SOL[0] + 1) % 36], SOL), false);
+});
+
+check('knights: a right board decides the match at once (finished), a wrong one waits', () => {
+  const almost = kLive({ live: { hi: kn(SOL.slice(0, 5), 40), lo: kn([0], 30) } });
+  assert.deepEqual(nextStep(almost, KT, at(60), seedOf, SOL), { kind: 'none' });
+  const done = kLive({ live: { hi: kn(SOL.slice(0, 5), 40), lo: kn([...SOL], 73) } });
+  assert.deepEqual(nextStep(done, KT, at(74), seedOf, SOL), {
+    kind: 'decide', winnerId: 'lo', decidedBy: 'finished', result: { winnerId: 'lo', decidedBy: 'finished', right: { hi: 5, lo: 6 }, finishedMs: 60_000 },
+  });
+  // Both right by the time the runner looks: the earlier report wins.
+  const both = kLive({ live: { hi: kn([...SOL], 50), lo: kn([...SOL], 49) } });
+  assert.equal((nextStep(both, KT, at(51), seedOf, SOL) as { winnerId: string }).winnerId, 'lo');
+  // A right board with a knight too many is not finished.
+  const extra = [...Array(36).keys()].find((c) => !SOL.includes(c))!;
+  assert.equal(nextStep(kLive({ live: { hi: kn([...SOL, extra], 40) } }), KT, at(60), seedOf, SOL).kind, 'none');
+});
+
+check('knights: resign hands the match over at once, only to a player, only in play', () => {
+  const live = kLive({ live: { hi: kn(SOL.slice(0, 3), 40) } });
+  assert.deepEqual(resignStep(live, 'hi', SOL), { kind: 'decide', winnerId: 'lo', decidedBy: 'resigned', result: { winnerId: 'lo', decidedBy: 'resigned', right: { hi: 3, lo: 0 } } });
+  assert.equal((resignStep(live, 'lo', SOL) as { winnerId: string }).winnerId, 'hi');
+  assert.equal((resignStep(live, 'x', SOL) as { ok: boolean; status: number }).status, 403);
+  assert.equal((resignStep({ ...live, status: 'open' }, 'hi', SOL) as { ok: boolean }).ok, false);
+  assert.equal((resignStep({ ...live, status: 'done' }, 'hi', SOL) as { ok: boolean }).ok, false);
+  // In the countdown (status live, the start still ahead) resigning is allowed.
+  assert.equal(resignStep(kLive({ startAt: at(100) }), 'hi', SOL).kind, 'decide');
+});
+
+check('knights: at the cap (+3 s) more knights in the right place wins', () => {
+  const capped = kLive({ live: { hi: kn([SOL[0], SOL[1], SOL[2]], 200), lo: kn([SOL[3], SOL[4], (SOL[5] + 1) % 36], 250) } });
+  assert.equal(nextStep(capped, KT, at(13 + 302), seedOf, SOL).kind, 'none');
+  const step = nextStep(capped, KT, at(13 + 303), seedOf, SOL);
+  assert.equal(step.kind, 'decide');
+  assert.deepEqual(step, { kind: 'decide', winnerId: 'hi', decidedBy: 'cap', result: { winnerId: 'hi', decidedBy: 'cap', right: { hi: 3, lo: 2 } } });
+  // Reports are taken until the cap + 3 s, not the 25 s grace of the other games.
+  assert.equal(mayScore(capped, 'lo', KT, at(13 + 302), false).ok, true);
+  assert.equal(mayScore(capped, 'lo', KT, at(13 + 304), false).ok, false);
+});
+
+check('knights: a tie at the cap replays (up to 2), then the better seed; a replay seed is a new board', () => {
+  const tie = kLive({ live: { hi: kn([SOL[0]], 200), lo: kn([SOL[1]], 250) } });
+  assert.deepEqual(nextStep(tie, KT, at(13 + 303), seedOf, SOL), { kind: 'replay', scores: { hi: 1, lo: 1 } });
+  // Nothing placed by either: 0 v 0, a tie too.
+  assert.equal(nextStep(kLive(), KT, at(13 + 303), seedOf, SOL).kind, 'replay');
+  const twice = { ...tie, attempt: 2, history: [{ attempt: 0, scores: { hi: 1, lo: 1 } }, { attempt: 1, scores: { hi: 0, lo: 0 } }] };
+  assert.deepEqual(nextStep(twice, KT, at(13 + 303), seedOf, SOL), { kind: 'decide', winnerId: 'hi', decidedBy: 'replays', result: { winnerId: 'hi', decidedBy: 'replays', right: { hi: 1, lo: 1 } } });
+  let n = 0;
+  const fresh = () => [7, 37, 67, 8][n++ % 4];
+  // 37 and 67 land on board 7 again (mod 30): skipped, 8 is taken.
+  assert.equal(newKnightsSeed(7, 30, fresh), 8);
+  for (let i = 0; i < 500; i += 1) {
+    const old = 1_000_000 + i * 7919;
+    const seed = newKnightsSeed(old, 30, () => 1_000_000 + Math.floor(Math.random() * 9_000_000));
+    assert.notEqual(seed % 30, old % 30);
+  }
+});
+
+check('knights: a lone player goes through once they start; never started: the better seed', () => {
+  const solo = match({ status: 'solo', joined: { lo: at(10) }, soloUntil: at(70) });
+  assert.deepEqual(nextStep(solo, KT, at(40), seedOf, SOL), { kind: 'none' });
+  assert.deepEqual(nextStep({ ...solo, startAt: at(44) }, KT, at(40), seedOf, SOL), {
+    kind: 'decide', winnerId: 'lo', decidedBy: 'solo', result: { winnerId: 'lo', decidedBy: 'solo', right: { hi: 0, lo: 0 } },
+  });
+  assert.deepEqual(nextStep(solo, KT, at(70), seedOf, SOL), {
+    kind: 'decide', winnerId: 'hi', decidedBy: 'absent', result: { winnerId: 'hi', decidedBy: 'absent', right: { hi: 0, lo: 0 } },
+  });
+  // Nobody came: absent, as every game.
+  assert.equal((nextStep(match({ deadlineAt: at(30) }), KT, at(30), seedOf, SOL) as { decidedBy: string }).decidedBy, 'absent');
+  // One came: solo, with 30 s to start.
+  assert.deepEqual(nextStep(match({ deadlineAt: at(30), joined: { lo: at(3) } }), KT, at(30), seedOf, SOL), { kind: 'solo', userId: 'lo', soloUntil: at(60) });
+});
+
+check('knights rules never touch the other games: Odd One Out ignores a knights board', () => {
+  const live = match({ status: 'live', joined: { hi: at(5), lo: at(9) }, startAt: at(13), live: { hi: { ...kn([...SOL], 20), score: 10 }, lo: sc(20, 30) } });
+  assert.equal(nextStep(live, T, at(30), seedOf, SOL).kind, 'none');
+  assert.deepEqual(nextStep(live, T, at(13 + 70), seedOf, SOL), { kind: 'decide', winnerId: 'lo', decidedBy: 'played', result: { hi: 10, lo: 20 } });
+});
 console.log(`\n${checks} checks passed`);

@@ -7,6 +7,7 @@ import {
   liveHandler,
   lobbyHandler,
   photoHandler,
+  resignHandler,
   soloHandler,
   stateHandler,
 } from '../controllers/cup.controller';
@@ -27,6 +28,7 @@ cupRouter.post('/api/matches/:id/join', joinHandler);
 cupRouter.post('/api/matches/:id/solo', soloHandler);
 cupRouter.post('/api/matches/:id/live', liveHandler);
 cupRouter.post('/api/matches/:id/final', finalHandler);
+cupRouter.post('/api/matches/:id/resign', resignHandler);
 // HR's void: the engine replays the match, and its bets are refunded (reconciled once more here).
 cupRouter.post('/api/matches/:id/void', voidMatchHandler);
 cupRouter.post('/api/bets', placeBetHandler);
