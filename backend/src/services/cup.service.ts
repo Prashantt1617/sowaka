@@ -1348,7 +1348,7 @@ export async function resignMatch(viewer: CupViewer, id: string) {
  * player's right ones and the solution. Nothing for any other game.
  */
 function knightsView(rt: Runtime, match: CupMatch, own = false): {
-  knights?: { n: number; g: number[]; solution?: number[] };
+  knights?: { n: number; g: number[]; f?: number; solution?: number[] };
   placed?: Record<string, number>;
   right?: Record<string, number>;
 } {
@@ -1357,12 +1357,14 @@ function knightsView(rt: Runtime, match: CupMatch, own = false): {
   const board = knightsBoardOf(rt, match)!;
   const placed: Record<string, number> = {};
   for (const p of match.players) placed[p] = knightsOfPlayer(rt, match, p)?.length ?? 0;
-  if (match.status !== 'done') return { knights: { n: board.n, g: board.g }, placed };
+  // The starting knight (one of the answer's, the same for both players), placed and locked as Meow's starting cat.
+  const f = board.s[Math.floor(board.n / 2)];
+  if (match.status !== 'done') return { knights: { n: board.n, g: board.g, f }, placed };
   const result = match.result as { right?: Record<string, number> } | undefined;
   const right: Record<string, number> = {};
   for (const p of match.players) right[p] = result?.right?.[p] ?? rightOf(knightsOfPlayer(rt, match, p), board.s);
   const roundOver = rt.event.phase === 'done' || match.round < rt.event.round;
-  return { knights: own || roundOver ? { n: board.n, g: board.g, solution: board.s } : { n: board.n, g: board.g }, placed, right };
+  return { knights: own || roundOver ? { n: board.n, g: board.g, f, solution: board.s } : { n: board.n, g: board.g, f }, placed, right };
 }
 
 // ---------------------------------------------------------------- void (for HR, through cup-bets)

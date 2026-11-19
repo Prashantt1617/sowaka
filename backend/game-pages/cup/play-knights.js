@@ -36,7 +36,7 @@
     '.ck-c{position:relative;display:grid;place-items:center;border:0 solid #060B26}' +
     '.ck-c.ckx::after{content:"\\00d7";font:800 calc(var(--s)*.62)/1 "Plus Jakarta Sans",system-ui;color:#fff;opacity:.92}.ck-c.ckl.ckx::after{color:#0B1440;opacity:.75}' +
     '.ck-c img{width:78%;height:78%;object-fit:contain;padding:8%;border-radius:50%;background:#F2F8FF;box-shadow:0 2px 0 rgba(6,11,38,.45)}' +
-    '.ck-c.ckk img{animation:ck-in .18s ease-out}.ck-c.ckb img{background:#FFE2A8;box-shadow:0 0 0 3px #FFB020}' +
+    '.ck-c.ckf img{animation:none;box-shadow:0 0 0 3px #F5B82E}.ck-c.ckk img{animation:ck-in .18s ease-out}.ck-c.ckb img{background:#FFE2A8;box-shadow:0 0 0 3px #FFB020}' +
     '.ck-c.ckb::before{content:"!";position:absolute;z-index:2;top:4%;right:6%;width:38%;height:38%;max-width:22px;max-height:22px;border-radius:50%;background:#FFB020;color:#060B26;font:800 calc(var(--s)*.26)/1 system-ui;display:grid;place-items:center}' +
     '.ck-c.cks{box-shadow:inset 0 0 0 3px #3DDC97}' +
     '@keyframes ck-in{0%{transform:scale(.4)}70%{transform:scale(1.12)}100%{transform:none}}' +
@@ -131,6 +131,9 @@
     var startAt = ms(o.startAt) || now() + 4000, endAt = startAt + (o.roundSec || 300) * 1000;
     var cells = new Array(N).fill(0), state = 'wait', stopped = false, lastCount = -1, solved = false;
     if (o.resume && Array.isArray(o.resume.cells) && o.resume.cells.length === N) cells = o.resume.cells.map(function (v) { return v === 1 || v === 2 ? v : 0; });
+    /* The starting knight, as Meow's starting cat: placed for both players and locked. */
+    var fix = typeof kn.f === 'number' && kn.f >= 0 && kn.f < N ? kn.f : -1;
+    if (fix >= 0) cells[fix] = 1;
     var opp = o.solo ? null : o.opponent, oppName = opp ? first(opp.name) : '';
     var root = document.createElement('div'); root.className = 'ck';
     root.innerHTML = '<div class="ck-top"><div class="ck-p"><b>You</b><small data-me></small></div><div class="ck-clk" data-clk>5:00</div>' +
@@ -162,7 +165,7 @@
     function paint(fresh) {
       var x = bad();
       for (var i = 0; i < N; i++) {
-        var c = $bd.children[i], v = cells[i], cls = 'ck-c' + (LIGHT[g[i] % 9] ? ' ckl' : '') + (v === 2 ? ' ckx' : v === 1 ? ' ckk' : '') + (x.bad[i] ? ' ckb' : '');
+        var c = $bd.children[i], v = cells[i], cls = 'ck-c' + (LIGHT[g[i] % 9] ? ' ckl' : '') + (v === 2 ? ' ckx' : v === 1 ? ' ckk' : '') + (i === fix ? ' ckf' : '') + (x.bad[i] ? ' ckb' : '');
         if (c.className !== cls) c.className = cls;
         var has = !!c.firstChild;
         if (v === 1 && !has) c.innerHTML = '<img alt="" src="' + KNIGHT + '" draggable="false">';
@@ -187,7 +190,7 @@
     function msg(t, cls) { $msg.textContent = t; $msg.className = 'ck-msg' + (cls ? ' ' + cls : ''); }
     function canPlay() { return state === 'play' && now() < endAt; }
     function act(i) {
-      if (!canPlay()) return;
+      if (!canPlay() || i === fix) return;
       var v = cells[i];
       cells[i] = v === 0 ? 2 : v === 2 ? 1 : 0;
       if (cells[i] === 1) { hoof(); buzz(12); } else if (cells[i] === 2) { sfx.mark(); buzz(6); } else sfx.clear();

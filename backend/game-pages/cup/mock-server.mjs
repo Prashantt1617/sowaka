@@ -71,7 +71,7 @@ function knightsify(d, n) {
   for (const m of [...matchesOf(d), ...(d.me && d.me.match ? [d.me.match] : [])]) {
     if (!['live', 'solo', 'done'].includes(m.status) && m !== d.me.match) continue;
     const b = board(m);
-    m.knights = { n: Math.round(Math.sqrt(b.g.length)), g: b.g };
+    m.knights = { n: Math.round(Math.sqrt(b.g.length)), g: b.g, f: b.s[Math.floor(Math.round(Math.sqrt(b.g.length)) / 2)] };
     m._sol = b.s;
     m.placed = m.placed || {};
   }
