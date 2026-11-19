@@ -68,6 +68,8 @@ export interface PortalOfferView {
   /** not in CONTRACT: the dates on the W4 steps ("You accepted · Sun 30 Nov"). */
   acceptedAt?: string;
   finalisedAt?: string;
+  /** not in CONTRACT (Figma App · 3/4 "Sent 26 Nov"): when HR sent this version. The API doesn't send it yet. */
+  sentAt?: string;
   /** not in CONTRACT: P4 "Accepted version · 3 pages". */
   pdfPages?: number;
 }

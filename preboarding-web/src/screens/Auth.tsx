@@ -8,7 +8,10 @@ import { Icon } from '../components/Icon';
 import { BottomBar, Eyebrow, Field, PrimaryButton } from '../components/ui';
 import { useFocusHeading } from '../lib/hooks';
 import { ClosedScreen } from './Closed';
-import { A1Frame, A1Icon, A1Logo, WebHeader } from '../components/A1';
+import { FigLogo, FigPage } from '../components/fig/FigShell';
+import { FigActions, FigField, FigNote } from '../components/fig/FigUi';
+import { FigMail } from '../components/fig/icons';
+import '../styles/fig-g1.css';
 
 function PasswordInput({ id, value, onChange, autoComplete }: { id: string; value: string; onChange: (v: string) => void; autoComplete: string }) {
   const [show, setShow] = useState(false);
@@ -73,7 +76,11 @@ export function SignIn() {
     setBusy(true);
     setError(undefined);
     try {
-      if (!sent) { await sendCode(); return; }
+      if (!sent) {
+        if (!email.trim()) { setError('Enter your work email.'); return; }
+        await sendCode(); return;
+      }
+      if (code.length !== 6) { setError('Enter the 6-digit code.'); return; }
       const out = await portal.verifyCode(email.trim(), code.trim());
       if ('closed' in out) { setClosed(out.closed); return; }
       rememberEmail(email);
@@ -90,54 +97,52 @@ export function SignIn() {
 
   if (closed) return <ClosedScreen state={closed.state} company={closed.company} hr={closed.hrContact} />;
   const company = client.company;
+  const change = () => { setSent(false); setError(undefined); };
   return (
-    <A1Frame white>
-      <WebHeader company={company} />
-      <form className="a1-signin" onSubmit={submit} noValidate aria-describedby={error ? 'signin-err' : undefined}>
-        <div className="a1-signin__top">
-          {sent && <button type="button" className="a1-icon-btn a1-icon-btn--ink" aria-label="Back to email" onClick={() => { setSent(false); setError(undefined); }}><A1Icon name="back" size={22} width={2} /></button>}
-        </div>
-        <div className="a1-signin__body" style={{ paddingTop: 8 }}>
-          {sent
-            ? <span className="a1-signin__mark a1-signin__mark--mail"><A1Icon name="mail" size={32} width={1.6} /></span>
-            : <A1Logo company={company} className="a1-signin__mark" />}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <h1 ref={h1} tabIndex={-1}>{sent ? 'Check your email' : `Welcome to ${company?.name ?? 'your joining portal'}`}</h1>
-            <p className="a1-intro">
-              {sent
-                ? <>Enter the 6-digit code we sent to your personal email, <b style={{ fontWeight: 600, color: 'var(--a1-ink)' }}>{email.trim()}</b> <button type="button" className="a1-link" onClick={() => { setSent(false); setError(undefined); }}>Change</button></>
-                : 'Sign in to see your offer, joining details and profile. We’ll email you a code, so there’s no password to remember.'}
-            </p>
-          </div>
-          {params.get('expired') && !sent && <p className="a1-info" role="status"><A1Icon name="info" size={16} /><span>You were signed out. Please sign in again.</span></p>}
-          {!sent ? (
-            <label className="a1-field" htmlFor={emailId}>Personal email
-              <input id={emailId} className="a1-input" type="email" inputMode="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus={!email} />
-              <span className="a1-help">Use the email your offer letter was sent to.</span>
-            </label>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <CodeBoxes value={code} onChange={(c) => { setCode(c); if (c.length === 6) setError(undefined); }} />
-              <span className="a1-small">
-                Didn’t get it? Check your spam folder, or{' '}
-                {wait > 0
-                  ? <>resend in <b style={{ fontWeight: 600, color: 'var(--a1-ink)' }}>0:{String(wait).padStart(2, '0')}</b></>
-                  : <button type="button" className="a1-link" style={{ fontSize: 12 }} onClick={() => { setError(undefined); void sendCode().catch((err) => setError((err as Error).message)); }}>send a new code</button>}
-              </span>
+    <FigPage surface>
+      <form className="fig-signin" onSubmit={submit} noValidate aria-describedby={error ? 'signin-err' : undefined}>
+        <div className="fig-signin__lead">
+          {!sent && <div className="fig-signin__top" />}
+          <div className="fig-signin__body">
+            {sent
+              ? <span className="fig-signin__mark fig-signin__mark--mail"><FigMail /></span>
+              : <FigLogo company={company} className="fig-signin__mark" />}
+            <div className="fig-signin__text">
+              <h1 ref={h1} tabIndex={-1} className="fig-display">{sent ? 'Check your email' : 'Log in with your work email'}</h1>
+              {sent ? (
+                <div className="fig-signin__sent">
+                  <p className="fig-body fig-t2">Enter the 6-digit code we sent to your personal email.</p>
+                  <div className="fig-signin__email">
+                    <span className="fig-body-strong">{email.trim()}</span>
+                    <button type="button" className="fig-link" onClick={change}>Change</button>
+                  </div>
+                </div>
+              ) : <p className="fig-body fig-t2">The one HR set up for you.</p>}
             </div>
-          )}
-          {error && <p id="signin-err" className="a1-error" role="alert">{error}</p>}
+            {params.get('expired') && !sent && <FigNote>You were signed out. Please sign in again.</FigNote>}
+            {!sent ? (
+              <FigField id={emailId} label="Work email" help="It’s on your pre-boarding page." type="email" inputMode="email" autoComplete="email" placeholder="you@company.com"
+                value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus={!email} />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <CodeBoxes value={code} onChange={(c) => { setCode(c); if (c.length === 6) setError(undefined); }} />
+                <p className="fig-resend">
+                  {wait > 0
+                    ? <><span>Didn’t get it? Check your spam folder, or resend in</span><b>{Math.floor(wait / 60)}:{String(wait % 60).padStart(2, '0')}</b></>
+                    : <><span>Didn’t get it? Check your spam folder, or</span><button type="button" className="fig-link" onClick={() => { setError(undefined); void sendCode().catch((err) => setError((err as Error).message)); }}>send a new code</button></>}
+                </p>
+              </div>
+            )}
+            {error && <p id="signin-err" className="fig-field__error" role="alert">{error}</p>}
+          </div>
         </div>
-        <div className="a1-signin__foot">
-          <button type="submit" className="a1-btn a1-btn--primary" disabled={busy || !email.trim() || (sent && code.length !== 6)}>
+        <FigActions note={<>Trouble signing in?{client.hr ? <a className="fig-link" href={`mailto:${client.hr.email}`}>Write to HR</a> : ' Reply to the email from HR.'}</>}>
+          <button type="submit" className="fig-btn" disabled={busy}>
             {busy ? (sent ? 'Checking…' : 'Sending…') : sent ? 'Verify and continue' : 'Send me a code'}
           </button>
-          <span className="a1-small" style={{ textAlign: 'center', fontSize: 11 }}>
-            Trouble signing in? {client.hr ? <a className="a1-link" style={{ fontSize: 11 }} href={`mailto:${client.hr.email}`}>Write to HR</a> : 'Reply to the email from HR.'}
-          </span>
-        </div>
+        </FigActions>
       </form>
-    </A1Frame>
+    </FigPage>
   );
 }
 
@@ -153,7 +158,7 @@ function CodeBoxes({ value, onChange }: { value: string; onChange: (v: string) =
     refs.current[Math.min(next.length, 5)]?.focus();
   };
   return (
-    <div className="a1-otp" role="group" aria-label="6-digit code">
+    <div className="fig-otp" role="group" aria-label="6-digit code">
       {Array.from({ length: 6 }, (_, k) => (
         <input key={k} ref={(el) => { refs.current[k] = el; }} inputMode="numeric" autoComplete={k === 0 ? 'one-time-code' : 'off'} aria-label={`Digit ${k + 1}`}
           className={value[k] ? 'has-value' : ''} value={value[k] ?? ''} maxLength={k === 0 ? 6 : 1}

@@ -1,0 +1,84 @@
+/* G1 screens (App · 1–7 and on): sign in, code, home, offer letter, joining details, employee profile,
+   about the company. Shared pieces are in fig.css. */
+
+/* App · 1 Sign in, App · 2 Enter the code */
+.fig-signin { flex: 1; display: flex; flex-direction: column; justify-content: space-between; padding: 0 var(--space-16); }
+.fig-signin__lead { display: flex; flex-direction: column; }
+.fig-signin__top { height: 56px; flex: none; }
+.fig-signin__body { padding-top: var(--space-40); display: flex; flex-direction: column; gap: var(--space-24); }
+.fig-signin__mark { width: 64px; height: 64px; border-radius: var(--radius-xl); background: var(--color-bg-primary); color: var(--color-text-on-primary); font-size: 18px; line-height: 24px; font-weight: 700; display: flex; align-items: center; justify-content: center; overflow: hidden; flex: none; }
+.fig-signin__mark img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+.fig-signin__mark--mail { background: var(--color-bg-canvas); color: var(--color-text-brand); }
+.fig-signin__text { display: flex; flex-direction: column; gap: var(--space-8); }
+.fig-signin__text h1 { outline: none; }
+.fig-signin__sent > p { max-width: 332.25px; }
+.fig-signin__sent { display: flex; flex-direction: column; gap: var(--space-4); padding-bottom: var(--space-4); }
+.fig-signin__email { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-12); height: 16px; }
+.fig-signin__email > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fig-signin__email .fig-link { font-size: 14px; line-height: 20px; padding: 0 1.5px; }
+.fig-signin .fig-input { border-color: var(--color-border-default); }
+.fig-signin .fig-input:focus { border-color: var(--color-border-focus); }
+.fig-otp { display: flex; gap: var(--space-8); }
+.fig-otp input { flex: 1 0 0; min-width: 0; height: 56px; border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-surface); text-align: center; font: inherit; font-size: 22px; line-height: 28px; font-weight: 700; color: var(--color-text-primary); outline: none; padding: 0 3px; }
+.fig-otp input:focus { border-color: var(--color-border-focus); }
+.fig-otp input:focus-visible { outline: none; }
+.fig-resend { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; line-height: 16px; color: var(--color-text-tertiary); }
+.fig-resend b { font-weight: 600; color: var(--color-text-primary); }
+.fig-resend .fig-link { font-size: 12px; line-height: 16px; }
+.fig-signin .fig-actions { padding: var(--space-16) 0 var(--space-24); }
+
+/* App · 3 Home: hello, two tall tiles, two wide tiles */
+.fig-hello { display: flex; align-items: center; gap: 5.67px; padding: 25px 16px 18px; }
+.fig-hello h1 { padding-right: 8px; height: 33px; outline: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fig-tiles { flex: 1; display: flex; flex-direction: column; gap: var(--space-12); padding: 0 var(--space-16); }
+.fig-tiles__row { display: flex; gap: var(--space-12); height: 270px; flex: none; }
+.fig-tile { border-radius: var(--radius-xl); padding: var(--space-16); color: var(--color-text-primary); text-decoration: none; display: flex; flex-direction: column; }
+.fig-tile--tall { flex: 1 0 0; min-width: 0; justify-content: space-between; }
+.fig-tile--green { background: var(--color-bg-success-subtle); }
+.fig-tile--blue { background: var(--color-bg-info-subtle); }
+.fig-tile--amber { background: var(--color-bg-warning-subtle); }
+.fig-tile--red { background: var(--color-bg-error-subtle); }
+.fig-tile__lead { display: flex; flex-direction: column; gap: var(--space-16); }
+.fig-tile__text { display: flex; flex-direction: column; gap: var(--space-4); }
+.fig-tile__foot { padding-top: var(--space-12); display: flex; }
+.fig-tile__chip { height: 40px; border-radius: var(--radius-full); background: var(--color-bg-surface); padding: 10px 16px 10px 14px; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; line-height: 20px; font-weight: 600; white-space: nowrap; }
+.fig-tile__chip--wide { width: 100%; border-radius: var(--radius-xl); padding: 10px 14.78px 10px 16px; gap: 5.72px; color: var(--color-text-brand); }
+.fig-tile__chip--split { width: 100%; border-radius: var(--radius-xl); padding: 10px 16px; justify-content: space-between; color: var(--color-text-primary); }
+.fig-tile__chip--done { color: var(--color-text-success); margin-right: 17.33px; flex: 1; }
+.fig-tile__row { display: flex; align-items: center; gap: 0; }
+.fig-tile__row > .fig-tile__text { flex: 1; min-width: 0; }
+.fig-tile__meter { display: flex; flex-direction: column; gap: 6px; height: 46px; }
+.fig-tile__meter b { font-size: 14px; line-height: 20px; font-weight: 600; color: var(--color-text-brand); }
+.fig-home-notice { display: flex; align-items: center; gap: 10px; margin: 0 16px 12px; padding: 12px; border-radius: var(--radius-lg); background: var(--color-bg-primary-subtle); color: var(--color-text-primary); text-decoration: none; font-size: 14px; line-height: 20px; font-weight: 600; }
+.fig-home-notice > span { flex: 1; }
+
+/* App · 4 Offer letter */
+.fig-offer-card { padding: 12px; }
+.fig-offer-card__top { display: flex; align-items: center; justify-content: space-between; }
+.fig-offer-card__file { display: flex; align-items: center; gap: var(--space-12); }
+.fig-offer-card__btns { display: flex; gap: var(--space-8); }
+.fig-offer-card__btns .fig-btn { flex: 1 0 0; min-width: 0; }
+.fig-note a { color: inherit; text-decoration: none; }
+
+/* App · 5 Joining details */
+.fig-firstday { background: var(--color-bg-info-subtle); border-radius: var(--radius-xl); padding: var(--space-16); display: flex; flex-direction: column; gap: var(--space-12); }
+.fig-firstday__text { display: flex; flex-direction: column; gap: var(--space-4); }
+.fig-firstday .fig-btn { height: 44px; padding: 12px 16px; border-radius: var(--radius-xl); }
+.fig-detail { display: flex; align-items: center; gap: var(--space-12); padding: 12px; }
+.fig-detail--top { align-items: flex-start; }
+.fig-detail__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.fig-detail__text .fig-link { font-size: 12px; line-height: 16px; padding-top: 2px; align-self: flex-start; }
+.fig-lead--initials { background: var(--color-bg-canvas); color: var(--color-text-brand); }
+.fig-bring { display: flex; align-items: center; gap: var(--space-12); padding: 12px; font-size: 14px; line-height: 20px; }
+.fig-small-line { font-size: 12px; line-height: 16px; color: var(--color-text-tertiary); display: flex; flex-wrap: wrap; gap: 0 8.5px; }
+.fig-small-line .fig-link { font-size: 12px; line-height: 16px; }
+
+/* App · 6 Employee profile */
+.fig-pct { background: var(--color-bg-primary-subtle); border-radius: var(--radius-xl); padding: 17px; display: flex; flex-direction: column; gap: var(--space-8); }
+.fig-pct__top { display: flex; align-items: center; justify-content: space-between; }
+.fig-pct__top b { font-size: 28px; line-height: 36px; font-weight: 700; color: var(--color-text-brand); }
+.fig-sec-icon { width: 24px; height: 24px; border-radius: var(--radius-full); background: var(--color-bg-subtle); display: flex; align-items: center; justify-content: center; flex: none; }
+.fig-sec-icon--next { background: var(--color-bg-primary-subtle); }
+.fig-row--next { background: var(--color-bg-canvas); }
+.fig-row--next .fig-row__chev { color: var(--color-text-brand); }
+.fig-profile-foot { text-align: center; font-size: 12px; line-height: 16px; color: var(--color-text-tertiary); padding: 0 10px; }

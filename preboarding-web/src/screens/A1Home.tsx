@@ -15,7 +15,10 @@ import { useFocusHeading } from '../lib/hooks';
 import { APP_LINK } from '../lib/links';
 import { useMe } from '../session';
 import { ClosedScreen } from './Closed';
-import { WebPage } from './A1Shell';
+import { FigHomeHeader, FigPage, FigPowered } from '../components/fig/FigShell';
+import { FigProgress } from '../components/fig/FigUi';
+import { FigCheck, FigChevronRight, FigIcon3D, FigWavingHand } from '../components/fig/icons';
+import '../styles/fig-g1.css';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "15 Dec 2026" */
@@ -53,68 +56,85 @@ export function A1Home() {
   const access = me.view === 'joined';
   const notices = access ? [] : noticesFor(me);
   const accepted = offer ? ['accepted', 'finalised'].includes(offer.state) : me.path.find((p) => p.key === 'offer')?.state === 'done';
-  const offerSub = offer?.acceptedAt ? `Accepted ${fmtShort(offer.acceptedAt)}` : offer?.validTill ? `Reply by ${fmtShort(offer.validTill)}` : 'Your offer from HR';
+  const offerSub = offer?.sentAt ? `Sent ${fmtShort(offer.sentAt)}` : offer?.acceptedAt ? `Accepted ${fmtShort(offer.acceptedAt)}` : offer?.validTill ? `Reply by ${fmtShort(offer.validTill)}` : 'Your offer from HR';
   const pct = profile && profile.total ? Math.round((profile.done / profile.total) * 100) : 0;
 
   return (
-    <WebPage>
-      {access && (
-        <section className="a1-install" aria-label="Install the Sowaka Connect app">
-          <div className="a1-row" style={{ gap: 16 }}>
-            <A1Logo company={me.company} className="a1-install__mark" />
-            <span style={{ fontSize: 22, lineHeight: '28px', fontWeight: 700 }}>Sowaka Connect</span>
+    <FigPage>
+      <FigHomeHeader company={me.company} />
+      <main id="main" className="fig-main">
+        {access && (
+          // App access (HR marked them joined): the install card first. Not in the Figma set; kept from the A1 look.
+          <div className="a1" style={{ minHeight: 0, background: 'none' }}>
+            <section className="a1-install" aria-label="Install the Sowaka Connect app">
+              <div className="a1-row" style={{ gap: 16 }}>
+                <A1Logo company={me.company} className="a1-install__mark" />
+                <span style={{ fontSize: 22, lineHeight: '28px', fontWeight: 700 }}>Sowaka Connect</span>
+              </div>
+              <ol>
+                <li className="step"><b>1</b>Install</li>
+                <li aria-hidden="true" style={{ display: 'flex', color: 'rgba(255,255,255,.8)' }}><A1Icon name="chevron" size={18} width={2} /></li>
+                <li className="step"><b>2</b>Log in with work email</li>
+              </ol>
+              {me.workEmail && (
+                <div className="a1-install__email">
+                  <span className="a1-strong" style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{me.workEmail}</span>
+                  <CopyButton text={me.workEmail} label="Copy work email" />
+                </div>
+              )}
+              <a className="a1-install__cta" href={APP_LINK}><A1Icon name="download" size={20} width={2} />Install the app</a>
+            </section>
           </div>
-          <ol>
-            <li className="step"><b>1</b>Install</li>
-            <li aria-hidden="true" style={{ display: 'flex', color: 'rgba(255,255,255,.8)' }}><A1Icon name="chevron" size={18} width={2} /></li>
-            <li className="step"><b>2</b>Log in with work email</li>
-          </ol>
-          {me.workEmail && (
-            <div className="a1-install__email">
-              <span className="a1-strong" style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{me.workEmail}</span>
-              <CopyButton text={me.workEmail} label="Copy work email" />
-            </div>
-          )}
-          <a className="a1-install__cta" href={APP_LINK}><A1Icon name="download" size={20} width={2} />Install the app</a>
-        </section>
-      )}
+        )}
 
-      <h1 className={`a1-hello${access ? ' a1-hello--small' : ''}`} ref={h1} tabIndex={-1}>{access ? 'Or keep going here' : `Hello, ${firstName(me.candidateName)}`}</h1>
-      {notices.map((n) => (
-        <Link key={n.title} to={n.to} className={`a1-notice${n.brand ? ' a1-notice--brand' : ''}`}><b>{n.title}</b><A1Icon name="chevron" size={18} /></Link>
-      ))}
+        <div className="fig-hello">
+          <h1 className="fig-display" ref={h1} tabIndex={-1}>{access ? 'Or keep going here' : `Hello, ${firstName(me.candidateName)}`}</h1>
+          {!access && <FigWavingHand />}
+        </div>
+        {notices.map((n) => (
+          <Link key={n.title} to={n.to} className="fig-home-notice"><span>{n.title}</span><FigChevronRight /></Link>
+        ))}
 
-      <div className="a1-tiles a1-tiles--web">
-        <Link to="/offer" className="a1-tile a1-tile--green">
-          <span className="a1-tile__icon"><A1Icon name="doc" size={32} width={1.6} /></span>
-          <span className="a1-tile__text"><span className="a1-tile__title">View offer letter</span><span className="a1-tile__sub">{offerSub}</span></span>
-          <span className="a1-tile__foot">
-            {accepted
-              ? <span className="a1-tile__chip"><A1Icon name="check" size={18} width={2.4} />Accepted</span>
-              : <span className="a1-tile__chip a1-tile__chip--square">Review<A1Icon name="chevron" size={18} width={2} /></span>}
-          </span>
-        </Link>
+        <div className="fig-tiles">
+          <div className="fig-tiles__row">
+            <Link to="/offer" className="fig-tile fig-tile--tall fig-tile--green">
+              <span className="fig-tile__lead">
+                <FigIcon3D name="document-approved" size={64} />
+                <span className="fig-tile__text"><span className="fig-subtitle">View offer letter</span><span className="fig-label fig-t2">{offerSub}</span></span>
+              </span>
+              <span className="fig-tile__foot">
+                {accepted
+                  ? <span className="fig-tile__chip fig-tile__chip--done"><FigCheck />Accepted</span>
+                  : <span className="fig-tile__chip fig-tile__chip--wide">Review<FigChevronRight size={18} stroke={1.5} /></span>}
+              </span>
+            </Link>
+            <Link to="/joining" className="fig-tile fig-tile--tall fig-tile--blue">
+              <span className="fig-tile__lead">
+                <FigIcon3D name="calendar" size={64} />
+                <span className="fig-tile__text"><span className="fig-subtitle">Joining details</span><span className="fig-label-strong">{me.tj ? dayMonthYear(me.tj) : 'Date to be set'}</span></span>
+              </span>
+              <span className="fig-tile__foot"><span className="fig-tile__chip fig-tile__chip--wide">View details<FigChevronRight size={18} stroke={1.5} /></span></span>
+            </Link>
+          </div>
 
-        <Link to="/joining" className="a1-tile a1-tile--blue">
-          <span className="a1-tile__icon"><A1Icon name="calendar" size={32} width={1.6} /></span>
-          <span className="a1-tile__text"><span className="a1-tile__title">Joining details</span><span className="a1-tile__sub a1-tile__sub--strong">{me.tj ? dayMonthYear(me.tj) : 'Date to be set'}</span></span>
-          <span className="a1-tile__foot"><span className="a1-tile__chip a1-tile__chip--square">View details<A1Icon name="chevron" size={18} width={2} /></span></span>
-        </Link>
+          <Link to="/profile" className="fig-tile fig-tile--amber" style={{ gap: 16 }}>
+            <span className="fig-tile__row">
+              <FigIcon3D name="user" size={64} />
+              <span className="fig-tile__text"><span className="fig-title">Employee profile</span><span className="fig-body fig-t2">{profile ? `${profile.done} of ${profile.total} sections done` : 'Fill in before you join'}</span></span>
+            </span>
+            <span className="fig-tile__meter"><b>{pct}% done</b><FigProgress value={pct} white label="Employee profile done" /></span>
+          </Link>
 
-        <Link to="/profile" className="a1-tile a1-tile--amber">
-          <span className="a1-tile__icon"><A1Icon name="person" size={32} width={1.6} /></span>
-          <span className="a1-tile__text"><span className="a1-tile__title">Employee profile</span><span className="a1-tile__sub">{profile ? `${profile.done} of ${profile.total} sections done` : 'Fill in before you join'}</span></span>
-          <span className="a1-tile__foot">
-            <span className="a1-tile__meter"><b>{pct}% done</b><span><i style={{ width: `${pct}%` }} /></span></span>
-          </span>
-        </Link>
-
-        <Link to="/about" className="a1-tile a1-tile--red">
-          <span className="a1-tile__icon"><A1Icon name="building" size={32} width={1.6} /></span>
-          <span className="a1-tile__text"><span className="a1-tile__title">About the company</span></span>
-          <span className="a1-tile__foot"><span className="a1-tile__chip a1-tile__chip--square a1-tile__chip--ink">View<A1Icon name="chevron" size={18} width={2} /></span></span>
-        </Link>
-      </div>
-    </WebPage>
+          <Link to="/about" className="fig-tile fig-tile--red">
+            <span className="fig-tile__row" style={{ gap: 16 }}>
+              <FigIcon3D name="team" size={64} />
+              <span className="fig-title">About the company</span>
+            </span>
+            <span className="fig-tile__chip fig-tile__chip--split">View<FigChevronRight size={18} stroke={1.5} /></span>
+          </Link>
+        </div>
+      </main>
+      <FigPowered />
+    </FigPage>
   );
 }
