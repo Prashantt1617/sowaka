@@ -83,12 +83,13 @@ class _TabContent extends StatelessWidget {
           // every company the moment the app opens.
           visible: state.tab == ManagerTab.games,
         )),
-        // While the joiner's portal is open the Action tab is the portal
-        // (the app header, the portal, the tabs), as the Games tab hosts
-        // its web page: one page, kept loaded across tab switches.
+        // Before Day 1 the Action tab is the joiner's pre-boarding portal
+        // (the app header, the portal, the tabs), as the Games tab hosts its
+        // web page: one page, kept loaded across tab switches. From the
+        // joining day the server says no, and it is the usual Actions tab.
         _only(ManagerTab.quick, ValueListenableBuilder<LifecycleMe>(
           valueListenable: LifecycleMeStore.instance,
-          builder: (context, me, _) => me.showsOnboarding && me.onboarding!.portal
+          builder: (context, me, _) => me.enabled && (me.onboarding?.portal ?? false)
               ? PortalTab(
                   key: const ValueKey('portal-tab'),
                   api: HttpOnboardingApi(session: session),

@@ -8,9 +8,9 @@ import '../../../manager_shell/presentation/app_home_header.dart';
 import '../data/onboarding_api.dart';
 import 'onboarding_kit.dart';
 
-/// The joining portal (preboarding-web) in the app, signed in as the joiner
-/// without a code, while their portal is open (`/lifecycle/me` says
-/// `onboarding.portal`).
+/// The pre-boarding portal (preboarding-web) in the app, signed in as the
+/// joiner without a code, before Day 1 (`/lifecycle/me` says
+/// `onboarding.portal`; from the joining day it is false).
 ///
 /// The server gives a fresh portal session for the person's own journey
 /// (`POST /lifecycle/portal-session`) and the address of the portal's `/app`
@@ -189,7 +189,7 @@ class _PortalPageState extends State<PortalPage> {
   }
 }
 
-/// The Action tab while the joining portal is open: the app's header and the
+/// The Action tab before Day 1: the app's header and the
 /// portal under it; the shell draws the tabs. Built once and kept, as the
 /// Games tab's page is, so switching tabs never reloads it.
 class PortalTab extends StatelessWidget {

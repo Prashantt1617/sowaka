@@ -56,9 +56,8 @@ Future<T?> _push<T>(BuildContext context, Widget Function(OnboardingShell shell)
   return Navigator.of(context).push<T>(MaterialPageRoute(builder: (_) => page(resolved)));
 }
 
-/// A2, the joiner's onboarding home. While their joining portal is still
-/// open (`/lifecycle/me` says `portal`) the Action tab is the portal, so this
-/// goes there (the portal as a page over the shell where there is no Action
+/// A2, the joiner's onboarding home. Before Day 1 (`/lifecycle/me` says
+/// `portal`) the Action tab is the pre-boarding portal, so this goes there (the portal as a page over the shell where there is no Action
 /// tab), never to the app's own onboarding cards.
 Future<void> openOnboardingHome(BuildContext context, {OnboardingShell? shell}) {
   if (LifecycleMeStore.instance.value.onboarding?.portal ?? false) {

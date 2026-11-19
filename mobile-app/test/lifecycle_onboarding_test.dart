@@ -912,7 +912,7 @@ void main() {
   });
 
   group('the joining portal in the app', () {
-    test('/lifecycle/me says whether the portal is still open', () {
+    test('/lifecycle/me says whether the tab is the portal (before Day 1 only)', () {
       final me = LifecycleMe.fromJson({
         'enabled': true,
         'onboarding': {'journeyId': 'j1', 'tileVisible': true, 'portal': true},
@@ -976,7 +976,7 @@ void main() {
       }));
       LifecycleMeStore.instance.value = LifecycleMe.fromJson({
         'enabled': true,
-        'onboarding': {'journeyId': 'j1', 'tileVisible': true, 'portal': true},
+        'onboarding': {'journeyId': 'j1', 'stage': 'pre_boarding', 'tileVisible': false, 'portal': true},
       });
       await openOnboardingHome(context, shell: shell);
       await tester.pumpAndSettle();

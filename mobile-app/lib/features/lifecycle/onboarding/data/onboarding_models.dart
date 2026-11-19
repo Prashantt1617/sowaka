@@ -210,9 +210,9 @@ class OnboardingMe {
   /// 9 steps done" in week 1, "Week 6 · check-in due Fri 9 Jan" after).
   final String? subtitle;
 
-  /// Their joining portal is still open (joined, until it moves to the app at
-  /// Tj + 7 or the end of month 1): Onboarding opens the portal itself, in
-  /// the app's page, instead of the app's own onboarding home.
+  /// Signed in to the app BEFORE Day 1 with their pre-boarding portal open:
+  /// the Action tab is the portal itself (the server says false from the
+  /// joining day, IST, and the tab is the usual Actions tab again).
   final bool portal;
 
   OnboardingMe withProgress(TaskProgress? value) => OnboardingMe(

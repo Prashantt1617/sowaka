@@ -1,11 +1,11 @@
 /**
- * The joining portal inside the app, through its HTTP routes on a scratch
- * database: POST /lifecycle/portal-session needs an app session (no session,
- * or a portal token, is 401), answers only for the caller's own journey while
- * its portal is open (no journey, or one moved to the app, is 404), and the
- * token it gives works on GET /portal/me for that journey and no other.
- * /lifecycle/me says `onboarding.portal` to match. The app's own token still
- * never opens a portal route.
+ * The joining portal inside the app (the Action tab before Day 1), through its
+ * HTTP routes on a scratch database: POST /lifecycle/portal-session needs an
+ * app session (no session, or a portal token, is 401), answers only for the
+ * caller's own journey and only before the joining day in IST (no journey, Day
+ * 1 itself, joined, moved to the app: 404), and the token it gives works on GET
+ * /portal/me for that journey. /lifecycle/me says `onboarding.portal` to match.
+ * The app's own token still never opens a portal route.
  *
  *   npm run portal-app:check     (mongod on 127.0.0.1:27133, database el_portal_app_check)
  */
@@ -66,23 +66,36 @@ async function call(token: string | null, method: string, path: string): Promise
       person('ravi', 'Ravi Menon', { managerUserId: 'mgr' }),
     ] as never[]);
 
-    /** Offer accepted → finalised (the candidate's account) → docs approved → joined, as HR and the portal walk it. */
-    const joinAt = async (name: string, userId: string, tjOffset: number) => {
+    /** Offer accepted → finalised (the candidate's account) → docs approved, as HR and the portal walk it. */
+    const preboard = async (name: string, userId: string, tjOffset: number) => {
       const j = await engine.createOnboardingJourney(ORG, 'hr', {
         candidate: { name, personalEmail: `${userId}@example.com` }, tj: day(tjOffset), managerUserId: 'mgr', designation: 'Designer', department: 'Design',
       });
       for (const s of ['offer_sent', 'accepted', 'finalised', 'active', 'docs_approved'] as const) await engine.setJourneyStatus(j.id, s);
       await auth.createCandidateAccount(await engine.loadJourney(j.id));
+      return engine.loadJourney(j.id);
+    };
+    /** ...and Mark joined on Day 1 (the app user created then, bound to the journey). */
+    const joinAt = async (name: string, userId: string, tjOffset: number) => {
+      const j = await preboard(name, userId, tjOffset);
       await db.users().insertOne(person(userId, name, { managerUserId: 'mgr', joiningDate: rules.dayDate(day(tjOffset)) }) as never);
       await engine.onJoined(j.id, userId);
       return engine.loadJourney(j.id);
     };
+    /** An app login before Day 1: the app user's email is the portal's login (HR set the employee up early). */
+    const earlyLogin = async (name: string, userId: string, tjOffset: number) => {
+      const j = await preboard(name, userId, tjOffset);
+      await db.users().insertOne(person(userId, name, { email: `${userId}@example.com`, managerUserId: 'mgr', joiningDate: rules.dayDate(day(tjOffset)) }) as never);
+      return j;
+    };
+    const pia = await earlyLogin('Pia Rao', 'pia', 5);
+    const tara = await earlyLogin('Tara Bose', 'tara', 0);
     const isha = await joinAt('Isha Verma', 'isha', -2);
     const kabir = await joinAt('Kabir Mehta', 'kabir', -9);
     await engine.setJourneyStatus(kabir.id, 'moved_to_app');
 
     const tokens: Record<string, string> = {};
-    for (const userId of ['isha', 'kabir', 'ravi']) {
+    for (const userId of ['pia', 'tara', 'isha', 'kabir', 'ravi']) {
       tokens[userId] = `tok-${randomUUID()}`;
       await db.authSessions().insertOne({ tokenHash: hashSessionToken(tokens[userId]), userId, createdAt: now, expiresAt: new Date(Date.now() + 3_600_000) });
     }
@@ -91,37 +104,51 @@ async function call(token: string | null, method: string, path: string): Promise
 
     console.log('who may ask');
     ok('no session: 401', (await call(null, 'POST', '/lifecycle/portal-session')).status === 401);
-    const portalOnly = auth.signPortalToken(isha.id, ORG);
+    const portalOnly = auth.signPortalToken(pia.id, ORG);
     ok('a portal token in place of an app session: 401', (await call(portalOnly, 'POST', '/lifecycle/portal-session')).status === 401);
     const none = await call(tokens.ravi, 'POST', '/lifecycle/portal-session');
-    ok('an employee without a journey: 404', none.status === 404, none);
+    ok('an employee without a journey: 404 (never someone else\'s)', none.status === 404, none);
+    const dayOne = await call(tokens.tara, 'POST', '/lifecycle/portal-session');
+    ok('on the joining day itself (Tj, IST): 404, the tab is the usual Actions', dayOne.status === 404, dayOne);
+    const joined = await call(tokens.isha, 'POST', '/lifecycle/portal-session');
+    ok('joined (after Day 1): 404', joined.status === 404, joined);
     const moved = await call(tokens.kabir, 'POST', '/lifecycle/portal-session');
-    ok('a journey moved to the app (portal closed): 404', moved.status === 404, moved);
+    ok('moved to the app: 404', moved.status === 404, moved);
 
-    console.log('the session');
-    const got = await call(tokens.isha, 'POST', '/lifecycle/portal-session');
+    console.log('the session (before Day 1)');
+    const got = await call(tokens.pia, 'POST', '/lifecycle/portal-session');
     ok('their own journey: 200 with a token', got.status === 200 && typeof got.body.token === 'string', got);
     const claims = auth.verifyPortalToken(String(got.body.token));
-    ok('the token is a portal token for their journey, in their company', claims?.sub === isha.id && claims?.org === ORG, claims);
+    ok('the token is a portal token for their journey, in their company', claims?.sub === pia.id && claims?.org === ORG, claims);
     ok('valid for 12 hours', !!claims && claims.exp - claims.iat === auth.PORTAL_TOKEN_TTL_SECONDS && Math.abs(Date.parse(got.body.expiresAt) - claims.exp * 1000) < 1000, got.body.expiresAt);
     const url = String(got.body.url ?? '');
     ok('the address is the portal\'s /app entry with the token in the fragment', url.startsWith('http://localhost:5181/onboarding/app?c=') && url.endsWith(`#t=${got.body.token}`), url);
 
     console.log('the token in the portal');
     const home = await call(String(got.body.token), 'GET', '/portal/me');
-    ok('GET /portal/me answers for them', home.status === 200 && home.body.candidateName === 'Isha Verma', { status: home.status, name: home.body.candidateName, view: home.body.view });
-    ok('the portal shows the joined view', home.body.view === 'joined', home.body.view);
-    ok('the app token itself never opens a portal route', (await call(tokens.isha, 'GET', '/portal/me')).status === 401);
+    ok('GET /portal/me answers for them', home.status === 200 && home.body.candidateName === 'Pia Rao', { status: home.status, name: home.body.candidateName, view: home.body.view });
+    ok('the pre-boarding portal (not joined, not closed)', !['joined', 'closed'].includes(String(home.body.view)), home.body.view);
+    ok('the app token itself never opens a portal route', (await call(tokens.pia, 'GET', '/portal/me')).status === 401);
 
     console.log('/lifecycle/me');
+    const mePia = await call(tokens.pia, 'GET', '/lifecycle/me');
+    ok('before Day 1: portal true, their journey, no Onboarding tile', mePia.body.onboarding?.portal === true && mePia.body.onboarding?.journeyId === pia.id && mePia.body.onboarding?.tileVisible === false, mePia.body.onboarding);
+    const meTara = await call(tokens.tara, 'GET', '/lifecycle/me');
+    ok('on Day 1: no portal', !meTara.body.onboarding?.portal, meTara.body.onboarding);
     const meIsha = await call(tokens.isha, 'GET', '/lifecycle/me');
-    ok('says portal: true while it is open', meIsha.body.onboarding?.portal === true, meIsha.body.onboarding);
+    ok('joined: portal false, the Onboarding tile', meIsha.body.onboarding?.portal === false && meIsha.body.onboarding?.tileVisible === true, meIsha.body.onboarding);
     const meKabir = await call(tokens.kabir, 'GET', '/lifecycle/me');
-    ok('and portal: false once moved to the app', meKabir.body.onboarding?.portal === false, meKabir.body.onboarding);
+    ok('moved to the app: portal false', meKabir.body.onboarding?.portal === false, meKabir.body.onboarding);
+    const meRavi = await call(tokens.ravi, 'GET', '/lifecycle/me');
+    ok('no journey: no onboarding', meRavi.status === 200 && !meRavi.body.onboarding, meRavi.body);
+
+    console.log('the day passes');
+    ok('from Tj on the same journey gives no portal', (await auth.portalJourneyForAppUser('pia', ORG, new Date(`${pia.tj}T00:30:00+05:30`))) === null);
+    ok('the evening before Tj (IST) it still does', (await auth.portalJourneyForAppUser('pia', ORG, new Date(`${day(4)}T23:30:00+05:30`)))?.id === pia.id);
 
     console.log('feature off');
     await db.companies().updateOne({ id: ORG }, { $set: { 'features.lifecycle': false } });
-    const off = await call(tokens.isha, 'POST', '/lifecycle/portal-session');
+    const off = await call(tokens.pia, 'POST', '/lifecycle/portal-session');
     ok('the company switched off: 404', off.status === 404, off);
   } catch (error) {
     failed += 1;

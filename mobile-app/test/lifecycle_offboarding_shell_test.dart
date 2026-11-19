@@ -210,13 +210,17 @@ void main() {
     },
   );
 
-  group('Action tab while the joining portal is open', () {
+  group('Action tab: the portal before Day 1, the usual Actions from Day 1', () {
+    // As /lifecycle/me answers: before Day 1 only the portal (no tile); from
+    // the joining day the joiner's journey with its tile and portal false.
     LifecycleMe me({required bool portal}) => LifecycleMe.fromJson({
       'enabled': true,
-      'onboarding': {'journeyId': 'j1', 'stage': 'welcome_week1', 'tileVisible': true, 'portal': portal},
+      'onboarding': portal
+          ? {'journeyId': 'j1', 'stage': 'pre_boarding', 'tj': '2026-12-01', 'tileVisible': false, 'portal': true}
+          : {'journeyId': 'j1', 'stage': 'welcome_week1', 'dayLabel': 'Day 1', 'tileVisible': true, 'portal': false},
     });
 
-    testWidgets('portal: the tab is the portal page (header, portal, tabs), kept across tab switches', (tester) async {
+    testWidgets('before Day 1: the tab is the portal page (header, portal, tabs), kept across tab switches', (tester) async {
       (FakeLifecycle()..enabled = true).install();
       PortalPage.debugSurfaceFactory = ({required onMessage, required stays, required onLoaded}) =>
           _Surface();
@@ -246,7 +250,7 @@ void main() {
       await finish(tester, bloc);
     });
 
-    testWidgets('no portal: the tab is Quick Actions as before', (tester) async {
+    testWidgets('from Day 1: the tab is Quick Actions with the Onboarding tile', (tester) async {
       (FakeLifecycle()..enabled = true).install();
       addTearDown(LifecycleMeStore.instance.clear);
       LifecycleMeStore.instance.value = me(portal: false);
@@ -255,6 +259,7 @@ void main() {
       await tester.pumpAndSettle(const Duration(seconds: 1));
       expect(find.byType(QuickActionsScreen), findsOneWidget);
       expect(find.byType(PortalTab), findsNothing);
+      expect(find.byKey(const ValueKey('onboarding-card')), findsOneWidget);
       await finish(tester, bloc);
     });
   });
