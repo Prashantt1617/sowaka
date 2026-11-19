@@ -19,3 +19,6 @@ Where: `preboarding-web/` (React + Vite; screens in src/screens, the current loo
 - The Mac has 8 GB and is swapping: run builds, type-checks and Chrome under `lockf -k /tmp/sowaka-heavy.lock <cmd>`; quit Chrome after each batch; stop your vite when done.
 - Never merge, deploy, upload or touch production. Type-check: `cd preboarding-web && npx tsc --noEmit -p tsconfig.app.json` (or the tsconfig the project uses).
 - Report: per frame — which route/screen, match notes (what still differs and why), files changed, the shared changes you need from G1.
+
+## Icons (the user: "make sure each icon is picked perfectly")
+Use the design's own icons: take them from Figma (get_design_context asset URLs or download_assets) as SVG and inline them; never swap in a similar icon from a library or draw one by eye. Same size, stroke and colour as the frame. Put shared ones in `src/components/fig/icons/` (one file per icon, named after the Figma layer) — G1 creates the folder; others add their own files there with a `g<N>-` prefix if the icon is only theirs.
