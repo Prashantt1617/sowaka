@@ -29,7 +29,7 @@ export function FigLogo({ company, className = 'fig-head__logo' }: { company?: C
 /** Header · company (App · 3 Home): logo tile and the company name. */
 export function FigHomeHeader({ company, children }: { company?: Company; children?: ReactNode }) {
   return (
-    <header className="fig-head">
+    <header className="fig-head fig-head--brand">
       <FigLogo company={company} />
       <span className="fig-head__name">{company?.name ?? 'Joining portal'}</span>
       {children}
