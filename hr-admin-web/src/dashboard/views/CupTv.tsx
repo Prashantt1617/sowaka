@@ -668,7 +668,8 @@ const TrailsBoard = memo(function TrailsBoard({ seed, at, size, colour }: { seed
  * Knights region colours, cool and apart on navy (the Knights Tournament look): cobalts, sky, teal, indigo, violet, ice,
  * in lightness steps so nine regions read apart.
  */
-const KN_REGIONS = ['#1F56D8', '#8FD0FF', '#12A39A', '#5B3FD9', '#B794FF', '#E6F2FF', '#3FA0E8', '#6EE7D8', '#8A3FC4', '#2E77D0'];
+// Meow's soft board colours, as the match page draws them.
+const KN_REGIONS = ['#c6ddac', '#afd4e3', '#f5c2a2', '#d4c4e5', '#eedca4', '#ebbfc5', '#b7dfd3', '#c6cdf0', '#e9cfa9', '#d9e6b8'];
 
 /**
  * A Knights board, read-only: its colour regions, and once the match is decided the answer's knights. While it is

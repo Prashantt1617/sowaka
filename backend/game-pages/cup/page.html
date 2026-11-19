@@ -1016,7 +1016,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
   /* ---------- Tipsters ---------- */
   /* How to play (Knights): a small solved board and the rules, as Meow shows them. */
   function viewHow() {
-    var g = [0, 0, 1, 1, 0, 2, 2, 1, 3, 2, 2, 1, 3, 3, 3, 1], k = [1, 7, 8, 14], C = ['#63A9F7', '#2E77D0', '#8E7BF0', '#2BB3A8'];
+    var g = [0, 0, 1, 1, 0, 2, 2, 1, 3, 2, 2, 1, 3, 3, 3, 1], k = [1, 7, 8, 14], C = ['#c6ddac', '#afd4e3', '#f5c2a2', '#d4c4e5'];
     var kn = (window.CupKnights && window.CupKnights.knight) || '';
     var demo = g.map(function (r, i) { return '<span style="background:' + C[r] + '">' + (k.indexOf(i) >= 0 && kn ? '<img alt="" src="' + kn + '">' : '') + '</span>'; }).join('');
     var art = ['<path fill="#2E77D0" d="M1 1h26v26H1z"/><path fill="#63A9F7" d="M10 1h8v26h-8zM1 10h26v8H1z"/>', '<path fill="#8E7BF0" d="M1 1h26v26H1z"/><path fill="#2BB3A8" d="M1 1h18v9h-9v9H1z"/><path fill="#63A9F7" d="M1 19h9v-9h17v17H1z"/>', '<path fill="#2E77D0" d="M1 1h26v26H1z"/><path d="M14 1v26M1 14h26" stroke="#CFE6FF" stroke-width="1.3"/><circle cx="7.5" cy="7.5" r="3.2" fill="#CFE6FF"/><circle cx="20.5" cy="20.5" r="3.2" fill="#F5B82E"/>', '<path fill="#2E77D0" d="M1 1h26v26H1z"/><path d="M8 8l12 12M20 8L8 20" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>', '<path fill="#2E77D0" d="M1 1h26v26H1z"/><path d="M6 15l5 5 11-12" stroke="#7FE0A8" stroke-width="2.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'];
