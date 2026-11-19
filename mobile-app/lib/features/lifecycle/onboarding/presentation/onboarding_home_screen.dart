@@ -5,9 +5,11 @@ import 'package:flutter/material.dart';
 import '../data/onboarding_api.dart';
 import '../data/onboarding_models.dart';
 import '../onboarding_launcher.dart';
+import '../timeline/lens_lists.dart';
+import '../timeline/stage_hero.dart';
+import '../timeline/stage_lens.dart';
 import 'notes_screen.dart';
 import 'onboarding_kit.dart';
-import 'plant.dart';
 import 'starter_task_screen.dart';
 import 'task_row.dart';
 import 'week_done_screen.dart';
@@ -30,7 +32,8 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
   List<StarterTask> _starterTasks = const [];
   List<OneOnOneNote> _notes = const [];
   String? _error;
-  bool _journeyOpen = false;
+  /// The stage being looked at through the timeline; null: her own.
+  int? _lensAt;
   bool _doneOpen = false;
   bool _weekDoneChecked = false;
 
@@ -164,11 +167,28 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
     final latestNote = _notes.isEmpty ? null : _notes.first;
     final manager = home.managerName ?? _starterTasks.map((t) => t.assignedByName).nonNulls.firstOrNull;
 
+    final lens = StageLens.of(home, now, selected: _lensAt);
+    final hero = OnbRise(
+      child: StageHero(
+        lens: lens,
+        plant: home.plant,
+        onPick: (i) => setState(() => _lensAt = i == lens.current ? null : i),
+      ),
+    );
+    if (lens.mode != LensMode.now) return _lensBody(home, lens, hero, now);
+    // Left over from an earlier stage: tagged "From Week 1" in the list.
+    final carried = {
+      for (final item in lens.tasks)
+        if (item.pill == LensPill.carried) item.id: item.pillText!,
+      for (final item in lens.meetings)
+        if (item.pill == LensPill.carried) item.id: item.pillText!,
+    };
+
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
       children: [
-        OnbRise(child: _hereCard(home, dayLabel, now)),
+        hero,
         if (upNext != null) ...[
           const SizedBox(height: 14),
           OnbRise(delay: 60, child: _UpNextCard(task: upNext, now: now, onTap: () => _open(upNext))),
@@ -223,7 +243,7 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
         for (final task in open)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: OnbTaskRow.task(task, now, onTap: () => _open(task)),
+            child: OnbTaskRow.task(task, now, onTap: () => _open(task), count: carried[task.id]),
           ),
         if (open.isEmpty && openStarters.isEmpty && upNext == null && thisWeek.isEmpty)
           Padding(
@@ -254,106 +274,52 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
     );
   }
 
-  Widget _hereCard(OnboardingHome home, String dayLabel, DateTime now) {
-    final stage = onboardingStageLabel(home.stage);
-    final next = nextOnboardingStageLabel(home.stage);
-    final journey = home.journey;
-    return OnbCard(
-      radius: 20,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              // The plant on its tile, as drawn.
-              Container(
-                width: 52,
-                height: 58,
-                decoration: BoxDecoration(color: OnbColors.tint, borderRadius: BorderRadius.circular(14)),
-                alignment: Alignment.bottomCenter,
-                child: Plant.of(home.plant, size: 46, showPill: false),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('YOU ARE HERE', style: _A2Text.eyebrow),
-                    const SizedBox(height: 2),
-                    Text(dayLabel, key: const ValueKey('day-label'), style: _A2Text.day),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Flexible(child: Text(stage, style: OnbText.label)),
-                        if (home.plant.droop) ...[
-                          const SizedBox(width: 6),
-                          const OnbTag('Needs water', tone: OnbTone.needsWater),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              if (journey.isNotEmpty)
-                Semantics(
-                  button: true,
-                  expanded: _journeyOpen,
-                  child: TextButton(
-                    key: const ValueKey('journey-toggle'),
-                    onPressed: () => setState(() => _journeyOpen = !_journeyOpen),
-                    style: TextButton.styleFrom(
-                      foregroundColor: OnbColors.text,
-                      backgroundColor: Colors.white,
-                      shape: const StadiumBorder(side: BorderSide(color: OnbColors.lineDark)),
-                      minimumSize: const Size(0, 34),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('Journey', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
-                        const SizedBox(width: 4),
-                        AnimatedRotation(
-                          turns: _journeyOpen ? 0.5 : 0,
-                          duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 200),
-                          child: const Icon(Icons.expand_more_rounded, size: 14),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
+  /// Another stage through the timeline: that stage's meetings and tasks
+  /// first (ahead: IN MONTH 1, then NOW · WEEK 1; back: what she did, still
+  /// open first). Nothing here moves her stage.
+  Widget _lensBody(OnboardingHome home, StageLens lens, Widget hero, DateTime now) {
+    final ahead = lens.mode == LensMode.ahead;
+    final nothing = lens.tasksOfStage.isEmpty && lens.meetingsOfStage.isEmpty;
+    return ListView(
+      key: const ValueKey('lens-body'),
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+      children: [
+        hero,
+        if (nothing) ...[
+          const SizedBox(height: 20),
+          Text(
+            ahead ? 'Nothing planned for ${lens.there} yet.' : 'Nothing was planned for ${lens.there}.',
+            key: const ValueKey('lens-nothing'),
+            style: OnbText.body,
           ),
-          if (_journeyOpen && journey.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            JourneyBar(
-              stages: journey,
-              currentFill: stageFill(stage: home.stage, tj: home.tj, today: now, months: _probationMonths(journey)),
-              dayLabel: dayLabel,
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                if (next != null) Expanded(child: Text('Next stage: $next', style: OnbText.label)) else const Spacer(),
-                OnbLink(label: 'Full journey', onTap: () => showJourneySheet(context, journey, dayLabel)),
-              ],
-            ),
-          ],
         ],
-      ),
+        if (lens.meetings.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          LensSection(
+            key: const ValueKey('lens-meetings'),
+            title: 'People to meet',
+            meta: lens.meetingsMeta,
+            items: lens.meetings,
+            now: now,
+            meetings: true,
+            onOpen: _open,
+          ),
+        ],
+        if (lens.tasks.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          LensSection(
+            key: const ValueKey('lens-tasks'),
+            title: 'Tasks for you',
+            meta: lens.tasksMeta,
+            items: lens.tasks,
+            now: now,
+            onOpen: _open,
+          ),
+        ],
+      ],
     );
   }
-}
-
-/// How many probation months the journey's stages span (Months 2–5 → 6).
-int _probationMonths(List<JourneyStage> stages) {
-  for (final stage in stages) {
-    final m = RegExp(r'Months 2–(\d+)').firstMatch(stage.label);
-    if (m != null) return int.parse(m.group(1)!) + 1;
-    if (stage.label == 'Month 2') return 3;
-  }
-  return 6;
 }
 
 /// How far into the current stage the joiner is, for the bar's fill: a
@@ -660,8 +626,6 @@ Future<void> showJourneySheet(BuildContext context, List<JourneyStage> stages, S
 
 /// A2's type, as the artboard sets it.
 abstract final class _A2Text {
-  static const eyebrow = TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.primary);
-  static const day = TextStyle(fontSize: 26, height: 1.1, fontWeight: FontWeight.w800, letterSpacing: -0.52, color: OnbColors.text);
   static const listTitle = TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: OnbColors.text);
   static const listMeta = TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.text2);
   static const upNextEyebrow = TextStyle(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 1.1, color: OnbColors.brandBorder);
