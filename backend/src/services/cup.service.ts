@@ -29,16 +29,27 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { Collection } from 'mongodb';
 import { env } from '../config/env';
 import { companies, gameCatalog, gameScores, getDb, users } from '../config/db';
-import type { CupDecision, CupEntrant, CupEvent, CupMatch, CupRound, CupBet } from '../models/cup.model';
+import type { CupDecision, CupEntrant, CupKnightsResult, CupEvent, CupMatch, CupRound, CupBet } from '../models/cup.model';
 import { catalogScoreId } from '../models/game-catalog.model';
 import type { User } from '../models/user.model';
 import { hasAllDashboardTabs } from '../middleware/admin.middleware';
 import { InFlight } from '../utils/inflight';
 import { logger } from '../utils/logger';
+import knightsBank from '../content/knights-boards.json';
 import {
+  KNIGHTS,
   buildDraw,
   buildPyramidDraw,
   cryptoRng,
+  gridFor,
+  isSolved,
+  knightsBoardFor,
+  newKnightsSeed,
+  parseKnights,
+  resignStep,
+  rightOf,
+  type KnightsBank,
+  type KnightsBoard,
   matchLabel,
   mayJoin,
   mayScore,
@@ -177,6 +188,8 @@ interface Runtime {
   live: Map<string, { score: number; at: number }>;
   /** Where each player is in the match's boards (memory only), by the same key: for viewers to draw both boards. */
   boards: Map<string, LiveBoard & { at: number }>;
+  /** Knights only: each player's latest board (cells with a knight), by the same key; `solved` sticks once it was right. */
+  knights: Map<string, { knights: number[]; at: number; solved?: boolean }>;
   persisted: Map<string, number>;
   rev: number;
   refreshedAt: number;
@@ -238,7 +251,7 @@ async function refresh(eventId: string): Promise<Runtime | null> {
       : { eventId, $or: [{ status: { $ne: 'done' as const } }, { updatedAt: { $gte: new Date(rt.refreshedAt - 5000) } }] };
     const rows = await cupMatches().find(query, { projection: { _id: 0 } }).toArray();
     if (!rt) {
-      rt = { event, matches: new Map(), live: new Map(), boards: new Map(), persisted: new Map(), rev: Date.now(), refreshedAt: 0, refreshing: null };
+      rt = { event, matches: new Map(), live: new Map(), boards: new Map(), knights: new Map(), persisted: new Map(), rev: Date.now(), refreshedAt: 0, refreshing: null };
       runtimes.set(eventId, rt);
     }
     if (rt.event.version !== event.version || rt.event.active !== event.active) rt.rev += 1;
@@ -996,6 +1009,14 @@ async function pushBetting(event: CupEvent, match: CupMatch, secs: string) {
 /** The match with this process's live scores in it, for deciding a round that ran out. */
 function withLive(rt: Runtime, match: CupMatch): CupMatch {
   const live = { ...(match.live ?? {}) };
+  if (isKnightsEvent(rt.event)) {
+    // Knights: each player's latest board, not their best (a knight taken off counts as off).
+    for (const p of match.players) {
+      const mem = rt.knights.get(`${match.id}:${match.attempt}:${p}`);
+      if (mem && (!live[p] || mem.solved || mem.at >= new Date(live[p].at).getTime())) live[p] = { score: 0, at: new Date(mem.at), knights: mem.knights };
+    }
+    return { ...match, live };
+  }
   for (const p of match.players) {
     const mem = rt.live.get(`${match.id}:${match.attempt}:${p}`);
     if (mem && (!live[p] || mem.score >= live[p].score)) live[p] = { score: mem.score, at: new Date(mem.at) };
@@ -1006,7 +1027,7 @@ function withLive(rt: Runtime, match: CupMatch): CupMatch {
 /** Moves one match on, if its time has come. */
 async function advance(rt: Runtime, match: CupMatch, now: Date): Promise<void> {
   if (match.status !== 'open' && match.status !== 'live' && match.status !== 'solo') return;
-  const step = nextStep(withLive(rt, match), rt.event, now, seedLookup(rt.event));
+  const step = nextStep(withLive(rt, match), rt.event, now, seedLookup(rt.event), solutionOf(rt, match));
   await apply(rt, match, step, now);
 }
 
@@ -1032,7 +1053,8 @@ async function apply(rt: Runtime, match: CupMatch, step: MatchStep, now: Date): 
       const after = await write({
         $set: {
           status: 'open',
-          seed: newSeed(),
+          // Knights: a new board from the bank, never the tied one.
+          seed: isKnightsEvent(event) ? newKnightsSeed(match.seed, boardsFor(rt, match).length, newSeed) : newSeed(),
           joined: {},
           live: {},
           finals: {},
@@ -1064,7 +1086,7 @@ async function decide(
   match: CupMatch,
   winnerId: string,
   decidedBy: CupDecision,
-  result: Record<string, number>,
+  result: Record<string, number> | CupKnightsResult,
   now: Date,
   write: (update: Record<string, unknown>) => Promise<CupMatch | null>,
 ) {
@@ -1168,6 +1190,12 @@ export async function startSolo(viewer: CupViewer, id: string) {
     current = after ?? (await reloadMatch(rt, id)) ?? match;
     if (after) keep(rt, after);
   }
+  // Knights: a lone player goes through as soon as they start (nobody to play; a sequential round must not wait 5 minutes).
+  if (isKnightsEvent(rt.event) && current.status === 'solo' && current.startAt && runnerMoves(rt.event.org)) {
+    await apply(rt, current, nextStep(withLive(rt, current), rt.event, now, seedLookup(rt.event), solutionOf(rt, current)), now);
+    current = rt.matches.get(id) ?? current;
+    if (current.status === 'done') kick(rt);
+  }
   return { serverNow: new Date(), match: myMatchView(rt, current, viewer.userId) };
 }
 
@@ -1181,6 +1209,7 @@ export async function reportLive(viewer: CupViewer, id: string, raw: unknown, pr
   const { rt, match } = await playersMatch(viewer, id);
   const now = new Date();
   refuse(mayScore(match, viewer.userId, rt.event, now, false));
+  if (isKnightsEvent(rt.event)) return reportKnights(rt, match, viewer, (progress as { knights?: unknown } | undefined)?.knights, now);
   const score = parseScore(raw, rt.event.maxScore);
   if (score === null) throw new CupError(400, 'Score is invalid');
   const key = `${match.id}:${match.attempt}:${viewer.userId}`;
@@ -1206,7 +1235,9 @@ export async function reportLive(viewer: CupViewer, id: string, raw: unknown, pr
 
 /** The round's final score. With both in, the match is decided at once. */
 export async function reportFinal(viewer: CupViewer, id: string, raw: unknown) {
-  const { rt } = await playersMatch(viewer, id);
+  const { rt, match: held } = await playersMatch(viewer, id);
+  // Knights has no final: the board decides (a right one at once, else the cap). Taken and ignored.
+  if (isKnightsEvent(rt.event)) return { serverNow: new Date(), match: myMatchView(rt, held, viewer.userId) };
   const match = (await reloadMatch(rt, id))!;
   const now = new Date();
   if (match.finals?.[viewer.userId]) return { serverNow: now, match: myMatchView(rt, match, viewer.userId) };
@@ -1225,12 +1256,100 @@ export async function reportFinal(viewer: CupViewer, id: string, raw: unknown) {
     const key = `${id}:${after.attempt}:${viewer.userId}`;
     rt.live.set(key, { score: Math.max(score, rt.live.get(key)?.score ?? 0), at: now.getTime() });
     if (runnerMoves(rt.event.org)) {
-      await apply(rt, after, nextStep(withLive(rt, after), rt.event, now, seedLookup(rt.event)), now);
+      await apply(rt, after, nextStep(withLive(rt, after), rt.event, now, seedLookup(rt.event), solutionOf(rt, after)), now);
       current = rt.matches.get(id) ?? current;
       if (current.status === 'done') kick(rt);
     }
   }
   return { serverNow: new Date(), match: myMatchView(rt, current, viewer.userId) };
+}
+
+// ---------------------------------------------------------------- knights
+
+const isKnightsEvent = (event: Pick<CupEvent, 'gameKey'>) => event.gameKey === KNIGHTS;
+const KNIGHTS_BANK = knightsBank as unknown as KnightsBank;
+
+/** The grid of a match's round: 6, 8 or 9 (`gridFor`). */
+const gridOf = (rt: Runtime, match: Pick<CupMatch, 'round'>) => gridFor(match.round, rt.event.rounds.length);
+const boardsFor = (rt: Runtime, match: Pick<CupMatch, 'round'>) => KNIGHTS_BANK[String(gridOf(rt, match))] ?? [];
+
+/** The match's board (both players', this attempt's), or null when the event is not knights. */
+function knightsBoardOf(rt: Runtime, match: Pick<CupMatch, 'round' | 'seed'>): (KnightsBoard & { n: number }) | null {
+  if (!isKnightsEvent(rt.event)) return null;
+  const n = gridOf(rt, match);
+  return { n, ...knightsBoardFor(KNIGHTS_BANK, n, match.seed) };
+}
+
+/** The solution, for the rules only (never a page's until decided). Undefined when not knights. */
+const solutionOf = (rt: Runtime, match: CupMatch) => knightsBoardOf(rt, match)?.s;
+
+/** A player's latest knights in this attempt: this process's, else as last written. */
+function knightsOfPlayer(rt: Runtime, match: CupMatch, userId: string): number[] | undefined {
+  return rt.knights.get(`${match.id}:${match.attempt}:${userId}`)?.knights ?? match.live?.[userId]?.knights;
+}
+
+/**
+ * A knights board mid-round: kept here, written to the match every few
+ * seconds. The moment it is the answer, the match is decided (`finished`).
+ */
+async function reportKnights(rt: Runtime, match: CupMatch, viewer: CupViewer, raw: unknown, now: Date): Promise<void> {
+  const board = knightsBoardOf(rt, match)!;
+  const knights = parseKnights(raw, board.n);
+  if (!knights) throw new CupError(400, 'Board is invalid');
+  const key = `${match.id}:${match.attempt}:${viewer.userId}`;
+  const had = rt.knights.get(key);
+  if (had?.solved) return;
+  const solved = isSolved(knights, board.s);
+  if (!had || had.knights.length !== knights.length) rt.rev += 1;
+  rt.knights.set(key, { knights, at: now.getTime(), ...(solved ? { solved: true } : {}) });
+  if (solved && runnerMoves(rt.event.org)) {
+    const current = rt.matches.get(match.id) ?? match;
+    await apply(rt, current, nextStep(withLive(rt, current), rt.event, now, seedLookup(rt.event), board.s), now);
+    if (rt.matches.get(match.id)?.status === 'done') kick(rt);
+  }
+  if (!solved && now.getTime() - (rt.persisted.get(key) ?? 0) < PERSIST_EVERY_MS) return;
+  rt.persisted.set(key, now.getTime());
+  await cupMatches().updateOne(
+    { id: match.id, attempt: match.attempt },
+    { $set: { [`live.${viewer.userId}`]: { score: rightOf(knights, board.s), at: now, knights } } },
+  );
+}
+
+/** Resigns the viewer's knights match: the opponent wins at once. */
+export async function resignMatch(viewer: CupViewer, id: string) {
+  const { rt } = await playersMatch(viewer, id);
+  if (!isKnightsEvent(rt.event)) throw new CupError(409, 'This game has no resign');
+  const match = (await reloadMatch(rt, id))!;
+  const now = new Date();
+  const step = resignStep(withLive(rt, match), viewer.userId, solutionOf(rt, match) ?? []);
+  if ('ok' in step) refuse(step);
+  await apply(rt, match, step as MatchStep, now);
+  const current = rt.matches.get(id) ?? match;
+  if (current.status !== 'done') throw new CupError(409, 'The match changed: try again');
+  kick(rt);
+  return { serverNow: new Date(), match: myMatchView(rt, current, viewer.userId) };
+}
+
+/**
+ * What a knights match adds to a view: the board (regions only) while it is
+ * live, solo or done; each player's knights placed; once decided, each
+ * player's right ones and the solution. Nothing for any other game.
+ */
+function knightsView(rt: Runtime, match: CupMatch): {
+  knights?: { n: number; g: number[]; solution?: number[] };
+  placed?: Record<string, number>;
+  right?: Record<string, number>;
+} {
+  if (!isKnightsEvent(rt.event)) return {};
+  if (match.status !== 'live' && match.status !== 'solo' && match.status !== 'done') return {};
+  const board = knightsBoardOf(rt, match)!;
+  const placed: Record<string, number> = {};
+  for (const p of match.players) placed[p] = knightsOfPlayer(rt, match, p)?.length ?? 0;
+  if (match.status !== 'done') return { knights: { n: board.n, g: board.g }, placed };
+  const result = match.result as { right?: Record<string, number> } | undefined;
+  const right: Record<string, number> = {};
+  for (const p of match.players) right[p] = result?.right?.[p] ?? rightOf(knightsOfPlayer(rt, match, p), board.s);
+  return { knights: { n: board.n, g: board.g, solution: board.s }, placed, right };
 }
 
 // ---------------------------------------------------------------- void (for HR, through cup-bets)
@@ -1333,6 +1452,8 @@ const person = (rt: Runtime, userId: string | null) => {
 
 function liveOf(rt: Runtime, match: CupMatch): Record<string, number> | undefined {
   if (match.status !== 'live' && match.status !== 'solo') return undefined;
+  // Knights: no correctness count during play (`placed` is in the knights view).
+  if (isKnightsEvent(rt.event)) return undefined;
   const out: Record<string, number> = {};
   for (const p of match.players) {
     const mem = rt.live.get(`${match.id}:${match.attempt}:${p}`)?.score;
@@ -1361,13 +1482,16 @@ function liveBoardOf(rt: Runtime, match: CupMatch): Record<string, LiveBoard & {
 function matchView(rt: Runtime, match: CupMatch) {
   const event = rt.event;
   const liveBoard = liveBoardOf(rt, match);
+  const kv = knightsView(rt, match);
+  const withPlaced = (p: ReturnType<typeof person>) => (p && kv.placed ? { ...p, placed: kv.placed[p.userId] ?? 0 } : p);
   return {
+    ...kv,
     id: match.id,
     slot: match.slot,
     label: match.label,
     status: match.status,
-    a: person(rt, match.players[0]),
-    b: person(rt, match.players[1]),
+    a: withPlaced(person(rt, match.players[0])),
+    b: withPlaced(person(rt, match.players[1])),
     live: liveOf(rt, match),
     boardSeed: liveBoard ? match.seed : undefined,
     liveBoard,
@@ -1528,7 +1652,13 @@ function myMatchView(rt: Runtime, match: CupMatch, userId: string) {
   const entrant = event.entrants.find((e) => e.userId === them);
   const live = liveOf(rt, match) ?? {};
   const playing = match.status === 'live' || match.status === 'solo';
+  const kv = knightsView(rt, match);
+  const knightsMine = kv.placed
+    ? { myPlaced: kv.placed[userId] ?? 0, opponentPlaced: kv.placed[them] ?? 0, myKnights: knightsOfPlayer(rt, match, userId) ?? [] }
+    : {};
   return {
+    ...kv,
+    ...knightsMine,
     id: match.id,
     label: match.label,
     round: match.round,
@@ -1683,7 +1813,7 @@ export async function cupBoardFor(org: string, gameId: string) {
     ? event.entrants.slice(0, 20).map((e) => ({ rank: e.seed, userId: e.userId, playerName: e.name, score: `Seed ${e.seed}` }))
     : standingsOf(rt).slice(0, 20).map((s) => ({ rank: s.place, userId: s.userId, playerName: s.name, score: s.reached }));
   return {
-    game: { id: event.id, name: event.name, description: event.gameKey === 'trails' ? 'Trails knockout' : 'Odd One Out knockout', hostedUrl: '', active: event.active },
+    game: { id: event.id, name: event.name, description: event.gameKey === 'trails' ? 'Trails knockout' : event.gameKey === KNIGHTS ? 'Knights knockout' : 'Odd One Out knockout', hostedUrl: '', active: event.active },
     leaderboard: rows,
   };
 }

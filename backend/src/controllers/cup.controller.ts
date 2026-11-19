@@ -7,6 +7,7 @@ import {
   joinMatch,
   reportFinal,
   reportLive,
+  resignMatch,
   startSolo,
   stateFor,
   viewerFromTicket,
@@ -69,6 +70,8 @@ export const liveHandler = cupHandler(async (viewer, req) => {
   return undefined;
 });
 export const finalHandler = cupHandler((viewer, req) => reportFinal(viewer, idOf(req), req.body?.score));
+/** Knights: gives the match up; the opponent wins at once. */
+export const resignHandler = cupHandler((viewer, req) => resignMatch(viewer, idOf(req)));
 
 /**
  * An old inline profile photo, as an image (`<img>` sends no ticket: the

@@ -126,7 +126,12 @@ export interface BetContext {
   label: string;
   /** The name of the player backed. */
   pickName: string;
+  /** The game played (the event's `gameKey`): names the tournament on the row. */
+  game?: string;
 }
+
+/** The tournament's name on a points-history row. */
+export const betTitlePrefix = (game?: string) => (game === 'knights' ? 'Knights Tournament' : 'O-O-O Tournament');
 
 /** The line the points history shows under a bet: the match, the pick and how it went. */
 export function betNote(ctx: BetContext, how?: string): string {
@@ -160,7 +165,7 @@ export function ledgerRowFor(
     reason: step === 'placed' ? 'bet_placed' : step === 'won' ? 'bet_won' : 'bet_refunded',
     refId: bet._id,
     note: betNote(ctx, how),
-    title: step === 'placed' ? 'O-O-O Tournament bet' : step === 'won' ? 'O-O-O Tournament win' : 'O-O-O Tournament refund',
+    title: `${betTitlePrefix(ctx.game)} ${step === 'placed' ? 'bet' : step === 'won' ? 'win' : 'refund'}`,
     createdAt: now,
   };
 }
