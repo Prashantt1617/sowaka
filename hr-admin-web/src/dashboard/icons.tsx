@@ -463,6 +463,12 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M2 10h20M6 15h4" />
     </svg>
   ),
+  policies: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M6 2.5h8.5L19 7v14.5H6z" />
+      <path d="M14 2.5V7h5M9 11.5h7M9 15h7M9 18.5h4" />
+    </svg>
+  ),
   cycle: (
     <svg {...base(18, 'currentColor')}>
       <circle cx="12" cy="12" r="3" />

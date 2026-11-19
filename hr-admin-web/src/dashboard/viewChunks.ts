@@ -35,6 +35,7 @@ const LOADERS: Partial<Record<View, Loader>> = {
   orgchart: () => import('./views/OrgChart').then((m) => ({ default: m.OrgChart })),
   usersroles: () => import('./views/Accesses').then((m) => ({ default: m.Accesses })),
   reimbursementtypes: () => import('./views/ReimbursementTypes').then((m) => ({ default: m.ReimbursementTypes })),
+  policies: () => import('./views/Policies').then((m) => ({ default: m.Policies })),
   cycle: () => import('./views/ReviewCycle').then((m) => ({ default: m.ReviewCycle })),
   appusage: () => import('./views/engagement/AppUsage').then((m) => ({ default: m.AppUsage })),
   feed: () => import('./views/engagement/Feed').then((m) => ({ default: m.Feed })),

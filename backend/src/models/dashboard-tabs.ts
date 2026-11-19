@@ -104,6 +104,8 @@ const RULES: Rule[] = [
   { path: /^\/admin\/(shifts|shift-policy)/, write: ['shifttypes', 'shiftbulk'] },
   // Claim types from Reimbursement Types; FBP bill types from Payroll › FBP splits (payroll access).
   { path: /^\/admin\/reimbursement-types/, write: ['reimbursementtypes', 'fbpsplits', 'salarydetails', 'payruns'] },
+  // Setup › Policies (what the app shows under Actions › Policies) goes with Organisation settings.
+  { path: /^\/admin\/policies/, read: ['organisation'], write: ['organisation'] },
   { path: /^\/admin\/company\/profile/, read: ['organisation'], write: ['organisation'] },
   { path: /^\/admin\/company\/settings/, write: ['organisation', 'departments', 'designations', 'cycle'] },
   { path: /^\/admin\/feedback/, read: ['feedback', 'overview'] },
