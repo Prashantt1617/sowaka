@@ -1,18 +1,21 @@
-// A1 sections (18 Nov design, "Section content used by every screen"): the offer
-// letter and the joining details, each under the section header (Back, title).
-// A revised offer still to accept keeps the offer flow (OfferSession).
+// The offer letter and the joining details (Figma "App · 4 Offer letter", "App · 5 Joining details"),
+// each under the section header (back, title). A revised offer still to accept keeps the offer flow (OfferSession).
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { portal, type OfferSource } from '../api/portal';
 import type { JoiningDetails, PortalLetter, PortalOfferView } from '../api/types';
-import { A1Icon, A1Loading, Breadcrumb } from '../components/A1';
-import { WebPage } from './A1Shell';
+import { FigLoading, FigPage, isAppHost } from '../components/fig/FigShell';
+import { G3SectionHead, G3WebBottom, G3WebTop } from '../components/fig/G3WebShell';
+import { FigChip, FigIntro, FigKv, FigList, FigNote, FigPdf } from '../components/fig/FigUi';
+import { FigCalendarPlus, FigCheckSmall, FigChevronRight, FigClock, FigDownload, FigEye, FigPass, FigPin } from '../components/fig/icons';
 import { PdfViewer } from '../components/PdfViewer';
 import { Sheet } from '../components/ui';
 import { fmtTime, fmtWeekday, fmtWeekdayYear, initials } from '../lib/format';
 import { downloadBlob, mailto } from '../lib/links';
 import { useMe } from '../session';
 import { OfferSession } from './Offer';
+import { dayMonthYear } from './A1Home';
+import '../styles/fig-g1.css';
 
 const EMPLOYEE_TYPE: Record<string, string> = { full_time: 'Full-time', intern: 'Internship', contract: 'Contract' };
 
@@ -41,7 +44,7 @@ export function A1Offer() {
   const f = view?.fields;
   const rows: Array<[string, string | undefined]> = f ? [
     ['Role', f.designation], ['Team', f.department],
-    ['Reporting to', f.managerName ? `${f.managerName}${f.managerDesignation ? `, ${f.managerDesignation}` : ''}` : undefined],
+    ['Reporting to', f.managerName],
     ['Joining date', f.tj ? fmtWeekdayYear(f.tj) : undefined], ['Work location', f.location],
     ['Employment type', f.employeeType ? EMPLOYEE_TYPE[f.employeeType] : undefined],
     ['Yearly CTC', typeof f.ctc === 'number' && f.ctc > 0 ? `₹${Math.round(f.ctc).toLocaleString('en-IN')}` : undefined],
@@ -50,60 +53,81 @@ export function A1Offer() {
   const shown = rows.filter((r): r is [string, string] => Boolean(r[1]));
   const toSign = letters.filter((l) => l.state === 'ready' || l.state === 'opened');
   const accepted = view && ['accepted', 'finalised'].includes(view.state);
+  const app = isAppHost();
+  const fileSub = view ? [
+    `Version ${view.version}`,
+    view.pdfPages ? `${view.pdfPages} ${view.pdfPages === 1 ? 'page' : 'pages'}` : '',
+    view.sentAt ? `sent ${fmtWeekday(view.sentAt)}` : '',
+  ].filter(Boolean).join(' · ') : '';
 
   return (
-    <WebPage>
-      <Breadcrumb title="Offer letter" />
-      {!view && !error ? <A1Loading /> : (
-        <div className="a1-body">
-          <p className="a1-intro">This is the offer letter HR sent you{accepted ? '. You’ve accepted it, so there is nothing more to do here.' : '.'}</p>
-          {error && <p className="a1-error" role="alert">{error}</p>}
-          {view && (
-            <>
-              <div className="a1-card">
-                <div className="a1-row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                  {accepted
-                    ? <span className="a1-chip a1-chip--green"><A1Icon name="check" size={14} width={2.4} />Accepted</span>
-                    : <span className="a1-chip a1-chip--grey">{view.state === 'replaced' ? 'Replaced by a new version' : 'Sent'}</span>}
-                  {view.acceptedAt && <span className="a1-small">You accepted on {fmtWeekday(view.acceptedAt)}</span>}
+    <FigPage>
+      <G3WebTop />
+      <G3SectionHead title="Offer letter" />
+      <main id="main" className="fig-main">
+        {!view && !error ? <FigLoading /> : (
+          <div className="fig-body-col">
+            <FigIntro icon="document-approved">
+              {accepted
+                ? 'This is the offer letter HR sent you. You accepted it by replying to the email, so there is nothing to sign here.'
+                : 'This is the offer letter HR sent you.'}
+            </FigIntro>
+            {error && <p className="fig-field__error" role="alert">{error}</p>}
+            {view && (
+              <>
+                <div className="fig-card fig-offer-card">
+                  {app ? (
+                    <div className="fig-offer-card__top">
+                      {accepted
+                        ? <FigChip tone="success">Accepted</FigChip>
+                        : <FigChip tone="neutral">{view.state === 'replaced' ? 'Replaced by a new version' : 'Sent'}</FigChip>}
+                      {view.acceptedAt && <span className="fig-label fig-t3">{fmtWeekday(view.acceptedAt)}</span>}
+                    </div>
+                  ) : (
+                    // Web · 5: a canvas chip with a tick, and "You replied yes on …" beside it.
+                    <div className="fig-offer-card__top fig-offer-card__top--web">
+                      {accepted
+                        ? <span className="fig-chip g1-chip-web"><FigCheckSmall />Accepted</span>
+                        : <span className="fig-chip g1-chip-web g1-chip-web--grey">{view.state === 'replaced' ? 'Replaced by a new version' : 'Sent'}</span>}
+                      {view.acceptedAt && <span className="fig-label fig-t3">You replied yes on {fmtWeekday(view.acceptedAt)}</span>}
+                    </div>
+                  )}
+                  <div className="fig-offer-card__file">
+                    <FigPdf />
+                    <span className="fig-row__text">
+                      <span className="fig-body-strong">Offer letter · {view.candidateName}</span>
+                      <span className="fig-label fig-t3">{fileSub}</span>
+                    </span>
+                  </div>
+                  <div className="fig-offer-card__btns">
+                    <button type="button" className="fig-btn fig-btn--outline" onClick={() => setPdf(true)}><FigEye />View letter</button>
+                    <button type="button" className="fig-btn fig-btn--outline" onClick={() => void download()} disabled={busy}><FigDownload />{busy ? 'Downloading…' : 'Download'}</button>
+                  </div>
                 </div>
-                <div className="a1-row">
-                  <span className="a1-pdf">PDF</span>
-                  <span className="a1-stack">
-                    <span className="a1-strong">Offer letter · {view.candidateName}</span>
-                    <span className="a1-small">{['Version ' + view.version, view.pdfPages ? `${view.pdfPages} ${view.pdfPages === 1 ? 'page' : 'pages'}` : ''].filter(Boolean).join(' · ')}</span>
-                  </span>
-                </div>
-                <div className="a1-btns">
-                  <button type="button" className="a1-btn" onClick={() => setPdf(true)}><A1Icon name="eye" size={18} />View letter</button>
-                  <button type="button" className="a1-btn" onClick={() => void download()} disabled={busy}><A1Icon name="download" size={18} />{busy ? 'Downloading…' : 'Download'}</button>
-                </div>
-              </div>
 
-              {toSign.length > 0 && (
-                <Link to="/letters" className="a1-card" style={{ textDecoration: 'none', color: 'inherit', background: 'var(--a1-brand-tint)', borderColor: 'transparent' }}>
-                  <span className="a1-row">
-                    <span className="a1-stack"><span className="a1-strong">{toSign.length === 1 ? `${toSign[0].title ?? 'A letter'} to sign` : `${toSign.length} letters to sign`}</span><span className="a1-small">Read and sign before you join</span></span>
-                    <A1Icon name="chevron" size={20} />
-                  </span>
-                </Link>
-              )}
+                {toSign.length > 0 && (
+                  <Link to="/letters" className="fig-home-notice" style={{ margin: 0 }}>
+                    <span>{toSign.length === 1 ? `${toSign[0].title ?? 'A letter'} to sign` : `${toSign.length} letters to sign`}</span>
+                    <FigChevronRight />
+                  </Link>
+                )}
 
-              {shown.length > 0 && <span className="a1-h2">Your offer at a glance</span>}
-              {shown.length > 0 && (
-                <dl className="a1-list" style={{ margin: 0 }}>
-                  {shown.map(([k, v]) => <div key={k} className="a1-kv"><dt>{k}</dt><dd>{v}</dd></div>)}
-                </dl>
-              )}
-              <div className="a1-info"><A1Icon name="info" size={16} /><span>Something doesn’t look right? Write to <a className="a1-link" style={{ fontSize: 12 }} href={mailto(me.hrContact.email, 'About my offer letter')}>{me.hrContact.email}</a> and HR will send you a revised letter.</span></div>
-            </>
-          )}
-        </div>
-      )}
+                {shown.length > 0 && <h2 className="fig-subtitle">Your offer at a glance</h2>}
+                {shown.length > 0 && <FigList as="dl">{shown.map(([k, v]) => <FigKv key={k} label={k} value={v} />)}</FigList>}
+                <FigNote>
+                  Something doesn’t look right? Reply to the offer email or write to{' '}
+                  <a href={mailto(me.hrContact.email, 'About my offer letter')}>{me.hrContact.email}</a>, and HR will send you a revised letter.
+                </FigNote>
+              </>
+            )}
+          </div>
+        )}
+      </main>
+      <G3WebBottom />
       <Sheet open={pdf} onClose={() => setPdf(false)} title="Your offer letter" wide>
         <PdfViewer load={load} fileName="Offer letter.pdf" toolbar label="Your offer letter" className="pdf--sheet" />
       </Sheet>
-    </WebPage>
+    </FigPage>
   );
 }
 
@@ -119,65 +143,80 @@ export function A1Joining() {
   const addToCalendar = async () => {
     try { downloadBlob(await portal.joiningIcs(), 'text/calendar', 'day-1.ics'); } catch (e) { setError((e as Error).message); }
   };
+  const when = days === undefined ? '' : days > 1 ? `In ${days} days` : days === 1 ? 'Tomorrow' : days === 0 ? 'Today' : 'Started';
   return (
-    <WebPage>
-      <Breadcrumb title="Joining details" />
-      {!j && !error ? <A1Loading /> : (
-        <div className="a1-body">
-          <p className="a1-intro">Everything you need for your first day. HR will email you if anything changes.</p>
-          {error && <p className="a1-error" role="alert">{error}</p>}
-          {j && (
-            <>
-              <div className="a1-first">
-                <span className="a1-first__eyebrow">YOUR FIRST DAY</span>
-                <span className="a1-first__day">{j.date ? fmtWeekdayYear(j.date) : 'To be confirmed'}</span>
-                {j.date && <span className="a1-intro">{days === undefined ? '' : days > 1 ? `In ${days} days` : days === 1 ? 'Tomorrow' : days === 0 ? 'Today' : 'Started'}{time ? ` · please arrive by ${time}` : ''}</span>}
-                {j.date && <button type="button" className="a1-btn a1-btn--inline" style={{ marginTop: 8 }} onClick={() => void addToCalendar()}><A1Icon name="calendar" size={18} />Add to calendar</button>}
-              </div>
-
-              <div className="a1-list">
-                <div className="a1-detail"><span className="a1-detail__icon"><A1Icon name="clock" /></span><span className="a1-stack"><span className="a1-small">Reporting time</span><span className="a1-strong">{time ?? 'HR will share it soon'}</span></span></div>
-                <div className="a1-detail">
-                  <span className="a1-detail__icon"><A1Icon name="pin" /></span>
-                  <span className="a1-stack">
-                    <span className="a1-small">Reporting place</span>
-                    <span className="a1-strong">{j.place ?? (j.meetingLink ? 'Online' : 'HR will share it soon')}</span>
-                    {directions && <a className="a1-link" style={{ fontSize: 12, paddingTop: 2 }} href={directions} target="_blank" rel="noreferrer">Get directions</a>}
-                    {!j.place && j.meetingLink && <a className="a1-link" style={{ fontSize: 12, paddingTop: 2 }} href={j.meetingLink} target="_blank" rel="noreferrer">Meeting link</a>}
-                  </span>
+    <FigPage>
+      <G3WebTop />
+      <G3SectionHead title="Joining details" />
+      <main id="main" className="fig-main">
+        {!j && !error ? <FigLoading /> : (
+          <div className="fig-body-col">
+            <FigIntro icon="calendar">Everything you need for your first day. HR will email you if anything changes.</FigIntro>
+            {error && <p className="fig-field__error" role="alert">{error}</p>}
+            {j && (
+              <>
+                <div className="fig-firstday">
+                  <div className="fig-firstday__text">
+                    <span className="fig-caption-strong fig-brand">YOUR FIRST DAY</span>
+                    <span className="fig-display">{j.date ? fmtWeekdayYear(j.date) : 'To be confirmed'}</span>
+                    {j.date && <span className="fig-body fig-t2">{[when, time ? `please arrive by ${time}` : ''].filter(Boolean).join(' · ')}</span>}
+                  </div>
+                  {j.date && <button type="button" className="fig-btn fig-btn--outline fig-btn--inline" onClick={() => void addToCalendar()}><FigCalendarPlus />Add to calendar</button>}
                 </div>
-                {j.manager && (
-                  <div className="a1-detail"><span className="a1-detail__icon a1-detail__icon--brand">{initials(j.manager.name)}</span><span className="a1-stack"><span className="a1-small">Report to</span><span className="a1-strong">{j.manager.name}{j.manager.designation ? `, ${j.manager.designation}` : ''}</span></span></div>
-                )}
-                {j.buddy && (
-                  <div className="a1-detail"><span className="a1-detail__icon a1-detail__icon--brand">{initials(j.buddy.name)}</span><span className="a1-stack"><span className="a1-small">Your buddy</span><span className="a1-strong">{j.buddy.name}{j.buddy.designation ? `, ${j.buddy.designation}` : ''}</span></span></div>
-                )}
-                <div className="a1-detail">
-                  <span className="a1-detail__icon"><A1Icon name="badge" /></span>
-                  <span className="a1-stack">
-                    <span className="a1-small">Day-1 pass</span>
-                    {j.passOpen
-                      ? <Link to="/pass" className="a1-strong" style={{ color: 'var(--a1-brand)', textDecoration: 'none' }}>Open your Day-1 pass</Link>
-                      : <span className="a1-strong">{j.passOpensOn ? `Arrives on ${fmtWeekday(j.passOpensOn)}, a week before you join` : 'Arrives a week before you join'}</span>}
-                  </span>
-                </div>
-              </div>
 
-              {j.bring.length > 0 && <span className="a1-h2">What to bring</span>}
-              {j.bring.length > 0 && (
-                <ul className="a1-list">
-                  {j.bring.map((b) => <li key={b} className="a1-row" style={{ padding: 12, fontSize: 14, lineHeight: '20px' }}><span className="a1-dot" />{b}</li>)}
-                </ul>
-              )}
-              {j.pendingDateRequest
-                ? <p className="a1-small" role="status">You asked to join on {fmtWeekday(j.pendingDateRequest.requestedTj)}. HR will reply soon.</p>
-                : j.date && <p className="a1-small">Can’t make it on {fmtWeekday(j.date)}? <Link to="/date-request" className="a1-link" style={{ fontSize: 12 }}>Ask HR for another date</Link></p>}
-              {me.batch.count > 0 && <p className="a1-small">{me.batch.count === 1 ? '1 person joins with you' : `${me.batch.count} people join with you`}.</p>}
-            </>
-          )}
-        </div>
-      )}
-    </WebPage>
+                <div className="fig-list">
+                  <div className="fig-detail fig-detail--top">
+                    <span className="fig-lead"><FigClock /></span>
+                    <span className="fig-detail__text"><span className="fig-label fig-t3">Reporting time</span><span className="fig-body-strong">{time ?? 'HR will share it soon'}</span></span>
+                  </div>
+                  <div className="fig-detail">
+                    <span className="fig-lead"><FigPin /></span>
+                    <span className="fig-detail__text">
+                      <span className="fig-label fig-t3">Reporting place</span>
+                      <span className="fig-body-strong">{j.place ?? (j.meetingLink ? 'Online' : 'HR will share it soon')}</span>
+                      {directions && <a className="fig-link" href={directions} target="_blank" rel="noreferrer">Get directions</a>}
+                      {!j.place && j.meetingLink && <a className="fig-link" href={j.meetingLink} target="_blank" rel="noreferrer">Meeting link</a>}
+                    </span>
+                  </div>
+                  {j.manager && (
+                    <div className="fig-detail fig-detail--top">
+                      <span className="fig-lead fig-lead--initials">{initials(j.manager.name)}</span>
+                      <span className="fig-detail__text"><span className="fig-label fig-t3">Report to</span><span className="fig-body-strong">{j.manager.name}{j.manager.designation ? `, ${j.manager.designation}` : ''}</span></span>
+                    </div>
+                  )}
+                  {j.buddy && (
+                    <div className="fig-detail fig-detail--top">
+                      <span className="fig-lead fig-lead--initials">{initials(j.buddy.name)}</span>
+                      <span className="fig-detail__text"><span className="fig-label fig-t3">Your buddy</span><span className="fig-body-strong">{j.buddy.name}{j.buddy.designation ? `, ${j.buddy.designation}` : ''}</span></span>
+                    </div>
+                  )}
+                  <div className="fig-detail">
+                    <span className="fig-lead"><FigPass /></span>
+                    <span className="fig-detail__text">
+                      <span className="fig-label fig-t3">Day-1 pass</span>
+                      {j.passOpen
+                        ? <Link to="/pass" className="fig-body-strong fig-brand" style={{ textDecoration: 'none' }}>Open your Day-1 pass</Link>
+                        : <span className="fig-body-strong">{j.passOpensOn ? `Arrives on ${fmtWeekday(j.passOpensOn)}, a week before you join` : 'Arrives a week before you join'}</span>}
+                    </span>
+                  </div>
+                </div>
+
+                {j.bring.length > 0 && <h2 className="fig-subtitle">What to bring</h2>}
+                {j.bring.length > 0 && (
+                  <ul className="fig-list">
+                    {j.bring.map((b) => <li key={b} className="fig-bring"><span className="fig-bullet" />{b}</li>)}
+                  </ul>
+                )}
+                {j.pendingDateRequest
+                  ? <p className="fig-small-line" role="status">You asked to join on {fmtWeekday(j.pendingDateRequest.requestedTj)}. HR will reply soon.</p>
+                  : j.date && <p className="fig-small-line"><span>Can’t make it on {dayMonthYear(j.date).replace(/ \d{4}$/, '')}?</span><Link to="/date-request" className="fig-link">Ask HR for another date</Link></p>}
+                {me.batch.count > 0 && <p className="fig-small-line">{me.batch.count === 1 ? '1 person joins with you' : `${me.batch.count} people join with you`}.</p>}
+              </>
+            )}
+          </div>
+        )}
+      </main>
+      <G3WebBottom />
+    </FigPage>
   );
 }
-

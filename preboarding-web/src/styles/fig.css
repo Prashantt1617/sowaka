@@ -1,0 +1,172 @@
+/* The pre-boarding portal from Figma (file iR1u5kUixarUHeVIU6jiHn, page "Pre-boarding Portal", 39 frames
+   at 393 x 852). Owned by G1: the design's tokens (its variable names) and the shared pieces every
+   screen uses. Screen-only CSS lives in fig-g<N>.css. The 393 px column centres on wider screens. */
+.fig {
+  --color-bg-surface: #ffffff;
+  --color-bg-canvas: #f7f7f9;
+  --color-bg-subtle: #efeff2;
+  --color-bg-primary: var(--brand, #0571a6);
+  --color-bg-primary-subtle: #e8f2f8;
+  --color-bg-success: #15803d;
+  --color-bg-success-subtle: #e8f7ee;
+  --color-bg-info-subtle: #eaf1fe;
+  --color-bg-warning: #b45309;
+  --color-bg-warning-subtle: #fef4e2;
+  --color-bg-error: #d92d20;
+  --color-bg-error-subtle: #fdecea;
+  --color-text-primary: #16181d;
+  --color-text-secondary: #4a4e5a;
+  --color-text-tertiary: #6b7080;
+  --color-text-brand: var(--brand, #0571a6);
+  --color-text-on-primary: #ffffff;
+  --color-text-success: #15803d;
+  --color-text-warning: #b45309;
+  --color-text-error: #d92d20;
+  --color-text-info: #2563eb;
+  --color-border-default: #e2e3e8;
+  --color-border-strong: #cdd0d7;
+  --color-border-focus: var(--brand, #0571a6);
+  --space-2: 2px; --space-4: 4px; --space-8: 8px; --space-12: 12px; --space-16: 16px;
+  --space-20: 20px; --space-24: 24px; --space-32: 32px; --space-40: 40px;
+  --radius-md: 8px; --radius-lg: 12px; --radius-xl: 16px; --radius-full: 9999px;
+  min-height: 100dvh;
+  background: #e9e9ee;
+  color: var(--color-text-primary);
+  font-family: 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.fig *, .fig *::before, .fig *::after { box-sizing: border-box; }
+.fig :where(h1, h2, h3, p, ul, ol, dl, dd, figure) { margin: 0; }
+.fig :where(ul, ol) { padding: 0; list-style: none; }
+.fig :where(a, button, input, select, textarea):focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 2px; }
+
+/* Type styles (the design's text styles) */
+.fig-display { font-size: 28px; line-height: 36px; font-weight: 700; }
+.fig-heading { font-size: 22px; line-height: 28px; font-weight: 700; }
+.fig-title { font-size: 18px; line-height: 24px; font-weight: 600; }
+.fig-subtitle { font-size: 16px; line-height: 22px; font-weight: 600; }
+.fig-body { font-size: 14px; line-height: 20px; font-weight: 400; }
+.fig-body-strong { font-size: 14px; line-height: 20px; font-weight: 600; }
+.fig-label { font-size: 12px; line-height: 16px; font-weight: 400; }
+.fig-label-strong { font-size: 12px; line-height: 16px; font-weight: 600; }
+.fig-caption { font-size: 11px; line-height: 16px; font-weight: 400; }
+.fig-caption-strong { font-size: 11px; line-height: 16px; font-weight: 600; }
+.fig-t2 { color: var(--color-text-secondary); }
+.fig-t3 { color: var(--color-text-tertiary); }
+.fig-brand { color: var(--color-text-brand); }
+.fig-success { color: var(--color-text-success); }
+
+/* The phone column */
+.fig-page { max-width: 393px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; background: var(--color-bg-canvas); }
+.fig-page--surface { background: var(--color-bg-surface); }
+@media (min-width: 394px) { .fig-page { box-shadow: 0 0 0 1px var(--color-border-default); } }
+.fig-main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+/* A section's scrolling body: 16 px gutter, 16 px top, 32 px bottom, 16 px gaps */
+.fig-body-col { flex: 1; padding: var(--space-16) var(--space-16) var(--space-32); display: flex; flex-direction: column; gap: var(--space-16); }
+
+/* Header · company (home): 64 px, logo tile, company name */
+.fig-head { height: 64px; flex: none; display: flex; align-items: center; gap: var(--space-12); padding: 0 var(--space-12) 0 var(--space-16); background: var(--color-bg-surface); border-bottom: 1px solid var(--color-border-default); position: sticky; top: 0; z-index: 5; }
+.fig-head__logo { width: 36px; height: 36px; border-radius: var(--radius-xl); background: var(--color-bg-primary); color: var(--color-text-on-primary); font-size: 12px; line-height: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex: none; overflow: hidden; }
+.fig-head__logo img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+.fig-head__name { flex: 1; min-width: 0; font-size: 16px; line-height: 22px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Header · section: 40 px tinted back button, the title */
+.fig-head--back { gap: var(--space-8); padding: 0 var(--space-16) 0 var(--space-8); }
+.fig-head--flat { border-bottom: 0; }
+/* Section header with something under the row (profile steps): one white sticky block */
+.fig-headwrap { flex: none; position: sticky; top: 0; z-index: 5; background: var(--color-bg-surface); border-bottom: 1px solid var(--color-border-default); }
+.fig-headwrap.fig-head--flat { border-bottom: 0; }
+.fig-head__back { width: 40px; height: 40px; border-radius: var(--radius-full); background: var(--color-bg-primary-subtle); color: var(--color-text-primary); display: inline-flex; align-items: center; justify-content: center; flex: none; border: 0; padding: 0; cursor: pointer; text-decoration: none; }
+.fig-head__title { flex: 1; min-width: 0; font-size: 18px; line-height: 24px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; outline: none; }
+.fig-head__side { font-size: 12px; line-height: 16px; font-weight: 600; color: var(--color-text-secondary); white-space: nowrap; }
+
+/* Buttons */
+.fig-btn { width: 100%; height: 48px; border: 0; border-radius: var(--radius-xl); background: var(--color-bg-primary); color: var(--color-text-on-primary); font: inherit; font-size: 15px; line-height: 20px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-8); cursor: pointer; text-decoration: none; padding: 0 var(--space-16); }
+.fig-btn:disabled { opacity: .55; cursor: default; }
+/* Outline: 42 px, white, 1 px border, brand label with an 18 px icon */
+.fig-btn--outline { height: 42px; background: var(--color-bg-surface); border: 1px solid var(--color-border-default); color: var(--color-text-brand); font-size: 14px; }
+/* On a tinted tile: white, no border */
+.fig-btn--white { height: 40px; background: var(--color-bg-surface); color: var(--color-text-brand); font-size: 14px; }
+.fig-btn--inline { width: auto; align-self: flex-start; }
+/* Zero-specificity reset (:where) so screen CSS can set padding/size without fighting it */
+.fig-link { border: 0; background: none; font-weight: 600; color: var(--color-text-brand); text-decoration: none; cursor: pointer; }
+:where(.fig-link) { padding: 0; }
+/* Sticky bottom actions (primary + a link under it) */
+.fig-actions { flex: none; padding: var(--space-16) var(--space-16) var(--space-24); display: flex; flex-direction: column; gap: var(--space-12); }
+.fig-actions--bar { position: sticky; bottom: 0; z-index: 4; background: var(--color-bg-surface); border-top: 1px solid var(--color-border-default); }
+.fig-actions__note { text-align: center; font-size: 11px; line-height: 16px; color: var(--color-text-tertiary); }
+.fig-actions__note .fig-link { font-size: 11px; line-height: 16px; padding: 0 3.5px; }
+
+/* Fields */
+.fig-field { display: flex; flex-direction: column; gap: var(--space-8); }
+.fig-field__label { font-size: 12px; line-height: 16px; font-weight: 600; color: var(--color-text-secondary); }
+.fig-input { width: 100%; height: 44px; border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-canvas); padding: 2.5px 14px 0; font: inherit; font-size: 14px; line-height: 20px; color: var(--color-text-primary); outline: none; }
+.fig-input::placeholder { color: var(--color-text-tertiary); }
+.fig-input:focus { border-color: var(--color-border-focus); }
+.fig .fig-input:focus-visible { outline: none; }
+.fig-input:disabled, .fig-input[readonly] { color: var(--color-text-secondary); }
+/* White field (inside white cards: the profile sections). On white pages the field stays canvas (sign in). */
+.fig-input--white, .fig-card .fig-input { background: var(--color-bg-surface); padding-left: 12px; padding-right: 12px; }
+.fig .fig-input[readonly] { background: var(--color-bg-subtle); color: var(--color-text-secondary); }
+.fig-field__help { font-size: 11px; line-height: 16px; color: var(--color-text-tertiary); }
+.fig-field__error { font-size: 12px; line-height: 16px; font-weight: 600; color: var(--color-text-error); }
+
+/* Intro line under a section header: 32 px 3D icon + secondary text */
+.fig-intro { display: flex; gap: var(--space-12); align-items: flex-start; font-size: 14px; line-height: 20px; color: var(--color-text-secondary); }
+.fig-intro > span { flex: 1; min-width: 0; }
+
+/* Cards and lists: white, 1 px border, radius 16 */
+.fig-card { background: var(--color-bg-surface); border: 1px solid var(--color-border-default); border-radius: var(--radius-xl); padding: 12px; display: flex; flex-direction: column; gap: var(--space-12); }
+.fig-list { background: var(--color-bg-surface); border: 1px solid var(--color-border-default); border-radius: var(--radius-xl); overflow: hidden; }
+.fig-list > * + * { border-top: 1px solid var(--color-border-default); }
+/* Label / value row */
+.fig-kv { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-12); padding: 12px; font-size: 14px; line-height: 20px; }
+.fig-kv dt, .fig-kv > :first-child { color: var(--color-text-tertiary); }
+.fig-kv dd, .fig-kv > :last-child { font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+/* Row with a lead, two lines and a trailing chevron (links) */
+.fig-row { display: flex; align-items: center; gap: var(--space-12); padding: 9px 12px; width: 100%; border: 0; background: none; font: inherit; color: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+.fig-row__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.fig-row__chev { color: var(--color-text-tertiary); flex: none; }
+/* Round lead icon: 40 px, subtle grey */
+.fig-lead { width: 40px; height: 40px; border-radius: var(--radius-full); background: var(--color-bg-subtle); color: var(--color-text-secondary); display: flex; align-items: center; justify-content: center; flex: none; font-size: 14px; line-height: 20px; font-weight: 600; overflow: hidden; }
+.fig-lead img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Chips */
+.fig-chip { display: inline-flex; align-items: center; gap: var(--space-4); height: 24px; padding: var(--space-4) var(--space-12); border-radius: var(--radius-full); font-size: 12px; line-height: 16px; font-weight: 600; white-space: nowrap; }
+.fig-chip--success { background: var(--color-bg-success-subtle); color: var(--color-text-success); }
+.fig-chip--info { background: var(--color-bg-info-subtle); color: var(--color-text-info); }
+.fig-chip--warning { background: var(--color-bg-warning-subtle); color: var(--color-text-warning); }
+.fig-chip--neutral { background: var(--color-bg-subtle); color: var(--color-text-secondary); }
+.fig-chip--brand { background: var(--color-bg-primary-subtle); color: var(--color-text-brand); }
+
+/* Note: canvas tint, 16 px info icon, 12/16 text */
+.fig-note { display: flex; gap: var(--space-8); align-items: flex-start; padding: 12px; border-radius: var(--radius-xl); background: var(--color-bg-canvas); font-size: 12px; line-height: 16px; color: var(--color-text-primary); }
+.fig-note > svg { color: var(--color-text-brand); }
+.fig-note > span { flex: 1; min-width: 0; }
+
+/* Progress bar: 8 px, round */
+.fig-progress { display: block; height: 8px; border-radius: var(--radius-full); background: var(--color-bg-subtle); overflow: hidden; }
+.fig-progress > i { display: block; height: 100%; border-radius: var(--radius-full); background: var(--color-bg-primary); }
+.fig-progress--white { background: var(--color-bg-surface); }
+
+/* PDF tile (40 x 48) */
+.fig-pdf { width: 40px; height: 48px; border-radius: var(--radius-md); background: var(--color-bg-subtle); color: var(--color-text-secondary); font-size: 11px; line-height: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex: none; }
+
+/* 8 px bullet */
+.fig-bullet { width: 8px; height: 8px; border-radius: var(--radius-full); background: var(--color-bg-primary); flex: none; }
+
+/* Done circle (24 px green, white check) */
+.fig-done { width: 24px; height: 24px; border-radius: var(--radius-full); background: var(--color-bg-success); color: #fff; display: flex; align-items: center; justify-content: center; flex: none; }
+
+/* "Your company's app is powered by SOWAKA" */
+.fig-powered { flex: none; padding: 11.5px 16px 16.5px; text-align: center; font-size: 11px; line-height: 16px; color: var(--color-text-tertiary); }
+.fig-powered b { font-weight: 700; color: var(--color-text-brand); }
+
+.fig-loading { padding: 16px; font-size: 14px; line-height: 20px; color: var(--color-text-secondary); }
+
+/* Inside the app's WebView (the /app entry sets <html data-host="app">): the app draws its own header
+   and bottom nav, so the portal's company header (home) and the old web header/footer go; section
+   headers keep their in-page back arrow. */
+html[data-host="app"] .fig-head--brand,
+html[data-host="app"] .a1-web-head,
+html[data-host="app"] .a1-web-foot { display: none; }
+html[data-host="app"] .fig-page { box-shadow: none; max-width: none; }

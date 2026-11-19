@@ -1,25 +1,27 @@
-// Web · About the company (18 Nov design, "Web · 8 About the company" and the five
-// "Web · Story ·" screens): highlights as story rings, the first person they'll meet,
+// About the company (Figma "App · 7 About the company", 4967:92990; the stories are G2's): highlights as story rings, the first person they'll meet,
 // their team, policies to read, and culture cards. A story opens full screen; opening
 // one marks its Meet-us item seen (all seen completes the Meet us task).
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { portal } from '../api/portal';
 import type { JoiningDetails, MeetItem } from '../api/types';
-import { A1Icon, A1Loading, A1Logo, Breadcrumb } from '../components/A1';
-import { firstName, fmtTime, fmtWeekday, initials } from '../lib/format';
-import { mailto } from '../lib/links';
+import { FigLoading, FigPage, isAppHost } from '../components/fig/FigShell';
+import { G3SectionHead, G3WebBottom, G3WebTop } from '../components/fig/G3WebShell';
+import { FigRow } from '../components/fig/FigUi';
+import { FigCalendar, FigClock, FigFileText, FigIcon3D, FigMessageCircle, FigPass, FigPin, FigPlay, FigShield } from '../components/fig/icons';
+import { firstName, initials } from '../lib/format';
 import { useMe } from '../session';
-import { WebPage } from './A1Shell';
+import '../styles/fig-g1.css';
+import { G2Story, type StoryKey } from '../components/fig/G2Story';
 
-type StoryKey = 'welcome' | 'manager' | 'team' | 'day1' | 'policies' | 'role';
-const BG: Record<StoryKey, string> = { welcome: '#0571A6', manager: '#15803D', team: '#2563EB', day1: '#B45309', policies: '#045A85', role: '#2E3139' };
+// The highlight rings in the App · 7 frame's order (the stories themselves keep G2's order).
+const RING_ORDER: StoryKey[] = ['manager', 'team', 'day1', 'policies', 'welcome', 'role'];
 const SEEN_ITEM: Partial<Record<StoryKey, string>> = { welcome: 'company_video', manager: 'manager_note', policies: 'policies', role: 'role' };
-const FACE_TONES = [['#E8F7EE', '#15803D'], ['#FEF4E2', '#B45309'], ['#EAF1FE', '#2563EB'], ['#FDECEA', '#D92D20']];
+// Initials colours in the design's order: the manager green, the buddy amber, then brand, amber.
+const FACE_TONES = ['var(--color-text-success)', 'var(--color-text-warning)', 'var(--color-text-brand)', 'var(--color-text-warning)'];
 
-function Face({ name, photo, className, tone = 0 }: { name: string; photo?: string; className: string; tone?: number }) {
+function Face({ name, photo, className, tone = 0 }: { name: string; photo?: string; className?: string; tone?: number }) {
   const [bad, setBad] = useState(false);
-  const [bg, fg] = FACE_TONES[tone % FACE_TONES.length];
-  return <span className={className} style={{ background: bg, color: fg }} aria-hidden="true">{photo && !bad ? <img src={photo} alt="" onError={() => setBad(true)} /> : initials(name)}</span>;
+  return <span className={className} style={{ color: FACE_TONES[tone % FACE_TONES.length] }} aria-hidden="true">{photo && !bad ? <img src={photo} alt="" onError={() => setBad(true)} /> : initials(name)}</span>;
 }
 
 /** The policies item's lines ("Title: summary"), as reads. */
@@ -41,12 +43,12 @@ export function A1About() {
   const policies = policiesOf(byId('policies'));
   const managerName = j?.manager?.name ?? note?.authorName;
   const stories = useMemo(() => {
-    const out: StoryKey[] = [];
+    // The design's order (App · Story · 1 Culture … 5 Policies), then the role.
+    const out: StoryKey[] = ['welcome'];
     if (managerName) out.push('manager');
     if (managerName || j?.buddy) out.push('team');
     out.push('day1');
     if (policies.length) out.push('policies');
-    out.push('welcome');
     if (role) out.push('role');
     return out;
   }, [managerName, j?.buddy, policies.length, role]);
@@ -59,189 +61,103 @@ export function A1About() {
   const show = (k: StoryKey) => { setOpen(k); markSeen(k); };
   const seenStory = (k: StoryKey) => { const id = SEEN_ITEM[k]; return id ? Boolean(byId(id)?.seen) : false; };
 
-  const ring = (k: StoryKey, label: string, face: React.ReactNode) => (
-    <button key={k} type="button" className={`a1-story-btn${seenStory(k) ? ' a1-story-btn--seen' : ''}`} onClick={() => show(k)}>
-      <span className="a1-story-btn__ring">{face}</span><span>{label}</span>
+  const ring = (k: StoryKey, label: string, face: ReactNode, inner = '') => (
+    <button key={k} type="button" className={`g1-hl${seenStory(k) ? ' g1-hl--seen' : ''}`} onClick={() => show(k)}>
+      <span className="g1-hl__ring"><span className={`g1-hl__face ${inner}`}>{face}</span></span>
+      <span className="fig-label-strong">{label}</span>
     </button>
   );
-  const iconFace = (name: Parameters<typeof A1Icon>[0]['name'], bg: string, fg: string) => <span className="a1-story-btn__face" style={{ background: bg, color: fg }}><A1Icon name={name} size={26} /></span>;
   const team = [
     ...(managerName ? [{ name: managerName, sub: 'Manager', photo: note?.authorPhotoUrl, buddy: false }] : []),
     ...(j?.buddy ? [{ name: j.buddy.name, sub: j.buddy.designation ?? '', photo: undefined, buddy: true }] : []),
   ];
+  const app = isAppHost();
+  const POLICY_ICON = [<FigShield key="s" />, <FigCalendar key="c" />, <FigClock key="k" size={22} />];
 
   return (
-    <WebPage>
-      <div style={{ background: '#fff' }}><Breadcrumb title="About the company" /></div>
-      {!items ? <A1Loading /> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24, paddingBottom: 32 }}>
-          <nav aria-label="Highlights" className="a1-stories">
-            <div className="a1-stories__row">
-              {stories.map((k) => k === 'manager' ? ring(k, firstName(managerName ?? 'Manager'), <Face name={managerName ?? ''} photo={note?.authorPhotoUrl} className="a1-story-btn__face" />)
-                : k === 'team' ? ring(k, 'Team', iconFace('team', '#EAF1FE', '#2563EB'))
-                  : k === 'day1' ? ring(k, 'Day 1', iconFace('pin', '#FEF4E2', '#B45309'))
-                    : k === 'policies' ? ring(k, 'Policies', iconFace('doc', '#FDECEA', '#D92D20'))
-                      : k === 'welcome' ? ring(k, 'Culture', <span className="a1-story-btn__face" style={{ background: '#0571A6', color: '#fff' }}><A1Icon name="play" size={24} /></span>)
-                        : ring(k, 'Your role', iconFace('badge', '#EFEFF2', '#4A4E5A')))}
-            </div>
-          </nav>
-
-          {managerName && (
-            <section style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <h2 className="a1-section-h">The first person you’ll meet</h2>
-              <div className="a1-meet">
-                <div className="a1-row" style={{ gap: 16 }}>
-                  <Face name={managerName} photo={note?.authorPhotoUrl} className="a1-meet__face" />
-                  <span className="a1-stack" style={{ gap: 4 }}><span style={{ fontSize: 18, lineHeight: '24px', fontWeight: 600 }}>{managerName}</span><span className="a1-intro">{[j?.manager?.designation ?? note?.authorRole, 'your manager'].filter(Boolean).join(' · ')}</span></span>
-                </div>
-                <span className="a1-row" style={{ gap: 8, fontSize: 14, lineHeight: '20px' }}><span style={{ color: 'var(--a1-green)', display: 'flex' }}><A1Icon name="pin" size={18} /></span>{j?.place ? `Meets you at ${j.place}` : 'Meets you on your first day'}</span>
-                {note && <button type="button" className="a1-meet__btn" onClick={() => show('manager')}><A1Icon name={note.videoUrl ? 'play' : 'mail'} size={18} />{note.videoUrl ? `Watch ${firstName(managerName)}’s hello` : `Read ${firstName(managerName)}’s note`}</button>}
+    <FigPage>
+      <G3WebTop />
+      <G3SectionHead title="About the company" flat white />
+      <main id="main" className="fig-main">
+        {!items ? <FigLoading /> : (
+          <div className="g1-about">
+            <nav aria-label="Highlights" className="g1-hls">
+              <div className="g1-hls__row">
+                {RING_ORDER.filter((k) => stories.includes(k)).map((k) => k === 'manager' ? ring(k, firstName(managerName ?? 'Manager'), <Face name={managerName ?? ''} photo={note?.authorPhotoUrl} />, 'g1-hl__face--initials')
+                  : k === 'team' ? ring(k, 'Team', <FigIcon3D name="team" size={40} />, 'g1-hl__face--pad')
+                    : k === 'day1' ? ring(k, 'Day 1', <FigPin size={26} />, 'g1-hl__face--amber')
+                      : k === 'policies' ? ring(k, 'Policies', <FigFileText />, 'g1-hl__face--amber')
+                        : k === 'welcome' ? ring(k, 'Culture', <FigPlay />, 'g1-hl__face--brand')
+                          : ring(k, 'Your role', <FigPass size={26} />, 'g1-hl__face--grey'))}
               </div>
-            </section>
-          )}
+            </nav>
 
-          {team.length > 0 && (
-            <section style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <h2 className="a1-section-h" style={{ padding: '0 16px' }}>Your team{j?.department ? `, ${j.department}` : ''}</h2>
-              <div className="a1-hscroll"><div className="a1-hscroll__row">
-                {team.map((p, n) => (
-                  <span key={p.name} className="a1-person">
-                    <Face name={p.name} photo={p.photo} className="a1-person__face" tone={n} />
-                    <span className="a1-strong">{firstName(p.name)}</span>
-                    {p.buddy ? <span className="a1-chip a1-chip--green">Your buddy</span> : <span className="a1-small">{p.sub}</span>}
-                  </span>
-                ))}
-                {me.batch.count > 0 && (
-                  <span className="a1-person"><span className="a1-person__face" style={{ background: '#EFEFF2', color: '#4A4E5A' }}>+{me.batch.count}</span><span className="a1-strong">Joining with you</span><span className="a1-small">{me.batch.names.slice(0, 2).map(firstName).join(', ')}</span></span>
-                )}
+            {managerName && (
+              <section className="g1-about__sec">
+                <h2 className="fig-title">The first person you’ll meet</h2>
+                <div className={`g1-meet${app ? '' : ' g1-meet--web'}`}>
+                  <div className="g1-meet__who">
+                    <Face name={managerName} photo={note?.authorPhotoUrl} className="g1-meet__face" />
+                    <span className="g1-meet__text">
+                      <span className="fig-title">{managerName}</span>
+                      <span className="fig-body fig-t2">{[j?.manager?.designation ?? note?.authorRole, 'your manager'].filter(Boolean).join(' · ')}</span>
+                    </span>
+                  </div>
+                  {app && <span className="g1-meet__where"><FigPin size={18} />Meets you at reception on your first day</span>}
+                  <button type="button" className="g1-meet__btn" onClick={() => show('manager')}><FigMessageCircle />Say hi to {firstName(managerName)}</button>
+                </div>
+              </section>
+            )}
+
+            {team.length > 0 && (
+              <section className="g1-about__sec g1-about__sec--bleed">
+                <h2 className="fig-title">Your team</h2>
+                <div className="g1-scroll"><div className="g1-scroll__row">
+                  {team.map((p, n) => (
+                    <span key={p.name} className="g1-person">
+                      <Face name={p.name} photo={p.photo} className="g1-person__face" tone={n} />
+                      <span className="fig-body-strong">{firstName(p.name)}</span>
+                      {p.buddy ? (app ? <span className="g1-person__buddy">Your buddy</span> : <span className="fig-label fig-t3">Your Buddy</span>) : <span className="fig-label fig-t3">{p.sub}</span>}
+                    </span>
+                  ))}
+                  {me.batch.count > 0 && (
+                    <span className="g1-person"><span className="g1-person__face" style={{ color: 'var(--color-text-secondary)' }}>+{me.batch.count}</span><span className="fig-body-strong">Joining with you</span><span className="fig-label fig-t3">{me.batch.names.slice(0, 2).map(firstName).join(', ')}</span></span>
+                  )}
+                </div></div>
+              </section>
+            )}
+
+            {policies.length > 0 && (
+              <section className="g1-about__sec">
+                <h2 className="fig-title">Policies to read</h2>
+                <ul className="fig-list">
+                  {policies.map((p, n) => (
+                    <li key={p.title}>
+                      <FigRow onClick={() => show('policies')} className="g1-policy"
+                        lead={<span className={`g1-policy__icon g1-policy__icon--${n % 3}`}>{POLICY_ICON[n % 3]}</span>}
+                        title={p.title} sub={p.summary || undefined} />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            <section className="g1-about__sec g1-about__sec--bleed">
+              <h2 className="fig-title">Culture and values</h2>
+              <div className="g1-scroll"><div className="g1-scroll__row">
+                <button type="button" className="g1-culture g1-culture--brand" onClick={() => show('welcome')}><span className="g1-culture__play"><FigPlay size={20} /></span><span className="fig-subtitle">{video?.title ?? 'Welcome from HR'}</span></button>
+                {role && <button type="button" className="g1-culture g1-culture--green" onClick={() => show('role')}><span className="g1-culture__play"><FigPlay size={20} /></span><span className="fig-subtitle">{role.title}</span></button>}
+                <button type="button" className="g1-culture g1-culture--amber" onClick={() => show('day1')}><span className="g1-culture__play"><FigPlay size={20} /></span><span className="fig-subtitle">Your first day</span></button>
               </div></div>
             </section>
-          )}
-
-          {policies.length > 0 && (
-            <section style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <h2 className="a1-section-h">Policies to read</h2>
-              <ul className="a1-list">
-                {policies.map((p, n) => {
-                  const [bg, fg] = [['#FDECEA', '#D92D20'], ['#E8F7EE', '#15803D'], ['#EAF1FE', '#2563EB']][n % 3];
-                  return (
-                    <li key={p.title}><button type="button" className="a1-policy" onClick={() => show('policies')}>
-                      <span className="a1-policy__icon" style={{ background: bg, color: fg }}><A1Icon name="doc" size={22} /></span>
-                      <span className="a1-stack"><span className="a1-strong">{p.title}</span>{p.summary && <span className="a1-small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.summary}</span>}</span>
-                      <A1Icon name="chevron" size={20} />
-                    </button></li>
-                  );
-                })}
-              </ul>
-              <span className="a1-small">You’ll confirm these in your first week.</span>
-            </section>
-          )}
-
-          <section style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <h2 className="a1-section-h" style={{ padding: '0 16px' }}>Culture and values</h2>
-            <div className="a1-hscroll"><div className="a1-hscroll__row">
-              <button type="button" className="a1-culture" style={{ background: '#0571A6' }} onClick={() => show('welcome')}><span className="a1-culture__play"><A1Icon name="play" size={20} /></span><span style={{ fontSize: 16, lineHeight: '22px', fontWeight: 600 }}>{video?.title ?? `Welcome to ${me.company.name}`}</span></button>
-              {role && <button type="button" className="a1-culture" style={{ background: '#15803D' }} onClick={() => show('role')}><span className="a1-culture__play"><A1Icon name="badge" size={20} /></span><span style={{ fontSize: 16, lineHeight: '22px', fontWeight: 600 }}>{role.title}</span></button>}
-              <button type="button" className="a1-culture" style={{ background: '#B45309' }} onClick={() => show('day1')}><span className="a1-culture__play"><A1Icon name="pin" size={20} /></span><span style={{ fontSize: 16, lineHeight: '22px', fontWeight: 600 }}>Your first day</span></button>
-            </div></div>
-          </section>
-        </div>
-      )}
+          </div>
+        )}
+      </main>
+      <G3WebBottom />
       {open && (
-        <Story order={stories} at={open} onMove={show} onClose={() => setOpen(null)}
+        <G2Story order={stories} at={open} onMove={show} onClose={() => setOpen(null)}
           company={me.company} candidate={me.candidateName} hr={me.hrContact.email} tj={me.tj} j={j} note={note} managerName={managerName} video={video} role={role} policies={policies} />
       )}
-    </WebPage>
-  );
-}
-
-function Story({ order, at, onMove, onClose, company, candidate, hr, tj, j, note, managerName, video, role, policies }: {
-  order: StoryKey[]; at: StoryKey; onMove: (k: StoryKey) => void; onClose: () => void; company: { name: string; logoUrl?: string }; candidate: string; hr: string; tj: string;
-  j?: JoiningDetails; note?: MeetItem; managerName?: string; video?: MeetItem; role?: MeetItem; policies: Array<{ title: string; summary: string }>;
-}) {
-  const i = Math.max(0, order.indexOf(at));
-  const bg = BG[at];
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); if (e.key === 'ArrowRight' && i < order.length - 1) onMove(order[i + 1]); if (e.key === 'ArrowLeft' && i > 0) onMove(order[i - 1]); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [i, order, onMove, onClose]);
-  const time = fmtTime(j?.reportingTime);
-  const directions = j?.mapLink ?? (j?.place ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(j.place)}` : undefined);
-  const reply = at === 'manager' ? 'Ask HR to pass a message on' : at === 'day1' ? 'Ask HR about your first day' : 'Ask HR a question';
-  return (
-    <div className="a1-story" role="dialog" aria-modal="true" aria-label={`Story ${i + 1} of ${order.length}`}>
-      <div className="a1-story__panel" style={{ background: bg }}>
-        <div style={{ padding: '12px 12px 0 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div className="a1-story__segs" style={{ gridTemplateColumns: `repeat(${order.length}, minmax(0, 1fr))` }}>
-            {order.map((k, n) => <span key={k}><i className={n === i ? 'run' : ''} style={{ width: n <= i ? '100%' : '0%' }} /></span>)}
-          </div>
-          <div className="a1-row">
-            <A1Logo company={company} className="a1-story__logo" />
-            <span className="a1-stack"><span className="a1-strong">{company.name} HR</span><span style={{ fontSize: 12, lineHeight: '16px', color: 'rgba(255,255,255,.85)' }}>Before you join</span></span>
-            <button type="button" className="a1-icon-btn" style={{ color: '#fff', width: 44, height: 44 }} aria-label="Close" onClick={onClose}><A1Icon name="close" size={24} width={2} /></button>
-          </div>
-        </div>
-        <div className="a1-story__main">
-          {i > 0 && <button type="button" className="a1-story__tap" style={{ left: 0 }} aria-label="Previous story" onClick={() => onMove(order[i - 1])} />}
-          {i < order.length - 1 && <button type="button" className="a1-story__tap" style={{ right: 0 }} aria-label="Next story" onClick={() => onMove(order[i + 1])} />}
-          <div className="a1-story__content">
-            {at === 'welcome' && (
-              <>
-                <h2 className="a1-story__title" style={{ fontSize: 32, lineHeight: '40px' }}>Welcome to {company.name}, {firstName(candidate)}!</h2>
-                {video?.videoUrl ? <video className="a1-story__video" src={video.videoUrl} controls playsInline /> : <p className="a1-story__line">We’re glad you’re joining us. Everything you need before your first day is in this portal.</p>}
-                {video?.subtitle && <p className="a1-story__line">{video.subtitle}</p>}
-              </>
-            )}
-            {at === 'manager' && managerName && (
-              <>
-                <Face name={managerName} photo={note?.authorPhotoUrl} className="a1-story__face" />
-                <h2 className="a1-story__title">Meet {managerName}</h2>
-                <span className="a1-story__pill">Your manager</span>
-                {note?.videoUrl ? <video className="a1-story__video" src={note.videoUrl} controls playsInline /> : <p className="a1-story__line">{note?.text ?? `${firstName(managerName)} will meet you on your first day.`}</p>}
-              </>
-            )}
-            {at === 'team' && (
-              <>
-                <span style={{ display: 'flex' }}>
-                  {[managerName, j?.buddy?.name, candidate].filter((n): n is string => Boolean(n)).map((n, k) => (
-                    <span key={n} className="a1-story__face" style={{ width: 72, height: 72, fontSize: 22, marginLeft: k ? -18 : 0, border: `3px solid ${bg}`, boxShadow: 'none', color: bg }}>{initials(n)}</span>
-                  ))}
-                </span>
-                <h2 className="a1-story__title">Your team{j?.department ? `, ${j.department}` : ''}</h2>
-                <p className="a1-story__line">{[managerName && `${firstName(managerName)}, your manager`, j?.buddy && `${firstName(j.buddy.name)}, your buddy`].filter(Boolean).join(' · ')}</p>
-                <p className="a1-story__line" style={{ fontSize: 14 }}>and you, from {fmtWeekday(tj)}</p>
-              </>
-            )}
-            {at === 'day1' && (
-              <>
-                <span style={{ width: 96, height: 96, borderRadius: 999, background: 'rgba(255,255,255,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><A1Icon name="pin" size={48} width={1.6} /></span>
-                <h2 className="a1-story__title">{j?.place ?? fmtWeekday(tj)}</h2>
-                <p className="a1-story__line">{[fmtWeekday(j?.date ?? tj), time ? `see you at ${time}` : ''].filter(Boolean).join(' · ')}</p>
-                {directions && <a className="a1-story__cta" style={{ color: bg }} href={directions} target="_blank" rel="noreferrer"><A1Icon name="send" size={20} width={2} />Get directions</a>}
-              </>
-            )}
-            {at === 'policies' && (
-              <>
-                <h2 className="a1-story__title">{policies.length === 1 ? '1 quick read' : `${policies.length} quick reads`} before you join</h2>
-                <div className="a1-story__reads">
-                  {policies.map((p) => <div key={p.title} className="a1-story__read"><span style={{ fontSize: 16, lineHeight: '22px', fontWeight: 600 }}>{p.title}</span>{p.summary && <span style={{ fontSize: 13, lineHeight: '18px', color: 'rgba(255,255,255,.9)' }}>{p.summary}</span>}</div>)}
-                </div>
-              </>
-            )}
-            {at === 'role' && role && (
-              <>
-                <h2 className="a1-story__title">{role.title}</h2>
-                {role.subtitle && <span className="a1-story__pill">{role.subtitle}</span>}
-                <p className="a1-story__line" style={{ textAlign: 'left' }}>{role.text}</p>
-              </>
-            )}
-          </div>
-        </div>
-        <div className="a1-story__foot">
-          <a className="a1-story__reply" href={mailto(hr, 'Question before I join')}>{reply}</a>
-        </div>
-      </div>
-    </div>
+    </FigPage>
   );
 }
