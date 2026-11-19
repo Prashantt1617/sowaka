@@ -1782,8 +1782,9 @@ var bet = e.wallet
 ? 'The top ' + top + ' play one at a time on stage. Everyone gets ' + num(e.wallet) + ' points to bet on them, the same for all, for this tournament only.'
 : 'The top ' + top + ' play one at a time on stage, and everyone can bet points on them.';
 if (isKnights()) return li(1, 'Join the lobby by ' + clock(e.startAt) + '. Everyone in it is paired 1 on 1 in Knights matches. The winner moves on till there are only ' + top + ' left.') +
-li(2, 'Each match: you and one colleague get the same board. Place every knight right first and you go through.') +
-li(3, 'Resign any time. Not there within ' + wait + '? The one who plays goes through.') + li(4, 'The top ' + top + ' play one at a time on stage, and everyone can bet points on them.');
+li(2, 'Each match: you and one colleague get the same board. The one who places all the knights correctly first moves to the next round.') +
+li(3, 'If you are not able to solve the board, tap Resign and your opponent moves to the next round.') +
+li(4, 'Once paired, you have only ' + wait + ' to enter the match.') + li(5, 'The top ' + top + ' play one at a time on stage, and everyone can bet points on them.');
 return li(1, first) + li(2, match) + li(3, 'A tie replays at once. Not there within ' + wait + '? The one who plays wins with their score.') + li(4, bet);
 }
 
