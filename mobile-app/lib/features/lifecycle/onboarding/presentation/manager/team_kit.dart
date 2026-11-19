@@ -257,7 +257,7 @@ class _TeamPill extends StatelessWidget {
 /// then "Day 1", "Week 1", "Month 3" …, "Confirmed".
 String teamStageLabel(JoinerSummary joiner, DateTime now) {
   if (joiner.stage == 'confirmed') return 'Confirmed';
-  if (joiner.preboarding) return joiner.tj == null ? 'Before Day 1' : 'Joins ${onbDay(joiner.tj!)}';
+  if (joiner.preboarding) return joiner.tj == null ? (joiner.dayLabel ?? 'Before Day 1') : 'Joins ${onbDay(joiner.tj!)}';
   return joiner.dayLabelOn(now);
 }
 

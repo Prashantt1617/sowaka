@@ -16,3 +16,9 @@ All in `mobile-app/lib/features/lifecycle/onboarding/presentation/manager/team_k
 - `TeamVoice` + `TeamNotesField`: notes boxes with voice typing (speech_to_text), one listener per page.
 
 Screens (T1): `manager/joiner_screen.dart` (person page, layout C + All tasks / View progress / Reach out sub-pages), `manager/team_meeting_screen.dart` (agenda, notes, voice typing, Mark as done), `manager/joiners_tab.dart` (Teams › Joiners list).
+
+## After merging T2 (origin/app-lc-t2 790e5655)
+
+- `TeamMeetingScreen` (team_meeting_screen.dart) is generic now: `title`, `joinerName`, `joinerPhotoUrl`, `agenda`, `link`, `startsAt`, `done`, `canTick`, `savesNotes`, `onFinish(notes, markDone)`. `TeamMeetingScreen.forManager(shell, journeyId, task, joiner)` for a journey task (notes go to POST /manager/joiners/:id/notes, private). T2's `TeamJoinerController.open` now pushes it for `opens == 'meeting'` with `savesNotes: false` (there is no notes endpoint for a buddy or head of department yet); `TeamMeetingAgendaScreen` is no longer used.
+- `JoinersTab` lists from GET /lifecycle/team/joiners (`HttpTeamJoinersApi.from(shell.api)`), falling back to /manager/joiners when there is no HTTP api. Report rows open T1's `JoinerScreen`; buddy / line rows open T2's `TeamJoinerScreen` with `reachOutWays` (game, announcement, introduce). Relation line from `TeamJoinerRow.relationLine`.
+- Still needed from T2's API: `userId` on `TeamJoinerRow` / `TeamJoinerPage` so `onOpenProfile` can open the profile (not passed until then).
