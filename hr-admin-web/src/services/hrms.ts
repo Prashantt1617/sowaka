@@ -972,6 +972,39 @@ export const updateReimbursementType = (id: string, input: ReimbursementTypeInpu
 export const deleteReimbursementType = (id: string) =>
   api(`/admin/reimbursement-types/${id}`, { method: 'DELETE' });
 
+// ---- Setup › Policies (what the app shows under Actions › Policies) ----
+
+export type PolicyDTO = {
+  key: string;
+  title: string;
+  /** One line under the name in the app's list; may be empty. */
+  summary: string;
+  /** Plain text: "- " bullets, "## " headings, a blank line between cards. */
+  body: string;
+  order: number;
+  /** False keeps it off the app without deleting it. */
+  active: boolean;
+  updatedAt: string;
+  updatedBy: string;
+};
+
+export type PolicyInput = Partial<Pick<PolicyDTO, 'title' | 'summary' | 'body' | 'active'>>;
+
+export const getPolicies = () =>
+  api<{ policies: PolicyDTO[] }>('/admin/policies').then((r) => r.policies);
+
+export const createPolicy = (input: PolicyInput) =>
+  api<{ policy: PolicyDTO }>('/admin/policies', { method: 'POST', body: input }).then((r) => r.policy);
+
+export const updatePolicy = (key: string, input: PolicyInput) =>
+  api<{ policy: PolicyDTO }>(`/admin/policies/${encodeURIComponent(key)}`, { method: 'PATCH', body: input }).then((r) => r.policy);
+
+export const reorderPolicies = (keys: string[]) =>
+  api<{ policies: PolicyDTO[] }>('/admin/policies/order', { method: 'PUT', body: { keys } }).then((r) => r.policies);
+
+export const deletePolicy = (key: string) =>
+  api(`/admin/policies/${encodeURIComponent(key)}`, { method: 'DELETE' });
+
 // ---- Connect moderation (what employees reported from the app's feed) ----
 export type ContentReportDTO = {
   id: string;

@@ -35,6 +35,8 @@ export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boo
     if (lifecycleOn() === false) return false;
     if (view === 'lifecycle_letter_templates') return canOpen(user, 'lifecycle_documents');
   }
+  // Setup › Policies goes with Organisation settings, as the server decides it.
+  if (view === 'policies') return canOpen(user, 'organisation');
   // Setup is a page of links: open to whoever may open any of the pages on it.
   if (view === 'setup') return SETUP_VIEWS.some((v) => canOpen(user, v));
   if (view === 'bulkassign') return BULK_VIEWS.some((v) => canOpen(user, v));
