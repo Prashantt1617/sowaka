@@ -319,14 +319,16 @@ async function main() {
       const event = await requireEvent(flags.id);
       const existing = await connectPosts().findOne({ org: event.org, type: 'live_game', 'body.cupEventId': event.id });
       if (existing) throw new Error(`Already posted (${existing.id}); unpost first`);
+      // A Knights Tournament has its own card: the knight, cobalt, and its own line.
+      const knights = event.gameKey === 'knights';
       const post: ConnectPost = {
         id: randomUUID(),
         org: event.org,
         type: 'live_game',
         tag: 'Live Game',
-        tagIcon: '🪔',
-        tagColor: '#E0483B',
-        tagTint: '#FBE2DE',
+        tagIcon: knights ? '♞' : '🪔',
+        tagColor: knights ? '#1F56D8' : '#E0483B',
+        tagTint: knights ? '#DCE8FF' : '#FBE2DE',
         // Faceless, like the Games announcements: nobody to tap through to.
         author: { userId: '', name: 'Sowaka Engagements', initials: 'S', designation: 'Games', avatarColor: '#F5B82E' },
         audience: { label: 'Company', org: event.org },
@@ -335,13 +337,15 @@ async function main() {
           cupEventId: event.id,
           cupLinkBase: event.linkBase,
           cupLinkUntil: event.linkUntil.toISOString(),
-          title: flags.title ?? event.name,
-          subtitle: flags.subtitle ?? 'Everyone is in. One Odd One Out knockout, live, with bets on the last eight.',
+          title: flags.title ?? (knights ? 'Knights Tournament' : event.name),
+          subtitle: flags.subtitle ?? (knights
+            ? 'One Meow-style knockout · first right board wins · bets from the quarter-finals'
+            : 'Everyone is in. One Odd One Out knockout, live, with bets on the last eight.'),
           startsAtLabel: flags['starts-label'] ?? `LOBBY OPENS ${event.lobbyAt.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })}`,
           actionLabel: flags.action ?? 'Enter the tournament',
           actionDoneLabel: flags.action ?? 'Enter the tournament',
           hostedUrl: '',
-          accentColor: '#F5B82E',
+          accentColor: knights ? '#1F56D8' : '#F5B82E',
           leaderboardEnabled: false,
         },
         likedBy: [],
