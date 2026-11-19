@@ -5,6 +5,7 @@ import '../../data/onboarding_api.dart';
 import '../../data/onboarding_models.dart';
 import '../links.dart';
 import '../onboarding_kit.dart';
+import '../../onboarding_launcher.dart';
 import 'team_kit.dart';
 
 /// The agenda a meeting opens with when the journey sends none (the
@@ -27,15 +28,68 @@ List<String> defaultMeetingAgenda(TaskView task, String first) {
 }
 
 /// A meeting with a joiner (MgrMeeting): who it is with, the agenda, a notes
-/// box with voice typing under each point, and Mark as done. The notes are
-/// the manager's own (a private 1:1 note); the joiner keeps theirs.
+/// box with voice typing under each point, and Mark as done. For the manager
+/// the notes are kept as a private 1:1 note; the joiner keeps theirs.
+/// [TeamMeetingScreen.forManager] reads a journey task; the buddy and head of
+/// department pages build it from their own task ([onFinish] says what
+/// finishing does there).
 class TeamMeetingScreen extends StatefulWidget {
-  const TeamMeetingScreen({super.key, required this.shell, required this.journeyId, required this.task, required this.joiner});
+  const TeamMeetingScreen({
+    super.key,
+    this.shell,
+    required this.title,
+    required this.joinerName,
+    this.joinerPhotoUrl,
+    required this.agenda,
+    this.link,
+    this.startsAt,
+    this.done = false,
+    this.canTick = false,
+    this.savesNotes = true,
+    required this.onFinish,
+  });
 
-  final OnboardingShell shell;
-  final String journeyId;
-  final TaskView task;
-  final JoinerSummary joiner;
+  /// The manager's meeting on a journey task.
+  factory TeamMeetingScreen.forManager({Key? key, required OnboardingShell shell, required String journeyId, required TaskView task, required JoinerSummary joiner}) {
+    final sent = task.meeting?.expect ?? const <String>[];
+    return TeamMeetingScreen(
+      key: key,
+      shell: shell,
+      title: task.title,
+      joinerName: joiner.name,
+      joinerPhotoUrl: joiner.photoUrl,
+      agenda: sent.isNotEmpty ? sent : defaultMeetingAgenda(task, joiner.firstName),
+      link: task.meeting?.link,
+      startsAt: task.startsAt,
+      done: task.isDone,
+      canTick: managerMayTick(task),
+      onFinish: (notes, markDone) async {
+        if (notes.isNotEmpty) await shell.api.addNote(journeyId, '${task.title}\n$notes', shared: false);
+        if (markDone) await shell.api.managerTaskDone(journeyId, task.id);
+      },
+    );
+  }
+
+  /// The app's header and tabs (the signed-in shell's when null).
+  final OnboardingShell? shell;
+  final String title;
+  final String joinerName;
+  final String? joinerPhotoUrl;
+  final List<String> agenda;
+  final String? link;
+  final DateTime? startsAt;
+  final bool done;
+
+  /// Whether finishing marks it done (else it only saves the notes).
+  final bool canTick;
+
+  /// Whether there is somewhere to keep notes: without it the agenda shows
+  /// without the notes boxes.
+  final bool savesNotes;
+
+  /// Saves [notes] (the points written on, one per line; empty when none)
+  /// and, when [markDone], marks the meeting done. Throws to say it failed.
+  final Future<void> Function(String notes, bool markDone) onFinish;
 
   @override
   State<TeamMeetingScreen> createState() => _TeamMeetingScreenState();
@@ -43,12 +97,9 @@ class TeamMeetingScreen extends StatefulWidget {
 
 class _TeamMeetingScreenState extends State<TeamMeetingScreen> {
   final _voice = TeamVoice();
-  late final List<String> _agenda = () {
-    final sent = widget.task.meeting?.expect ?? const <String>[];
-    return sent.isNotEmpty ? sent : defaultMeetingAgenda(widget.task, widget.joiner.firstName);
-  }();
+  late final List<String> _agenda = widget.agenda;
   late final List<TextEditingController> _notes = [for (final _ in _agenda) TextEditingController()];
-  late bool _done = widget.task.isDone;
+  late bool _done = widget.done;
   bool _busy = false;
 
   @override
@@ -60,7 +111,7 @@ class _TeamMeetingScreenState extends State<TeamMeetingScreen> {
     super.dispose();
   }
 
-  /// The points with something written, as one private note.
+  /// The points with something written.
   String get _noteText => [
     for (final (i, c) in _notes.indexed)
       if (c.text.trim().isNotEmpty) '${_agenda[i]}: ${c.text.trim()}',
@@ -68,20 +119,15 @@ class _TeamMeetingScreenState extends State<TeamMeetingScreen> {
 
   Future<void> _finish() async {
     setState(() => _busy = true);
-    final api = widget.shell.api;
     try {
       final text = _noteText;
-      if (text.isNotEmpty) {
-        await api.addNote(widget.journeyId, '${widget.task.title}\n$text', shared: false);
-        for (final c in _notes) {
-          c.clear();
-        }
+      final markDone = !_done && widget.canTick;
+      await widget.onFinish(text, markDone);
+      for (final c in _notes) {
+        c.clear();
       }
-      if (!_done && managerMayTick(widget.task)) {
-        await api.managerTaskDone(widget.journeyId, widget.task.id);
-        _done = true;
-      }
-      if (mounted) showAppToast(context, _done ? 'Marked as done' : 'Notes saved');
+      if (markDone) _done = true;
+      if (mounted) showAppToast(context, markDone ? 'Marked as done' : 'Notes saved');
     } catch (error) {
       if (mounted) showAppToast(context, onboardingErrorText(error));
     } finally {
@@ -91,15 +137,13 @@ class _TeamMeetingScreenState extends State<TeamMeetingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final joiner = widget.joiner;
-    final task = widget.task;
-    final link = task.meeting?.link;
-    final start = task.startsAt;
-    final canTick = !_done && managerMayTick(task);
-    return OnbScaffold(
-      shell: widget.shell,
-      title: joiner.name,
-      body: ListView(
+    final name = widget.joinerName;
+    final first = name.trim().split(RegExp(r'\s+')).first;
+    final link = widget.link;
+    final start = widget.startsAt;
+    final canTick = !_done && widget.canTick;
+    final shell = widget.shell ?? currentOnboardingShell();
+    final body = ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
         children: [
           Container(
@@ -108,16 +152,16 @@ class _TeamMeetingScreenState extends State<TeamMeetingScreen> {
             decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: OnbColors.line)),
             child: Row(
               children: [
-                OnbAvatar(name: joiner.name, photoUrl: joiner.photoUrl, size: 52),
+                OnbAvatar(name: name, photoUrl: widget.joinerPhotoUrl, size: 52),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(task.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: TeamColors.ink)),
+                      Text(widget.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: TeamColors.ink)),
                       const SizedBox(height: 2),
                       Text(
-                        ['With ${joiner.name}', if (start != null) '${onbDay(start)}, ${onbTime(start)}'].join(' · '),
+                        ['With $name', if (start != null) '${onbDay(start)}, ${onbTime(start)}'].join(' · '),
                         style: const TextStyle(fontSize: 12, color: OnbColors.text3),
                       ),
                     ],
@@ -157,7 +201,8 @@ class _TeamMeetingScreenState extends State<TeamMeetingScreen> {
                         Expanded(child: Text(point, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: TeamColors.ink))),
                       ],
                     ),
-                    const SizedBox(height: 10),
+                    if (widget.savesNotes) const SizedBox(height: 10),
+                    if (widget.savesNotes)
                     TeamNotesField(field: 'agenda-$i', controller: _notes[i], voice: _voice, label: 'Your notes on $point'),
                   ],
                 ),
@@ -188,13 +233,14 @@ class _TeamMeetingScreenState extends State<TeamMeetingScreen> {
                     ),
                     child: _busy
                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : Text(canTick ? 'Mark as done' : 'Save notes'),
+                        : Text(canTick || !widget.savesNotes ? 'Mark as done' : 'Save notes'),
                   ),
           ),
           const SizedBox(height: 8),
-          TeamFootnote('Only you can see your notes. ${joiner.firstName} keeps their own.'),
-        ],
-      ),
+          if (widget.savesNotes) TeamFootnote('Only you can see your notes. $first keeps their own.'),
+      ],
     );
+    if (shell != null) return OnbScaffold(shell: shell, title: name, body: body);
+    return Scaffold(backgroundColor: OnbColors.screen, appBar: AppBar(title: Text(name)), body: body);
   }
 }

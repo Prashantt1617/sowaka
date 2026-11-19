@@ -404,7 +404,7 @@ class _JoinerScreenState extends State<JoinerScreen> {
         );
     }
     if (task.isTimed || task.kind == 'meeting') {
-      return () => _push(TeamMeetingScreen(shell: _shell, journeyId: widget.journeyId, task: task, joiner: detail.joiner));
+      return () => _push(TeamMeetingScreen.forManager(shell: _shell, journeyId: widget.journeyId, task: task, joiner: detail.joiner));
     }
     return null;
   }

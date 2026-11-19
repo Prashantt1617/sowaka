@@ -7,6 +7,7 @@ import '../../data/onboarding_api.dart' show onboardingErrorText;
 import '../../data/team_joiners_api.dart';
 import '../onboarding_kit.dart';
 import 'team_kit.dart';
+import 'team_meeting_screen.dart';
 
 /// Teams › Joiners for the head of department and the buddy, and the full
 /// task list (“View all”) for every viewer: the Team side artifact
@@ -190,7 +191,23 @@ class TeamJoinerController extends ChangeNotifier {
     if (t.opens == 'approval') {
       await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => HodApprovalScreen(api: api, page: p)));
     } else if (t.opens == 'meeting') {
-      await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => TeamMeetingAgendaScreen(controller: this, task: t)));
+      // T1's meeting screen (agenda, voice notes, Mark as done); no notes endpoint for buddies and heads yet.
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => TeamMeetingScreen(
+            title: t.title,
+            joinerName: p.name,
+            joinerPhotoUrl: p.photoUrl,
+            agenda: t.agenda,
+            done: t.done,
+            canTick: t.canTick,
+            savesNotes: false,
+            onFinish: (_, markDone) async {
+              if (markDone && context.mounted) await tick(context, t);
+            },
+          ),
+        ),
+      );
     }
     if (context.mounted) await load();
   }
