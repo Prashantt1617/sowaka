@@ -789,7 +789,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
   function viewOut() {
     var me = S.me, last = myLastDone(), e = ev();
     var stage = isTopN();
-    var reached = me.eliminatedIn || (last ? last.r.label : 'Round 1');
+    var reached = (me.eliminatedIn && me.eliminatedIn.label) || (last ? last.r.label : 'Round 1');
     var wins = allMatches().filter(function (m) { return m.status === 'done' && m.winnerId === me.userId; }).length;
     var firstR = (e.rounds || []).find(function (r) { return r.kind === 'sequential'; });
     return resultCard(last, !!(last && last.r.n === e.round)) +
@@ -803,7 +803,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     var me = S.me, last = myLastDone();
     if (!last) return '';
     var m = last.m, u = meId(), opp = m.a && m.a.userId === u ? m.b : m.a;
-    return '<section class="card" aria-label="Your run" style="flex-direction:row;align-items:center"><div class="sp"><p class="lbl">Your run</p><p style="font-weight:700">Out in ' + esc(me.eliminatedIn || last.r.label) + ': ' + num(scoreOf(m, u)) + ' to ' + num(scoreOf(m, opp && opp.userId)) + ' v ' + esc(opp ? opp.name : '') + '</p></div></section>';
+    return '<section class="card" aria-label="Your run" style="flex-direction:row;align-items:center"><div class="sp"><p class="lbl">Your run</p><p style="font-weight:700">Out in ' + esc((me.eliminatedIn && me.eliminatedIn.label) || last.r.label) + ': ' + num(scoreOf(m, u)) + ' to ' + num(scoreOf(m, opp && opp.userId)) + ' v ' + esc(opp ? opp.name : '') + '</p></div></section>';
   }
   function viewSpectator() {
     var e = ev();
