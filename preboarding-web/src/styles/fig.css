@@ -87,7 +87,9 @@
 /* On a tinted tile: white, no border */
 .fig-btn--white { height: 40px; background: var(--color-bg-surface); color: var(--color-text-brand); font-size: 14px; }
 .fig-btn--inline { width: auto; align-self: flex-start; }
-.fig-link { border: 0; background: none; padding: 0; font: inherit; font-weight: 600; color: var(--color-text-brand); text-decoration: none; cursor: pointer; }
+/* Zero-specificity reset (:where) so screen CSS can set padding/size without fighting it */
+.fig-link { border: 0; background: none; font-weight: 600; color: var(--color-text-brand); text-decoration: none; cursor: pointer; }
+:where(.fig-link) { padding: 0; }
 /* Sticky bottom actions (primary + a link under it) */
 .fig-actions { flex: none; padding: var(--space-16) var(--space-16) var(--space-24); display: flex; flex-direction: column; gap: var(--space-12); }
 .fig-actions--bar { position: sticky; bottom: 0; z-index: 4; background: var(--color-bg-surface); border-top: 1px solid var(--color-border-default); }
@@ -102,6 +104,9 @@
 .fig-input:focus { border-color: var(--color-border-focus); }
 .fig .fig-input:focus-visible { outline: none; }
 .fig-input:disabled, .fig-input[readonly] { color: var(--color-text-secondary); }
+/* White field (inside white cards: the profile sections). On white pages the field stays canvas (sign in). */
+.fig-input--white, .fig-card .fig-input { background: var(--color-bg-surface); padding-left: 12px; padding-right: 12px; }
+.fig .fig-input[readonly] { background: var(--color-bg-subtle); color: var(--color-text-secondary); }
 .fig-field__help { font-size: 11px; line-height: 16px; color: var(--color-text-tertiary); }
 .fig-field__error { font-size: 12px; line-height: 16px; font-weight: 600; color: var(--color-text-error); }
 

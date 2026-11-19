@@ -10,7 +10,8 @@ import { useMe } from '../../session';
 import { INTRO, ORDER, TITLE, readDraft, savedValues, writeDraft } from '../../screens/A1Profile';
 import { FigBackHeader, FigLoading, FigPage } from './FigShell';
 import { FigField, FigIntro } from './FigUi';
-import { FigCheckSmall, type Fig3DName } from './icons';
+import { FigCheckCircle, FigCheckSmall, type Fig3DName } from './icons';
+import '../../styles/fig-g1.css';
 import { G2Steps, type G2Seg } from './G2Steps';
 import { G2DocUpload } from './G2Upload';
 import { G2MonthInput, G2PhotoTip, G2PrivacyNote } from './G2Profile';
@@ -21,8 +22,10 @@ import { G2Camera } from './icons/g2-camera';
 import { G2Gallery } from './icons/g2-gallery';
 import '../../styles/fig-g2.css';
 
-export const G2_SECTIONS: ProfileSectionKey[] = ['bank', 'education', 'ids', 'photo'];
-const ICON: Partial<Record<ProfileSectionKey, Fig3DName>> = { bank: 'bank', education: 'write', ids: 'document-approved', photo: 'id-card' };
+// All seven sections: personal, contact and emergency (G1's frames 4967:93155, 93226, 93303) were added to G2's shell.
+export const G2_SECTIONS: ProfileSectionKey[] = ['personal', 'contact', 'emergency', 'bank', 'education', 'ids', 'photo'];
+const RELATIONS = ['Parent', 'Partner', 'Sibling', 'Friend'];
+const ICON: Partial<Record<ProfileSectionKey, Fig3DName>> = { personal: 'user', emergency: 'phone', bank: 'bank', education: 'write', ids: 'document-approved', photo: 'id-card' };
 /** Which card of the section a template document belongs in (by its name); others go in the last card. */
 const DOC_CARD: Partial<Record<ProfileSectionKey, Array<[string, RegExp]>>> = {
   bank: [['bank', /.*/]],
@@ -63,7 +66,9 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
     setBusy(true);
     setError('');
     try {
-      if (k === 'bank') {
+      if (k === 'emergency') await portal.saveAbout({ emergencyContact: { name: String(v.name ?? ''), relation: v.relation as never, phone: String(v.phone ?? '') } });
+      else if (k === 'personal' || k === 'contact') await portal.saveProfile(k, v);
+      else if (k === 'bank') {
         if (!v.hasUan) throw new Error('Choose whether you have a UAN from a previous job');
         await portal.saveProfile('bank', v);
         await portal.saveAbout({ pf: v.hasUan === 'No' ? { firstJob: true } : { firstJob: false, uan: String(v.uan ?? '') } });
@@ -80,8 +85,8 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
     }
   };
 
-  const T = (name: string, label: string, o: { ph?: string; help?: string; inputMode?: 'numeric' | 'text'; max?: number; value?: string; onChange?: (s: string) => void } = {}) => (
-    <FigField key={name} label={label} help={o.help} placeholder={o.ph} inputMode={o.inputMode} maxLength={o.max}
+  const T = (name: string, label: string, o: { ph?: string; help?: string; inputMode?: 'numeric' | 'text' | 'tel'; max?: number; value?: string; onChange?: (s: string) => void; readOnly?: boolean } = {}) => (
+    <FigField key={name} label={label} help={o.help} placeholder={o.ph} inputMode={o.inputMode} maxLength={o.max} readOnly={o.readOnly}
       value={o.value ?? String(v[name] ?? '')} onChange={(e) => (o.onChange ? o.onChange(e.target.value) : set({ [name]: e.target.value }))} />
   );
   const G = (name: string, label: string, options: Array<[string, string]>, wide?: boolean) => (
@@ -93,9 +98,63 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
     </div>
   );
 
+  const addr = (name: 'current' | 'permanent', title: string) => {
+    const a = (v[name] ?? { line: '', city: '', state: '', pin: '' }) as Record<string, string>;
+    const put = (patch: Record<string, string>) => set({ [name]: { ...a, ...patch } });
+    return (
+      <Card title={title}>
+        {T(`${name}.line`, 'House, building and street', { value: a.line, onChange: (s) => put({ line: s }) })}
+        {T(`${name}.city`, 'City', { value: a.city, onChange: (s) => put({ city: s }) })}
+        <SelectField label="State" value={a.state ?? ''} options={STATES} onChange={(s) => put({ state: s })} />
+        {T(`${name}.pin`, 'PIN code', { ph: '6 digits', inputMode: 'numeric', max: 6, value: a.pin, onChange: (s) => put({ pin: s.replace(/\D/g, '') }) })}
+      </Card>
+    );
+  };
+
   let body: ReactNode = null;
   if (view) {
-    if (k === 'bank') {
+    if (k === 'personal') {
+      const nat = String(v.nationality ?? '');
+      body = (
+        <Card>
+          {T('fullName', 'Full name', { help: 'As on your Aadhaar or PAN card' })}
+          {T('preferredName', 'Preferred name (optional)')}
+          <DateField label="Date of birth" value={String(v.dob ?? '')} onChange={(s) => set({ dob: s })} />
+          <div className="fig-field" role="radiogroup" aria-label="Gender">
+            <span className="fig-field__label">Gender</span>
+            <div className="g2-seg g1-seg--wrap">{view.options.genders.map((o) => (
+              <button key={o} type="button" role="radio" aria-checked={v.gender === o} onClick={() => set({ gender: o })}>{o}</button>
+            ))}</div>
+          </div>
+          <SelectField label="Marital status" value={String(v.maritalStatus ?? '')} options={view.options.marital} onChange={(s) => set({ maritalStatus: s })} />
+          <SelectField label="Nationality" value={nat} options={NATIONALITIES.includes(nat) || !nat ? NATIONALITIES : [nat, ...NATIONALITIES]} onChange={(s) => set({ nationality: s })} />
+        </Card>
+      );
+    } else if (k === 'contact') {
+      body = (
+        <>
+          <Card title="Contact">
+            {T('email', 'Personal email', { readOnly: true, value: view.personalEmail ?? '', help: 'From your offer. Write to HR if it needs to change.' })}
+            {T('mobile', 'Mobile number', { ph: '+91', inputMode: 'tel' })}
+          </Card>
+          {addr('current', 'Current address')}
+          <Card title="Permanent address">
+            <button type="button" role="checkbox" aria-checked={v.permanentSame !== false} className="g1-check" onClick={() => set({ permanentSame: v.permanentSame === false })}>
+              <span className="g1-check__box">{v.permanentSame !== false && <FigCheckSmall />}</span>Same as my current address
+            </button>
+          </Card>
+          {v.permanentSame === false && addr('permanent', 'Permanent address, if different')}
+        </>
+      );
+    } else if (k === 'emergency') {
+      body = (
+        <Card title="Contact 1">
+          {T('name', 'Full name', { ph: 'e.g. Anil Menon' })}
+          <SelectField label="Relationship" value={String(v.relation ?? '')} options={RELATIONS} onChange={(s) => set({ relation: s })} />
+          {T('phone', 'Mobile number', { ph: '+91', inputMode: 'tel' })}
+        </Card>
+      );
+    } else if (k === 'bank') {
       const kept = view.profile.bank?.accountLast4;
       body = (
         <>
@@ -163,12 +222,12 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
   const icon = ICON[k];
   return (
     <FigPage>
-      <FigBackHeader title={TITLE[k]} back="/profile" backLabel="Back to employee profile" below={<G2Steps segs={segs} />} />
+      <FigBackHeader title={TITLE[k]} back="/profile" backLabel="Back to employee profile" side={i === 0 ? <span className="fig-brand">Step {i + 1} of {ORDER.length}</span> : undefined} below={<G2Steps segs={segs} />} />
       <main id="main" className="g2-sec">
         {!view && !error ? <FigLoading /> : (
           <>
-            {sec?.done && <p className="fig-note g2-done-note"><span className="fig-done"><FigCheckSmall /></span><span>You’ve finished this section. You can still change anything before you join.</span></p>}
-            {icon && <FigIntro icon={icon}>{INTRO[k]}</FigIntro>}
+            {sec?.done && <p className="fig-note g2-done-note"><FigCheckCircle className="fig-success" /><span>You’ve finished this section. You can still change anything before you join.</span></p>}
+            {icon ? <FigIntro icon={icon}>{INTRO[k]}</FigIntro> : <p className="fig-intro"><span>{INTRO[k]}</span></p>}
             {body}
             {error && <p className="fig-field__error" role="alert">{error}</p>}
           </>
@@ -184,10 +243,10 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
   );
 }
 
-function Card({ title, children }: { title: string; children: ReactNode }) {
+function Card({ title, children }: { title?: string; children: ReactNode }) {
   return (
     <section className="g2-group">
-      <h2 className="fig-subtitle">{title}</h2>
+      {title && <h2 className="fig-subtitle">{title}</h2>}
       <div className="g2-card">{children}</div>
     </section>
   );
@@ -251,5 +310,23 @@ function PhotoBlock({ view, onSaved }: { view: ProfileView; onSaved: (v: Profile
       </div>
       {error && <p className="fig-field__error" role="alert">{error}</p>}
     </>
+  );
+}
+
+const NATIONALITIES = ['Indian', 'Other'];
+const STATES = ['Andaman and Nicobar Islands', 'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chandigarh', 'Chhattisgarh', 'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jammu and Kashmir', 'Jharkhand', 'Karnataka', 'Kerala', 'Ladakh', 'Lakshadweep', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Puducherry', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'];
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Date of birth: shows "14 Mar 1998" (the design) and opens the date picker while it has focus; kept as YYYY-MM-DD. */
+function DateField({ label, value, onChange }: { label: string; value: string; onChange: (s: string) => void }) {
+  const id = useId();
+  const [focus, setFocus] = useState(false);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const shown = m ? `${Number(m[3])} ${MON[Number(m[2]) - 1]} ${m[1]}` : value;
+  return (
+    <FigField label={label} id={id}>
+      <input id={id} className="fig-input" type={focus ? 'date' : 'text'} value={focus ? value : shown} placeholder="DD Mon YYYY"
+        onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} onChange={(e) => onChange(e.target.value)} />
+    </FigField>
   );
 }
