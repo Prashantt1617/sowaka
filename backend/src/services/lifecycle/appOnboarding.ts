@@ -15,7 +15,7 @@ import type {
 import { createConnectPost } from '../connect.service';
 import { saveMyDeclaration } from '../employeePayroll.declaration';
 import { encryptField, fieldKeyConfigured, maskTail } from '../fieldCrypto';
-import { policiesFor } from '../policy-document.service';
+import { allPoliciesAcknowledged, policiesFor, type PublicPolicy } from '../policy-document.service';
 import { FACE_PROJECTION, faceUrlOf, faceUrlsFor, type FaceFields } from '../face-photos';
 import { logger } from '../../utils/logger';
 import {
@@ -293,7 +293,47 @@ export async function onboardingHome(me: Me, now = new Date()) {
     showWeekDone: isWeek1Done(j.tj, today) && !j.week1DoneSeenAt,
     ...(j.week1DoneSeenAt ? { weekDoneSeenAt: j.week1DoneSeenAt } : {}),
     weekDoneStats: weekDoneStats(tasks, await countBadges(j), derived.plant.leaves),
+    tour: { lessons: [...TOUR_LESSONS], done: (j.tour?.done ?? []).filter((k) => (TOUR_ALL_LESSONS as readonly string[]).includes(k)) },
+    devices: devicesFor(tasks),
   };
+}
+
+/**
+ * The Sowaka tour (new-joiner artifact, "Sowaka tour"): one lesson a day in
+ * this order; the app holds each lesson's steps. Managers also get
+ * [TOUR_MANAGER_LESSONS]. All of [TOUR_LESSONS] done completes `app_tour`.
+ */
+export const TOUR_LESSONS = ['punch', 'missed', 'leave', 'overtime'] as const;
+export const TOUR_MANAGER_LESSONS = ['approveLeave', 'approveOvertime'] as const;
+const TOUR_ALL_LESSONS = [...TOUR_LESSONS, ...TOUR_MANAGER_LESSONS] as const;
+
+/**
+ * "Devices and accesses": what IT and HR set up, from the tasks that do it —
+ * the laptop (`laptop_setup`), the work email (`mark_joined` creates it) and
+ * this app (ready: they are in it). Ready once its task is done.
+ */
+function devicesFor(tasks: JourneyTask[]) {
+  const done = (key: SystemTaskKey) => tasks.some((t) => t.systemKey === key && (t.status === 'done' || t.status === 'skipped'));
+  const has = (key: SystemTaskKey) => tasks.some((t) => t.systemKey === key);
+  return [
+    ...(has('laptop_setup') ? [{ key: 'laptop', title: 'Laptop', ready: done('laptop_setup') }] : []),
+    ...(has('mark_joined') ? [{ key: 'email', title: 'Email', ready: done('mark_joined') }] : []),
+    { key: 'app', title: 'Sowaka Connect', ready: true },
+  ];
+}
+
+/** A tour lesson finished (`{ done: true }`) or replayed from the start (`{ done: false }` is ignored: done stays done). */
+export async function tourLessonDone(me: Me, lesson: string) {
+  if (!(TOUR_ALL_LESSONS as readonly string[]).includes(lesson)) throw new LifecycleError(400, `lesson is one of ${TOUR_ALL_LESSONS.join(', ')}`);
+  const j = await joinerJourney(me.userId);
+  const done = [...(j.tour?.done ?? [])];
+  if (!done.includes(lesson)) {
+    done.push(lesson);
+    const now = new Date();
+    await journeys().updateOne({ id: j.id }, { $set: { tour: { done, updatedAt: now }, updatedAt: now } });
+    if (TOUR_LESSONS.every((k) => done.includes(k))) await completeTask(j.id, 'app_tour', { userId: me.userId, name: me.name }).catch(() => undefined);
+  }
+  return { lessons: [...TOUR_LESSONS], done };
 }
 
 /** "Week 1, done!" (A8): tasks done in week 1, people met, leaves grown. */
@@ -356,6 +396,32 @@ export async function week1View(me: Me) {
     ...(j.tj ? { goalsLockOn: addDaysKey(j.tj, 7) } : {}),
     ...(j.bankPfRequest ? { bankPfRequest: { status: j.bankPfRequest.status, requestedAt: j.bankPfRequest.requestedAt } } : {}),
   };
+}
+
+/**
+ * Policies › Acknowledge, for a joiner: once every policy that needs it is
+ * acknowledged at its current version, the Week-1 policies step is done too
+ * (the same record the Week-1 reel writes), so the "Acknowledge policies" task
+ * ticks itself. No onboarding, or the step already done: nothing to do.
+ */
+export async function policiesAcknowledgedByJoiner(me: Me, policies: PublicPolicy[], device?: string): Promise<boolean> {
+  if (!allPoliciesAcknowledged(policies)) return false;
+  let j: Journey;
+  try {
+    j = await joinerJourney(me.userId);
+  } catch {
+    return false;
+  }
+  if (j.org !== me.org || j.week1?.policies) return false;
+  const now = new Date();
+  const week1: Week1Reels = {
+    ...(j.week1 ?? {}),
+    policies: { versions: policies.map((p) => ({ id: p.key, version: p.updatedAt })), at: now, ...(device ? { device: device.slice(0, 200) } : {}) },
+  };
+  await journeys().updateOne({ id: j.id }, { $set: { week1, updatedAt: now } });
+  if (week1.policies && week1.taxRegime && week1.bankPf && week1.goalsReadAt) await completeTask(j.id, 'week1_reels', { userId: me.userId, name: me.name });
+  else await refreshJourney(j.id);
+  return true;
 }
 
 export async function saveWeek1Step(me: Me, body: Record<string, unknown>, device?: string) {

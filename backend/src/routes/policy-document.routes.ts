@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { policiesHandler } from '../controllers/policy-document.controller';
+import { acknowledgePolicyHandler, policiesHandler } from '../controllers/policy-document.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 
 /**
@@ -10,3 +10,4 @@ import { requireAuth } from '../middleware/auth.middleware';
 export const policiesRouter = Router();
 policiesRouter.use(requireAuth);
 policiesRouter.get('/', policiesHandler);
+policiesRouter.post('/:key/acknowledge', acknowledgePolicyHandler);

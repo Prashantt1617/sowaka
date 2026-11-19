@@ -97,6 +97,40 @@ class PoliciesApiService {
     return policies;
   }
 
+  /// Acknowledges [key] at [version], the version read: the whole list back,
+  /// with its new state. A 409 means the text changed meanwhile; the message
+  /// says so and the caller reloads.
+  Future<List<PolicyDocument>> acknowledge(String key, int version) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/policies/${Uri.encodeComponent(key)}/acknowledge'),
+      headers: {
+        'Authorization': 'Bearer ${session.token}',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({'version': version}),
+    );
+    Map<String, dynamic> json;
+    try {
+      final decoded = response.body.isEmpty
+          ? null
+          : jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true));
+      json = decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+    } catch (_) {
+      json = <String, dynamic>{};
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw PoliciesApiException(
+        (json['error'] ?? json['message']) as String? ??
+            'That did not go through. Try again.',
+        statusCode: response.statusCode,
+      );
+    }
+    final policies = parsePolicyDocuments(json);
+    _lastPolicies = policies;
+    _lastPoliciesFor = session.user.id;
+    return policies;
+  }
+
   /// The policies as this person last saw them, without the network. Null
   /// when there is no copy.
   Future<List<PolicyDocument>?> policiesFromCache() async {

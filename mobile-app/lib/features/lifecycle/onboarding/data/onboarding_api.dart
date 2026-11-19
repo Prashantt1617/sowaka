@@ -266,6 +266,13 @@ class HttpOnboardingApi implements OnboardingApi {
     await _json('POST', '/lifecycle/onboarding/week-done/seen');
   }
 
+  /// The Sowaka tour: [lesson] finished (`POST /lifecycle/onboarding/tour/:lesson`);
+  /// the lessons done so far. Not on [OnboardingApi], so test fakes need nothing.
+  Future<List<String>> markTourLessonDone(String lesson) async {
+    final json = await _json('POST', '/lifecycle/onboarding/tour/${Uri.encodeComponent(lesson)}');
+    return [for (final k in json['done'] as List? ?? const []) if (k is String) k];
+  }
+
   List<PersonToMeet> _people(Map<String, dynamic> json) => [
     for (final item in json['people'] as List? ?? const [])
       if (item is Map) PersonToMeet.fromJson(Map<String, dynamic>.from(item)),

@@ -20,6 +20,7 @@ import 'presentation/meeting_screen.dart';
 import 'presentation/notes_screen.dart';
 import 'presentation/onboarding_home_screen.dart';
 import 'presentation/onboarding_kit.dart';
+import 'presentation/onboarding_tiles.dart';
 import 'presentation/people_screen.dart';
 import 'presentation/probation_screens.dart';
 import 'presentation/intro_post_screen.dart';
@@ -117,8 +118,7 @@ Future<void> openOnboardingTask(
       }
       return;
     case 'app_tour':
-      await showTourSheet(context, shell, task);
-      return;
+      return push(OnbTourScreen(shell: shell, done: home?.tourDone ?? const []));
   }
   final meetingId = task.meetingId;
   if (task.kind == 'meeting' && meetingId != null) {

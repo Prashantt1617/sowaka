@@ -7,6 +7,7 @@ import '../data/onboarding_models.dart';
 import '../onboarding_launcher.dart';
 import 'notes_screen.dart';
 import 'onboarding_kit.dart';
+import 'onboarding_tiles.dart';
 import 'plant.dart';
 import 'starter_task_screen.dart';
 import 'task_row.dart';
@@ -169,6 +170,9 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
       children: [
         OnbRise(child: _hereCard(home, dayLabel, now)),
+        // The artifact's tiles: Meetings, Tasks, Sowaka tour, Devices and accesses.
+        const SizedBox(height: 14),
+        OnbRise(delay: 30, child: OnbTileGrid(shell: _shell, home: home, onChanged: _load)),
         if (upNext != null) ...[
           const SizedBox(height: 14),
           OnbRise(delay: 60, child: _UpNextCard(task: upNext, now: now, onTap: () => _open(upNext))),

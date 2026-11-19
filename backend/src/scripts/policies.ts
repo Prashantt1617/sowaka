@@ -37,6 +37,8 @@
  *   node --env-file=.env --import tsx src/scripts/policies.ts remove sowaka leave
  *
  * Upsert options: --title "..." --file <path> --order N --summary "..." | none
+ * --ack true|false (false: read only, no Acknowledge) --change "<what changed>" (shown with Updated
+ * when --file brings a new text, which is a new version everyone acknowledges again)
  * --active true|false --by "<name>" (who is recorded as having written it;
  * defaults to this machine's user). A new policy needs --title and --file.
  */
@@ -147,6 +149,7 @@ async function upsert(positional: string[], flags: Record<string, string>) {
     set.order = order;
   }
   if (flags.active !== undefined) set.active = bool(flags.active, 'active');
+  if (flags.ack !== undefined) set.ackRequired = bool(flags.ack, 'ack');
 
   if (!existing) {
     if (!set.title) throw new Error('A new policy needs --title, such as --title "Leave"');
@@ -173,10 +176,15 @@ async function upsert(positional: string[], flags: Record<string, string>) {
     onInsert.order = (last?.order ?? 0) + 10;
   }
   const updatedBy = (flags.by && flags.by !== 'true' ? flags.by : userInfo().username).trim().slice(0, 80);
+  // A new text is a new version (everyone acknowledges it again); --change says what changed.
+  const textChanged = changed.includes('body');
+  const versioning: Partial<PolicyDocument> = textChanged
+    ? { version: existing ? (existing.version ?? 1) + 1 : 1, textUpdatedAt: now, changeNote: existing && flags.change && flags.change !== 'true' ? flags.change.trim().slice(0, 400) : '' }
+    : {};
   await policyDocuments().updateOne(
     { org, key },
     {
-      $set: { ...Object.fromEntries(changed.map((field) => [field, set[field]])), updatedAt: now, updatedBy },
+      $set: { ...Object.fromEntries(changed.map((field) => [field, set[field]])), ...versioning, updatedAt: now, updatedBy },
       ...(existing ? {} : { $setOnInsert: onInsert }),
       ...(removed.length ? { $unset: unset } : {}),
     },
@@ -247,7 +255,7 @@ async function main() {
   const { positional, flags } = parseArgs(rest);
   if (!command || command === 'help' || command === '--help') {
     console.log(
-      'Usage: policies.ts upsert <org> <key> [--title "..."] [--file <path>] [--order N] [--summary "..."|none] [--active true|false]\n' +
+      'Usage: policies.ts upsert <org> <key> [--title "..."] [--file <path>] [--order N] [--summary "..."|none] [--active true|false] [--ack true|false] [--change "what changed"]\n' +
         '       policies.ts list [org] | export <org> <key> <file> | remove <org> <key>',
     );
     return;
