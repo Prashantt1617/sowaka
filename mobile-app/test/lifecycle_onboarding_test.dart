@@ -29,6 +29,7 @@ import 'package:mobile_app/features/lifecycle/onboarding/presentation/survey_scr
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/week1_reels_screen.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/onboarding_launcher.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/notes_screen.dart';
+import 'package:mobile_app/features/manager/data/manager_models.dart' show ManagerTab;
 import 'package:mobile_app/features/manager/presentation/manager_screen.dart' show ProfileTab, ownProfileTabs;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -928,9 +929,9 @@ void main() {
       registerOnboardingShell(maker);
       addTearDown(() => unregisterOnboardingShell(maker));
       addTearDown(LifecycleMeStore.instance.clear);
-      PortalPageScreen.debugSurfaceFactory = ({required onMessage, required stays, required onLoaded}) =>
+      PortalPage.debugSurfaceFactory = ({required onMessage, required stays, required onLoaded}) =>
           FakePortalSurface(onMessage, stays, onLoaded);
-      addTearDown(() => PortalPageScreen.debugSurfaceFactory = null);
+      addTearDown(() => PortalPage.debugSurfaceFactory = null);
       late BuildContext context;
       await pumpPage(tester, Builder(builder: (c) {
         context = c;
@@ -954,6 +955,62 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(OnboardingHomeScreen), findsOneWidget);
       expect(find.byType(PortalPageScreen), findsNothing);
+    });
+
+    testWidgets('with an Action tab in the bar, Onboarding goes to that tab (the portal), nothing pushed', (tester) async {
+      final api = FakeOnboardingApi();
+      final picked = <ManagerTab>[];
+      final shell = OnboardingShell(
+        api: api,
+        profileAction: const SizedBox(width: 30, height: 30),
+        onNotifications: () {},
+        tabs: const [ManagerTab.connect, ManagerTab.quick],
+        selectedTab: ManagerTab.connect,
+        onSelectTab: picked.add,
+      );
+      addTearDown(LifecycleMeStore.instance.clear);
+      late BuildContext context;
+      await pumpPage(tester, Builder(builder: (c) {
+        context = c;
+        return const Scaffold(body: Text('shell'));
+      }));
+      LifecycleMeStore.instance.value = LifecycleMe.fromJson({
+        'enabled': true,
+        'onboarding': {'journeyId': 'j1', 'tileVisible': true, 'portal': true},
+      });
+      await openOnboardingHome(context, shell: shell);
+      await tester.pumpAndSettle();
+      expect(picked, [ManagerTab.quick]);
+      expect(find.byType(PortalPageScreen), findsNothing);
+      expect(find.byType(OnboardingHomeScreen), findsNothing);
+    });
+
+    testWidgets('the tab asks for a session only once it is looked at, and once', (tester) async {
+      final api = FakeOnboardingApi();
+      PortalPage.debugSurfaceFactory = ({required onMessage, required stays, required onLoaded}) =>
+          FakePortalSurface(onMessage, stays, onLoaded);
+      addTearDown(() => PortalPage.debugSurfaceFactory = null);
+      Widget tab(bool visible) => MaterialApp(
+        home: Scaffold(
+          body: PortalTab(
+            key: const ValueKey('portal-tab'),
+            api: api,
+            visible: visible,
+            profileAction: const SizedBox(width: 30, height: 30),
+            onNotifications: () {},
+          ),
+        ),
+      );
+      await tester.pumpWidget(tab(false));
+      await tester.pumpAndSettle();
+      expect(api.calls.where((c) => c == 'portal-session'), isEmpty);
+      await tester.pumpWidget(tab(true));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(tab(false));
+      await tester.pumpWidget(tab(true));
+      await tester.pumpAndSettle();
+      expect(api.calls.where((c) => c == 'portal-session'), hasLength(1));
+      expect(find.byKey(const ValueKey('fake-portal')), findsOneWidget);
     });
 
     testWidgets('the page: the app header, the portal, no title row; signed in by the session\'s address', (tester) async {

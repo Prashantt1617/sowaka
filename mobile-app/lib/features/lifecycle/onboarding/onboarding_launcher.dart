@@ -12,6 +12,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../manager/data/manager_models.dart' show ManagerTab;
 import 'data/lifecycle_me_store.dart';
 import 'data/onboarding_models.dart';
 import 'presentation/manager/joiner_screen.dart';
@@ -32,6 +33,7 @@ import 'presentation/week1_reels_screen.dart';
 
 export 'data/lifecycle_me_store.dart';
 export 'presentation/onboarding_kit.dart' show OnboardingShell;
+export 'presentation/portal_page_screen.dart' show PortalTab;
 
 typedef OnboardingShellMaker = OnboardingShell Function();
 
@@ -54,17 +56,22 @@ Future<T?> _push<T>(BuildContext context, Widget Function(OnboardingShell shell)
   return Navigator.of(context).push<T>(MaterialPageRoute(builder: (_) => page(resolved)));
 }
 
-/// A2, the joiner's onboarding home; while their joining portal is still
-/// open (`/lifecycle/me` says `portal`), the portal itself in the app's page
-/// (header, portal, tabs) instead of the app's own cards.
-Future<void> openOnboardingHome(BuildContext context, {OnboardingShell? shell}) =>
-    _push(
-      context,
-      (s) => LifecycleMeStore.instance.value.onboarding?.portal ?? false
-          ? PortalPageScreen(shell: s)
-          : OnboardingHomeScreen(shell: s),
-      shell: shell,
-    );
+/// A2, the joiner's onboarding home. While their joining portal is still
+/// open (`/lifecycle/me` says `portal`) the Action tab is the portal, so this
+/// goes there (the portal as a page over the shell where there is no Action
+/// tab), never to the app's own onboarding cards.
+Future<void> openOnboardingHome(BuildContext context, {OnboardingShell? shell}) {
+  if (LifecycleMeStore.instance.value.onboarding?.portal ?? false) {
+    final resolved = shell ?? currentOnboardingShell();
+    final select = resolved?.onSelectTab;
+    if (resolved != null && select != null && resolved.tabs.contains(ManagerTab.quick)) {
+      select(ManagerTab.quick);
+      return Future.value();
+    }
+    return _push(context, (s) => PortalPageScreen(shell: s), shell: shell);
+  }
+  return _push(context, (s) => OnboardingHomeScreen(shell: s), shell: shell);
+}
 
 /// M2, a joiner's week as their manager sees it.
 /// [summary]: the Team tab's row, so M2's card paints at once.
