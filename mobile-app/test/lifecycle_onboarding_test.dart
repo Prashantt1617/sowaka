@@ -509,9 +509,9 @@ void main() {
       final api = FakeOnboardingApi()..home = dayOne();
       await pumpPage(tester, OnboardingHomeScreen(shell: shellFor(api, now)));
 
-      expect(find.byKey(const ValueKey('day-label')), findsOneWidget);
-      expect(find.text('Day 1'), findsOneWidget);
-      expect(find.text('Welcome stage'), findsOneWidget);
+      expect(find.byKey(const ValueKey('stage-title')), findsOneWidget);
+      expect(tester.widget<Text>(find.byKey(const ValueKey('stage-title'))).data, 'Day 1');
+      expect(find.text('YOU ARE HERE'), findsOneWidget);
       expect(find.text('Today'), findsOneWidget);
       // Up next, with its time and place; not repeated in the list.
       final upNext = find.byKey(const ValueKey('up-next'));
@@ -537,18 +537,13 @@ void main() {
       expect(find.textContaining('Opens Mon 7 Dec'), findsOneWidget);
     });
 
-    testWidgets('Journey opens the six-stage bar in the card', (tester) async {
+    testWidgets('the stage row sits in the card: Day 1 … Month 6, Confirmed', (tester) async {
       final api = FakeOnboardingApi()..home = dayOne();
       await pumpPage(tester, OnboardingHomeScreen(shell: shellFor(api, now)));
-      expect(find.byType(JourneyBar), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('journey-toggle')));
-      await tester.pumpAndSettle();
-      expect(find.byType(JourneyBar), findsOneWidget);
-      expect(find.text('Next stage: Settling in'), findsOneWidget);
-      expect(
-        find.bySemanticsLabel(RegExp('Journey: pre-boarding done, now in week 1 \\(Day 1\\)')),
-        findsOneWidget,
-      );
+      for (final step in ['Day 1', 'Week 1', 'Month 1', 'Month 6', 'Confirmed']) {
+        expect(find.byKey(ValueKey('stage-step-$step')), findsOneWidget);
+      }
+      expect(find.bySemanticsLabel('Day 1, your stage'), findsOneWidget);
     });
 
     testWidgets('the profile card: day and stage, to do, next, progress, Continue', (tester) async {
@@ -1217,7 +1212,7 @@ void main() {
     testWidgets('the onboarding home: the device copy with the note when offline', (tester) async {
       final api = _FailingHomeApi()..keptOnDevice = true;
       await pumpPage(tester, OnboardingHomeScreen(shell: shellFor(api, DateTime(2026, 12, 2))));
-      expect(find.byKey(const ValueKey('day-label')), findsOneWidget);
+      expect(find.byKey(const ValueKey('stage-title')), findsOneWidget);
       expect(find.text(OnbOfflineNote.text), findsOneWidget);
     });
   });
