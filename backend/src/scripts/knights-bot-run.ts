@@ -293,7 +293,8 @@ async function play(userId: string, ticket: string, m: View & { attempt: number;
     if ((await report(board)) !== 204) return;
   }
   const order = [...answer].sort(() => Math.random() - 0.5);
-  const target = slow ? 2 : n;
+  // Forced ties place exactly 2; other slow players 1-3, so the cap decides some by more right.
+  const target = forcedTie ? 2 : slow ? 1 + Math.floor(Math.random() * 3) : n;
   if (slow) stats.slow += 1;
   // A solver takes 1-4 s a knight; slow players place two and stop (the cap decides).
   for (const cell of order.slice(0, target)) {
@@ -321,6 +322,9 @@ async function main() {
     if (r.status === 200) break;
     await sleep(1000);
   }
+  // Connection refusals while it booted are not failures.
+  callErrors = 0;
+  calls = 0;
   console.log(`Backend up after ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   const bots = ids.map((id) => bot(id, tickets.get(id)!));
   const db = client.db(DB);

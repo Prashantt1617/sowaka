@@ -451,7 +451,7 @@ check('knights: resign hands the match over at once, only to a player, only in p
   assert.equal((resignStep({ ...live, status: 'open' }, 'hi', SOL) as { ok: boolean }).ok, false);
   assert.equal((resignStep({ ...live, status: 'done' }, 'hi', SOL) as { ok: boolean }).ok, false);
   // In the countdown (status live, the start still ahead) resigning is allowed.
-  assert.equal(resignStep(kLive({ startAt: at(100) }), 'hi', SOL).kind, 'decide');
+  assert.equal((resignStep(kLive({ startAt: at(100) }), 'hi', SOL) as { kind: string }).kind, 'decide');
 });
 
 check('knights: at the cap (+3 s) more knights in the right place wins', () => {
