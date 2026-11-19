@@ -27,7 +27,7 @@ import { careRouter } from './care.routes';
 import { profileRouter } from './profile.routes';
 import { supportAdminRouter, supportRouter } from './support.routes';
 import { placementsAdminRouter, placementsRouter } from './placements.routes';
-import { gamesRouter, playRouter, pokerWebRouter, squadWebRouter } from './game-catalog.routes';
+import { gameProgressRouter, gamesRouter, playRouter, pokerWebRouter, squadWebRouter } from './game-catalog.routes';
 import { cupRouter } from './cup.routes';
 import { cupAdminRouter } from './cup-admin.routes';
 import { engagementUsageRouter } from './engagement-usage.routes';
@@ -117,6 +117,8 @@ router.use('/admin/placements', placementsAdminRouter);
 router.use('/relay', relayPlayerRouter);
 router.use('/talk', talkRouter);
 router.use('/garden', gardenRouter);
+// Meow's level, by the page's own ticket (no session), ahead of the session-only Games routes.
+router.use('/games/progress', gameProgressRouter);
 // The Games tab: which games a company has, their pages and their scores.
 router.use('/games', gamesRouter);
 router.use('/play', playRouter);
