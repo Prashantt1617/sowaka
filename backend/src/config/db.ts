@@ -54,7 +54,7 @@ import { TalkSession } from '../models/talk.model';
 import { GardenNote } from '../models/garden.model';
 import { CareWriting, JournalEntry, PairQuiz } from '../models/care.model';
 import { SupportEvent, SupportMessage, SupportTicket, SupportTopicList } from '../models/support.model';
-import { PolicyDocument } from '../models/policy-document.model';
+import { PolicyAcknowledgement, PolicyDocument } from '../models/policy-document.model';
 import { AppPage } from '../models/app-page.model';
 import { EmployeeActivity } from '../models/employee-activity.model';
 import { FaceChallenge, FaceLivenessSession, FaceVerification } from '../models/face.model';
@@ -225,6 +225,10 @@ export function gameCatalog(): Collection<GameCatalogEntry> {
 /** Each company's policies as the app shows them, one document per policy; see PolicyDocument. */
 export function policyDocuments(): Collection<PolicyDocument> {
   return getDb().collection<PolicyDocument>('policy_documents');
+}
+
+export function policyAcknowledgements(): Collection<PolicyAcknowledgement> {
+  return getDb().collection<PolicyAcknowledgement>('policy_acknowledgements');
 }
 
 /** Colleagues challenging each other to a catalog game; see GameChallenge. */
@@ -650,6 +654,7 @@ async function ensureIndexes(database: Db): Promise<void> {
   await database.collection<GameCatalogEntry>('game_catalog').createIndex({ key: 1, active: 1, updatedAt: 1 });
   // One document per policy per company, and how a company's are found.
   await database.collection<PolicyDocument>('policy_documents').createIndex({ org: 1, key: 1 }, { unique: true });
+  await database.collection<PolicyAcknowledgement>('policy_acknowledgements').createIndex({ org: 1, userId: 1, key: 1 }, { unique: true });
   const challengesCollection = database.collection<GameChallenge>('game_challenges');
   await challengesCollection.createIndex({ id: 1 }, { unique: true });
   // Each player's list, newest first, and the counts that cap open challenges.

@@ -4,7 +4,7 @@ import {
   actOnMeeting, actOnNote, actOnOwnTask, actOnPerson, addNote, assignStarterTask, checkinForMe, introView, joinerForManager,
   joinersForManager, lifecycleMe, managerProbationMonth, managerTaskDone, markWeekDoneSeen, meetingFor, notesForJoiner,
   onboardingHome, peopleView, postIntro, postWelcome, probationForMe, replyToStarterTask, revealForMe, revealSeenForMe, saveIntro, saveSetup,
-  saveWeek1Step, sendSurvey, starterDone, starterTasksForJoiner, surveyView, week1View,
+  saveWeek1Step, sendSurvey, starterDone, starterTasksForJoiner, surveyView, tourLessonDone, week1View,
 } from '../services/lifecycle/appOnboarding';
 import { LifecycleError } from '../services/lifecycle/engine';
 import { contentDisposition } from '../services/lifecycle/files';
@@ -53,6 +53,7 @@ lifecycleAppRouter.get('/onboarding/notes', lifecycleHandler(async (req) => note
 lifecycleAppRouter.post('/onboarding/notes/:id', lifecycleHandler(async (req) => actOnNote(me(req), param(req, 'id'), body(req))));
 lifecycleAppRouter.get('/onboarding/meetings/:id', lifecycleHandler(async (req) => meetingFor(me(req), param(req, 'id'))));
 lifecycleAppRouter.post('/onboarding/meetings/:id', lifecycleHandler(async (req) => actOnMeeting(me(req), param(req, 'id'), body(req))));
+lifecycleAppRouter.post('/onboarding/tour/:lesson', lifecycleHandler(async (req) => tourLessonDone(me(req), param(req, 'lesson'))));
 lifecycleAppRouter.get('/onboarding/survey', lifecycleHandler(async (req) => surveyView(me(req))));
 lifecycleAppRouter.post('/onboarding/survey', lifecycleHandler(async (req) => sendSurvey(me(req), body(req))));
 lifecycleAppRouter.get('/onboarding/probation', lifecycleHandler(async (req) => probationForMe(me(req))));

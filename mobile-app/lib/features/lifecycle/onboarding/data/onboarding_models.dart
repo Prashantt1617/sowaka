@@ -458,6 +458,8 @@ class OnboardingHome {
     this.showWeekDone = false,
     this.weekDoneStats,
     this.firstPunch,
+    this.tourDone = const [],
+    this.devices = const [],
   });
 
   factory OnboardingHome.fromJson(Map<String, dynamic> json) {
@@ -490,6 +492,11 @@ class OnboardingHome {
       firstPunch: firstPunch.isEmpty
           ? null
           : FirstPunch(at: parseLifecycleDate(firstPunch['at']), faceEnrolled: _bool(firstPunch['faceEnrolled'])),
+      tourDone: [
+        for (final k in (_map(json['tour'])['done'] as List?) ?? const [])
+          if (k is String && k.isNotEmpty) k,
+      ],
+      devices: _maps(json['devices']).map(OnbDevice.fromJson).where((d) => d.title.isNotEmpty).toList(),
     );
   }
 
@@ -524,6 +531,12 @@ class OnboardingHome {
   final bool showWeekDone;
   final ({int tasksDone, int peopleMet, int leaves})? weekDoneStats;
 
+  /// The Sowaka tour's lessons finished (`tour.done`: punch, missed, …).
+  final List<String> tourDone;
+
+  /// "Devices and accesses": what IT and HR set up, ready or not.
+  final List<OnbDevice> devices;
+
   List<TaskView> get all => [...today, ...later, ...done];
 
   /// Steps done of everything the joiner has in this stretch: the server's
@@ -547,6 +560,17 @@ class FirstPunch {
 
   final DateTime? at;
   final bool faceEnrolled;
+/// One of "Devices and accesses": the laptop, the work email, this app.
+class OnbDevice {
+  const OnbDevice({required this.key, required this.title, this.ready = false});
+
+  factory OnbDevice.fromJson(Map<String, dynamic> json) =>
+      OnbDevice(key: _str(json['key']) ?? '', title: _str(json['title']) ?? '', ready: _bool(json['ready']));
+
+  /// laptop, email, app, or any other.
+  final String key;
+  final String title;
+  final bool ready;
 }
 
 // ─── Meetings ───────────────────────────────────────────────────────────────

@@ -260,6 +260,8 @@ export interface Journey {
   bankPfRequest?: BankPfChangeRequest;
   /** When the joiner first saw "Week 1, done!" (A8). */
   week1DoneSeenAt?: Date;
+  /** The Sowaka tour's lessons the joiner has finished (app keys: punch, missed, leave, overtime, …), in order done. */
+  tour?: { done: string[]; updatedAt?: Date };
   /** The manager's welcome post on Connect for the joiner (M2 "Post a welcome"), once per joiner. */
   managerWelcome?: { text: string; postedAt: Date; connectPostId?: string };
   /**
