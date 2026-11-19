@@ -34,7 +34,9 @@ export type OwnerRole =
   | 'finance'
   | 'manager_employee'  // either side marks it done (e.g. "Meet your manager")
   | 'hr_manager'
-  | 'automatic';
+  | 'automatic'
+  | 'buddy'               // the joiner's buddy (team-side task, Teams › Joiners)
+  | 'head_of_department'; // the joiner's head of department: the department head, else the manager's manager
 
 export type TaskKind =
   | 'ack' | 'form' | 'upload' | 'sign' | 'meeting' | 'reel' | 'survey'
@@ -115,6 +117,24 @@ export interface TemplateTask {
    * document is approved. A month task waits for the same month's task.
    */
   after?: { key: SystemTaskKey; when?: 'done' | 'started' };
+  /**
+   * A team-side task (services/lifecycle/teamTasks.ts): shown to the manager, the buddy or the
+   * head of department in Teams › Joiners and ticked there (journey.teamTasks), never made into a
+   * journey task. Its step comes from `dueRule` (none: once confirmed); `title` may use {n}
+   * (first name) and {p} (first name’s); `helper` is the row's quiet line.
+   */
+  team?: TeamTaskSpec;
+}
+
+export type TeamTaskKind = 'help' | 'approve' | 'review' | 'task' | 'meet' | 'team' | 'goal' | 'doc' | 'chat';
+/** Stable key (ticks are kept by it), the row's look, and what the joiner sees for it. */
+export interface TeamTaskSpec {
+  key: string;
+  kind: TeamTaskKind;
+  /** May be done before its step. */
+  early?: boolean;
+  pair?: string;
+  agenda?: string[];
 }
 
 export interface LifecycleTemplateSettings {
@@ -224,7 +244,13 @@ export interface Journey {
   /** Meet-us content: manager note (text or video key), the company's culture video, JD cards. */
   meetUs?: { managerNote?: { kind: 'text' | 'video'; text?: string; fileId?: string; at?: Date }; seen?: string[] };
   /** Probation (onboarding). `goals`: the probation goals the manager sets in week 1 (lock Tj + 7). */
-  probation?: { months: number; extendedBy?: number; decision?: ConfirmationDecision; goals?: string[]; goalsLockedAt?: Date };
+  probation?: {
+    months: number; extendedBy?: number; decision?: ConfirmationDecision; goals?: string[]; goalsLockedAt?: Date;
+    /** The manager's recommendation from the app (Teams › Joiners); HR still decides. */
+    recommendation?: { outcome: 'confirm' | 'extend'; note?: string; byUserId: string; byName?: string; at: Date };
+    /** The head of department's answer to it. */
+    hodApproval?: { outcome: 'approved' | 'discuss'; comment?: string; byUserId: string; byName?: string; at: Date };
+  };
   /** Offboarding: how they leave, and whether the app's off-boarding page shows (O2 override of the template's appPageFor). */
   exitType?: ExitType;
   showAppPage?: boolean;

@@ -84,6 +84,11 @@ export interface Company {
   // Departments and designations HR created on the dashboard, before anyone
   // holds them; the ones people hold come from their own records.
   departmentList?: string[];
+  /**
+   * Who heads each department (User.department → User.userId): the onboarding approver of a
+   * joiner's confirmation (services/lifecycle/teamTasks.ts). No entry: the manager's manager.
+   */
+  departmentHeads?: Array<{ department: string; userId: string }>;
   designationList?: string[];
   /**
    * Day of the month review cycles open on (1-28). A value of 10 means the

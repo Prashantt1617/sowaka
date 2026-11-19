@@ -25,7 +25,11 @@ const LEAD: Record<LifecycleKind, ReactNode> = {
   onboarding: <>Templates set the tasks every joiner gets, from the offer to confirmation. Anyone not assigned to one follows the <strong style={{ fontWeight: 500, color: 'var(--ink-2)' }}>default</strong>.</>,
   offboarding: <>Every exit gets these tasks, dated from the last working day (Tl). Anyone not given another template follows the <strong style={{ fontWeight: 500, color: 'var(--ink-2)' }}>default</strong>.</>,
 };
-const OWNERS: OwnerRole[] = ['employee', 'manager', 'manager_employee', 'hr', 'hr_manager', 'it', 'admin', 'finance', 'automatic'];
+const OWNERS: OwnerRole[] = ['employee', 'manager', 'manager_employee', 'hr', 'hr_manager', 'it', 'admin', 'finance', 'automatic', 'buddy', 'head_of_department'];
+/** Owners only the app's Teams › Joiners has (onboarding only). */
+const TEAM_OWNERS: OwnerRole[] = ['manager', 'buddy', 'head_of_department'];
+const ownersFor = (kind: LifecycleKind, task: TemplateTask): OwnerRole[] =>
+  task.team ? TEAM_OWNERS : kind === 'onboarding' ? OWNERS : OWNERS.filter((o) => o !== 'buddy' && o !== 'head_of_department');
 const EXIT_TYPES: [ExitTypeKey, string][] = [['resignation', 'Resignation'], ['retirement', 'Retirement'], ['end_of_contract', 'End of contract'], ['termination', 'Termination'], ['absconding', 'Absconding']];
 
 const visibleTasks = (tasks: TemplateTask[]) => tasks.filter((t) => !t.recommended || t.recommended.added);
@@ -521,6 +525,7 @@ function TaskRow({ task, kind, open, first, last, onToggle, onChange, onMove, on
             {task.title || <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}>New task</span>}
             {task.recommended?.added && <span style={tagStyle('var(--accent-soft)', 'var(--accent-ink)')}>Added</span>}
             {task.mustDo && <span style={tagStyle('var(--warn-bg)', 'var(--p-orange)')}>Must-do</span>}
+            {task.team && <span style={tagStyle('var(--t-sky)', 'var(--t-sky-i)')} title="Shown in the app under Teams › Joiners">Teams › Joiners</span>}
           </div>
           {task.helper && <div style={{ fontSize: 12, color: 'var(--ink-3)', overflowWrap: 'anywhere' }}>{task.helper}</div>}
         </div>
@@ -538,23 +543,25 @@ function TaskEditor({ task, kind, first, last, onChange, onMove, onRemove, onDon
   onChange: (p: Partial<TemplateTask>) => void; onMove: (by: -1 | 1) => void; onRemove: () => void; onDone: () => void;
 }) {
   const system = Boolean(task.systemKey);
-  const surfaceFor = (o: OwnerRole): TemplateTask['surface'] => (o === 'employee' ? (task.phase === 'pre_boarding' ? 'portal' : 'app') : o === 'manager' || o === 'manager_employee' ? 'app' : o === 'automatic' ? 'backend' : 'dashboard');
+  const surfaceFor = (o: OwnerRole): TemplateTask['surface'] => (o === 'employee' ? (task.phase === 'pre_boarding' ? 'portal' : 'app') : o === 'manager' || o === 'manager_employee' || o === 'buddy' || o === 'head_of_department' ? 'app' : o === 'automatic' ? 'backend' : 'dashboard');
   const docs = task.documents ?? [];
   const showDocs = task.systemKey === 'upload_documents' || (task.kind === 'upload' && task.phase === 'pre_boarding');
   return (
     <div style={{ background: 'var(--surface-2)', borderRadius: 14, padding: 16, margin: '0 0 12px', display: 'grid', gap: 14 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-        <Field label="Task" required><input value={task.title} onChange={(e) => onChange({ title: e.target.value })} style={inputStyle} autoFocus={!task.title} /></Field>
+        <Field label="Task" required hint={task.team ? 'In the app: {n} is the joiner’s first name, {p} their name with ’s' : undefined}><input value={task.title} onChange={(e) => onChange({ title: e.target.value })} style={inputStyle} autoFocus={!task.title} /></Field>
         <Field label="Helper text" hint="One line under the task"><input value={task.helper ?? ''} onChange={(e) => onChange({ helper: e.target.value })} style={inputStyle} /></Field>
         <Field label="Done by" hint={system ? 'Set by the product for this task' : undefined}>
           <Pick value={task.ownerRole} disabled={system} onChange={(v) => onChange({ ownerRole: v as OwnerRole, surface: surfaceFor(v as OwnerRole) })}>
-            {OWNERS.map((o) => <option key={o} value={o}>{OWNER_LABEL[o]}</option>)}
+            {ownersFor(kind, task).map((o) => <option key={o} value={o}>{OWNER_LABEL[o]}</option>)}
           </Pick>
         </Field>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
         <RuleEditor label="Due" kind={kind} value={task.dueRule ?? null} onChange={(r) => onChange({ dueRule: r, dueLabel: r ? undefined : task.dueLabel })} />
-        <RuleEditor label="Opens" kind={kind} value={task.opensRule ?? null} onChange={(r) => onChange({ opensRule: r })} noneLabel="As soon as the journey starts" />
+        {task.team
+          ? <div style={{ fontSize: 12.5, color: 'var(--ink-3)', alignSelf: 'center' }}>The due date sets where it shows in the app: before the joining day, Day 1, Week 1 or a probation month. No date: once they are confirmed.</div>
+          : <RuleEditor label="Opens" kind={kind} value={task.opensRule ?? null} onChange={(r) => onChange({ opensRule: r })} noneLabel="As soon as the journey starts" />}
       </div>
       {!task.dueRule && (
         <Field label="Due, in words" hint="Shown instead of a date, e.g. “Manager sets” or “Each upload”">

@@ -6,18 +6,21 @@
 import { randomUUID } from 'node:crypto';
 import { companies, journeys, lifecycleTemplates, users } from '../../config/db';
 import type {
-  LifecycleKind, LifecycleTemplate, LifecycleTemplateSettings, LifecyclePhase, OwnerRole, SystemTaskKey, TaskKind, TaskSurface, TemplateTask,
+  LifecycleKind, LifecycleTemplate, LifecycleTemplateSettings, LifecyclePhase, OwnerRole, SystemTaskKey, TaskKind, TaskSurface, TeamTaskKind, TeamTaskSpec, TemplateTask,
 } from '../../models/lifecycle.model';
 import { isValidRule } from './dueRules';
 import { LifecycleError } from './errors';
-import { OFFBOARDING_SETTINGS, ONBOARDING_SETTINGS, offboardingSeed, onboardingSeed } from './seed';
+import { OFFBOARDING_SETTINGS, ONBOARDING_SETTINGS, offboardingSeed, onboardingSeed, teamSeed } from './seed';
 
 const KINDS: LifecycleKind[] = ['onboarding', 'offboarding'];
 const PHASES: Record<LifecycleKind, LifecyclePhase[]> = {
   onboarding: ['pre_boarding', 'first_week', 'probation'],
   offboarding: ['resignation', 'when_accepted', 'notice_period', 'last_day', 'after_exit'],
 };
-const OWNERS: OwnerRole[] = ['employee', 'manager', 'hr', 'it', 'admin', 'finance', 'manager_employee', 'hr_manager', 'automatic'];
+const OWNERS: OwnerRole[] = ['employee', 'manager', 'hr', 'it', 'admin', 'finance', 'manager_employee', 'hr_manager', 'automatic', 'buddy', 'head_of_department'];
+/** Owners that exist only on the team side (a row of theirs is always a team row). */
+const TEAM_ONLY_OWNERS: OwnerRole[] = ['buddy', 'head_of_department'];
+const TEAM_KINDS: TeamTaskKind[] = ['help', 'approve', 'review', 'task', 'meet', 'team', 'goal', 'doc', 'chat'];
 const TASK_KINDS: TaskKind[] = ['ack', 'form', 'upload', 'sign', 'meeting', 'reel', 'survey', 'assign', 'review', 'system', 'post', 'tour', 'face', 'checkin', 'letter'];
 const SURFACES: TaskSurface[] = ['portal', 'app', 'dashboard', 'backend', 'outside'];
 const EXIT_TYPES = ['resignation', 'retirement', 'end_of_contract', 'termination', 'absconding'] as const;
@@ -233,12 +236,29 @@ function applySettingsToTasks(kind: LifecycleKind, settings: LifecycleTemplateSe
   });
 }
 
-const SYSTEM_KEYS = new Set<SystemTaskKey>([...onboardingSeed(), ...offboardingSeed()].map((t) => t.systemKey!));
+const SYSTEM_KEYS = new Set<SystemTaskKey>([...onboardingSeed(), ...offboardingSeed()].flatMap((t) => (t.systemKey ? [t.systemKey] : [])));
+
+/** A team row's spec, cleaned; a buddy's or head of department's row without one gets a plain task's. */
+function cleanTeam(kind: LifecycleKind, raw: unknown, owner: OwnerRole, id: string, where: string): TeamTaskSpec | undefined {
+  if ((raw === undefined || raw === null) && !TEAM_ONLY_OWNERS.includes(owner)) return undefined;
+  if (kind !== 'onboarding') throw new LifecycleError(400, `${where}: team tasks are for onboarding`);
+  if (!['manager', ...TEAM_ONLY_OWNERS].includes(owner)) throw new LifecycleError(400, `${where}: a team task is the manager’s, the buddy’s or the head of department’s`);
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const key = typeof r.key === 'string' && /^[a-z0-9_-]{1,40}$/.test(r.key) ? r.key : `custom_${id.replace(/[^a-z0-9]/gi, '').slice(0, 24).toLowerCase()}`;
+  const teamKind = TEAM_KINDS.includes(r.kind as TeamTaskKind) ? (r.kind as TeamTaskKind) : 'task';
+  const agenda = Array.isArray(r.agenda) ? r.agenda.filter((a): a is string => typeof a === 'string' && !!a.trim()).slice(0, 8).map((a) => a.trim().slice(0, 120)) : [];
+  return {
+    key, kind: teamKind, ...(r.early === true ? { early: true } : {}),
+    ...(typeof r.pair === 'string' && r.pair.trim() ? { pair: r.pair.trim().slice(0, 80) } : {}),
+    ...(agenda.length ? { agenda } : {}),
+  };
+}
 
 function cleanTasks(kind: LifecycleKind, input: unknown): TemplateTask[] {
   if (!Array.isArray(input)) throw new LifecycleError(400, 'tasks must be a list');
   if (input.length > 200) throw new LifecycleError(400, 'A template holds at most 200 tasks');
   const seen = new Set<string>();
+  const seenTeam = new Set<string>();
   return input.map((raw, index) => {
     if (!raw || typeof raw !== 'object') throw new LifecycleError(400, `Task ${index + 1} is not an object`);
     const t = raw as Record<string, unknown>;
@@ -268,6 +288,12 @@ function cleanTasks(kind: LifecycleKind, input: unknown): TemplateTask[] {
       order: Number.isFinite(t.order) ? Number(t.order) : (index + 1) * 10,
     };
     if (typeof t.helper === 'string' && t.helper.trim()) task.helper = t.helper.trim().slice(0, 300);
+    const team = cleanTeam(kind, t.team, task.ownerRole, id, where);
+    if (team) {
+      if (seenTeam.has(team.key)) throw new LifecycleError(400, `${where}: duplicate team task`);
+      seenTeam.add(team.key);
+      task.team = team;
+    }
     if (systemKey) task.systemKey = systemKey;
     if (typeof t.dueLabel === 'string' && t.dueLabel.trim()) task.dueLabel = t.dueLabel.trim().slice(0, 60);
     if (t.recommended && typeof t.recommended === 'object') {
@@ -359,4 +385,31 @@ export async function templateJourneys(org: string, id: string) {
       };
     }),
   };
+}
+
+/**
+ * Adds the team side's rows (seed.ts teamSeed: the buddy's, the head of department's and the
+ * manager's Teams › Joiners tasks) to onboarding templates that lack them, by team key: a row HR
+ * already has (edited or switched off) is never added twice. `apply` false only counts. One org,
+ * or every org.
+ */
+export async function addTeamRowsToTemplates(opts: { apply: boolean; org?: string }): Promise<Array<{ org: string; templateId: string; name: string; added: string[] }>> {
+  const docs = await lifecycleTemplates().find({ kind: 'onboarding', ...(opts.org ? { org: opts.org } : {}) }, { projection: { _id: 0 } }).toArray();
+  const out: Array<{ org: string; templateId: string; name: string; added: string[] }> = [];
+  for (const doc of docs) {
+    const have = new Set(doc.tasks.flatMap((t) => (t.team ? [t.team.key] : [])));
+    const ids = new Set(doc.tasks.map((t) => t.id));
+    const start = Math.max(0, ...doc.tasks.map((t) => t.order ?? 0));
+    const missing = teamSeed(start).filter((t) => !have.has(t.team!.key) && !ids.has(t.id));
+    if (!missing.length) continue;
+    out.push({ org: doc.org, templateId: doc.id, name: doc.name, added: missing.map((t) => t.team!.key) });
+    if (opts.apply) {
+      // Only while none of them is there (a second run, or HR saving meanwhile): never a duplicate.
+      await lifecycleTemplates().updateOne(
+        { org: doc.org, id: doc.id, 'tasks.team.key': { $nin: missing.map((t) => t.team!.key) } },
+        { $push: { tasks: { $each: missing } }, $set: { updatedAt: new Date() } },
+      );
+    }
+  }
+  return out;
 }

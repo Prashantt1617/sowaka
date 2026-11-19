@@ -4,91 +4,64 @@
  * and the full task list ("View all"), the same page for every viewer with the tasks of
  * their relation to the joiner:
  *
- * - `report`: the joiner reports to me. The manager's tasks: every manager-owned journey task
- *   from the template (ticked through the engine), plus the artifact's manager tasks that have
- *   no template row (MANAGER_EXTRA_TASKS, ticked here).
- * - `buddy`: I'm the joiner's buddy (journey.buddyUserId). BUDDY_TASKS.
- * - `line`: the joiner is further down my reporting line (I manage their manager, or someone
- *   above them): the head of department's view. HOD_TASKS, among them the confirmation approval
- *   once the manager has recommended.
+ * - `report`: the joiner reports to me. Every manager-owned journey task (ticked through the
+ *   engine), plus the template's manager team rows (ticked here).
+ * - `buddy`: I'm the joiner's buddy (journey.buddyUserId). The template's buddy rows.
+ * - `line`: I'm the joiner's head of department (approverOf: the department head the company
+ *   records, else the manager's manager), or further up their reporting line. Only the head of
+ *   department gets the template's head-of-department rows and approves the confirmation; anyone
+ *   else up the line follows along read-only.
  *
- * The team tasks are definitions in code (not in HR's template yet) and their ticks live on the
- * journey (`journey.teamTasks`), so every journey has them, existing ones too.
+ * The team tasks are rows of HR's onboarding template (`TemplateTask.team`, seed.ts teamSeed),
+ * read from the journey's template as it is now, so HR's edits apply at once; a template without
+ * any (not migrated yet) uses the seed's. They never become journey tasks: ticks live on the
+ * journey (`journey.teamTasks`, by the row's team key). The manager's recommendation and the head
+ * of department's answer are also written onto the confirmation record (journey.probation), where
+ * HR decides.
  *
  * Stages are the artifact's steps: Before Day 1, Day 1, Week 1, Month 1…Month n, Confirmed.
  */
-import { journeys, users } from '../../config/db';
-import type { Journey, JourneyTask, SystemTaskKey, TeamTaskTick } from '../../models/lifecycle.model';
+import { companies, journeys, lifecycleTemplates, users } from '../../config/db';
+import type { DueRule, Journey, JourneyTask, OwnerRole, SystemTaskKey, TeamTaskKind, TeamTaskSpec, TeamTaskTick, TemplateTask } from '../../models/lifecycle.model';
 import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
-import { companyTimeZone, keyOfDay, probationMonthOn, todayKey, daysBetween } from './dueRules';
+import { addDaysKey, companyTimeZone, daysBetween, keyOfDay, probationMonthOn, todayKey } from './dueRules';
 import {
-  LifecycleError, deriveJourney, isJoined, loadJourney, namesOf, taskLate, tasksOf, totalProbationMonths, visibleTo,
+  LifecycleError, deriveJourney, isJoined, loadJourney, namesOf, taskLate, tasksOf, tell, totalProbationMonths, visibleTo,
 } from './engine';
 import { MANAGER_OWNED, managerMayTick, managerTaskDone } from './appOnboarding';
-import { APP_COPY } from './seed';
+import { APP_COPY, teamSeed } from './seed';
 
 type Me = { userId: string; name: string; org: string };
 
 export type TeamRelation = 'report' | 'buddy' | 'line';
-export type TeamTaskKind = 'help' | 'approve' | 'review' | 'task' | 'meet' | 'team' | 'goal' | 'doc' | 'chat';
 
-/** When a team task is due: a step of the journey (a probation month by number, or the last). */
-export type TeamAt = { step: 'pre' | 'day1' | 'week1' | 'confirmed' } | { step: 'month'; month: number | 'last' | 'mid' };
-
+/** A team row as the views read it: its key, wording, owner, timing and look. */
 export interface TeamTaskDef {
   id: string;
+  owner: OwnerRole;
   /** `{n}` is the joiner's first name, `{p}` their first name with ’s. */
   title: string;
-  at: TeamAt;
-  kind: TeamTaskKind;
-  /** May be done before its step ("Opens in Month 2" otherwise). */
-  early?: boolean;
-  /** The joiner's own item it pairs with ("Your buddy"), shown with their avatar. */
-  pair?: string;
   note?: string;
-  /** A meeting's agenda (the meeting screen). */
-  agenda?: string[];
+  dueRule: DueRule | null;
+  team: TeamTaskSpec;
 }
 
-const SETTLE = ['How {n} is settling in', 'Anything {n} is stuck on'];
+const OWNER_OF: Record<TeamRelation, OwnerRole> = { report: 'manager', buddy: 'buddy', line: 'head_of_department' };
 
-/** The buddy's list (BuddyProto). */
-export const BUDDY_TASKS: TeamTaskDef[] = [
-  { id: 'buddy_meet', title: 'Meet {n} on Day 1', at: { step: 'day1' }, kind: 'meet', pair: 'Your buddy', agenda: ['How the team works day to day', 'Tools and shortcuts', 'Anything {n} is unsure about'] },
-  { id: 'buddy_show_around', title: 'Show {n} around the office', at: { step: 'day1' }, kind: 'team' },
-  { id: 'buddy_punch_in', title: 'Tell {n} how punch-in works', at: { step: 'day1' }, kind: 'help', pair: 'Sowaka tour: Punch in and out' },
-  { id: 'buddy_policies', title: 'Show {n} where policies and payslips are', at: { step: 'day1' }, kind: 'help' },
-  { id: 'buddy_week1', title: 'Week-1 check-in', at: { step: 'week1' }, kind: 'meet', agenda: ['How the first week went', 'Anything {n} is stuck on', 'Who {n} should meet next'] },
-  { id: 'buddy_tools', title: 'Help {n} set up their work tools', at: { step: 'week1' }, kind: 'help', early: true },
-  { id: 'buddy_intros', title: 'Introduce {n} to three people outside the team', at: { step: 'week1' }, kind: 'team', early: true },
-  { id: 'buddy_leave_ot', title: 'Tell {n} how leave and overtime work', at: { step: 'week1' }, kind: 'help', early: true, pair: 'Sowaka tour: leave and overtime' },
-  { id: 'buddy_month1', title: 'Month-1 catch-up', at: { step: 'month', month: 1 }, kind: 'meet', agenda: ['How the first month went', 'What would make next month easier'] },
-];
-
-/** The head of department's list (HodProto). */
-export const HOD_TASKS: TeamTaskDef[] = [
-  { id: 'hod_meet', title: 'Meet {n}', at: { step: 'week1' }, kind: 'meet', early: true, pair: 'Meet your head of department', note: 'A short hello in the first week or two', agenda: ['How {n} is settling in', 'What the department is working on', 'Anything {n} needs from you'] },
-  { id: 'hod_approve', title: 'Approve {p} confirmation', at: { step: 'month', month: 'last' }, kind: 'approve', note: 'After the manager recommends' },
-];
+const defOf = (t: TemplateTask): TeamTaskDef => ({ id: t.team!.key, owner: t.ownerRole, title: t.title, ...(t.helper ? { note: t.helper } : {}), dueRule: t.dueRule ?? null, team: t.team! });
 
 /**
- * The manager's tasks from the artifact that no template row covers (the template's own rows,
- * e.g. Meet {n}, Pick a buddy, the monthly check-ins and goals, come from the journey).
- * `manager_welcome` is done when the manager posted the welcome (journey.managerWelcome).
+ * The journey's team rows, switched on: from its template as it is now, else its snapshot, else
+ * the seed (a template with no team rows at all has not been migrated yet).
  */
-export const MANAGER_EXTRA_TASKS: TeamTaskDef[] = [
-  { id: 'mgr_plan_week', title: 'Plan {p} first week', at: { step: 'pre' }, kind: 'task', note: 'Who they meet, what they shadow' },
-  { id: 'mgr_welcome', title: 'Send {n} a welcome message', at: { step: 'pre' }, kind: 'chat', early: true, pair: 'Message from your manager' },
-  { id: 'mgr_buddy_check', title: 'Check in with {p} buddy', at: { step: 'week1' }, kind: 'meet', early: true, agenda: SETTLE },
-  { id: 'mgr_week_chat', title: 'End-of-week chat', at: { step: 'week1' }, kind: 'meet', early: true, agenda: ['Highlights of the week', 'Questions so far', 'Plan for next week'] },
-  { id: 'mgr_mid_feedback', title: 'Mid-probation feedback', at: { step: 'month', month: 'mid' }, kind: 'doc', pair: 'Feedback from your manager' },
-  { id: 'mgr_write_review', title: 'Write {p} confirmation review', at: { step: 'month', month: 'last' }, kind: 'doc' },
-  { id: 'mgr_recommend', title: 'Recommend: confirm or extend', at: { step: 'month', month: 'last' }, kind: 'doc', note: 'HR makes the final call' },
-  { id: 'mgr_share_news', title: 'Share the news with the team', at: { step: 'confirmed' }, kind: 'team' },
-];
-
-const DEFS: Record<TeamRelation, TeamTaskDef[]> = { report: MANAGER_EXTRA_TASKS, buddy: BUDDY_TASKS, line: HOD_TASKS };
-const ALL_DEFS = new Map([...BUDDY_TASKS, ...HOD_TASKS, ...MANAGER_EXTRA_TASKS].map((d) => [d.id, d]));
+export async function teamDefsFor(j: Pick<Journey, 'org' | 'templateId' | 'templateSnapshot'>): Promise<TeamTaskDef[]> {
+  const template = j.templateId ? await lifecycleTemplates().findOne({ org: j.org, id: j.templateId }, { projection: { _id: 0, tasks: 1 } }) : null;
+  const pick = (tasks?: TemplateTask[]) => (tasks ?? []).filter((t) => !!t.team);
+  let rows = pick(template?.tasks);
+  if (!rows.length) rows = pick(j.templateSnapshot?.tasks);
+  if (!rows.length) rows = teamSeed();
+  return rows.filter((t) => t.enabled !== false).sort((a, b) => a.order - b.order).map(defOf);
+}
 
 // ─── Steps ──────────────────────────────────────────────────────────────────
 
@@ -98,19 +71,27 @@ export function stepsFor(j: Pick<Journey, 'probation' | 'templateSnapshot'>): st
   return ['Before Day 1', 'Day 1', 'Week 1', ...Array.from({ length: n }, (_, i) => `Month ${i + 1}`), 'Confirmed'];
 }
 
-/** The step a team task belongs to, or -1 when the journey has no such month. */
-export function stepOfDef(at: TeamAt, months: number): number {
-  switch (at.step) {
-    case 'pre': return 0;
-    case 'day1': return 1;
-    case 'week1': return 2;
-    case 'confirmed': return 3 + months;
-    case 'month': {
-      const raw = at.month;
-      const m = raw === 'last' ? months : raw === 'mid' ? Math.max(1, Math.ceil(months / 2)) : raw;
-      return m >= 1 && m <= months ? 2 + m : -1;
-    }
+/**
+ * The step a team row belongs to, from its due rule: before Tj → Before Day 1, Tj → Day 1,
+ * Tj+1…6 → Week 1, later or a month's start/end → that month, none → Confirmed. -1: the journey
+ * has no such month (a Month-5 row on a 3-month probation).
+ */
+export function stepOfRule(rule: DueRule | null, months: number, tj?: string): number {
+  if (!rule) return 3 + months;
+  if (rule.anchor === 'tj') {
+    const offset = rule.offset ?? 0;
+    if (offset < 0) return 0;
+    if (offset === 0) return 1;
+    if (offset < 7) return 2;
+    if (tj) return stepOfDay(tj, addDaysKey(tj, offset), months);
+    return 2 + Math.min(months, Math.max(1, Math.ceil((offset + 1) / 30)));
   }
+  if (rule.anchor === 'month_start' || rule.anchor === 'month_end') {
+    const m = rule.month === 'last' ? months : Array.isArray(rule.month) ? rule.month[0] : rule.month === 'each' || rule.month === undefined ? 1 : rule.month;
+    return m >= 1 && m <= months ? 2 + m : -1;
+  }
+  // The offer and its acceptance: before Day 1. Offboarding anchors never apply.
+  return 0;
 }
 
 /** The step a day falls on for a journey joining on `tj` (a key 'YYYY-MM-DD'). */
@@ -146,20 +127,51 @@ async function myLine(org: string, userId: string): Promise<Set<string>> {
   return seen;
 }
 
-/** How I'm connected to a joiner: their manager first, then their buddy, then their line. */
-export async function relationTo(me: Me, j: Journey): Promise<TeamRelation | null> {
-  if (j.managerUserId === me.userId) return 'report';
-  if (j.buddyUserId === me.userId) return 'buddy';
-  if (j.managerUserId && (await myLine(me.org, me.userId)).has(j.managerUserId)) return 'line';
+/**
+ * The joiner's head of department, the one approver of their confirmation: the head the company
+ * records for their department (Company.departmentHeads), unless that is the joiner or their
+ * manager; else the manager's own manager.
+ */
+export async function approverOf(j: Pick<Journey, 'org' | 'userId' | 'managerUserId' | 'department'>): Promise<string | undefined> {
+  const [company, joiner, manager] = await Promise.all([
+    companies().findOne({ id: j.org }, { projection: { _id: 0, departmentHeads: 1 } }),
+    !j.department && j.userId ? users().findOne({ userId: j.userId }, { projection: { _id: 0, department: 1 } }) : Promise.resolve(null),
+    j.managerUserId ? users().findOne({ userId: j.managerUserId }, { projection: { _id: 0, managerUserId: 1 } }) : Promise.resolve(null),
+  ]);
+  const department = (j.department ?? joiner?.department ?? '').trim().toLowerCase();
+  const head = department ? company?.departmentHeads?.find((h) => h.department.trim().toLowerCase() === department)?.userId : undefined;
+  if (head && head !== j.userId && head !== j.managerUserId) return head;
+  const skip = manager?.managerUserId;
+  return skip && skip !== j.userId && skip !== j.managerUserId ? skip : undefined;
+}
+
+/** The departments I head (Company.departmentHeads), lower-cased. */
+async function departmentsIHead(me: Me): Promise<string[]> {
+  const company = await companies().findOne({ id: me.org }, { projection: { _id: 0, departmentHeads: 1 } });
+  return (company?.departmentHeads ?? []).filter((h) => h.userId === me.userId).map((h) => h.department.trim().toLowerCase());
+}
+
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+type Link = { rel: TeamRelation; approver: boolean; approverUserId?: string };
+
+/** How I'm connected to a joiner: their manager first, then their buddy, then their head of department or line. */
+export async function relationTo(me: Me, j: Journey, line?: Set<string>): Promise<Link | null> {
+  const approverUserId = await approverOf(j);
+  const base = approverUserId ? { approverUserId } : {};
+  if (j.managerUserId === me.userId) return { rel: 'report', approver: false, ...base };
+  if (j.buddyUserId === me.userId) return { rel: 'buddy', approver: false, ...base };
+  if (approverUserId === me.userId) return { rel: 'line', approver: true, ...base };
+  if (j.managerUserId && (line ?? await myLine(me.org, me.userId)).has(j.managerUserId)) return { rel: 'line', approver: false, ...base };
   return null;
 }
 
-async function connectedJourney(me: Me, journeyId: string): Promise<{ j: Journey; rel: TeamRelation }> {
+async function connectedJourney(me: Me, journeyId: string): Promise<{ j: Journey } & Link> {
   const j = await loadJourney(journeyId);
   if (j.kind !== 'onboarding' || j.org !== me.org || j.closedAt) throw new LifecycleError(404, 'Joiner not found');
-  const rel = await relationTo(me, j);
-  if (!rel) throw new LifecycleError(404, 'Joiner not found');
-  return { j, rel };
+  const link = await relationTo(me, j);
+  if (!link) throw new LifecycleError(404, 'Joiner not found');
+  return { j, ...link };
 }
 
 const firstOf = (name: string) => name.trim().split(/\s+/)[0] || 'them';
@@ -191,6 +203,28 @@ export interface TeamTaskView {
   doneByName?: string;
 }
 
+/** The manager's recommendation: the confirmation record's, else an older tick's. */
+export function recommendationOf(j: Journey) {
+  const rec = j.probation?.recommendation;
+  if (rec) return rec;
+  const tick = j.teamTasks?.mgr_recommend;
+  return tick ? { outcome: (tick.outcome === 'extend' ? 'extend' : 'confirm') as 'confirm' | 'extend', ...(tick.note ? { note: tick.note } : {}), byUserId: tick.byUserId, byName: tick.byName, at: tick.doneAt } : undefined;
+}
+
+/** The head of department's answer: the confirmation record's, else an older tick's. */
+export function approvalOf(j: Journey) {
+  const a = j.probation?.hodApproval;
+  if (a) return a;
+  const tick = j.teamTasks?.hod_approve;
+  return tick ? { outcome: (tick.outcome === 'discuss' ? 'discuss' : 'approved') as 'approved' | 'discuss', ...(tick.note ? { comment: tick.note } : {}), byUserId: tick.byUserId, byName: tick.byName, at: tick.doneAt } : undefined;
+}
+
+function approvalState(j: Journey): TeamReviewState {
+  const a = approvalOf(j);
+  if (a) return a.outcome === 'discuss' ? 'back' : 'reviewed';
+  return recommendationOf(j) ? 'ready' : 'waiting';
+}
+
 const KIND_OF_KEY: Partial<Record<SystemTaskKey, TeamTaskKind>> = {
   manager_setup: 'task', assign_buddy: 'team', meet_manager: 'meet', meet_team: 'team', starter_task: 'task', one_on_one_notes: 'doc',
   probation_goals: 'goal', monthly_goals: 'goal', monthly_checkin: 'meet', monthly_review: 'review', confirmation_discussion: 'meet', manager_30day_note: 'doc',
@@ -220,32 +254,36 @@ function journeyTaskView(t: JourneyTask, j: Journey, first: string, months: numb
 }
 
 function teamDefView(d: TeamTaskDef, j: Journey, first: string, months: number): TeamTaskView | null {
-  const step = stepOfDef(d.at, months);
+  const step = stepOfRule(d.dueRule, months, j.tj);
   if (step < 0) return null;
+  const kind = d.team.kind;
   const tick = j.teamTasks?.[d.id];
   let done = !!tick;
   if (d.id === 'mgr_welcome' && j.managerWelcome) done = true;
+  if (d.id === 'mgr_recommend') done = !!recommendationOf(j);
   let reviewState: TeamReviewState | undefined;
-  if (d.kind === 'approve') {
-    const rec = j.teamTasks?.mgr_recommend;
-    reviewState = tick ? (tick.outcome === 'discuss' ? 'back' : 'reviewed') : rec ? 'ready' : 'waiting';
+  if (kind === 'approve') {
+    reviewState = approvalState(j);
     done = reviewState === 'reviewed';
   }
   return {
-    id: d.id, title: fill(d.title, first), kind: d.kind, step, early: !!d.early, done,
-    ...(d.pair ? { pair: d.pair } : {}), ...(d.note ? { note: d.note } : {}),
-    canTick: d.kind !== 'approve' && d.id !== 'mgr_recommend',
-    opens: d.kind === 'meet' ? 'meeting' : d.kind === 'approve' ? 'approval' : null,
+    id: d.id, title: fill(d.title, first), kind, step, early: !!d.team.early, done,
+    ...(d.team.pair ? { pair: d.team.pair } : {}), ...(d.note ? { note: d.note } : {}),
+    canTick: kind !== 'approve' && d.id !== 'mgr_recommend',
+    opens: kind === 'meet' ? 'meeting' : kind === 'approve' ? 'approval' : null,
     ...(reviewState ? { reviewState } : {}),
-    ...(d.agenda ? { agenda: d.agenda.map((a) => fill(a, first)) } : {}),
+    ...(d.team.agenda?.length ? { agenda: d.team.agenda.map((a) => fill(a, first)) } : {}),
     source: 'team', ...(tick?.byName ? { doneByName: tick.byName } : {}),
   };
 }
 
-async function tasksFor(j: Journey, rel: TeamRelation, first: string, journeyTasks?: JourneyTask[]): Promise<TeamTaskView[]> {
+/** My tasks for the joiner; none for someone up the line who is not the head of department. */
+async function tasksFor(j: Journey, link: Link, first: string, journeyTasks?: JourneyTask[]): Promise<TeamTaskView[]> {
+  if (link.rel === 'line' && !link.approver) return [];
   const months = totalProbationMonths(j);
-  const team = DEFS[rel].map((d) => teamDefView(d, j, first, months)).filter((t): t is TeamTaskView => !!t);
-  if (rel !== 'report') return team;
+  const owner = OWNER_OF[link.rel];
+  const team = (await teamDefsFor(j)).filter((d) => d.owner === owner).map((d) => teamDefView(d, j, first, months)).filter((t): t is TeamTaskView => !!t);
+  if (link.rel !== 'report') return team;
   const rows = (journeyTasks ?? await tasksOf(j.id)).filter((t) => MANAGER_OWNED.includes(t.ownerRole) && visibleTo('manager', t));
   const names = await namesOf(rows.map((t) => t.doneByUserId));
   const fromJourney = rows.map((t) => journeyTaskView(t, j, first, months, names));
@@ -271,28 +309,33 @@ function delayedCount(tasks: JourneyTask[], today: string): number {
 
 /** GET /lifecycle/team/joiners — everyone joining or in probation I'm connected to. */
 export async function teamJoiners(me: Me, now = new Date()) {
-  const line = await myLine(me.org, me.userId);
+  const [line, heads] = await Promise.all([myLine(me.org, me.userId), departmentsIHead(me)]);
   const rows = ((await journeys().find({
     org: me.org, ...OPEN_ONBOARDING,
-    $or: [{ managerUserId: me.userId }, { buddyUserId: me.userId }, { managerUserId: { $in: [...line] } }],
+    $or: [
+      { managerUserId: me.userId }, { buddyUserId: me.userId }, { managerUserId: { $in: [...line] } },
+      // The departments I head: their joiners, wherever they sit in the tree.
+      ...(heads.length ? [{ department: { $in: heads.map((d) => new RegExp(`^\\s*${escapeRegex(d)}\\s*$`, 'i')) } }] : []),
+    ],
   } as never, { projection: { _id: 0 } }).toArray()) as Journey[])
     .filter((j) => !(j.status === 'confirmed' && j.probation?.decision?.revealedAt));
-  const faces = await facesOf(rows.flatMap((j) => [j.userId, j.managerUserId, j.buddyUserId]));
-  const today = (j: Journey) => todayKey(now, companyTimeZone(j.org));
-  const out = await Promise.all(rows.map(async (j) => {
-    const rel: TeamRelation = j.managerUserId === me.userId ? 'report' : j.buddyUserId === me.userId ? 'buddy' : 'line';
+  const links = await Promise.all(rows.map((j) => relationTo(me, j, line)));
+  const mine = rows.map((j, i) => ({ j, link: links[i] })).filter((x): x is { j: Journey; link: Link } => !!x.link);
+  const faces = await facesOf(mine.flatMap(({ j, link }) => [j.userId, j.managerUserId, j.buddyUserId, link.approverUserId]));
+  const out = await Promise.all(mine.map(async ({ j, link }) => {
     const person = j.userId ? faces.get(j.userId) : undefined;
     const name = person?.name ?? j.candidate?.name ?? '—';
     const steps = stepsFor(j);
-    const step = currentStep(j, today(j));
+    const step = currentStep(j, todayKey(now, companyTimeZone(j.org)));
     const all = await tasksOf(j.id);
-    const tasks = await tasksFor(j, rel, firstOf(name), all);
+    const tasks = await tasksFor(j, link, firstOf(name), all);
     const open = tasks.filter((t) => t.step === step && !t.done && (t.canTick || t.opens === 'meeting' || t.reviewState === 'ready')).length;
     const photoUrl = person?.userId ? await faceUrlOf(person as FaceFields) : null;
     return {
       journeyId: j.id, ...(j.userId ? { userId: j.userId } : {}), name, ...(photoUrl ? { photoUrl } : {}),
       ...((j.designation ?? person?.designation) ? { designation: j.designation ?? person?.designation } : {}),
-      relation: rel, ...(j.managerUserId ? { managerName: faces.get(j.managerUserId)?.name ?? '' } : {}),
+      relation: link.rel, ...(j.managerUserId ? { managerName: faces.get(j.managerUserId)?.name ?? '' } : {}),
+      ...approverFields(link, me, faces),
       step, stepLabel: step === 0 && j.tj ? `Joins ${joinsLabel(j.tj)}` : steps[step], plant: deriveJourney(j, all, now).plant,
       preboarding: !isJoined(j), toDo: open, ...(j.tj ? { tj: j.tj } : {}),
     };
@@ -302,14 +345,20 @@ export async function teamJoiners(me: Me, now = new Date()) {
   return { joiners: out };
 }
 
+/** Who approves the confirmation, for the views ("Head of department: Rahul Mehta"). */
+function approverFields(link: Link, me: Me, faces: Map<string, Face>) {
+  if (!link.approverUserId) return { approverIsYou: false };
+  return { approverUserId: link.approverUserId, approverName: faces.get(link.approverUserId)?.name ?? '', approverIsYou: link.approverUserId === me.userId };
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const joinsLabel = (key: string) => `${Number(key.slice(8, 10))} ${MONTHS[Number(key.slice(5, 7)) - 1]}`;
 
 /** GET /lifecycle/team/joiners/:journeyId — the person page and the full task list. */
 export async function teamJoiner(me: Me, journeyId: string, now = new Date()) {
-  const { j, rel } = await connectedJourney(me, journeyId);
+  const { j, ...link } = await connectedJourney(me, journeyId);
   const all = await tasksOf(j.id);
-  const faces = await facesOf([j.userId, j.managerUserId, j.buddyUserId]);
+  const faces = await facesOf([j.userId, j.managerUserId, j.buddyUserId, link.approverUserId]);
   const person = j.userId ? faces.get(j.userId) : undefined;
   const name = person?.name ?? j.candidate?.name ?? '—';
   const first = firstOf(name);
@@ -329,22 +378,29 @@ export async function teamJoiner(me: Me, journeyId: string, now = new Date()) {
       ...(j.tj ? { tj: j.tj } : {}), preboarding: !isJoined(j), plant: derived.plant, dayLabel: derived.dayLabel,
       status: delayed ? `${delayed} task${delayed === 1 ? '' : 's'} delayed` : step === 0 ? 'Joining soon' : 'On track', delayed,
     },
-    relation: rel,
+    relation: link.rel,
+    ...approverFields(link, me, faces),
+    // Up the line but not the head of department: following along, nothing to do.
+    readOnly: link.rel === 'line' && !link.approver,
     steps, step,
     // The head of department follows along; only the manager and the buddy step ahead or back.
-    canBrowseSteps: rel !== 'line',
-    tasks: await tasksFor(j, rel, first, all),
+    canBrowseSteps: link.rel !== 'line',
+    tasks: await tasksFor(j, link, first, all),
   };
 }
 
 /** GET /lifecycle/team/joiners/:journeyId/approval — what the head of department approves. */
 export async function teamApproval(me: Me, journeyId: string) {
-  const { j, rel } = await connectedJourney(me, journeyId);
-  if (rel !== 'line') throw new LifecycleError(403, 'Only the head of department approves');
+  const { j, approver } = await connectedJourney(me, journeyId);
+  if (!approver) throw new LifecycleError(403, 'Only the head of department approves');
+  return approvalView(j);
+}
+
+async function approvalView(j: Journey) {
   const all = await tasksOf(j.id);
-  const rec = j.teamTasks?.mgr_recommend;
-  const mine = j.teamTasks?.hod_approve;
-  const names = await namesOf([j.managerUserId, j.userId]);
+  const rec = recommendationOf(j);
+  const mine = approvalOf(j);
+  const names = await namesOf([j.managerUserId]);
   const total = totalProbationMonths(j);
   const status = (key: SystemTaskKey, month?: number) => all.find((t) => t.systemKey === key && (month === undefined || t.month === month) && t.status !== 'cancelled');
   const isDone = (t?: JourneyTask) => !!t && (t.status === 'done' || t.status === 'skipped');
@@ -357,9 +413,9 @@ export async function teamApproval(me: Me, journeyId: string) {
     ...(status('pulse_survey') ? [{ label: 'Probation feedback survey', value: isDone(status('pulse_survey')) ? 'Filled in' : 'Not yet', ok: isDone(status('pulse_survey')) }] : []),
   ];
   return {
-    state: (mine ? (mine.outcome === 'discuss' ? 'back' : 'reviewed') : rec ? 'ready' : 'waiting') as TeamReviewState,
-    ...(rec ? { recommendation: { byName: rec.byName ?? (j.managerUserId ? names.get(j.managerUserId) : '') ?? '', outcome: rec.outcome ?? 'confirm', ...(rec.note ? { note: rec.note } : {}), at: rec.doneAt } } : {}),
-    ...(mine ? { answer: { outcome: mine.outcome, ...(mine.note ? { note: mine.note } : {}), at: mine.doneAt, byName: mine.byName } } : {}),
+    state: approvalState(j),
+    ...(rec ? { recommendation: { byName: rec.byName ?? (j.managerUserId ? names.get(j.managerUserId) : '') ?? '', outcome: rec.outcome, ...(rec.note ? { note: rec.note } : {}), at: rec.at } } : {}),
+    ...(mine ? { answer: { outcome: mine.outcome, ...(mine.comment ? { note: mine.comment } : {}), at: mine.at, byName: mine.byName } } : {}),
     managerName: (j.managerUserId ? names.get(j.managerUserId) : '') ?? '',
     facts,
   };
@@ -367,58 +423,89 @@ export async function teamApproval(me: Me, journeyId: string) {
 
 // ─── Writes ─────────────────────────────────────────────────────────────────
 
-async function setTick(j: Journey, id: string, tick: TeamTaskTick | null): Promise<void> {
-  const update = tick
-    ? { $set: { [`teamTasks.${id}`]: tick, updatedAt: new Date() } }
-    : { $unset: { [`teamTasks.${id}`]: '' }, $set: { updatedAt: new Date() } };
-  await journeys().updateOne({ id: j.id }, update as never);
+async function setTick(j: Journey, id: string, tick: TeamTaskTick | null, extra: { set?: Record<string, unknown>; unset?: string[] } = {}): Promise<void> {
+  const $set: Record<string, unknown> = { updatedAt: new Date(), ...(tick ? { [`teamTasks.${id}`]: tick } : {}), ...(extra.set ?? {}) };
+  const $unset: Record<string, ''> = Object.fromEntries([...(tick ? [] : [`teamTasks.${id}`]), ...(extra.unset ?? [])].map((k) => [k, '' as const]));
+  await journeys().updateOne({ id: j.id }, { $set, ...(Object.keys($unset).length ? { $unset } : {}) } as never);
 }
 
 const cleanNote = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 2000) : '');
 
 /**
  * POST /lifecycle/team/joiners/:journeyId/tasks/:taskId — `{ action: 'done' | 'undo' }`; the manager's
- * recommendation `{ action: 'recommend', outcome: 'confirm' | 'extend', note }`. A template task of the
- * manager's goes through the engine (managerTaskDone: its rules, no undo).
+ * recommendation `{ action: 'recommend', outcome: 'confirm' | 'extend', note }` (onto the confirmation
+ * record too; a new one after "Ask to discuss" reopens the head of department's answer). A template task
+ * of the manager's goes through the engine (managerTaskDone: its rules, no undo).
  */
 export async function teamTaskAction(me: Me, journeyId: string, taskId: string, body: Record<string, unknown>) {
-  const { j, rel } = await connectedJourney(me, journeyId);
-  const def = ALL_DEFS.get(taskId);
+  const { j, ...link } = await connectedJourney(me, journeyId);
+  const def = (await teamDefsFor(j)).find((d) => d.id === taskId);
   if (!def) {
-    if (rel !== 'report') throw new LifecycleError(404, 'Task not found');
+    if (link.rel !== 'report') throw new LifecycleError(404, 'Task not found');
     await managerTaskDone(me, journeyId, taskId, { action: 'done' });
     return teamJoiner(me, journeyId);
   }
-  if (!DEFS[rel].includes(def)) throw new LifecycleError(404, 'Task not found');
-  if (def.kind === 'approve') throw new LifecycleError(409, 'This one is done from its own screen');
+  if (def.owner !== OWNER_OF[link.rel] || (link.rel === 'line' && !link.approver)) throw new LifecycleError(404, 'Task not found');
+  if (def.team.kind === 'approve') throw new LifecycleError(409, 'This one is done from its own screen');
   const by = { doneAt: new Date(), byUserId: me.userId, byName: me.name };
   if (body.action === 'recommend') {
     if (def.id !== 'mgr_recommend') throw new LifecycleError(400, 'Only the recommendation takes an outcome');
     const outcome = body.outcome === 'extend' ? 'extend' : body.outcome === 'confirm' ? 'confirm' : null;
     if (!outcome) throw new LifecycleError(400, 'outcome is confirm or extend');
-    await setTick(j, def.id, { ...by, outcome, ...(cleanNote(body.note) ? { note: cleanNote(body.note) } : {}) });
+    if (j.probation?.decision) throw new LifecycleError(409, 'HR has decided already');
+    const answered = approvalOf(j);
+    if (answered && answered.outcome === 'approved') throw new LifecycleError(409, 'The head of department has approved already');
+    const note = cleanNote(body.note);
+    await setTick(j, def.id, { ...by, outcome, ...(note ? { note } : {}) }, {
+      set: { 'probation.recommendation': { outcome, ...(note ? { note } : {}), byUserId: me.userId, byName: me.name, at: by.doneAt } },
+      // A new recommendation after "Ask to discuss": the head of department answers again.
+      unset: answered ? ['probation.hodApproval', 'teamTasks.hod_approve'] : [],
+    });
   } else if (body.action === 'done') {
     if (def.id === 'mgr_recommend') throw new LifecycleError(400, 'Recommend with an outcome');
     await setTick(j, def.id, by);
   } else if (body.action === 'undo') {
-    if (def.id === 'mgr_recommend' && j.teamTasks?.hod_approve) throw new LifecycleError(409, 'The head of department has answered already');
-    await setTick(j, def.id, null);
+    if (def.id === 'mgr_recommend') {
+      if (approvalOf(j)) throw new LifecycleError(409, 'The head of department has answered already');
+      if (j.probation?.decision) throw new LifecycleError(409, 'HR has decided already');
+      await setTick(j, def.id, null, { unset: ['probation.recommendation'] });
+    } else {
+      await setTick(j, def.id, null);
+    }
   } else {
     throw new LifecycleError(400, 'action is done, undo or recommend');
   }
   return teamJoiner(me, journeyId);
 }
 
-/** POST /lifecycle/team/joiners/:journeyId/approval — `{ action: 'approve' | 'discuss', comment }`. */
+/**
+ * POST /lifecycle/team/joiners/:journeyId/approval — `{ action: 'approve' | 'discuss', comment }`, the head
+ * of department only. Onto the confirmation record (HR sees it by their decision) and HR is told.
+ */
 export async function answerApproval(me: Me, journeyId: string, body: Record<string, unknown>) {
-  const { j, rel } = await connectedJourney(me, journeyId);
-  if (rel !== 'line') throw new LifecycleError(403, 'Only the head of department approves');
-  if (!j.teamTasks?.mgr_recommend) throw new LifecycleError(409, 'Waiting for the manager’s recommendation');
-  if (j.teamTasks?.hod_approve && j.teamTasks.hod_approve.outcome !== 'discuss') throw new LifecycleError(409, 'Approved already');
+  const { j, approver } = await connectedJourney(me, journeyId);
+  if (!approver) throw new LifecycleError(403, 'Only the head of department approves');
+  if (!recommendationOf(j)) throw new LifecycleError(409, 'Waiting for the manager’s recommendation');
+  if (j.probation?.decision) throw new LifecycleError(409, 'HR has decided already');
+  const before = approvalOf(j);
+  if (before && before.outcome === 'approved') throw new LifecycleError(409, 'Approved already');
   const outcome = body.action === 'approve' ? 'approved' : body.action === 'discuss' ? 'discuss' : null;
   if (!outcome) throw new LifecycleError(400, 'action is approve or discuss');
-  const note = cleanNote(body.comment);
-  await setTick(j, 'hod_approve', { doneAt: new Date(), byUserId: me.userId, byName: me.name, outcome, ...(note ? { note } : {}) });
-  return teamApproval(me, journeyId);
+  const comment = cleanNote(body.comment);
+  const at = new Date();
+  await setTick(j, 'hod_approve', { doneAt: at, byUserId: me.userId, byName: me.name, outcome, ...(comment ? { note: comment } : {}) }, {
+    set: { 'probation.hodApproval': { outcome, ...(comment ? { comment } : {}), byUserId: me.userId, byName: me.name, at } },
+  });
+  // HR records the decision: the joiner's HR contact hears, as when the final month starts.
+  const joiner = j.userId ? await users().findOne({ userId: j.userId }, { projection: { _id: 0, name: 1, hrPrimaryUserId: 1 } }) : null;
+  const name = joiner?.name ?? j.candidate?.name ?? 'the joiner';
+  await tell([joiner?.hrPrimaryUserId], {
+    scenario: 'lifecycle_confirmation_window_hr',
+    title: `Decide on ${name}'s probation`,
+    body: outcome === 'approved'
+      ? `${me.name} approved the manager’s recommendation. Confirm or extend on the Onboarding board.`
+      : `${me.name} asked to discuss the recommendation${comment ? `: ${comment}` : ''}.`,
+    data: { journeyId: j.id },
+  });
+  return approvalView(await loadJourney(j.id));
 }
-
