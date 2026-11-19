@@ -97,9 +97,10 @@
 /* Fields */
 .fig-field { display: flex; flex-direction: column; gap: var(--space-8); }
 .fig-field__label { font-size: 12px; line-height: 16px; font-weight: 600; color: var(--color-text-secondary); }
-.fig-input { width: 100%; height: 44px; border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-canvas); padding: 0 14px; font: inherit; font-size: 14px; line-height: 20px; color: var(--color-text-primary); outline: none; }
+.fig-input { width: 100%; height: 44px; border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-canvas); padding: 2.5px 14px 0; font: inherit; font-size: 14px; line-height: 20px; color: var(--color-text-primary); outline: none; }
 .fig-input::placeholder { color: var(--color-text-tertiary); }
 .fig-input:focus { border-color: var(--color-border-focus); }
+.fig .fig-input:focus-visible { outline: none; }
 .fig-input:disabled, .fig-input[readonly] { color: var(--color-text-secondary); }
 .fig-field__help { font-size: 11px; line-height: 16px; color: var(--color-text-tertiary); }
 .fig-field__error { font-size: 12px; line-height: 16px; font-weight: 600; color: var(--color-text-error); }
@@ -156,3 +157,11 @@
 .fig-powered b { font-weight: 700; color: var(--color-text-brand); }
 
 .fig-loading { padding: 16px; font-size: 14px; line-height: 20px; color: var(--color-text-secondary); }
+
+/* Inside the app's WebView (the /app entry sets <html data-host="app">): the app draws its own header
+   and bottom nav, so the portal's company header (home) and the old web header/footer go; section
+   headers keep their in-page back arrow. */
+html[data-host="app"] .fig-head--brand,
+html[data-host="app"] .a1-web-head,
+html[data-host="app"] .a1-web-foot { display: none; }
+html[data-host="app"] .fig-page { box-shadow: none; max-width: none; }

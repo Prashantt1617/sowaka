@@ -16,6 +16,9 @@ Merge it into yours: `git fetch origin && git merge origin/portal-figma-g1`.
 - `FigHomeHeader` — Header · company (36 px logo tile + name), as on App · 3 Home.
 - `FigBackHeader` — Header · section: 40 px tinted back button (`FigBack` 22 px) + 18/24 title.
   Props: `back` (route) or `onBack`, `side` (right text, e.g. "Step 3 of 7"), `flat` (no border), `below` (e.g. step segments under the row).
+- App host: when `<html data-host="app">` (the /app WebView entry), fig.css hides `FigHomeHeader` (`.fig-head--brand`)
+  and the old `.a1-web-head` / `.a1-web-foot`; `FigBackHeader` stays (in-page back). Don't add other top chrome
+  of your own — if you must, give it `fig-head--brand` so it hides too.
 - `FigLogo`, `FigPowered` ("Your company's app is powered by SOWAKA"), `FigLoading`.
 
 ## Components — `preboarding-web/src/components/fig/FigUi.tsx`
