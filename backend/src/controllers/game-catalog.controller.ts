@@ -11,6 +11,8 @@ import {
 import { gamesHomeFor, parsePeriod, pointsLeaderboardFor } from '../services/games-home.service';
 import { loadEvent } from '../services/cup.service';
 import { mintTicket, verifyTicket } from '../services/scribble-ticket.service';
+import { PROGRESS_GAMES, parseLevel, raiseLevel, storedLevel, withinRate } from '../services/game-progress.service';
+import { logger } from '../utils/logger';
 
 function viewerOf(req: Request): GameViewer {
   const user = req.auth?.user;
@@ -52,6 +54,8 @@ export async function playHandler(req: Request, res: Response, next: NextFunctio
     const viewer = viewerOf(req);
     const key = keyOf(req);
     const { html, version } = await pageFor(viewer, key);
+    const keepsLevel = PROGRESS_GAMES.has(key);
+    const page = TICKETED[key] ? withGameTicket(key, html, viewer, true) : html;
     res
       .status(200)
       .set({
@@ -59,10 +63,11 @@ export async function playHandler(req: Request, res: Response, next: NextFunctio
         // Behind a session, and replaced whenever Sowaka updates the game.
         'Cache-Control': 'private, no-store',
         'X-Content-Type-Options': 'nosniff',
-        'Content-Security-Policy': PAGE_CSP,
+        // A levelled game reports its level to this server, and only there.
+        'Content-Security-Policy': keepsLevel ? PAGE_CSP.replace("connect-src 'none'", "connect-src 'self'") : PAGE_CSP,
         'X-Game-Version': version,
       })
-      .send(TICKETED[key] ? withGameTicket(key, html, viewer, true) : html);
+      .send(keepsLevel ? await withProgress(key, page, viewer) : page);
   } catch (error) {
     next(error);
   }
@@ -276,6 +281,66 @@ export async function squadWebHandler(req: Request, res: Response, next: NextFun
         'X-Game-Version': page.version,
       })
       .send(withGlobal(SQUAD_KEY, page.html, { web: true }));
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ---------------------------------------------------------------- Meow's level (game-progress.service)
+
+/**
+ * The page with `window.__SOWAKA_PROGRESS = {level, ticket, url}` just
+ * before `</head>`: the stored level (0 when there is none), a `progress`
+ * ticket, and where to report a new level. Should the read fail, the page
+ * gets level 0 and keeps its own; it reports that, and nothing is lost.
+ */
+async function withProgress(key: string, html: string, viewer: GameViewer): Promise<string> {
+  if (!viewer.org) return html;
+  let level = 0;
+  try {
+    level = await storedLevel(viewer.org, viewer.userId, key);
+  } catch (error) {
+    logger.warn('Game progress could not be read; the page keeps its own level', { key, error: String(error) });
+  }
+  const ticket = mintTicket({ userId: viewer.userId, org: viewer.org, name: viewer.name }, { kind: 'progress' });
+  const script = `<script>window.__SOWAKA_PROGRESS=${scriptJson({ level, ticket, url: `/games/progress/${key}` })}</script>`;
+  const head = html.search(/<\/head>/i);
+  return head >= 0 ? html.slice(0, head) + script + html.slice(head) : script + html;
+}
+
+/**
+ * `POST /games/progress/:key` with `X-Game-Ticket` and `{level}`, or, from
+ * inside the app (whose page policy allows no connection, only images),
+ * `GET /games/progress/:key?level=&ticket=` as an image. No session: the
+ * ticket says who. Keeps the higher level and answers 204; a key that keeps
+ * no level falls through to the Games routes.
+ */
+export async function progressHandler(req: Request, res: Response, next: NextFunction) {
+  const key = keyOf(req);
+  if (!PROGRESS_GAMES.has(key)) {
+    next();
+    return;
+  }
+  res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+  try {
+    const raw = req.method === 'GET' ? req.query.ticket : req.get('x-game-ticket');
+    const verdict = verifyTicket(raw, 'progress');
+    if (!verdict.ok) {
+      res.status(401).json({ success: false, message: verdict.error });
+      return;
+    }
+    const level = parseLevel(req.method === 'GET' ? req.query.level : req.body?.level);
+    if (level === null) {
+      res.status(400).json({ success: false, message: 'level must be a whole number from 1 to 999' });
+      return;
+    }
+    const { org, userId } = verdict.ticket;
+    if (!withinRate(`${org}|${userId}`)) {
+      res.status(429).json({ success: false, message: 'Too many reports; try again in a minute' });
+      return;
+    }
+    await raiseLevel(org, userId, key, level);
+    res.status(204).end();
   } catch (error) {
     next(error);
   }

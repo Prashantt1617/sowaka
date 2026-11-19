@@ -33,6 +33,7 @@
     "poker:room-check": "MONGODB_DB=poker_check tsx src/scripts/poker-room-check.ts",
     "poker:rooms-check": "MONGODB_DB=poker_check tsx src/scripts/poker-rooms-check.ts",
     "pool:check": "MONGODB_DB=pool_check tsx src/scripts/pool-check.ts",
+    "meow-progress:check": "MONGODB_URI=${MEOW_CHECK_MONGODB_URI:-mongodb://127.0.0.1:27133} MONGODB_DB=meow_progress_check NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= REDIS_URL= tsx src/scripts/meow-progress-check.ts",
     "notifications:check": "tsx src/scripts/notifications-check.ts",
     "faces:check": "MONGODB_DB=face_photos_scratch NOTIFY_ORGS=facecheck EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/face-photos-check.ts",
     "notifications:look-check": "MONGODB_DB=notif_look_check NOTIFY_ORGS=notif-look-check EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/notification-look-check.ts",
