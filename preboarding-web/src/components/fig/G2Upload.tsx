@@ -48,7 +48,7 @@ export function G2DocUpload({ doc, onChange, title }: { doc: CandidateDocumentVi
     try { onChange((await portal.uploadDocument(doc.id, files)).documents); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
   const locked = doc.status === 'approved';
-  const label = `${doc.title ?? doc.label}${doc.required ? '' : ' (optional)'}`;
+  const label = `${doc.label}${doc.required ? '' : ' (optional)'}`;
   const replace = (
     <label className="g2-file__action">
       <input type="file" accept="image/jpeg,image/png,application/pdf" disabled={busy} aria-label={`Replace ${doc.label}`}
@@ -65,7 +65,7 @@ export function G2DocUpload({ doc, onChange, title }: { doc: CandidateDocumentVi
           status={DOC_STATE[doc.status] || fmtBytes(f.size)} action={!locked && doc.files.length === 1 ? replace : undefined} />
       ))}
       {!locked && (doc.files.length === 0 || doc.files.length > 1 || doc.status === 'sent_back') && (
-        <G2UploadTile title={doc.files.length ? 'Add another file' : title ?? doc.hint ?? 'Upload the file'}
+        <G2UploadTile title={doc.files.length ? 'Add another file' : title ?? doc.title ?? 'Upload the file'}
           onFiles={(f) => void send(f)} busy={busy} multiple label={`Upload ${doc.label}`} />
       )}
       {error && <span className="fig-field__error" role="alert">{error}</span>}

@@ -34,11 +34,11 @@
 .g2-group { display: flex; flex-direction: column; gap: 8px; }
 .g2-card { background: var(--color-bg-surface, #fff); border: 1px solid var(--color-border-default, #e2e3e8); border-radius: 16px; padding: 12px; display: flex; flex-direction: column; gap: 16px; }
 /* Fields in a profile card: white, 46 px (13.25 / 20 / 10.75 + border), 13 px inset */
-.g2-card .fig-input { height: 46px; padding: 0 12px; background: var(--color-bg-surface, #fff); }
+.g2-card .fig-input { height: 44px; padding: 0 12px; background: var(--color-bg-surface, #fff); }
 .g2-card .fig-input:focus { background: var(--color-bg-canvas, #f7f7f9); }
 .g2-select { position: relative; display: block; }
-.g2-select__input { appearance: none; -webkit-appearance: none; height: 45px; border-radius: 16px; padding: 0 40px 0 12px; cursor: pointer; }
-.g2-select__input--empty { color: var(--color-text-tertiary, #6b7080); }
+.g2-select .g2-select__input { appearance: none; -webkit-appearance: none; height: 45px; border-radius: 16px; padding: 0 40px 0 12px; cursor: pointer; }
+.g2-select .g2-select__input--empty { color: var(--color-text-tertiary, #6b7080); }
 .g2-select__chev { position: absolute; right: 13px; top: 13px; color: var(--color-text-tertiary, #6b7080); pointer-events: none; }
 /* Yes / No choices: 40 px, r16, 1 px border; chosen = canvas, brand border and semibold brand */
 .g2-seg { display: flex; gap: 8px; }
@@ -48,7 +48,7 @@
 .g2-job { display: flex; flex-direction: column; gap: 16px; }
 .g2-job--more { padding-top: 12px; border-top: 1px solid var(--color-border-default, #e2e3e8); }
 .g2-linkbtn { align-self: flex-start; font-size: 14px; line-height: 20px; }
-.g2-addjob { align-self: flex-start; display: inline-flex; align-items: center; gap: 13px; padding: 11px 5px 8px 0; font-size: 14px; line-height: 20px; }
+.g2-card .g2-addjob { align-self: flex-start; display: inline-flex; align-items: center; gap: 13px; padding: 11px 5px 8px 0; font-size: 14px; line-height: 20px; }
 .g2-note { align-items: flex-start; }
 .g2-done-note { align-items: center; background: var(--color-bg-success-subtle, #e8f7ee); }
 /* Photo: 168 px dashed ring, tips, two buttons */
@@ -65,7 +65,7 @@
 .g2-photo__btn:focus-within { outline: 2px solid var(--color-border-focus, #0571a6); outline-offset: 2px; }
 /* Footer: Save and continue + Save and finish later */
 .g2-foot { flex: none; position: sticky; bottom: 0; z-index: 4; display: flex; flex-direction: column; gap: 4px; padding: 12px 16px 16px; background: var(--color-bg-surface, #fff); border-top: 1px solid var(--color-border-default, #e2e3e8); }
-.g2-foot__later { height: 40px; padding: 12px 0 8px; font-size: 14px; line-height: 20px; text-align: center; }
+.g2-foot .g2-foot__later { height: 40px; padding: 12px 0 8px; font-size: 14px; line-height: 20px; text-align: center; }
 
 /* ── Stories ── */
 .g2-story { --bg: #e8f2f8; --ink: #16181d; --ink2: #4a4e5a; --track: #cdd0d7; --fill: #0571a6; --field: #fff; --field-line: #e2e3e8; --field-ink: #4a4e5a; --like: #fff;
@@ -97,7 +97,7 @@
 .g2-story__line { margin: 0; font-size: 16px; line-height: 22px; color: var(--ink2); text-align: center; white-space: pre-line; }
 .g2-story__line--sm { font-size: 14px; line-height: 20px; }
 .g2-story__cta { display: inline-flex; align-items: center; padding: 14px 24px 13px 20px; border: 0; border-radius: 9999px; background: #fff; font: inherit; font-size: 15px; line-height: 20px; font-weight: 600; color: #0571a6; text-decoration: none; cursor: pointer; white-space: nowrap; }
-.g2-story__face { width: 128px; height: 128px; border-radius: 9999px; background: #fff; display: flex; align-items: center; justify-content: center; font-size: 28px; line-height: 36px; font-weight: 700; color: #15803d; overflow: hidden; }
+.g2-story__face { width: 128px; height: 128px; padding-bottom: 10px; border-radius: 9999px; background: #fff; display: flex; align-items: center; justify-content: center; font-size: 28px; line-height: 36px; font-weight: 700; color: #15803d; overflow: hidden; }
 .g2-story__face img { width: 100%; height: 100%; object-fit: cover; }
 .g2-story__pill { padding: 6px 19.5px; border-radius: 9999px; background: #fff; font-size: 14px; line-height: 20px; font-weight: 600; color: #4a4e5a; }
 .g2-story__faces { display: flex; justify-content: center; }
@@ -121,6 +121,8 @@
 /* ── Web · 1 Sign in with personal email (on the A1 sign-in) ── */
 .g2-signin .a1-signin__top { height: 56px; }
 .g2-signin .a1-signin__mark { font-size: 18px; line-height: 24px; }
-.g2-signin .a1-input { height: 46px; padding: 0 14px; border-color: #e2e3e8; background: #f7f7f9; }
+.g2-signin .a1-input:focus-visible { outline: none; }
+.g2-signin .a1-signin__foot .a1-btn--primary { height: 48px; min-height: 48px; flex: none; }
+.g2-signin .a1-input { height: 44px; padding: 0 14px; border-color: #e2e3e8; background: #f7f7f9; }
 .g2-signin .a1-input:focus { border-color: var(--a1-brand); box-shadow: none; }
 .g2-signin .a1-signin__foot .a1-link { padding: 0 3.5px; }

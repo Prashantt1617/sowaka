@@ -125,7 +125,7 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
             {docsIn('education')}
           </Card>
           <Card title="Work experience">
-            {G('worked', 'Have you worked before?', [['Yes', 'Yes'], ['No', 'No, this is my first job']], true)}
+            {G('worked', 'Have you worked before?', [['Yes', 'Yes'], ['No', 'No, this is my first job']])}
             {v.worked !== 'No' && jobs.map((j, n) => (
               <div key={n} className={n ? 'g2-job g2-job--more' : 'g2-job'}>
                 {T(`job${n}.company`, n ? `Company ${n + 1}` : 'Last company', { ph: 'Company name', value: j.company, onChange: (s) => putJob(n, { company: s }) })}

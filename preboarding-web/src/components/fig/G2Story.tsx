@@ -108,7 +108,7 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, hr, tj
         <div className="g2-story__lead" style={{ gap: 16, alignItems: 'center' }}>
           <span className="g2-story__pin"><img src={pin3d} alt="" width={64} height={64} /></span>
           <h2 className="g2-story__title">{j?.place ?? fmtWeekday(tj)}</h2>
-          <p className="g2-story__line">{[fmtWeekday(j?.date ?? tj), time ? `see you at ${time}` : ''].filter(Boolean).join(' · ')}</p>
+          {(j?.place || time) && <p className="g2-story__line">{[j?.place ? fmtWeekday(j?.date ?? tj) : '', time ? `see you at ${time}` : ''].filter(Boolean).join(' · ')}</p>}
         </div>
         {directions && <a className="g2-story__cta" style={{ gap: 12, paddingRight: 24.453 }} href={directions} target="_blank" rel="noreferrer"><G2Directions />Get directions</a>}
       </div>
@@ -146,7 +146,7 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, hr, tj
             {order.map((k, n) => <span key={k}><i style={{ width: n <= i ? '100%' : '0%' }} /></span>)}
           </div>
           <div className="g2-story__who">
-            <A1Logo company={company} className="g2-story__mark" />
+            <span style={{ color: look.mark, display: 'flex' }}><A1Logo company={company} className="g2-story__mark" /></span>
             <span className="g2-story__by"><b>{company.name} HR</b><span>{look.sub}</span></span>
             <button type="button" className="g2-story__close" aria-label="Close" onClick={onClose}><G2Close color={onBrand ? '#FFFFFF' : '#0571A6'} /></button>
           </div>
