@@ -32,6 +32,8 @@ Map<String, dynamic> _buddyPage({Set<String> done = const {}}) => {
 Map<String, dynamic> _hodPage() => {
   'joiner': {'journeyId': 'j2', 'name': 'Dev Arora', 'first': 'Dev', 'managerName': 'Haider Ali', 'status': 'On track', 'delayed': 0},
   'relation': 'line',
+  'approverName': 'Rahul Head',
+  'approverIsYou': true,
   'steps': _steps,
   'step': 5,
   'canBrowseSteps': false,
@@ -89,6 +91,15 @@ Future<void> _pump(WidgetTester tester, _FakeApi api) async {
 }
 
 void main() {
+  test('pages carry the joiner’s account and the approver', () {
+    final page = TeamJoinerPage.fromJson({..._hodPage(), 'joiner': {..._hodPage()['joiner'] as Map<String, dynamic>, 'userId': 'u-dev'}, 'readOnly': true, 'approverIsYou': false});
+    expect(page.userId, 'u-dev');
+    expect(page.readOnly, isTrue);
+    expect(page.approverName, 'Rahul Head');
+    final row = TeamJoinerRow.fromJson({'journeyId': 'j', 'userId': 'u1', 'name': 'Priya', 'relation': 'line', 'approverName': 'Rahul Head', 'approverIsYou': true});
+    expect([row.userId, row.approverName, row.approverIsYou], ['u1', 'Rahul Head', true]);
+  });
+
   test('rows: now, then the next step as COMING UP (locked unless it can be done early)', () {
     final page = TeamJoinerPage.fromJson(_buddyPage());
     final rows = teamRowsFor(page);
@@ -136,6 +147,7 @@ void main() {
     expect(find.text('Your tasks for Dev'), findsOneWidget);
     expect(find.text('Reports to Haider Ali'), findsOneWidget);
     expect(find.text('Ready to approve'), findsOneWidget);
+    expect(find.text('You approve Dev’s confirmation after the manager recommends.'), findsOneWidget);
 
     await tester.tap(find.text('Approve Dev’s confirmation'));
     await tester.pumpAndSettle();

@@ -161,12 +161,14 @@ class TeamJoinerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> tick(BuildContext context, TeamTask t) async {
+  /// [quiet]: the caller says "Marked as done" itself (T1's meeting screen).
+  Future<void> tick(BuildContext context, TeamTask t, {bool quiet = false}) async {
     final current = page;
     if (current == null || busy.contains(t.id)) return;
     busy.add(t.id);
     page = TeamJoinerPage(
-      journeyId: current.journeyId, name: current.name, first: current.first, relation: current.relation, steps: current.steps,
+      journeyId: current.journeyId, userId: current.userId, name: current.name, first: current.first, relation: current.relation, steps: current.steps,
+      approverName: current.approverName, approverIsYou: current.approverIsYou, readOnly: current.readOnly,
       step: current.step, status: current.status, designation: current.designation, department: current.department,
       photoUrl: current.photoUrl, managerName: current.managerName, buddyName: current.buddyName, plant: current.plant,
       delayed: current.delayed, canBrowseSteps: current.canBrowseSteps, preboarding: current.preboarding,
@@ -175,9 +177,11 @@ class TeamJoinerController extends ChangeNotifier {
     notifyListeners();
     try {
       page = await api.taskAction(journeyId, t.id, t.done ? 'undo' : 'done');
-      if (!t.done && t.kind == TeamKind.meet && context.mounted) showAppToast(context, 'Marked as done');
+      if (!quiet && !t.done && t.kind == TeamKind.meet && context.mounted) showAppToast(context, 'Marked as done');
     } catch (e) {
       page = current;
+      // The meeting screen says what went wrong itself.
+      if (quiet) rethrow;
       if (context.mounted) showAppToast(context, onboardingErrorText(e));
     } finally {
       busy.remove(t.id);
@@ -203,7 +207,7 @@ class TeamJoinerController extends ChangeNotifier {
             canTick: t.canTick,
             savesNotes: false,
             onFinish: (_, markDone) async {
-              if (markDone && context.mounted) await tick(context, t);
+              if (markDone && context.mounted) await tick(context, t, quiet: true);
             },
           ),
         ),
@@ -328,7 +332,11 @@ class _TeamJoinerScreenState extends State<TeamJoinerScreen> {
                   onOpen: () => _c.open(context, hub[k].task),
                 ),
             ],
-            emptyText: soonFirst == null ? 'Nothing due right now.' : 'Nothing due right now. Next: ${soonFirst.task.title}',
+            emptyText: page.readOnly
+                ? 'Nothing for you to do. You can follow along.'
+                : soonFirst == null
+                ? 'Nothing due right now.'
+                : 'Nothing due right now. Next: ${soonFirst.task.title}',
             onViewAll: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => TeamAllTasksScreen(controller: _c))),
           ),
           Row(
@@ -357,6 +365,10 @@ class _TeamJoinerScreenState extends State<TeamJoinerScreen> {
               ),
             ],
           ),
+          if (page.approverIsYou)
+            TeamFootnote('You approve ${page.first}’s confirmation after the manager recommends.')
+          else if (page.approverName != null && page.approverName!.isNotEmpty)
+            TeamFootnote('${page.approverName} approves ${page.first}’s confirmation.'),
         ],
       );
     },

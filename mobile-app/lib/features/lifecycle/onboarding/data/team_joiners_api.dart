@@ -53,15 +53,21 @@ class TeamJoinerRow {
     required this.step,
     required this.stepLabel,
     required this.plant,
+    this.userId,
     this.designation,
     this.photoUrl,
     this.managerName,
+    this.approverName,
+    this.approverIsYou = false,
     this.toDo = 0,
     this.preboarding = false,
   });
 
   factory TeamJoinerRow.fromJson(Map<String, dynamic> json) => TeamJoinerRow(
     journeyId: '${json['journeyId'] ?? ''}',
+    userId: _str(json['userId']),
+    approverName: _str(json['approverName']),
+    approverIsYou: json['approverIsYou'] == true,
     name: _str(json['name']) ?? '—',
     designation: _str(json['designation']),
     photoUrl: _str(json['photoUrl']),
@@ -75,11 +81,18 @@ class TeamJoinerRow {
   );
 
   final String journeyId;
+
+  /// The joiner's account (absent before they join), for their profile.
+  final String? userId;
   final String name;
   final String? designation;
   final String? photoUrl;
   final TeamRelation relation;
   final String? managerName;
+
+  /// Who approves their confirmation (the head of department); [approverIsYou] when it is the viewer.
+  final String? approverName;
+  final bool approverIsYou;
   final int step;
   final String stepLabel;
   final PlantState plant;
@@ -164,11 +177,15 @@ class TeamJoinerPage {
     required this.step,
     required this.tasks,
     required this.status,
+    this.userId,
     this.designation,
     this.department,
     this.photoUrl,
     this.managerName,
     this.buddyName,
+    this.approverName,
+    this.approverIsYou = false,
+    this.readOnly = false,
     this.plant = const PlantState(),
     this.delayed = 0,
     this.canBrowseSteps = true,
@@ -179,6 +196,10 @@ class TeamJoinerPage {
     final j = (json['joiner'] as Map?)?.cast<String, dynamic>() ?? const {};
     return TeamJoinerPage(
       journeyId: '${j['journeyId'] ?? ''}',
+      userId: _str(j['userId']),
+      approverName: _str(json['approverName']),
+      approverIsYou: json['approverIsYou'] == true,
+      readOnly: json['readOnly'] == true,
       name: _str(j['name']) ?? '—',
       first: _str(j['first']) ?? '',
       designation: _str(j['designation']),
@@ -202,8 +223,18 @@ class TeamJoinerPage {
   }
 
   final String journeyId;
+
+  /// The joiner's account (absent before they join), for their profile.
+  final String? userId;
   final String name;
   final String first;
+
+  /// Who approves their confirmation (the head of department); [approverIsYou] when it is the viewer.
+  final String? approverName;
+  final bool approverIsYou;
+
+  /// Up the reporting line but not the head of department: following along, no tasks.
+  final bool readOnly;
   final String? designation;
   final String? department;
   final String? photoUrl;
