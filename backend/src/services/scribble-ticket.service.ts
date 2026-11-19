@@ -31,7 +31,13 @@ import { logger } from '../utils/logger';
  * A fourth, `poker-tv`, is a Speed Poker screen link for an office TV: it
  * opens the event's lobby and tables to watch, read only, as no one.
  */
-export type ScribbleTicketKind = 'ticket' | 'hop' | 'cup-link' | 'poker-tv';
+/**
+ * A fifth, `progress`, rides in a levelled game's page (Meow) and does one
+ * thing: raise that person's level in that game (game-progress.service). In
+ * the app the page can only send it as an image's URL, so it is its own kind:
+ * a copy in a proxy's log opens no socket and reads nothing.
+ */
+export type ScribbleTicketKind = 'ticket' | 'hop' | 'cup-link' | 'poker-tv' | 'progress';
 
 export interface ScribbleTicket {
   userId: string;

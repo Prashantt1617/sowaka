@@ -420,7 +420,16 @@ $('steps').innerHTML=[[0,'One per row and column','Every row and every column ge
 const SAVE_KEY='meowdoku.v1';
 const freshSave=()=>({best:0,rounds:0,sound:true,scores:[],seenHowTo:false,level:1,cur:null});
 let save=freshSave(), saveKey='';
-const store=()=>{ try{ localStorage.setItem(saveKey,JSON.stringify(save)); }catch(e){} };
+/* The level is kept on the server too: the page comes with window.__SOWAKA_PROGRESS {level, ticket, url}, so a new phone or a cleared app starts
+   where you were. The higher of the two wins, and each new level is reported with the ticket, fire and forget: a POST, or, in the app (whose policy
+   allows no connection), the same report as an image. A plain browser without it keeps the level on this device only, as before. */
+const PROGRESS=(()=>{ const p=window.__SOWAKA_PROGRESS; return p&&typeof p==='object'&&typeof p.ticket==='string'&&typeof p.url==='string'?p:null; })();
+let reported=PROGRESS?Math.max(0,Math.floor(+PROGRESS.level||0)):0; /* the highest level the server has, or has been sent */
+function reportLevel(){ const L=Math.floor(+save.level||0); if(!PROGRESS||!(L>reported)||L>999)return; reported=L;
+  const asImage=()=>{ try{ new Image().src=PROGRESS.url+'?level='+L+'&ticket='+encodeURIComponent(PROGRESS.ticket); }catch(e){} };
+  try{ fetch(PROGRESS.url,{method:'POST',headers:{'Content-Type':'application/json','X-Game-Ticket':PROGRESS.ticket},body:JSON.stringify({level:L}),keepalive:true}).catch(asImage); }
+  catch(e){ asImage(); } }
+const store=()=>{ try{ localStorage.setItem(saveKey,JSON.stringify(save)); }catch(e){} reportLevel(); };
 function validCur(c){ if(!c||!Number.isInteger(c.idx)||!BANK[c.idx]||!Array.isArray(c.cells))return false; const b=BANK[c.idx];
   return Number.isInteger(c.lv)&&c.lv>=1&&c.cells.length===b.n*b.n&&c.cells.every(x=>x===0||x===1||x===2)&&c.cells[b.f]===1; }
 function readSave(key){ try{ const s=JSON.parse(localStorage.getItem(key)||'null'); return s&&typeof s.best==='number'?s:null; }catch(e){ return null; } }
@@ -440,9 +449,9 @@ const playerId=()=>{ const b=bridge(); const id=b&&b.userId; return id==null?'':
 function loadSave(){ const id=playerId(), key=id?SAVE_KEY+'.'+id:SAVE_KEY; if(key===saveKey)return false;
   let s=readSave(key);
   if(id){ const old=readSave(SAVE_KEY); if(!s&&old)s=old; try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
-  saveKey=key; save=Object.assign(freshSave(),s||{}); if(!Array.isArray(save.scores))save.scores=[]; save.level=Math.max(1,Math.floor(+save.level||1));
+  saveKey=key; save=Object.assign(freshSave(),s||{}); if(!Array.isArray(save.scores))save.scores=[]; save.level=Math.max(1,Math.floor(+save.level||1),reported);
   if(!validCur(save.cur))save.cur=null;
-  if(s&&id)store(); return true; }
+  if(s&&id)store(); reportLevel(); return true; }
 loadSave();
 let lbData=null; /* the last leaderboard seen */
 function shapeBoard(r){ r=r||{}; const rows=(Array.isArray(r.entries)?r.entries:[]).map(x=>({rank:+x.rank||0,userId:x.userId?String(x.userId):'',name:String(x.name||'Player'),score:+x.score||0,me:!!x.me}));

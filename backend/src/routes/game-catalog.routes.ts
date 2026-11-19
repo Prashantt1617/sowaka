@@ -6,6 +6,7 @@ import {
   playHandler,
   pokerTvHandler,
   pointsLeaderboardHandler,
+  progressHandler,
   scribbleHopHandler,
   squadWebHandler,
   submitScoreHandler,
@@ -57,6 +58,15 @@ gamesRouter.post('/challenges/:id/live', liveHandler);
 gamesRouter.post('/challenges/:id/finish', finishHandler);
 gamesRouter.post('/:key/score', submitScoreHandler);
 gamesRouter.get('/:key/leaderboard', leaderboardHandler);
+
+/**
+ * Meow's level, reported by its page with the `progress` ticket the page was
+ * served with (no session; see progressHandler). Mounted at /games/progress,
+ * ahead of the Games routes; a key that keeps no level falls through to them.
+ */
+export const gameProgressRouter = Router();
+gameProgressRouter.post('/:key', progressHandler);
+gameProgressRouter.get('/:key', progressHandler);
 
 /**
  * A web game's page, fetched by the app with the person's session and loaded
