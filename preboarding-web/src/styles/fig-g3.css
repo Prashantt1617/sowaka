@@ -1,0 +1,52 @@
+/* G3: the web-only deltas of the "Web · …" frames (4967:93936 … 4967:94851) over G1's screens.
+   Tokens from fig.css (scoped under .fig). Host switch: the browser portal has no data-host; the
+   app WebView sets <html data-host="app">. */
+
+/* Which chrome shows where */
+html[data-host="app"] .g3-web { display: none !important; }
+.g3-app-only { display: contents; }
+html:not([data-host="app"]) .g3-app-only { display: none; }
+/* On the web the company header and the powered-by line are the web ones (G3WebHeader, G3WebFooter). */
+html:not([data-host="app"]) .fig .fig-head--brand,
+html:not([data-host="app"]) .fig .fig-powered { display: none; }
+
+/* Header · company + email (Web · 2–8) */
+.g3-head { height: 56px; flex: none; display: flex; align-items: center; gap: var(--space-12); padding: 0 var(--space-8) 0 var(--space-16); background: var(--color-bg-surface); border-bottom: 1px solid var(--color-border-default); }
+.g3-head__logo { width: 32px; height: 32px; border-radius: var(--radius-md); background: var(--color-bg-primary); color: var(--color-text-on-primary); font-size: 12px; line-height: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex: none; overflow: hidden; }
+.g3-head__logo img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+.g3-head__text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.g3-head__name { font-size: 14px; line-height: 20px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.g3-head__email { font-size: 11px; line-height: 16px; color: var(--color-text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Breadcrumb (Web · 5–8): 84 px, 12 top; About's white strip 76 px, 4 top */
+.g3-crumb { flex: none; height: 84px; padding: var(--space-12) var(--space-16) 0; display: flex; flex-direction: column; gap: var(--space-4); }
+.g3-crumb--white { height: 76px; padding-top: var(--space-4); background: var(--color-bg-surface); }
+.g3-crumb__back { align-self: flex-start; height: 39px; padding: 11px 10px 8px 0; display: inline-flex; align-items: flex-start; gap: 7px; font-size: 14px; line-height: 20px; font-weight: 600; color: var(--color-text-brand); text-decoration: none; }
+.g3-crumb--white .g3-crumb__back { gap: var(--space-4); }
+.g3-crumb__back svg { margin-top: 1px; }
+.g3-crumb__title { font-size: 22px; line-height: 28px; font-weight: 600; outline: none; }
+
+/* Footer (Web · 3–8): 16 top, 24 bottom, 8 gap */
+.g3-foot { flex: none; padding: var(--space-16) var(--space-16) var(--space-24); display: flex; flex-direction: column; align-items: center; gap: var(--space-8); }
+.g3-foot__links { display: flex; gap: var(--space-16); }
+.g3-foot__links a, .g3-foot__links button { font: inherit; font-size: 12px; line-height: 16px; color: var(--color-text-secondary); text-decoration: none; background: none; border: 0; padding: 0; cursor: pointer; }
+.g3-foot__powered { font-size: 11px; line-height: 16px; color: var(--color-text-tertiary); text-align: center; }
+.g3-foot__powered b { font-weight: 700; color: var(--color-text-brand); }
+
+/* Web · 4 Install (web-only page) */
+.g3-main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.g3-install { display: flex; flex-direction: column; gap: var(--space-24); padding: var(--space-24) var(--space-20) 0; }
+.g3-install__preview { display: block; width: 100%; height: 228px; border-radius: var(--radius-xl); background: var(--color-bg-primary-subtle); object-fit: cover; object-position: left top; }
+.g3-install__intro { display: flex; flex-direction: column; gap: var(--space-12); }
+.g3-install__intro h1 { font-size: 28px; line-height: 36px; font-weight: 700; outline: none; }
+.g3-install__intro p { font-size: 14px; line-height: 20px; color: var(--color-text-secondary); }
+.g3-install__email { display: flex; flex-direction: column; gap: var(--space-8); }
+.g3-install__label { font-size: 12px; line-height: 16px; font-weight: 600; }
+.g3-install__box { height: 56px; display: flex; align-items: center; gap: var(--space-4); padding: var(--space-8) var(--space-8) var(--space-8) var(--space-12); border: 1px solid var(--color-border-default); border-radius: var(--radius-md); background: var(--color-bg-subtle); }
+.g3-install__box span { flex: 1; min-width: 0; font-size: 11px; line-height: 16px; overflow-wrap: anywhere; }
+.g3-install__copy { width: 40px; height: 40px; border-radius: 4px; border: 0; background: var(--color-bg-surface); color: var(--color-text-tertiary); display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex: none; }
+.g3-install__help { font-size: 11px; line-height: 16px; color: var(--color-text-secondary); }
+.g3-install__cta { display: flex; flex-direction: column; gap: var(--space-12); }
+.g3-install__cta .fig-btn { border-radius: var(--radius-lg); padding: 0 var(--space-20); }
+.g3-install__cta p { text-align: center; font-size: 11px; line-height: 16px; color: var(--color-text-secondary); }
+.g3-spacer { flex: 1 0 24px; }
