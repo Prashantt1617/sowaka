@@ -1,0 +1,72 @@
+/* G4 screens from Figma (Sowaka Connect): the About-the-company stories (4967:95263–95442)
+   and the profile steps 4–7 (Bank account and PF, Education and experience, ID documents,
+   Photo; 4967:94913–95192). Only these screens' own parts; the shell, fields, buttons and
+   upload tiles are G1's shared pieces. */
+
+/* ── Stories ─────────────────────────────────────────────────────────── */
+.g4-story { color: #16181d; }
+.g4-story__top { flex: none; padding: 12px 12px 0 16px; display: flex; flex-direction: column; gap: 12px; }
+.g4-story__segs { display: flex; gap: 4px; }
+.g4-story__segs span { flex: 1 0 0; min-width: 1px; height: 4px; border-radius: 9999px; background: #efeff2; }
+.g4-story__segs span.is-done { background: #15803d; }
+.g4-story__who { display: flex; align-items: center; gap: 12px; }
+.g4-story__logo { width: 40px; height: 40px; border-radius: 9999px; background: #fff; flex: none; display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 12px; line-height: 16px; font-weight: 700; }
+.g4-story__logo-img { width: 100%; height: 100%; display: flex; }
+.g4-story__logo-img img { width: 100%; height: 100%; object-fit: contain; }
+.g4-story__from { flex: 1 0 0; min-width: 0; display: flex; flex-direction: column; color: #4a4e5a; }
+.g4-story__name { font-size: 14px; line-height: 20px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.g4-story__when { font-size: 12px; line-height: 16px; font-weight: 400; }
+.g4-story__close { width: 44px; height: 44px; flex: none; border: 0; padding: 10px; border-radius: 9999px; background: transparent; color: #0571a6; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.g4-story__main { padding: 80px 32px 0; justify-content: center; align-items: center; }
+.g4-story__content { width: 100%; gap: 0; }
+.g4-story__stack { width: 100%; display: flex; flex-direction: column; align-items: center; }
+.g4-story__title { margin: 0; font-size: 28px; line-height: 36px; font-weight: 700; color: #16181d; text-align: center; }
+.g4-story__title--lines { display: flex; flex-direction: column; align-items: center; gap: 4px; padding-bottom: 4px; }
+.g4-story__line { margin: 0; width: 100%; font-size: 16px; line-height: 22px; color: #4a4e5a; text-align: center; white-space: pre-line; }
+.g4-story__line--sm { font-size: 14px; line-height: 20px; }
+.g4-story__face { width: 128px; height: 128px; border-radius: 9999px; background: #fff; display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 28px; line-height: 36px; font-weight: 700; }
+.g4-story__face img { width: 100%; height: 100%; object-fit: cover; }
+.g4-story__pill { padding: 6px 19.5px; border-radius: 9999px; background: #fff; font-size: 14px; line-height: 20px; font-weight: 600; color: #4a4e5a; }
+.g4-story__faces { display: flex; }
+.g4-story__teamface { width: 78px; height: 78px; flex: none; border-radius: 9999px; border: 3px solid #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; line-height: 28px; font-weight: 700; }
+.g4-story__teamface + .g4-story__teamface { margin-left: -18px; }
+.g4-story__pin { padding: 16px; border-radius: 9999px; background: #fff; display: flex; }
+.g4-story__pin img { display: block; width: 64px; height: 64px; object-fit: cover; }
+.g4-story__cta { padding: 14px 28.4px 13px 20px; border: 0; border-radius: 9999px; background: #fff; color: #0571a6; font: inherit; font-size: 15px; line-height: 20px; font-weight: 600; display: inline-flex; align-items: flex-start; gap: 16.5px; text-decoration: none; cursor: pointer; white-space: nowrap; }
+.g4-story__cta--dir { gap: 12px; padding-right: 24.45px; }
+.g4-story__reads { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.g4-story__read { width: 100%; padding: 25px 16px; border: 0; border-radius: 16px; background: #fff; display: flex; align-items: center; gap: 12px; font: inherit; text-align: left; cursor: pointer; color: #4a4e5a; }
+.g4-story__read-text { flex: 1 0 0; min-width: 0; display: flex; flex-direction: column; padding-bottom: 0.5px; }
+.g4-story__read-title { font-size: 16px; line-height: 22px; font-weight: 600; }
+.g4-story__read-sub { font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.g4-story__read-sub.is-open { white-space: normal; }
+.g4-story__read-go { width: 40px; height: 40px; flex: none; border-radius: 9999px; background: #e8f2f8; color: #16181d; display: flex; align-items: center; justify-content: center; }
+.g4-story__foot { flex: none; height: 84px; padding: 12px 16px 24px; display: flex; align-items: flex-start; gap: 8px; }
+.g4-story__reply { flex: 1 0 0; min-width: 0; height: 48px; padding: 0 19px; border: 1px solid #e2e3e8; border-radius: 9999px; background: #fff; color: #4a4e5a; font-size: 14px; line-height: 20px; text-decoration: none; display: flex; align-items: center; padding-top: 2.5px; }
+.g4-story__like { width: 48px; height: 48px; flex: none; border: 0; border-radius: 9999px; background: #fff; color: #0571a6; padding: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.g4-story__like.is-on svg path { fill: currentColor; }
+/* Culture: the brand colour, white type */
+.g4-story--dark, .g4-story--dark .g4-story__from, .g4-story--dark .g4-story__title, .g4-story--dark .g4-story__line { color: #fff; }
+.g4-story--dark .g4-story__close { color: #fff; }
+.g4-story--dark .g4-story__reply { background: #045a85; border-color: #fff; color: #fff; }
+.g4-story--dark .g4-story__like { background: #045a85; color: #fff; }
+
+/* ── Profile steps 4–7 ───────────────────────────────────────────────── */
+.g4-step { padding: 16px 16px 24px; display: flex; flex-direction: column; gap: 24px; }
+.g4-intro { display: flex; align-items: flex-start; gap: 12px; margin: 0; font-size: 14px; line-height: 20px; color: #4a4e5a; }
+.g4-intro img { width: 32px; height: 32px; flex: none; object-fit: contain; }
+.g4-note { display: flex; align-items: flex-start; gap: 8px; padding: 12px; border-radius: 16px; background: #f7f7f9; font-size: 12px; line-height: 16px; color: #16181d; }
+.g4-note svg { flex: none; color: #0571a6; }
+.g4-photo { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 8px 0; }
+.g4-photo__ring { width: 168px; height: 168px; border-radius: 9999px; background: #fff; border: 2px dashed #e2e3e8; display: flex; align-items: center; justify-content: center; overflow: hidden; color: #6b7080; }
+.g4-photo__ring img { width: 100%; height: 100%; object-fit: cover; }
+.g4-photo__ring--set { border: 0; }
+.g4-photo__caption { font-size: 14px; line-height: 20px; color: #4a4e5a; }
+.g4-tips { background: #fff; border: 1px solid #e2e3e8; border-radius: 16px; padding: 13px; display: flex; flex-direction: column; gap: 12px; }
+.g4-tips__h { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; color: #16181d; }
+.g4-tip { display: flex; align-items: center; gap: 12px; font-size: 14px; line-height: 20px; color: #16181d; }
+.g4-tip__mark { width: 24px; height: 24px; flex: none; border-radius: 9999px; background: #f7f7f9; display: flex; align-items: center; justify-content: center; color: #15803d; }
+.g4-tip__mark--no { color: #b45309; }
+.g4-photo-btns { display: flex; gap: 8px; }
+.g4-photo-btn { flex: 1 0 0; min-width: 0; height: 48px; position: relative; border: 1px solid #e2e3e8; border-radius: 16px; background: #fff; color: #0571a6; font-size: 15px; line-height: 20px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 13px; cursor: pointer; }
+.g4-photo-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }

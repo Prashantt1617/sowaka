@@ -6,13 +6,19 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { portal } from '../api/portal';
 import type { JoiningDetails, MeetItem } from '../api/types';
 import { A1Icon, A1Loading, A1Logo, Breadcrumb } from '../components/A1';
-import { firstName, fmtTime, fmtWeekday, initials } from '../lib/format';
+import { firstName, fmtShort, fmtTime, fmtWeekday, initials } from '../lib/format';
 import { mailto } from '../lib/links';
 import { useMe } from '../session';
 import { WebPage } from './A1Shell';
+import { G4StoryChevron } from '../components/fig/icons/g4-story-chevron';
+import { G4StoryClose } from '../components/fig/icons/g4-story-close';
+import { G4StoryDirections } from '../components/fig/icons/g4-story-directions';
+import { G4StoryHeart } from '../components/fig/icons/g4-story-heart';
+import { G4StoryPlay } from '../components/fig/icons/g4-story-play';
+import pin3d from '../components/fig/icons/g4-3d-pin.png';
+import '../styles/fig-g4.css';
 
 type StoryKey = 'welcome' | 'manager' | 'team' | 'day1' | 'policies' | 'role';
-const BG: Record<StoryKey, string> = { welcome: '#0571A6', manager: '#15803D', team: '#2563EB', day1: '#B45309', policies: '#045A85', role: '#2E3139' };
 const SEEN_ITEM: Partial<Record<StoryKey, string>> = { welcome: 'company_video', manager: 'manager_note', policies: 'policies', role: 'role' };
 const FACE_TONES = [['#E8F7EE', '#15803D'], ['#FEF4E2', '#B45309'], ['#EAF1FE', '#2563EB'], ['#FDECEA', '#D92D20']];
 
@@ -155,12 +161,34 @@ export function A1About() {
   );
 }
 
+// The story viewer as in Figma ("Web · Story · Culture / Your manager / Your team / Day 1 /
+// Policies", 4967:95263–95442): a light page per story (Culture on the brand colour), green
+// progress, the company's HR at the top, the story in the middle, a reply pill and a like.
+const THEME: Record<StoryKey, { bg: string; logo: string; dark?: boolean; pb: number }> = {
+  welcome: { bg: '#0571A6', logo: '#0571A6', dark: true, pb: 218.5 },
+  manager: { bg: '#E8F7EE', logo: '#15803D', pb: 204.5 },
+  team: { bg: '#FEF4E2', logo: '#0571A6', pb: 228.5 },
+  day1: { bg: '#EAF1FE', logo: '#B45309', pb: 208.5 },
+  policies: { bg: '#E8F2F8', logo: '#0571A6', pb: 186.5 },
+  role: { bg: '#F7F7F9', logo: '#0571A6', pb: 204.5 },
+};
+const TEAM_TONES = ['#0571A6', '#15803D', '#B45309', '#B45309'];
+const REPLY: Record<StoryKey, (manager?: string) => string> = {
+  welcome: () => 'Say hi to HR', manager: (m) => (m ? `Reply to ${firstName(m)}` : 'Ask HR a question'), team: () => 'Say hi to the team',
+  day1: () => 'Ask about the office', policies: () => 'Ask HR a question', role: () => 'Ask HR a question',
+};
+
 function Story({ order, at, onMove, onClose, company, candidate, hr, tj, j, note, managerName, video, role, policies }: {
   order: StoryKey[]; at: StoryKey; onMove: (k: StoryKey) => void; onClose: () => void; company: { name: string; logoUrl?: string }; candidate: string; hr: string; tj: string;
   j?: JoiningDetails; note?: MeetItem; managerName?: string; video?: MeetItem; role?: MeetItem; policies: Array<{ title: string; summary: string }>;
 }) {
   const i = Math.max(0, order.indexOf(at));
-  const bg = BG[at];
+  const t = THEME[at];
+  // Likes stay on this page (the API has no story likes yet).
+  const [liked, setLiked] = useState<Partial<Record<StoryKey, boolean>>>({});
+  const [playing, setPlaying] = useState(false);
+  const [openRead, setOpenRead] = useState<string | null>(null);
+  useEffect(() => { setPlaying(false); setOpenRead(null); }, [at]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); if (e.key === 'ArrowRight' && i < order.length - 1) onMove(order[i + 1]); if (e.key === 'ArrowLeft' && i > 0) onMove(order[i - 1]); };
     document.addEventListener('keydown', onKey);
@@ -168,78 +196,95 @@ function Story({ order, at, onMove, onClose, company, candidate, hr, tj, j, note
   }, [i, order, onMove, onClose]);
   const time = fmtTime(j?.reportingTime);
   const directions = j?.mapLink ?? (j?.place ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(j.place)}` : undefined);
-  const reply = at === 'manager' ? 'Ask HR to pass a message on' : at === 'day1' ? 'Ask HR about your first day' : 'Ask HR a question';
+  const team = [managerName, j?.buddy?.name].filter((n): n is string => Boolean(n));
+  const managerLine = note?.text ?? [j?.manager?.designation ?? note?.authorRole, `${firstName(managerName ?? '')} will meet you ${j?.place ? `at ${j.place}` : 'on your first day'}.`].filter(Boolean).join('. ');
+  const day = j?.date ?? tj;
   return (
     <div className="a1-story" role="dialog" aria-modal="true" aria-label={`Story ${i + 1} of ${order.length}`}>
-      <div className="a1-story__panel" style={{ background: bg }}>
-        <div style={{ padding: '12px 12px 0 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div className="a1-story__segs" style={{ gridTemplateColumns: `repeat(${order.length}, minmax(0, 1fr))` }}>
-            {order.map((k, n) => <span key={k}><i className={n === i ? 'run' : ''} style={{ width: n <= i ? '100%' : '0%' }} /></span>)}
+      <div className={`a1-story__panel g4-story${t.dark ? ' g4-story--dark' : ''}`} style={{ background: t.bg }}>
+        <div className="g4-story__top">
+          <div className="g4-story__segs">
+            {order.map((k, n) => <span key={k} className={n <= i ? 'is-done' : undefined} />)}
           </div>
-          <div className="a1-row">
-            <A1Logo company={company} className="a1-story__logo" />
-            <span className="a1-stack"><span className="a1-strong">{company.name} HR</span><span style={{ fontSize: 12, lineHeight: '16px', color: 'rgba(255,255,255,.85)' }}>Before you join</span></span>
-            <button type="button" className="a1-icon-btn" style={{ color: '#fff', width: 44, height: 44 }} aria-label="Close" onClick={onClose}><A1Icon name="close" size={24} width={2} /></button>
+          <div className="g4-story__who">
+            <span className="g4-story__logo" style={{ color: t.logo }}>{company.logoUrl ? <A1Logo company={company} className="g4-story__logo-img" /> : initials(company.name).slice(0, 2)}</span>
+            <span className="g4-story__from"><span className="g4-story__name">{company.name} HR</span><span className="g4-story__when">{at === 'welcome' ? 'Pinned by HR' : 'Before you join'}</span></span>
+            <button type="button" className="g4-story__close" aria-label="Close" onClick={onClose}><G4StoryClose /></button>
           </div>
         </div>
-        <div className="a1-story__main">
+        <div className="a1-story__main g4-story__main" style={{ paddingBottom: t.pb }}>
           {i > 0 && <button type="button" className="a1-story__tap" style={{ left: 0 }} aria-label="Previous story" onClick={() => onMove(order[i - 1])} />}
           {i < order.length - 1 && <button type="button" className="a1-story__tap" style={{ right: 0 }} aria-label="Next story" onClick={() => onMove(order[i + 1])} />}
-          <div className="a1-story__content">
+          <div className="a1-story__content g4-story__content">
             {at === 'welcome' && (
-              <>
-                <h2 className="a1-story__title" style={{ fontSize: 32, lineHeight: '40px' }}>Welcome to {company.name}, {firstName(candidate)}!</h2>
-                {video?.videoUrl ? <video className="a1-story__video" src={video.videoUrl} controls playsInline /> : <p className="a1-story__line">We’re glad you’re joining us. Everything you need before your first day is in this portal.</p>}
-                {video?.subtitle && <p className="a1-story__line">{video.subtitle}</p>}
-              </>
+              <div className="g4-story__stack" style={{ gap: 28 }}>
+                <div className="g4-story__stack" style={{ gap: 20 }}>
+                  <h2 className="g4-story__title g4-story__title--lines"><span>Welcome to</span><span>{company.name}</span><span>{firstName(candidate)}!</span></h2>
+                  <p className="g4-story__line">{video?.text ?? video?.subtitle ?? 'We’re glad you’re joining us. Everything you need before your first day is in this portal.'}</p>
+                </div>
+                {video?.videoUrl && (playing
+                  ? <video className="a1-story__video" src={video.videoUrl} controls autoPlay playsInline />
+                  : <button type="button" className="g4-story__cta" onClick={() => setPlaying(true)}><G4StoryPlay />Watch the welcome video</button>)}
+              </div>
             )}
             {at === 'manager' && managerName && (
-              <>
-                <Face name={managerName} photo={note?.authorPhotoUrl} className="a1-story__face" />
-                <h2 className="a1-story__title">Meet {managerName}</h2>
-                <span className="a1-story__pill">Your manager</span>
-                {note?.videoUrl ? <video className="a1-story__video" src={note.videoUrl} controls playsInline /> : <p className="a1-story__line">{note?.text ?? `${firstName(managerName)} will meet you on your first day.`}</p>}
-              </>
+              <div className="g4-story__stack" style={{ gap: 16 }}>
+                <Face name={managerName} photo={note?.authorPhotoUrl} className="g4-story__face" />
+                <h2 className="g4-story__title">Meet {managerName}</h2>
+                <span className="g4-story__pill">Your manager</span>
+                <p className="g4-story__line">{managerLine}</p>
+                {note?.videoUrl && (playing
+                  ? <video className="a1-story__video" src={note.videoUrl} controls autoPlay playsInline />
+                  : <button type="button" className="g4-story__cta" onClick={() => setPlaying(true)}><G4StoryPlay />Watch {firstName(managerName)}’s hello</button>)}
+              </div>
             )}
             {at === 'team' && (
-              <>
-                <span style={{ display: 'flex' }}>
-                  {[managerName, j?.buddy?.name, candidate].filter((n): n is string => Boolean(n)).map((n, k) => (
-                    <span key={n} className="a1-story__face" style={{ width: 72, height: 72, fontSize: 22, marginLeft: k ? -18 : 0, border: `3px solid ${bg}`, boxShadow: 'none', color: bg }}>{initials(n)}</span>
-                  ))}
+              <div className="g4-story__stack" style={{ gap: 20 }}>
+                <span className="g4-story__faces">
+                  {team.map((n, k) => <span key={n} className="g4-story__teamface" style={{ color: TEAM_TONES[k % TEAM_TONES.length], background: k ? '#F7F7F9' : '#fff' }}>{initials(n)}</span>)}
                 </span>
-                <h2 className="a1-story__title">Your team{j?.department ? `, ${j.department}` : ''}</h2>
-                <p className="a1-story__line">{[managerName && `${firstName(managerName)}, your manager`, j?.buddy && `${firstName(j.buddy.name)}, your buddy`].filter(Boolean).join(' · ')}</p>
-                <p className="a1-story__line" style={{ fontSize: 14 }}>and you, from {fmtWeekday(tj)}</p>
-              </>
+                <h2 className="g4-story__title g4-story__title--lines"><span>Your team</span>{j?.department && <span>{j.department}</span>}</h2>
+                <div className="g4-story__stack" style={{ gap: 8 }}>
+                  <p className="g4-story__line">{team.map(firstName).join(' · ')}</p>
+                  <p className="g4-story__line g4-story__line--sm">and you, from {fmtShort(day)}</p>
+                </div>
+              </div>
             )}
             {at === 'day1' && (
-              <>
-                <span style={{ width: 96, height: 96, borderRadius: 999, background: 'rgba(255,255,255,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><A1Icon name="pin" size={48} width={1.6} /></span>
-                <h2 className="a1-story__title">{j?.place ?? fmtWeekday(tj)}</h2>
-                <p className="a1-story__line">{[fmtWeekday(j?.date ?? tj), time ? `see you at ${time}` : ''].filter(Boolean).join(' · ')}</p>
-                {directions && <a className="a1-story__cta" style={{ color: bg }} href={directions} target="_blank" rel="noreferrer"><A1Icon name="send" size={20} width={2} />Get directions</a>}
-              </>
+              <div className="g4-story__stack" style={{ gap: 24 }}>
+                <div className="g4-story__stack" style={{ gap: 16 }}>
+                  <span className="g4-story__pin"><img src={pin3d} alt="" width={64} height={64} /></span>
+                  <h2 className="g4-story__title">{j?.place ?? fmtWeekday(day)}</h2>
+                  <p className="g4-story__line">{[fmtWeekday(day), time ? `see you at ${time}` : ''].filter(Boolean).join(' · ')}</p>
+                </div>
+                {directions && <a className="g4-story__cta g4-story__cta--dir" href={directions} target="_blank" rel="noreferrer"><G4StoryDirections />Get directions</a>}
+              </div>
             )}
             {at === 'policies' && (
-              <>
-                <h2 className="a1-story__title">{policies.length === 1 ? '1 quick read' : `${policies.length} quick reads`} before you join</h2>
-                <div className="a1-story__reads">
-                  {policies.map((p) => <div key={p.title} className="a1-story__read"><span style={{ fontSize: 16, lineHeight: '22px', fontWeight: 600 }}>{p.title}</span>{p.summary && <span style={{ fontSize: 13, lineHeight: '18px', color: 'rgba(255,255,255,.9)' }}>{p.summary}</span>}</div>)}
+              <div className="g4-story__stack" style={{ gap: 20 }}>
+                <h2 className="g4-story__title">{policies.length === 1 ? '1 quick read' : `${policies.length} quick reads`} before you join</h2>
+                <div className="g4-story__reads">
+                  {policies.map((p) => (
+                    <button key={p.title} type="button" className="g4-story__read" aria-expanded={openRead === p.title} onClick={() => setOpenRead((cur) => (cur === p.title ? null : p.title))}>
+                      <span className="g4-story__read-text"><span className="g4-story__read-title">{p.title}</span>{p.summary && <span className={`g4-story__read-sub${openRead === p.title ? ' is-open' : ''}`}>{p.summary}</span>}</span>
+                      <span className="g4-story__read-go"><G4StoryChevron /></span>
+                    </button>
+                  ))}
                 </div>
-              </>
+              </div>
             )}
             {at === 'role' && role && (
-              <>
-                <h2 className="a1-story__title">{role.title}</h2>
-                {role.subtitle && <span className="a1-story__pill">{role.subtitle}</span>}
-                <p className="a1-story__line" style={{ textAlign: 'left' }}>{role.text}</p>
-              </>
+              <div className="g4-story__stack" style={{ gap: 16 }}>
+                <h2 className="g4-story__title">{role.title}</h2>
+                {role.subtitle && <span className="g4-story__pill">{role.subtitle}</span>}
+                <p className="g4-story__line">{role.text}</p>
+              </div>
             )}
           </div>
         </div>
-        <div className="a1-story__foot">
-          <a className="a1-story__reply" href={mailto(hr, 'Question before I join')}>{reply}</a>
+        <div className="g4-story__foot">
+          <a className="g4-story__reply" href={mailto(hr, 'Question before I join')}>{REPLY[at](managerName)}</a>
+          <button type="button" className={`g4-story__like${liked[at] ? ' is-on' : ''}`} aria-label="Like" aria-pressed={Boolean(liked[at])} onClick={() => setLiked((cur) => ({ ...cur, [at]: !cur[at] }))}><G4StoryHeart /></button>
         </div>
       </div>
     </div>
