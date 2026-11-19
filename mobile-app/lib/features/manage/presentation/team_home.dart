@@ -95,6 +95,7 @@ class _TeamHomeState extends State<_TeamHome> {
                       onOpenComposer: widget.onOpenComposer,
                       fromTeamTab: true,
                     ),
+                    TeamSection.joiners => const JoinersTab(),
                   },
           ),
         ],
@@ -139,9 +140,11 @@ bool _reviewedThisMonth(TeamMember member) {
 int _pendingTeamFeedback(ManagerDashboard data) =>
     _reviewableReports(data).where((m) => !_reviewedThisMonth(m)).length;
 
-/// My Team / Requests / Feedback (node 2944:42323): a hairline under three
-/// equal tabs, the open one in bold over a dark underline, and an orange count
-/// beside Requests and Feedback while anything there is waiting.
+/// Teams' sections as a row of pills that scrolls sideways (Teams › Joiners,
+/// MgrTeamsProto): My Team, Requests, Feedback and, while the company has
+/// the lifecycle on, Joiners last. The open one is black; an orange count
+/// sits in Requests and Feedback while anything there is waiting, a blue one
+/// in Joiners.
 class _TeamSectionBar extends StatelessWidget {
   const _TeamSectionBar({
     required this.data,
@@ -160,43 +163,35 @@ class _TeamSectionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: DecoratedBox(
-        decoration: const BoxDecoration(
-          border: Border(
-            bottom: BorderSide(color: Color(0xFFEBEBEB), width: 1.114),
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: _SegmentTab(
-                label: 'My Team',
-                selected: section == TeamSection.myTeam,
-                onTap: () => onChanged(TeamSection.myTeam),
-              ),
+    return ListenableBuilder(
+      listenable: Listenable.merge([LifecycleMeStore.instance, JoinersTab.count]),
+      builder: (context, _) {
+        final joiners = LifecycleMeStore.instance.value.enabled;
+        return TeamSectionPills(
+          selected: section.name,
+          onSelect: (key) => onChanged(TeamSection.values.byName(key)),
+          pills: [
+            TeamPillSpec(key: TeamSection.myTeam.name, label: 'My Team'),
+            TeamPillSpec(
+              key: TeamSection.requests.name,
+              label: 'Requests',
+              count: _pendingTeamRequests(data) + extraRequests,
             ),
-            Expanded(
-              child: _SegmentTab(
-                label: 'Requests',
-                count: _pendingTeamRequests(data) + extraRequests,
-                selected: section == TeamSection.requests,
-                onTap: () => onChanged(TeamSection.requests),
-              ),
+            TeamPillSpec(
+              key: TeamSection.feedback.name,
+              label: 'Feedback',
+              count: _pendingTeamFeedback(data),
             ),
-            Expanded(
-              child: _SegmentTab(
-                label: 'Feedback',
-                count: _pendingTeamFeedback(data),
-                selected: section == TeamSection.feedback,
-                onTap: () => onChanged(TeamSection.feedback),
+            if (joiners || section == TeamSection.joiners)
+              TeamPillSpec(
+                key: TeamSection.joiners.name,
+                label: 'Joiners',
+                count: JoinersTab.count.value,
+                countColor: TeamColors.joinersCount,
               ),
-            ),
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -219,101 +214,6 @@ class _PushedTeamSectionBar extends StatelessWidget {
         Navigator.of(context).popUntil((route) => route.isFirst);
         bloc.add(ShowTeamSection(value));
       },
-    );
-  }
-}
-
-class _SegmentTab extends StatelessWidget {
-  const _SegmentTab({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.count = 0,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  /// What is waiting in this section; no badge at zero.
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: count > 0 ? '$label, $count waiting' : label,
-      excludeSemantics: true,
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          height: 33.1,
-          alignment: Alignment.topCenter,
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: selected ? const Color(0xFF222222) : Colors.transparent,
-                width: 1.114,
-              ),
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: 'Sora',
-                    color: selected
-                        ? const Color(0xFF222222)
-                        : const Color(0xFF717171),
-                    fontSize: 14,
-                    height: 20 / 14,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  ),
-                ),
-              ),
-              if (count > 0) ...[
-                const SizedBox(width: 4),
-                _CountBadge(count: count),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The orange count on a section tab (node 3459:62154).
-class _CountBadge extends StatelessWidget {
-  const _CountBadge({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFF8D28),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFFF8D28)),
-      ),
-      child: Text(
-        count > 99 ? '99+' : '$count',
-        style: const TextStyle(
-          fontFamily: 'Sora',
-          color: Colors.white,
-          fontSize: 10,
-          height: 12 / 10,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
     );
   }
 }

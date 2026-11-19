@@ -2,23 +2,44 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../../profile/profile_launcher.dart';
 import '../../../../shared/app_toast.dart';
 import '../../data/onboarding_api.dart';
 import '../../data/onboarding_models.dart';
-import '../links.dart';
 import '../onboarding_kit.dart';
-import '../plant.dart';
 import '../task_row.dart';
 import 'joiner_setup_screen.dart';
 import 'probation_review_screen.dart';
 import 'starter_review_screen.dart';
+import 'team_kit.dart';
+import 'team_meeting_screen.dart';
 
-/// M2 · a joiner's week as their manager sees it (6Zs §5.4): where they
-/// are, the manager's own tasks with a pill each (Join / time / Assign /
-/// Add / Set up), the set-up (people, buddy, welcome note, goals), the
-/// starter tasks and notes, and the joiner's own progress, read-only.
+/// The page a joiner's own sub-pages open on (Teams › Joiners, layout C).
+enum JoinerPage {
+  /// Who they are, your tasks for them, their onboarding and reach out.
+  main,
+
+  /// View all: every task, with what is coming up below.
+  tasks,
+
+  /// View progress: their onboarding, read-only.
+  progress,
+
+  /// Choose how: the ways to reach out, as blocks.
+  reachOut,
+
+  /// From View progress: their meetings, then their own tasks.
+  theirMeetings,
+  theirTasks,
+}
+
+/// A joiner as their manager sees them (Teams › Joiners, artifact
+/// 8C82Qv57Z88eV7VTVQpFGZ, layout C): who they are at the top, "Your tasks
+/// for Priya" as the main card with what is due now ready to tick, and two
+/// smaller tiles — their onboarding (View progress) and Reach out (Choose
+/// how). Each opens its own page here; a meeting opens its agenda and notes.
 class JoinerScreen extends StatefulWidget {
-  const JoinerScreen({super.key, required this.shell, required this.journeyId, this.openSetup = false, this.summary});
+  const JoinerScreen({super.key, required this.shell, required this.journeyId, this.openSetup = false, this.summary, this.page = JoinerPage.main});
 
   final OnboardingShell shell;
   final String journeyId;
@@ -29,6 +50,9 @@ class JoinerScreen extends StatefulWidget {
   /// Opens the set-up straight away (from the "set up your joiner" push).
   final bool openSetup;
 
+  /// Where it opens (the artifact's key screens open on their sub-page).
+  final JoinerPage page;
+
   @override
   State<JoinerScreen> createState() => _JoinerScreenState();
 }
@@ -38,9 +62,13 @@ class _JoinerScreenState extends State<JoinerScreen> {
   String? _error;
   bool _openedSetup = false;
   final Set<String> _busyTasks = {};
+  late JoinerPage _page = widget.page;
 
-  /// The done row is closed on every visit.
-  bool _doneOpen = false;
+  /// Where Back goes from a page opened from View progress.
+  JoinerPage get _parent => switch (_page) {
+    JoinerPage.theirMeetings || JoinerPage.theirTasks => JoinerPage.progress,
+    _ => JoinerPage.main,
+  };
 
   OnboardingShell get _shell => widget.shell;
 
@@ -50,7 +78,7 @@ class _JoinerScreenState extends State<JoinerScreen> {
     unawaited(_first());
   }
 
-  /// Last time's M2 from the device at once (or the Team tab's row), then live.
+  /// Last time's page from the device at once (or the Team tab's row), then live.
   Future<void> _first() async {
     final kept = await _shell.api.fromDevice((api) => api.fetchJoiner(widget.journeyId));
     if (kept != null && mounted && _detail == null) setState(() => _detail = kept);
@@ -96,6 +124,10 @@ class _JoinerScreenState extends State<JoinerScreen> {
   }
 
   Future<void> _welcome(JoinerDetail detail) async {
+    if (!detail.welcomeCanPost) {
+      showAppToast(context, detail.welcomePostedAt != null ? 'You already welcomed ${detail.joiner.firstName} on the feed' : 'Post a welcome once ${detail.joiner.firstName} has joined');
+      return;
+    }
     final sent = await showWelcomePostSheet(context, _shell, widget.journeyId, detail.joiner.firstName);
     if (sent == true && mounted) {
       showAppToast(context, 'Posted on Connect');
@@ -107,6 +139,7 @@ class _JoinerScreenState extends State<JoinerScreen> {
     setState(() => _busyTasks.add(task.id));
     try {
       await _shell.api.managerTaskDone(widget.journeyId, task.id);
+      if (mounted && (task.isTimed || task.kind == 'meeting')) showAppToast(context, 'Marked as done');
       await _load();
     } catch (error) {
       if (mounted) showAppToast(context, onboardingErrorText(error));
@@ -115,350 +148,681 @@ class _JoinerScreenState extends State<JoinerScreen> {
     }
   }
 
+  void _openProfile(JoinerSummary joiner) {
+    final id = joiner.userId;
+    if (id == null || !openPersonProfile(id)) {
+      showAppToast(context, '${joiner.firstName}’s profile opens once they have joined');
+    }
+  }
+
+  void _go(JoinerPage page) => setState(() => _page = page);
+
+  void _back() {
+    if (_page == JoinerPage.main || _page == widget.page && widget.page != JoinerPage.main) {
+      Navigator.of(context).maybePop();
+    } else {
+      _go(_parent);
+    }
+  }
+
+  String _title(JoinerSummary? joiner) => switch (_page) {
+    JoinerPage.main => 'Joiners',
+    JoinerPage.tasks => 'All tasks',
+    _ => joiner?.name ?? 'New joiner',
+  };
+
   @override
   Widget build(BuildContext context) {
     final detail = _detail;
     final summary = widget.summary;
-    return OnbScaffold(
-      shell: _shell,
-      title: detail?.joiner.name ?? summary?.name ?? 'New joiner',
-      offline: detail != null && _error != null,
-      body: detail != null
-          ? RefreshIndicator(onRefresh: _load, child: _body(detail))
-          : summary != null && _error == null
-          // The card from the Team tab's row while the week loads: never a blank page.
-          ? ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-              children: [
-                _hero(summary, _shell.now()),
-                const SizedBox(height: 24),
-                const Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))),
-              ],
-            )
-          : OnbLoadState(error: _error, onRetry: _load),
+    return PopScope(
+      canPop: _page == JoinerPage.main || _page == widget.page,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _go(_parent);
+      },
+      child: OnbScaffold(
+        shell: _shell,
+        title: _title(detail?.joiner ?? summary),
+        onBack: _back,
+        offline: detail != null && _error != null,
+        body: detail != null
+            ? RefreshIndicator(onRefresh: _load, child: _body(detail))
+            : summary != null && _error == null
+            // The top from the Team tab's row while the page loads: never a blank page.
+            ? ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+                children: [
+                  _hero(summary, null, _shell.now()),
+                  const SizedBox(height: 24),
+                  const Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))),
+                ],
+              )
+            : OnbLoadState(error: _error, onRetry: _load),
+      ),
     );
   }
 
-  /// M2's one card: the plant on its tile, the stage, the big week label,
-  /// the role and joining date.
-  Widget _hero(JoinerSummary joiner, DateTime now) => Container(
-    key: const ValueKey('mgr-hero'),
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: OnbColors.line),
-    ),
-    child: Row(
-      children: [
-        Container(
-          width: 56,
-          height: 64,
-          decoration: BoxDecoration(color: OnbColors.tint, borderRadius: BorderRadius.circular(14)),
-          alignment: Alignment.bottomCenter,
-          child: Plant.of(joiner.plant, size: 50, sway: false, showPill: false),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                onboardingStageLabel(joiner.stage).toUpperCase(),
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: OnbColors.primary),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                joiner.dayLabelOn(now),
-                style: const TextStyle(fontSize: 26, height: 1.1, fontWeight: FontWeight.w800, letterSpacing: -0.52, color: OnbColors.text),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                [
-                  ?joiner.designation,
-                  if (joiner.tj != null) (joiner.preboarding ? 'joins ${onbDay(joiner.tj!)}' : 'joined ${onbDay(joiner.tj!)}'),
-                ].join(' · '),
-                style: const TextStyle(fontSize: 12, color: OnbColors.text3),
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
+  /// Who they are: photo, name, designation, reports to you, their buddy, the stage.
+  Widget _hero(JoinerSummary joiner, JoinerDetail? detail, DateTime now) {
+    final buddy = detail?.setup.buddy?.name;
+    return KeyedSubtree(
+      key: const ValueKey('mgr-hero'),
+      child: TeamPersonHero(
+        name: joiner.name,
+        photoUrl: joiner.photoUrl,
+        designation: joiner.designation,
+        reportsLine: 'Reports to you',
+        buddyLine: detail == null ? '' : (buddy == null || buddy.isEmpty ? 'No buddy yet' : 'Buddy: $buddy'),
+        stage: teamStageLabel(joiner, now),
+        plant: teamPlantOf(joiner),
+        onOpenProfile: () => _openProfile(joiner),
+      ),
+    );
+  }
 
   Widget _body(JoinerDetail detail) {
     final now = _shell.now();
-    final joiner = detail.joiner;
-    final first = joiner.firstName;
-    // "Your tasks this week": open ones, and locked ones only when they open within the week.
-    bool soon(TaskView t) => !t.isLocked || (t.opensAt != null && calendarDaysBetween(now, t.opensAt!) <= 7);
-    final mine = orderTaskList(detail.managerTasks.where((t) => !t.isClosed && soon(t)).toList());
-    // Done this past week stay on the list, ticked green (the design's done pill).
-    final mineDone = detail.managerTasks
-        .where((t) => t.isDone && (t.doneAt == null || calendarDaysBetween(t.doneAt!, now) <= 7))
-        .toList();
-    final theirs = detail.joinerTasks;
-    final theirsDone = theirs.where((t) => t.isDone).length;
-    final late = theirs.where((t) => t.late && !t.isDone).length;
-    final inProbation = joiner.stage != null && joiner.stage != 'pre_boarding' && joiner.stage != 'welcome_week1';
+    final children = switch (_page) {
+      JoinerPage.main => _main(detail, now),
+      JoinerPage.tasks => _allTasks(detail, now),
+      JoinerPage.progress => _progress(detail, now),
+      JoinerPage.reachOut => _reachOut(detail),
+      JoinerPage.theirMeetings => _theirMeetings(detail, now),
+      JoinerPage.theirTasks => _theirTasks(detail, now),
+    };
     return ListView(
+      key: ValueKey('joiner-page-${_page.name}'),
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-      children: [
-        _hero(joiner, now),
-        const SizedBox(height: 14),
-        const Text('Your tasks this week', style: _MgrText.section),
-        const SizedBox(height: 8),
-        if (mine.isEmpty && mineDone.isEmpty && !detail.welcomeCanPost && detail.starterTasks.isEmpty)
-          const Text('Nothing waiting on you.', style: OnbText.body),
-        // The timed ones first, then "Post a welcome", then the rest (as drawn).
-        for (final task in mine.where((t) => t.startsAt != null)) _taskRow(detail, task, now),
-        // M2 "🎉 Post a welcome · Shows on the Connect feed · Write", once per joiner.
-        if (detail.welcomeCanPost)
-          _MgrTaskRow(
-            key: const ValueKey('mgr-welcome'),
-            emoji: '🎉',
-            tint: OnbColors.mustTint,
-            title: 'Post a welcome',
-            meta: 'Shows on the Connect feed',
-            pill: _Pill(key: const ValueKey('welcome-write'), label: 'Write', onTap: () => _welcome(detail)),
-          ),
-        for (final task in mine.where((t) => t.startsAt == null)) _taskRow(detail, task, now),
-        // The starter tasks given: due, or done with the joiner's note to read (M3).
-        for (final task in detail.starterTasks)
-          _MgrTaskRow(
-            key: ValueKey('mgr-starter-${task.id}'),
-            emoji: '🎯',
-            tint: _purpleTint,
-            title: task.title,
-            meta: task.done
-                ? '$first marked it done${task.doneAt == null ? '' : ' · ${onbDay(task.doneAt!)}'}'
-                : (task.dueAt == null ? 'Starter task' : 'Due by ${onbDay(task.dueAt!)}'),
-            pill: task.done
-                ? _Pill(
-                    key: ValueKey('starter-open-${task.id}'),
-                    label: task.managerReply == null ? 'Reply' : 'Done',
-                    state: _PillState.done,
-                    onTap: () => _push(
-                      StarterReviewScreen(
-                        shell: _shell,
-                        journeyId: widget.journeyId,
-                        starterTaskId: task.id,
-                        initial: task,
-                        joinerName: joiner.name,
-                        joinerPhotoUrl: joiner.photoUrl,
-                      ),
-                    ),
-                  )
-                : const _Pill(label: 'Sent', onTap: null),
-          ),
-        // What is done folds into one row, as the joiner's home does ("2 done · View").
-        if (mineDone.isNotEmpty || detail.welcomePostedAt != null)
-          _DoneGroup(
-            open: _doneOpen,
-            onToggle: () => setState(() => _doneOpen = !_doneOpen),
-            rows: [
-              for (final task in mineDone)
-                (
-                  key: 'mgr-done-${task.id}',
-                  title: task.title,
-                  meta: taskMeta(task, now, forManager: true),
-                  onTap: _setupKeys.contains(task.systemKey) ? () => _setup(detail) : null,
-                ),
-              if (detail.welcomePostedAt != null)
-                (key: 'mgr-welcome-done', title: 'Post a welcome', meta: 'Posted ${onbDay(detail.welcomePostedAt!)}', onTap: null),
-            ],
-          ),
-        const SizedBox(height: 6),
-        // The joiner's own progress, read-only.
-        Container(
-          key: const ValueKey('joiner-progress'),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: OnbColors.line),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(child: Text('$first’s own tasks', style: _MgrText.cardTitle)),
-                  Text('$theirsDone of ${theirs.length} done', style: _MgrText.count),
-                ],
-              ),
-              const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: LinearProgressIndicator(
-                  value: theirs.isEmpty ? 0 : theirsDone / theirs.length,
-                  minHeight: 6,
-                  backgroundColor: OnbColors.line,
-                  color: OnbColors.primary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                [
-                  late == 0 ? 'On track.' : '$late ${late == 1 ? 'task is' : 'tasks are'} late.',
-                  if (detail.joinerNextDue case final next? when next.dueAt != null)
-                    '${next.title} ${next.title.endsWith('s') ? 'are' : 'is'} due ${onbDay(next.dueAt!)}.',
-                ].join(' '),
-                key: const ValueKey('joiner-on-track'),
-                style: _MgrText.meta.copyWith(color: late == 0 ? OnbColors.text3 : OnbColors.waterText),
-              ),
-            ],
-          ),
-        ),
-        // Below the drawn week: what only exists later (shared notes, probation months, survey summaries).
-        if (detail.notes.isNotEmpty) ...[
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              const Expanded(child: Text('Notes from your 1:1s', style: _MgrText.section)),
-              OnbLink(key: const ValueKey('add-note-more'), label: 'Add', onTap: () => _note(detail)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          for (final note in detail.notes)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: OnbColors.line),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(child: Text(note.createdAt == null ? '' : onbDayTime(note.createdAt!), style: _MgrText.meta)),
-                        OnbTag(note.shared ? (note.seen ? 'Shared · seen' : 'Shared') : 'Private', tone: note.shared ? OnbTone.count : OnbTone.locked),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(note.text, style: OnbText.body),
-                    for (final reply in note.replies)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text('${reply.mine ? 'You' : (reply.byName ?? first)}: ${reply.text}', style: _MgrText.meta),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-        if (inProbation && detail.probation != null && detail.probation!.months.isNotEmpty) ...[
-          const SizedBox(height: 14),
-          const Text('Probation', style: _MgrText.section),
-          const SizedBox(height: 8),
-          for (final month in detail.probation!.months)
-            _MgrTaskRow(
-              key: ValueKey('mgr-month-${month.monthNo}'),
-              emoji: '🪴',
-              tint: OnbColors.doneTint,
-              title: 'Month ${month.monthNo}',
-              meta: [
-                '${month.goals.length} goals',
-                month.checkinEmployee == null ? 'no check-in yet' : '$first checked in',
-                if (month.review != null) 'reviewed',
-              ].join(' · '),
-              pill: _Pill(
-                label: month.review != null && month.bothCheckedIn ? 'Done' : 'Open',
-                state: month.review != null && month.bothCheckedIn ? _PillState.done : _PillState.later,
-                onTap: () => _push(
-                  ProbationReviewScreen(
-                    shell: _shell,
-                    journeyId: widget.journeyId,
-                    month: month.monthNo,
-                    initial: month,
-                    joinerName: joiner.name,
-                  ),
-                ),
-              ),
-            ),
-        ],
-        // One summary per survey kind, only once 3+ different people answered it (the server's rule).
-        for (final survey in detail.surveys)
-          if (survey.count >= 3) ...[
-            const SizedBox(height: 12),
-            OnbCard(
-              key: ValueKey('survey-${survey.kind}'),
-              child: Text(
-                'Your team’s ${surveyKindName(survey.kind)}: ${survey.count} people answered'
-                '${survey.avg == null ? '' : ', ${survey.avg!.toStringAsFixed(1)} out of 5 on average'}. Names are never shown.',
-                style: OnbText.body,
-              ),
-            ),
-          ],
-      ],
+      children: children,
     );
   }
 
-  Widget _taskRow(JoinerDetail detail, TaskView task, DateTime now) => _MgrTaskRow(
-    key: ValueKey('mgr-task-${task.id}'),
-    emoji: _mgrEmoji(task),
-    tint: _mgrTint(task),
-    title: task.title,
-    meta: _mgrMeta(task, now),
-    late: task.late,
-    pill: _pill(detail, task),
-  );
+  // ─── What is yours to do ──────────────────────────────────────────────────
 
-  Widget _pill(JoinerDetail detail, TaskView task) {
-    final now = _shell.now();
-    if (_busyTasks.contains(task.id)) {
-      return const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2));
+  /// Your tasks now: open and not locked, the timed ones first.
+  List<TaskView> _openNow(JoinerDetail detail) =>
+      orderTaskList(detail.managerTasks.where((t) => t.isOpen || t.status == 'in_review').toList());
+
+  /// What opens later, soonest first.
+  List<TaskView> _comingUp(JoinerDetail detail) {
+    final later = detail.managerTasks.where((t) => t.isLocked).toList();
+    later.sort((a, b) => (a.opensAt ?? a.dueAt ?? DateTime(9999)).compareTo(b.opensAt ?? b.dueAt ?? DateTime(9999)));
+    return later;
+  }
+
+  List<Widget> _main(JoinerDetail detail, DateTime now) {
+    final joiner = detail.joiner;
+    final first = joiner.firstName;
+    final open = _openNow(detail);
+    final soon = _comingUp(detail);
+    // What is due now, up to three; nothing due → the next ones that can be done early.
+    final due = open.take(3).toList();
+    final late = detail.joinerTasks.where((t) => t.late && !t.isDone).toList();
+    final next = soon.isEmpty ? null : soon.first;
+    return [
+      _hero(joiner, detail, now),
+      const SizedBox(height: 14),
+      TeamTasksCard(
+        title: 'Your tasks for $first',
+        openCount: open.length,
+        rows: _lastWithoutLine([for (final task in due) _taskRow(detail, task, now)]),
+        emptyText: next == null ? 'Nothing due right now.' : 'Nothing due right now. Next: ${next.title}',
+        onViewAll: () => _go(JoinerPage.tasks),
+      ),
+      const SizedBox(height: 14),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: TeamSmallTile(
+              key: const ValueKey('tile-onboarding'),
+              label: '$first’s onboarding',
+              dot: late.isEmpty ? TeamColors.okFg : TeamColors.warnFg,
+              line: _statusShort(detail),
+              link: 'View progress',
+              onTap: () => _go(JoinerPage.progress),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TeamSmallTile(
+              key: const ValueKey('tile-reach-out'),
+              label: 'Reach out to $first',
+              line: joiner.preboarding ? 'Welcome $first before Day 1' : 'Make $first feel welcome',
+              link: 'Choose how',
+              linkColor: TeamColors.reachOut,
+              onTap: () => _go(JoinerPage.reachOut),
+            ),
+          ),
+        ],
+      ),
+    ];
+  }
+
+  /// "On track", "Joining soon", "1 task delayed".
+  String _statusShort(JoinerDetail detail) {
+    final late = detail.joinerTasks.where((t) => t.late && !t.isDone).length;
+    if (late > 0) return '$late ${late == 1 ? 'task' : 'tasks'} delayed';
+    if (detail.joiner.preboarding) return 'Joining soon';
+    if (detail.joiner.stage == 'confirmed') return 'Confirmed';
+    return 'On track';
+  }
+
+  /// One of your tasks, as a row: tick what you can tick here, open what has
+  /// its own screen, a lock on what opens later.
+  Widget _taskRow(JoinerDetail detail, TaskView task, DateTime now) {
+    final kind = TeamTaskKind.of(task);
+    final busy = _busyTasks.contains(task.id);
+    final key = ValueKey('mgr-task-${task.id}');
+    if (task.isLocked) {
+      final opens = task.opensAt;
+      return TeamTaskRow(
+        divider: false,
+        key: key,
+        kind: kind,
+        title: task.title,
+        sub: opens == null ? 'Opens later' : 'Opens ${onbDay(opens)}',
+        end: TeamRowEnd.locked,
+      );
     }
+    final opener = _opener(detail, task);
+    final tickable = managerMayTick(task);
+    final hr = !tickable && opener == null && (task.ownerRole == 'hr_manager' || task.ownerRole == 'hr');
+    final start = task.startsAt;
+    String? pill;
+    var pillBg = OnbColors.screen, pillFg = OnbColors.text2;
+    if (task.isDone) {
+      pill = null;
+    } else if (hr) {
+      pill = 'With HR';
+    } else if (task.late) {
+      pill = 'Late';
+      pillBg = TeamColors.countRedBg;
+      pillFg = TeamColors.countRedFg;
+    } else if (start != null) {
+      final minutes = start.difference(now).inMinutes;
+      if (minutes <= 10 && minutes >= -60) {
+        pill = 'Now';
+        pillBg = OnbColors.primary;
+        pillFg = Colors.white;
+      } else {
+        pill = calendarDaysBetween(now, start) == 0 ? compactTime(start) : onbDay(start).split(' ').first;
+      }
+    } else if (task.status == 'in_review') {
+      pill = 'Ready to review';
+      pillBg = TeamColors.blueBg;
+      pillFg = OnbColors.primary;
+    }
+    final end = opener != null
+        ? TeamRowEnd.chevron
+        : tickable || task.isDone
+        ? TeamRowEnd.tick
+        : TeamRowEnd.none;
+    return TeamTaskRow(
+      divider: false,
+      key: key,
+      kind: kind,
+      title: task.title,
+      sub: _mgrMeta(task, now),
+      pill: pill,
+      pillBg: pillBg,
+      pillFg: pillFg,
+      end: end,
+      done: task.isDone,
+      busy: busy,
+      onOpen: opener,
+      onTick: tickable && !task.isDone ? () => _markDone(task) : null,
+    );
+  }
+
+  /// The screen a task opens, when it has one.
+  VoidCallback? _opener(JoinerDetail detail, TaskView task) {
     switch (task.systemKey) {
       case 'starter_task':
-        return _Pill(key: const ValueKey('assign-starter'), label: 'Assign', onTap: () => _assign(detail));
+        return () => _assign(detail);
       case 'one_on_one_notes':
       case 'manager_30day_note':
-        return _Pill(key: ValueKey(task.systemKey == 'one_on_one_notes' ? 'add-note' : 'add-note-${task.id}'), label: 'Add', onTap: () => _note(detail));
+        return () => _note(detail);
       case 'manager_setup':
       case 'assign_buddy':
       case 'probation_goals':
       case 'people_to_meet':
-        return _Pill(key: ValueKey(task.systemKey == 'manager_setup' ? 'open-setup' : 'open-setup-${task.id}'), label: 'Set up', onTap: () => _setup(detail));
+        return () => _setup(detail);
       case 'monthly_goals':
       case 'monthly_checkin':
       case 'monthly_review':
         final month = task.month ?? 1;
-        return _Pill(
-          label: 'Open',
-          onTap: () => _push(
-            ProbationReviewScreen(
-              shell: _shell,
-              journeyId: widget.journeyId,
-              month: month,
-              initial: detail.probation?.months.where((m) => m.monthNo == month).firstOrNull,
-              joinerName: detail.joiner.name,
-            ),
+        return () => _push(
+          ProbationReviewScreen(
+            shell: _shell,
+            journeyId: widget.journeyId,
+            month: month,
+            initial: detail.probation?.months.where((m) => m.monthNo == month).firstOrNull,
+            joinerName: detail.joiner.name,
           ),
         );
     }
-    final start = task.startsAt;
-    if (start != null && !task.isDone) {
-      final minutes = start.difference(now).inMinutes;
-      final link = task.meeting?.link;
-      if (minutes <= 10 && minutes >= -60 && link != null) {
-        return _Pill(key: ValueKey('join-${task.id}'), label: 'Join', state: _PillState.now, onTap: () => openExternalLink(context, link));
+    if (task.isTimed || task.kind == 'meeting') {
+      return () => _push(TeamMeetingScreen(shell: _shell, journeyId: widget.journeyId, task: task, joiner: detail.joiner));
+    }
+    return null;
+  }
+
+  // ─── View all ─────────────────────────────────────────────────────────────
+
+  List<Widget> _allTasks(JoinerDetail detail, DateTime now) {
+    final joiner = detail.joiner;
+    final first = joiner.firstName;
+    final open = _openNow(detail);
+    final done = detail.managerTasks.where((t) => t.isDone).toList()
+      ..sort((a, b) => (b.doneAt ?? DateTime(0)).compareTo(a.doneAt ?? DateTime(0)));
+    final soon = _comingUp(detail);
+    final rows = <Widget>[
+      for (final task in open) _taskRow(detail, task, now),
+      // "Post a welcome", once per joiner, while it can still be posted.
+      if (detail.welcomeCanPost)
+        TeamTaskRow(
+          divider: false,
+          key: const ValueKey('mgr-welcome'),
+          kind: TeamTaskKind.chat,
+          title: 'Post a welcome',
+          sub: 'Shows on the Connect feed',
+          end: TeamRowEnd.chevron,
+          onOpen: () => _welcome(detail),
+        ),
+      // The starter tasks you gave: due, or done with their note to read.
+      for (final task in detail.starterTasks)
+        TeamTaskRow(
+          divider: false,
+          key: ValueKey('mgr-starter-${task.id}'),
+          kind: TeamTaskKind.task,
+          title: task.title,
+          sub: task.done
+              ? '$first marked it done${task.doneAt == null ? '' : ' · ${onbDay(task.doneAt!)}'}'
+              : (task.dueAt == null ? 'Starter task' : 'Due by ${onbDay(task.dueAt!)}'),
+          pill: task.done ? (task.managerReply == null ? 'Reply' : 'Replied') : 'Sent',
+          pillBg: task.done && task.managerReply == null ? TeamColors.blueBg : OnbColors.screen,
+          pillFg: task.done && task.managerReply == null ? OnbColors.primary : OnbColors.text2,
+          end: task.done ? TeamRowEnd.chevron : TeamRowEnd.none,
+          onOpen: task.done
+              ? () => _push(
+                  StarterReviewScreen(
+                    shell: _shell,
+                    journeyId: widget.journeyId,
+                    starterTaskId: task.id,
+                    initial: task,
+                    joinerName: joiner.name,
+                    joinerPhotoUrl: joiner.photoUrl,
+                  ),
+                )
+              : null,
+        ),
+      for (final task in done) _taskRow(detail, task, now),
+      if (detail.welcomePostedAt != null)
+        TeamTaskRow(
+          divider: false,
+          key: const ValueKey('mgr-welcome-done'),
+          kind: TeamTaskKind.chat,
+          title: 'Post a welcome',
+          sub: 'Posted ${onbDay(detail.welcomePostedAt!)}',
+          end: TeamRowEnd.tick,
+          done: true,
+        ),
+    ];
+    final later = [for (final task in soon) _taskRow(detail, task, now)];
+    final inProbation = joiner.stage != null && joiner.stage != 'pre_boarding' && joiner.stage != 'welcome_week1';
+    return [
+      TeamSectionTitle('Your tasks for $first', meta: open.isEmpty ? 'All done for now' : '${open.length} to do'),
+      const SizedBox(height: 10),
+      TeamListCard(
+        radius: 16,
+        children: [
+          if (rows.isEmpty && later.isEmpty)
+            const Padding(padding: EdgeInsets.all(14), child: Text('Nothing waiting on you.', style: OnbText.body)),
+          ..._lastWithoutLine(rows),
+          if (later.isNotEmpty) ...[const TeamListHead('Coming up'), ..._lastWithoutLine(later)],
+        ],
+      ),
+      // What only exists later: notes from your 1:1s, the probation months, survey summaries.
+      if (detail.notes.isNotEmpty) ...[
+        const SizedBox(height: 18),
+        TeamSectionTitle('Notes from your 1:1s', trailing: OnbLink(key: const ValueKey('add-note-more'), label: 'Add', onTap: () => _note(detail))),
+        const SizedBox(height: 8),
+        for (final note in detail.notes)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: OnbColors.line)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(child: Text(note.createdAt == null ? '' : onbDayTime(note.createdAt!), style: _MgrText.meta)),
+                      OnbTag(note.shared ? (note.seen ? 'Shared · seen' : 'Shared') : 'Private', tone: note.shared ? OnbTone.count : OnbTone.locked),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(note.text, style: OnbText.body),
+                  for (final reply in note.replies)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text('${reply.mine ? 'You' : (reply.byName ?? first)}: ${reply.text}', style: _MgrText.meta),
+                    ),
+                ],
+              ),
+            ),
+          ),
+      ],
+      if (inProbation && detail.probation != null && detail.probation!.months.isNotEmpty) ...[
+        const SizedBox(height: 18),
+        const TeamSectionTitle('Probation'),
+        const SizedBox(height: 8),
+        TeamListCard(
+          radius: 16,
+          children: _lastWithoutLine([
+            for (final month in detail.probation!.months)
+              TeamTaskRow(
+                divider: false,
+                key: ValueKey('mgr-month-${month.monthNo}'),
+                kind: TeamTaskKind.goal,
+                title: 'Month ${month.monthNo}',
+                sub: [
+                  '${month.goals.length} goals',
+                  month.checkinEmployee == null ? 'no check-in yet' : '$first checked in',
+                  if (month.review != null) 'reviewed',
+                ].join(' · '),
+                pill: month.review != null && month.bothCheckedIn ? 'Reviewed' : null,
+                pillBg: TeamColors.okBg,
+                pillFg: TeamColors.okFg,
+                end: TeamRowEnd.chevron,
+                onOpen: () => _push(
+                  ProbationReviewScreen(shell: _shell, journeyId: widget.journeyId, month: month.monthNo, initial: month, joinerName: joiner.name),
+                ),
+              ),
+          ]),
+        ),
+      ],
+      // One summary per survey kind, only once 3+ different people answered it (the server's rule).
+      for (final survey in detail.surveys)
+        if (survey.count >= 3) ...[
+          const SizedBox(height: 12),
+          OnbCard(
+            key: ValueKey('survey-${survey.kind}'),
+            child: Text(
+              'Your team’s ${surveyKindName(survey.kind)}: ${survey.count} people answered'
+              '${survey.avg == null ? '' : ', ${survey.avg!.toStringAsFixed(1)} out of 5 on average'}. Names are never shown.',
+              style: OnbText.body,
+            ),
+          ),
+        ],
+    ];
+  }
+
+  /// A card's rows with a hairline between them (none under the last).
+  List<Widget> _lastWithoutLine(List<Widget> rows) => [
+    for (final (i, row) in rows.indexed) ...[
+      if (i > 0) const Divider(height: 1, thickness: 1, color: OnbColors.line),
+      row,
+    ],
+  ];
+
+  // ─── View progress ────────────────────────────────────────────────────────
+
+  List<Widget> _progress(JoinerDetail detail, DateTime now) {
+    final joiner = detail.joiner;
+    final first = joiner.firstName;
+    final late = detail.joinerTasks.where((t) => t.late && !t.isDone).toList();
+    final status = _statusShort(detail);
+    final warn = late.isNotEmpty;
+    final stats = <Widget>[];
+    // Meetings set up for them so far (the ones that have happened or are due).
+    final meetings = detail.meetings.where((m) => m.startsAt == null || !m.startsAt!.isAfter(now.add(const Duration(days: 1)))).toList();
+    if (meetings.isNotEmpty) {
+      final met = meetings.where((m) => m.met == 'yes').length;
+      stats.add(
+        TeamStatRow(
+          divider: false,
+          key: const ValueKey('stat-meetings'),
+          title: 'Meetings',
+          value: '$met/${meetings.length}',
+          meta: 'met',
+          fraction: met / meetings.length,
+          bar: TeamColors.okFg,
+          flag: met >= meetings.length ? 'Done' : '${meetings.length - met} to go',
+          flagBg: met >= meetings.length ? TeamColors.okBg : OnbColors.screen,
+          flagFg: met >= meetings.length ? TeamColors.okFg : OnbColors.text2,
+          onTap: () => _go(JoinerPage.theirMeetings),
+        ),
+      );
+    }
+    final now0 = detail.joinerTasks.where((t) => !t.isLocked && t.status != 'cancelled').toList();
+    if (now0.isNotEmpty) {
+      final done = now0.where((t) => t.isDone).length;
+      final left = now0.length - done;
+      stats.add(
+        TeamStatRow(
+          divider: false,
+          key: const ValueKey('stat-tasks'),
+          title: 'Tasks',
+          value: '$done/${now0.length}',
+          meta: 'done',
+          fraction: done / now0.length,
+          bar: const Color(0xFF6B4FBB),
+          flag: warn ? '${late.length} delayed' : (left == 0 ? 'Done' : '$left not done'),
+          flagBg: warn ? TeamColors.warnBg : (left == 0 ? TeamColors.okBg : OnbColors.screen),
+          flagFg: warn ? TeamColors.warnFg : (left == 0 ? TeamColors.okFg : OnbColors.text2),
+          onTap: () => _go(JoinerPage.theirTasks),
+        ),
+      );
+    }
+    final own = detail.joiner;
+    return [
+      Row(
+        children: [
+          Expanded(child: Text('$first’s onboarding', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: TeamColors.ink))),
+          TeamPill(
+            status,
+            key: const ValueKey('progress-status'),
+            background: warn ? TeamColors.warnBg : TeamColors.okBg,
+            foreground: warn ? TeamColors.warnFg : TeamColors.okFg,
+            height: 26,
+          ),
+        ],
+      ),
+      if (warn) ...[
+        const SizedBox(height: 14),
+        TeamDelayBanner(late.length == 1 ? '${late.first.title}, late' : '${late.length} tasks late: ${late.map((t) => t.title).take(2).join(', ')}'),
+      ],
+      const SizedBox(height: 14),
+      if (stats.isNotEmpty) TeamListCard(radius: 16, children: _lastWithoutLine(stats)),
+      if (own.preboarding && own.tj != null) ...[
+        const SizedBox(height: 14),
+        Container(
+          key: const ValueKey('joining-details'),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: OnbColors.line)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('JOINING DETAILS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.88, color: OnbColors.text3)),
+              const SizedBox(height: 4),
+              Text('Joins ${onbDay(own.tj!)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: TeamColors.ink)),
+            ],
+          ),
+        ),
+      ],
+      if (detail.joinerNextDue case final next? when next.dueAt != null && !warn) ...[
+        const SizedBox(height: 12),
+        Text(
+          'On track. ${next.title} ${next.title.endsWith('s') ? 'are' : 'is'} due ${onbDay(next.dueAt!)}.',
+          key: const ValueKey('joiner-on-track'),
+          style: _MgrText.meta,
+        ),
+      ],
+      const SizedBox(height: 14),
+      TeamFootnote('You can see where $first is. Survey answers and meeting notes stay private.'),
+    ];
+  }
+
+  (String, Color, Color) _tone(String tone) => switch (tone) {
+    'ok' => ('Done', TeamColors.okBg, TeamColors.okFg),
+    'warn' => ('Late', TeamColors.warnBg, TeamColors.warnFg),
+    _ => ('To do', OnbColors.screen, OnbColors.text2),
+  };
+
+  List<Widget> _theirMeetings(JoinerDetail detail, DateTime now) {
+    final first = detail.joiner.firstName;
+    final met = detail.meetings.where((m) => m.met == 'yes').length;
+    final rows = <Widget>[];
+    final later = <Widget>[];
+    for (final m in detail.meetings) {
+      final upcoming = m.met != 'yes' && m.startsAt != null && m.startsAt!.isAfter(now.add(const Duration(days: 1)));
+      final who = m.attendees.map((p) => p.name).where((n) => n.isNotEmpty).join(', ');
+      final (label, bg, fg) = m.met == 'yes'
+          ? ('Met', TeamColors.okBg, TeamColors.okFg)
+          : upcoming
+          ? (onbDay(m.startsAt!), OnbColors.screen, OnbColors.text3)
+          : ('Not yet', OnbColors.screen, OnbColors.text2);
+      (upcoming ? later : rows).add(TeamStatusRow(divider: false, title: m.withWho ?? m.title, meta: who.isEmpty ? m.title : who, status: label, bg: bg, fg: fg));
+    }
+    return [
+      TeamSectionTitle('Meetings', meta: '$met of ${detail.meetings.length} met'),
+      const SizedBox(height: 10),
+      TeamListCard(radius: 16, children: [..._lastWithoutLine(rows), if (later.isNotEmpty) ...[const TeamListHead('Coming up'), ..._lastWithoutLine(later)]]),
+      const SizedBox(height: 14),
+      TeamFootnote('Meeting notes stay private to $first.'),
+    ];
+  }
+
+  List<Widget> _theirTasks(JoinerDetail detail, DateTime now) {
+    final tasks = detail.joinerTasks.where((t) => t.status != 'cancelled').toList();
+    final nowRows = <Widget>[];
+    final later = <Widget>[];
+    for (final t in tasks) {
+      if (t.isLocked) {
+        later.add(TeamStatusRow(divider: false, title: t.title, meta: t.opensAt == null ? null : 'Opens ${onbDay(t.opensAt!)}', status: 'Later', bg: OnbColors.screen, fg: OnbColors.text3));
+        continue;
       }
-      if (minutes > 10) {
-        return _Pill(label: calendarDaysBetween(now, start) == 0 ? compactTime(start) : onbDay(start).split(' ').first, onTap: null);
+      final (label, bg, fg) = _tone(t.isDone ? 'ok' : (t.late ? 'warn' : 'todo'));
+      nowRows.add(TeamStatusRow(divider: false, title: t.title, meta: t.isDone ? null : taskMeta(t, now, forManager: true), status: label, bg: bg, fg: fg));
+    }
+    final left = tasks.where((t) => !t.isLocked && !t.isDone).length;
+    return [
+      TeamSectionTitle('Tasks', meta: left == 0 ? 'All done' : '$left to do'),
+      const SizedBox(height: 10),
+      TeamListCard(radius: 16, children: [..._lastWithoutLine(nowRows), if (later.isNotEmpty) ...[const TeamListHead('Coming up'), ..._lastWithoutLine(later)]]),
+      const SizedBox(height: 14),
+      const TeamFootnote('Survey answers go to HR only.'),
+    ];
+  }
+
+  // ─── Reach out ────────────────────────────────────────────────────────────
+
+  List<Widget> _reachOut(JoinerDetail detail) {
+    final joiner = detail.joiner;
+    final first = joiner.firstName;
+    void composer() {
+      final open = TeamReachOutDoors.openComposer;
+      if (open != null) {
+        open(context);
+      } else {
+        showAppToast(context, 'Opens a post on Connect');
       }
     }
-    // HR's decision (the Confirmation discussion) and anything HR records: no Done here.
-    if (!managerMayTick(task)) {
-      return _Pill(label: task.ownerRole == 'hr_manager' || task.ownerRole == 'hr' ? 'With HR' : 'Later', onTap: null);
+
+    void chat() {
+      final open = TeamReachOutDoors.openChat;
+      final id = joiner.userId;
+      if (open != null && id != null) {
+        open(context, id);
+      } else {
+        _openProfile(joiner);
+      }
     }
-    return _Pill(key: ValueKey('done-${task.id}'), label: 'Mark done', onTap: () => _markDone(task));
+
+    final ways = joiner.preboarding
+        ? [
+            TeamReachOutWay(
+              key: 'welcome-message',
+              title: 'Send a welcome message',
+              meta: 'A note before Day 1',
+              icon: TeamTaskKind.chat.icon,
+              tint: TeamTaskKind.chat.tint,
+              fg: TeamTaskKind.chat.fg,
+              onTap: () => _setup(detail),
+            ),
+            TeamReachOutWay(
+              key: 'announce',
+              title: 'Make an announcement',
+              meta: 'Tell everyone who’s joining',
+              icon: Icons.campaign_outlined,
+              tint: TeamColors.warnBg,
+              fg: TeamColors.warnFg,
+              onTap: composer,
+            ),
+          ]
+        : [
+            TeamReachOutWay(
+              key: 'feed',
+              title: 'Welcome on the feed',
+              meta: 'A post everyone can cheer',
+              icon: Icons.article_outlined,
+              tint: TeamTaskKind.goal.tint,
+              fg: TeamTaskKind.goal.fg,
+              onTap: () => _welcome(detail),
+            ),
+            TeamReachOutWay(
+              key: 'game',
+              title: 'Send a game',
+              meta: 'A quick one to break the ice',
+              icon: Icons.sports_esports_outlined,
+              tint: TeamTaskKind.team.tint,
+              fg: TeamTaskKind.team.fg,
+              onTap: () {
+                final open = TeamReachOutDoors.openGames;
+                if (open != null) {
+                  open(context);
+                } else {
+                  showAppToast(context, 'Pick a game to challenge $first');
+                }
+              },
+            ),
+            TeamReachOutWay(
+              key: 'announce',
+              title: 'Make an announcement',
+              meta: 'Share the news with everyone',
+              icon: Icons.campaign_outlined,
+              tint: TeamColors.warnBg,
+              fg: TeamColors.warnFg,
+              onTap: composer,
+            ),
+            TeamReachOutWay(
+              key: 'introduce',
+              title: 'Introduce to the team',
+              meta: 'A post for your team',
+              icon: TeamTaskKind.team.icon,
+              tint: TeamColors.okBg,
+              fg: TeamColors.okFg,
+              onTap: composer,
+            ),
+            TeamReachOutWay(
+              key: 'message',
+              title: 'Message',
+              meta: 'Just say hi',
+              icon: TeamTaskKind.chat.icon,
+              tint: TeamTaskKind.chat.tint,
+              fg: TeamTaskKind.chat.fg,
+              onTap: chat,
+            ),
+          ];
+    return [
+      Text('Reach out to $first', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: TeamColors.ink)),
+      const SizedBox(height: 10),
+      TeamReachOutBlocks(ways: ways),
+    ];
   }
 }
 
@@ -467,30 +831,6 @@ String compactTime(DateTime at) {
   final full = onbTime(at);
   return full.replaceFirst(':00 ', ' ');
 }
-
-const _purpleTint = Color(0xFFEEF0FF);
-
-/// The set-up tasks: done, their pill reopens the set-up.
-const _setupKeys = {'manager_setup', 'assign_buddy', 'probation_goals', 'people_to_meet'};
-
-/// The manager's row icon (M2): their own words for the week's tasks.
-String _mgrEmoji(TaskView task) => switch (task.systemKey) {
-  'meet_manager' => '🤝',
-  'meet_team' || 'welcome_induction' => '👋',
-  'starter_task' => '🎯',
-  'one_on_one_notes' || 'manager_30day_note' => '📝',
-  _ => taskEmoji(task),
-};
-
-/// The tile behind it, one tint per kind, as drawn.
-Color _mgrTint(TaskView task) => switch (task.systemKey) {
-  'meet_manager' => OnbColors.tint,
-  'meet_team' || 'welcome_induction' => OnbColors.doneTint,
-  'starter_task' || 'probation_goals' || 'monthly_goals' => _purpleTint,
-  'one_on_one_notes' || 'manager_30day_note' => OnbColors.screen,
-  'monthly_checkin' || 'monthly_review' => OnbColors.doneTint,
-  _ => OnbColors.screen,
-};
 
 /// The row's second line: "Mon · 11:00 AM · must-do", "Due by Fri 5 Dec",
 /// "After you meet"; late and done as the task list words them.
@@ -505,240 +845,15 @@ String _mgrMeta(TaskView task, DateTime now) {
 }
 
 abstract final class _MgrText {
-  static const section = TextStyle(fontSize: 16, fontWeight: FontWeight.w700, height: 1.3, color: OnbColors.text);
-  static const cardTitle = TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: OnbColors.text);
-  static const count = TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.text);
-  static const title = TextStyle(fontSize: 14, fontWeight: FontWeight.w600, height: 1.3, color: OnbColors.text);
   static const meta = TextStyle(fontSize: 12, height: 1.35, color: OnbColors.text3);
 }
 
-typedef _DoneRow = ({String key, String title, String meta, VoidCallback? onTap});
-
-/// "4 done": a ticked row whose View opens the done tasks right under it (a
-/// tick, the task crossed out, when), about two rows tall and scrolling.
-class _DoneGroup extends StatelessWidget {
-  const _DoneGroup({required this.open, required this.onToggle, required this.rows});
-
-  final bool open;
-  final VoidCallback onToggle;
-  final List<_DoneRow> rows;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Material(
-          key: const ValueKey('mgr-done-group'),
-          color: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: OnbColors.line)),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onToggle,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(color: OnbColors.doneTint, borderRadius: BorderRadius.circular(12)),
-                    alignment: Alignment.center,
-                    child: const Text('✓', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: OnbColors.doneText)),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('${rows.length} done', style: _MgrText.title.copyWith(color: OnbColors.text2)),
-                        const SizedBox(height: 3),
-                        Text(rows.map((r) => r.title).join(' · '), style: _MgrText.meta, maxLines: 1, overflow: TextOverflow.ellipsis),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    key: const ValueKey('mgr-done-toggle'),
-                    height: 30,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: const ShapeDecoration(color: OnbColors.doneTint, shape: StadiumBorder()),
-                    alignment: Alignment.center,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(open ? 'Hide' : 'View', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.doneText)),
-                        const SizedBox(width: 4),
-                        Icon(open ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 14, color: OnbColors.doneText),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        if (open)
-          Container(
-            constraints: const BoxConstraints(maxHeight: 120),
-            margin: const EdgeInsets.only(left: 18, top: 4),
-            padding: const EdgeInsets.only(left: 12),
-            decoration: const BoxDecoration(border: Border(left: BorderSide(color: OnbColors.green, width: 2))),
-            child: ListView(
-              shrinkWrap: true,
-              padding: EdgeInsets.zero,
-              children: [
-                for (final row in rows)
-                  InkWell(
-                    key: ValueKey(row.key),
-                    onTap: row.onTap,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 20,
-                            height: 20,
-                            decoration: const BoxDecoration(color: OnbColors.green, shape: BoxShape.circle),
-                            alignment: Alignment.center,
-                            child: const Icon(Icons.check_rounded, size: 13, color: Colors.white),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  row.title,
-                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: OnbColors.text3, decoration: TextDecoration.lineThrough),
-                                ),
-                                Text(row.meta, style: const TextStyle(fontSize: 11, color: OnbColors.icon)),
-                              ],
-                            ),
-                          ),
-                          if (row.onTap != null) const Text('Edit', style: OnbText.link),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-      ],
-    ),
-  );
-}
-
-/// One of the manager's tasks on M2: the tinted icon tile, the task and its
-/// when, and the pill that does it.
-class _MgrTaskRow extends StatelessWidget {
-  const _MgrTaskRow({
-    super.key,
-    required this.emoji,
-    required this.tint,
-    required this.title,
-    required this.meta,
-    required this.pill,
-    this.late = false,
-  });
-
-  final String emoji;
-  final Color tint;
-  final String title;
-  final String meta;
-  final Widget pill;
-  final bool late;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: OnbColors.line),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(12)),
-            alignment: Alignment.center,
-            child: Text(emoji, style: const TextStyle(fontSize: 20)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: _MgrText.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 3),
-                Text(
-                  meta,
-                  style: _MgrText.meta.copyWith(color: late ? OnbColors.redText : OnbColors.text3),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          pill,
-        ],
-      ),
-    ),
-  );
-}
-
-/// The survey's name on M2.
+/// The survey's name on the joiner's page.
 String surveyKindName(String kind) => switch (kind) {
   'm3' => 'month-3 pulse survey',
   'm6' => 'month-6 pulse survey',
   _ => 'first-week survey',
 };
-
-/// The pill's three looks, as drawn: now (filled blue), later (grey), done (green).
-enum _PillState { now, later, done }
-
-class _Pill extends StatelessWidget {
-  const _Pill({super.key, required this.label, required this.onTap, this.state = _PillState.later});
-
-  final String label;
-  final VoidCallback? onTap;
-  final _PillState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final (bg, fg) = switch (state) {
-      _PillState.now => (OnbColors.primary, Colors.white),
-      _PillState.done => (OnbColors.doneTint, OnbColors.doneText),
-      _PillState.later => (OnbColors.screen, OnbColors.text2),
-    };
-    return Semantics(
-      button: onTap != null,
-      label: label,
-      child: ExcludeSemantics(
-        child: Material(
-          color: bg,
-          shape: const StadiumBorder(),
-          child: InkWell(
-            customBorder: const StadiumBorder(),
-            onTap: onTap,
-            child: Container(
-              height: 30,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              alignment: Alignment.center,
-              child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg)),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 // ─── M2a · starter task sheet ───────────────────────────────────────────────
 
