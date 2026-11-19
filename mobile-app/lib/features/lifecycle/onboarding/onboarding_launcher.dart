@@ -29,7 +29,8 @@ import 'presentation/task_sheet.dart';
 import 'presentation/week1_reels_screen.dart';
 
 export 'data/lifecycle_me_store.dart';
-export 'presentation/onboarding_kit.dart' show OnboardingShell;
+export 'presentation/onboarding_kit.dart' show OnboardingShell, OnbSpotlight, OnbPulse;
+export 'presentation/first_punch.dart' show FirstPunchTour, PunchSpotlightCallout, openYoureIn;
 
 typedef OnboardingShellMaker = OnboardingShell Function();
 

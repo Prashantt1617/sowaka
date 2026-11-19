@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../data/onboarding_api.dart';
 import '../data/onboarding_models.dart';
+import '../../../manager/data/manager_models.dart' show ManagerTab;
 import '../onboarding_launcher.dart';
+import 'first_punch.dart';
 import 'notes_screen.dart';
 import 'onboarding_kit.dart';
 import 'plant.dart';
@@ -122,13 +124,20 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
 
   Widget _body(OnboardingHome home) {
     final now = _shell.now();
-    final upNext = home.upNext ?? pickUpNext([...home.today, ...home.later], now);
+    // Day 1, before the first punch-in: its own card (J1), so the face task
+    // is neither Up next nor a row of its own while the card shows.
+    final firstPunch = home.needsFirstPunchOn(now) && (_shell.tabs.isEmpty || _shell.tabs.contains(ManagerTab.quick));
+    bool isFaceTask(TaskView? t) => firstPunch && t?.systemKey == 'register_face';
+    final serverUpNext = isFaceTask(home.upNext) ? null : home.upNext;
+    final upNext = serverUpNext ??
+        pickUpNext([for (final t in [...home.today, ...home.later]) if (!isFaceTask(t)) t], now);
     // Each thing once: the 1:1 notes and the starter tasks have rows of their
     // own below (from their own reads), so the server's rows for them are not
     // drawn again, and whatever is Up next is not repeated in the list.
     final starterIds = {for (final t in _starterTasks) t.id};
     bool drawnElsewhere(TaskView t) =>
         t.id == upNext?.id ||
+        isFaceTask(t) ||
         (_notes.isNotEmpty && t.systemKey == 'one_on_one_notes' && t.id == 'notes') ||
         (t.systemKey == 'starter_task' && starterIds.contains(t.id));
     final openStarters = [for (final t in _starterTasks) if (!t.done && t.id != upNext?.id) t];
@@ -169,6 +178,11 @@ class _OnboardingHomeScreenState extends State<OnboardingHomeScreen> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
       children: [
         OnbRise(child: _hereCard(home, dayLabel, now)),
+        // Day 1, before the first punch-in: learn it on the Actions tab (J1).
+        if (firstPunch) ...[
+          const SizedBox(height: 14),
+          OnbRise(delay: 60, child: FirstPunchCard(onTap: () => FirstPunchTour.start(context, _shell))),
+        ],
         if (upNext != null) ...[
           const SizedBox(height: 14),
           OnbRise(delay: 60, child: _UpNextCard(task: upNext, now: now, onTap: () => _open(upNext))),

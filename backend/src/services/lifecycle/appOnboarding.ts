@@ -7,7 +7,7 @@
 import { offboardingMe } from './offboarding';
 import { randomUUID } from 'node:crypto';
 import {
-  connectPosts, employeePaymentDetails, journeyTasks, journeys, lifecycleMeetings, oneOnOneNotes, peopleToMeet, starterTasks, surveyResponses, users,
+  attendanceRecords, connectPosts, employeePaymentDetails, journeyTasks, journeys, lifecycleMeetings, oneOnOneNotes, peopleToMeet, starterTasks, surveyResponses, users,
 } from '../../config/db';
 import type {
   AboutYou, IntroPost, Journey, JourneyTask, Meeting, OnboardingStage, SurveyKind, SystemTaskKey, Week1Reels,
@@ -293,7 +293,25 @@ export async function onboardingHome(me: Me, now = new Date()) {
     showWeekDone: isWeek1Done(j.tj, today) && !j.week1DoneSeenAt,
     ...(j.week1DoneSeenAt ? { weekDoneSeenAt: j.week1DoneSeenAt } : {}),
     weekDoneStats: weekDoneStats(tasks, await countBadges(j), derived.plant.leaves),
+    firstPunch: await firstPunchOf(me.userId, j.tj),
   };
+}
+
+/**
+ * Day 1's "Your first punch-in" (app-lifecycle-1120, J1): when the joiner
+ * first punched in on or after joining (absent until they have), and whether
+ * a face is on their record, so the app can say "Face registered" after it.
+ */
+async function firstPunchOf(userId: string, tj: string | undefined): Promise<{ at?: string; faceEnrolled: boolean }> {
+  const [punch, user] = await Promise.all([
+    attendanceRecords().findOne(
+      { userId, ...(tj ? { workDate: { $gte: tj } } : {}), punchIn: { $exists: true } },
+      { projection: { _id: 0, punchIn: 1 }, sort: { workDate: 1 } },
+    ),
+    users().findOne({ userId }, { projection: { _id: 0, 'faceId.faceId': 1 } }),
+  ]);
+  const faceEnrolled = Boolean((user as { faceId?: { faceId?: string } } | null)?.faceId?.faceId);
+  return { ...(punch?.punchIn ? { at: new Date(punch.punchIn).toISOString() } : {}), faceEnrolled };
 }
 
 /** "Week 1, done!" (A8): tasks done in week 1, people met, leaves grown. */
