@@ -5,14 +5,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { portal } from '../api/portal';
 import type { JoiningDetails, MeetItem } from '../api/types';
-import { A1Icon, A1Loading, A1Logo, Breadcrumb } from '../components/A1';
-import { firstName, fmtTime, fmtWeekday, initials } from '../lib/format';
-import { mailto } from '../lib/links';
+import { A1Icon, A1Loading, Breadcrumb } from '../components/A1';
+import { firstName, initials } from '../lib/format';
 import { useMe } from '../session';
 import { WebPage } from './A1Shell';
+import { G2Story, type StoryKey } from '../components/fig/G2Story';
 
-type StoryKey = 'welcome' | 'manager' | 'team' | 'day1' | 'policies' | 'role';
-const BG: Record<StoryKey, string> = { welcome: '#0571A6', manager: '#15803D', team: '#2563EB', day1: '#B45309', policies: '#045A85', role: '#2E3139' };
 const SEEN_ITEM: Partial<Record<StoryKey, string>> = { welcome: 'company_video', manager: 'manager_note', policies: 'policies', role: 'role' };
 const FACE_TONES = [['#E8F7EE', '#15803D'], ['#FEF4E2', '#B45309'], ['#EAF1FE', '#2563EB'], ['#FDECEA', '#D92D20']];
 
@@ -41,12 +39,12 @@ export function A1About() {
   const policies = policiesOf(byId('policies'));
   const managerName = j?.manager?.name ?? note?.authorName;
   const stories = useMemo(() => {
-    const out: StoryKey[] = [];
+    // The design's order (App · Story · 1 Culture … 5 Policies), then the role.
+    const out: StoryKey[] = ['welcome'];
     if (managerName) out.push('manager');
     if (managerName || j?.buddy) out.push('team');
     out.push('day1');
     if (policies.length) out.push('policies');
-    out.push('welcome');
     if (role) out.push('role');
     return out;
   }, [managerName, j?.buddy, policies.length, role]);
@@ -148,100 +146,9 @@ export function A1About() {
         </div>
       )}
       {open && (
-        <Story order={stories} at={open} onMove={show} onClose={() => setOpen(null)}
+        <G2Story order={stories} at={open} onMove={show} onClose={() => setOpen(null)}
           company={me.company} candidate={me.candidateName} hr={me.hrContact.email} tj={me.tj} j={j} note={note} managerName={managerName} video={video} role={role} policies={policies} />
       )}
     </WebPage>
-  );
-}
-
-function Story({ order, at, onMove, onClose, company, candidate, hr, tj, j, note, managerName, video, role, policies }: {
-  order: StoryKey[]; at: StoryKey; onMove: (k: StoryKey) => void; onClose: () => void; company: { name: string; logoUrl?: string }; candidate: string; hr: string; tj: string;
-  j?: JoiningDetails; note?: MeetItem; managerName?: string; video?: MeetItem; role?: MeetItem; policies: Array<{ title: string; summary: string }>;
-}) {
-  const i = Math.max(0, order.indexOf(at));
-  const bg = BG[at];
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); if (e.key === 'ArrowRight' && i < order.length - 1) onMove(order[i + 1]); if (e.key === 'ArrowLeft' && i > 0) onMove(order[i - 1]); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [i, order, onMove, onClose]);
-  const time = fmtTime(j?.reportingTime);
-  const directions = j?.mapLink ?? (j?.place ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(j.place)}` : undefined);
-  const reply = at === 'manager' ? 'Ask HR to pass a message on' : at === 'day1' ? 'Ask HR about your first day' : 'Ask HR a question';
-  return (
-    <div className="a1-story" role="dialog" aria-modal="true" aria-label={`Story ${i + 1} of ${order.length}`}>
-      <div className="a1-story__panel" style={{ background: bg }}>
-        <div style={{ padding: '12px 12px 0 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div className="a1-story__segs" style={{ gridTemplateColumns: `repeat(${order.length}, minmax(0, 1fr))` }}>
-            {order.map((k, n) => <span key={k}><i className={n === i ? 'run' : ''} style={{ width: n <= i ? '100%' : '0%' }} /></span>)}
-          </div>
-          <div className="a1-row">
-            <A1Logo company={company} className="a1-story__logo" />
-            <span className="a1-stack"><span className="a1-strong">{company.name} HR</span><span style={{ fontSize: 12, lineHeight: '16px', color: 'rgba(255,255,255,.85)' }}>Before you join</span></span>
-            <button type="button" className="a1-icon-btn" style={{ color: '#fff', width: 44, height: 44 }} aria-label="Close" onClick={onClose}><A1Icon name="close" size={24} width={2} /></button>
-          </div>
-        </div>
-        <div className="a1-story__main">
-          {i > 0 && <button type="button" className="a1-story__tap" style={{ left: 0 }} aria-label="Previous story" onClick={() => onMove(order[i - 1])} />}
-          {i < order.length - 1 && <button type="button" className="a1-story__tap" style={{ right: 0 }} aria-label="Next story" onClick={() => onMove(order[i + 1])} />}
-          <div className="a1-story__content">
-            {at === 'welcome' && (
-              <>
-                <h2 className="a1-story__title" style={{ fontSize: 32, lineHeight: '40px' }}>Welcome to {company.name}, {firstName(candidate)}!</h2>
-                {video?.videoUrl ? <video className="a1-story__video" src={video.videoUrl} controls playsInline /> : <p className="a1-story__line">We’re glad you’re joining us. Everything you need before your first day is in this portal.</p>}
-                {video?.subtitle && <p className="a1-story__line">{video.subtitle}</p>}
-              </>
-            )}
-            {at === 'manager' && managerName && (
-              <>
-                <Face name={managerName} photo={note?.authorPhotoUrl} className="a1-story__face" />
-                <h2 className="a1-story__title">Meet {managerName}</h2>
-                <span className="a1-story__pill">Your manager</span>
-                {note?.videoUrl ? <video className="a1-story__video" src={note.videoUrl} controls playsInline /> : <p className="a1-story__line">{note?.text ?? `${firstName(managerName)} will meet you on your first day.`}</p>}
-              </>
-            )}
-            {at === 'team' && (
-              <>
-                <span style={{ display: 'flex' }}>
-                  {[managerName, j?.buddy?.name, candidate].filter((n): n is string => Boolean(n)).map((n, k) => (
-                    <span key={n} className="a1-story__face" style={{ width: 72, height: 72, fontSize: 22, marginLeft: k ? -18 : 0, border: `3px solid ${bg}`, boxShadow: 'none', color: bg }}>{initials(n)}</span>
-                  ))}
-                </span>
-                <h2 className="a1-story__title">Your team{j?.department ? `, ${j.department}` : ''}</h2>
-                <p className="a1-story__line">{[managerName && `${firstName(managerName)}, your manager`, j?.buddy && `${firstName(j.buddy.name)}, your buddy`].filter(Boolean).join(' · ')}</p>
-                <p className="a1-story__line" style={{ fontSize: 14 }}>and you, from {fmtWeekday(tj)}</p>
-              </>
-            )}
-            {at === 'day1' && (
-              <>
-                <span style={{ width: 96, height: 96, borderRadius: 999, background: 'rgba(255,255,255,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><A1Icon name="pin" size={48} width={1.6} /></span>
-                <h2 className="a1-story__title">{j?.place ?? fmtWeekday(tj)}</h2>
-                <p className="a1-story__line">{[fmtWeekday(j?.date ?? tj), time ? `see you at ${time}` : ''].filter(Boolean).join(' · ')}</p>
-                {directions && <a className="a1-story__cta" style={{ color: bg }} href={directions} target="_blank" rel="noreferrer"><A1Icon name="send" size={20} width={2} />Get directions</a>}
-              </>
-            )}
-            {at === 'policies' && (
-              <>
-                <h2 className="a1-story__title">{policies.length === 1 ? '1 quick read' : `${policies.length} quick reads`} before you join</h2>
-                <div className="a1-story__reads">
-                  {policies.map((p) => <div key={p.title} className="a1-story__read"><span style={{ fontSize: 16, lineHeight: '22px', fontWeight: 600 }}>{p.title}</span>{p.summary && <span style={{ fontSize: 13, lineHeight: '18px', color: 'rgba(255,255,255,.9)' }}>{p.summary}</span>}</div>)}
-                </div>
-              </>
-            )}
-            {at === 'role' && role && (
-              <>
-                <h2 className="a1-story__title">{role.title}</h2>
-                {role.subtitle && <span className="a1-story__pill">{role.subtitle}</span>}
-                <p className="a1-story__line" style={{ textAlign: 'left' }}>{role.text}</p>
-              </>
-            )}
-          </div>
-        </div>
-        <div className="a1-story__foot">
-          <a className="a1-story__reply" href={mailto(hr, 'Question before I join')}>{reply}</a>
-        </div>
-      </div>
-    </div>
   );
 }

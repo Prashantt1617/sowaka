@@ -1,0 +1,255 @@
+// Figma "App · Profile ·" Bank account and PF (4967:93357), Education and experience (4967:93433),
+// ID documents (4967:93530) and Photo (4967:93612): the step header with segments, the intro with its
+// 3D icon, the section's cards (the template's documents sit in the card they belong to) and the
+// Save and continue / Save and finish later footer. Saving, drafts and uploads are A1Profile's, unchanged.
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { portal } from '../../api/portal';
+import type { CandidateDocumentView, ProfileSectionKey, ProfileView } from '../../api/types';
+import { useMe } from '../../session';
+import { INTRO, ORDER, TITLE, readDraft, savedValues, writeDraft } from '../../screens/A1Profile';
+import { FigBackHeader, FigLoading, FigPage } from './FigShell';
+import { FigField, FigIntro } from './FigUi';
+import { FigCheckSmall, type Fig3DName } from './icons';
+import { G2Steps, type G2Seg } from './G2Steps';
+import { G2DocUpload } from './G2Upload';
+import { G2MonthInput, G2PhotoTip, G2PrivacyNote } from './G2Profile';
+import { G2SelectChevron } from './icons/g2-select-chevron';
+import { G2Plus } from './icons/g2-plus';
+import { G2Person } from './icons/g2-person';
+import { G2Camera } from './icons/g2-camera';
+import { G2Gallery } from './icons/g2-gallery';
+import '../../styles/fig-g2.css';
+
+export const G2_SECTIONS: ProfileSectionKey[] = ['bank', 'education', 'ids', 'photo'];
+const ICON: Partial<Record<ProfileSectionKey, Fig3DName>> = { bank: 'bank', education: 'write', ids: 'document-approved', photo: 'id-card' };
+/** Which card of the section a template document belongs in (by its name); others go in the last card. */
+const DOC_CARD: Partial<Record<ProfileSectionKey, Array<[string, RegExp]>>> = {
+  bank: [['bank', /.*/]],
+  education: [['education', /degree|certificate|education|marksheet|diploma/i], ['work', /.*/]],
+  ids: [['aadhaar', /aadhaar|aadhar|id proof/i], ['pan', /.*/]],
+};
+
+type Values = Record<string, unknown>;
+
+export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
+  const { reload } = useMe();
+  const navigate = useNavigate();
+  const [view, setView] = useState<ProfileView>();
+  const [docs, setDocs] = useState<CandidateDocumentView[]>([]);
+  const [v, setV] = useState<Values>({});
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const typed = useRef(false);
+  useEffect(() => {
+    portal.profile().then((pv) => { setView(pv); setV({ ...savedValues(k, pv), ...(readDraft(k) ?? {}) }); }, (e: Error) => setError(e.message));
+    portal.documents().then((r) => setDocs(r.documents), () => undefined);
+  }, [k]);
+  useEffect(() => { if (typed.current) writeDraft(k, v); }, [k, v]);
+  const set = (patch: Values) => { typed.current = true; setV((cur) => ({ ...cur, ...patch })); };
+
+  const i = ORDER.indexOf(k);
+  const sec = view?.sections.find((s) => s.key === k);
+  const myDocs = useMemo(() => docs.filter((d) => sec?.documentIds.includes(d.id)), [docs, sec]);
+  const segs: G2Seg[] = ORDER.map((key, n) => (n === i ? 'on' : view?.sections.find((s) => s.key === key)?.done ? 'done' : 'todo'));
+  const last = i === ORDER.length - 1;
+  const docsIn = (card: string) => {
+    const rules = DOC_CARD[k] ?? [];
+    return myDocs.filter((d) => rules.find(([, re]) => re.test(`${d.label} ${d.title ?? ''}`))?.[0] === card)
+      .map((d) => <G2DocUpload key={d.id} doc={d} onChange={setDocs} />);
+  };
+
+  const save = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      if (k === 'bank') {
+        if (!v.hasUan) throw new Error('Choose whether you have a UAN from a previous job');
+        await portal.saveProfile('bank', v);
+        await portal.saveAbout({ pf: v.hasUan === 'No' ? { firstJob: true } : { firstJob: false, uan: String(v.uan ?? '') } });
+      } else if (k === 'education') await portal.saveProfile('education', { ...v, firstJob: v.worked === 'No' });
+      else if (k === 'ids') await portal.saveProfile(k, v);
+      writeDraft(k, null);
+      typed.current = false;
+      void reload();
+      navigate(last ? '/profile' : `/profile/${ORDER[i + 1]}`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const T = (name: string, label: string, o: { ph?: string; help?: string; inputMode?: 'numeric' | 'text'; max?: number; value?: string; onChange?: (s: string) => void } = {}) => (
+    <FigField key={name} label={label} help={o.help} placeholder={o.ph} inputMode={o.inputMode} maxLength={o.max}
+      value={o.value ?? String(v[name] ?? '')} onChange={(e) => (o.onChange ? o.onChange(e.target.value) : set({ [name]: e.target.value }))} />
+  );
+  const G = (name: string, label: string, options: Array<[string, string]>, wide?: boolean) => (
+    <div className="fig-field" role="radiogroup" aria-label={label}>
+      <span className="fig-field__label">{label}</span>
+      <div className="g2-seg">{options.map(([val, text], n) => (
+        <button key={val} type="button" role="radio" aria-checked={v[name] === val} className={wide && n === options.length - 1 ? 'g2-seg__wide' : undefined} onClick={() => set({ [name]: val })}>{text}</button>
+      ))}</div>
+    </div>
+  );
+
+  let body: ReactNode = null;
+  if (view) {
+    if (k === 'bank') {
+      const kept = view.profile.bank?.accountLast4;
+      body = (
+        <>
+          <Card title="Bank account">
+            {T('holderName', 'Account holder name', { ph: 'As on your bank account' })}
+            {T('accountNumber', 'Account number', { ph: kept ? `Saved: •••• ${kept}. Type it again to change it` : 'Enter your account number', inputMode: 'numeric' })}
+            {T('accountNumberAgain', 'Re-enter account number', { ph: 'Type it again to check', inputMode: 'numeric' })}
+            {T('ifsc', 'IFSC code', { ph: 'e.g. HDFC0001234', help: 'Printed on your cheque book and passbook', onChange: (s) => set({ ifsc: s.toUpperCase() }), max: 11 })}
+            {docsIn('bank')}
+          </Card>
+          <Card title="Provident fund (PF)">
+            {G('hasUan', 'Do you have a UAN from a previous job?', [['Yes', 'Yes'], ['No', 'No']])}
+            {v.hasUan !== 'No' && T('uan', 'UAN (optional)', { ph: '12-digit number', inputMode: 'numeric', max: 12, help: 'If this is your first job, choose No and HR will create one for you.' })}
+            {v.hasUan === 'No' && <span className="fig-field__help">HR will create one for you.</span>}
+          </Card>
+        </>
+      );
+    } else if (k === 'education') {
+      const jobs = (v.jobs as Array<Record<string, string>>) ?? [];
+      const putJob = (n: number, patch: Record<string, string>) => set({ jobs: jobs.map((j, m) => (m === n ? { ...j, ...patch } : j)) });
+      body = (
+        <>
+          <Card title="Education">
+            <SelectField label="Highest qualification" value={String(v.qualification ?? '')} options={view.options.qualifications} onChange={(s) => set({ qualification: s })} />
+            {T('institution', 'College or university', { ph: 'e.g. Savitribai Phule Pune University' })}
+            {T('year', 'Year of passing', { ph: 'e.g. 2020', inputMode: 'numeric', max: 4 })}
+            {docsIn('education')}
+          </Card>
+          <Card title="Work experience">
+            {G('worked', 'Have you worked before?', [['Yes', 'Yes'], ['No', 'No, this is my first job']])}
+            {v.worked !== 'No' && jobs.map((j, n) => (
+              <div key={n} className={n ? 'g2-job g2-job--more' : 'g2-job'}>
+                {T(`job${n}.company`, n ? `Company ${n + 1}` : 'Last company', { ph: 'Company name', value: j.company, onChange: (s) => putJob(n, { company: s }) })}
+                {T(`job${n}.role`, 'Your role', { ph: 'e.g. Admissions counsellor', value: j.role, onChange: (s) => putJob(n, { role: s }) })}
+                <MonthField label="From" value={j.from ?? ''} onChange={(s) => putJob(n, { from: s })} />
+                <MonthField label="To" value={j.to ?? ''} onChange={(s) => putJob(n, { to: s })} />
+                {n > 0 && <button type="button" className="fig-link g2-linkbtn" onClick={() => set({ jobs: jobs.filter((_, m) => m !== n) })}>Remove this job</button>}
+              </div>
+            ))}
+            {docsIn('work')}
+            {v.worked !== 'No' && jobs.length < 5 && <button type="button" className="fig-link g2-addjob" onClick={() => set({ jobs: [...jobs, { company: '', role: '', from: '', to: '' }] })}><G2Plus />Add another job</button>}
+          </Card>
+        </>
+      );
+    } else if (k === 'ids') {
+      const ids = view.profile.ids;
+      body = (
+        <>
+          <Card title="Aadhaar card">
+            {T('aadhaar', 'Aadhaar number', { ph: ids?.aadhaarLast4 ? `Saved: •••• ${ids.aadhaarLast4}` : '12-digit number', inputMode: 'numeric', max: 14 })}
+            {docsIn('aadhaar')}
+          </Card>
+          <Card title="PAN card">
+            {T('pan', 'PAN', { ph: ids?.panLast4 ? `Saved: ••••••${ids.panLast4}` : 'e.g. ABCDE1234F', onChange: (s) => set({ pan: s.toUpperCase() }), max: 10 })}
+            {docsIn('pan')}
+          </Card>
+          <G2PrivacyNote>Only HR can see your ID documents. They’re never shown to your manager or team.</G2PrivacyNote>
+        </>
+      );
+    } else if (k === 'photo') {
+      body = <PhotoBlock view={view} onSaved={(pv) => { setView(pv); void reload(); }} />;
+    }
+  }
+
+  const icon = ICON[k];
+  return (
+    <FigPage>
+      <FigBackHeader title={TITLE[k]} back="/profile" backLabel="Back to employee profile" below={<G2Steps segs={segs} />} />
+      <main id="main" className="g2-sec">
+        {!view && !error ? <FigLoading /> : (
+          <>
+            {sec?.done && <p className="fig-note g2-done-note"><span className="fig-done"><FigCheckSmall /></span><span>You’ve finished this section. You can still change anything before you join.</span></p>}
+            {icon && <FigIntro icon={icon}>{INTRO[k]}</FigIntro>}
+            {body}
+            {error && <p className="fig-field__error" role="alert">{error}</p>}
+          </>
+        )}
+      </main>
+      <div className="g2-foot">
+        {k === 'photo'
+          ? <button type="button" className="fig-btn" onClick={() => navigate('/profile')}>Finish profile</button>
+          : <button type="button" className="fig-btn" disabled={busy || !view} onClick={() => void save()}>{busy ? 'Saving…' : 'Save and continue'}</button>}
+        <button type="button" className="fig-link g2-foot__later" onClick={() => navigate('/profile')}>Save and finish later</button>
+      </div>
+    </FigPage>
+  );
+}
+
+function Card({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="g2-group">
+      <h2 className="fig-subtitle">{title}</h2>
+      <div className="g2-card">{children}</div>
+    </section>
+  );
+}
+
+function SelectField({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (s: string) => void }) {
+  const id = useId();
+  return (
+    <FigField label={label} id={id}>
+      <span className="g2-select">
+        <select id={id} className={`fig-input g2-select__input${value ? '' : ' g2-select__input--empty'}`} value={value} onChange={(e) => onChange(e.target.value)}>
+          <option value="">Choose</option>
+          {options.map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
+        <G2SelectChevron className="g2-select__chev" />
+      </span>
+    </FigField>
+  );
+}
+
+function MonthField({ label, value, onChange }: { label: string; value: string; onChange: (s: string) => void }) {
+  const id = useId();
+  return <FigField label={label} id={id}><G2MonthInput id={id} value={value} onChange={onChange} /></FigField>;
+}
+
+/** The photo for the ID card: the preview, the tips, and Take a photo / From gallery. */
+function PhotoBlock({ view, onSaved }: { view: ProfileView; onSaved: (v: ProfileView) => void }) {
+  const [url, setUrl] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const id = view.profile.photoFileId;
+  useEffect(() => {
+    if (!id) { setUrl(undefined); return undefined; }
+    let live = true;
+    let made: string | undefined;
+    portal.file(id).then((buf) => { if (live) { made = URL.createObjectURL(new Blob([buf])); setUrl(made); } }, () => undefined);
+    return () => { live = false; if (made) URL.revokeObjectURL(made); };
+  }, [id]);
+  const send = async (files: FileList | null) => {
+    const f = files?.[0];
+    if (!f) return;
+    setBusy(true);
+    setError('');
+    try { onSaved(await portal.uploadPhoto(f)); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  };
+  return (
+    <>
+      <div className="g2-photo">
+        <span className={`g2-photo__ring${url ? ' g2-photo__ring--set' : ''}`}>{url ? <img src={url} alt="Your photo" /> : <G2Person />}</span>
+        <span className="fig-body fig-t2">{busy ? 'Uploading…' : url ? 'Your photo' : 'No photo yet'}</span>
+      </div>
+      <div className="g2-card g2-tips">
+        <h2 className="fig-subtitle">For a photo that works</h2>
+        <G2PhotoTip ok>Face the camera, with your whole face in view</G2PhotoTip>
+        <G2PhotoTip ok>A plain, light background and good light</G2PhotoTip>
+        <G2PhotoTip ok={false}>No sunglasses, caps or filters</G2PhotoTip>
+      </div>
+      <div className="g2-photo__btns">
+        <label className="g2-photo__btn"><input type="file" accept="image/jpeg,image/png" capture="user" onChange={(e) => { void send(e.target.files); e.target.value = ''; }} disabled={busy} aria-label="Take a photo" /><G2Camera />Take a photo</label>
+        <label className="g2-photo__btn"><input type="file" accept="image/jpeg,image/png" onChange={(e) => { void send(e.target.files); e.target.value = ''; }} disabled={busy} aria-label="Choose a photo from your gallery" /><G2Gallery />From gallery</label>
+      </div>
+      {error && <p className="fig-field__error" role="alert">{error}</p>}
+    </>
+  );
+}
