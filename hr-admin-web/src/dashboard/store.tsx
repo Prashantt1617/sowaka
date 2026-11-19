@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { View, ReqStatus, FeedbackStatus } from './theme';
+import { TITLES } from './theme';
 import { emptyForm } from './seed';
 import type { Correction, Emp, FbEmp, Feedback, FbMgr, Leave, OtChoice, Overtime, Reimb, UserForm } from './seed';
 import {
@@ -69,15 +70,34 @@ function useProvideStore() {
     return false;
   };
 
-  // A Tournament TV link (`?cup=<eventId>`, `?stream=1`) opens on the TV.
-  const [view, setViewRaw] = useState<View>(() => {
+  // A Tournament TV link (`?cup=<eventId>`, `?stream=1`) opens on the TV; a page's own link (`#employees`) on that page.
+  const [view, setViewState] = useState<View>(() => {
     try {
       const q = new URLSearchParams(window.location.search);
-      return q.has('cup') || q.get('stream') === '1' ? 'cuptv' : 'overview';
+      if (q.has('cup') || q.get('stream') === '1') return 'cuptv';
+      return viewFromHash() ?? 'overview';
     } catch {
       return 'overview';
     }
   });
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  // Each page change is a step in the browser's history, so Back goes to the page you came from.
+  const setViewRaw = useCallback((v: View) => {
+    if (v !== viewRef.current) {
+      try { window.history.pushState({ sowakaView: v }, '', `${window.location.pathname}${window.location.search}#${v}`); } catch { /* history unavailable: the page still changes */ }
+    }
+    setViewState(v);
+  }, []);
+  useEffect(() => {
+    try { window.history.replaceState({ sowakaView: viewRef.current }, '', `${window.location.pathname}${window.location.search}#${viewRef.current}`); } catch { /* ignore */ }
+    const onPop = (e: PopStateEvent) => {
+      const v = (e.state && typeof e.state.sowakaView === 'string' && e.state.sowakaView in TITLES ? e.state.sowakaView : viewFromHash()) as View | null;
+      if (v) setViewState(v);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
   const [toast, setToast] = useState('');
   // A failure reads as one: no green tick on "Could not save".
   const [toastTone, setToastTone] = useState<'ok' | 'error'>('ok');
@@ -699,6 +719,16 @@ function useProvideStore() {
 }
 
 const Ctx = createContext<Store | null>(null);
+
+/** The page named in the address's #fragment, when it is one of the dashboard's pages. */
+function viewFromHash(): View | null {
+  try {
+    const h = decodeURIComponent(window.location.hash.replace(/^#/, ''));
+    return h && h in TITLES ? (h as View) : null;
+  } catch {
+    return null;
+  }
+}
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const store = useProvideStore();
