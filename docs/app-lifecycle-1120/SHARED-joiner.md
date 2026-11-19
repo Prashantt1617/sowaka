@@ -30,7 +30,8 @@ your report.
 ## J1's own files (not shared, listed so others don't duplicate)
 
 - `presentation/first_punch.dart`: `FirstPunchCard`, `FirstPunchTour` (the Actions-tab spotlight request), `PunchSpotlightCallout`, `YoureInScreen`, `openYoureIn`.
-- `data/onboarding_models.dart`: `OnboardingHome.firstPunch` (`FirstPunch { at, faceEnrolled }`).
+- `data/onboarding_models.dart`: `OnboardingHome.firstPunch` (`FirstPunch { at, faceEnrolled }`) and `needsFirstPunchOn(now)` (Day 1, server sent `firstPunch`, no punch yet). While it is true the home hides the `register_face` task from Up next and the list (the card stands for it).
+- `onboarding_launcher.dart` now also exports `OnbSpotlight`, `OnbPulse`, `FirstPunchTour`, `PunchSpotlightCallout`, `openYoureIn`.
 - Backend: `onboardingHome()` returns `firstPunch: { at?, faceEnrolled }` (backend/src/services/lifecycle/appOnboarding.ts).
 - `quick_actions_screen.dart`: the Onboarding tile's Day-1 look (blue border, "Day 1" pill, pulse, "Today is your first day") and the spotlight over the Attendance card. J2 owns the Policies tile there ("3 to acknowledge", second in the grid); please keep edits to that tile only.
 - `onboarding_home_screen.dart`: J1 adds only the `FirstPunchCard` slot right under the hero card (Day 1, before the first punch-in).

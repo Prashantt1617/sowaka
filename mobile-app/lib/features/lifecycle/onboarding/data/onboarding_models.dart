@@ -457,12 +457,14 @@ class OnboardingHome {
     this.serverProgress,
     this.showWeekDone = false,
     this.weekDoneStats,
+    this.firstPunch,
   });
 
   factory OnboardingHome.fromJson(Map<String, dynamic> json) {
     final upNext = _map(json['upNext']);
     final meeting = _map(upNext['meeting']);
     final stats = _map(json['weekDoneStats']);
+    final firstPunch = _map(json['firstPunch']);
     return OnboardingHome(
       journeyId: _str(json['journeyId']) ?? '',
       stage: _str(json['stage']),
@@ -485,8 +487,19 @@ class OnboardingHome {
       weekDoneStats: stats.isEmpty
           ? null
           : (tasksDone: _int(stats['tasksDone']), peopleMet: _int(stats['peopleMet']), leaves: _int(stats['leaves'])),
+      firstPunch: firstPunch.isEmpty
+          ? null
+          : FirstPunch(at: parseLifecycleDate(firstPunch['at']), faceEnrolled: _bool(firstPunch['faceEnrolled'])),
     );
   }
+
+  /// Day 1's first punch-in: when it happened (null until it has) and whether
+  /// a face is on record. Null from a server that does not send it.
+  final FirstPunch? firstPunch;
+
+  /// "Your first punch-in" shows on Day 1 until the first punch-in, as the
+  /// server's [firstPunch] says; a server without it keeps the old list.
+  bool needsFirstPunchOn(DateTime now) => dayLabelOn(now) == 'Day 1' && firstPunch != null && firstPunch!.at == null;
 
   final String journeyId;
   final String? stage;
@@ -526,6 +539,14 @@ class OnboardingHome {
   /// The label the server gave, or the rule's own.
   String dayLabelOn(DateTime now) =>
       dayLabel ?? (tj == null ? 'Onboarding' : onboardingDayLabel(tj: tj!, today: now));
+}
+
+/// `firstPunch` on the onboarding home.
+class FirstPunch {
+  const FirstPunch({this.at, this.faceEnrolled = false});
+
+  final DateTime? at;
+  final bool faceEnrolled;
 }
 
 // ─── Meetings ───────────────────────────────────────────────────────────────
