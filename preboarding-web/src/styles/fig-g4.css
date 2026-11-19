@@ -52,11 +52,6 @@
 .g4-story--dark .g4-story__like { background: #045a85; color: #fff; }
 
 /* ── Profile steps 4–7 ───────────────────────────────────────────────── */
-.g4-step { padding: 16px 16px 24px; display: flex; flex-direction: column; gap: 24px; }
-.g4-intro { display: flex; align-items: flex-start; gap: 12px; margin: 0; font-size: 14px; line-height: 20px; color: #4a4e5a; }
-.g4-intro img { width: 32px; height: 32px; flex: none; object-fit: contain; }
-.g4-note { display: flex; align-items: flex-start; gap: 8px; padding: 12px; border-radius: 16px; background: #f7f7f9; font-size: 12px; line-height: 16px; color: #16181d; }
-.g4-note svg { flex: none; color: #0571a6; }
 .g4-photo { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 8px 0; }
 .g4-photo__ring { width: 168px; height: 168px; border-radius: 9999px; background: #fff; border: 2px dashed #e2e3e8; display: flex; align-items: center; justify-content: center; overflow: hidden; color: #6b7080; }
 .g4-photo__ring img { width: 100%; height: 100%; object-fit: cover; }
@@ -70,3 +65,22 @@
 .g4-photo-btns { display: flex; gap: 8px; }
 .g4-photo-btn { flex: 1 0 0; min-width: 0; height: 48px; position: relative; border: 1px solid #e2e3e8; border-radius: 16px; background: #fff; color: #0571a6; font-size: 15px; line-height: 20px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 13px; cursor: pointer; }
 .g4-photo-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+/* The step body sits in the A1 page until the shared step shell lands: no page height or grey. */
+.fig.g4-step { min-height: 0; background: none; flex: 1; padding: 16px 16px 24px; display: flex; flex-direction: column; gap: 24px; }
+.g4-group { display: flex; flex-direction: column; gap: 8px; }
+.g4-card { gap: 16px; }
+/* Fields on these frames: white input, 13 px in (the sign-in field is canvas grey). */
+.g4-step .fig-input { background: var(--color-bg-surface); padding: 2px 12px 0; }
+.g4-select { position: relative; display: block; }
+.g4-select select { appearance: none; border-radius: var(--radius-xl); padding-right: 40px; cursor: pointer; }
+.g4-select select:invalid, .g4-select select:has(option[value='']:checked) { color: var(--color-text-tertiary); }
+.g4-select svg { position: absolute; right: 13px; top: 13px; pointer-events: none; color: var(--color-text-tertiary); }
+.g4-choice { display: flex; gap: 8px; }
+.g4-choice button { height: 40px; padding: 0 13px; border: 1px solid var(--color-border-default); border-radius: var(--radius-xl); background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 14px; line-height: 20px; font-weight: 400; cursor: pointer; white-space: nowrap; }
+.g4-choice button.is-wide { flex: 1 0 0; min-width: 0; }
+.g4-choice button[aria-checked='true'] { background: var(--color-bg-canvas); border-color: var(--color-border-focus); color: var(--color-text-brand); font-weight: 600; }
+.g4-job { display: flex; flex-direction: column; gap: 16px; }
+.g4-job--more { padding-top: 16px; border-top: 1px solid var(--color-border-default); }
+.g4-textbtn { align-self: flex-start; border: 0; background: none; padding: 0; font: inherit; font-size: 14px; line-height: 20px; font-weight: 600; color: var(--color-text-brand); cursor: pointer; }
+.g4-textbtn--add { display: inline-flex; align-items: center; gap: 13px; padding: 11px 0 8px; }
+.g4-step .fig-note > svg { flex: none; }
