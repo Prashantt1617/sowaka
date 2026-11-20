@@ -31,12 +31,14 @@ import '../../placements/data/placements_api_service.dart';
 import '../../placements/data/placements_models.dart';
 import '../../policies/data/policies_api_service.dart';
 import '../../policies/data/policies_models.dart';
+import '../../policies/presentation/policies_ack_screen.dart';
 import '../../policies/presentation/policy_body_view.dart';
 import '../../shared/app_toast.dart';
 import '../../shared/attachment_picker.dart';
 import '../../shared/image_source_sheet.dart' show ImageSourceChoice;
 import '../../support/presentation/support_desk_screen.dart';
 import '../../lifecycle/onboarding/onboarding_launcher.dart';
+import '../../face_id/face_check_screen.dart' show FaceCheckOutcome;
 
 part 'placements_screen.dart';
 part 'payroll_screen.dart';
@@ -769,11 +771,38 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     _offboarding.addListener(_onOffboardingChanged);
     unawaited(_offboarding.revalidate());
     LifecycleMeStore.instance.addListener(_onLifecycleChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadJoinerPolicies();
+    });
+    FirstPunchTour.requested.addListener(_onPunchTourRequested);
+    if (FirstPunchTour.requested.value) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _onPunchTourRequested(),
+      );
+    }
   }
 
-  /// The Onboarding tile comes and goes with what `/lifecycle/me` says.
+  /// The Onboarding tile comes and goes with what `/lifecycle/me` says; a
+  /// joiner's Policies tile counts what is still to acknowledge.
   void _onLifecycleChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    _loadJoinerPolicies();
+  }
+
+  void _loadJoinerPolicies() {
+    if (LifecycleMeStore.instance.value.showsOnboarding) unawaited(_loadPolicies());
+  }
+
+  /// Day 1's "Learn to punch in" (the New joiner artifact): the Attendance
+  /// card spotlit until Later, Try it now, a tap on the dim, or a punch.
+  bool _punchTour = false;
+  final _attendanceCardKey = GlobalKey();
+
+  void _onPunchTourRequested() {
+    if (!mounted || !FirstPunchTour.requested.value) return;
+    FirstPunchTour.requested.value = false;
+    setState(() => _punchTour = true);
   }
 
   /// The Off-boarding tile and page (R3), while someone is on notice.
@@ -826,6 +855,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   void dispose() {
     _offboarding.removeListener(_onOffboardingChanged);
     LifecycleMeStore.instance.removeListener(_onLifecycleChanged);
+    FirstPunchTour.requested.removeListener(_onPunchTourRequested);
     widget.controller._detach(this);
     _text.dispose();
     _leaveReason.dispose();
@@ -877,7 +907,56 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         _reimbursementReceiptBytes != null;
   }
 
+  /// Actions › Policies (new-joiner canvas, "Policies · from Actions"): the
+  /// company's own policies open the Policies screen with Acknowledge,
+  /// Acknowledged or Updated on each, the same one onboarding's task opens. A
+  /// company with none keeps the built-in page.
+  Future<void> _openPoliciesScreen() async {
+    var list = _companyPolicies;
+    list ??= await _policiesApi.policiesFromCache().catchError((_) => null);
+    var fresh = false;
+    if (list == null) {
+      try {
+        list = await _policiesApi.policies();
+        fresh = true;
+        _policiesFetchedAt = DateTime.now();
+      } catch (_) {
+        // Offline with nothing kept: the built-in page, as before.
+      }
+    }
+    if (!mounted) return;
+    if (list != null) setState(() => _companyPolicies = list);
+    if (list == null || list.isEmpty) {
+      _openPage(_QuickPage.policies, refresh: !fresh);
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => PoliciesAckScreen(
+          source: HttpPoliciesSource(_policiesApi),
+          // The app's header and tabs around it, as the canvas draws it (Actions lit).
+          shell: currentOnboardingShell(),
+          // The company took all of its policies away meanwhile: the built-in page.
+          onEmpty: () {
+            if (!mounted) return;
+            setState(() => _companyPolicies = const []);
+            _openPage(_QuickPage.policies, refresh: false);
+          },
+        ),
+      ),
+    );
+    if (mounted) unawaited(_loadPolicies());
+  }
+
   void _open(_QuickPage page) {
+    if (page == _QuickPage.policies) {
+      unawaited(_openPoliciesScreen());
+      return;
+    }
+    _openPage(page);
+  }
+
+  void _openPage(_QuickPage page, {bool refresh = true}) {
     if (page == _QuickPage.placements) {
       _placementsKey = GlobalKey<_PlacementsScreenState>();
     }
@@ -890,7 +969,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     // anyone looks; the Leave screen only needs to know whether there is a
     // leave policy to link to.
     if (page == _QuickPage.policies) {
-      unawaited(_loadPolicies(force: true));
+      if (refresh) unawaited(_loadPolicies(force: true));
     } else if (page == _QuickPage.leave) {
       unawaited(_loadPolicies());
     }
@@ -1034,7 +1113,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 220),
       child: switch (_page) {
-        _QuickPage.home => _home(),
+        _QuickPage.home => _homeWithPunchTour(),
         _QuickPage.leave => _leaveHub(),
         _QuickPage.applyLeave => _applyLeaveForm(),
         _QuickPage.overtime => _overtimeHub(),
@@ -1083,6 +1162,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   /// offering somewhere to go next — so this only has to bring back whatever it
   /// settled on.
   Future<void> _startPunch(String type) async {
+    // From the Day-1 spotlight (its slider or Try it now): "You're in!" after.
+    final firstPunch = _punchTour && type == 'in';
+    if (_punchTour) setState(() => _punchTour = false);
     final outcome = await Navigator.of(context).push<PunchOutcome>(
       MaterialPageRoute(
         builder: (_) => PunchScreen(
@@ -1099,10 +1181,33 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         ),
       ),
     );
+    if (firstPunch && outcome?.punched == true && mounted) {
+      unawaited(widget.bloc.add(LoadAttendanceMonth(DateTime.now())));
+      await openYoureIn(
+        context,
+        at: outcome?.at ?? DateTime.now(),
+        faceRegistered:
+            widget.bloc.session.user.faceIdEnrolled ||
+            FaceCheckOutcome.enrolledThisRun,
+      );
+      return;
+    }
+    // The joiner's punch-out on their joining date: "Day 1, done!".
+    if (type == 'out' && outcome?.punched == true && _isJoiningDay() && mounted) {
+      unawaited(widget.bloc.add(LoadAttendanceMonth(DateTime.now())));
+      await openDay1Done(context);
+      return;
+    }
     if (mounted) showPunchToast(context, outcome, type: type);
     if ((outcome?.punched == true || outcome?.requested == true) && mounted) {
       await widget.bloc.add(LoadAttendanceMonth(DateTime.now()));
     }
+  }
+
+  /// Today is the joiner's Day 1, as `/lifecycle/me` says (the tile's badge).
+  bool _isJoiningDay() {
+    final onboarding = LifecycleMeStore.instance.value;
+    return onboarding.showsOnboarding && onboarding.onboarding?.dayLabel == 'Day 1';
   }
 
   /// Whether a correction for today is already with the manager.
@@ -1115,8 +1220,31 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     );
   }
 
+  /// The home, with Day 1's spotlight on the Attendance card when asked for.
+  Widget _homeWithPunchTour() => OnbSpotlight(
+    key: const ValueKey('quick-home-spotlight'),
+    show: _punchTour,
+    target: _attendanceCardKey,
+    radius: 24,
+    onDismiss: () => setState(() => _punchTour = false),
+    callout: PunchSpotlightCallout(
+      onLater: () {
+        setState(() => _punchTour = false);
+        unawaited(openOnboardingHome(context));
+      },
+      onTry: () => unawaited(_startPunch('in')),
+    ),
+    child: _home(),
+  );
+
   Widget _home() {
     final today = DateTime.now();
+    final onboarding = LifecycleMeStore.instance.value;
+    // The joiner's first day: the Onboarding tile is ringed, says so and
+    // carries a "Day 1" pill (the New joiner artifact's Actions).
+    final firstDay =
+        onboarding.showsOnboarding &&
+        onboarding.onboarding?.dayLabel == 'Day 1';
     final todayRecord = widget.dashboard.attendance
         .where((record) => _sameDay(record.workDate, today))
         .firstOrNull;
@@ -1172,6 +1300,121 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           (total, label) => total + _balanceFor(label)!.remaining,
         );
 
+    // A new joiner (onboarding runs until probation ends, where the
+    // lifecycle is on): the New joiner artifact's tiles, in its order.
+    final joiner = onboarding.showsOnboarding;
+    final onboardingTile = _HomeActionCard(
+      key: const ValueKey('onboarding-card'),
+      icon: Icons.waving_hand_rounded,
+      color: const Color(0xFF0571A6),
+      tint: const Color(0xFFE8F4FA),
+      // Figma "Quick Action-Geotag" (4166:19856): Icon · Colour/waving-hand.
+      imageAsset: 'assets/icons/action_card_onboarding_waving_hand.png',
+      title: 'Onboarding',
+      subtitle: firstDay
+          ? 'Today is your first day'
+          : onboardingTileSubtitle(onboarding),
+      onTap: () => openOnboardingHome(context),
+      highlight: firstDay,
+      badge: firstDay ? 'Day 1' : null,
+    );
+    // Someone marked present automatically has no attendance to manage: no
+    // leave to balance against days worked, and no overtime to claim beyond
+    // hours nobody records. What is left is what they can still act on.
+    final leaveTile = autoPresent
+        ? null
+        : _HomeActionCard(
+            icon: Icons.card_giftcard_rounded,
+            color: const Color(0xFFBE5A36),
+            tint: const Color(0xFFF6E5DB),
+            title: 'Leave',
+            // No balance, nothing to count down — so the card says what it
+            // is for rather than a number that would be wrong for these
+            // people.
+            subtitle: widget.dashboard.shift.leaveBalanceTracked
+                ? '${formatDays(leaveDaysAvailable)} days available'
+                : 'Apply & view requests',
+            onTap: () => _open(_QuickPage.leave),
+            imageAsset: 'assets/icons/team/calendar.png',
+          );
+    final overtimeTile = autoPresent || !widget.dashboard.overtimeEnabled
+        ? null
+        : _HomeActionCard(
+            icon: Icons.hourglass_bottom_rounded,
+            color: const Color(0xFFC98A2E),
+            tint: const Color(0xFFF4ECDD),
+            title: 'Overtime',
+            subtitle: 'Request & view hours',
+            onTap: () => _open(_QuickPage.overtime),
+            imageAsset: 'assets/icons/overtime_hourglass.png',
+          );
+    final reimbursementTile = _HomeActionCard(
+      icon: Icons.payments_rounded,
+      color: const Color(0xFF4F8C89),
+      tint: const Color(0xFFDEEBE9),
+      title: 'Reimbursement',
+      subtitle: 'Track your claims',
+      onTap: () => _open(_QuickPage.reimbursements),
+      imageAsset: 'assets/icons/action_card_reimbursement_rupee.png',
+      imageSize: 28,
+    );
+    // A recruitment company's clients, candidates and placements: only
+    // where the server switched it on.
+    final placementsTile = widget.bloc.session.user.placementsEnabled
+        ? _HomeActionCard(
+            key: const ValueKey('placements-card'),
+            icon: Icons.work_rounded,
+            color: const Color(0xFF0571A6),
+            tint: const Color(0xFFE0F2FE),
+            title: 'Placements',
+            subtitle: 'Clients & candidates',
+            onTap: () => _open(_QuickPage.placements),
+            imageAsset: 'assets/icons/placements_briefcase.png',
+          )
+        : null;
+    // Support desk (node 2896:32193): a concern raised to HR and the chat on
+    // it. Its pages keep the tabs under them, as Leave and Overtime do.
+    final supportTile = _HomeActionCard(
+      key: const ValueKey('support-desk-card'),
+      icon: Icons.support_agent_rounded,
+      color: const Color(0xFF2F7FD9),
+      tint: const Color(0xFFE3EEFB),
+      title: 'Support Desk',
+      subtitle: joiner ? 'Submit concern to HR.' : 'Raise a ticket',
+      onTap: _openSupportDesk,
+      imageAsset: 'assets/icons/support_headset.png',
+    );
+    // Payroll: the month's salary, what to fix before it runs, payslips, the
+    // flexible split and the tax declaration.
+    final payrollTile = _HomeActionCard(
+      key: const ValueKey('payroll-card'),
+      icon: Icons.account_balance_wallet_rounded,
+      color: const Color(0xFF0571A6),
+      tint: const Color(0xFFE0F2FE),
+      title: 'Payroll',
+      subtitle: 'Payslips, salary & tax',
+      onTap: () => _open(_QuickPage.payroll),
+      imageAsset: 'assets/icons/request_reimbursement_money.png',
+    );
+    // A joiner's Policies: how many are still to acknowledge, the same
+    // count the Policies screen and onboarding's "Acknowledge policies" show
+    // (policiesToAcknowledge over the server's list).
+    final toAcknowledge = policiesToAcknowledge(_companyPolicies ?? const []);
+    final policiesTile = _HomeActionCard(
+      key: const ValueKey('policies-card'),
+      icon: Icons.edit_note_rounded,
+      color: const Color(0xFF8A6AA0),
+      tint: const Color(0xFFEEE6F0),
+      title: joiner ? 'Policies' : 'View Policies',
+      subtitle: joiner && toAcknowledge > 0
+          ? '$toAcknowledge to acknowledge'
+          : 'Company guidelines',
+      onTap: joiner && (_companyPolicies?.isNotEmpty ?? false)
+          ? _openPoliciesToAcknowledge
+          : () => _open(_QuickPage.policies),
+      imageAsset: 'assets/icons/connect_icon_my_post_pencil.png',
+    );
+
     return Column(
       key: const ValueKey('quick-home'),
       children: [
@@ -1187,6 +1430,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               padding: const EdgeInsets.fromLTRB(16, 17, 16, 24),
               children: [
                 _HomeAttendanceCard(
+                  key: _attendanceCardKey,
                   date: today,
                   punchIn: punchIn,
                   punchOut: punchOut,
@@ -1232,107 +1476,27 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     mainAxisExtent: 123.185,
                   ),
                   children: [
-                    // A new joiner's onboarding, first while it runs (until
-                    // probation ends), only where the lifecycle is on.
-                    if (LifecycleMeStore.instance.value.showsOnboarding)
-                      _HomeActionCard(
-                        key: const ValueKey('onboarding-card'),
-                        icon: Icons.waving_hand_rounded,
-                        color: const Color(0xFF0571A6),
-                        tint: const Color(0xFFE8F4FA),
-                        title: 'Onboarding',
-                        subtitle: onboardingTileSubtitle(LifecycleMeStore.instance.value),
-                        onTap: () => openOnboardingHome(context),
-                      ),
-                    // Someone marked present automatically has no attendance to
-                    // manage: no leave to balance against days worked, and no
-                    // overtime to claim beyond hours nobody records. What is
-                    // left is what they can still act on.
-                    if (!autoPresent)
-                      _HomeActionCard(
-                        icon: Icons.card_giftcard_rounded,
-                        color: const Color(0xFFBE5A36),
-                        tint: const Color(0xFFF6E5DB),
-                        title: 'Leave',
-                        // No balance, nothing to count down — so the card says
-                        // what it is for rather than a number that would be
-                        // wrong for these people.
-                        subtitle: widget.dashboard.shift.leaveBalanceTracked
-                            ? '${formatDays(leaveDaysAvailable)} days available'
-                            : 'Apply & view requests',
-                        onTap: () => _open(_QuickPage.leave),
-                        imageAsset: 'assets/icons/team/calendar.png',
-                      ),
-                    if (!autoPresent && widget.dashboard.overtimeEnabled)
-                      _HomeActionCard(
-                        icon: Icons.hourglass_bottom_rounded,
-                        color: const Color(0xFFC98A2E),
-                        tint: const Color(0xFFF4ECDD),
-                        title: 'Overtime',
-                        subtitle: 'Request & view hours',
-                        onTap: () => _open(_QuickPage.overtime),
-                        imageAsset: 'assets/icons/overtime_hourglass.png',
-                      ),
-                    _HomeActionCard(
-                      icon: Icons.payments_rounded,
-                      color: const Color(0xFF4F8C89),
-                      tint: const Color(0xFFDEEBE9),
-                      title: 'Reimbursement',
-                      subtitle: 'Track your claims',
-                      onTap: () => _open(_QuickPage.reimbursements),
-                      imageAsset:
-                          'assets/icons/action_card_reimbursement_rupee.png',
-                      imageSize: 28,
-                    ),
-                    // A recruitment company's clients, candidates and
-                    // placements: only where the server switched it on.
-                    if (widget.bloc.session.user.placementsEnabled)
-                      _HomeActionCard(
-                        key: const ValueKey('placements-card'),
-                        icon: Icons.work_rounded,
-                        color: const Color(0xFF0571A6),
-                        tint: const Color(0xFFE0F2FE),
-                        title: 'Placements',
-                        subtitle: 'Clients & candidates',
-                        onTap: () => _open(_QuickPage.placements),
-                        imageAsset: 'assets/icons/placements_briefcase.png',
-                      ),
-                    // Support desk (node 2896:32193): a concern raised to HR
-                    // and the chat on it. Its pages keep the tabs under them,
-                    // as Leave and Overtime do.
-                    _HomeActionCard(
-                      key: const ValueKey('support-desk-card'),
-                      icon: Icons.support_agent_rounded,
-                      color: const Color(0xFF2F7FD9),
-                      tint: const Color(0xFFE3EEFB),
-                      title: 'Support Desk',
-                      subtitle: 'Raise a ticket',
-                      onTap: _openSupportDesk,
-                      imageAsset: 'assets/icons/support_headset.png',
-                    ),
-                    // Payroll: the month's salary, what to fix before it runs,
-                    // payslips, the flexible split and the tax declaration.
-                    _HomeActionCard(
-                      key: const ValueKey('payroll-card'),
-                      icon: Icons.account_balance_wallet_rounded,
-                      color: const Color(0xFF0571A6),
-                      tint: const Color(0xFFE0F2FE),
-                      title: 'Payroll',
-                      subtitle: 'Payslips, salary & tax',
-                      onTap: () => _open(_QuickPage.payroll),
-                      imageAsset:
-                          'assets/icons/request_reimbursement_money.png',
-                    ),
-                    _HomeActionCard(
-                      icon: Icons.edit_note_rounded,
-                      color: const Color(0xFF8A6AA0),
-                      tint: const Color(0xFFEEE6F0),
-                      title: 'View Policies',
-                      subtitle: 'Company guidelines',
-                      onTap: () => _open(_QuickPage.policies),
-                      imageAsset:
-                          'assets/icons/connect_icon_my_post_pencil.png',
-                    ),
+                    // A new joiner, while onboarding runs: the New joiner
+                    // artifact's Actions (Onboarding, Policies, Leave,
+                    // Overtime, Payroll, Reimbursement, Support Desk).
+                    if (joiner) ...[
+                      onboardingTile,
+                      policiesTile,
+                      ?leaveTile,
+                      ?overtimeTile,
+                      payrollTile,
+                      reimbursementTile,
+                      supportTile,
+                      ?placementsTile,
+                    ] else ...[
+                      ?leaveTile,
+                      ?overtimeTile,
+                      reimbursementTile,
+                      ?placementsTile,
+                      supportTile,
+                      payrollTile,
+                      policiesTile,
+                    ],
                     // Off-boarding (R3): someone serving notice, where the
                     // lifecycle is on. Last, and quiet.
                     if (_offboarding.showsOffboardingPage)
@@ -1356,6 +1520,21 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         ),
       ],
     );
+  }
+
+  /// A joiner's Policies from Actions (the New joiner artifact's "Policies ·
+  /// from Actions"): Acknowledge, Acknowledged or Updated on each; the
+  /// tile's count is read again on the way back.
+  Future<void> _openPoliciesToAcknowledge() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => PoliciesAckScreen(
+          source: HttpPoliciesSource(_policiesApi),
+          shell: currentOnboardingShell(),
+        ),
+      ),
+    );
+    if (mounted) await _loadPolicies(force: true);
   }
 
   /// The Support desk, with the shell's tabs under it; a pick comes back to
@@ -7773,6 +7952,7 @@ class _MissedPunchBanner extends StatelessWidget {
 /// shift it is and the two punches, with the slider that closes it last.
 class _HomeAttendanceCard extends StatelessWidget {
   const _HomeAttendanceCard({
+    super.key,
     required this.date,
     required this.punchIn,
     required this.punchOut,
@@ -8174,6 +8354,8 @@ class _HomeActionCard extends StatelessWidget {
     required this.onTap,
     this.imageAsset,
     this.imageSize = 24,
+    this.highlight = false,
+    this.badge,
   });
 
   final IconData icon;
@@ -8188,9 +8370,20 @@ class _HomeActionCard extends StatelessWidget {
   /// rupee whose artwork has more air round it.
   final double imageSize;
 
+  /// The New joiner artifact's Day-1 tile: a 1.5 brand ring, the subtitle in
+  /// brand blue and the icon pulsing.
+  final bool highlight;
+
+  /// A brand pill in the top-right corner ("Day 1").
+  final String? badge;
+
   @override
   Widget build(BuildContext context) {
     final image = imageAsset;
+    final badge = this.badge;
+    final Widget iconTile = image != null
+        ? _IllustrationTile(asset: image, size: imageSize)
+        : _IconTile(icon: icon, color: color, tint: tint, size: 40);
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
@@ -8204,47 +8397,82 @@ class _HomeActionCard extends StatelessWidget {
       ),
       child: Material(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: highlight
+              ? const BorderSide(color: Color(0xFF0571A6), width: 1.5)
+              : BorderSide.none,
+        ),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (image != null)
-                  _IllustrationTile(asset: image, size: imageSize)
-                else
-                  _IconTile(icon: icon, color: color, tint: tint, size: 40),
-                const SizedBox(height: 10),
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Sora',
-                    color: Color(0xFF222222),
-                    fontSize: 14,
-                    height: 21 / 14,
-                    letterSpacing: -0.1,
-                    fontWeight: FontWeight.w700,
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (highlight)
+                      OnbPulse(radius: BorderRadius.circular(13), child: iconTile)
+                    else
+                      iconTile,
+                    const SizedBox(height: 10),
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'Sora',
+                        color: Color(0xFF222222),
+                        fontSize: 14,
+                        height: 21 / 14,
+                        letterSpacing: -0.1,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Sora',
+                        color: highlight
+                            ? const Color(0xFF0571A6)
+                            : const Color(0xFF484848),
+                        fontSize: 12,
+                        height: 16 / 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (badge != null)
+                Positioned(
+                  top: 14,
+                  right: 14,
+                  child: Container(
+                    key: const ValueKey('action-card-badge'),
+                    height: 24,
+                    padding: const EdgeInsets.symmetric(horizontal: 9),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0571A6),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      badge,
+                      style: const TextStyle(
+                        fontFamily: 'Sora',
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Sora',
-                    color: Color(0xFF484848),
-                    fontSize: 12,
-                    height: 16 / 12,
-                  ),
-                ),
-              ],
-            ),
+            ],
           ),
         ),
       ),

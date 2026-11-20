@@ -110,6 +110,7 @@ const ALLOWED = [
   'CONTRACT: the manager’s M2 phrases tasks for them (APP_COPY managerTitle, “Meet {name}”)',
   'CONTRACT: the joiner sees the Day-1 items others do read-only (readOnly, doneBy), and starter tasks / shared notes as rows',
   'CONTRACT: finished pre-boarding steps stay behind on the portal (the app home lists open ones only)',
+  'CONTRACT: the joiner’s home also lists rows that live on their own record, not journey tasks (team:<key> meetings on journey.teamTasks, person:<id> people to meet, Acknowledge policies); they are compared with that record, not HR’s task list',
   'CONTRACT Auth: IT / Admin / Finance staff see their own team’s clearance items only',
   'an ended account cannot open the app at all (its app views are not compared after access ends)',
 ];
@@ -416,7 +417,32 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
     }
     ok(`${label}: titles, owners, due dates, done/open, must-do agree with HR’s panel`, diffs.length === 0, diffs.slice(0, 4));
   }
-  const appRows = (home: Json) => [...home.today, ...home.later, ...home.done].filter((t: Json) => t.id !== 'notes' && t.systemKey !== 'starter_task');
+  const allAppRows = (home: Json): Json[] => [...home.today, ...home.later, ...home.done];
+  /**
+   * Rows on the joiner's home that are not journey tasks, each read from its own record: shared 1:1
+   * notes, starter tasks, team meetings (`team:<key>`, journey.teamTasks), people the manager picked
+   * (`person:<id>`, lifecycle_people_to_meet) and Acknowledge policies (`policies`, the policy
+   * acknowledgements). HR's panel lists journey tasks only; these are compared with their record.
+   */
+  const ownRecordRow = (t: Json) => t.id === 'notes' || t.id === 'policies' || String(t.id).includes(':') || t.systemKey === 'starter_task';
+  const appRows = (home: Json) => allAppRows(home).filter((t: Json) => !ownRecordRow(t));
+  /** The home's own-record rows agree with their records: people to meet, and the policy counts. */
+  function sameOwnRows(label: string, hr: Json[], home: Json, people: Json) {
+    const rows = allAppRows(home);
+    const container = hr.find((t) => t.systemKey === 'people_to_meet' && t.status !== 'cancelled');
+    if (container) {
+      agree(`${label}: people to meet (the home's rows, the people list)`, {
+        home: rows.filter((r) => String(r.id).startsWith('person:')).map((r) => [r.id, r.status === 'done']).sort(),
+        people: (people.people as Json[]).filter((x) => !x.role).map((x) => [`person:${x.id}`, !!x.metAt]).sort(),
+      });
+    }
+    const pol = rows.find((r) => r.id === 'policies');
+    const counts = home.policies;
+    agree(`${label}: Acknowledge policies (the home's row, the policy counts)`, {
+      row: pol ? [pol.progress?.done, pol.progress?.total] : null,
+      counts: counts?.required ? [counts.acknowledged, counts.required] : null,
+    });
+  }
 
   function compareOnboarding(step: string, v: OnView, opts: { joined?: boolean } = {}) {
     const p = v.panel; const j = p.journey;
@@ -468,6 +494,7 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
     if (v.app) {
       const appIds = hr.filter((t) => joinerSees(t) && (t.phase !== 'pre_boarding' || ACTIVE.includes(t.status))).map((t) => t.id);
       sameTasks(`${step}: app home`, hr, appRows(v.app.home), appIds);
+      sameOwnRows(`${step}: app home`, hr, v.app.home, v.app.people);
     }
     if (v.mgr) sameTasks(`${step}: manager’s M2`, hr, v.mgr.detail.tasks, hr.filter(managerSees).map((t) => t.id), { titles: 'manager' });
     // Documents and letters

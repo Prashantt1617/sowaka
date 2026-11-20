@@ -15,11 +15,11 @@
  */
 import { createHash, createHmac, randomBytes, randomInt, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { candidateAccounts, journeys } from '../../config/db';
+import { candidateAccounts, journeys, users } from '../../config/db';
 import { env } from '../../config/env';
 import type { CandidateAccount, Journey } from '../../models/lifecycle.model';
 import { logger } from '../../utils/logger';
-import { companyDisplayName, companyOf, hrContactFor, lifecycleEnabled, mails, portalLink, sendLifecycleEmail } from './emails';
+import { companyDisplayName, companyOf, hrContactFor, istDate, lifecycleEnabled, mails, portalLink, sendLifecycleEmail } from './emails';
 import { completeTask, setJourneyStatus } from './engine';
 import { LifecycleOfferError } from './files';
 
@@ -297,6 +297,54 @@ export async function journeyForPortalToken(authorization: string | undefined, n
   if (!(await lifecycleEnabled(journey.org))) throw new LifecycleOfferError(404, 'Not available');
   if (!(await candidateAccounts().findOne({ journeyId: journey.id }, { projection: { _id: 1 } }))) throw new LifecycleOfferError(401, 'Please sign in again');
   return journey;
+}
+
+// ─── The portal inside the app (an app user's own journey, no code) ─────────
+
+/**
+ * The signed-in app user's own pre-boarding journey, while the Action tab is
+ * their joining portal: only BEFORE Day 1. From the joining day (Tj, IST) the
+ * tab is the usual Actions tab, so this is null from Tj on.
+ *
+ * Their journey is the one bound to them (journey.userId), else, before Mark
+ * joined binds it, the one whose portal login is their app login email (both
+ * proven by a code to that address). It must be open (not closed, not joined
+ * or moved to the app), have a joining date still ahead, and a candidate
+ * account behind it (journeyForPortalToken needs one).
+ */
+export async function portalJourneyForAppUser(userId: string, org: string, now = new Date()): Promise<Journey | null> {
+  if (!userId || !org) return null;
+  let journey = await journeys().find({ userId, org, kind: 'onboarding', closedAt: { $exists: false } }).sort({ createdAt: -1 }).limit(1).next();
+  if (!journey) {
+    const email = String((await users().findOne({ userId, org }, { projection: { _id: 0, email: 1 } }))?.email ?? '').trim().toLowerCase();
+    const account = email ? await candidateAccounts().findOne({ email }) : null;
+    if (account) {
+      journey = await journeys().findOne({ id: account.journeyId, org, kind: 'onboarding', userId: { $exists: false }, closedAt: { $exists: false } });
+    }
+  }
+  if (!journey || CLOSED_STATUSES.has(String(journey.status)) || String(journey.status) === 'joined') return null;
+  if (typeof journey.tj !== 'string' || istDate(now) >= journey.tj) return null;
+  if (!(await candidateAccounts().findOne({ journeyId: journey.id }, { projection: { _id: 1 } }))) return null;
+  return journey;
+}
+
+/**
+ * A portal session for the app user's own journey: the app opens the portal in
+ * its own page, signed in without a code (POST /lifecycle/portal-session). The
+ * token is the portal's usual one (aud 'portal', sub journeyId, 12 hours); the
+ * portal's `/app` entry reads it from the URL's fragment, which never reaches a
+ * server or a log.
+ */
+export async function portalSessionForAppUser(me: { userId: string; org: string }, now = new Date()): Promise<{ token: string; expiresAt: string; url: string }> {
+  const journey = await portalJourneyForAppUser(me.userId, me.org, now);
+  if (!journey) throw new LifecycleOfferError(404, 'No joining portal for you');
+  const token = signPortalToken(journey.id, journey.org, now);
+  await journeys().updateOne({ id: journey.id }, { $set: { lastActivityAt: now } });
+  return {
+    token,
+    expiresAt: new Date((Math.floor(now.getTime() / 1000) + PORTAL_TOKEN_TTL_SECONDS) * 1000).toISOString(),
+    url: `${portalLink('/app', journey.org)}#t=${token}`,
+  };
 }
 
 // ─── Sign-in by a code to their email (no password) ─────────────────────────

@@ -21,6 +21,7 @@ import {
   type AgendaTaskKey, type Derived, type TaskView,
 } from './engine';
 import { journeyDocumentsView } from './documents';
+import { PROFILE_SECTIONS, sectionStates } from './profile';
 import { journeyLettersView } from './letters';
 import { offerView } from './offers';
 import { probationOf, sentDecisionLetter } from './probation';
@@ -465,10 +466,10 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
   const j = loaded && loaded.id === journeyId && loaded.org === org ? loaded : await requireOnboarding(org, journeyId);
   if (j.kind !== 'onboarding') throw new LifecycleError(404, 'Journey not found');
   // Every read that needs only the journey, at once.
-  const [tasks, tills, documents, letters, offer, dateRequests, probation, batch] = await Promise.all([
+  const [tasks, tills, allDocuments, letters, offer, dateRequests, probation, batch] = await Promise.all([
     tasksOf(journeyId),
     validTills([journeyId]),
-    journeyDocumentsView(journeyId).then((docs) => (viewer.seesDocuments ? docs : docs.map(documentStatusOnly))),
+    journeyDocumentsView(journeyId),
     journeyLettersView(journeyId),
     offerView(journeyId, { hidePay: !viewer.seesPay }),
     dateChangeRequests().find({ journeyId }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray(),
@@ -477,6 +478,9 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
   ]);
   const derived = deriveJourney(j, tasks, now, { offerValidTill: tills.get(journeyId) });
   const names = await namesOf([j.managerUserId, j.buddyUserId, j.userId, ...tasks.map((t) => t.ownerUserId)]);
+  // The portal's Employee profile sections done (the count the portal and the app's Your profile show).
+  const sectionsDone = sectionStates(j, allDocuments);
+  const documents = viewer.seesDocuments ? allDocuments : allDocuments.map(documentStatusOnly);
   const journey = {
     ...journeyForViewer(sanitiseJourney(j), viewer),
     ...(j.managerUserId && names.get(j.managerUserId) ? { managerName: names.get(j.managerUserId) } : {}),
@@ -484,11 +488,12 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
     dayLabel: derived.dayLabel, statusLabel: derived.statusLabel, flags: derived.flags, column: derived.column, tab: derived.tab,
     stage: derived.stage, plant: derived.plant,
     waitingOn: waitingOnOf(j, tasks, names, now, 10), progress: progressOf(tasks, derived.tab),
+    profileSections: { done: PROFILE_SECTIONS.filter((k) => sectionsDone[k]).length, total: PROFILE_SECTIONS.length },
   };
   const [, nudged] = await Promise.all([markNudged(journey.waitingOn, now), nudgedToday(tasks.map((t) => t.id), now)]);
   const views = tasks.map((t) => ({ ...taskView(t, j, names, now), canNudge: !('reason' in nudgeTarget(j, t)), ...(nudged.has(t.id) ? { nudgedToday: true } : {}) }));
   const probationView = viewer.seesPay ? probation : { ...probation, decision: decisionWithoutPay(probation.decision) };
-  return { journey, tasks: views, documents, letters, offer, dateRequests, probation: probationView, batch, viewer };
+  return { journey, tasks: views, documents, letters, offer, dateRequests, probation: probationView, batch, viewer, teamRows: await (await import('./teamTasks')).teamRowsForHr(j) };
 }
 
 /** A candidate document without its files: what someone outside HR may see. */

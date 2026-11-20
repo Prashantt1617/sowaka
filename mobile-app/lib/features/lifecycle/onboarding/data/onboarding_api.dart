@@ -49,6 +49,11 @@ abstract class OnboardingApi {
 
   // Joiner
   Future<LifecycleMe> fetchMe();
+
+  /// The joining portal's address, signed in as them (`POST
+  /// /lifecycle/portal-session`): the portal's `/app` entry with a fresh
+  /// portal session in its fragment. Fails once the portal has closed.
+  Future<Uri> portalSessionUrl();
   Future<OnboardingHome> fetchHome();
   Future<TaskView?> taskAction(String taskId, String action, {String? note});
   Future<Week1Data> fetchWeek1();
@@ -211,6 +216,13 @@ class HttpOnboardingApi implements OnboardingApi {
   }
 
   @override
+  Future<Uri> portalSessionUrl() async {
+    final url = Uri.tryParse('${(await _json('POST', '/lifecycle/portal-session'))['url'] ?? ''}');
+    if (url == null || !url.hasScheme) throw const OnboardingApiException(OnboardingApiException.failed);
+    return url;
+  }
+
+  @override
   Future<OnboardingHome> fetchHome() async =>
       OnboardingHome.fromJson(await _json('GET', '/lifecycle/onboarding'));
 
@@ -264,6 +276,20 @@ class HttpOnboardingApi implements OnboardingApi {
   @override
   Future<void> markWeekDoneSeen() async {
     await _json('POST', '/lifecycle/onboarding/week-done/seen');
+  }
+
+  /// "Day 1, done!" · How was today? ([answer] great, okay or tough), on
+  /// the journey, where HR sees it. Not on [OnboardingApi], as the tour's.
+  Future<String?> saveDay1Feeling(String answer) async {
+    final json = await _json('PUT', '/lifecycle/onboarding/day1-feeling', body: {'answer': answer});
+    return json['feeling'] as String?;
+  }
+
+  /// The Sowaka tour: [lesson] finished (`POST /lifecycle/onboarding/tour/:lesson`);
+  /// the lessons done so far. Not on [OnboardingApi], so test fakes need nothing.
+  Future<List<String>> markTourLessonDone(String lesson) async {
+    final json = await _json('POST', '/lifecycle/onboarding/tour/${Uri.encodeComponent(lesson)}');
+    return [for (final k in json['done'] as List? ?? const []) if (k is String) k];
   }
 
   List<PersonToMeet> _people(Map<String, dynamic> json) => [
@@ -514,6 +540,11 @@ class HttpOnboardingApi implements OnboardingApi {
   }
 
   // ── Transport ─────────────────────────────────────────────────────────────
+
+  /// A lifecycle call outside [OnboardingApi] (joiner_meetings_api.dart), with the same token,
+  /// device copy of GETs and errors.
+  Future<Map<String, dynamic>> request(String method, String path, {Map<String, dynamic>? body}) =>
+      _json(method, path, body: body);
 
   Future<Map<String, dynamic>> _json(String method, String path, {Map<String, dynamic>? body}) async {
     if (Zone.current[_replayKey] == true) {

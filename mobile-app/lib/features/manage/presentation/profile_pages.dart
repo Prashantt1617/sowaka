@@ -84,6 +84,9 @@ List<ProfileTab> memberProfileTabs({
   ];
 }
 
+/// Off: the new-joiner prototype has no Onboarding tab on the profile.
+const _profileOnboardingTab = false;
+
 /// The tabs on one's own profile. Growth is reviewed by one's manager, so
 /// someone with nobody above them has no Grow; the counsellor is there where
 /// the company has Help. Settings — privacy, blocked people, log out, delete
@@ -94,7 +97,10 @@ List<ProfileTab> ownProfileTabs({
   bool showsResignation = false,
   bool showsOnboarding = false,
 }) => [
-  if (showsOnboarding) ProfileTab.onboarding,
+  // The new-joiner prototype opens onboarding only from the Actions tab's
+  // Onboarding tile: the profile's Onboarding tab is not shown (its card,
+  // OnboardingProfileCard, is kept).
+  if (showsOnboarding && _profileOnboardingTab) ProfileTab.onboarding,
   ProfileTab.workDetail,
   ProfileTab.request,
   ProfileTab.attendance,
@@ -1459,7 +1465,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     // Onboarding leads while it runs: the usual opening (Work detail) gives
     // way to it; a profile opened on purpose elsewhere (Post, Org chart)
     // still opens there.
-    ], showsOnboarding && widget.openOn == ProfileTab.workDetail ? ProfileTab.onboarding : widget.openOn);
+    ], showsOnboarding && _profileOnboardingTab && widget.openOn == ProfileTab.workDetail ? ProfileTab.onboarding : widget.openOn);
     final selected = _shownTab(tabs, _tab);
     final today = DateTime.now();
     final todayRecord = dashboard.attendance

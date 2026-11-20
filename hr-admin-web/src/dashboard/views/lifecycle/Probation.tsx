@@ -9,7 +9,7 @@ import { canSeePay } from '../../access';
 import { listKpiTemplates } from '../../../services/kpi';
 import type { KpiTemplateDTO } from '../../../services/kpi';
 import { recordDecision } from '../../../services/lifecycle';
-import type { ConfirmationDecision, JourneyView, ProbationMonthDTO } from '../../../services/lifecycle';
+import type { ConfirmationDecision, ConfirmationHodApproval, ConfirmationRecommendation, JourneyView, ProbationMonthDTO } from '../../../services/lifecycle';
 import { Field, Modal, Pick } from './shared';
 import { errText, firstName, inputStyle, longDay, sectionLabel } from './format';
 import { useOfferChoices } from './hooks';
@@ -48,11 +48,47 @@ export function ProbationMonths({ months, total }: { months: ProbationMonthDTO[]
           {m.review && (
             <div>
               <div style={sectionLabel}>Review</div>
-              <div style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{m.review.text}</div>
+              <div style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{m.review.text || 'Marked as reviewed'}</div>
+            </div>
+          )}
+          {!m.review && m.sentBack && (!m.checkinEmployee || m.sentBack.at >= m.checkinEmployee.at) && (
+            <div>
+              <div style={sectionLabel}>Sent back</div>
+              <div style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{m.sentBack.byName ? `${m.sentBack.byName} sent the check-in back` : 'The check-in was sent back'}{m.sentBack.text ? `: ${m.sentBack.text}` : ''}</div>
             </div>
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * What the app sent ahead of HR's decision: the manager's recommendation ("Recommended: Confirm by
+ * Sunny") and the head of department's answer ("Approved by Rahul" or "Asked to discuss: …").
+ * HR still decides.
+ */
+export function RecommendationNote({ recommendation, hodApproval }: { recommendation?: ConfirmationRecommendation; hodApproval?: ConfirmationHodApproval }) {
+  if (!recommendation && !hodApproval) return null;
+  const by = (name?: string) => (name ? ` by ${firstName(name)}` : '');
+  return (
+    <div className="pd-note" style={{ display: 'grid', gap: 4 }} aria-label="From the app">
+      {recommendation && (
+        <div>
+          <b style={{ fontWeight: 500 }}>Recommended: {recommendation.outcome === 'extend' ? 'Extend' : 'Confirm'}{by(recommendation.byName)}</b>
+          <span style={{ color: 'var(--ink-3)' }}> · {longDay(recommendation.at.slice(0, 10))}</span>
+          {recommendation.note && <div style={{ color: 'var(--ink-2)', overflowWrap: 'anywhere' }}>{recommendation.note}</div>}
+        </div>
+      )}
+      {hodApproval && (
+        <div>
+          <b style={{ fontWeight: 500, color: hodApproval.outcome === 'approved' ? 'var(--ok)' : 'var(--warn)' }}>
+            {hodApproval.outcome === 'approved' ? `Approved${by(hodApproval.byName)}` : `Asked to discuss${hodApproval.comment ? `: ${hodApproval.comment}` : ''}`}
+          </b>
+          <span style={{ color: 'var(--ink-3)' }}>{hodApproval.outcome === 'discuss' && hodApproval.byName ? ` · ${firstName(hodApproval.byName)}` : ''} · {longDay(hodApproval.at.slice(0, 10))}</span>
+          {hodApproval.outcome === 'approved' && hodApproval.comment && <div style={{ color: 'var(--ink-2)', overflowWrap: 'anywhere' }}>{hodApproval.comment}</div>}
+        </div>
+      )}
     </div>
   );
 }
@@ -101,6 +137,7 @@ export function DecisionDialog({ journey, onClose, onDone }: { journey: JourneyV
   return (
     <Modal title={`Confirmation decision · ${name}`} sub="From the confirmation discussion with their manager" onClose={onClose} busy={busy} width={600}
       footer={<><button type="button" className="pd-btn" onClick={onClose} disabled={busy}>Cancel</button><button type="button" className="pd-btn primary" onClick={() => void go()} disabled={busy}>{busy ? 'Saving…' : 'Record decision'}</button></>}>
+      <RecommendationNote recommendation={journey.probation?.recommendation} hodApproval={journey.probation?.hodApproval} />
       <div role="radiogroup" aria-label="Decision" style={{ display: 'grid', gap: 8 }}>
         {OPTIONS.map(([k, title, body]) => {
           const on = outcome === k;

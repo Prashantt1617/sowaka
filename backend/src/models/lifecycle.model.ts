@@ -34,7 +34,9 @@ export type OwnerRole =
   | 'finance'
   | 'manager_employee'  // either side marks it done (e.g. "Meet your manager")
   | 'hr_manager'
-  | 'automatic';
+  | 'automatic'
+  | 'buddy'               // the joiner's buddy (team-side task, Teams › Joiners)
+  | 'head_of_department'; // the joiner's head of department: the department head, else the manager's manager
 
 export type TaskKind =
   | 'ack' | 'form' | 'upload' | 'sign' | 'meeting' | 'reel' | 'survey'
@@ -115,6 +117,30 @@ export interface TemplateTask {
    * document is approved. A month task waits for the same month's task.
    */
   after?: { key: SystemTaskKey; when?: 'done' | 'started' };
+  /**
+   * A team-side task (services/lifecycle/teamTasks.ts): shown to the manager, the buddy or the
+   * head of department in Teams › Joiners and ticked there (journey.teamTasks), never made into a
+   * journey task. Its step comes from `dueRule` (none: once confirmed); `title` may use {n}
+   * (first name) and {p} (first name’s); `helper` is the row's quiet line.
+   */
+  team?: TeamTaskSpec;
+  /**
+   * A meeting's agenda (a meeting, a check-in or the confirmation discussion): the points the
+   * joiner's meeting screen lists with a notes box each, and the manager's for the same meeting.
+   * HR edits it in Templates; absent: the seed's for the task's systemKey.
+   */
+  agenda?: string[];
+}
+
+export type TeamTaskKind = 'help' | 'approve' | 'review' | 'task' | 'meet' | 'team' | 'goal' | 'doc' | 'chat';
+/** Stable key (ticks are kept by it), the row's look, and what the joiner sees for it. */
+export interface TeamTaskSpec {
+  key: string;
+  kind: TeamTaskKind;
+  /** May be done before its step. */
+  early?: boolean;
+  pair?: string;
+  agenda?: string[];
 }
 
 export interface LifecycleTemplateSettings {
@@ -224,7 +250,13 @@ export interface Journey {
   /** Meet-us content: manager note (text or video key), the company's culture video, JD cards. */
   meetUs?: { managerNote?: { kind: 'text' | 'video'; text?: string; fileId?: string; at?: Date }; seen?: string[] };
   /** Probation (onboarding). `goals`: the probation goals the manager sets in week 1 (lock Tj + 7). */
-  probation?: { months: number; extendedBy?: number; decision?: ConfirmationDecision; goals?: string[]; goalsLockedAt?: Date };
+  probation?: {
+    months: number; extendedBy?: number; decision?: ConfirmationDecision; goals?: string[]; goalsLockedAt?: Date;
+    /** The manager's recommendation from the app (Teams › Joiners); HR still decides. */
+    recommendation?: { outcome: 'confirm' | 'extend'; note?: string; byUserId: string; byName?: string; at: Date };
+    /** The head of department's answer to it. */
+    hodApproval?: { outcome: 'approved' | 'discuss'; comment?: string; byUserId: string; byName?: string; at: Date };
+  };
   /** Offboarding: how they leave, and whether the app's off-boarding page shows (O2 override of the template's appPageFor). */
   exitType?: ExitType;
   showAppPage?: boolean;
@@ -234,8 +266,18 @@ export interface Journey {
   bankPfRequest?: BankPfChangeRequest;
   /** When the joiner first saw "Week 1, done!" (A8). */
   week1DoneSeenAt?: Date;
+  /** "How was today?" on "Day 1, done!" (the joiner's own answer; HR sees it on the joiner panel). */
+  day1Feeling?: { answer: Day1Feeling; at: Date };
+  /** The Sowaka tour's lessons the joiner has finished (app keys: punch, missed, leave, overtime, …), in order done. */
+  tour?: { done: string[]; updatedAt?: Date };
   /** The manager's welcome post on Connect for the joiner (M2 "Post a welcome"), once per joiner. */
   managerWelcome?: { text: string; postedAt: Date; connectPostId?: string };
+  /**
+   * The team side's own ticks (services/lifecycle/teamTasks.ts): the buddy's, the head of
+   * department's and the manager's tasks that have no template row, by team task id. The
+   * manager's recommendation and the head of department's approval carry an outcome and a note.
+   */
+  teamTasks?: Record<string, TeamTaskTick>;
   /** Timed jobs already fired for this journey (each key once). */
   firedJobs?: string[];
   /** Kept by refreshJourney for lists and counts; the board recomputes them on read. */
@@ -253,6 +295,16 @@ export interface Journey {
   createdAt: Date;
   createdByUserId: string;
   updatedAt: Date;
+}
+
+/** One team-side task done (teamTasks.ts). */
+export interface TeamTaskTick {
+  doneAt: Date;
+  byUserId: string;
+  byName?: string;
+  /** The manager's recommendation ('confirm' | 'extend') or the head of department's answer ('approved' | 'discuss'). */
+  outcome?: string;
+  note?: string;
 }
 
 export type JourneyTaskStatus = 'locked' | 'todo' | 'in_review' | 'sent_back' | 'done' | 'skipped' | 'cancelled';
@@ -531,6 +583,26 @@ export interface Meeting {
   agendaId?: string;
 }
 
+/** "Day 1, done!" · How was today? */
+export const DAY1_FEELINGS = ['great', 'okay', 'tough'] as const;
+export type Day1Feeling = typeof DAY1_FEELINGS[number];
+
+/**
+ * Someone's own notes on a meeting's agenda (the joiner's meeting screen, "Only you can see your
+ * notes"): one text per agenda point, kept by the meeting row's id (a journey task id, `team:<key>`
+ * for a buddy or head-of-department meeting, `person:<id>` for someone the manager picked). Read by
+ * nobody but `userId`: no HR or manager view reads this collection.
+ */
+export interface MeetingNotes {
+  id: string;
+  org: string;
+  journeyId: string;
+  rowId: string;
+  userId: string;
+  notes: string[];
+  updatedAt: Date;
+}
+
 export interface Week1Reels {
   policies?: { versions: Array<{ id: string; version: string }>; at: Date; device?: string };
   taxRegime?: { regime: 'new' | 'old'; at: Date };
@@ -572,6 +644,8 @@ export interface ProbationMonth {
   checkinManager?: { text: string; rating?: number; goalRatings?: number[]; at: Date };
   /** PB2: the review, one-tap feedback chips, and "On it" for what the joiner asked. */
   review?: { text: string; feedback?: string[]; askAck?: boolean; at: Date };
+  /** The manager sent the joiner's self check-in back (team side, MgrReview): the joiner sends it again. */
+  sentBack?: { text?: string; at: Date; byName?: string };
 }
 
 export interface ConfirmationDecision {

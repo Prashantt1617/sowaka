@@ -1,7 +1,7 @@
 {
   "enabled": true,
   "onboarding": {
-    "journeyId": "ce4cafab-40a9-4200-ad7f-ec45ef0c8fcf",
+    "journeyId": "b6714d8a-bb77-4739-b8e7-d0a60ff08f20",
     "stage": "welcome_week1",
     "dayLabel": "Week 1",
     "plant": {
@@ -15,6 +15,7 @@
       "done": 5,
       "total": 11
     },
-    "subtitle": "5 of 11 steps done"
+    "subtitle": "5 of 11 steps done",
+    "portal": false
   }
 }

@@ -1,7 +1,7 @@
 {
   "joiners": [
     {
-      "journeyId": "ce4cafab-40a9-4200-ad7f-ec45ef0c8fcf",
+      "journeyId": "b6714d8a-bb77-4739-b8e7-d0a60ff08f20",
       "userId": "isha",
       "name": "Isha Verma",
       "designation": "Product Designer",
@@ -16,7 +16,7 @@
       "todayCount": 3,
       "overdue": 3,
       "preboarding": false,
-      "tj": "2026-11-11"
+      "tj": "2026-11-14"
     }
   ]
 }

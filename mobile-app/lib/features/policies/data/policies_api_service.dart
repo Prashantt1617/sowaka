@@ -31,10 +31,17 @@ String? _lastPoliciesFor;
 List<PolicyDocument>? companyPoliciesFor(String userId) =>
     _lastPoliciesFor == userId ? _lastPolicies : null;
 
+/// The server's counts with the policies last fetched for [userId]
+/// (`toAcknowledge` is Actions' "N to acknowledge"); null until fetched.
+PolicyAckCounts? policyCountsFor(String userId) =>
+    _lastPoliciesFor == userId ? _lastCounts : null;
+PolicyAckCounts? _lastCounts;
+
 /// Forgets what is held in memory. Called when the person signs out; the
 /// device copy goes with the dashboard's.
 void forgetPolicies() {
   _lastPolicies = null;
+  _lastCounts = null;
   _lastPoliciesFor = null;
 }
 
@@ -88,6 +95,7 @@ class PoliciesApiService {
     }
     final policies = parsePolicyDocuments(json);
     _lastPolicies = policies;
+    _lastCounts = PolicyAckCounts.fromJson(json, policies);
     _lastPoliciesFor = session.user.id;
     unawaited(
       DashboardCache.write(_cacheKey, {
@@ -95,6 +103,48 @@ class PoliciesApiService {
       }, startedAt: startedAt),
     );
     return policies;
+  }
+
+  /// Acknowledges [key] at [version], the version read: the whole list back,
+  /// with its new state. A 409 means the text changed meanwhile; the message
+  /// says so and the caller reloads.
+  Future<List<PolicyDocument>> acknowledge(String key, int version) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/policies/${Uri.encodeComponent(key)}/acknowledge'),
+      headers: {
+        'Authorization': 'Bearer ${session.token}',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({'version': version}),
+    );
+    Map<String, dynamic> json;
+    try {
+      final decoded = response.body.isEmpty
+          ? null
+          : jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true));
+      json = decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+    } catch (_) {
+      json = <String, dynamic>{};
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw PoliciesApiException(
+        (json['error'] ?? json['message']) as String? ??
+            'That did not go through. Try again.',
+        statusCode: response.statusCode,
+      );
+    }
+    final policies = parsePolicyDocuments(json);
+    _lastPolicies = policies;
+    _lastCounts = PolicyAckCounts.fromJson(json, policies);
+    _lastPoliciesFor = session.user.id;
+    return policies;
+  }
+
+  /// The server's counts (`GET /policies`): `toAcknowledge` is the number on
+  /// Actions' Policies tile.
+  Future<PolicyAckCounts> ackCounts() async {
+    final policies = await this.policies();
+    return policyCountsFor(session.user.id) ?? PolicyAckCounts.fromJson(const {}, policies);
   }
 
   /// The policies as this person last saw them, without the network. Null

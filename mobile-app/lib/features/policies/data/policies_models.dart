@@ -11,6 +11,13 @@ class PolicyDocument {
     this.summary = '',
     this.order = 0,
     this.updatedAt,
+    this.version = 1,
+    this.textUpdatedAt,
+    this.ackRequired = false,
+    this.changeNote = '',
+    this.readMinutes,
+    this.acknowledgedAt,
+    this.acknowledgedVersion,
   });
 
   /// One row of the list, or null for a row this app cannot show: no key, no
@@ -22,6 +29,9 @@ class PolicyDocument {
     final body = _string(raw['body']);
     if (key.isEmpty || title.isEmpty || body.trim().isEmpty) return null;
     final order = raw['order'];
+    final version = raw['version'];
+    final ackVersion = raw['acknowledgedVersion'];
+    final minutes = raw['readMinutes'];
     return PolicyDocument(
       key: key,
       title: title,
@@ -29,6 +39,14 @@ class PolicyDocument {
       summary: _string(raw['summary']).trim(),
       order: order is num ? order.toDouble() : 0,
       updatedAt: DateTime.tryParse(_string(raw['updatedAt']))?.toLocal(),
+      version: version is num && version >= 1 ? version.toInt() : 1,
+      textUpdatedAt: DateTime.tryParse(_string(raw['textUpdatedAt']))?.toLocal(),
+      // A server older than acknowledgements says nothing: read only, as before.
+      ackRequired: raw['ackRequired'] == true,
+      changeNote: _string(raw['changeNote']).trim(),
+      readMinutes: minutes is num && minutes >= 1 ? minutes.toInt() : null,
+      acknowledgedAt: DateTime.tryParse(_string(raw['acknowledgedAt']))?.toLocal(),
+      acknowledgedVersion: ackVersion is num ? ackVersion.toInt() : null,
     );
   }
 
@@ -46,6 +64,41 @@ class PolicyDocument {
   final double order;
   final DateTime? updatedAt;
 
+  /// The text's version, 1 up: what an acknowledgement is of.
+  final int version;
+
+  /// When the text last changed ([updatedAt] also moves on a reorder).
+  final DateTime? textUpdatedAt;
+
+  /// Whether the person is asked to acknowledge it; false is read only.
+  final bool ackRequired;
+
+  /// What changed in this version, shown with "Updated"; empty for the first.
+  final String changeNote;
+
+  /// About how long it takes to read, from the server; null from an older one.
+  final int? readMinutes;
+
+  /// This person's acknowledgement, of whichever version they read.
+  final DateTime? acknowledgedAt;
+  final int? acknowledgedVersion;
+
+  /// Acknowledged at the version in force now.
+  bool get isAcknowledged => acknowledgedVersion != null && acknowledgedVersion == version;
+
+  /// Acknowledged once, and the text has changed since: "Updated".
+  bool get isUpdatedSinceAck => acknowledgedVersion != null && acknowledgedVersion != version;
+
+  /// Still to acknowledge: needed, and not at this version (never, or an
+  /// older one: "Updated"). The server's `toAcknowledge` counts the same.
+  bool get needsAck => ackRequired && !isAcknowledged;
+
+  /// "Version 2 · 4 min read".
+  String get versionLine => [
+    'Version $version',
+    if (readMinutes != null) '$readMinutes min read',
+  ].join(' · ');
+
   Map<String, dynamic> toJson() => {
     'key': key,
     'title': title,
@@ -53,7 +106,40 @@ class PolicyDocument {
     'body': body,
     'order': order,
     if (updatedAt != null) 'updatedAt': updatedAt!.toUtc().toIso8601String(),
+    'version': version,
+    if (textUpdatedAt != null) 'textUpdatedAt': textUpdatedAt!.toUtc().toIso8601String(),
+    'ackRequired': ackRequired,
+    if (changeNote.isNotEmpty) 'changeNote': changeNote,
+    'readMinutes': ?readMinutes,
+    if (acknowledgedAt != null) 'acknowledgedAt': acknowledgedAt!.toUtc().toIso8601String(),
+    'acknowledgedVersion': ?acknowledgedVersion,
   };
+}
+
+/// The server's counts beside the list (`required`, `acknowledged`,
+/// `toAcknowledge`): one number for Actions' tile, the Policies banner and
+/// onboarding's "n of N done". An older server that sends none is counted
+/// from [policies] by the same rule ([PolicyDocument.needsAck]).
+class PolicyAckCounts {
+  const PolicyAckCounts({required this.required, required this.acknowledged, required this.toAcknowledge});
+
+  factory PolicyAckCounts.fromJson(Map<String, dynamic> json, List<PolicyDocument> policies) {
+    final to = json['toAcknowledge'];
+    final req = json['required'];
+    final ack = json['acknowledged'];
+    if (to is num && req is num && ack is num) {
+      return PolicyAckCounts(required: req.toInt(), acknowledged: ack.toInt(), toAcknowledge: to.toInt());
+    }
+    final needed = policies.where((p) => p.ackRequired).toList();
+    final left = policiesToAcknowledge(policies);
+    return PolicyAckCounts(required: needed.length, acknowledged: needed.length - left, toAcknowledge: left);
+  }
+
+  final int required;
+  final int acknowledged;
+
+  /// "3 to acknowledge".
+  final int toAcknowledge;
 }
 
 /// The policies from `{policies: [...]}`, in the order given, without the
@@ -92,6 +178,9 @@ String policyUpdatedLabel(DateTime at) {
   ];
   return 'Updated ${at.day} ${months[at.month - 1]} ${at.year}';
 }
+
+/// "15 Dec 2026".
+String policyDateLabel(DateTime at) => policyUpdatedLabel(at).substring('Updated '.length);
 
 /// One piece of a policy's page.
 sealed class PolicyBlock {
@@ -193,3 +282,9 @@ List<PolicyBlock> parsePolicyBody(String body) {
 }
 
 String _string(Object? value) => value is String ? value : '';
+
+/// How many of [policies] are still to acknowledge (needed, and not at the
+/// version in force): one count for the Actions tile ("3 to acknowledge"),
+/// the Policies screen and onboarding's "Acknowledge policies" task.
+int policiesToAcknowledge(Iterable<PolicyDocument> policies) =>
+    policies.where((p) => p.needsAck).length;

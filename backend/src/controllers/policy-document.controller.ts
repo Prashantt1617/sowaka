@@ -1,6 +1,8 @@
 import { NextFunction, Request, Response } from 'express';
+import { logger } from '../utils/logger';
+import { policiesAcknowledgedByJoiner } from '../services/lifecycle/appOnboarding';
 import {
-  PolicyDocumentError, PolicyViewer, adminPolicies, createPolicy, deletePolicy, policiesFor, reorderPolicies, updatePolicy,
+  PolicyDocumentError, PolicyViewer, acknowledgePolicy, adminPolicies, createPolicy, deletePolicy, policiesFor, policyAckCounts, reorderPolicies, updatePolicy,
 } from '../services/policy-document.service';
 
 function viewerOf(req: Request): PolicyViewer {
@@ -11,7 +13,31 @@ function viewerOf(req: Request): PolicyViewer {
 
 export async function policiesHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json({ success: true, policies: await policiesFor(viewerOf(req)) });
+    const policies = await policiesFor(viewerOf(req));
+    // `toAcknowledge` is the count Actions' Policies tile shows ("3 to acknowledge"); see policyAckCounts.
+    res.json({ success: true, policies, ...policyAckCounts(policies) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Policies › a policy › Acknowledge: `{ version }` is the version read. 409
+ * when the text has changed since. Answers the policy and the whole list, so
+ * the page redraws its pills from one reply.
+ */
+export async function acknowledgePolicyHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const viewer = viewerOf(req);
+    const device = String(req.get('user-agent') ?? '');
+    const out = await acknowledgePolicy(viewer, String(req.params.key ?? ''), { version: req.body?.version, device });
+    const user = req.auth?.user;
+    if (user?.org) {
+      // A joiner's Week-1 policies step follows; a failure there never fails the acknowledgement.
+      await policiesAcknowledgedByJoiner({ userId: viewer.userId, name: user.name ?? '', org: user.org }, out.policies, device).catch((error: unknown) =>
+        logger.warn('Policy acknowledgement not passed to onboarding', { userId: viewer.userId, reason: (error as Error).message }));
+    }
+    res.json({ success: true, ...out, ...policyAckCounts(out.policies) });
   } catch (error) {
     next(error);
   }

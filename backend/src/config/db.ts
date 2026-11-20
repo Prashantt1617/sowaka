@@ -55,14 +55,14 @@ import { TalkSession } from '../models/talk.model';
 import { GardenNote } from '../models/garden.model';
 import { CareWriting, JournalEntry, PairQuiz } from '../models/care.model';
 import { SupportEvent, SupportMessage, SupportTicket, SupportTopicList } from '../models/support.model';
-import { PolicyDocument } from '../models/policy-document.model';
+import { PolicyAcknowledgement, PolicyDocument } from '../models/policy-document.model';
 import { AppPage } from '../models/app-page.model';
 import { EmployeeActivity } from '../models/employee-activity.model';
 import { FaceChallenge, FaceLivenessSession, FaceVerification } from '../models/face.model';
 import { Placement, PlacementClient, PlacementCustomer } from '../models/placement.model';
 import type {
   CandidateAccount, CandidateDocument, DateChangeRequest, HandoverItem, Journey, JourneyTask, Letter, LetterTemplate,
-  LifecycleFile, LifecycleTemplate, Meeting, Offer, OneOnOneNote, PeopleToMeet, ProbationMonth, Resignation, StarterTask, SurveyResponse,
+  LifecycleFile, LifecycleTemplate, Meeting, MeetingNotes, Offer, OneOnOneNote, PeopleToMeet, ProbationMonth, Resignation, StarterTask, SurveyResponse,
 } from '../models/lifecycle.model';
 
 let client: MongoClient | null = null;
@@ -233,6 +233,10 @@ export function policyDocuments(): Collection<PolicyDocument> {
   return getDb().collection<PolicyDocument>('policy_documents');
 }
 
+export function policyAcknowledgements(): Collection<PolicyAcknowledgement> {
+  return getDb().collection<PolicyAcknowledgement>('policy_acknowledgements');
+}
+
 /** Colleagues challenging each other to a catalog game; see GameChallenge. */
 export function gameChallenges(): Collection<GameChallenge> {
   return getDb().collection<GameChallenge>('game_challenges');
@@ -396,6 +400,7 @@ export function peopleToMeet(): Collection<PeopleToMeet> { return getDb().collec
 export function starterTasks(): Collection<StarterTask> { return getDb().collection<StarterTask>('lifecycle_starter_tasks'); }
 export function oneOnOneNotes(): Collection<OneOnOneNote> { return getDb().collection<OneOnOneNote>('lifecycle_one_on_one_notes'); }
 export function lifecycleMeetings(): Collection<Meeting> { return getDb().collection<Meeting>('lifecycle_meetings'); }
+export function meetingNotes(): Collection<MeetingNotes> { return getDb().collection<MeetingNotes>('lifecycle_meeting_notes'); }
 export function probationMonths(): Collection<ProbationMonth> { return getDb().collection<ProbationMonth>('lifecycle_probation_months'); }
 export function surveyResponses(): Collection<SurveyResponse> { return getDb().collection<SurveyResponse>('lifecycle_survey_responses'); }
 export function resignations(): Collection<Resignation> { return getDb().collection<Resignation>('lifecycle_resignations'); }
@@ -662,6 +667,7 @@ async function ensureIndexes(database: Db): Promise<void> {
   await database.collection<GameCatalogEntry>('game_catalog').createIndex({ key: 1, active: 1, updatedAt: 1 });
   // One document per policy per company, and how a company's are found.
   await database.collection<PolicyDocument>('policy_documents').createIndex({ org: 1, key: 1 }, { unique: true });
+  await database.collection<PolicyAcknowledgement>('policy_acknowledgements').createIndex({ org: 1, userId: 1, key: 1 }, { unique: true });
   const challengesCollection = database.collection<GameChallenge>('game_challenges');
   await challengesCollection.createIndex({ id: 1 }, { unique: true });
   // Each player's list, newest first, and the counts that cap open challenges.
@@ -773,6 +779,7 @@ async function ensureIndexes(database: Db): Promise<void> {
   await getDb().collection('lifecycle_letters').createIndex({ org: 1, journeyId: 1 });
   await getDb().collection('lifecycle_resignations').createIndex({ org: 1, userId: 1, status: 1 });
   await getDb().collection('lifecycle_survey_responses').createIndex({ org: 1, kind: 1, createdAt: -1 });
+  await getDb().collection('lifecycle_meeting_notes').createIndex({ journeyId: 1, userId: 1 });
 
   const relayEventsCollection = database.collection<RelayEvent>('relay_events');
   await relayEventsCollection.createIndex({ id: 1 }, { unique: true });

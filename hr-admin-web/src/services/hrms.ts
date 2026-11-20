@@ -1035,9 +1035,15 @@ export type PolicyDTO = {
   active: boolean;
   updatedAt: string;
   updatedBy: string;
+  /** The text's version, 1 up: a new text is a new version, which everyone acknowledges again. */
+  version: number;
+  /** False: read only in the app ("Read"), nothing to acknowledge. */
+  ackRequired: boolean;
+  /** What changed in this version: the app shows it with "Updated". */
+  changeNote: string;
 };
 
-export type PolicyInput = Partial<Pick<PolicyDTO, 'title' | 'summary' | 'body' | 'active'>>;
+export type PolicyInput = Partial<Pick<PolicyDTO, 'title' | 'summary' | 'body' | 'active' | 'ackRequired' | 'changeNote'>>;
 
 export const getPolicies = () =>
   api<{ policies: PolicyDTO[] }>('/admin/policies').then((r) => r.policies);

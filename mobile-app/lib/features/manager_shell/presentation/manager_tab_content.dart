@@ -83,20 +83,41 @@ class _TabContent extends StatelessWidget {
           // every company the moment the app opens.
           visible: state.tab == ManagerTab.games,
         )),
-        _only(ManagerTab.quick, QuickActionsScreen(
-          key: ValueKey('quick-actions-${state.resetsOf(ManagerTab.quick)}'),
-          bloc: bloc,
-          dashboard: state.dashboard!,
-          controller: quickActionsController,
-          onNotifications: () => _openNotifications(context),
-          onOpenComposer: connectComposerController.openComposer,
-          profileAction: _ProfileAvatarAction(
-            key: const ValueKey('quick-profile-avatar'),
-            initial: state.dashboard!.managerInitial,
-            photoUrl: state.dashboard!.managerPhotoUrl,
-            onTap: onOpenProfile,
-            size: 30,
-          ),
+        // Before Day 1 the Action tab is the joiner's pre-boarding portal
+        // (the app header, the portal, the tabs), as the Games tab hosts its
+        // web page: one page, kept loaded across tab switches. From the
+        // joining day the server says no, and it is the usual Actions tab.
+        _only(ManagerTab.quick, ValueListenableBuilder<LifecycleMe>(
+          valueListenable: LifecycleMeStore.instance,
+          builder: (context, me, _) => me.enabled && (me.onboarding?.portal ?? false)
+              ? PortalTab(
+                  key: const ValueKey('portal-tab'),
+                  api: HttpOnboardingApi(session: session),
+                  visible: state.tab == ManagerTab.quick,
+                  onNotifications: () => _openNotifications(context),
+                  profileAction: _ProfileAvatarAction(
+                    key: const ValueKey('quick-profile-avatar'),
+                    initial: state.dashboard!.managerInitial,
+                    photoUrl: state.dashboard!.managerPhotoUrl,
+                    onTap: onOpenProfile,
+                    size: 30,
+                  ),
+                )
+              : QuickActionsScreen(
+                  key: ValueKey('quick-actions-${state.resetsOf(ManagerTab.quick)}'),
+                  bloc: bloc,
+                  dashboard: state.dashboard!,
+                  controller: quickActionsController,
+                  onNotifications: () => _openNotifications(context),
+                  onOpenComposer: connectComposerController.openComposer,
+                  profileAction: _ProfileAvatarAction(
+                    key: const ValueKey('quick-profile-avatar'),
+                    initial: state.dashboard!.managerInitial,
+                    photoUrl: state.dashboard!.managerPhotoUrl,
+                    onTap: onOpenProfile,
+                    size: 30,
+                  ),
+                ),
         )),
         // Still in ManagerTab order: care, then talk. Whether either is in the
         // bar is the company's call; the stack builds them only if so.

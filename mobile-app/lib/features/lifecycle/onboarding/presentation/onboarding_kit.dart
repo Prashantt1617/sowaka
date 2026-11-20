@@ -1,4 +1,5 @@
 import 'dart:io' show Platform;
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -42,6 +43,33 @@ abstract final class OnbColors {
   static const quiet = Color(0xFFF1F1F4);
   static const divider = Color(0xFFF3F4F6);
   static const scrim = Color(0x73111827);
+
+  // ── The 20 Nov New joiner artifact (app-lifecycle-1120), as drawn there.
+  // Shared by the joiner lanes; add here rather than in a screen.
+  static const successTint = Color(0xFFEAF9EE);
+  static const successText = Color(0xFF1F9D45);
+  static const successLine = Color(0xFFCFE3D6);
+  static const successDot = Color(0xFF30D158);
+  static const blueTint = Color(0xFFEAF1FE);
+  static const blue = Color(0xFF2563EB);
+  static const amberTint = Color(0xFFFFF4E5);
+  static const amber = Color(0xFFB45309);
+  static const violetTint = Color(0xFFF3EEFF);
+  static const violet = Color(0xFF6B4FBB);
+  static const rustTint = Color(0xFFFDECEC);
+  static const rust = Color(0xFFB23500);
+  static const skyTint = Color(0xFFE8F4FA);
+  static const skyText = Color(0xFFBEEDFF);
+
+  /// The Sowaka tour's card and tile.
+  static const tourGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFFCC4A12), Color(0xFFB23500), Color(0xFF872800)],
+  );
+
+  /// The spotlight's dim, rgba(0,0,0,.62).
+  static const spotlight = Color(0x9E000000);
 }
 
 /// No family on any of these: they take the theme's (Plus Jakarta Sans) from
@@ -125,7 +153,8 @@ class OnboardingShell {
 
 /// An onboarding page as Leave and the Support desk are laid out: the app
 /// header, a back + title row, the page, an optional footer, and the app's
-/// tabs under it ([showNav] off on reels, which hide the nav).
+/// tabs under it ([showNav] off on reels, which hide the nav; [showTitleRow]
+/// off for the joining portal, a web page with its own heading).
 class OnbScaffold extends StatelessWidget {
   const OnbScaffold({
     super.key,
@@ -135,6 +164,7 @@ class OnbScaffold extends StatelessWidget {
     this.footer,
     this.trailing,
     this.showNav = true,
+    this.showTitleRow = true,
     this.onBack,
     this.background = OnbColors.screen,
     this.offline = false,
@@ -146,6 +176,7 @@ class OnbScaffold extends StatelessWidget {
   final Widget? footer;
   final Widget? trailing;
   final bool showNav;
+  final bool showTitleRow;
   final VoidCallback? onBack;
   final Color background;
 
@@ -176,7 +207,7 @@ class OnbScaffold extends StatelessWidget {
             ),
             onNotifications: shell.onNotifications,
           ),
-          Container(
+          if (showTitleRow) Container(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             decoration: const BoxDecoration(
               color: Colors.white,
@@ -759,4 +790,438 @@ String onbRelativeDay(DateTime date, DateTime now) {
     -1 => 'Yesterday',
     _ => onbDay(date),
   };
+}
+
+// ─── The 20 Nov joiner artifact's shared pieces (lane J1 owns these) ────────
+
+/// The artifact's `pulse`: a ring that grows out of [child] and fades, every
+/// 1.6 s, round a circle or a rounded square. Still when animations are off.
+class OnbPulse extends StatefulWidget {
+  const OnbPulse({super.key, required this.child, this.color = OnbColors.primary, this.radius, this.spread = 8});
+
+  final Widget child;
+  final Color color;
+
+  /// Null: a circle.
+  final BorderRadius? radius;
+  final double spread;
+
+  @override
+  State<OnbPulse> createState() => _OnbPulseState();
+}
+
+class _OnbPulseState extends State<OnbPulse> with SingleTickerProviderStateMixin {
+  late final AnimationController _ring = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600));
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _ring.stop();
+    } else if (!_ring.isAnimating) {
+      _ring.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ring.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) return widget.child;
+    return AnimatedBuilder(
+      animation: _ring,
+      builder: (context, child) {
+        final t = Curves.easeOut.transform(_ring.value);
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            shape: widget.radius == null ? BoxShape.circle : BoxShape.rectangle,
+            borderRadius: widget.radius,
+            boxShadow: [BoxShadow(color: widget.color.withValues(alpha: 0.45 * (1 - t)), spreadRadius: widget.spread * t)],
+          ),
+          child: child,
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
+/// The artifact's `pop`: scales in from .6, past 1.08, to 1.
+class OnbPop extends StatelessWidget {
+  const OnbPop({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) return child;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 450),
+      curve: const Cubic(0.2, 0.8, 0.2, 1),
+      builder: (context, t, child) {
+        final scale = t < 0.7 ? 0.6 + (1.08 - 0.6) * (t / 0.7) : 1.08 - 0.08 * ((t - 0.7) / 0.3);
+        return Opacity(opacity: (t / 0.7).clamp(0.0, 1.0), child: Transform.scale(scale: scale, child: child));
+      },
+      child: child,
+    );
+  }
+}
+
+/// A full-width action banner (radius 20, padding 16): a pulsing white disc
+/// with [icon], then an optional eyebrow, the title and a line under it. The
+/// Day-1 "Your first punch-in" card (brand blue) and the Sowaka tour card
+/// ([OnbColors.tourGradient], with an eyebrow) are both this.
+class OnbBanner extends StatelessWidget {
+  const OnbBanner({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.onTap,
+    this.eyebrow,
+    this.subtitle,
+    this.color = OnbColors.primary,
+    this.gradient,
+    this.iconColor,
+    this.subtitleColor,
+    this.titleSize,
+    this.pulse = true,
+  });
+
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+  final String? eyebrow;
+  final String? subtitle;
+  final Color color;
+  final Gradient? gradient;
+
+  /// The icon on the white disc; [color] (or the tour's rust) when null.
+  final Color? iconColor;
+
+  /// Null: #E8F4FA under a plain title, white under an eyebrow.
+  final Color? subtitleColor;
+
+  /// Null: 18, or 17 under an eyebrow.
+  final double? titleSize;
+  final bool pulse;
+
+  @override
+  Widget build(BuildContext context) {
+    final eyebrow = this.eyebrow;
+    final subtitle = this.subtitle;
+    final disc = Container(
+      width: 52,
+      height: 52,
+      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+      child: Icon(icon, size: 26, color: iconColor ?? (gradient == null ? color : OnbColors.rust)),
+    );
+    return Semantics(
+      button: true,
+      label: [?eyebrow, title, ?subtitle].join('. '),
+      child: ExcludeSemantics(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: gradient == null ? color : null,
+            gradient: gradient,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    if (pulse) OnbPulse(color: Colors.white, child: disc) else disc,
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (eyebrow != null) ...[
+                            Text(
+                              eyebrow,
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: Colors.white),
+                            ),
+                            const SizedBox(height: 2),
+                          ],
+                          Text(
+                            title,
+                            style: TextStyle(
+                              fontSize: titleSize ?? (eyebrow == null ? 18 : 17),
+                              height: eyebrow == null ? 1.2 : 1.25,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          if (subtitle != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              subtitle,
+                              style: TextStyle(
+                                fontSize: eyebrow == null ? 13 : 12,
+                                color: subtitleColor ?? (eyebrow == null ? OnbColors.skyTint : Colors.white),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The green celebration card ("You're in!", "Day 1, done!"): radius 28 on
+/// [OnbColors.successTint], an eyebrow, a big title, a line, and the plant
+/// (or any [art]) sitting on the card's bottom edge. Pops in.
+class OnbCelebrationCard extends StatelessWidget {
+  const OnbCelebrationCard({
+    super.key,
+    required this.eyebrow,
+    required this.title,
+    this.subtitle,
+    this.art,
+    this.titleSize = 40,
+  });
+
+  final String eyebrow;
+  final String title;
+  final String? subtitle;
+  final Widget? art;
+  final double titleSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitle = this.subtitle;
+    final art = this.art;
+    return OnbPop(
+      child: Container(
+        width: double.infinity,
+        clipBehavior: Clip.antiAlias,
+        padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
+        decoration: BoxDecoration(color: OnbColors.successTint, borderRadius: BorderRadius.circular(28)),
+        child: Column(
+          children: [
+            Text(
+              eyebrow,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 1.1, color: OnbColors.successText),
+            ),
+            const SizedBox(height: 6),
+            Semantics(
+              header: true,
+              child: Text(
+                title,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: titleSize,
+                  height: 1.05,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.03 * titleSize,
+                  color: OnbColors.text,
+                ),
+              ),
+            ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 6),
+              Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: OnbColors.text2)),
+            ],
+            if (art != null) ...[const SizedBox(height: 6), art] else const SizedBox(height: 22),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A white row card with a green check tile: "Face registered · From
+/// tomorrow, just slide to punch in".
+class OnbDoneNote extends StatelessWidget {
+  const OnbDoneNote({super.key, required this.title, this.subtitle});
+
+  final String title;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitle = this.subtitle;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: OnbColors.line),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(color: OnbColors.successTint, borderRadius: BorderRadius.circular(10)),
+            child: const Icon(Icons.check_rounded, size: 20, color: OnbColors.successText),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: OnbText.bodyStrong),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: OnbText.label),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The artifact's spotlight: [child] dimmed except the box of [target]
+/// (ringed 4 px in brand blue, still usable), and [callout] in a white bubble
+/// under it whose arrow points up at the target's middle. A tap on the dim
+/// calls [onDismiss]; nothing under the dim is reachable.
+class OnbSpotlight extends StatefulWidget {
+  const OnbSpotlight({
+    super.key,
+    required this.child,
+    required this.show,
+    required this.target,
+    required this.callout,
+    this.radius = 28,
+    this.onDismiss,
+  });
+
+  final Widget child;
+  final bool show;
+  final GlobalKey target;
+  final Widget callout;
+  final double radius;
+  final VoidCallback? onDismiss;
+
+  @override
+  State<OnbSpotlight> createState() => _OnbSpotlightState();
+}
+
+class _OnbSpotlightState extends State<OnbSpotlight> {
+  final _stack = GlobalKey();
+  Rect? _hole;
+
+  void _measure() {
+    if (!mounted || !widget.show) return;
+    final target = widget.target.currentContext?.findRenderObject();
+    final stack = _stack.currentContext?.findRenderObject();
+    if (target is! RenderBox || stack is! RenderBox || !target.hasSize || !target.attached) return;
+    final hole = target.localToGlobal(Offset.zero, ancestor: stack) & target.size;
+    if (hole != _hole) setState(() => _hole = hole);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.show) WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
+    final hole = widget.show ? _hole : null;
+    return Stack(
+      key: _stack,
+      children: [
+        widget.child,
+        if (hole != null) ...[
+          // The dim, painted with the hole and its ring; it takes no taps.
+          Positioned.fill(
+            child: IgnorePointer(child: CustomPaint(painter: _SpotlightPainter(hole: hole, radius: widget.radius))),
+          ),
+          // Four blockers round the hole, so the target itself stays usable.
+          Positioned(left: 0, right: 0, top: 0, height: math.max(0, hole.top), child: _blocker()),
+          Positioned(left: 0, right: 0, top: hole.bottom, bottom: 0, child: _blocker()),
+          Positioned(left: 0, width: math.max(0, hole.left), top: hole.top, height: hole.height, child: _blocker()),
+          Positioned(left: hole.right, right: 0, top: hole.top, height: hole.height, child: _blocker()),
+          Positioned(
+            left: 16,
+            right: 16,
+            top: hole.bottom + 14,
+            child: _SpotlightBubble(arrowX: hole.center.dx - 16, child: widget.callout),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _blocker() => GestureDetector(behavior: HitTestBehavior.opaque, onTap: widget.onDismiss);
+}
+
+class _SpotlightPainter extends CustomPainter {
+  _SpotlightPainter({required this.hole, required this.radius});
+
+  final Rect hole;
+  final double radius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final dim = Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect(Offset.zero & size)
+      ..addRRect(RRect.fromRectAndRadius(hole.inflate(4), Radius.circular(radius + 4)));
+    canvas.drawPath(dim, Paint()..color = OnbColors.spotlight);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(hole.inflate(2), Radius.circular(radius + 2)),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4
+        ..color = OnbColors.primary,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_SpotlightPainter old) => old.hole != hole || old.radius != radius;
+}
+
+/// The white bubble (radius 20, padding 16) with a small arrow on top.
+class _SpotlightBubble extends StatelessWidget {
+  const _SpotlightBubble({required this.child, required this.arrowX});
+
+  final Widget child;
+
+  /// The arrow's middle, from the bubble's left edge.
+  final double arrowX;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final x = arrowX.clamp(24.0, math.max(24.0, constraints.maxWidth - 24));
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
+            child: child,
+          ),
+          Positioned(
+            top: -8,
+            left: x - 8,
+            child: Transform.rotate(
+              angle: math.pi / 4,
+              child: const SizedBox(width: 16, height: 16, child: ColoredBox(color: Colors.white)),
+            ),
+          ),
+        ],
+      );
+    },
+  );
 }

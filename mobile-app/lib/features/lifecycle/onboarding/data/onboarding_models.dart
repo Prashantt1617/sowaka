@@ -182,6 +182,7 @@ class OnboardingMe {
     this.tileVisible = false,
     this.progress,
     this.subtitle,
+    this.portal = false,
   });
 
   factory OnboardingMe.fromJson(Map<String, dynamic> json) => OnboardingMe(
@@ -192,6 +193,7 @@ class OnboardingMe {
     tileVisible: _bool(json['tileVisible']),
     progress: TaskProgress.maybe(json['progress']),
     subtitle: _str(json['subtitle']),
+    portal: _bool(json['portal']),
   );
 
   final String journeyId;
@@ -208,6 +210,11 @@ class OnboardingMe {
   /// 9 steps done" in week 1, "Week 6 · check-in due Fri 9 Jan" after).
   final String? subtitle;
 
+  /// Signed in to the app BEFORE Day 1 with their pre-boarding portal open:
+  /// the Action tab is the portal itself (the server says false from the
+  /// joining day, IST, and the tab is the usual Actions tab again).
+  final bool portal;
+
   OnboardingMe withProgress(TaskProgress? value) => OnboardingMe(
     journeyId: journeyId,
     stage: stage,
@@ -216,6 +223,7 @@ class OnboardingMe {
     tileVisible: tileVisible,
     progress: value ?? progress,
     subtitle: subtitle,
+    portal: portal,
   );
 }
 
@@ -298,10 +306,18 @@ class TaskView {
     this.readOnly = false,
     this.doneBy,
     this.canMarkDone,
+    this.agenda = const [],
+    this.withName,
+    this.withUserId,
+    this.withPhotoUrl,
+    this.canTick,
+    this.myNotes = const [],
+    this.opens,
   });
 
   factory TaskView.fromJson(Map<String, dynamic> json) {
     final meeting = _map(json['meeting']);
+    List<String> strings(Object? v) => v is List ? [for (final x in v) x is String ? x : ''] : const [];
     return TaskView(
       id: _str(json['id']) ?? '',
       systemKey: _str(json['systemKey']),
@@ -328,6 +344,13 @@ class TaskView {
       readOnly: _bool(json['readOnly']),
       doneBy: _str(json['doneBy']),
       canMarkDone: json['canMarkDone'] is bool ? json['canMarkDone'] as bool : null,
+      agenda: strings(json['agenda']).where((a) => a.isNotEmpty).toList(),
+      withName: _str(json['withName']),
+      withUserId: _str(json['withUserId']),
+      withPhotoUrl: _str(json['withPhotoUrl']),
+      canTick: json['canTick'] is bool ? json['canTick'] as bool : null,
+      myNotes: strings(json['myNotes']),
+      opens: _str(json['opens']),
     );
   }
 
@@ -368,6 +391,19 @@ class TaskView {
   /// M2: whether the manager may tick it there. HR's decision tasks never.
   /// Null from an older server; [managerMayTick] then decides.
   final bool? canMarkDone;
+
+  /// A meeting row (the joiner's Meetings): the template's agenda, who it is
+  /// with, whether the joiner may mark it met (null: not a meeting row), and
+  /// their own notes, one per agenda point.
+  final List<String> agenda;
+  final String? withName;
+  final String? withUserId;
+  final String? withPhotoUrl;
+  final bool? canTick;
+  final List<String> myNotes;
+
+  /// A row that opens a screen of its own ('policies': Acknowledge policies).
+  final String? opens;
 
   bool get isDone => status == 'done' || status == 'skipped';
   bool get isLocked => status == 'locked';
@@ -457,12 +493,23 @@ class OnboardingHome {
     this.serverProgress,
     this.showWeekDone = false,
     this.weekDoneStats,
+    this.firstPunch,
+    this.day1,
+    this.tourDone = const [],
+    this.tourForManager = false,
+    this.policyCounts,
+    this.devices = const [],
+    this.watch = const [],
+    this.companyName,
+    this.profile,
   });
 
   factory OnboardingHome.fromJson(Map<String, dynamic> json) {
     final upNext = _map(json['upNext']);
     final meeting = _map(upNext['meeting']);
     final stats = _map(json['weekDoneStats']);
+    final firstPunch = _map(json['firstPunch']);
+    final day1 = _map(json['day1']);
     return OnboardingHome(
       journeyId: _str(json['journeyId']) ?? '',
       stage: _str(json['stage']),
@@ -485,8 +532,42 @@ class OnboardingHome {
       weekDoneStats: stats.isEmpty
           ? null
           : (tasksDone: _int(stats['tasksDone']), peopleMet: _int(stats['peopleMet']), leaves: _int(stats['leaves'])),
+      firstPunch: firstPunch.isEmpty
+          ? null
+          : FirstPunch(at: parseLifecycleDate(firstPunch['at']), faceEnrolled: _bool(firstPunch['faceEnrolled'])),
+      day1: day1.isEmpty
+          ? null
+          : Day1Summary(peopleMet: _int(day1['peopleMet']), thingsDone: _int(day1['thingsDone']), feeling: _str(day1['feeling'])),
+      tourDone: [
+        for (final k in (_map(json['tour'])['done'] as List?) ?? const [])
+          if (k is String && k.isNotEmpty) k,
+      ],
+      tourForManager: ((_map(json['tour'])['managerLessons'] as List?) ?? const []).isNotEmpty,
+      policyCounts: _map(json['policies']).isEmpty
+          ? null
+          : (
+              required: _int(_map(json['policies'])['required']),
+              acknowledged: _int(_map(json['policies'])['acknowledged']),
+              toAcknowledge: _int(_map(json['policies'])['toAcknowledge']),
+            ),
+      devices: _maps(json['devices']).map(OnbDevice.fromJson).where((d) => d.title.isNotEmpty).toList(),
+      watch: _maps(json['watch']).map(OnbVideo.fromJson).where((v) => v.url.isNotEmpty).toList(),
+      companyName: _str(json['companyName']),
+      profile: _map(json['profile']).isEmpty ? null : OnbProfileState.fromJson(_map(json['profile'])),
     );
   }
+
+  /// Day 1's first punch-in: when it happened (null until it has) and whether
+  /// a face is on record. Null from a server that does not send it.
+  final FirstPunch? firstPunch;
+
+  /// "Day 1, done!": the server's counts and the joiner's "How was today?".
+  /// Null from a server that does not send it.
+  final Day1Summary? day1;
+
+  /// "Your first punch-in" shows on Day 1 until the first punch-in, as the
+  /// server's [firstPunch] says; a server without it keeps the old list.
+  bool needsFirstPunchOn(DateTime now) => dayLabelOn(now) == 'Day 1' && firstPunch != null && firstPunch!.at == null;
 
   final String journeyId;
   final String? stage;
@@ -511,6 +592,30 @@ class OnboardingHome {
   final bool showWeekDone;
   final ({int tasksDone, int peopleMet, int leaves})? weekDoneStats;
 
+  /// The Sowaka tour's lessons finished (`tour.done`: punch, missed, …).
+  final List<String> tourDone;
+
+  /// The joiner manages anyone (the server sends `tour.managerLessons`): the
+  /// tour also has "For managers".
+  final bool tourForManager;
+
+  /// The server's policy counts (the same as `GET /policies`): onboarding's
+  /// "Acknowledge policies · n of N done"; null from an older server.
+  final ({int required, int acknowledged, int toAcknowledge})? policyCounts;
+
+  /// "Devices and accesses": what IT and HR set up, ready or not.
+  final List<OnbDevice> devices;
+
+  /// "Watch list": the Meet us videos the portal plays (the manager's video
+  /// hello, the company video), as the server sends them.
+  final List<OnbVideo> watch;
+
+  /// The company's name ("About `company`").
+  final String? companyName;
+
+  /// "Your profile": the portal's Employee profile sections and their state.
+  final OnbProfileState? profile;
+
   List<TaskView> get all => [...today, ...later, ...done];
 
   /// Steps done of everything the joiner has in this stretch: the server's
@@ -526,6 +631,82 @@ class OnboardingHome {
   /// The label the server gave, or the rule's own.
   String dayLabelOn(DateTime now) =>
       dayLabel ?? (tj == null ? 'Onboarding' : onboardingDayLabel(tj: tj!, today: now));
+}
+
+/// `day1` on the onboarding home: people met and things done (the same
+/// count as the tile's "steps done"), and `feeling` (great, okay, tough)
+/// once answered.
+class Day1Summary {
+  const Day1Summary({this.peopleMet = 0, this.thingsDone = 0, this.feeling});
+
+  final int peopleMet;
+  final int thingsDone;
+  final String? feeling;
+}
+
+/// `firstPunch` on the onboarding home.
+class FirstPunch {
+  const FirstPunch({this.at, this.faceEnrolled = false});
+
+  final DateTime? at;
+  final bool faceEnrolled;
+}
+
+/// One of "Devices and accesses": the laptop, the work email, this app.
+class OnbDevice {
+  const OnbDevice({required this.key, required this.title, this.ready = false});
+
+  factory OnbDevice.fromJson(Map<String, dynamic> json) =>
+      OnbDevice(key: _str(json['key']) ?? '', title: _str(json['title']) ?? '', ready: _bool(json['ready']));
+
+  /// laptop, email, app, or any other.
+  final String key;
+  final String title;
+  final bool ready;
+}
+
+/// One of the Watch list's videos (the portal's Meet us video).
+class OnbVideo {
+  const OnbVideo({required this.id, required this.title, required this.url, this.seen = false});
+
+  factory OnbVideo.fromJson(Map<String, dynamic> json) => OnbVideo(
+    id: _str(json['id']) ?? '',
+    title: _str(json['title']) ?? '',
+    url: _str(json['videoUrl']) ?? '',
+    seen: _bool(json['seen']),
+  );
+
+  final String id;
+  final String title;
+
+  /// The portal's link: a signed `/portal/media/…` path or the company's URL.
+  final String url;
+  final bool seen;
+}
+
+/// The portal's Employee profile as the app shows it: each section done or
+/// not, and the count ("n of 7 sections done"), the server's.
+class OnbProfileState {
+  const OnbProfileState({this.sections = const [], this.done = 0, this.total = 0});
+
+  factory OnbProfileState.fromJson(Map<String, dynamic> json) {
+    final sections = [
+      for (final s in _maps(json['sections']))
+        (key: _str(s['key']) ?? '', title: _str(s['title']) ?? '', done: _bool(s['done'])),
+    ];
+    return OnbProfileState(
+      sections: sections,
+      done: _int(json['done'], sections.where((s) => s.done).length),
+      total: _int(json['total'], sections.length),
+    );
+  }
+
+  final List<({String key, String title, bool done})> sections;
+  final int done;
+  final int total;
+
+  /// The portal's percent: round(done / total × 100).
+  int get percent => total == 0 ? 0 : (done * 100 / total).round();
 }
 
 // ─── Meetings ───────────────────────────────────────────────────────────────
@@ -1105,6 +1286,7 @@ class ProbationMonth {
     this.reviewAt,
     this.reviewFeedback = const [],
     this.askAck = false,
+    this.sentBackAt,
   });
 
   factory ProbationMonth.fromJson(Map<String, dynamic> json) {
@@ -1121,6 +1303,7 @@ class ProbationMonth {
       reviewAt: parseLifecycleDate(review['at']),
       reviewFeedback: _strings(review['feedback']),
       askAck: _bool(review['askAck']),
+      sentBackAt: parseLifecycleDate(_map(json['sentBack'])['at']),
     );
   }
 
@@ -1137,6 +1320,9 @@ class ProbationMonth {
   /// One-tap feedback chips on the review, and "On it" for the ask.
   final List<String> reviewFeedback;
   final bool askAck;
+
+  /// When the manager sent the joiner's self check-in back to send again (team side).
+  final DateTime? sentBackAt;
 
   bool get reviewed => reviewAt != null || review != null || reviewFeedback.isNotEmpty;
 
