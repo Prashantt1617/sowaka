@@ -70,7 +70,9 @@ import '../../face_id/face_setup_screen.dart';
 import '../../lifecycle/onboarding/data/onboarding_api.dart';
 import '../../lifecycle/onboarding/data/onboarding_models.dart';
 import '../../lifecycle/onboarding/onboarding_launcher.dart';
+import '../../lifecycle/onboarding/presentation/manager/joiners_tab.dart';
 import '../../lifecycle/onboarding/presentation/manager/new_joiners_section.dart';
+import '../../lifecycle/onboarding/presentation/manager/team_kit.dart';
 import '../../lifecycle/onboarding/presentation/profile_onboarding_card.dart';
 
 part '../../connect/presentation/connect_tab.dart';
@@ -230,6 +232,16 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // The lifecycle's onboarding screens open over the shell from anywhere;
     // what `/lifecycle/me` says decides whether they show at all.
     registerOnboardingShell(_onboardingShell);
+    // Teams › Joiners' "Reach out": a game, a post on Connect.
+    TeamReachOutDoors.openComposer = (context) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      _openConnectComposer();
+    };
+    TeamReachOutDoors.openGames = (context) {
+      if (!visibleTabs(_session.user.enabledTabs).contains(ManagerTab.games)) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      _bloc.add(const ChangeManagerTab(ManagerTab.games));
+    };
     unawaited(LifecycleMeStore.instance.refresh(HttpOnboardingApi(session: widget.session)));
   }
 

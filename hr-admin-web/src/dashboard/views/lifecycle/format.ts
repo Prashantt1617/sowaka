@@ -51,6 +51,7 @@ export const errText = (e: unknown, fallback = 'Something went wrong') => (e ins
 export const OWNER_LABEL: Record<OwnerRole, string> = {
   employee: 'Employee', manager: 'Manager', hr: 'HR', it: 'IT', admin: 'Admin', finance: 'Finance',
   manager_employee: 'Manager + Employee', hr_manager: 'HR + Manager', automatic: 'Automatic',
+  buddy: 'Buddy', head_of_department: 'Head of department',
 };
 export const OWNER_TONE: Record<OwnerRole, { bg: string; fg: string }> = {
   employee: { bg: 'var(--t-sky)', fg: 'var(--t-sky-i)' },
@@ -62,6 +63,8 @@ export const OWNER_TONE: Record<OwnerRole, { bg: string; fg: string }> = {
   admin: { bg: 'var(--t-mint)', fg: 'var(--t-mint-i)' },
   finance: { bg: 'var(--t-mint)', fg: 'var(--t-mint-i)' },
   automatic: { bg: 'var(--mute-bg)', fg: 'var(--ink-2)' },
+  buddy: { bg: 'var(--t-sky)', fg: 'var(--t-sky-i)' },
+  head_of_department: { bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)' },
 };
 const RISK = { bg: 'var(--bad-bg)', fg: 'var(--bad)' };
 const WARN = { bg: 'var(--warn-bg)', fg: 'var(--warn)' };

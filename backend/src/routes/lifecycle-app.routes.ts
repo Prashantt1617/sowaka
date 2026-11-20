@@ -4,11 +4,13 @@ import {
   actOnMeeting, actOnNote, actOnOwnTask, actOnPerson, addNote, assignStarterTask, checkinForMe, introView, joinerForManager,
   joinersForManager, lifecycleMe, managerProbationMonth, managerTaskDone, markWeekDoneSeen, meetingFor, notesForJoiner,
   onboardingHome, peopleView, postIntro, postWelcome, probationForMe, replyToStarterTask, revealForMe, revealSeenForMe, saveIntro, saveSetup,
-  saveWeek1Step, sendSurvey, starterDone, starterTasksForJoiner, surveyView, week1View,
+  saveWeek1Step, sendSurvey, starterDone, starterTasksForJoiner, surveyView, tourLessonDone, week1View,
 } from '../services/lifecycle/appOnboarding';
 import { LifecycleError } from '../services/lifecycle/engine';
 import { contentDisposition } from '../services/lifecycle/files';
 import { letterPdfForEmployee } from '../services/lifecycle/letters';
+import { portalSessionForAppUser } from '../services/lifecycle/portalAuth';
+import { answerApproval, teamApproval, teamJoiner, teamJoiners, teamTaskAction } from '../services/lifecycle/teamTasks';
 import { lifecycleGate, lifecycleHandler } from './lifecycle-admin.routes';
 
 /**
@@ -39,6 +41,8 @@ lifecycleAppRouter.use(lifecycleGate);
 lifecycleAppRouter.get('/onboarding', lifecycleHandler(async (req) => onboardingHome(me(req))));
 lifecycleAppRouter.post('/onboarding/tasks/:taskId', lifecycleHandler(async (req) => actOnOwnTask(me(req), param(req, 'taskId'), body(req))));
 lifecycleAppRouter.post('/onboarding/week-done/seen', lifecycleHandler(async (req) => markWeekDoneSeen(me(req))));
+// The joining portal inside the app: a portal session for their own journey while its portal is open (no code).
+lifecycleAppRouter.post('/portal-session', lifecycleHandler(async (req) => portalSessionForAppUser(me(req))));
 lifecycleAppRouter.get('/onboarding/week1', lifecycleHandler(async (req) => week1View(me(req))));
 lifecycleAppRouter.put('/onboarding/week1', lifecycleHandler(async (req) => saveWeek1Step(me(req), body(req), String(req.get('user-agent') ?? ''))));
 lifecycleAppRouter.get('/onboarding/intro', lifecycleHandler(async (req) => introView(me(req))));
@@ -52,6 +56,7 @@ lifecycleAppRouter.get('/onboarding/notes', lifecycleHandler(async (req) => note
 lifecycleAppRouter.post('/onboarding/notes/:id', lifecycleHandler(async (req) => actOnNote(me(req), param(req, 'id'), body(req))));
 lifecycleAppRouter.get('/onboarding/meetings/:id', lifecycleHandler(async (req) => meetingFor(me(req), param(req, 'id'))));
 lifecycleAppRouter.post('/onboarding/meetings/:id', lifecycleHandler(async (req) => actOnMeeting(me(req), param(req, 'id'), body(req))));
+lifecycleAppRouter.post('/onboarding/tour/:lesson', lifecycleHandler(async (req) => tourLessonDone(me(req), param(req, 'lesson'))));
 lifecycleAppRouter.get('/onboarding/survey', lifecycleHandler(async (req) => surveyView(me(req))));
 lifecycleAppRouter.post('/onboarding/survey', lifecycleHandler(async (req) => sendSurvey(me(req), body(req))));
 lifecycleAppRouter.get('/onboarding/probation', lifecycleHandler(async (req) => probationForMe(me(req))));
@@ -84,3 +89,11 @@ lifecycleAppRouter.post('/manager/joiners/:journeyId/notes', lifecycleHandler(as
 lifecycleAppRouter.post('/manager/joiners/:journeyId/welcome', lifecycleHandler(async (req) => postWelcome(me(req), param(req, 'journeyId'), body(req)), 201));
 lifecycleAppRouter.post('/manager/joiners/:journeyId/tasks/:taskId', lifecycleHandler(async (req) => managerTaskDone(me(req), param(req, 'journeyId'), param(req, 'taskId'), body(req))));
 lifecycleAppRouter.put('/manager/joiners/:journeyId/probation/:month', lifecycleHandler(async (req) => managerProbationMonth(me(req), param(req, 'journeyId'), Number(param(req, 'month')), body(req))));
+
+// Teams › Joiners for the manager, the buddy and the head of department (services/lifecycle/teamTasks.ts):
+// the joiners I'm connected to, one joiner's page with my tasks for them, ticks, and the confirmation approval.
+lifecycleAppRouter.get('/team/joiners', lifecycleHandler(async (req) => teamJoiners(me(req))));
+lifecycleAppRouter.get('/team/joiners/:journeyId', lifecycleHandler(async (req) => teamJoiner(me(req), param(req, 'journeyId'))));
+lifecycleAppRouter.post('/team/joiners/:journeyId/tasks/:taskId', lifecycleHandler(async (req) => teamTaskAction(me(req), param(req, 'journeyId'), param(req, 'taskId'), body(req))));
+lifecycleAppRouter.get('/team/joiners/:journeyId/approval', lifecycleHandler(async (req) => teamApproval(me(req), param(req, 'journeyId'))));
+lifecycleAppRouter.post('/team/joiners/:journeyId/approval', lifecycleHandler(async (req) => answerApproval(me(req), param(req, 'journeyId'), body(req))));

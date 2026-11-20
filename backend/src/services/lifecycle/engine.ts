@@ -121,7 +121,8 @@ function ownerFor(role: OwnerRole, j: Journey): string | undefined {
 // ─── Materialising ──────────────────────────────────────────────────────────
 
 /** Whether a template task runs: switched on, and (if recommended) added. */
-const runs = (t: TemplateTask) => t.enabled && (!t.recommended || t.recommended.added);
+/** Team-side rows (Teams › Joiners) are never journey tasks: the app ticks them on the journey. */
+const runs = (t: TemplateTask) => !t.team && t.enabled && (!t.recommended || t.recommended.added);
 
 function monthsFor(t: TemplateTask, total: number): Array<number | undefined> {
   const months = monthsOfRule(t.opensRule, total) ?? monthsOfRule(t.dueRule, total);

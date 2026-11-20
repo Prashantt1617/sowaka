@@ -6,6 +6,7 @@ import '../../data/onboarding_models.dart';
 import '../../onboarding_launcher.dart';
 import '../onboarding_kit.dart';
 import '../plant.dart';
+import 'joiners_tab.dart';
 
 /// What the Team tab needs to draw the joiners inside its Direct Reports tree
 /// (6Zs M0, artboard AppTeams): who they are, most urgent first, the day it is
@@ -133,6 +134,7 @@ class _NewJoinersSectionState extends State<NewJoinersSection> {
   void _show(List<JoinerSummary> joiners) {
     setState(() => _joiners = sortJoinersByUrgency(joiners));
     NewJoinersSection.joinerUserIds.value = {for (final j in joiners) ?j.userId};
+    JoinersTab.count.value = joiners.length;
     _publish();
     // Their faces into the image cache now, so the cards and M2 paint them at once.
     for (final joiner in _joiners) {

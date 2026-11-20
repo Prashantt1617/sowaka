@@ -12,7 +12,7 @@ export type OnboardingPhase = 'pre_boarding' | 'first_week' | 'probation';
 export type OffboardingPhase = 'resignation' | 'when_accepted' | 'notice_period' | 'last_day' | 'after_exit';
 export type LifecyclePhase = OnboardingPhase | OffboardingPhase;
 
-export type OwnerRole = 'employee' | 'manager' | 'hr' | 'it' | 'admin' | 'finance' | 'manager_employee' | 'hr_manager' | 'automatic';
+export type OwnerRole = 'employee' | 'manager' | 'hr' | 'it' | 'admin' | 'finance' | 'manager_employee' | 'hr_manager' | 'automatic' | 'buddy' | 'head_of_department';
 export type TaskKind = 'ack' | 'form' | 'upload' | 'sign' | 'meeting' | 'reel' | 'survey' | 'assign' | 'review' | 'system' | 'post' | 'tour' | 'face' | 'checkin' | 'letter';
 export type TaskSurface = 'portal' | 'app' | 'dashboard' | 'backend' | 'outside';
 export type DueAnchor = 'offer_sent' | 'accepted' | 'finalised' | 'tj' | 'month_start' | 'month_end' | 'tl' | 'exit_accepted';
@@ -41,7 +41,13 @@ export interface TemplateTask {
   order: number;
   recommended?: { why: string; added: boolean };
   documents?: Array<{ key: string; label: string; required: boolean }>;
+  /** A team-side task (the app's Teams › Joiners for the manager, buddy or head of department); kept as it is on save. */
+  team?: { key: string; kind: string; early?: boolean; pair?: string; agenda?: string[] };
 }
+
+/** The manager's recommendation from the app and the head of department's answer, by HR's decision. */
+export interface ConfirmationRecommendation { outcome: 'confirm' | 'extend'; note?: string; byUserId: string; byName?: string; at: string }
+export interface ConfirmationHodApproval { outcome: 'approved' | 'discuss'; comment?: string; byUserId: string; byName?: string; at: string }
 
 export type ExitTypeKey = 'resignation' | 'retirement' | 'end_of_contract' | 'termination' | 'absconding';
 
@@ -220,7 +226,7 @@ export interface JourneyView {
   location?: string;
   plant?: PlantState;
   day1Pass?: Day1Pass;
-  probation?: { months: number; extendedBy?: number; decision?: ConfirmationDecision };
+  probation?: { months: number; extendedBy?: number; decision?: ConfirmationDecision; recommendation?: ConfirmationRecommendation; hodApproval?: ConfirmationHodApproval };
   lastActivityAt?: string;
   closedAt?: string;
   closedReason?: string;
@@ -367,7 +373,7 @@ export interface JourneyDetail {
   letters: LetterView[];
   offer: OfferView | null;
   dateRequests: DateChangeRequestDTO[];
-  probation: { months: ProbationMonthDTO[]; decision?: ConfirmationDecision };
+  probation: { months: ProbationMonthDTO[]; decision?: ConfirmationDecision; recommendation?: ConfirmationRecommendation; hodApproval?: ConfirmationHodApproval };
   batch: Array<{ journeyId: string; name: string }>;
   /** What this viewer may see: pay (a payroll tab) and candidates' documents (HR). */
   viewer?: { seesPay: boolean; seesDocuments: boolean };

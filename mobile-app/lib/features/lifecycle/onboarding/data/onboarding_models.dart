@@ -182,6 +182,7 @@ class OnboardingMe {
     this.tileVisible = false,
     this.progress,
     this.subtitle,
+    this.portal = false,
   });
 
   factory OnboardingMe.fromJson(Map<String, dynamic> json) => OnboardingMe(
@@ -192,6 +193,7 @@ class OnboardingMe {
     tileVisible: _bool(json['tileVisible']),
     progress: TaskProgress.maybe(json['progress']),
     subtitle: _str(json['subtitle']),
+    portal: _bool(json['portal']),
   );
 
   final String journeyId;
@@ -208,6 +210,11 @@ class OnboardingMe {
   /// 9 steps done" in week 1, "Week 6 · check-in due Fri 9 Jan" after).
   final String? subtitle;
 
+  /// Signed in to the app BEFORE Day 1 with their pre-boarding portal open:
+  /// the Action tab is the portal itself (the server says false from the
+  /// joining day, IST, and the tab is the usual Actions tab again).
+  final bool portal;
+
   OnboardingMe withProgress(TaskProgress? value) => OnboardingMe(
     journeyId: journeyId,
     stage: stage,
@@ -216,6 +223,7 @@ class OnboardingMe {
     tileVisible: tileVisible,
     progress: value ?? progress,
     subtitle: subtitle,
+    portal: portal,
   );
 }
 
@@ -457,12 +465,16 @@ class OnboardingHome {
     this.serverProgress,
     this.showWeekDone = false,
     this.weekDoneStats,
+    this.firstPunch,
+    this.tourDone = const [],
+    this.devices = const [],
   });
 
   factory OnboardingHome.fromJson(Map<String, dynamic> json) {
     final upNext = _map(json['upNext']);
     final meeting = _map(upNext['meeting']);
     final stats = _map(json['weekDoneStats']);
+    final firstPunch = _map(json['firstPunch']);
     return OnboardingHome(
       journeyId: _str(json['journeyId']) ?? '',
       stage: _str(json['stage']),
@@ -485,8 +497,24 @@ class OnboardingHome {
       weekDoneStats: stats.isEmpty
           ? null
           : (tasksDone: _int(stats['tasksDone']), peopleMet: _int(stats['peopleMet']), leaves: _int(stats['leaves'])),
+      firstPunch: firstPunch.isEmpty
+          ? null
+          : FirstPunch(at: parseLifecycleDate(firstPunch['at']), faceEnrolled: _bool(firstPunch['faceEnrolled'])),
+      tourDone: [
+        for (final k in (_map(json['tour'])['done'] as List?) ?? const [])
+          if (k is String && k.isNotEmpty) k,
+      ],
+      devices: _maps(json['devices']).map(OnbDevice.fromJson).where((d) => d.title.isNotEmpty).toList(),
     );
   }
+
+  /// Day 1's first punch-in: when it happened (null until it has) and whether
+  /// a face is on record. Null from a server that does not send it.
+  final FirstPunch? firstPunch;
+
+  /// "Your first punch-in" shows on Day 1 until the first punch-in, as the
+  /// server's [firstPunch] says; a server without it keeps the old list.
+  bool needsFirstPunchOn(DateTime now) => dayLabelOn(now) == 'Day 1' && firstPunch != null && firstPunch!.at == null;
 
   final String journeyId;
   final String? stage;
@@ -511,6 +539,12 @@ class OnboardingHome {
   final bool showWeekDone;
   final ({int tasksDone, int peopleMet, int leaves})? weekDoneStats;
 
+  /// The Sowaka tour's lessons finished (`tour.done`: punch, missed, …).
+  final List<String> tourDone;
+
+  /// "Devices and accesses": what IT and HR set up, ready or not.
+  final List<OnbDevice> devices;
+
   List<TaskView> get all => [...today, ...later, ...done];
 
   /// Steps done of everything the joiner has in this stretch: the server's
@@ -526,6 +560,27 @@ class OnboardingHome {
   /// The label the server gave, or the rule's own.
   String dayLabelOn(DateTime now) =>
       dayLabel ?? (tj == null ? 'Onboarding' : onboardingDayLabel(tj: tj!, today: now));
+}
+
+/// `firstPunch` on the onboarding home.
+class FirstPunch {
+  const FirstPunch({this.at, this.faceEnrolled = false});
+
+  final DateTime? at;
+  final bool faceEnrolled;
+}
+
+/// One of "Devices and accesses": the laptop, the work email, this app.
+class OnbDevice {
+  const OnbDevice({required this.key, required this.title, this.ready = false});
+
+  factory OnbDevice.fromJson(Map<String, dynamic> json) =>
+      OnbDevice(key: _str(json['key']) ?? '', title: _str(json['title']) ?? '', ready: _bool(json['ready']));
+
+  /// laptop, email, app, or any other.
+  final String key;
+  final String title;
+  final bool ready;
 }
 
 // ─── Meetings ───────────────────────────────────────────────────────────────

@@ -24,7 +24,7 @@ import {
   DOCS_OPEN_KEY, PHASES, areaStyle, changedFieldsText, nudgeLabel, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, labelStyle, longDay, rupees, sectionLabel, shortDay, todayKey,
 } from './format';
 import { FinaliseDialog, MarkJoinedDialog } from './OfferDialogs';
-import { DecisionDialog, ProbationMonths } from './Probation';
+import { DecisionDialog, ProbationMonths, RecommendationNote } from './Probation';
 import { KIND_LABEL } from './letterDoc';
 import { downloadFile } from './DocumentParts';
 import { TAB_LABELS, columnLabel, pctColour, weekOf } from './boardModel';
@@ -448,6 +448,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
             {finalTasks.length > 0 && taskList(finalTasks)}
             {probation.months.length > 0 && <><Sub>Every month</Sub><ProbationMonths months={probation.months} total={probationTotal} /></>}
             {decision && <div className="pd-note">{decisionLine(decision, pay)}</div>}
+            {!decision && <RecommendationNote recommendation={probation.recommendation ?? journey.probation?.recommendation} hodApproval={probation.hodApproval ?? journey.probation?.hodApproval} />}
             {journey.column === 'final_month' && <span><button type="button" className="pd-btn sm" onClick={() => setDialog({ kind: 'decision' })}>{decision ? 'Change decision' : 'Record decision'}</button></span>}
             {!finalTasks.length && !probation.months.length && !decision && <Para>The final check-in and the decision to confirm or extend.</Para>}
           </>

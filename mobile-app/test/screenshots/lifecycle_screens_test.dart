@@ -721,9 +721,9 @@ void _joinerScreens() {
       ..on('GET', r'/lifecycle/onboarding/notes$', {'notes': <dynamic>[]});
     await _push(tester, OnboardingHomeScreen(shell: _shell(_joiner, _at(0, 10, 35))));
     await shot('A2', 'day1');
-    await _tap(tester, find.byKey(const ValueKey('journey-toggle')));
-    await shot('A2', 'day1-journey', full: false);
-    await _tap(tester, find.byKey(const ValueKey('journey-toggle')));
+    await _tap(tester, find.byKey(const ValueKey('stage-step-Month 1')));
+    await shot('A2', 'day1-lens-month1', full: false);
+    await _tap(tester, find.byKey(const ValueKey('lens-back')));
     await _tap(tester, find.byKey(const ValueKey('done-toggle')));
     await shot('A2', 'day1-done', full: false);
     // The tour opens a sheet; a locked item says when it opens.
@@ -745,9 +745,9 @@ void _joinerScreens() {
       ..on('GET', r'/lifecycle/onboarding/notes$', _notes());
     await _push(tester, OnboardingHomeScreen(shell: _shell(_joiner, _at(3, 10))));
     await shot('A2', 'day4');
-    await _tap(tester, find.byKey(const ValueKey('journey-toggle')));
-    await shot('A2', 'day4-journey', full: false);
-    await _tap(tester, find.byKey(const ValueKey('journey-toggle')));
+    await _tap(tester, find.byKey(const ValueKey('stage-step-Month 1')));
+    await shot('A2', 'day4-lens-month1', full: false);
+    await _tap(tester, find.byKey(const ValueKey('lens-back')));
     await _tap(tester, find.byKey(const ValueKey('done-toggle')));
     await shot('A2', 'day4-done', full: false);
   });

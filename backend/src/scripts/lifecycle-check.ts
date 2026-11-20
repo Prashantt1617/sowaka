@@ -84,7 +84,8 @@ async function main() {
     return out;
   };
   const sorted = (o: Record<string, number>) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b)));
-  const OB = seed.ONBOARDING_SEED;
+  // The team side's rows (Teams › Joiners) are checked in lifecycle:team-check.
+  const OB = seed.ONBOARDING_SEED.filter((t) => !t.team);
   const OFF = seed.OFFBOARDING_SEED;
   eq('Pre-boarding: Employee 7 · HR 5 · Automatic 1 · Manager 1', sorted(countBy(OB, 'pre_boarding')), sorted({ employee: 7, hr: 5, automatic: 1, manager: 1 }));
   eq('First week: Employee 6 · Manager 3 · HR 2 · Manager + Employee 1 · IT 1 · Manager → Employee 1 · Automatic 1', sorted(countBy(OB, 'first_week')),

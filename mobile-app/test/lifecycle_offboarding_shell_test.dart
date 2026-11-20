@@ -10,6 +10,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:mobile_app/features/auth/data/auth_models.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/data/lifecycle_me_store.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_models.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/presentation/portal_page_screen.dart';
+import 'package:mobile_app/features/quick_actions/presentation/quick_actions_screen.dart';
 import 'package:mobile_app/features/manager/bloc/manager_bloc.dart';
 import 'package:mobile_app/features/manager/data/manager_api_service.dart';
 import 'package:mobile_app/features/manager/data/manager_models.dart';
@@ -100,6 +104,11 @@ void main() {
     await bloc.add(const LoadManagerDashboard());
     await tester.pumpWidget(
       MaterialApp(
+        // The Day-1 tile pulses forever otherwise, and nothing would settle.
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(disableAnimations: true),
+          child: child!,
+        ),
         home: ManagerScreen(session: session, bloc: bloc),
       ),
     );
@@ -205,6 +214,60 @@ void main() {
       await finish(tester, bloc);
     },
   );
+
+  group('Action tab: the portal before Day 1, the usual Actions from Day 1', () {
+    // As /lifecycle/me answers: before Day 1 only the portal (no tile); from
+    // the joining day the joiner's journey with its tile and portal false.
+    LifecycleMe me({required bool portal}) => LifecycleMe.fromJson({
+      'enabled': true,
+      'onboarding': portal
+          ? {'journeyId': 'j1', 'stage': 'pre_boarding', 'tj': '2026-12-01', 'tileVisible': false, 'portal': true}
+          : {'journeyId': 'j1', 'stage': 'welcome_week1', 'dayLabel': 'Day 1', 'tileVisible': true, 'portal': false},
+    });
+
+    testWidgets('before Day 1: the tab is the portal page (header, portal, tabs), kept across tab switches', (tester) async {
+      (FakeLifecycle()..enabled = true).install();
+      PortalPage.debugSurfaceFactory = ({required onMessage, required stays, required onLoaded}) =>
+          _Surface();
+      addTearDown(() => PortalPage.debugSurfaceFactory = null);
+      addTearDown(LifecycleMeStore.instance.clear);
+      final bloc = await pumpShell(tester, leaverSession, leaverTeam);
+      // The page's progress bar runs while the session is asked for (over a
+      // real client here), so the frames are pumped rather than settled.
+      Future<void> settle() async {
+        for (var i = 0; i < 5; i++) {
+          await tester.pump(const Duration(milliseconds: 200));
+        }
+      }
+      LifecycleMeStore.instance.value = me(portal: true);
+      bloc.add(const ChangeManagerTab(ManagerTab.quick));
+      await settle();
+      expect(find.byType(PortalTab), findsOneWidget);
+      expect(find.byType(PortalPage), findsOneWidget);
+      expect(find.byType(QuickActionsScreen), findsNothing);
+      final page = tester.state(find.byType(PortalPage));
+      bloc.add(const ChangeManagerTab(ManagerTab.connect));
+      await settle();
+      bloc.add(const ChangeManagerTab(ManagerTab.quick));
+      await settle();
+      // The same page: not built again, so not loaded again.
+      expect(identical(tester.state(find.byType(PortalPage)), page), isTrue);
+      await finish(tester, bloc);
+    });
+
+    testWidgets('from Day 1: the tab is Quick Actions with the Onboarding tile', (tester) async {
+      (FakeLifecycle()..enabled = true).install();
+      addTearDown(LifecycleMeStore.instance.clear);
+      LifecycleMeStore.instance.value = me(portal: false);
+      final bloc = await pumpShell(tester, leaverSession, leaverTeam);
+      bloc.add(const ChangeManagerTab(ManagerTab.quick));
+      await tester.pumpAndSettle(const Duration(seconds: 1));
+      expect(find.byType(QuickActionsScreen), findsOneWidget);
+      expect(find.byType(PortalTab), findsNothing);
+      expect(find.byKey(const ValueKey('onboarding-card')), findsOneWidget);
+      await finish(tester, bloc);
+    });
+  });
 
   testWidgets('Action tab: no tile before HR accepts', (tester) async {
     final fake = FakeLifecycle()..resignation = reportResignation();
@@ -404,4 +467,15 @@ void main() {
       await finish(tester, bloc);
     },
   );
+}
+
+class _Surface implements PortalSurface {
+  @override
+  Future<void> load(Uri url) async {}
+
+  @override
+  Future<bool> back() async => false;
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.expand(key: ValueKey('fake-portal'));
 }

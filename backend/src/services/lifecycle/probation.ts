@@ -45,11 +45,19 @@ function monthViews(j: Journey, months: ProbationMonth[]): MonthView[] {
 }
 
 /** HR's view: every month and the decision. */
-export async function probationOf(journeyId: string): Promise<{ months: MonthView[]; decision?: ConfirmationDecision }> {
+export async function probationOf(journeyId: string): Promise<{
+  months: MonthView[]; decision?: ConfirmationDecision;
+  recommendation?: NonNullable<Journey['probation']>['recommendation']; hodApproval?: NonNullable<Journey['probation']>['hodApproval'];
+}> {
   const j = await loadJourney(journeyId);
   if (j.kind !== 'onboarding') throw new LifecycleError(400, 'Not an onboarding journey');
   const months = await ensureMonths(j);
-  return { months: monthViews(j, months), ...(j.probation?.decision ? { decision: j.probation.decision } : {}) };
+  // The manager's recommendation and the head of department's answer from the app (teamTasks.ts), by HR's decision.
+  return {
+    months: monthViews(j, months), ...(j.probation?.decision ? { decision: j.probation.decision } : {}),
+    ...(j.probation?.recommendation ? { recommendation: j.probation.recommendation } : {}),
+    ...(j.probation?.hodApproval ? { hodApproval: j.probation.hodApproval } : {}),
+  };
 }
 
 /** The joiner's view: goals are read-only; the decision only shows through the reveal. */

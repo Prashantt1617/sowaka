@@ -37,6 +37,7 @@ import '../../shared/attachment_picker.dart';
 import '../../shared/image_source_sheet.dart' show ImageSourceChoice;
 import '../../support/presentation/support_desk_screen.dart';
 import '../../lifecycle/onboarding/onboarding_launcher.dart';
+import '../../face_id/face_check_screen.dart' show FaceCheckOutcome;
 
 part 'placements_screen.dart';
 part 'payroll_screen.dart';
@@ -769,11 +770,28 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     _offboarding.addListener(_onOffboardingChanged);
     unawaited(_offboarding.revalidate());
     LifecycleMeStore.instance.addListener(_onLifecycleChanged);
+    FirstPunchTour.requested.addListener(_onPunchTourRequested);
+    if (FirstPunchTour.requested.value) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _onPunchTourRequested(),
+      );
+    }
   }
 
   /// The Onboarding tile comes and goes with what `/lifecycle/me` says.
   void _onLifecycleChanged() {
     if (mounted) setState(() {});
+  }
+
+  /// Day 1's "Learn to punch in" (the New joiner artifact): the Attendance
+  /// card spotlit until Later, Try it now, a tap on the dim, or a punch.
+  bool _punchTour = false;
+  final _attendanceCardKey = GlobalKey();
+
+  void _onPunchTourRequested() {
+    if (!mounted || !FirstPunchTour.requested.value) return;
+    FirstPunchTour.requested.value = false;
+    setState(() => _punchTour = true);
   }
 
   /// The Off-boarding tile and page (R3), while someone is on notice.
@@ -826,6 +844,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   void dispose() {
     _offboarding.removeListener(_onOffboardingChanged);
     LifecycleMeStore.instance.removeListener(_onLifecycleChanged);
+    FirstPunchTour.requested.removeListener(_onPunchTourRequested);
     widget.controller._detach(this);
     _text.dispose();
     _leaveReason.dispose();
@@ -1034,7 +1053,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 220),
       child: switch (_page) {
-        _QuickPage.home => _home(),
+        _QuickPage.home => _homeWithPunchTour(),
         _QuickPage.leave => _leaveHub(),
         _QuickPage.applyLeave => _applyLeaveForm(),
         _QuickPage.overtime => _overtimeHub(),
@@ -1083,6 +1102,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   /// offering somewhere to go next — so this only has to bring back whatever it
   /// settled on.
   Future<void> _startPunch(String type) async {
+    // From the Day-1 spotlight (its slider or Try it now): "You're in!" after.
+    final firstPunch = _punchTour && type == 'in';
+    if (_punchTour) setState(() => _punchTour = false);
     final outcome = await Navigator.of(context).push<PunchOutcome>(
       MaterialPageRoute(
         builder: (_) => PunchScreen(
@@ -1099,6 +1121,17 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         ),
       ),
     );
+    if (firstPunch && outcome?.punched == true && mounted) {
+      unawaited(widget.bloc.add(LoadAttendanceMonth(DateTime.now())));
+      await openYoureIn(
+        context,
+        at: outcome?.at ?? DateTime.now(),
+        faceRegistered:
+            widget.bloc.session.user.faceIdEnrolled ||
+            FaceCheckOutcome.enrolledThisRun,
+      );
+      return;
+    }
     if (mounted) showPunchToast(context, outcome, type: type);
     if ((outcome?.punched == true || outcome?.requested == true) && mounted) {
       await widget.bloc.add(LoadAttendanceMonth(DateTime.now()));
@@ -1115,8 +1148,31 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     );
   }
 
+  /// The home, with Day 1's spotlight on the Attendance card when asked for.
+  Widget _homeWithPunchTour() => OnbSpotlight(
+    key: const ValueKey('quick-home-spotlight'),
+    show: _punchTour,
+    target: _attendanceCardKey,
+    radius: 24,
+    onDismiss: () => setState(() => _punchTour = false),
+    callout: PunchSpotlightCallout(
+      onLater: () {
+        setState(() => _punchTour = false);
+        unawaited(openOnboardingHome(context));
+      },
+      onTry: () => unawaited(_startPunch('in')),
+    ),
+    child: _home(),
+  );
+
   Widget _home() {
     final today = DateTime.now();
+    final onboarding = LifecycleMeStore.instance.value;
+    // The joiner's first day: the Onboarding tile is ringed, says so and
+    // carries a "Day 1" pill (the New joiner artifact's Actions).
+    final firstDay =
+        onboarding.showsOnboarding &&
+        onboarding.onboarding?.dayLabel == 'Day 1';
     final todayRecord = widget.dashboard.attendance
         .where((record) => _sameDay(record.workDate, today))
         .firstOrNull;
@@ -1187,6 +1243,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               padding: const EdgeInsets.fromLTRB(16, 17, 16, 24),
               children: [
                 _HomeAttendanceCard(
+                  key: _attendanceCardKey,
                   date: today,
                   punchIn: punchIn,
                   punchOut: punchOut,
@@ -1234,15 +1291,21 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                   children: [
                     // A new joiner's onboarding, first while it runs (until
                     // probation ends), only where the lifecycle is on.
-                    if (LifecycleMeStore.instance.value.showsOnboarding)
+                    if (onboarding.showsOnboarding)
                       _HomeActionCard(
                         key: const ValueKey('onboarding-card'),
                         icon: Icons.waving_hand_rounded,
                         color: const Color(0xFF0571A6),
                         tint: const Color(0xFFE8F4FA),
+                        // Figma "Quick Action-Geotag" (4166:19856): Icon · Colour/waving-hand.
+                        imageAsset: 'assets/icons/action_card_onboarding_waving_hand.png',
                         title: 'Onboarding',
-                        subtitle: onboardingTileSubtitle(LifecycleMeStore.instance.value),
+                        subtitle: firstDay
+                            ? 'Today is your first day'
+                            : onboardingTileSubtitle(onboarding),
                         onTap: () => openOnboardingHome(context),
+                        highlight: firstDay,
+                        badge: firstDay ? 'Day 1' : null,
                       ),
                     // Someone marked present automatically has no attendance to
                     // manage: no leave to balance against days worked, and no
@@ -7773,6 +7836,7 @@ class _MissedPunchBanner extends StatelessWidget {
 /// shift it is and the two punches, with the slider that closes it last.
 class _HomeAttendanceCard extends StatelessWidget {
   const _HomeAttendanceCard({
+    super.key,
     required this.date,
     required this.punchIn,
     required this.punchOut,
@@ -8174,6 +8238,8 @@ class _HomeActionCard extends StatelessWidget {
     required this.onTap,
     this.imageAsset,
     this.imageSize = 24,
+    this.highlight = false,
+    this.badge,
   });
 
   final IconData icon;
@@ -8188,9 +8254,20 @@ class _HomeActionCard extends StatelessWidget {
   /// rupee whose artwork has more air round it.
   final double imageSize;
 
+  /// The New joiner artifact's Day-1 tile: a 1.5 brand ring, the subtitle in
+  /// brand blue and the icon pulsing.
+  final bool highlight;
+
+  /// A brand pill in the top-right corner ("Day 1").
+  final String? badge;
+
   @override
   Widget build(BuildContext context) {
     final image = imageAsset;
+    final badge = this.badge;
+    final Widget iconTile = image != null
+        ? _IllustrationTile(asset: image, size: imageSize)
+        : _IconTile(icon: icon, color: color, tint: tint, size: 40);
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
@@ -8204,47 +8281,82 @@ class _HomeActionCard extends StatelessWidget {
       ),
       child: Material(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: highlight
+              ? const BorderSide(color: Color(0xFF0571A6), width: 1.5)
+              : BorderSide.none,
+        ),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (image != null)
-                  _IllustrationTile(asset: image, size: imageSize)
-                else
-                  _IconTile(icon: icon, color: color, tint: tint, size: 40),
-                const SizedBox(height: 10),
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Sora',
-                    color: Color(0xFF222222),
-                    fontSize: 14,
-                    height: 21 / 14,
-                    letterSpacing: -0.1,
-                    fontWeight: FontWeight.w700,
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (highlight)
+                      OnbPulse(radius: BorderRadius.circular(13), child: iconTile)
+                    else
+                      iconTile,
+                    const SizedBox(height: 10),
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'Sora',
+                        color: Color(0xFF222222),
+                        fontSize: 14,
+                        height: 21 / 14,
+                        letterSpacing: -0.1,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Sora',
+                        color: highlight
+                            ? const Color(0xFF0571A6)
+                            : const Color(0xFF484848),
+                        fontSize: 12,
+                        height: 16 / 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (badge != null)
+                Positioned(
+                  top: 14,
+                  right: 14,
+                  child: Container(
+                    key: const ValueKey('action-card-badge'),
+                    height: 24,
+                    padding: const EdgeInsets.symmetric(horizontal: 9),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0571A6),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      badge,
+                      style: const TextStyle(
+                        fontFamily: 'Sora',
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Sora',
-                    color: Color(0xFF484848),
-                    fontSize: 12,
-                    height: 16 / 12,
-                  ),
-                ),
-              ],
-            ),
+            ],
           ),
         ),
       ),
