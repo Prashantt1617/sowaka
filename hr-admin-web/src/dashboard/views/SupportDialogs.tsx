@@ -54,11 +54,11 @@ export function SendBackDialog({ busy, onClose, onConfirm }: { busy: boolean; on
 
 export function ConfirmResolveDialog({ busy, onClose, onConfirm }: { busy: boolean; onClose: () => void; onConfirm: () => void }) {
   return (
-    <DialogShell title="Resolve this ticket?" busy={busy} onClose={onClose}>
+    <DialogShell title="Close this ticket?" busy={busy} onClose={onClose}>
       <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55, marginTop: 8 }}>
         The conversation closes for good. The employee is notified and can’t reply here; to continue they raise a new ticket.
       </div>
-      <Buttons busy={busy} onClose={onClose} onConfirm={onConfirm} label="Resolve" busyLabel="Resolving…" tone="var(--ok)" />
+      <Buttons busy={busy} onClose={onClose} onConfirm={onConfirm} label="Close ticket" busyLabel="Closing…" tone="var(--ok)" />
     </DialogShell>
   );
 }

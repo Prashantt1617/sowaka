@@ -620,7 +620,7 @@ function TicketPane({ detail, role, meId, onChanged, pending, onSend, onRetry, o
             <button type="button" disabled={busy} onClick={() => setDialog('sendback')} style={ghostBtn}>Send back to head</button>
           )}
           {!resolved && (isHead || mineNow) && (
-            <button type="button" disabled={busy} onClick={() => setDialog('resolve')} className={btnClass('ok')} style={btn('ok')}>Resolve</button>
+            <button type="button" disabled={busy} onClick={() => setDialog('resolve')} className={btnClass('ok')} style={btn('ok')}>Close ticket</button>
           )}
           <button type="button" onClick={() => setShowHistory((s) => !s)}
             style={{ ...ghostBtn, marginLeft: 'auto', background: showHistory ? 'var(--sel)' : 'var(--surface)', color: showHistory ? 'var(--on-sel)' : 'var(--ink)', borderColor: showHistory ? 'var(--sel)' : 'var(--line-2)' }}>
@@ -648,7 +648,7 @@ function TicketPane({ detail, role, meId, onChanged, pending, onSend, onRetry, o
       )}
       {dialog === 'resolve' && (
         <ConfirmResolveDialog busy={busy} onClose={() => setDialog(null)}
-          onConfirm={() => void run(() => resolveSupportTicket(t.id), 'Ticket resolved')} />
+          onConfirm={() => void run(() => resolveSupportTicket(t.id), 'Ticket closed')} />
       )}
     </>
   );
