@@ -166,7 +166,7 @@ class _PoliciesAckScreenState extends State<PoliciesAckScreen> {
   }
 
   Widget _list(List<PolicyDocument> policies) {
-    final pending = policies.where((p) => p.needsAck).length;
+    final pending = policiesToAcknowledge(policies);
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(

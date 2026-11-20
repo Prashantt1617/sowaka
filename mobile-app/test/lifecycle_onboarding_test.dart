@@ -827,16 +827,27 @@ void main() {
   });
 
   group('the plant', () {
-    testWidgets('names its stage for screen readers; droop shows Needs water, never red', (tester) async {
-      await pumpPage(tester, const Scaffold(body: Center(child: Plant(stage: 2, droop: true))));
-      expect(find.bySemanticsLabel('Plant at Seedling stage, needs water'), findsOneWidget);
-      expect(find.text('Needs water'), findsOneWidget);
-      final tag = tester.widget<Text>(find.text('Needs water'));
-      expect(tag.style?.color, OnbColors.waterText);
+    testWidgets('names its stage for screen readers, in the artifact\'s 120 × 140 box, with no pill', (tester) async {
+      await pumpPage(tester, const Scaffold(body: Center(child: Plant(stage: 2, size: 150, droop: true))));
+      expect(find.bySemanticsLabel('Plant at Seedling stage'), findsOneWidget);
+      expect(find.text('Needs water'), findsNothing);
+      expect(tester.getSize(find.byType(Plant)), const Size(150, 175));
     });
 
-    test('a seed counts its water', () {
+    test('a seed counts its water; a grown plant has none', () {
       expect(Plant.semanticsLabel(stage: 0, water: 2), 'Plant at Seed stage, watered 2 of 3');
+      expect(Plant.semanticsLabel(stage: 1, water: 2), 'Plant at Sprout stage');
+    });
+
+    testWidgets('every stage and every water level paints', (tester) async {
+      for (var stage = 0; stage <= 5; stage++) {
+        for (var water = 0; water <= 3; water++) {
+          await tester.pumpWidget(MaterialApp(home: Center(child: Plant(stage: stage, water: water))));
+          await tester.pump(const Duration(milliseconds: 700));
+          expect(tester.takeException(), isNull);
+        }
+      }
+      await tester.pumpWidget(const SizedBox());
     });
   });
 

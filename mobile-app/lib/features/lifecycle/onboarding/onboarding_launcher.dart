@@ -35,6 +35,7 @@ import 'presentation/week1_reels_screen.dart';
 export 'data/lifecycle_me_store.dart';
 export 'presentation/onboarding_kit.dart' show OnboardingShell, OnbSpotlight, OnbPulse;
 export 'presentation/first_punch.dart' show FirstPunchTour, PunchSpotlightCallout, openYoureIn;
+export 'presentation/day1_done_screen.dart' show openDay1Done;
 export 'presentation/portal_page_screen.dart' show PortalTab;
 
 typedef OnboardingShellMaker = OnboardingShell Function();

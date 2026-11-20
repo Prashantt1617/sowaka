@@ -70,6 +70,9 @@ type Dialog =
   | null;
 
 /** Key facts, as the design's step lists them: a narrow label column, the value in medium weight. */
+/** The joiner's answer to "How was today?" on "Day 1, done!", as the app labels it. */
+const DAY1_FEELING: Record<string, string> = { great: 'Great', okay: 'Okay', tough: 'Tough' };
+
 function Facts({ rows, strong = true }: { rows: [string, ReactNode][]; strong?: boolean }) {
   const shown = rows.filter(([, v]) => v != null && v !== '');
   return (
@@ -428,6 +431,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
       case 4:
         return (
           <>
+            {journey.day1Feeling && <Facts rows={[['How was Day 1', `${DAY1_FEELING[journey.day1Feeling.answer] ?? journey.day1Feeling.answer} · ${shortDay(journey.day1Feeling.at)}`]]} />}
             {weekTasks.length ? taskList(weekTasks) : <Para>The week-1 tasks open on the joining day.</Para>}
             {bankPf && <><Sub>Bank and PF change</Sub><BankPfCard request={bankPf} pay={pay} busy={Boolean(busy)} onDecide={(d) => setDialog({ kind: 'bankpf', decision: d })} /></>}
           </>

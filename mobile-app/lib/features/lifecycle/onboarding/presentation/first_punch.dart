@@ -169,14 +169,17 @@ class _YoureInScreenState extends State<YoureInScreen> {
                   subtitle: '${onbTime(widget.at)} · ${widget.at.day} ${_monthNames[widget.at.month - 1]}',
                   art: const Plant(stage: 1, size: 150, water: 2, showPill: false),
                 ),
-                const SizedBox(height: 14),
-                OnbRise(
-                  delay: 80,
-                  child: OnbDoneNote(
-                    title: widget.faceRegistered ? 'Face registered' : 'Punched in',
-                    subtitle: 'From tomorrow, just slide to punch in',
+                // Only what is true: no face on record, no "Face registered".
+                if (widget.faceRegistered) ...[
+                  const SizedBox(height: 14),
+                  const OnbRise(
+                    delay: 80,
+                    child: OnbDoneNote(
+                      title: 'Face registered',
+                      subtitle: 'From tomorrow, just slide to punch in',
+                    ),
                   ),
-                ),
+                ],
                 const Spacer(),
                 const SizedBox(height: 14),
                 OnbPrimaryButton(

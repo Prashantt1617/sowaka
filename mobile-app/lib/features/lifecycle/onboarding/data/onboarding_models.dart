@@ -466,6 +466,7 @@ class OnboardingHome {
     this.showWeekDone = false,
     this.weekDoneStats,
     this.firstPunch,
+    this.day1,
     this.tourDone = const [],
     this.devices = const [],
   });
@@ -475,6 +476,7 @@ class OnboardingHome {
     final meeting = _map(upNext['meeting']);
     final stats = _map(json['weekDoneStats']);
     final firstPunch = _map(json['firstPunch']);
+    final day1 = _map(json['day1']);
     return OnboardingHome(
       journeyId: _str(json['journeyId']) ?? '',
       stage: _str(json['stage']),
@@ -500,6 +502,9 @@ class OnboardingHome {
       firstPunch: firstPunch.isEmpty
           ? null
           : FirstPunch(at: parseLifecycleDate(firstPunch['at']), faceEnrolled: _bool(firstPunch['faceEnrolled'])),
+      day1: day1.isEmpty
+          ? null
+          : Day1Summary(peopleMet: _int(day1['peopleMet']), thingsDone: _int(day1['thingsDone']), feeling: _str(day1['feeling'])),
       tourDone: [
         for (final k in (_map(json['tour'])['done'] as List?) ?? const [])
           if (k is String && k.isNotEmpty) k,
@@ -511,6 +516,10 @@ class OnboardingHome {
   /// Day 1's first punch-in: when it happened (null until it has) and whether
   /// a face is on record. Null from a server that does not send it.
   final FirstPunch? firstPunch;
+
+  /// "Day 1, done!": the server's counts and the joiner's "How was today?".
+  /// Null from a server that does not send it.
+  final Day1Summary? day1;
 
   /// "Your first punch-in" shows on Day 1 until the first punch-in, as the
   /// server's [firstPunch] says; a server without it keeps the old list.
@@ -560,6 +569,17 @@ class OnboardingHome {
   /// The label the server gave, or the rule's own.
   String dayLabelOn(DateTime now) =>
       dayLabel ?? (tj == null ? 'Onboarding' : onboardingDayLabel(tj: tj!, today: now));
+}
+
+/// `day1` on the onboarding home: people met and things done (the same
+/// count as the tile's "steps done"), and `feeling` (great, okay, tough)
+/// once answered.
+class Day1Summary {
+  const Day1Summary({this.peopleMet = 0, this.thingsDone = 0, this.feeling});
+
+  final int peopleMet;
+  final int thingsDone;
+  final String? feeling;
 }
 
 /// `firstPunch` on the onboarding home.

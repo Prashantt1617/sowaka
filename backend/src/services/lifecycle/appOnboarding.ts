@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import {
   attendanceRecords, connectPosts, employeePaymentDetails, journeyTasks, journeys, lifecycleMeetings, oneOnOneNotes, peopleToMeet, starterTasks, surveyResponses, users,
 } from '../../config/db';
+import { DAY1_FEELINGS, type Day1Feeling } from '../../models/lifecycle.model';
 import type {
   AboutYou, IntroPost, Journey, JourneyTask, Meeting, OnboardingStage, SurveyKind, SystemTaskKey, Week1Reels,
 } from '../../models/lifecycle.model';
@@ -301,6 +302,7 @@ export async function onboardingHome(me: Me, now = new Date()) {
     ...(j.week1DoneSeenAt ? { weekDoneSeenAt: j.week1DoneSeenAt } : {}),
     weekDoneStats: weekDoneStats(tasks, await countBadges(j), derived.plant.leaves),
     firstPunch: await firstPunchOf(me.userId, j.tj),
+    day1: await day1Of(j, tasks, meetings, derived.tab),
     tour: { lessons: [...TOUR_LESSONS], done: (j.tour?.done ?? []).filter((k) => (TOUR_ALL_LESSONS as readonly string[]).includes(k)) },
     devices: devicesFor(tasks),
   };
@@ -321,6 +323,42 @@ async function firstPunchOf(userId: string, tj: string | undefined): Promise<{ a
   ]);
   const faceEnrolled = Boolean((user as { faceId?: { faceId?: string } } | null)?.faceId?.faceId);
   return { ...(punch?.punchIn ? { at: new Date(punch.punchIn).toISOString() } : {}), faceEnrolled };
+}
+
+/**
+ * "Day 1, done!" (new-joiner artifact, End of Day 1): the people met so far
+ * (everyone in a meeting marked met, and the people-to-meet ticked met, each
+ * person once), the things done (the same count as the tile's and the home's
+ * "steps done") and the joiner's "How was today?" answer when given.
+ */
+async function day1Of(j: Journey, tasks: JourneyTask[], meetings: Meeting[], tab: 'pre_boarding' | 'first_week' | 'probation') {
+  const doneTask = new Set(tasks.filter((t) => t.status === 'done').map((t) => t.id));
+  const people = new Set<string>();
+  for (const m of meetings) {
+    if (m.met !== 'yes' && !(m.journeyTaskId && doneTask.has(m.journeyTaskId))) continue;
+    const others = m.attendeeUserIds.filter((u) => u !== j.userId);
+    if (others.length) others.forEach((u) => people.add(u));
+    else people.add(`meeting:${m.id}`);
+  }
+  const met = await peopleToMeet().find({ journeyId: j.id, metAt: { $exists: true } }, { projection: { _id: 0, personUserId: 1 } }).toArray();
+  for (const p of met) people.add(p.personUserId);
+  return {
+    peopleMet: people.size,
+    thingsDone: ownProgress(tasks, tab).done,
+    ...(j.day1Feeling ? { feeling: j.day1Feeling.answer, feelingAt: j.day1Feeling.at } : {}),
+  };
+}
+
+/** "How was today?" on "Day 1, done!": great, okay or tough; answering again changes it. */
+export async function saveDay1Feeling(me: Me, body: Record<string, unknown>) {
+  const answer = body.answer;
+  if (typeof answer !== 'string' || !(DAY1_FEELINGS as readonly string[]).includes(answer)) throw new LifecycleError(400, `answer is one of ${DAY1_FEELINGS.join(', ')}`);
+  const j = await joinerJourney(me.userId);
+  if (!isJoined(j)) throw new LifecycleError(409, 'Day 1 has not started yet');
+  const now = new Date();
+  const day1Feeling = { answer: answer as Day1Feeling, at: now };
+  await journeys().updateOne({ id: j.id }, { $set: { day1Feeling, updatedAt: now } });
+  return { feeling: day1Feeling.answer, feelingAt: day1Feeling.at };
 }
 
 /**

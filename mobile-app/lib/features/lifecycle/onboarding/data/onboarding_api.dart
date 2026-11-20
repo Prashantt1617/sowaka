@@ -278,6 +278,13 @@ class HttpOnboardingApi implements OnboardingApi {
     await _json('POST', '/lifecycle/onboarding/week-done/seen');
   }
 
+  /// "Day 1, done!" · How was today? ([answer] great, okay or tough), on
+  /// the journey, where HR sees it. Not on [OnboardingApi], as the tour's.
+  Future<String?> saveDay1Feeling(String answer) async {
+    final json = await _json('PUT', '/lifecycle/onboarding/day1-feeling', body: {'answer': answer});
+    return json['feeling'] as String?;
+  }
+
   /// The Sowaka tour: [lesson] finished (`POST /lifecycle/onboarding/tour/:lesson`);
   /// the lessons done so far. Not on [OnboardingApi], so test fakes need nothing.
   Future<List<String>> markTourLessonDone(String lesson) async {

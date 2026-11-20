@@ -226,6 +226,8 @@ export interface JourneyView {
   location?: string;
   plant?: PlantState;
   day1Pass?: Day1Pass;
+  /** The joiner's "How was today?" on "Day 1, done!" in the app. */
+  day1Feeling?: { answer: 'great' | 'okay' | 'tough'; at: string };
   probation?: { months: number; extendedBy?: number; decision?: ConfirmationDecision; recommendation?: ConfirmationRecommendation; hodApproval?: ConfirmationHodApproval };
   lastActivityAt?: string;
   closedAt?: string;

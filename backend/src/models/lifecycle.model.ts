@@ -260,6 +260,8 @@ export interface Journey {
   bankPfRequest?: BankPfChangeRequest;
   /** When the joiner first saw "Week 1, done!" (A8). */
   week1DoneSeenAt?: Date;
+  /** "How was today?" on "Day 1, done!" (the joiner's own answer; HR sees it on the joiner panel). */
+  day1Feeling?: { answer: Day1Feeling; at: Date };
   /** The Sowaka tour's lessons the joiner has finished (app keys: punch, missed, leave, overtime, …), in order done. */
   tour?: { done: string[]; updatedAt?: Date };
   /** The manager's welcome post on Connect for the joiner (M2 "Post a welcome"), once per joiner. */
@@ -571,6 +573,10 @@ export interface Meeting {
   /** The Day-1 agenda line it was made from (its `id`); removed with the line. */
   agendaId?: string;
 }
+
+/** "Day 1, done!" · How was today? */
+export const DAY1_FEELINGS = ['great', 'okay', 'tough'] as const;
+export type Day1Feeling = typeof DAY1_FEELINGS[number];
 
 export interface Week1Reels {
   policies?: { versions: Array<{ id: string; version: string }>; at: Date; device?: string };

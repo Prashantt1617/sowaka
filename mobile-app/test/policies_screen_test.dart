@@ -13,6 +13,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:mobile_app/features/auth/data/auth_models.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/data/lifecycle_me_store.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_models.dart';
 import 'package:mobile_app/features/manager/bloc/manager_bloc.dart';
 import 'package:mobile_app/features/manager/data/manager_api_service.dart';
 import 'package:mobile_app/features/policies/data/policies_api_service.dart';
@@ -586,4 +588,67 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  group('a new joiner on the joining date (the New joiner artifact\'s Actions)', () {
+    Map<String, dynamic> ackPolicy(String key, String title, {int? acknowledged}) => {
+      ..._policy(key, title, 'Read me.'),
+      'version': 2,
+      'ackRequired': true,
+      'acknowledgedVersion': ?acknowledged,
+    };
+
+    setUp(() {
+      LifecycleMeStore.instance.value = LifecycleMe.fromJson({
+        'enabled': true,
+        'onboarding': {'journeyId': 'j1', 'stage': 'welcome_week1', 'dayLabel': 'Day 1', 'tileVisible': true, 'portal': false},
+      });
+    });
+    tearDown(LifecycleMeStore.instance.clear);
+
+    // The Day-1 tile pulses for ever: frames, not settle.
+    Future<void> frames(WidgetTester tester) async {
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+    }
+
+    testWidgets('tiles in the artifact\'s order; Day 1 on Onboarding; Policies counts what is left to acknowledge', (tester) async {
+      answer = () => _json({
+        'success': true,
+        'policies': [
+          ackPolicy('leave', 'Leave'),
+          ackPolicy('posh', 'POSH', acknowledged: 2),
+          ackPolicy('conduct', 'Code of Conduct', acknowledged: 1),
+          _policy('travel', 'Travel', 'Read only.'),
+        ],
+      });
+      await pumpActions(tester);
+      await frames(tester);
+      final titles = ['Onboarding', 'Policies', 'Leave', 'Overtime', 'Payroll', 'Reimbursement', 'Support Desk'];
+      for (var i = 1; i < titles.length; i++) {
+        final a = tester.getTopLeft(find.text(titles[i - 1]));
+        final b = tester.getTopLeft(find.text(titles[i]));
+        expect(a.dy < b.dy || (a.dy == b.dy && a.dx < b.dx), isTrue, reason: '${titles[i - 1]} before ${titles[i]}');
+      }
+      expect(find.text('Today is your first day'), findsOneWidget);
+      expect(find.byKey(const ValueKey('action-card-badge')), findsOneWidget);
+      // Leave (not at v2) and Code of Conduct (acknowledged at v1, now v2): 2.
+      expect(find.text('2 to acknowledge'), findsOneWidget);
+      expect(find.text('Submit concern to HR.'), findsOneWidget);
+      expect(find.text('View Policies'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('the Policies tile opens the Policies screen with Acknowledge on each', (tester) async {
+      answer = () => _json({'success': true, 'policies': [ackPolicy('leave', 'Leave')]});
+      await pumpActions(tester);
+      await frames(tester);
+      expect(find.text('1 to acknowledge'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('policies-card')));
+      await frames(tester);
+      expect(find.text('1 to acknowledge'), findsWidgets);
+      expect(find.text('Policies'), findsWidgets);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  });
 }

@@ -479,6 +479,20 @@ async function main() {
   await board.updateJourneyByHr(ORG, J1b.id, { templateId: faculty.id });
   eq('A draft re-snapshots its new template', (await engine.loadJourney(J1b.id)).templateSnapshot.name, 'Faculty');
 
+  // ───────────────────────────────────────────────────────── Day 1, done!
+  section('Day 1, done! (New joiner artifact): people met, things done, How was today?');
+  const homeBefore = await app.onboardingHome(ISHA);
+  eq('Things done is the home’s own “steps done” count', homeBefore.day1.thingsDone, homeBefore.progress.done);
+  await app.actOnMeeting(ISHA, mv.id, { met: 'yes' });
+  const homeAfter = await app.onboardingHome(ISHA);
+  ok('A meeting marked met counts its people (the manager), each once', homeAfter.day1.peopleMet >= 1 && homeAfter.day1.peopleMet <= homeBefore.day1.peopleMet + 1, { before: homeBefore.day1, after: homeAfter.day1 });
+  eq('…and the meeting task done counts as a thing done', homeAfter.day1.thingsDone, homeAfter.progress.done);
+  eq('An answer outside great / okay / tough is refused', (await refusal(async () => app.saveDay1Feeling(ISHA, { answer: 'meh' }))).status, 400);
+  eq('How was today? is saved on the journey', (await app.saveDay1Feeling(ISHA, { answer: 'okay' })).feeling, 'okay');
+  await app.saveDay1Feeling(ISHA, { answer: 'great' });
+  eq('…answering again changes it; the home sends it back', (await app.onboardingHome(ISHA)).day1.feeling, 'great');
+  eq('HR’s joiner panel shows the same answer', (await board.journeyPanel(ORG, J2.id)).journey.day1Feeling?.answer, 'great');
+
   // ───────────────────────────────────────────────────────── probation
   section('Probation: months, check-ins, decision, extension, reveal');
   const finalTj = rules.addDaysKey(rules.addMonthsKey(TODAY, -5), -3);

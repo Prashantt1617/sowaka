@@ -255,3 +255,9 @@ List<PolicyBlock> parsePolicyBody(String body) {
 }
 
 String _string(Object? value) => value is String ? value : '';
+
+/// How many of [policies] are still to acknowledge (needed, and not at the
+/// version in force): one count for the Actions tile ("3 to acknowledge"),
+/// the Policies screen and onboarding's "Acknowledge policies" task.
+int policiesToAcknowledge(Iterable<PolicyDocument> policies) =>
+    policies.where((p) => p.needsAck).length;
