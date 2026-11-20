@@ -83,7 +83,7 @@ const joinerTourLessons = <TourLesson>[
     length: '1 min',
     screen: 'ACTIONS',
     blocks: [
-      TourCard('Attendance', 'Today', Icons.calendar_today_outlined),
+      TourCard('Attendance', '{today}', Icons.calendar_today_outlined),
       TourSlider('Slide to Punch In'),
       TourRow('Punched in', '9:31 AM', 'Done', OnbColors.successTint, OnbColors.successText),
     ],
@@ -99,10 +99,10 @@ const joinerTourLessons = <TourLesson>[
     length: '1 min',
     screen: 'ATTENDANCE',
     blocks: [
-      TourCard('Attendance', 'This month', Icons.calendar_today_outlined),
-      TourRow('Yesterday', 'In 9:30 · Out —', 'Missed', OnbColors.rustTint, OnbColors.rust),
+      TourCard('Attendance', '{month}', Icons.calendar_today_outlined),
+      TourRow('{yesterday}', 'In 9:30 · Out —', 'Missed', OnbColors.rustTint, OnbColors.rust),
       TourButton('Request a correction'),
-      TourRow('Sent to your manager', 'Waiting for approval', 'Pending', OnbColors.amberTint, OnbColors.amber),
+      TourRow('Sent to {manager}', 'Waiting for approval', 'Pending', OnbColors.amberTint, OnbColors.amber),
     ],
     steps: [
       TourStep(1, 'Spot the missed punch', 'Days with a missing punch are marked Missed.'),
@@ -116,15 +116,15 @@ const joinerTourLessons = <TourLesson>[
     length: '2 min',
     screen: 'LEAVE',
     blocks: [
-      TourChips([('6', 'Casual'), ('4', 'Sick'), ('12', 'Earned')]),
-      TourField('Dates', 'Pick a day or a range'),
+      TourChips([('{casual}', 'Casual'), ('{sick}', 'Sick'), ('{earned}', 'Earned')]),
+      TourField('Dates', '{leaveDates}'),
       TourField('Type', 'Casual leave'),
-      TourButton('Send for approval'),
+      TourButton('Send to {manager}'),
     ],
     steps: [
       TourStep(0, 'Check your balance', 'Your leave policy decides how many days you get.'),
       TourStep(1, 'Pick your dates', 'Then choose the type of leave.'),
-      TourStep(3, 'Send it for approval', 'Your manager gets it straight away.'),
+      TourStep(3, 'Send it for approval', '{Manager} gets it straight away.'),
     ],
   ),
   TourLesson(
@@ -134,7 +134,7 @@ const joinerTourLessons = <TourLesson>[
     screen: 'OVERTIME',
     blocks: [
       TourCard('Overtime', 'Request and view hours', Icons.schedule_outlined),
-      TourField('Date', 'The day you worked'),
+      TourField('Date', '{otDate}'),
       TourField('Extra hours', '2 h'),
       TourButton('Send for approval'),
     ],
@@ -155,7 +155,7 @@ const managerTourLessons = <TourLesson>[
     screen: 'TEAMS',
     blocks: [
       TourCard('Requests', 'From your team', Icons.group_outlined),
-      TourRow('A teammate', '2 days · Casual', 'New', OnbColors.skyTint, Color(0xFF0571A6)),
+      TourRow('A teammate', '{leaveDates} · Casual', 'New', OnbColors.skyTint, Color(0xFF0571A6)),
       TourButton('Approve'),
     ],
     steps: [
@@ -171,7 +171,7 @@ const managerTourLessons = <TourLesson>[
     screen: 'TEAMS',
     blocks: [
       TourCard('Requests', 'From your team', Icons.group_outlined),
-      TourRow('A teammate', '2 h overtime', 'New', OnbColors.skyTint, Color(0xFF0571A6)),
+      TourRow('A teammate', '{otDate} · 2 h overtime', 'New', OnbColors.skyTint, Color(0xFF0571A6)),
       TourButton('Approve'),
     ],
     steps: [
@@ -181,6 +181,65 @@ const managerTourLessons = <TourLesson>[
     ],
   ),
 ];
+
+/// What a lesson's drawing fills in from the joiner's own record (the canvas
+/// draws "Sent to Sunny", "15 December", a balance): the manager's first
+/// name, dates around today, and the leave balance the server keeps. A fact
+/// not known reads plainly ("your manager", "—"), never made up.
+class TourFacts {
+  const TourFacts({required this.today, this.managerName, this.casual, this.sick, this.earned});
+
+  final DateTime today;
+  final String? managerName;
+  final double? casual;
+  final double? sick;
+  final double? earned;
+
+  static const _months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+  String _day(DateTime d) => '${d.day} ${_months[d.month - 1]}';
+  String _short(DateTime d) => '${d.day} ${_months[d.month - 1].substring(0, 3)}';
+  static String _days(double? n) => n == null ? '—' : (n == n.roundToDouble() ? '${n.toInt()}' : n.toStringAsFixed(1));
+
+  String fill(String text) {
+    if (!text.contains('{')) return text;
+    final first = managerName?.trim().split(RegExp(r'\s+')).first ?? '';
+    final yesterday = today.subtract(const Duration(days: 1));
+    final from = today.add(const Duration(days: 2));
+    final to = today.add(const Duration(days: 3));
+    final leave = from.month == to.month ? '${from.day} – ${_short(to)}' : '${_short(from)} – ${_short(to)}';
+    return text
+        .replaceAll('{manager}', first.isEmpty ? 'your manager' : first)
+        .replaceAll('{Manager}', first.isEmpty ? 'Your manager' : first)
+        .replaceAll('{today}', _day(today))
+        .replaceAll('{month}', _months[today.month - 1])
+        .replaceAll('{yesterday}', _day(yesterday))
+        .replaceAll('{leaveDates}', leave)
+        .replaceAll('{otDate}', _short(yesterday))
+        .replaceAll('{casual}', _days(casual))
+        .replaceAll('{sick}', _days(sick))
+        .replaceAll('{earned}', _days(earned));
+  }
+
+  TourBlock _block(TourBlock b) => switch (b) {
+    TourCard(:final title, :final meta, :final icon) => TourCard(fill(title), fill(meta), icon),
+    TourSlider(:final label) => TourSlider(fill(label)),
+    TourRow(:final title, :final meta, :final pill, :final pillBg, :final pillFg) => TourRow(fill(title), fill(meta), fill(pill), pillBg, pillFg),
+    TourChips(:final chips) => TourChips([for (final (n, t) in chips) (fill(n), fill(t))]),
+    TourField(:final label, :final value) => TourField(fill(label), fill(value)),
+    TourButton(:final label) => TourButton(fill(label)),
+  };
+
+  /// [lesson] with its drawing and steps filled in.
+  TourLesson apply(TourLesson lesson) => TourLesson(
+    key: lesson.key,
+    title: lesson.title,
+    length: lesson.length,
+    screen: lesson.screen,
+    blocks: [for (final b in lesson.blocks) _block(b)],
+    steps: [for (final s in lesson.steps) TourStep(s.lit, fill(s.title), fill(s.text))],
+  );
+}
 
 /// Today's lesson: the first not done, or null when all are.
 TourLesson? todaysTourLesson(List<String> done) {
@@ -207,9 +266,12 @@ Future<List<String>?> reportTourLessonDone(OnboardingShell shell, String lesson)
 /// Back and Next / Done; then "You’ve got it" with Back to the tour and
 /// Replay.
 class TourLessonScreen extends StatefulWidget {
-  const TourLessonScreen({super.key, required this.lesson, this.onDone});
+  const TourLessonScreen({super.key, required this.lesson, this.onDone, this.facts});
 
   final TourLesson lesson;
+
+  /// Fills the drawing in from the joiner's record; null draws it as written.
+  final TourFacts? facts;
 
   /// Called once, when the last step's Done is pressed.
   final Future<void> Function(String key)? onDone;
@@ -224,7 +286,7 @@ class _TourLessonScreenState extends State<TourLessonScreen> {
 
   static const _ground = Color(0xFF16181D);
 
-  TourLesson get _l => widget.lesson;
+  late final TourLesson _l = widget.facts?.apply(widget.lesson) ?? widget.lesson;
 
   void _next() {
     if (_at == _l.steps.length - 1) {

@@ -468,6 +468,8 @@ class OnboardingHome {
     this.firstPunch,
     this.day1,
     this.tourDone = const [],
+    this.tourForManager = false,
+    this.policyCounts,
     this.devices = const [],
   });
 
@@ -509,6 +511,14 @@ class OnboardingHome {
         for (final k in (_map(json['tour'])['done'] as List?) ?? const [])
           if (k is String && k.isNotEmpty) k,
       ],
+      tourForManager: ((_map(json['tour'])['managerLessons'] as List?) ?? const []).isNotEmpty,
+      policyCounts: _map(json['policies']).isEmpty
+          ? null
+          : (
+              required: _int(_map(json['policies'])['required']),
+              acknowledged: _int(_map(json['policies'])['acknowledged']),
+              toAcknowledge: _int(_map(json['policies'])['toAcknowledge']),
+            ),
       devices: _maps(json['devices']).map(OnbDevice.fromJson).where((d) => d.title.isNotEmpty).toList(),
     );
   }
@@ -550,6 +560,14 @@ class OnboardingHome {
 
   /// The Sowaka tour's lessons finished (`tour.done`: punch, missed, …).
   final List<String> tourDone;
+
+  /// The joiner manages anyone (the server sends `tour.managerLessons`): the
+  /// tour also has "For managers".
+  final bool tourForManager;
+
+  /// The server's policy counts (the same as `GET /policies`): onboarding's
+  /// "Acknowledge policies · n of N done"; null from an older server.
+  final ({int required, int acknowledged, int toAcknowledge})? policyCounts;
 
   /// "Devices and accesses": what IT and HR set up, ready or not.
   final List<OnbDevice> devices;

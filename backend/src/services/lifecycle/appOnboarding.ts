@@ -17,7 +17,7 @@ import type {
 import { createConnectPost } from '../connect.service';
 import { saveMyDeclaration } from '../employeePayroll.declaration';
 import { encryptField, fieldKeyConfigured, maskTail } from '../fieldCrypto';
-import { allPoliciesAcknowledged, policiesFor, type PublicPolicy } from '../policy-document.service';
+import { acknowledgeAllPolicies, allPoliciesAcknowledged, policiesFor, policyAckCounts, type PublicPolicy } from '../policy-document.service';
 import { FACE_PROJECTION, faceUrlOf, faceUrlsFor, type FaceFields } from '../face-photos';
 import { logger } from '../../utils/logger';
 import {
@@ -303,7 +303,9 @@ export async function onboardingHome(me: Me, now = new Date()) {
     weekDoneStats: weekDoneStats(tasks, await countBadges(j), derived.plant.leaves),
     firstPunch: await firstPunchOf(me.userId, j.tj),
     day1: await day1Of(j, tasks, meetings, derived.tab),
-    tour: { lessons: [...TOUR_LESSONS], done: (j.tour?.done ?? []).filter((k) => (TOUR_ALL_LESSONS as readonly string[]).includes(k)) },
+    tour: await tourOf(me.userId, j),
+    // The same counts as GET /policies (policyAckCounts): "Acknowledge policies · n of N done".
+    policies: policyAckCounts(await policiesFor({ userId: me.userId, org: me.org })),
     devices: devicesFor(tasks),
   };
 }
@@ -385,6 +387,23 @@ function devicesFor(tasks: JourneyTask[]) {
   ];
 }
 
+/**
+ * The tour as the app draws it: the lessons, which are done, and whether the
+ * joiner manages anyone (active direct reports), who then also gets "For
+ * managers" ([TOUR_MANAGER_LESSONS]).
+ */
+async function tourOf(userId: string, j: Pick<Journey, 'org' | 'tour'>) {
+  const reports = await users().countDocuments(
+    { org: j.org, managerUserId: userId, hiddenFromDirectory: { $ne: true }, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } },
+    { limit: 1 },
+  );
+  return {
+    lessons: [...TOUR_LESSONS],
+    ...(reports > 0 ? { managerLessons: [...TOUR_MANAGER_LESSONS] } : {}),
+    done: (j.tour?.done ?? []).filter((k) => (TOUR_ALL_LESSONS as readonly string[]).includes(k)),
+  };
+}
+
 /** A tour lesson finished (`{ done: true }`) or replayed from the start (`{ done: false }` is ignored: done stays done). */
 export async function tourLessonDone(me: Me, lesson: string) {
   if (!(TOUR_ALL_LESSONS as readonly string[]).includes(lesson)) throw new LifecycleError(400, `lesson is one of ${TOUR_ALL_LESSONS.join(', ')}`);
@@ -396,7 +415,7 @@ export async function tourLessonDone(me: Me, lesson: string) {
     await journeys().updateOne({ id: j.id }, { $set: { tour: { done, updatedAt: now }, updatedAt: now } });
     if (TOUR_LESSONS.every((k) => done.includes(k))) await completeTask(j.id, 'app_tour', { userId: me.userId, name: me.name }).catch(() => undefined);
   }
-  return { lessons: [...TOUR_LESSONS], done };
+  return tourOf(me.userId, { org: j.org, tour: { done, updatedAt: new Date() } });
 }
 
 /** "Week 1, done!" (A8): tasks done in week 1, people met, leaves grown. */
@@ -502,8 +521,9 @@ export async function saveWeek1Step(me: Me, body: Record<string, unknown>, devic
       // Agreeing: `{ agreed: true }` or the versions read (`{ versions, device }`). The versions stored are the
       // company's current ones, so an old app cannot acknowledge a policy text that is no longer in force.
       if (value.agreed !== true && !Array.isArray(value.versions)) throw new LifecycleError(400, 'Tick “I have read and agree” first');
-      const policies = await policiesFor({ userId: me.userId, org: me.org });
       const where = typeof value.device === 'string' && value.device.trim() ? value.device.trim() : device;
+      // Each policy's own acknowledgement too (the record Policies › Acknowledge writes), so Policies, Actions and onboarding agree.
+      const policies = await acknowledgeAllPolicies({ userId: me.userId, org: me.org }, where);
       week1.policies = { versions: policies.map((p) => ({ id: p.key, version: p.updatedAt })), at: now, ...(where ? { device: where.slice(0, 200) } : {}) };
       break;
     }

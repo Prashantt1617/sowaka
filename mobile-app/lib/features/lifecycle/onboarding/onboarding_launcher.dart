@@ -136,7 +136,7 @@ Future<void> openOnboardingTask(
       }
       return;
     case 'app_tour':
-      return push(OnbTourScreen(shell: shell, done: home?.tourDone ?? const []));
+      return push(OnbTourScreen.of(shell, home));
   }
   final meetingId = task.meetingId;
   if (task.kind == 'meeting' && meetingId != null) {

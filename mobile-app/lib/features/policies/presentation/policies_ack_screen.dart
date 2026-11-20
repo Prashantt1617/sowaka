@@ -39,7 +39,7 @@ class HttpPoliciesSource implements PoliciesSource {
 /// The same screen opens from onboarding's "Acknowledge policies" task (with
 /// [shell], inside the onboarding pages) and from Actions (without).
 class PoliciesAckScreen extends StatefulWidget {
-  const PoliciesAckScreen({super.key, required this.source, this.shell, this.openKey});
+  const PoliciesAckScreen({super.key, required this.source, this.shell, this.openKey, this.onEmpty});
 
   final PoliciesSource source;
 
@@ -48,6 +48,10 @@ class PoliciesAckScreen extends StatefulWidget {
 
   /// Opens straight on this policy.
   final String? openKey;
+
+  /// The server says the company has no policies (any more): the screen
+  /// closes and this runs, so Actions can show its built-in ones.
+  final VoidCallback? onEmpty;
 
   @override
   State<PoliciesAckScreen> createState() => _PoliciesAckScreenState();
@@ -79,7 +83,14 @@ class _PoliciesAckScreenState extends State<PoliciesAckScreen> {
   Future<void> _load() async {
     try {
       final list = await widget.source.load();
-      if (mounted) setState(() { _policies = list; _error = null; });
+      if (!mounted) return;
+      final onEmpty = widget.onEmpty;
+      if (list.isEmpty && onEmpty != null) {
+        Navigator.of(context).pop();
+        onEmpty();
+        return;
+      }
+      setState(() { _policies = list; _error = null; });
     } catch (error) {
       if (mounted) setState(() => _error = '$error');
     }
@@ -129,7 +140,9 @@ class _PoliciesAckScreenState extends State<PoliciesAckScreen> {
         : open == null
         ? _list(_policies!)
         : _read(open);
-    final footer = open == null || !open.ackRequired ? null : _footer(open);
+    // Every policy can be acknowledged once read (the canvas draws the tick and
+    // Acknowledge on a "Read" one too); only ones that need it are counted.
+    final footer = open == null ? null : _footer(open);
     final shell = widget.shell;
     if (shell != null) {
       return OnbScaffold(shell: shell, title: title, onBack: _back, body: body, footer: footer);
@@ -233,7 +246,9 @@ class _PoliciesAckScreenState extends State<PoliciesAckScreen> {
   }
 
   Widget _read(PolicyDocument p) {
-    final updated = p.isUpdatedSinceAck || (p.version > 1 && p.changeNote.isNotEmpty && !p.isAcknowledged);
+    // "What changed" is for someone who acknowledged an older text; a joiner
+    // reading it for the first time reads it as it is.
+    final updated = p.isUpdatedSinceAck;
     final changedOn = p.textUpdatedAt ?? p.updatedAt;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),

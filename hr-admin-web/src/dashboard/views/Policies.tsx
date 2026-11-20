@@ -178,6 +178,9 @@ export function Policies() {
                   <Td muted last={last}>
                     {when || '—'}
                     {p.updatedBy && <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 2 }}>{p.updatedBy}</div>}
+                    <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 2 }}>
+                      Version {p.version ?? 1}{p.ackRequired === false ? ' · read only' : ''}
+                    </div>
                   </Td>
                   <Td last={last}><Pill label={p.active ? 'Shown' : 'Hidden'} tone={p.active ? onPill : offPill} /></Td>
                   <Td right last={last}>
@@ -218,16 +221,21 @@ function PolicySheet({ initial, startTitle, onClose, onSaved }: {
   const [summary, setSummary] = useState(initial?.summary ?? '');
   const [points, setPoints] = useState(initial ? pointsOf(initial.body) : '');
   const [active, setActive] = useState(initial?.active ?? true);
+  const [ackRequired, setAckRequired] = useState(initial?.ackRequired ?? true);
+  const [changeNote, setChangeNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const body = useMemo(() => bodyOf(points), [points]);
+  // New points are a new version: the app shows it as Updated, with what changed, and people acknowledge it again.
+  const newVersion = !!initial && body !== initial.body;
 
   const save = async () => {
     if (!title.trim()) { setError('Give the policy a name'); return; }
     if (!body) { setError('Add at least one point'); return; }
+    if (newVersion && !changeNote.trim()) { setError('Say what changed: people read it before they acknowledge the update'); return; }
     setSaving(true); setError('');
     try {
-      const input = { title: title.trim(), summary: summary.trim(), body, active };
+      const input = { title: title.trim(), summary: summary.trim(), body, active, ackRequired, ...(newVersion ? { changeNote: changeNote.trim() } : {}) };
       if (initial) await updatePolicy(initial.key, input);
       else await createPolicy(input);
       onSaved(`${input.title} saved${active ? ', the app shows it now' : ' (hidden from the app)'}`);
@@ -266,6 +274,27 @@ function PolicySheet({ initial, startTitle, onClose, onSaved }: {
               Each line is one bullet point. Leave an empty line to start a new group, and start a line with "## " for a heading.
             </div>
           </Field>
+          {newVersion && (
+            <Field label="What changed" required>
+              <textarea
+                value={changeNote}
+                onChange={(e) => setChangeNote(e.target.value)}
+                placeholder="e.g. Casual leave goes up from 6 to 8 days a year."
+                rows={3}
+                maxLength={400}
+                className="ds-inp"
+                style={{ ...textareaStyle, minHeight: 72, lineHeight: 1.55 }}
+              />
+              <div style={{ ...hint, marginTop: 6 }}>
+                This is version {(initial?.version ?? 1) + 1}. The app shows it as Updated with this note, and everyone who acknowledged it acknowledges it again.
+              </div>
+            </Field>
+          )}
+          <label style={checkRow}>
+            <input type="checkbox" checked={ackRequired} onChange={(e) => setAckRequired(e.target.checked)} />
+            People acknowledge it (untick to make it read only)
+          </label>
+          <div style={{ height: 10 }} />
           <label style={checkRow}>
             <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
             Shown in the app
