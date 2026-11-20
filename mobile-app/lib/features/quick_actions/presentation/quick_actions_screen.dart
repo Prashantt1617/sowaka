@@ -31,6 +31,7 @@ import '../../placements/data/placements_api_service.dart';
 import '../../placements/data/placements_models.dart';
 import '../../policies/data/policies_api_service.dart';
 import '../../policies/data/policies_models.dart';
+import '../../policies/presentation/policies_ack_screen.dart';
 import '../../policies/presentation/policy_body_view.dart';
 import '../../shared/app_toast.dart';
 import '../../shared/attachment_picker.dart';
@@ -896,7 +897,54 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         _reimbursementReceiptBytes != null;
   }
 
+  /// Actions › Policies (new-joiner canvas, "Policies · from Actions"): the
+  /// company's own policies open the Policies screen with Acknowledge,
+  /// Acknowledged or Updated on each, the same one onboarding's task opens. A
+  /// company with none keeps the built-in page.
+  Future<void> _openPoliciesScreen() async {
+    var list = _companyPolicies;
+    list ??= await _policiesApi.policiesFromCache().catchError((_) => null);
+    var fresh = false;
+    if (list == null) {
+      try {
+        list = await _policiesApi.policies();
+        fresh = true;
+        _policiesFetchedAt = DateTime.now();
+      } catch (_) {
+        // Offline with nothing kept: the built-in page, as before.
+      }
+    }
+    if (!mounted) return;
+    if (list != null) setState(() => _companyPolicies = list);
+    if (list == null || list.isEmpty) {
+      _openPage(_QuickPage.policies, refresh: !fresh);
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => PoliciesAckScreen(
+          source: HttpPoliciesSource(_policiesApi),
+          // The company took all of its policies away meanwhile: the built-in page.
+          onEmpty: () {
+            if (!mounted) return;
+            setState(() => _companyPolicies = const []);
+            _openPage(_QuickPage.policies, refresh: false);
+          },
+        ),
+      ),
+    );
+    if (mounted) unawaited(_loadPolicies());
+  }
+
   void _open(_QuickPage page) {
+    if (page == _QuickPage.policies) {
+      unawaited(_openPoliciesScreen());
+      return;
+    }
+    _openPage(page);
+  }
+
+  void _openPage(_QuickPage page, {bool refresh = true}) {
     if (page == _QuickPage.placements) {
       _placementsKey = GlobalKey<_PlacementsScreenState>();
     }
@@ -909,7 +957,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     // anyone looks; the Leave screen only needs to know whether there is a
     // leave policy to link to.
     if (page == _QuickPage.policies) {
-      unawaited(_loadPolicies(force: true));
+      if (refresh) unawaited(_loadPolicies(force: true));
     } else if (page == _QuickPage.leave) {
       unawaited(_loadPolicies());
     }

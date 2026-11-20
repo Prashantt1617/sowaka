@@ -31,10 +31,17 @@ String? _lastPoliciesFor;
 List<PolicyDocument>? companyPoliciesFor(String userId) =>
     _lastPoliciesFor == userId ? _lastPolicies : null;
 
+/// The server's counts with the policies last fetched for [userId]
+/// (`toAcknowledge` is Actions' "N to acknowledge"); null until fetched.
+PolicyAckCounts? policyCountsFor(String userId) =>
+    _lastPoliciesFor == userId ? _lastCounts : null;
+PolicyAckCounts? _lastCounts;
+
 /// Forgets what is held in memory. Called when the person signs out; the
 /// device copy goes with the dashboard's.
 void forgetPolicies() {
   _lastPolicies = null;
+  _lastCounts = null;
   _lastPoliciesFor = null;
 }
 
@@ -88,6 +95,7 @@ class PoliciesApiService {
     }
     final policies = parsePolicyDocuments(json);
     _lastPolicies = policies;
+    _lastCounts = PolicyAckCounts.fromJson(json, policies);
     _lastPoliciesFor = session.user.id;
     unawaited(
       DashboardCache.write(_cacheKey, {
@@ -127,8 +135,16 @@ class PoliciesApiService {
     }
     final policies = parsePolicyDocuments(json);
     _lastPolicies = policies;
+    _lastCounts = PolicyAckCounts.fromJson(json, policies);
     _lastPoliciesFor = session.user.id;
     return policies;
+  }
+
+  /// The server's counts (`GET /policies`): `toAcknowledge` is the number on
+  /// Actions' Policies tile.
+  Future<PolicyAckCounts> ackCounts() async {
+    final policies = await this.policies();
+    return policyCountsFor(session.user.id) ?? PolicyAckCounts.fromJson(const {}, policies);
   }
 
   /// The policies as this person last saw them, without the network. Null

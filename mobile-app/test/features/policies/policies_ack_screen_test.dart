@@ -79,10 +79,56 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('1 to acknowledge'), findsOneWidget);
 
-    // A read-only policy has nothing to acknowledge.
+    // A read-only policy can be acknowledged too (the canvas draws the tick
+    // on every policy), but it never counted.
     await tester.tap(find.byKey(const ValueKey('policy-travel')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('policy-ack')), findsNothing);
+    expect(find.text('I’ve read this policy'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('policy-agree')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('policy-ack')));
+    await tester.pumpAndSettle();
+    expect(source.acks, ['leave@3', 'travel@1']);
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 to acknowledge'), findsOneWidget);
+  });
+
+  testWidgets('a joiner reads a later version as it is: no "what changed"', (tester) async {
+    final source = _Fake([_p('leave', 'Leave policy', version: 2, note: 'Casual leave goes up.')]);
+    await tester.pumpWidget(MaterialApp(home: PoliciesAckScreen(source: source, openKey: 'leave')));
+    await tester.pumpAndSettle();
+    expect(find.text('Leave policy'), findsOneWidget);
+    expect(find.text('Version 2 · 3 min read'), findsOneWidget);
+    expect(find.text('What changed'), findsNothing);
+    expect(find.text('I’ve read this policy'), findsOneWidget);
+    expect(find.text('Acknowledge'), findsOneWidget);
+  });
+
+  testWidgets('from Actions, a company with no policies any more closes it for the built-in ones', (tester) async {
+    var emptied = false;
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => TextButton(
+          onPressed: () => Navigator.of(context).push<void>(MaterialPageRoute(
+            builder: (_) => PoliciesAckScreen(source: _Fake(const []), onEmpty: () => emptied = true),
+          )),
+          child: const Text('open'),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(emptied, isTrue);
+    expect(find.byType(PoliciesAckScreen), findsNothing);
+  });
+
+  test('the counts are the server\'s, else counted by the same rule', () {
+    final list = [_p('a', 'A'), _p('b', 'B', acked: 1), _p('c', 'C', version: 2, acked: 1), _p('d', 'D', req: false)];
+    final local = PolicyAckCounts.fromJson(const {}, list);
+    expect([local.required, local.acknowledged, local.toAcknowledge], [3, 1, 2]);
+    final server = PolicyAckCounts.fromJson(const {'required': 5, 'acknowledged': 2, 'toAcknowledge': 3}, list);
+    expect(server.toAcknowledge, 3);
   });
 
   testWidgets('a tour lesson steps through and reports done once', (tester) async {

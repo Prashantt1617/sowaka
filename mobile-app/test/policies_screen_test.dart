@@ -1,5 +1,6 @@
 // Actions › View Policies against a fake server. A company with policies of
-// its own sees those, in its own words; one without (or an older server that
+// its own sees those, in its own words, on the Policies screen (Acknowledge,
+// Acknowledged, Updated or Read on each: the new-joiner canvas); one without (or an older server that
 // answers 404) sees exactly what the app has always shown: the built-in list,
 // with the leave, attendance and overtime texts written from its shift rules.
 // The Leave screen's "leave policy" link opens the company's leave policy when
@@ -298,6 +299,12 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// Back on the Policies screen (a page of its own over Actions).
+  Future<void> closePolicies(WidgetTester tester) async {
+    await tester.tap(find.bySemanticsLabel('Back').last);
+    await tester.pumpAndSettle();
+  }
+
   Future<void> back(
     WidgetTester tester,
     QuickActionsController controller,
@@ -421,12 +428,14 @@ void main() {
     tester,
   ) async {
     answer = () => _json(_companyPolicies);
-    final controller = await pumpActions(tester);
+    await pumpActions(tester);
     await openPolicies(tester);
 
     expect(find.text('Leave policy'), findsOneWidget);
-    expect(find.text('Types, balances and how to apply'), findsOneWidget);
     expect(find.text('Code of Conduct policy'), findsOneWidget);
+    // Read only (nothing asked of them): "Read", and no banner.
+    expect(find.text('Read'), findsNWidgets(2));
+    expect(find.byKey(const ValueKey('policies-pending')), findsNothing);
     // Only the company's: none of the built-in ones.
     for (final title in [
       'Attendance policy',
@@ -443,12 +452,9 @@ void main() {
 
     await tester.tap(find.text('Leave policy'));
     await tester.pumpAndSettle();
-    expect(find.text('Leave'), findsWidgets);
-    expect(find.text('Updated 10 Oct 2026'), findsOneWidget);
     expect(find.text('Leave types'), findsOneWidget);
     expect(find.text('Casual Leave — 12 days a year.'), findsOneWidget);
-    expect(find.text('Can be applied up to 30 days ahead.'), findsOneWidget);
-    expect(find.text('•'), findsOneWidget);
+    expect(find.text('•  Can be applied up to 30 days ahead.'), findsOneWidget);
     expect(
       find.text('Week-offs inside a leave range are not counted.'),
       findsOneWidget,
@@ -457,7 +463,7 @@ void main() {
     expect(find.text('As your company has it set up today.'), findsNothing);
     expect(find.textContaining('10 left'), findsNothing);
 
-    await back(tester, controller);
+    await closePolicies(tester);
     expect(find.text('Code of Conduct policy'), findsOneWidget);
     await tester.tap(find.text('Code of Conduct policy'));
     await tester.pumpAndSettle();
@@ -474,11 +480,9 @@ void main() {
       await tester.tap(find.text('View Policies'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
-      expect(find.byKey(const ValueKey('policies-loading')), findsOneWidget);
       expect(find.text('POSH policy'), findsNothing);
       hold!.complete();
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('policies-loading')), findsNothing);
       expect(find.text('Code of Conduct policy'), findsOneWidget);
       expect(find.text('POSH policy'), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
@@ -546,7 +550,7 @@ void main() {
       var controller = await pumpActions(tester);
       await openPolicies(tester);
       expect(find.text('Code of Conduct policy'), findsOneWidget);
-      await back(tester, controller);
+      await closePolicies(tester);
 
       // The server is unreachable: what was read stays.
       answer = () => throw http.ClientException('offline');
@@ -560,7 +564,7 @@ void main() {
       await openPolicies(tester);
       expect(find.text('Code of Conduct policy'), findsOneWidget);
       expect(find.text('Leave policy'), findsOneWidget);
-      await back(tester, controller);
+      await closePolicies(tester);
 
       // Back online with an edit: the next opening shows it.
       answer = () => _json({
@@ -578,8 +582,8 @@ void main() {
       expect(find.text('Be kinder.'), findsOneWidget);
 
       // And if the company's policies are all taken away, back to the built-in.
-      await back(tester, controller);
-      await back(tester, controller);
+      await closePolicies(tester);
+      await closePolicies(tester);
       answer = () => _json({'success': true, 'policies': <dynamic>[]});
       await openPolicies(tester);
       expectBuiltInList();
