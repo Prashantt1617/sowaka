@@ -236,6 +236,8 @@ export interface JourneyView {
   bankPfRequest?: BankPfRequest;
   /** The portal's Employee profile (HR only; the account number, Aadhaar and PAN as their last four). */
   profile?: CandidateProfileView;
+  /** The portal's Employee profile sections done (the portal's and the app's "n of 7 sections done"). */
+  profileSections?: { done: number; total: number };
   /** The portal's About you: the emergency contact and PF (HR only). */
   aboutYou?: { emergencyContact?: { name: string; relation: string; phone: string }; pf?: { firstJob: boolean; uan?: string } };
   waitingOn?: WaitingOn[];

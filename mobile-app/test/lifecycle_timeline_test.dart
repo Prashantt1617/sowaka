@@ -7,10 +7,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_models.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/onboarding_home_screen.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/timeline/lens_selection.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/timeline/stage_lens.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'lifecycle_onboarding_test.dart' show FakeOnboardingApi, pumpPage, scrollTo, shellFor, task;
+import 'lifecycle_onboarding_test.dart' show FakeOnboardingApi, pumpPage, shellFor, task;
 
 /// A probation task: phase probation, its month.
 Map<String, dynamic> ptask(String id, String title, int month, {String status = 'todo', String kind = 'form', String? systemKey, DateTime? opensAt, DateTime? dueAt}) => {
@@ -176,54 +177,57 @@ void main() {
   });
 
   group('the home through the lens', () {
-    testWidgets('Week 1: tap Month 1 to look ahead, Back to Week 1 returns', (tester) async {
-      final api = FakeOnboardingApi()
-        ..home = week1(upNext: task('payroll', 'Meet Payroll', kind: 'meeting', dueAt: DateTime(2026, 12, 4, 10)));
+    testWidgets('Week 1: tap Month 1 to look ahead (LensAhead), the tiles say In Month 1; Back to Week 1 returns', (tester) async {
+      final api = FakeOnboardingApi()..home = week1();
       await pumpPage(tester, OnboardingHomeScreen(shell: shellFor(api, DateTime(2026, 12, 3, 10))));
       expect(find.text('YOU ARE HERE'), findsOneWidget);
       expect(tester.widget<Text>(find.byKey(const ValueKey('stage-title'))).data, 'Week 1');
-      // Her own stage's list tags what Day 1 left behind (below the tiles).
-      await tester.dragUntilVisible(find.text('From Day 1'), find.byType(Scrollable).first, const Offset(0, -200));
-      expect(find.text('From Day 1'), findsWidgets);
+      final tasks = find.byKey(const ValueKey('tile-tasks'));
+      expect(find.descendant(of: tasks, matching: find.text('UP NEXT')), findsOneWidget);
 
-      await tester.dragUntilVisible(find.byKey(const ValueKey('stage-step-Month 1')), find.byType(Scrollable).first, const Offset(0, 200));
-      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('stage-step-Month 1')));
       await tester.pumpAndSettle();
       expect(find.text('A LOOK AHEAD'), findsOneWidget);
       expect(tester.widget<Text>(find.byKey(const ValueKey('stage-title'))).data, 'Month 1');
       expect(find.text('Back to Week 1'), findsOneWidget);
-      expect(find.text('IN MONTH 1'), findsWidgets);
-      expect(find.text('2 meetings in Month 1'), findsOneWidget);
-      expect(find.text('Opens in Month 1'), findsWidgets);
-      await scrollTo(tester, find.byKey(const ValueKey('lens-task-posh')));
-      expect(find.byKey(const ValueKey('lens-task-posh')), findsOneWidget);
-      await tester.drag(find.byKey(const ValueKey('lens-body')), const Offset(0, 2000));
-      await tester.pumpAndSettle();
+      expect(onbLensSelection.value, 2, reason: 'the tabs the tiles open keep the lens');
+      // The tiles through the lens: that stage's, no lists on the home.
+      expect(find.descendant(of: tasks, matching: find.text('IN MONTH 1')), findsOneWidget);
+      expect(find.descendant(of: tasks, matching: find.text('2 tasks')), findsOneWidget);
+      expect(find.descendant(of: find.byKey(const ValueKey('tile-meetings')), matching: find.text('2 meetings in Month 1')), findsOneWidget);
+      expect(find.byKey(const ValueKey('tile-tour')), findsNothing, reason: 'the tour is Day 1 and Week 1');
+      expect(find.byKey(const ValueKey('tile-devices')), findsNothing);
+      expect(find.byKey(const ValueKey('lens-body')), findsNothing);
 
       await tester.tap(find.byKey(const ValueKey('lens-back')));
       await tester.pumpAndSettle();
       expect(find.text('YOU ARE HERE'), findsOneWidget);
-      expect(find.byKey(const ValueKey('lens-body')), findsNothing);
+      expect(onbLensSelection.value, isNull);
     });
 
-    testWidgets('Month 1: tap Week 1 to look back, what is still open first', (tester) async {
+    testWidgets('Month 1: tap Week 1 to look back (LensBack), what is still open', (tester) async {
       final api = FakeOnboardingApi()..home = week1(stage: 'settling_in');
       await pumpPage(tester, OnboardingHomeScreen(shell: shellFor(api, DateTime(2026, 12, 15))));
       await tester.tap(find.byKey(const ValueKey('stage-step-Week 1')));
       await tester.pumpAndSettle();
       expect(find.text('LOOKING BACK'), findsOneWidget);
       expect(find.text('Back to Month 1'), findsOneWidget);
-      expect(find.text('Still open'), findsWidgets);
+      final tasks = find.byKey(const ValueKey('tile-tasks'));
+      expect(find.descendant(of: tasks, matching: find.text('IN WEEK 1')), findsOneWidget);
+      expect(find.descendant(of: tasks, matching: find.textContaining('still open')), findsOneWidget);
+      // The tour looking back at Week 1: its first lesson and the count.
+      expect(find.descendant(of: find.byKey(const ValueKey('tile-tour')), matching: find.text('Punch in and out')), findsOneWidget);
     });
 
-    testWidgets('a stage with nothing planned says so', (tester) async {
+    testWidgets('a stage with nothing planned shows no tiles for it', (tester) async {
       final api = FakeOnboardingApi()..home = week1();
       await pumpPage(tester, OnboardingHomeScreen(shell: shellFor(api, DateTime(2026, 12, 3, 10))));
       await tester.ensureVisible(find.byKey(const ValueKey('stage-step-Month 4')));
       await tester.tap(find.byKey(const ValueKey('stage-step-Month 4')));
       await tester.pumpAndSettle();
-      expect(find.text('Nothing planned for Month 4 yet.'), findsOneWidget);
+      expect(find.text('A LOOK AHEAD'), findsOneWidget);
+      expect(find.byKey(const ValueKey('tile-tasks')), findsNothing);
+      expect(find.byKey(const ValueKey('tile-meetings')), findsNothing);
     });
 
     testWidgets('Confirmed: the hero turns green, PROBATION COMPLETE', (tester) async {

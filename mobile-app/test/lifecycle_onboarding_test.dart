@@ -539,36 +539,24 @@ void main() {
       ],
     });
 
-    testWidgets('Day 1: you are here, up next, today\'s list, done folded away', (tester) async {
+    testWidgets('Day 1: you are here, then the tiles only (no Up next card, no list)', (tester) async {
       final api = FakeOnboardingApi()..home = dayOne();
       await pumpPage(tester, OnboardingHomeScreen(shell: shellFor(api, now)));
 
-      expect(find.byKey(const ValueKey('stage-title')), findsOneWidget);
       expect(tester.widget<Text>(find.byKey(const ValueKey('stage-title'))).data, 'Day 1');
       expect(find.text('YOU ARE HERE'), findsOneWidget);
-      expect(find.text('Today'), findsOneWidget);
-      // Up next, with its time and place; not repeated in the list.
-      final upNext = find.byKey(const ValueKey('up-next'));
-      expect(find.descendant(of: upNext, matching: find.text('Meet your manager')), findsOneWidget);
-      expect(find.descendant(of: upNext, matching: find.textContaining('11:00 AM · Room 4B · with Neha R.')), findsOneWidget);
-      expect(find.byKey(const ValueKey('task-mgr')), findsNothing);
-      // The list (under the tiles): the 4 PM meeting first, then the untimed ones as "Any time".
-      await tester.scrollUntilVisible(find.byKey(const ValueKey('task-face')), 200, scrollable: find.byType(Scrollable).first);
-      final team = tester.getTopLeft(find.byKey(const ValueKey('task-team'))).dy;
-      final face = tester.getTopLeft(find.byKey(const ValueKey('task-face'))).dy;
-      expect(team, lessThan(face));
-      expect(find.text('MUST-DO'), findsWidgets);
-      expect(find.textContaining('Any time'), findsWidgets);
-      // Two done, closed; View opens them, Hide closes.
-      expect(find.text('2 done'), findsOneWidget);
-      expect(find.text('View'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('done-toggle')));
-      await tester.pumpAndSettle();
-      expect(find.text('Hide'), findsOneWidget);
-      expect(find.text('Done 10:15 AM'), findsOneWidget);
-      // Later, the locked survey says when it opens.
-      await scrollTo(tester, find.textContaining('Opens Mon 7 Dec'));
-      expect(find.textContaining('Opens Mon 7 Dec'), findsOneWidget);
+      // The prototype's home is the hero and the tiles: no Up next card, no Today list.
+      expect(find.byKey(const ValueKey('up-next')), findsNothing);
+      expect(find.text('Today'), findsNothing);
+      expect(find.byKey(const ValueKey('done-toggle')), findsNothing);
+      expect(find.byKey(const ValueKey('tile-meetings')), findsOneWidget);
+      // Meetings of her stage: manager and team open, the induction done.
+      expect(find.descendant(of: find.byKey(const ValueKey('tile-meetings')), matching: find.text('0 of 2 met')), findsOneWidget);
+      final tasks = find.byKey(const ValueKey('tile-tasks'));
+      expect(find.descendant(of: tasks, matching: find.text('UP NEXT')), findsOneWidget);
+      expect(find.descendant(of: tasks, matching: find.text('Register your face')), findsOneWidget);
+      // The tour has its own tile, so it is not a task.
+      expect(find.descendant(of: find.byKey(const ValueKey('tile-tour')), matching: find.text('Punch in and out')), findsOneWidget);
     });
 
     testWidgets('the stage row sits in the card: Day 1 … Month 6, Confirmed', (tester) async {
@@ -896,10 +884,10 @@ void main() {
     expect(hidden.showsOnboarding, isFalse);
   });
 
-  test('the profile leads with Onboarding only while it runs', () {
+  test('the profile has no Onboarding tab (the prototype opens onboarding from Actions only)', () {
     expect(ownProfileTabs(hasManager: true, showsHelp: false).first, ProfileTab.workDetail);
     expect(ownProfileTabs(hasManager: true, showsHelp: false), isNot(contains(ProfileTab.onboarding)));
-    expect(ownProfileTabs(hasManager: true, showsHelp: false, showsOnboarding: true).first, ProfileTab.onboarding);
+    expect(ownProfileTabs(hasManager: true, showsHelp: false, showsOnboarding: true), isNot(contains(ProfileTab.onboarding)));
   });
 
   testWidgets('a tapped notification opens its onboarding screen; offboarding\'s kinds pass through', (tester) async {
@@ -914,9 +902,11 @@ void main() {
     }));
     expect(openOnboardingDestination(context, {'destination': 'lifecycle_resignation'}), isFalse);
     expect(openOnboardingDestination(context, {'destination': 'connect_post'}), isFalse);
+    // The 1:1 notes are not in the new-joiner prototype: the push opens the home.
     expect(openOnboardingDestination(context, {'destination': 'lifecycle_notes'}), isTrue);
     await tester.pumpAndSettle();
-    expect(find.byType(NotesScreen), findsOneWidget);
+    expect(find.byType(NotesScreen), findsNothing);
+    expect(find.byType(OnboardingHomeScreen), findsOneWidget);
   });
 
   group('the joining portal in the app', () {
@@ -1122,7 +1112,7 @@ void main() {
       expect(taskMeta(bare, DateTime(2026, 12, 1, 9), forManager: true), '11:00 AM · with Isha Verma');
     });
 
-    testWidgets('Day 1 lists the items others do, read-only, counted, not tickable', (tester) async {
+    testWidgets('Day 1: what others do is in Meetings (a meeting) or Devices (the laptop), never a task', (tester) async {
       final api = FakeOnboardingApi()
         ..home = OnboardingHome.fromJson({
           'journeyId': 'j1',
@@ -1138,21 +1128,18 @@ void main() {
               ..['doneBy'] = 'IT',
             task('face', 'Register your face', systemKey: 'register_face')..['helper'] = '2 min · needed to punch in',
           ],
+          'devices': [
+            {'key': 'laptop', 'title': 'Laptop', 'ready': false},
+            {'key': 'app', 'title': 'Sowaka Connect', 'ready': true},
+          ],
         });
       await pumpPage(tester, OnboardingHomeScreen(shell: shellFor(api, DateTime(2026, 12, 1, 9))));
-      await tester.scrollUntilVisible(find.byKey(const ValueKey('task-laptop')), 200, scrollable: find.byType(Scrollable).first);
-      expect(find.byKey(const ValueKey('task-vision')), findsOneWidget);
-      expect(find.byKey(const ValueKey('task-laptop')), findsOneWidget);
-      expect(find.descendant(of: find.byKey(const ValueKey('task-laptop')), matching: find.text('IT')), findsOneWidget);
-      expect(find.text('Any time · 2 min · needed to punch in'), findsOneWidget);
-      expect(find.text('0 of 3 done'), findsOneWidget, reason: 'they count toward the day');
-      // Opening one never offers "Mark as done".
-      await tester.ensureVisible(find.byKey(const ValueKey('task-laptop')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('task-laptop')));
-      await tester.pumpAndSettle();
-      expect(find.text('IT and Admin do this'), findsOneWidget);
-      expect(find.byKey(const ValueKey('task-sheet-done')), findsNothing);
+      expect(find.descendant(of: find.byKey(const ValueKey('tile-meetings')), matching: find.text('0 of 1 met')), findsOneWidget);
+      final tasks = find.byKey(const ValueKey('tile-tasks'));
+      expect(find.descendant(of: tasks, matching: find.text('Register your face')), findsOneWidget);
+      expect(find.descendant(of: tasks, matching: find.text('1 to do')), findsOneWidget);
+      await scrollTo(tester, find.byKey(const ValueKey('tile-devices')));
+      expect(find.descendant(of: find.byKey(const ValueKey('tile-devices')), matching: find.text('1 of 2 ready')), findsOneWidget);
     });
 
     testWidgets('a meeting HR ticks asks no "Did you meet?"', (tester) async {
@@ -1171,7 +1158,7 @@ void main() {
   });
 
   group('home duplicates and A8', () {
-    testWidgets('the 1:1 notes and a starter task Up next each show once', (tester) async {
+    testWidgets('the 1:1 notes row is not drawn; a starter task is a task', (tester) async {
       final api = _NotesApi()
         ..home = OnboardingHome.fromJson({
           'journeyId': 'j1',
@@ -1185,13 +1172,14 @@ void main() {
           ],
         });
       await pumpPage(tester, OnboardingHomeScreen(shell: shellFor(api, DateTime(2026, 12, 4, 9))));
-      expect(find.text('Notes from your 1:1'), findsOneWidget);
-      expect(find.byKey(const ValueKey('starter-st1')), findsNothing, reason: 'it is Up next');
-      expect(find.byKey(const ValueKey('task-st1')), findsNothing);
-      expect(find.descendant(of: find.byKey(const ValueKey('up-next')), matching: find.text('Redesign the leave screen')), findsOneWidget);
+      expect(find.text('Notes from your 1:1'), findsNothing);
+      expect(find.byKey(const ValueKey('up-next')), findsNothing);
+      final tasks = find.byKey(const ValueKey('tile-tasks'));
+      expect(find.descendant(of: tasks, matching: find.text('Redesign the leave screen')), findsOneWidget);
+      expect(find.descendant(of: tasks, matching: find.text('1 to do')), findsOneWidget);
     });
 
-    testWidgets('"Week 1, done!" shows when the server says so, and tells it it was seen', (tester) async {
+    testWidgets('"Week 1, done!" is not in the prototype: never opened from the home', (tester) async {
       final api = FakeOnboardingApi()
         ..home = OnboardingHome.fromJson({
           'journeyId': 'j1',
@@ -1201,10 +1189,8 @@ void main() {
           'weekDoneStats': {'tasksDone': 9, 'peopleMet': 6, 'leaves': 3},
         });
       await pumpPage(tester, OnboardingHomeScreen(shell: shellFor(api, DateTime(2026, 12, 9, 9))));
-      expect(find.text('Week 1, done!'), findsOneWidget);
-      expect(find.text('9'), findsOneWidget);
-      expect(find.text('+3'), findsOneWidget);
-      expect(api.calls, contains('week-done-seen'));
+      expect(find.text('Week 1, done!'), findsNothing);
+      expect(api.calls, isNot(contains('week-done-seen')));
     });
 
     testWidgets('…and not when it has been seen (any device)', (tester) async {

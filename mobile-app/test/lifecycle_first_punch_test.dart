@@ -12,7 +12,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'lifecycle_onboarding_test.dart' show FakeOnboardingApi, pumpPage, shellFor, task;
 
-OnboardingHome dayOne({Map<String, dynamic>? firstPunch}) => OnboardingHome.fromJson({
+OnboardingHome dayOne({Map<String, dynamic>? firstPunch}) => OnboardingHome.fromJson(dayOneJson(firstPunch: firstPunch));
+
+Map<String, dynamic> dayOneJson({Map<String, dynamic>? firstPunch}) => {
   'journeyId': 'j1',
   'stage': 'welcome_week1',
   'tj': '2026-12-01',
@@ -22,7 +24,7 @@ OnboardingHome dayOne({Map<String, dynamic>? firstPunch}) => OnboardingHome.from
     task('tour', 'Take the Sowaka tour', systemKey: 'app_tour'),
   ],
   'firstPunch': ?firstPunch,
-});
+};
 
 void main() {
   setUp(() {
@@ -45,22 +47,30 @@ void main() {
   });
 
   group('the home on Day 1', () {
-    testWidgets('"Your first punch-in" sits under the hero; the face task is neither Up next nor a row', (tester) async {
+    testWidgets('"Your first punch-in" sits under the hero; the face task is not a task while it shows', (tester) async {
       final api = FakeOnboardingApi()..home = dayOne(firstPunch: {'faceEnrolled': false});
       await pumpPage(tester, OnboardingHomeScreen(shell: shellFor(api, day1)));
       expect(find.byKey(const ValueKey('first-punch-card')), findsOneWidget);
       expect(find.text('Your first punch-in'), findsOneWidget);
       expect(find.text('Learn to punch in'), findsOneWidget);
-      expect(find.byKey(const ValueKey('task-face')), findsNothing);
-      final upNext = find.byKey(const ValueKey('up-next'));
-      expect(find.descendant(of: upNext, matching: find.text('Register your face')), findsNothing);
+      expect(find.byKey(const ValueKey('up-next')), findsNothing);
+      expect(find.text('Register your face'), findsNothing);
+      // The tour card waits for the first punch-in.
+      expect(find.byKey(const ValueKey('tour-card')), findsNothing);
     });
 
-    testWidgets('after the first punch-in the card is gone and the list is as before', (tester) async {
+    testWidgets('after the first punch-in the card is gone; the tour card says tomorrow\'s lesson', (tester) async {
       final api = FakeOnboardingApi()
-        ..home = dayOne(firstPunch: {'at': DateTime(2026, 12, 1, 8, 50).toIso8601String(), 'faceEnrolled': true});
+        ..home = OnboardingHome.fromJson({
+          ...dayOneJson(firstPunch: {'at': DateTime(2026, 12, 1, 8, 50).toIso8601String(), 'faceEnrolled': true}),
+          'tour': {'done': ['punch']},
+        });
       await pumpPage(tester, OnboardingHomeScreen(shell: shellFor(api, day1)));
       expect(find.byKey(const ValueKey('first-punch-card')), findsNothing);
+      final card = find.byKey(const ValueKey('tour-card'));
+      expect(find.descendant(of: card, matching: find.text('SOWAKA TOUR · TOMORROW')), findsOneWidget);
+      expect(find.descendant(of: card, matching: find.text('Fix a missed punch')), findsOneWidget);
+      expect(find.descendant(of: card, matching: find.text('1 min · 1 of 4 done')), findsOneWidget);
     });
 
     testWidgets('tapping it goes to the Actions tab and asks for the spotlight', (tester) async {
@@ -95,9 +105,6 @@ void main() {
       );
       await pumpPage(tester, OnboardingHomeScreen(shell: shell));
       expect(find.byKey(const ValueKey('first-punch-card')), findsNothing);
-      // The face task is Up next again, as the server put it.
-      final upNext = find.byKey(const ValueKey('up-next'));
-      expect(find.descendant(of: upNext, matching: find.text('Register your face')), findsOneWidget);
     });
   });
 

@@ -468,6 +468,9 @@ class OnboardingHome {
     this.firstPunch,
     this.tourDone = const [],
     this.devices = const [],
+    this.watch = const [],
+    this.companyName,
+    this.profile,
   });
 
   factory OnboardingHome.fromJson(Map<String, dynamic> json) {
@@ -505,6 +508,9 @@ class OnboardingHome {
           if (k is String && k.isNotEmpty) k,
       ],
       devices: _maps(json['devices']).map(OnbDevice.fromJson).where((d) => d.title.isNotEmpty).toList(),
+      watch: _maps(json['watch']).map(OnbVideo.fromJson).where((v) => v.url.isNotEmpty).toList(),
+      companyName: _str(json['companyName']),
+      profile: _map(json['profile']).isEmpty ? null : OnbProfileState.fromJson(_map(json['profile'])),
     );
   }
 
@@ -545,6 +551,16 @@ class OnboardingHome {
   /// "Devices and accesses": what IT and HR set up, ready or not.
   final List<OnbDevice> devices;
 
+  /// "Watch list": the Meet us videos the portal plays (the manager's video
+  /// hello, the company video), as the server sends them.
+  final List<OnbVideo> watch;
+
+  /// The company's name ("About `company`").
+  final String? companyName;
+
+  /// "Your profile": the portal's Employee profile sections and their state.
+  final OnbProfileState? profile;
+
   List<TaskView> get all => [...today, ...later, ...done];
 
   /// Steps done of everything the joiner has in this stretch: the server's
@@ -581,6 +597,50 @@ class OnbDevice {
   final String key;
   final String title;
   final bool ready;
+}
+
+/// One of the Watch list's videos (the portal's Meet us video).
+class OnbVideo {
+  const OnbVideo({required this.id, required this.title, required this.url, this.seen = false});
+
+  factory OnbVideo.fromJson(Map<String, dynamic> json) => OnbVideo(
+    id: _str(json['id']) ?? '',
+    title: _str(json['title']) ?? '',
+    url: _str(json['videoUrl']) ?? '',
+    seen: _bool(json['seen']),
+  );
+
+  final String id;
+  final String title;
+
+  /// The portal's link: a signed `/portal/media/…` path or the company's URL.
+  final String url;
+  final bool seen;
+}
+
+/// The portal's Employee profile as the app shows it: each section done or
+/// not, and the count ("n of 7 sections done"), the server's.
+class OnbProfileState {
+  const OnbProfileState({this.sections = const [], this.done = 0, this.total = 0});
+
+  factory OnbProfileState.fromJson(Map<String, dynamic> json) {
+    final sections = [
+      for (final s in _maps(json['sections']))
+        (key: _str(s['key']) ?? '', title: _str(s['title']) ?? '', done: _bool(s['done'])),
+    ];
+    return OnbProfileState(
+      sections: sections,
+      done: _int(json['done'], sections.where((s) => s.done).length),
+      total: _int(json['total'], sections.length),
+    );
+  }
+
+  final List<({String key, String title, bool done})> sections;
+  final int done;
+  final int total;
+
+  /// The portal's percent: round(done / total × 100).
+  int get percent => total == 0 ? 0 : (done * 100 / total).round();
 }
 
 // ─── Meetings ───────────────────────────────────────────────────────────────

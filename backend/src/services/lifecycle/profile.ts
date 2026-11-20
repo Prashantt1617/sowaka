@@ -19,7 +19,7 @@ import { CLOSED_STATUSES } from './portalAuth';
 
 export const PROFILE_SECTIONS = ['personal', 'contact', 'emergency', 'bank', 'education', 'ids', 'photo'] as const;
 export type ProfileSection = (typeof PROFILE_SECTIONS)[number];
-const SECTION_TITLE: Record<ProfileSection, string> = {
+export const PROFILE_SECTION_TITLE: Record<ProfileSection, string> = {
   personal: 'Personal details', contact: 'Contact and address', emergency: 'Emergency contact', bank: 'Bank account and PF',
   education: 'Education and experience', ids: 'ID documents (Aadhaar, PAN)', photo: 'Photo',
 };
@@ -176,7 +176,7 @@ export async function profileView(journey: Journey, docs?: CandidateDocumentView
   const done = sectionStates(journey, list);
   const { bank, ids, ...open } = p;
   return {
-    sections: PROFILE_SECTIONS.map((key) => ({ key, title: SECTION_TITLE[key], done: done[key], documentIds: list.filter((d) => sectionOfDocument(d) === key).map((d) => d.id) })),
+    sections: PROFILE_SECTIONS.map((key) => ({ key, title: PROFILE_SECTION_TITLE[key], done: done[key], documentIds: list.filter((d) => sectionOfDocument(d) === key).map((d) => d.id) })),
     done: PROFILE_SECTIONS.filter((k) => done[k]).length,
     total: PROFILE_SECTIONS.length,
     profile: {

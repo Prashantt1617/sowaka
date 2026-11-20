@@ -110,21 +110,32 @@ class StageLens {
     final steps = lensSteps(months);
     final current = currentStepOf(home, now, months: months);
     final at = (selected ?? current).clamp(0, steps.length - 1);
+    // Day 1 before the first punch-in: "Your first punch-in" registers the face, not a task row.
+    final firstPunch = home.needsFirstPunchOn(now);
     final all = <TaskView>[
       for (final t in [...home.today, ...home.later, ...home.done])
-        if (t.status != 'cancelled') t,
+        if (t.status != 'cancelled' && !(firstPunch && t.systemKey == 'register_face')) t,
     ];
     // Each thing once (Up next is also in today).
     final seen = <String>{};
     final unique = [for (final t in all) if (seen.add(t.id)) t];
     final staged = [for (final t in unique) (task: t, stage: stepOfTask(t, home.tj, current: current, months: months))];
     final meetings = staged.where((s) => isLensMeeting(s.task)).toList();
-    final tasks = staged.where((s) => !isLensMeeting(s.task)).toList();
+    final tasks = staged.where((s) => isLensTask(s.task)).toList();
     final mode = at == current ? LensMode.now : (at > current ? LensMode.ahead : LensMode.back);
     List<LensItem> build(List<({TaskView task, int stage})> list) => _rows(list, steps, current, at, mode);
     List<TaskView> ofStage(List<({TaskView task, int stage})> list) => [for (final s in list) if (s.stage == at) s.task];
-    List<TaskView> openNow(List<({TaskView task, int stage})> list) =>
-        [for (final s in list) if (s.stage <= current && !s.task.isDone && !s.task.isLocked) s.task];
+    // What is due now: her stage's and earlier stages' open things. With
+    // none (Day 1, when the week's tasks are due by Tj + 5), the next
+    // stage's that she can already do, so Up next is never "All done" while
+    // the week's work is open.
+    List<TaskView> openNow(List<({TaskView task, int stage})> list) {
+      final due = [for (final s in list) if (s.stage <= current && !s.task.isDone && !s.task.isLocked) s.task];
+      if (due.isNotEmpty) return due;
+      final early = [for (final s in list) if (s.stage == current + 1 && !s.task.isDone && !s.task.isLocked) s]
+        ..sort((a, b) => _byWhen(a.task, b.task));
+      return [for (final s in early) s.task];
+    }
     return StageLens._(
       steps: steps,
       current: current,
@@ -264,9 +275,21 @@ class StageLens {
 }
 
 /// A meeting through the lens: a meeting, a check-in, the confirmation
-/// discussion. Everything else is a task.
+/// discussion (People to meet shows as its people, one row each).
 bool isLensMeeting(TaskView task) =>
-    task.kind == 'meeting' || task.kind == 'checkin' || task.systemKey == 'confirmation_discussion' || task.meeting != null;
+    task.systemKey != 'people_to_meet' &&
+    (task.kind == 'meeting' || task.kind == 'checkin' || task.systemKey == 'confirmation_discussion' || task.meeting != null);
+
+/// A task through the lens: the joiner's own (the prototype's "Tasks for
+/// you"), not a meeting, not the tour (its own tile), not what someone else
+/// does, not the 1:1 notes row.
+bool isLensTask(TaskView task) =>
+    !isLensMeeting(task) &&
+    task.systemKey != 'people_to_meet' &&
+    task.systemKey != 'app_tour' &&
+    task.systemKey != 'one_on_one_notes' &&
+    !task.readOnly &&
+    (task.ownerRole == 'employee' || task.ownerRole == 'manager_employee');
 
 /// "IN MONTH 1", "ONCE CONFIRMED".
 String inStageLabel(String step) => step == 'Confirmed' ? 'ONCE CONFIRMED' : 'IN ${step.toUpperCase()}';

@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../timeline/stage_lens.dart';
+import 'onboarding_home_tabs.dart';
 
 import '../../../policies/data/policies_api_service.dart';
 import '../../../policies/presentation/policies_ack_screen.dart';
@@ -12,19 +14,19 @@ import 'onboarding_kit.dart';
 import 'task_row.dart' show taskMeta;
 import 'tour_lessons.dart';
 
-/// The new-joiner artifact's tiles ("Each tile opens its own screen"):
-/// Meetings, Tasks, Sowaka tour and Devices and accesses, two to a row with
-/// Devices full width, each opening its own screen. Built from the home the
-/// onboarding page already read; [onChanged] reloads it after a screen.
-///
-/// Watch list and Your profile are drawn by the artifact too, but the server
-/// has no videos list or profile sections for the app yet (see the lane
-/// report); they show once it does.
+/// The new-joiner artifact's tiles ("Each tile opens its own screen"), in
+/// its order: Meetings, Tasks, Sowaka tour and Watch list two to a row, then
+/// Devices and accesses and Your profile full width. Through the timeline
+/// ([lens] on another stage) the tiles say "In Month 1" instead of "Up next"
+/// and show that stage's things; Devices, Watch list and Your profile are her
+/// own stage's only. Built from the home the page already read; [onChanged]
+/// reloads it after a screen.
 class OnbTileGrid extends StatelessWidget {
-  const OnbTileGrid({super.key, required this.shell, required this.home, required this.onChanged});
+  const OnbTileGrid({super.key, required this.shell, required this.home, required this.lens, required this.onChanged});
 
   final OnboardingShell shell;
   final OnboardingHome home;
+  final StageLens lens;
   final Future<void> Function() onChanged;
 
   Future<void> _push(BuildContext context, Widget page) async {
@@ -34,94 +36,104 @@ class OnbTileGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final meetings = joinerMeetings(home);
-    final nowMeetings = meetings.where((t) => !t.isLocked).toList();
-    final met = nowMeetings.where((t) => t.isDone).length;
-    final tasks = joinerTasks(home);
-    final openTasks = tasks.where((t) => !t.isDone && !t.isLocked).toList();
-    final lesson = todaysTourLesson(home.tourDone);
-    final lessonsDone = joinerTourLessons.where((l) => home.tourDone.contains(l.key)).length;
-    final ready = home.devices.where((d) => d.ready).length;
-    final tiles = <Widget>[
-      if (meetings.isNotEmpty)
+    final now = lens.mode == LensMode.now;
+    final tiles = onbTiles(home, lens);
+    // Faces: her own stage's meetings; through the lens, that stage's.
+    final faces = now
+        ? [for (final m in lens.meetings) if (m.stage <= lens.current) m.task]
+        : lens.meetingsOfStage;
+    final cells = <Widget>[
+      if (tiles.meetings)
         _Tile(
           key: const ValueKey('tile-meetings'),
           onTap: () => _push(context, OnbMeetingsScreen(shell: shell)),
+          minHeight: 132,
           top: Row(
             children: [
-              for (final t in nowMeetings.take(3))
-                Align(widthFactor: 0.72, child: _Initials(name: t.ownerName ?? t.title, size: 36, ring: true)),
+              for (final t in faces.take(3))
+                Align(widthFactor: 0.72, child: _Initials(name: t.ownerName ?? t.meeting?.withWho ?? t.title, size: 36, ring: true)),
             ],
           ),
           title: 'Meetings',
-          meta: nowMeetings.isEmpty ? '${meetings.length} coming up' : '$met of ${nowMeetings.length} met',
+          meta: lens.meetingsMeta,
         ),
-      if (tasks.isNotEmpty)
+      if (tiles.tasks)
         _Tile(
           key: const ValueKey('tile-tasks'),
           onTap: () => _push(context, OnbTasksScreen(shell: shell)),
           icon: const _IconChip(icon: Icons.checklist_rounded, tint: OnbColors.violetTint, color: OnbColors.violet),
           name: 'Tasks',
-          eyebrow: 'UP NEXT',
-          title: openTasks.isEmpty ? 'All done' : openTasks.first.title,
-          meta: openTasks.isEmpty ? 'All done' : '${openTasks.length} to do',
+          eyebrow: lens.taskTile.label,
+          title: lens.taskTile.title,
+          meta: lens.taskTile.meta,
         ),
-      _Tile(
-        key: const ValueKey('tile-tour'),
-        onTap: () => _push(context, OnbTourScreen(shell: shell, done: home.tourDone)),
-        gradient: OnbColors.tourGradient,
-        light: true,
-        icon: const _IconChip(icon: Icons.explore_outlined, tint: Color(0x38FFFFFF), color: Colors.white),
-        name: 'Sowaka tour',
-        eyebrow: lesson == null ? 'ALL DONE' : 'UP NEXT',
-        title: (lesson ?? joinerTourLessons.first).title,
-        meta: '${(lesson ?? joinerTourLessons.first).length} · $lessonsDone of ${joinerTourLessons.length} done',
-      ),
+      if (tiles.tour case final tour?)
+        _Tile(
+          key: const ValueKey('tile-tour'),
+          onTap: () => _push(context, OnbTourScreen(shell: shell, done: home.tourDone)),
+          gradient: OnbColors.tourGradient,
+          light: true,
+          icon: const _IconChip(icon: Icons.explore_outlined, tint: Color(0x38FFFFFF), color: Colors.white),
+          name: 'Sowaka tour',
+          eyebrow: tour.label,
+          title: tour.title,
+          meta: tour.meta,
+        ),
+      if (tiles.watch case final watch?)
+        _Tile(
+          key: const ValueKey('tile-watch'),
+          onTap: () => _push(context, OnbWatchScreen(shell: shell, home: home)),
+          color: OnbColors.primary,
+          light: true,
+          subColor: OnbColors.skyText,
+          icon: const _IconChip(icon: Icons.play_arrow_rounded, tint: Color(0x38FFFFFF), color: Colors.white),
+          name: 'Watch list',
+          eyebrow: watch.label,
+          title: watch.title,
+          meta: watch.meta,
+        ),
     ];
+    final ready = home.devices.where((d) => d.ready).length;
+    final profile = home.profile;
     return Column(
       children: [
-        for (var i = 0; i < tiles.length; i += 2) ...[
+        for (var i = 0; i < cells.length; i += 2) ...[
           if (i > 0) const SizedBox(height: 10),
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(child: tiles[i]),
+                Expanded(child: cells[i]),
                 const SizedBox(width: 10),
-                Expanded(child: i + 1 < tiles.length ? tiles[i + 1] : const SizedBox.shrink()),
+                Expanded(child: i + 1 < cells.length ? cells[i + 1] : const SizedBox.shrink()),
               ],
             ),
           ),
         ],
-        if (home.devices.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          OnbCard(
+        if (tiles.devices) ...[
+          if (cells.isNotEmpty) const SizedBox(height: 10),
+          _WideTile(
             key: const ValueKey('tile-devices'),
-            padding: const EdgeInsets.all(14),
             onTap: () => _push(context, OnbDevicesScreen(shell: shell, devices: home.devices)),
-            child: Row(
-              children: [
-                const _IconChip(icon: Icons.laptop_outlined, tint: OnbColors.blueTint, color: OnbColors.blue, size: 48, radius: 14, iconSize: 24),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Devices and accesses', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: OnbColors.text)),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Expanded(child: _Bar(value: ready / home.devices.length, color: OnbColors.blue)),
-                          const SizedBox(width: 8),
-                          Text('$ready of ${home.devices.length} ready', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: OnbColors.text2)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right_rounded, color: OnbColors.icon),
-              ],
-            ),
+            icon: const _IconChip(icon: Icons.laptop_outlined, tint: OnbColors.blueTint, color: OnbColors.blue, size: 48, radius: 14, iconSize: 24),
+            title: 'Devices and accesses',
+            value: ready / home.devices.length,
+            barColor: OnbColors.blue,
+            barText: '$ready of ${home.devices.length} ready',
+          ),
+        ],
+        if (tiles.profile && profile != null) ...[
+          if (cells.isNotEmpty || tiles.devices) const SizedBox(height: 10),
+          _WideTile(
+            key: const ValueKey('tile-profile'),
+            onTap: () => _push(context, OnbProfileScreen(shell: shell, profile: profile)),
+            icon: const _IconChip(icon: Icons.person_outline_rounded, tint: OnbColors.amberTint, color: OnbColors.amber, size: 48, radius: 14, iconSize: 24),
+            title: 'Your profile',
+            meta: onbProfileMeta(profile),
+            metaColor: profile.percent >= 100 ? OnbColors.successText : OnbColors.text3,
+            value: profile.percent / 100,
+            barColor: profile.percent >= 100 ? OnbColors.successDot : OnbColors.amber,
+            barText: '${profile.percent}%',
           ),
         ],
       ],
@@ -129,6 +141,43 @@ class OnbTileGrid extends StatelessWidget {
   }
 }
 
+/// Which tiles show, and the tour's and watch list's three lines (the
+/// artifact's rules). Meetings and Tasks read [StageLens].
+({bool meetings, bool tasks, LensTile? tour, LensTile? watch, bool devices, bool profile}) onbTiles(OnboardingHome home, StageLens lens) {
+  final now = lens.mode == LensMode.now;
+  final month1 = lens.steps.indexOf('Month 1');
+  final lesson = todaysTourLesson(home.tourDone);
+  final lessonsDone = joinerTourLessons.where((l) => home.tourDone.contains(l.key)).length;
+  final count = '$lessonsDone of ${joinerTourLessons.length} done';
+  // The tour runs through Day 1 and Week 1; in Month 1 only while a lesson is left.
+  final tourShows = lens.selected <= 1 || (now && lesson != null && lens.current == month1);
+  final shown = lesson ?? joinerTourLessons.first;
+  final LensTile? tour = !tourShows
+      ? null
+      : switch (lens.mode) {
+          LensMode.now => (label: 'UP NEXT', title: shown.title, meta: '${shown.length} · $count'),
+          LensMode.ahead => (label: lens.inLabel, title: 'Fix a missed punch, leave and overtime', meta: 'A new lesson each day'),
+          LensMode.back => (label: lens.inLabel, title: joinerTourLessons.first.title, meta: count),
+        };
+  // The Meet us videos are the first month's; the server gives them no stage, so only her own.
+  final video = home.watch.where((v) => !v.seen).firstOrNull ?? home.watch.firstOrNull;
+  final LensTile? watch = now && video != null && lens.current <= month1
+      ? (label: 'UP NEXT', title: video.title, meta: home.watch.length == 1 ? '1 video' : '${home.watch.length} videos')
+      : null;
+  return (
+    meetings: now ? lens.meetings.isNotEmpty : lens.meetingsOfStage.isNotEmpty,
+    tasks: now ? lens.tasks.isNotEmpty : lens.tasksOfStage.isNotEmpty,
+    tour: tour,
+    watch: watch,
+    // Day 1's, and later while something is still being set up.
+    devices: now && home.devices.isNotEmpty && (lens.current == 0 || home.devices.any((d) => !d.ready)),
+    // Day 1 and Week 1, as the portal's profile is filled before joining.
+    profile: now && home.profile != null && lens.current <= 1,
+  );
+}
+
+/// "2 of 7 sections done", or "All done".
+String onbProfileMeta(OnbProfileState p) => p.percent >= 100 ? 'All done' : '${p.done} of ${p.total} sections done';
 
 /// The joiner's meetings in the home: their timed items, done ones too.
 List<TaskView> joinerMeetings(OnboardingHome home) => [
@@ -806,7 +855,10 @@ class _Tile extends StatelessWidget {
     this.name,
     this.eyebrow,
     this.gradient,
+    this.color,
+    this.subColor,
     this.light = false,
+    this.minHeight = 140,
   });
 
   final VoidCallback onTap;
@@ -817,20 +869,28 @@ class _Tile extends StatelessWidget {
   final String title;
   final String meta;
   final Gradient? gradient;
+
+  /// A filled tile (the Watch list's brand blue); white when null.
+  final Color? color;
+
+  /// The eyebrow's and meta's colour on a filled tile; white when null.
+  final Color? subColor;
   final bool light;
+  final double minHeight;
 
   @override
   Widget build(BuildContext context) {
     final fg = light ? Colors.white : OnbColors.text;
-    final sub = light ? Colors.white : OnbColors.text3;
+    final sub = light ? (subColor ?? Colors.white) : OnbColors.text3;
+    final plain = gradient == null && color == null;
     return Semantics(
       button: true,
-      label: [name ?? title, ?eyebrow, if (name != null) title, meta].join('. '),
+      label: [name ?? title, ?eyebrow, if (name != null) title, if (meta.isNotEmpty) meta].join('. '),
       child: Material(
-        color: gradient == null ? Colors.white : Colors.transparent,
+        color: color ?? (gradient == null ? Colors.white : Colors.transparent),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
-          side: gradient == null ? const BorderSide(color: OnbColors.line) : BorderSide.none,
+          side: plain ? const BorderSide(color: OnbColors.line) : BorderSide.none,
         ),
         clipBehavior: Clip.antiAlias,
         child: Ink(
@@ -839,7 +899,7 @@ class _Tile extends StatelessWidget {
             onTap: onTap,
             child: ExcludeSemantics(
               child: Container(
-                constraints: const BoxConstraints(minHeight: 140),
+                constraints: BoxConstraints(minHeight: minHeight),
                 padding: const EdgeInsets.all(14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -860,7 +920,7 @@ class _Tile extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (eyebrow != null) ...[
-                          Text(eyebrow!, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.9, color: light ? Colors.white : OnbColors.text3)),
+                          Text(eyebrow!, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.9, color: light ? sub : OnbColors.text3)),
                           const SizedBox(height: 4),
                         ],
                         Text(
@@ -869,8 +929,10 @@ class _Tile extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: top != null ? 16 : 15, height: 1.25, fontWeight: FontWeight.w700, color: fg),
                         ),
-                        const SizedBox(height: 4),
-                        Text(meta, style: TextStyle(fontSize: 12, color: sub)),
+                        if (meta.isNotEmpty) ...[
+                          SizedBox(height: top != null ? 2 : 4),
+                          Text(meta, style: TextStyle(fontSize: 12, color: sub)),
+                        ],
                       ],
                     ),
                   ],
@@ -882,6 +944,79 @@ class _Tile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A full-width tile (Devices and accesses, Your profile): the icon, the
+/// name (and a line beside it), a bar with its count, a chevron.
+class _WideTile extends StatelessWidget {
+  const _WideTile({
+    super.key,
+    required this.onTap,
+    required this.icon,
+    required this.title,
+    required this.value,
+    required this.barColor,
+    required this.barText,
+    this.meta,
+    this.metaColor = OnbColors.text3,
+  });
+
+  final VoidCallback onTap;
+  final Widget icon;
+  final String title;
+  final String? meta;
+  final Color metaColor;
+  final double value;
+  final Color barColor;
+  final String barText;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: [title, ?meta, barText].join('. '),
+    child: ExcludeSemantics(
+      child: OnbCard(
+        padding: const EdgeInsets.all(14),
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48),
+          child: Row(
+            children: [
+              icon,
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Expanded(child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: OnbColors.text))),
+                        if (meta != null) ...[
+                          const SizedBox(width: 8),
+                          Flexible(child: Text(meta!, textAlign: TextAlign.end, style: TextStyle(fontSize: 12, color: metaColor))),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(child: _Bar(value: value, color: barColor)),
+                        const SizedBox(width: 8),
+                        Text(barText, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: OnbColors.text2)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: OnbColors.icon),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class _IconChip extends StatelessWidget {
