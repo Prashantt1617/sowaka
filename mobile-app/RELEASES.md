@@ -20,6 +20,7 @@ sale, change its word to `live`.
 
 | version | build | commit | branch | status | notes |
 |---|---|---|---|---|---|
+| 1.4.3 | 87 | cbf90e02 | release-1.4.3-87 | built | main bbd22758 + build number: the onboarding prototypes (PR #266, new joiner Day 1/Week 1 + manager) on 86's lifecycle work; needs the #258/#266 backend deployed; APK and IPA in ~/Downloads (Sowaka-1.4.3-87.*), archive in Organizer |
 | 1.4.3 | 86 | eca2a909 | app-lc-all | built | 85 + the 20 Nov lifecycle lanes (J1–J3, T1–T2, portal in the app, manager recommendation); needs the backend from PR #258; APK ~/Downloads/Sowaka-1.4.3-86.apk |
 | 1.4.3 | 85 | 38503e47 | release-1.4.3-85 | built | 84 + all of main (lifecycle app screens, photos, Working from home), payroll lock and Sowaka default logo behind company switches; APK ~/Downloads/Sowaka-1.4.3-85.apk, archive in Organizer |
 | 1.4.2 | 84 | be00af6b | release-1.4.2-84 | testflight | 83's code (77 + notifications + punch-out fix) as 1.4.2; AAB ~/Downloads/Sowaka-1.4.2-84.aab, archive in Organizer |
