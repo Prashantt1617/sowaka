@@ -1297,6 +1297,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                         icon: Icons.waving_hand_rounded,
                         color: const Color(0xFF0571A6),
                         tint: const Color(0xFFE8F4FA),
+                        // Figma "Quick Action-Geotag" (4166:19856): Icon · Colour/waving-hand.
+                        imageAsset: 'assets/icons/action_card_onboarding_waving_hand.png',
                         title: 'Onboarding',
                         subtitle: firstDay
                             ? 'Today is your first day'
