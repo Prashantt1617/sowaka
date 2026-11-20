@@ -924,6 +924,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       MaterialPageRoute(
         builder: (_) => PoliciesAckScreen(
           source: HttpPoliciesSource(_policiesApi),
+          // The app's header and tabs around it, as the canvas draws it (Actions lit).
+          shell: currentOnboardingShell(),
           // The company took all of its policies away meanwhile: the built-in page.
           onEmpty: () {
             if (!mounted) return;

@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../manager/data/manager_api_service.dart';
+import '../../../manager/data/manager_models.dart' show LeaveBalance, LeaveBalanceItem;
 import '../../../policies/data/policies_api_service.dart';
 import '../../../policies/presentation/policies_ack_screen.dart';
 import '../../../shared/app_toast.dart';
@@ -68,7 +70,7 @@ class OnbTileGrid extends StatelessWidget {
         ),
       _Tile(
         key: const ValueKey('tile-tour'),
-        onTap: () => _push(context, OnbTourScreen(shell: shell, done: home.tourDone)),
+        onTap: () => _push(context, OnbTourScreen.of(shell, home)),
         gradient: OnbColors.tourGradient,
         light: true,
         icon: const _IconChip(icon: Icons.explore_outlined, tint: Color(0x38FFFFFF), color: Colors.white),
@@ -584,11 +586,27 @@ class _TaskLine extends StatelessWidget {
 /// number (a tick once done), Today / Day n / Done, and Start, Play or
 /// Replay. Managers also see "For managers".
 class OnbTourScreen extends StatefulWidget {
-  const OnbTourScreen({super.key, required this.shell, this.done = const [], this.forManager = false});
+  const OnbTourScreen({super.key, required this.shell, this.done = const [], this.forManager = false, this.managerName, this.leaveBalance});
+
+  /// The tour as the onboarding home has it: lessons done, "For managers"
+  /// when the server sends `tour.managerLessons`, and the manager's name.
+  factory OnbTourScreen.of(OnboardingShell shell, OnboardingHome? home) => OnbTourScreen(
+    shell: shell,
+    done: home?.tourDone ?? const [],
+    forManager: home?.tourForManager ?? false,
+    managerName: home?.managerName,
+  );
 
   final OnboardingShell shell;
   final List<String> done;
   final bool forManager;
+
+  /// "Sent to Sunny" in a lesson's drawing; "your manager" without one.
+  final String? managerName;
+
+  /// The leave lesson's balance; read from the server (`/leaves/balance`)
+  /// when not given.
+  final Future<LeaveBalance?> Function()? leaveBalance;
 
   @override
   State<OnbTourScreen> createState() => _OnbTourScreenState();
@@ -596,6 +614,38 @@ class OnbTourScreen extends StatefulWidget {
 
 class _OnbTourScreenState extends State<OnbTourScreen> {
   late List<String> _done = [...widget.done];
+  LeaveBalance? _balance;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadBalance());
+  }
+
+  Future<void> _loadBalance() async {
+    final api = widget.shell.api;
+    final read = widget.leaveBalance ??
+        (api is HttpOnboardingApi ? () => ManagerApiService(session: api.session).fetchLeaveBalance() : null);
+    if (read == null) return;
+    try {
+      final balance = await read();
+      if (mounted) setState(() => _balance = balance);
+    } catch (_) {
+      // The drawing shows "—" for a balance it could not read.
+    }
+  }
+
+  TourFacts get _facts {
+    double? left(LeaveBalanceItem item) => item.unpaid ? null : item.remaining;
+    final b = _balance;
+    return TourFacts(
+      today: widget.shell.now(),
+      managerName: widget.managerName,
+      casual: b == null ? null : left(b.casual),
+      sick: b == null ? null : left(b.sick),
+      earned: b == null ? null : left(b.earned),
+    );
+  }
 
   Future<void> _play(TourLesson lesson) async {
     await Navigator.of(context).push<void>(
@@ -603,6 +653,7 @@ class _OnbTourScreenState extends State<OnbTourScreen> {
         fullscreenDialog: true,
         builder: (_) => TourLessonScreen(
           lesson: lesson,
+          facts: _facts,
           onDone: (key) async {
             if (mounted && !_done.contains(key)) setState(() => _done = [..._done, key]);
             final server = await reportTourLessonDone(widget.shell, key);
