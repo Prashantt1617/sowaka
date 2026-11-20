@@ -244,7 +244,8 @@ export interface ProfileView {
     ids?: { aadhaarLast4?: string; panLast4?: string };
     photoFileId?: string;
   };
-  emergencyContact?: { name: string; relation: string; phone: string };
+  emergencyContact?: { name: string; relation: string; phone: string; altPhone?: string };
+  emergencyContact2?: { name: string; relation: string; phone: string; altPhone?: string };
   pf?: { firstJob: boolean; uan?: string };
   personalEmail?: string;
   phone?: string;
@@ -262,8 +263,8 @@ export interface JoiningDetails {
   place?: string;
   mapLink?: string;
   meetingLink?: string;
-  manager?: { name: string; designation?: string };
-  buddy?: { name: string; designation?: string };
+  manager?: { name: string; designation?: string; email?: string };
+  buddy?: { name: string; designation?: string; email?: string };
   askFor?: { name: string; phone?: string };
   department?: string;
   designation?: string;

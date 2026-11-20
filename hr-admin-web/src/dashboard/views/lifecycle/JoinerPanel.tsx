@@ -19,7 +19,7 @@ import type {
   BankPfRequest, CandidateDocumentView, ConfirmationDecision, Day1Pass, JourneyDetail, LetterKind, LetterView, TaskView, TemplateListItem,
 } from '../../../services/lifecycle';
 import { FilePreview, NoteDialog, OwnerChip, Pick, PlantFace, Field } from './shared';
-import { IconChevronDown } from '../../icons';
+import { IconChevronDown, IconDownload } from '../../icons';
 import {
   DOCS_OPEN_KEY, PHASES, areaStyle, changedFieldsText, nudgeLabel, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, labelStyle, longDay, rupees, sectionLabel, shortDay, todayKey,
 } from './format';
@@ -113,8 +113,10 @@ const addr = (a?: { line: string; city: string; state: string; pin: string }) =>
 const month = (m?: string) => (m ? new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'now');
 
 /** What the candidate filled in on the portal's Employee profile (the secrets as their last four). */
-function ProfileFacts({ profile: p, emergency, pf, onPhoto }: {
-  profile: NonNullable<JourneyDetail['journey']['profile']>; emergency?: { name: string; relation: string; phone: string }; pf?: { firstJob: boolean; uan?: string }; onPhoto: (id: string) => void;
+type Contact = { name: string; relation: string; phone: string; altPhone?: string };
+const contactLine = (c?: Contact) => (c ? `${c.name} (${c.relation}) · ${c.phone}${c.altPhone ? ` · ${c.altPhone}` : ''}` : '');
+function ProfileFacts({ profile: p, emergency, emergency2, pf, onPhoto }: {
+  profile: NonNullable<JourneyDetail['journey']['profile']>; emergency?: Contact; emergency2?: Contact; pf?: { firstJob: boolean; uan?: string }; onPhoto: (id: string) => void;
 }) {
   return (
     <>
@@ -125,9 +127,10 @@ function ProfileFacts({ profile: p, emergency, pf, onPhoto }: {
         ['Gender', p.personal?.gender], ['Marital status', p.personal?.maritalStatus], ['Nationality', p.personal?.nationality],
         ['Mobile', p.contact?.mobile], ['Current address', addr(p.contact?.current)],
         ['Permanent address', p.contact ? (p.contact.permanentSame ? 'Same as current' : addr(p.contact.permanent)) : ''],
-        ['Emergency contact', emergency ? `${emergency.name} (${emergency.relation}) · ${emergency.phone}` : ''],
+        ['Emergency contact', contactLine(emergency)],
+        ['Second contact', contactLine(emergency2)],
         ['Bank', p.bank ? `${p.bank.holderName} · •••• ${p.bank.accountLast4} · ${p.bank.ifsc}${p.bank.bankName ? ` · ${p.bank.bankName}` : ''}` : ''],
-        ['PF', pf ? (pf.firstJob ? 'First job: no UAN yet' : `UAN ${pf.uan ?? ''}`) : ''],
+        ['PF', pf ? (pf.firstJob ? 'First job: no UAN yet' : pf.uan ? `UAN ${pf.uan}` : 'Has a UAN, not given') : ''],
         ['Education', p.education ? `${p.education.qualification}, ${p.education.institution} (${p.education.year})` : ''],
         ['Experience', p.experience ? (p.experience.firstJob ? 'First job' : p.experience.jobs.map((j) => `${j.role} at ${j.company} (${month(j.from)} – ${month(j.to)})`).join('; ')) : ''],
         ['Aadhaar', p.ids?.aadhaarLast4 ? `•••• ${p.ids.aadhaarLast4}` : ''], ['PAN', p.ids?.panLast4 ? `••••••${p.ids.panLast4}` : ''],
@@ -136,6 +139,11 @@ function ProfileFacts({ profile: p, emergency, pf, onPhoto }: {
     </>
   );
 }
+
+/** The design's pencil, beside Edit offer. */
+const PencilIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4" /></svg>
+);
 
 const doneOf = (list: TaskView[]) => list.filter((t) => t.status === 'done' || t.status === 'skipped').length;
 
@@ -184,7 +192,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
 
   if (!data) {
     return (
-      <DrawerShell width={520} onClose={onClose} label="Joiner" resetKey={journeyId} onEscape={dialog ? undefined : onClose}>
+      <DrawerShell width={480} floating onClose={onClose} label="Joiner" resetKey={journeyId} onEscape={dialog ? undefined : onClose}>
         <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'flex-end' }}><CloseButton onClose={onClose} /></div>
         {error ? <LoadError text={error} onRetry={() => setAttempt((n) => n + 1)} /> : <div style={{ padding: 20 }}><SkeletonLines lines={8} /></div>}
       </DrawerShell>
@@ -333,7 +341,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
                 <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>Version {offer.version}{sentAt ? ` · sent ${shortDay(sentAt)}` : ' · not sent yet'}</span>
               </span>
               <button type="button" className="pd-btn sm" onClick={() => setDialog({ kind: 'file', id: offer.pdfFileId!, name: `Offer letter – ${name}.pdf` })}>View</button>
-              <button type="button" className="pd-btn sm" aria-label="Download offer letter" title="Download" disabled={busy === 'pdf'} onClick={() => void downloadOffer()}>↓</button>
+              <button type="button" className="pd-btn sm" aria-label="Download offer letter" title="Download" disabled={busy === 'pdf'} onClick={() => void downloadOffer()}><IconDownload size={14} stroke="currentColor" /></button>
             </div>
           )}
           {offer.versions.length > 1 && (
@@ -343,7 +351,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
               ))}
             </div>
           )}
-          {PRE_JOIN.has(status) && pay && <span><button type="button" className="pd-btn sm" onClick={() => openDocuments(s.setView, 'offer', journey.id)}>{status === 'draft' ? 'Edit offer' : 'Edit offer'}</button></span>}
+          {PRE_JOIN.has(status) && pay && <span><button type="button" className="pd-btn sm" onClick={() => openDocuments(s.setView, 'offer', journey.id)}><PencilIcon />Edit offer</button></span>}
           {PRE_JOIN.has(status) && pay && status !== 'draft' && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', lineHeight: 1.5 }}>Editing makes version {offer.version + 1} of the offer letter. {first} keeps version {offer.version} until you send the new one.</div>}
         </>
       ) : <Para>No offer yet. New offer letter starts one.</Para>;
@@ -366,7 +374,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
               </span>
               <span style={{ height: 8, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}><i style={{ display: 'block', height: '100%', width: `${profilePct}%`, borderRadius: 99, background: pctColour(profilePct) }} /></span>
             </span>
-            {journey.profile && <ProfileFacts profile={journey.profile} emergency={journey.aboutYou?.emergencyContact} pf={journey.aboutYou?.pf} onPhoto={(id) => setDialog({ kind: 'file', id, name: `Photo – ${name}` })} />}
+            {journey.profile && <ProfileFacts profile={journey.profile} emergency={journey.aboutYou?.emergencyContact} emergency2={journey.aboutYou?.emergencyContact2} pf={journey.aboutYou?.pf} onPhoto={(id) => setDialog({ kind: 'file', id, name: `Photo – ${name}` })} />}
             {documents.length > 0 && <Sub>Documents</Sub>}
             {documents.length > 0 && !seesDocuments && <div className="pd-note">Only HR opens candidates’ documents and ID proofs. You see where each one is.</div>}
             {documents.map((d) => <DocumentRow key={d.id} doc={d} busy={busy === `doc:${d.id}`} canReview={seesDocuments}
@@ -455,7 +463,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   };
 
   return (
-    <DrawerShell width={520} onClose={onClose} label={name} resetKey={journeyId} onEscape={dialog ? undefined : nudgeMenu ? () => setNudgeMenu(false) : closing ? () => setClosing(null) : onClose}>
+    <DrawerShell width={480} floating onClose={onClose} label={name} resetKey={journeyId} onEscape={dialog ? undefined : nudgeMenu ? () => setNudgeMenu(false) : closing ? () => setClosing(null) : onClose}>
       <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--line)', flexShrink: 0 }}>
         <div style={{ flex: 1, fontSize: 12, color: 'var(--ink-3)' }}>{closed ? `Closed · ${STATUS_LABEL[status] ?? status}` : `${TAB_LABELS[journey.tab] ?? ''} · ${columnLabel(journey.column)}`}</div>
         <CloseButton onClose={onClose} />
@@ -506,7 +514,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
                         <span style={{ fontSize: 13.5, fontWeight: state === 'current' ? 600 : 500, color: state === 'todo' ? 'var(--ink-3)' : 'var(--ink)' }}>{title}</span>
                         <span style={{ fontSize: 11.5, color: line.red && state === 'current' ? 'var(--bad)' : state === 'current' ? 'var(--accent-ink)' : 'var(--ink-3)', overflowWrap: 'anywhere' }}>{line.text}</span>
                       </span>
-                      {tag && <Pill label={tag} tone={tag === 'This week' || tag === 'Today' ? { bg: 'var(--warn-bg)', fg: 'var(--warn)' } : { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' }} fontSize={11} padding="2px 9px" />}
+                      {tag && <Pill dot={false} label={tag} tone={tag === 'This week' || tag === 'Today' ? { bg: 'var(--warn-bg)', fg: 'var(--warn)' } : { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' }} fontSize={11} padding="2px 9px" />}
                       <IconChevronDown size={16} stroke="var(--ink-3)" style={{ flex: 'none', transform: open ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }} />
                     </button>
                     {open && <div id={`lf-step-${i}`} style={{ display: 'grid', gap: 12, padding: '12px 12px 8px' }}>{body(i)}</div>}

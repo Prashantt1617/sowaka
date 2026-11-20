@@ -163,31 +163,41 @@ export function aboutYouView(journey: Journey): AboutYou & { phone?: string; edi
 }
 
 /** Saves one step or both ("save on every Next"); editable until the day before joining. */
-export async function saveAboutYou(journey: Journey, input: { emergencyContact?: unknown; pf?: unknown }, now = new Date()): Promise<AboutYou & { phone?: string; editableUntil?: string }> {
+export async function saveAboutYou(journey: Journey, input: { emergencyContact?: unknown; emergencyContact2?: unknown; pf?: unknown }, now = new Date()): Promise<AboutYou & { phone?: string; editableUntil?: string }> {
   if (CLOSED_STATUSES.has(String(journey.status)) || String(journey.status) === 'joined') throw new LifecycleOfferError(409, 'This can no longer be changed here');
   if (journey.tj && istDate(now) >= journey.tj) throw new LifecycleOfferError(409, 'These details lock the day before you join; ask HR to change them');
   const about: AboutYou = { ...aboutYouOf(journey) };
-  if (input.emergencyContact !== undefined) {
-    const ec = (input.emergencyContact ?? {}) as Record<string, unknown>;
+  // One contact as the portal sends it: name, relation, mobile and an optional second number.
+  const contact = (raw: unknown, which: string): NonNullable<AboutYou['emergencyContact']> => {
+    const ec = (raw ?? {}) as Record<string, unknown>;
     const name = String(ec.name ?? '').trim();
-    if (!name || name.length > 80) throw new LifecycleOfferError(400, 'Add your emergency contact’s name');
+    if (!name || name.length > 80) throw new LifecycleOfferError(400, `Add ${which}’s name`);
     const relation = String(ec.relation ?? '') as (typeof RELATIONS)[number];
-    if (!RELATIONS.includes(relation)) throw new LifecycleOfferError(400, 'Pick how they are related to you');
+    if (!RELATIONS.includes(relation)) throw new LifecycleOfferError(400, `Pick how ${which} is related to you`);
     const phone = indianMobile(ec.phone);
-    if (!phone) throw new LifecycleOfferError(400, 'Their phone must be +91 and 10 digits');
+    if (!phone) throw new LifecycleOfferError(400, `The mobile number for ${which} must be +91 and 10 digits`);
     if (phone === indianMobile(journey.candidate?.phone)) throw new LifecycleOfferError(400, 'Add someone else’s number, not your own');
-    about.emergencyContact = { name, relation, phone };
+    const altRaw = String(ec.altPhone ?? '').replace(/[\s()+-]/g, '');
+    const alt = altRaw && altRaw !== '91' ? indianMobile(ec.altPhone) : null;
+    if (altRaw && altRaw !== '91' && !alt) throw new LifecycleOfferError(400, `The other number for ${which} must be +91 and 10 digits`);
+    return { name, relation, phone, ...(alt && alt !== phone ? { altPhone: alt } : {}) };
+  };
+  if (input.emergencyContact !== undefined) about.emergencyContact = contact(input.emergencyContact, 'your emergency contact');
+  if (input.emergencyContact2 !== undefined) {
+    if (input.emergencyContact2 === null) delete about.emergencyContact2;
+    else about.emergencyContact2 = contact(input.emergencyContact2, 'your second contact');
   }
   if (input.pf !== undefined) {
     const pf = (input.pf ?? {}) as Record<string, unknown>;
     if (pf.firstJob === true) about.pf = { firstJob: true };
     else {
+      // The UAN is optional (the portal's "UAN (optional)"): HR can find it from the last employer's records.
       const uan = String(pf.uan ?? '').replace(/\s/g, '');
-      if (!/^\d{12}$/.test(uan)) throw new LifecycleOfferError(400, 'Your UAN is 12 digits');
-      about.pf = { firstJob: false, uan };
+      if (uan && !/^\d{12}$/.test(uan)) throw new LifecycleOfferError(400, 'Your UAN is 12 digits');
+      about.pf = uan ? { firstJob: false, uan } : { firstJob: false };
     }
   }
-  if (input.emergencyContact === undefined && input.pf === undefined) throw new LifecycleOfferError(400, 'Nothing to save');
+  if (input.emergencyContact === undefined && input.emergencyContact2 === undefined && input.pf === undefined) throw new LifecycleOfferError(400, 'Nothing to save');
   about.savedAt = now;
   await journeys().updateOne({ id: journey.id }, { $set: { aboutYou: about, lastActivityAt: now } });
   if (about.emergencyContact && about.pf) await completeTask(journey.id, 'about_you', { name: journey.candidate?.name });
@@ -270,8 +280,8 @@ export async function portalPassIcs(journey: Journey, now = new Date(), opts: { 
 export async function joiningDetails(journey: Journey, now = new Date()) {
   const pass = journey.day1Pass ?? {};
   const [manager, buddy, pending] = await Promise.all([
-    journey.managerUserId ? users().findOne({ userId: journey.managerUserId }, { projection: { _id: 0, name: 1, designation: 1 } }) : null,
-    journey.buddyUserId ? users().findOne({ userId: journey.buddyUserId }, { projection: { _id: 0, name: 1, designation: 1 } }) : null,
+    journey.managerUserId ? users().findOne({ userId: journey.managerUserId }, { projection: { _id: 0, name: 1, designation: 1, email: 1 } }) : null,
+    journey.buddyUserId ? users().findOne({ userId: journey.buddyUserId }, { projection: { _id: 0, name: 1, designation: 1, email: 1 } }) : null,
     dateChangeRequests().findOne({ journeyId: journey.id, status: 'pending' }, { projection: { _id: 0, requestedTj: 1 } }),
   ]);
   const date = pass.date ?? journey.tj;
@@ -279,8 +289,9 @@ export async function joiningDetails(journey: Journey, now = new Date()) {
     ...(date ? { date, daysToGo: daysBetween(istDate(now), date) } : {}),
     ...(pass.reportingTime ? { reportingTime: pass.reportingTime } : {}),
     ...(pass.place ? { place: pass.place } : {}), ...(pass.mapLink ? { mapLink: pass.mapLink } : {}), ...(pass.meetingLink ? { meetingLink: pass.meetingLink } : {}),
-    ...(manager ? { manager: { name: manager.name, ...(manager.designation ? { designation: manager.designation } : {}) } } : {}),
-    ...(buddy ? { buddy: { name: buddy.name, ...(buddy.designation ? { designation: buddy.designation } : {}) } } : {}),
+    // Their work email, so "Say hi" can write to them before the joiner has a work account.
+    ...(manager ? { manager: { name: manager.name, ...(manager.designation ? { designation: manager.designation } : {}), ...(manager.email ? { email: manager.email } : {}) } } : {}),
+    ...(buddy ? { buddy: { name: buddy.name, ...(buddy.designation ? { designation: buddy.designation } : {}), ...(buddy.email ? { email: buddy.email } : {}) } } : {}),
     ...(pass.askFor ? { askFor: pass.askFor } : {}),
     ...(journey.department ? { department: journey.department } : {}), ...(journey.designation ? { designation: journey.designation } : {}),
     bring: pass.bring ?? [],

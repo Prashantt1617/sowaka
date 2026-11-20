@@ -12,8 +12,11 @@ export function DrawerShell({
   label,
   resetKey,
   onEscape,
+  floating,
 }: {
   width?: number;
+  /** Floats 16 px in from the screen's edges with every corner rounded (the onboarding panel's design), instead of sitting flush right. */
+  floating?: boolean;
   onClose: () => void;
   children: ReactNode;
   /** Names the drawer for screen readers and makes it a dialog that takes focus when it opens. */
@@ -36,10 +39,10 @@ export function DrawerShell({
   // (animated, transformed) view would otherwise pin it to that view, so on a scrolled list it
   // opened far up the page, off screen.
   return createPortal(
-    <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', justifyContent: 'flex-end' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', justifyContent: 'flex-end', ...(floating ? { padding: 16 } : {}) }}>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)', animation: 'ovl .2s ease both' }} />
       <div ref={panel} className="scry" {...(label ? { role: 'dialog', 'aria-modal': true, 'aria-label': label, tabIndex: -1 } : {})}
-        style={{ position: 'relative', width, maxWidth: '100%', height: '100%', background: 'var(--surface)', borderRadius: '24px 0 0 24px', boxShadow: 'var(--shadow-drawer)', overflowY: 'auto', display: 'flex', flexDirection: 'column', animation: 'drwIn .25s ease both', outline: 'none' }}>
+        style={{ position: 'relative', width, maxWidth: '100%', height: '100%', background: 'var(--surface)', borderRadius: floating ? 24 : '24px 0 0 24px', boxShadow: 'var(--shadow-drawer)', overflowY: 'auto', display: 'flex', flexDirection: 'column', animation: 'drwIn .25s ease both', outline: 'none' }}>
         {children}
       </div>
     </div>,

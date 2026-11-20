@@ -231,7 +231,11 @@ export interface JourneyView {
   /** The portal's Employee profile (HR only; the account number, Aadhaar and PAN as their last four). */
   profile?: CandidateProfileView;
   /** The portal's About you: the emergency contact and PF (HR only). */
-  aboutYou?: { emergencyContact?: { name: string; relation: string; phone: string }; pf?: { firstJob: boolean; uan?: string } };
+  aboutYou?: {
+    emergencyContact?: { name: string; relation: string; phone: string; altPhone?: string };
+    emergencyContact2?: { name: string; relation: string; phone: string; altPhone?: string };
+    pf?: { firstJob: boolean; uan?: string };
+  };
   waitingOn?: WaitingOn[];
   managerName?: string;
   buddyName?: string;

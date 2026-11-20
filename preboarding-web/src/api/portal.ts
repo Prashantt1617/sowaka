@@ -78,7 +78,8 @@ export const portal = {
     request<{ documents: CandidateDocumentView[] }>(`/portal/documents/${enc(id)}/files/${enc(fileId)}`, { method: 'DELETE' }),
 
   about: () => request<AboutYou>('/portal/about'),
-  saveAbout: (body: Pick<AboutYou, 'emergencyContact' | 'pf'>) => request<AboutYou>('/portal/about', { method: 'PUT', body }),
+  /** Any of: emergencyContact, emergencyContact2 (null removes it), pf. */
+  saveAbout: (body: Partial<Pick<AboutYou, 'pf'>> & { emergencyContact?: unknown; emergencyContact2?: unknown }) => request<AboutYou>('/portal/about', { method: 'PUT', body }),
 
   // ── Employee profile, joining details (the A1 portal) ─────────────────
   profile: () => request<ProfileView>('/portal/profile'),
