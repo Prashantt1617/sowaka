@@ -19,12 +19,12 @@
   ],
   "taxRegime": {
     "regime": "new",
-    "at": "2026-11-17T05:16:26.440Z"
+    "at": "2026-11-20T09:37:53.275Z"
   },
   "bankPf": {
-    "confirmedAt": "2026-11-17T05:16:26.666Z"
+    "confirmedAt": "2026-11-20T09:37:53.522Z"
   },
-  "goalsReadAt": "2026-11-17T05:16:26.672Z",
+  "goalsReadAt": "2026-11-20T09:37:53.530Z",
   "policiesAck": {
     "versions": [
       {
@@ -36,10 +36,10 @@
         "version": "2026-09-15T00:00:00.000Z"
       }
     ],
-    "at": "2026-11-17T05:16:26.433Z",
+    "at": "2026-11-20T09:37:53.250Z",
     "device": "Fixture/1.0"
   },
-  "policiesAckAt": "2026-11-17T05:16:26.433Z",
+  "policiesAckAt": "2026-11-20T09:37:53.250Z",
   "steps": {
     "policies": true,
     "tax": true,
@@ -57,5 +57,5 @@
     "Meet every designer"
   ],
   "probationMonths": 6,
-  "goalsLockOn": "2026-11-18"
+  "goalsLockOn": "2026-11-21"
 }

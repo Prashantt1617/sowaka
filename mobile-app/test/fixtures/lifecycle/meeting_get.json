@@ -1,9 +1,10 @@
 {
   "id": "fx-meeting",
   "title": "Meet your manager",
-  "startsAt": "2026-11-17T05:36:26.129Z",
-  "endsAt": "2026-11-17T06:06:26.129Z",
+  "startsAt": "2026-11-20T09:57:52.848Z",
+  "endsAt": "2026-11-20T10:27:52.848Z",
   "place": "Room 4B",
+  "with": "Meera Iyer",
   "canConfirm": true,
   "attendees": [
     {
@@ -20,11 +21,12 @@
     }
   ],
   "expect": [
-    "How your first week will go and who to meet",
-    "Your probation goals, and what good looks like by month 1",
-    "Bring any questions, nothing to prepare"
+    "What a good first month looks like",
+    "How you’ll work together",
+    "Your first goals",
+    "Who to meet first"
   ],
   "mustDo": true,
   "systemKey": "meet_manager",
-  "taskId": "28eb4fb5-5576-4414-be68-6716164cb803"
+  "taskId": "a85a995e-a524-468d-ba42-556b641909cf"
 }

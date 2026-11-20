@@ -7,7 +7,6 @@ import 'onboarding_home_tabs.dart';
 import '../../../manager/data/manager_api_service.dart';
 import '../../../manager/data/manager_models.dart' show LeaveBalance, LeaveBalanceItem;
 import '../../../policies/data/policies_api_service.dart';
-import '../../../policies/data/policies_models.dart';
 import '../../../policies/presentation/policies_ack_screen.dart';
 import '../data/onboarding_api.dart';
 import '../data/onboarding_models.dart';

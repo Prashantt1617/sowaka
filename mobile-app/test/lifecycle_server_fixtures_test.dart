@@ -141,7 +141,9 @@ void main() {
       expect(up.meeting!.expect, isNotEmpty);
       expect(up.meeting!.place, 'Room 4B');
       expect(home.today.length, (raw['today'] as List).length);
-      expect(home.today.every((t) => t.forEmployee || t.readOnly), isTrue, reason: 'the joiner’s own rows, and others’ only read-only');
+      // A meeting row (the buddy's, the head of department's, someone the manager picked) is the
+      // joiner's to mark met (canTick), whoever's record holds the tick.
+      expect(home.today.every((t) => t.forEmployee || t.readOnly || t.canTick != null), isTrue, reason: 'the joiner’s own rows, meeting rows, and others’ only read-only');
       // Day 1's items others do: listed, read-only, with who does them.
       final others = {for (final t in home.all.where((t) => t.readOnly)) t.systemKey: t.doneBy};
       expect(others, {'welcome_induction': 'HR', 'vision_culture': 'HR', 'meet_team': 'Your manager', 'laptop_setup': 'IT'});
@@ -274,7 +276,8 @@ void main() {
       expect(m.startsAt, isNotNull);
       expect(m.endsAt, isNotNull);
       expect(m.attendees, hasLength(2));
-      expect(m.expect, hasLength(3));
+      // The template's agenda for Meet your manager (seed.ts), the list the home's row carries too.
+      expect(m.expect, ['What a good first month looks like', 'How you’ll work together', 'Your first goals', 'Who to meet first']);
       final moved = (await api.answerMeeting('fx-meeting', 'moved', newTime: DateTime.now()))!;
       expect(moved.met, 'moved');
       expect(moved.newTime, isNotNull);

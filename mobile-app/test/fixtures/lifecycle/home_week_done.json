@@ -1,9 +1,9 @@
 {
-  "journeyId": "9143a96a-9228-4c91-8ef9-74f6496dd720",
+  "journeyId": "0658f964-b29d-4577-80c3-cfa85c49abed",
   "stage": "settling_in",
   "stageName": "Settling in",
   "dayLabel": "Week 2",
-  "tj": "2026-11-09",
+  "tj": "2026-11-12",
   "plant": {
     "stage": 2,
     "water": 3,
@@ -16,7 +16,7 @@
     "total": 8
   },
   "upNext": {
-    "id": "8569777c-5e16-4e61-aa05-c6f29417d08c",
+    "id": "f49270b2-0fd8-4fc7-939d-61ccdcb4daa1",
     "systemKey": "meet_manager",
     "phase": "first_week",
     "title": "Meet your manager",
@@ -26,15 +26,24 @@
     "surface": "app",
     "mustDo": true,
     "status": "todo",
-    "opensAt": "2026-11-09T00:00:00.000Z",
-    "dueAt": "2026-11-09T00:00:00.000Z",
-    "dueLabel": "Mon 9 Nov",
+    "opensAt": "2026-11-12T00:00:00.000Z",
+    "dueAt": "2026-11-12T00:00:00.000Z",
+    "dueLabel": "Thu 12 Nov",
     "late": true,
-    "helper": "Your first 1:1"
+    "helper": "Your first 1:1",
+    "agenda": [
+      "What a good first month looks like",
+      "How you’ll work together",
+      "Your first goals",
+      "Who to meet first"
+    ],
+    "canTick": true,
+    "withName": "Meera Iyer",
+    "withUserId": "mgr"
   },
   "today": [
     {
-      "id": "880e2b65-d815-41a9-87d9-3be9e79031b2",
+      "id": "d6509aee-ed28-4424-8fac-63053121751a",
       "systemKey": "about_you",
       "phase": "pre_boarding",
       "title": "Emergency contact and PF",
@@ -45,13 +54,13 @@
       "mustDo": false,
       "status": "todo",
       "opensAt": null,
-      "dueAt": "2026-11-06T00:00:00.000Z",
-      "dueLabel": "Fri 6 Nov",
+      "dueAt": "2026-11-09T00:00:00.000Z",
+      "dueLabel": "Mon 9 Nov",
       "late": true,
       "helper": "Emergency contact and PF · 2 min"
     },
     {
-      "id": "79cecd55-85d7-4bed-8e94-4041fcfcb4fc",
+      "id": "232d8161-4847-45fb-98ba-5ecf4c03f098",
       "systemKey": "meet_us",
       "phase": "pre_boarding",
       "title": "Meet us videos",
@@ -62,13 +71,13 @@
       "mustDo": false,
       "status": "todo",
       "opensAt": null,
-      "dueAt": "2026-11-08T00:00:00.000Z",
-      "dueLabel": "Sun 8 Nov",
+      "dueAt": "2026-11-11T00:00:00.000Z",
+      "dueLabel": "Wed 11 Nov",
       "late": true,
       "helper": "Short videos from the team"
     },
     {
-      "id": "b110d906-03a5-4035-8a57-7ed3b05ceb67",
+      "id": "fdf6a4fa-bc00-4b1d-bd51-2cb5d4e77a4a",
       "systemKey": "welcome_induction",
       "phase": "first_week",
       "title": "Welcome and induction",
@@ -77,16 +86,23 @@
       "surface": "dashboard",
       "mustDo": false,
       "status": "todo",
-      "opensAt": "2026-11-09T00:00:00.000Z",
-      "dueAt": "2026-11-09T00:00:00.000Z",
-      "dueLabel": "Mon 9 Nov",
+      "opensAt": "2026-11-12T00:00:00.000Z",
+      "dueAt": "2026-11-12T00:00:00.000Z",
+      "dueLabel": "Thu 12 Nov",
       "late": true,
       "helper": "With HR · your first morning",
       "readOnly": true,
-      "doneBy": "HR"
+      "doneBy": "HR",
+      "agenda": [
+        "Your ID card and documents",
+        "Working hours and attendance",
+        "Payroll and your tax declaration",
+        "Who to ask for what"
+      ],
+      "canTick": false
     },
     {
-      "id": "8569777c-5e16-4e61-aa05-c6f29417d08c",
+      "id": "f49270b2-0fd8-4fc7-939d-61ccdcb4daa1",
       "systemKey": "meet_manager",
       "phase": "first_week",
       "title": "Meet your manager",
@@ -96,14 +112,23 @@
       "surface": "app",
       "mustDo": true,
       "status": "todo",
-      "opensAt": "2026-11-09T00:00:00.000Z",
-      "dueAt": "2026-11-09T00:00:00.000Z",
-      "dueLabel": "Mon 9 Nov",
+      "opensAt": "2026-11-12T00:00:00.000Z",
+      "dueAt": "2026-11-12T00:00:00.000Z",
+      "dueLabel": "Thu 12 Nov",
       "late": true,
-      "helper": "Your first 1:1"
+      "helper": "Your first 1:1",
+      "agenda": [
+        "What a good first month looks like",
+        "How you’ll work together",
+        "Your first goals",
+        "Who to meet first"
+      ],
+      "canTick": true,
+      "withName": "Meera Iyer",
+      "withUserId": "mgr"
     },
     {
-      "id": "ee16a895-ad5d-42ac-b396-1ea813bd0f4d",
+      "id": "b3c4509b-bbaa-4f9b-a64d-0ead537cc169",
       "systemKey": "vision_culture",
       "phase": "first_week",
       "title": "Company vision and culture",
@@ -112,16 +137,22 @@
       "surface": "dashboard",
       "mustDo": false,
       "status": "todo",
-      "opensAt": "2026-11-09T00:00:00.000Z",
-      "dueAt": "2026-11-09T00:00:00.000Z",
-      "dueLabel": "Mon 9 Nov",
+      "opensAt": "2026-11-12T00:00:00.000Z",
+      "dueAt": "2026-11-12T00:00:00.000Z",
+      "dueLabel": "Thu 12 Nov",
       "late": true,
       "helper": "A session for your batch",
       "readOnly": true,
-      "doneBy": "HR"
+      "doneBy": "HR",
+      "agenda": [
+        "Where the company is going and why",
+        "How we work together",
+        "Questions are welcome"
+      ],
+      "canTick": false
     },
     {
-      "id": "94729944-c72d-4d20-aa44-7ed6dcc01187",
+      "id": "6f1faa20-bd25-49e3-9f2a-4ec0cd270851",
       "systemKey": "meet_team",
       "phase": "first_week",
       "title": "Meet your team",
@@ -131,16 +162,23 @@
       "surface": "app",
       "mustDo": true,
       "status": "todo",
-      "opensAt": "2026-11-09T00:00:00.000Z",
-      "dueAt": "2026-11-09T00:00:00.000Z",
-      "dueLabel": "Mon 9 Nov",
+      "opensAt": "2026-11-12T00:00:00.000Z",
+      "dueAt": "2026-11-12T00:00:00.000Z",
+      "dueLabel": "Thu 12 Nov",
       "late": true,
       "helper": "Your manager introduces you",
       "readOnly": true,
-      "doneBy": "Your manager"
+      "doneBy": "Your manager",
+      "agenda": [
+        "Who does what in the team",
+        "How the team works day to day"
+      ],
+      "canTick": false,
+      "withName": "Meera Iyer",
+      "withUserId": "mgr"
     },
     {
-      "id": "05e23dcb-10bf-4461-872e-15a39c8164f6",
+      "id": "bb543eb4-2139-4c62-878c-5b93a8c04bdc",
       "systemKey": "laptop_setup",
       "phase": "first_week",
       "title": "Set up laptop and login",
@@ -149,16 +187,34 @@
       "surface": "dashboard",
       "mustDo": false,
       "status": "todo",
-      "opensAt": "2026-11-09T00:00:00.000Z",
-      "dueAt": "2026-11-09T00:00:00.000Z",
-      "dueLabel": "Mon 9 Nov",
+      "opensAt": "2026-11-12T00:00:00.000Z",
+      "dueAt": "2026-11-12T00:00:00.000Z",
+      "dueLabel": "Thu 12 Nov",
       "late": true,
       "helper": "IT hands over your laptop and logins",
       "readOnly": true,
       "doneBy": "IT"
     },
     {
-      "id": "f3edd0c6-519a-445b-aaa6-72b74b7d0755",
+      "id": "policies",
+      "phase": "first_week",
+      "title": "Acknowledge policies",
+      "ownerRole": "employee",
+      "kind": "ack",
+      "surface": "app",
+      "mustDo": false,
+      "status": "todo",
+      "opensAt": null,
+      "dueAt": "2026-11-12T00:00:00.000Z",
+      "late": false,
+      "progress": {
+        "done": 0,
+        "total": 2
+      },
+      "opens": "policies"
+    },
+    {
+      "id": "17ff0247-38ec-4120-83f6-9005464731eb",
       "systemKey": "register_face",
       "phase": "first_week",
       "title": "Register face for punch-in",
@@ -168,14 +224,14 @@
       "surface": "app",
       "mustDo": false,
       "status": "todo",
-      "opensAt": "2026-11-09T00:00:00.000Z",
-      "dueAt": "2026-11-10T00:00:00.000Z",
-      "dueLabel": "Tue 10 Nov",
+      "opensAt": "2026-11-12T00:00:00.000Z",
+      "dueAt": "2026-11-13T00:00:00.000Z",
+      "dueLabel": "Fri 13 Nov",
       "late": true,
       "helper": "2 min · needed to punch in"
     },
     {
-      "id": "2c80a429-81ad-43f6-8ab9-8f68b6314bbe",
+      "id": "13b4d365-2773-42c5-b8bc-eed750d80f07",
       "systemKey": "app_tour",
       "phase": "first_week",
       "title": "Take the Sowaka tour",
@@ -185,14 +241,14 @@
       "surface": "app",
       "mustDo": false,
       "status": "todo",
-      "opensAt": "2026-11-09T00:00:00.000Z",
-      "dueAt": "2026-11-12T00:00:00.000Z",
-      "dueLabel": "Thu 12 Nov",
+      "opensAt": "2026-11-12T00:00:00.000Z",
+      "dueAt": "2026-11-15T00:00:00.000Z",
+      "dueLabel": "Sun 15 Nov",
       "late": true,
       "helper": "5 min"
     },
     {
-      "id": "d2c99c64-c627-447a-b695-e2a8972c5ccd",
+      "id": "ffd69c6a-5266-4aad-8872-27c5844f1973",
       "systemKey": "intro_post",
       "phase": "first_week",
       "title": "Intro post",
@@ -202,14 +258,14 @@
       "surface": "app",
       "mustDo": false,
       "status": "todo",
-      "opensAt": "2026-11-09T00:00:00.000Z",
-      "dueAt": "2026-11-12T00:00:00.000Z",
-      "dueLabel": "Thu 12 Nov",
+      "opensAt": "2026-11-12T00:00:00.000Z",
+      "dueAt": "2026-11-15T00:00:00.000Z",
+      "dueLabel": "Sun 15 Nov",
       "late": true,
       "helper": "Say hello on Connect · 2 min"
     },
     {
-      "id": "da0d4f73-c495-4c91-93a3-e2034101b319",
+      "id": "a0de10ee-50ed-43b3-b064-111702c6c7f9",
       "systemKey": "week1_reels",
       "phase": "first_week",
       "title": "Week-1 tasks",
@@ -219,9 +275,9 @@
       "surface": "app",
       "mustDo": true,
       "status": "todo",
-      "opensAt": "2026-11-09T00:00:00.000Z",
-      "dueAt": "2026-11-14T00:00:00.000Z",
-      "dueLabel": "Sat 14 Nov",
+      "opensAt": "2026-11-12T00:00:00.000Z",
+      "dueAt": "2026-11-17T00:00:00.000Z",
+      "dueLabel": "Tue 17 Nov",
       "late": true,
       "helper": "Policies, tax regime, bank and PF, your goals",
       "progress": {
@@ -230,7 +286,30 @@
       }
     },
     {
-      "id": "c760b1b1-1651-4ee6-9605-a7c7cc767eca",
+      "surface": "app",
+      "mustDo": false,
+      "opensAt": null,
+      "late": false,
+      "meetingRow": true,
+      "id": "team:hod_meet",
+      "title": "Meet your head of department",
+      "ownerRole": "head_of_department",
+      "ownerName": "Hema Rao",
+      "kind": "meeting",
+      "phase": "first_week",
+      "dueAt": "2026-11-18T00:00:00.000Z",
+      "status": "todo",
+      "agenda": [
+        "How you’re settling in",
+        "What the department is working on",
+        "Anything you needs from you"
+      ],
+      "canTick": true,
+      "withName": "Hema Rao",
+      "withUserId": "hr"
+    },
+    {
+      "id": "6cd6f8f1-e08f-4c9e-9bd1-d78e09c628d5",
       "systemKey": "day7_survey",
       "phase": "first_week",
       "title": "Day-7 survey",
@@ -240,14 +319,14 @@
       "surface": "app",
       "mustDo": false,
       "status": "todo",
-      "opensAt": "2026-11-15T00:00:00.000Z",
-      "dueAt": "2026-11-16T00:00:00.000Z",
-      "dueLabel": "Mon 16 Nov",
+      "opensAt": "2026-11-18T00:00:00.000Z",
+      "dueAt": "2026-11-19T00:00:00.000Z",
+      "dueLabel": "Thu 19 Nov",
       "late": true,
       "helper": "4 quick questions"
     },
     {
-      "id": "3011ba20-2962-41d4-8096-1e836708d8ba",
+      "id": "db71f2ec-9d54-48e6-aa0c-e364b4d67814",
       "systemKey": "people_to_meet",
       "phase": "first_week",
       "title": "People to meet · month 1",
@@ -257,9 +336,9 @@
       "surface": "app",
       "mustDo": false,
       "status": "todo",
-      "opensAt": "2026-11-09T00:00:00.000Z",
-      "dueAt": "2026-12-08T00:00:00.000Z",
-      "dueLabel": "Tue 8 Dec",
+      "opensAt": "2026-11-12T00:00:00.000Z",
+      "dueAt": "2026-12-11T00:00:00.000Z",
+      "dueLabel": "Fri 11 Dec",
       "late": false,
       "month": 1,
       "helper": "People your manager picked for you"
@@ -267,7 +346,7 @@
   ],
   "later": [
     {
-      "id": "2382c850-5d99-4a78-a47c-76c3227dee90",
+      "id": "293c92d1-fe71-41d7-9a3b-c4b179f92681",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 1",
@@ -277,15 +356,23 @@
       "surface": "app",
       "mustDo": true,
       "status": "locked",
-      "opensAt": "2026-12-02T00:00:00.000Z",
-      "dueAt": "2026-12-08T00:00:00.000Z",
-      "dueLabel": "Tue 8 Dec",
+      "opensAt": "2026-12-05T00:00:00.000Z",
+      "dueAt": "2026-12-11T00:00:00.000Z",
+      "dueLabel": "Fri 11 Dec",
       "late": false,
       "month": 1,
-      "helper": "How the month went, with your manager"
+      "helper": "How the month went, with your manager",
+      "agenda": [
+        "Progress on this month’s goals",
+        "Feedback both ways",
+        "Goals for next month"
+      ],
+      "canTick": false,
+      "withName": "Meera Iyer",
+      "withUserId": "mgr"
     },
     {
-      "id": "09a1c88c-979c-415e-950c-d68e6f56dc0c",
+      "id": "e627af6e-ca2a-4969-ad0b-4e5846d18058",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 2",
@@ -295,15 +382,23 @@
       "surface": "app",
       "mustDo": true,
       "status": "locked",
-      "opensAt": "2027-01-02T00:00:00.000Z",
-      "dueAt": "2027-01-08T00:00:00.000Z",
-      "dueLabel": "Fri 8 Jan",
+      "opensAt": "2027-01-05T00:00:00.000Z",
+      "dueAt": "2027-01-11T00:00:00.000Z",
+      "dueLabel": "Mon 11 Jan",
       "late": false,
       "month": 2,
-      "helper": "How the month went, with your manager"
+      "helper": "How the month went, with your manager",
+      "agenda": [
+        "Progress on this month’s goals",
+        "Feedback both ways",
+        "Goals for next month"
+      ],
+      "canTick": false,
+      "withName": "Meera Iyer",
+      "withUserId": "mgr"
     },
     {
-      "id": "64957bec-ef78-4b73-b8b1-8185565dcedc",
+      "id": "bc67b130-b82f-4628-8b4b-77a4268d6cb3",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 3",
@@ -313,15 +408,23 @@
       "surface": "app",
       "mustDo": true,
       "status": "locked",
-      "opensAt": "2027-02-02T00:00:00.000Z",
-      "dueAt": "2027-02-08T00:00:00.000Z",
-      "dueLabel": "Mon 8 Feb",
+      "opensAt": "2027-02-05T00:00:00.000Z",
+      "dueAt": "2027-02-11T00:00:00.000Z",
+      "dueLabel": "Thu 11 Feb",
       "late": false,
       "month": 3,
-      "helper": "How the month went, with your manager"
+      "helper": "How the month went, with your manager",
+      "agenda": [
+        "Progress on this month’s goals",
+        "Feedback both ways",
+        "Goals for next month"
+      ],
+      "canTick": false,
+      "withName": "Meera Iyer",
+      "withUserId": "mgr"
     },
     {
-      "id": "3449869d-e21a-4267-afc0-ccffc0414a8a",
+      "id": "2ce86101-2b23-4ec5-8879-3820acf1778d",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 4",
@@ -331,15 +434,23 @@
       "surface": "app",
       "mustDo": true,
       "status": "locked",
-      "opensAt": "2027-03-02T00:00:00.000Z",
-      "dueAt": "2027-03-08T00:00:00.000Z",
-      "dueLabel": "Mon 8 Mar",
+      "opensAt": "2027-03-05T00:00:00.000Z",
+      "dueAt": "2027-03-11T00:00:00.000Z",
+      "dueLabel": "Thu 11 Mar",
       "late": false,
       "month": 4,
-      "helper": "How the month went, with your manager"
+      "helper": "How the month went, with your manager",
+      "agenda": [
+        "Progress on this month’s goals",
+        "Feedback both ways",
+        "Goals for next month"
+      ],
+      "canTick": false,
+      "withName": "Meera Iyer",
+      "withUserId": "mgr"
     },
     {
-      "id": "8d7df52f-501b-4bd1-bee5-5dd229078e73",
+      "id": "087332af-5b48-4d95-9334-daa0a30b3790",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 5",
@@ -349,15 +460,23 @@
       "surface": "app",
       "mustDo": true,
       "status": "locked",
-      "opensAt": "2027-04-02T00:00:00.000Z",
-      "dueAt": "2027-04-08T00:00:00.000Z",
-      "dueLabel": "Thu 8 Apr",
+      "opensAt": "2027-04-05T00:00:00.000Z",
+      "dueAt": "2027-04-11T00:00:00.000Z",
+      "dueLabel": "Sun 11 Apr",
       "late": false,
       "month": 5,
-      "helper": "How the month went, with your manager"
+      "helper": "How the month went, with your manager",
+      "agenda": [
+        "Progress on this month’s goals",
+        "Feedback both ways",
+        "Goals for next month"
+      ],
+      "canTick": false,
+      "withName": "Meera Iyer",
+      "withUserId": "mgr"
     },
     {
-      "id": "788ee17a-e8b8-419b-8403-cac8b20dd714",
+      "id": "9725fa29-b94e-4a7c-9744-6bcee0b49c69",
       "systemKey": "monthly_checkin",
       "phase": "probation",
       "title": "Monthly check-in · month 6",
@@ -367,15 +486,23 @@
       "surface": "app",
       "mustDo": true,
       "status": "locked",
-      "opensAt": "2027-05-02T00:00:00.000Z",
-      "dueAt": "2027-05-08T00:00:00.000Z",
-      "dueLabel": "Sat 8 May",
+      "opensAt": "2027-05-05T00:00:00.000Z",
+      "dueAt": "2027-05-11T00:00:00.000Z",
+      "dueLabel": "Tue 11 May",
       "late": false,
       "month": 6,
-      "helper": "How the month went, with your manager"
+      "helper": "How the month went, with your manager",
+      "agenda": [
+        "Progress on this month’s goals",
+        "Feedback both ways",
+        "Goals for next month"
+      ],
+      "canTick": false,
+      "withName": "Meera Iyer",
+      "withUserId": "mgr"
     },
     {
-      "id": "062dab2d-3391-42bc-997b-5305703326f2",
+      "id": "26fe62e8-1d3e-4992-910f-1cd4cc5fe238",
       "systemKey": "pulse_survey",
       "phase": "probation",
       "title": "Pulse survey · month 3",
@@ -385,14 +512,14 @@
       "surface": "app",
       "mustDo": false,
       "status": "locked",
-      "opensAt": "2027-01-09T00:00:00.000Z",
+      "opensAt": "2027-01-12T00:00:00.000Z",
       "dueAt": null,
       "late": false,
       "month": 3,
       "helper": "4 quick questions"
     },
     {
-      "id": "38dc18d2-4cb3-4f03-aaf7-df25d9c7a1f7",
+      "id": "3ab7c571-cd53-4ad1-b51e-bf16d32d3730",
       "systemKey": "pulse_survey",
       "phase": "probation",
       "title": "Pulse survey · month 6",
@@ -402,7 +529,7 @@
       "surface": "app",
       "mustDo": false,
       "status": "locked",
-      "opensAt": "2027-04-09T00:00:00.000Z",
+      "opensAt": "2027-04-12T00:00:00.000Z",
       "dueAt": null,
       "late": false,
       "month": 6,
@@ -448,5 +575,86 @@
     "tasksDone": 0,
     "peopleMet": 0,
     "leaves": 0
+  },
+  "firstPunch": {
+    "faceEnrolled": false
+  },
+  "day1": {
+    "peopleMet": 0,
+    "thingsDone": 0
+  },
+  "tour": {
+    "lessons": [
+      "punch",
+      "missed",
+      "leave",
+      "overtime"
+    ],
+    "done": []
+  },
+  "policies": {
+    "required": 2,
+    "acknowledged": 0,
+    "toAcknowledge": 2
+  },
+  "devices": [
+    {
+      "key": "laptop",
+      "title": "Laptop",
+      "ready": false
+    },
+    {
+      "key": "email",
+      "title": "Email",
+      "ready": true
+    },
+    {
+      "key": "app",
+      "title": "Sowaka Connect",
+      "ready": true
+    }
+  ],
+  "companyName": "Fixture Works",
+  "watch": [],
+  "profile": {
+    "sections": [
+      {
+        "key": "personal",
+        "title": "Personal details",
+        "done": false
+      },
+      {
+        "key": "contact",
+        "title": "Contact and address",
+        "done": false
+      },
+      {
+        "key": "emergency",
+        "title": "Emergency contact",
+        "done": false
+      },
+      {
+        "key": "bank",
+        "title": "Bank account and PF",
+        "done": false
+      },
+      {
+        "key": "education",
+        "title": "Education and experience",
+        "done": false
+      },
+      {
+        "key": "ids",
+        "title": "ID documents (Aadhaar, PAN)",
+        "done": false
+      },
+      {
+        "key": "photo",
+        "title": "Photo",
+        "done": false
+      }
+    ],
+    "done": 0,
+    "total": 7
   }
 }
