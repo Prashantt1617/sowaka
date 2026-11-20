@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from 'express';
 import { logger } from '../utils/logger';
 import { policiesAcknowledgedByJoiner } from '../services/lifecycle/appOnboarding';
 import {
-  PolicyDocumentError, PolicyViewer, acknowledgePolicy, adminPolicies, createPolicy, deletePolicy, policiesFor, reorderPolicies, updatePolicy,
+  PolicyDocumentError, PolicyViewer, acknowledgePolicy, adminPolicies, createPolicy, deletePolicy, policiesFor, policyAckCounts, reorderPolicies, updatePolicy,
 } from '../services/policy-document.service';
 
 function viewerOf(req: Request): PolicyViewer {
@@ -13,7 +13,9 @@ function viewerOf(req: Request): PolicyViewer {
 
 export async function policiesHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json({ success: true, policies: await policiesFor(viewerOf(req)) });
+    const policies = await policiesFor(viewerOf(req));
+    // `toAcknowledge` is the count Actions' Policies tile shows ("3 to acknowledge"); see policyAckCounts.
+    res.json({ success: true, policies, ...policyAckCounts(policies) });
   } catch (error) {
     next(error);
   }
@@ -35,7 +37,7 @@ export async function acknowledgePolicyHandler(req: Request, res: Response, next
       await policiesAcknowledgedByJoiner({ userId: viewer.userId, name: user.name ?? '', org: user.org }, out.policies, device).catch((error: unknown) =>
         logger.warn('Policy acknowledgement not passed to onboarding', { userId: viewer.userId, reason: (error as Error).message }));
     }
-    res.json({ success: true, ...out });
+    res.json({ success: true, ...out, ...policyAckCounts(out.policies) });
   } catch (error) {
     next(error);
   }
