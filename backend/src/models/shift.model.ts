@@ -238,6 +238,23 @@ export function isUnpaidLeaveType(types: LeaveTypeRule[] | undefined, key: strin
  * `carried` from here rather than re-deriving it, so a balance cannot change
  * retroactively because someone edited the policy afterwards.
  */
+/**
+ * HR's change to one person's total for one leave type and year (dashboard ›
+ * Employee › Requests › Leave balance). Stored as a difference from the
+ * worked-out total (monthly credits + what last year carried), so later credits
+ * still add on top; leave taken is never touched. The balance, the apply check,
+ * the app and the year-end close all add it.
+ */
+export interface LeaveBalanceAdjustment {
+  org: string;
+  userId: string;
+  year: number;
+  type: string;
+  days: number;
+  updatedAt: Date;
+  updatedByUserId: string;
+}
+
 export interface LeaveYearEnd {
   _id?: ObjectId;
   org: string;

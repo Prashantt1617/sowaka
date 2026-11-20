@@ -32,10 +32,10 @@ export function OwnerChip({ role, name, you, label: words, title }: { role: Owne
 }
 
 /** A card's flag; Quiet and Expires soon carry their days ("Quiet 4 days", "Expires in 4 days") when the card has them. */
-export function FlagPill({ flag, card }: { flag: JourneyFlag; card?: { quietDays?: number; expiresInDays?: number } }) {
+export function FlagPill({ flag, card, dot }: { flag: JourneyFlag; card?: { quietDays?: number; expiresInDays?: number }; dot?: boolean }) {
   const f = FLAG[flag];
   if (!f) return null;
-  return <Pill label={flagLabel(flag, card)} tone={f.tone} fontSize={11} padding="2px 9px" />;
+  return <Pill label={flagLabel(flag, card)} tone={f.tone} fontSize={11} padding="2px 9px" dot={dot} />;
 }
 
 // —— Plant ———————————————————————————————————————————————————————————————

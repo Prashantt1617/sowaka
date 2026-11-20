@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../store';
 import { canSeePay } from '../../access';
 import { Card, LoadError, PageActions, Pill, SearchInput, Skeleton, SkeletonFrame } from '../../ui';
-import { IconDownload, IconPlus } from '../../icons';
+import { IconChevronLeft, IconDownload, IconPlus, IconSearch } from '../../icons';
 import { downloadCsv } from '../../export';
 import { getBoard, getClosedJourneys, isNotAvailable } from '../../../services/lifecycle';
 import type { BoardCard, BoardDTO, BoardTab, ClosedJourneyRow, JourneyFlag } from '../../../services/lifecycle';
@@ -304,7 +304,7 @@ function PreBody({ card, col }: { card: BoardCard; col: number }) {
       {!!card.optionalWaiting && (
         <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>{card.optionalWaiting === 1 ? 'Optional document waiting' : `${card.optionalWaiting} optional documents waiting`}</div>
       )}
-      {flag && <span><Pill label={flag.label} tone={flag.tone} fontSize={11} padding="2px 9px" /></span>}
+      {flag && <span><Pill dot={false} label={flag.label} tone={flag.tone} fontSize={11} padding="2px 9px" /></span>}
     </>
   );
 }
@@ -329,7 +329,7 @@ function StepBody({ card }: { card: BoardCard }) {
           </span>
         )}
         {next?.dueAt && <span className={`due${late ? ' late' : ''}`}><ClockIcon /> {dueText(next.dueAt, late)}</span>}
-        {flag && <span style={{ marginLeft: 'auto' }}><FlagPill flag={flag} card={card} /></span>}
+        {flag && <span style={{ marginLeft: 'auto' }}><FlagPill flag={flag} card={card} dot={false} /></span>}
       </div>
     </>
   );
@@ -351,12 +351,18 @@ function ListView({ tab, cards, filters, onFilters, onBack, openId, onOpen }: {
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <button type="button" className="pd-btn sm" onClick={onBack}>‹ Back to board</button>
+        <button type="button" className="pd-btn sm" onClick={onBack}><IconChevronLeft size={15} stroke="currentColor" />Back to board</button>
         <b style={{ fontSize: 15, fontWeight: 600 }}>{TAB_LABELS[tab]} · {filters.col === 'all' ? 'everyone' : cols[Number(filters.col)]?.label}</b>
         <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{rows.length} {rows.length === 1 ? 'person' : 'people'}</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
-        <label style={labelStyle}>Search<SearchInput value={filters.q} onChange={(q) => set({ q })} placeholder="Name or department" width={240} /></label>
+        <label style={labelStyle}>Search
+          <span style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: 6, width: 240, height: 40 }}>
+            <IconSearch size={15} stroke="var(--ink-3)" />
+            <input value={filters.q} onChange={(e) => set({ q: e.target.value })} placeholder="Name or department" className="ds-inp-bare" aria-label="Search by name or department"
+              style={{ border: 0, outline: 'none', background: 'none', flex: 1, minWidth: 0, font: 'inherit', fontSize: 13, color: 'var(--ink)', height: '100%', padding: 0 }} />
+          </span>
+        </label>
         <label style={{ ...labelStyle, width: 190 }}>Step
           <select value={filters.col} onChange={(e) => set({ col: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
             <option value="all">All steps</option>
@@ -370,12 +376,12 @@ function ListView({ tab, cards, filters, onFilters, onBack, openId, onOpen }: {
             <option value="revised">Revised</option>
           </select>
         </label>
-        <label style={{ ...labelStyle, width: 160 }}>Joining from<input type="date" value={filters.from} max={filters.to || undefined} onChange={(e) => set({ from: e.target.value })} style={inputStyle} /></label>
-        <label style={{ ...labelStyle, width: 160 }}>Joining to<input type="date" value={filters.to} min={filters.from || undefined} onChange={(e) => set({ to: e.target.value })} style={inputStyle} /></label>
+        <DateField label="Joining from" value={filters.from} max={filters.to || undefined} placeholder="01 Dec 2026" onChange={(from) => set({ from })} />
+        <DateField label="Joining to" value={filters.to} min={filters.from || undefined} placeholder="31 Jan 2027" onChange={(to) => set({ to })} />
         {filtered && <button type="button" className="pd-btn sm" style={{ marginBottom: 5 }} onClick={() => onFilters({ col: 'all', ...NO_FILTERS })}>Clear filters</button>}
       </div>
-      <div className="pd-tbl-wrap" style={{ margin: 0, padding: 0 }}>
-        <table className="pd-t" style={{ minWidth: 860 }}>
+      <div style={{ overflowX: 'auto', border: '1px solid var(--line)', borderRadius: 16 }}>
+        <table className="pd-t pd-t--boxed" style={{ minWidth: 860 }}>
           <thead><tr><th>Employee</th><th>Department</th><th>Step</th><th>Joining date</th><th>Offer sent</th><th>Offer</th><th aria-label="Open" /></tr></thead>
           <tbody>
             {rows.map((p) => {
@@ -388,7 +394,7 @@ function ListView({ tab, cards, filters, onFilters, onBack, openId, onOpen }: {
                   <td>{cols[p.col]?.label}</td>
                   <td className="num" style={{ whiteSpace: 'nowrap' }}>{p.card.tj ? longDay(p.card.tj) : '—'}</td>
                   <td className="num" style={{ whiteSpace: 'nowrap' }}>{p.card.offerSentAt ? shortDay(p.card.offerSentAt) : '—'}</td>
-                  <td><Pill label={label} tone={o.tone} fontSize={11} padding="2px 9px" /></td>
+                  <td><Pill dot={false} label={label} tone={o.tone} fontSize={11} padding="2px 9px" /></td>
                   <td className="r"><button type="button" className="pd-btn sm" data-journey-card={p.card.journeyId} onClick={(e) => { e.stopPropagation(); onOpen(p.card.journeyId); }}>Open</button></td>
                 </tr>
               );
@@ -398,6 +404,22 @@ function ListView({ tab, cards, filters, onFilters, onBack, openId, onOpen }: {
         {!rows.length && <p style={{ margin: 0, padding: 28, textAlign: 'center', color: 'var(--ink-3)' }}>No one matches these filters.</p>}
       </div>
     </div>
+  );
+}
+
+const boxDate = (key: string) => new Date(`${key}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+
+/** A joining-date filter: the day as "01 Dec 2026" (grey example until one is picked); a click opens the browser's date picker. */
+function DateField({ label, value, placeholder, min, max, onChange }: { label: string; value: string; placeholder: string; min?: string; max?: string; onChange: (v: string) => void }) {
+  return (
+    <label style={{ ...labelStyle, width: 150 }}>{label}
+      <span style={{ ...inputStyle, position: 'relative', display: 'flex', alignItems: 'center', height: 40, color: value ? 'var(--ink)' : 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>
+        {value ? boxDate(value) : placeholder}
+        <input type="date" value={value} min={min} max={max} aria-label={label} onChange={(e) => onChange(e.target.value)}
+          onClick={(e) => { try { (e.currentTarget as HTMLInputElement & { showPicker?: () => void }).showPicker?.(); } catch { /* the field still takes typing */ } }}
+          style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', border: 0, padding: 0, cursor: 'pointer' }} />
+      </span>
+    </label>
   );
 }
 
@@ -414,15 +436,15 @@ function ClosedTable({ rows, error, q, search, onSearch, openId, onOpen, onRetry
       {!shown.length ? (
         <div className="pd-note">{q ? 'No closed offer matches this search.' : 'No closed offers. Declined, expired and not-joining offers show here.'}</div>
       ) : (
-        <div className="pd-tbl-wrap" style={{ margin: 0, padding: 0 }}>
-          <table className="pd-t" style={{ minWidth: 760 }}>
+        <div style={{ overflowX: 'auto', border: '1px solid var(--line)', borderRadius: 16 }}>
+          <table className="pd-t pd-t--boxed" style={{ minWidth: 760 }}>
             <thead><tr><th>Employee</th><th>Status</th><th>Reason</th><th>Offer sent</th><th>Closed on</th></tr></thead>
             <tbody>
               {shown.map((r) => (
                 <tr key={r.journeyId} className="pd-click" data-journey-card={r.journeyId} tabIndex={0} aria-selected={openId === r.journeyId}
                   onClick={() => onOpen(r.journeyId)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(r.journeyId); } }}>
                   <td><b>{r.name}</b><div style={{ fontSize: 12, color: 'var(--ink-3)' }}>{[r.designation, r.department].filter(Boolean).join(' · ')}</div></td>
-                  <td><Pill label={CLOSED_LABEL[r.status] ?? r.status} tone={CLOSED_TONE[r.status] ?? TONE.wait} fontSize={11} padding="2px 9px" /></td>
+                  <td><Pill dot={false} label={CLOSED_LABEL[r.status] ?? r.status} tone={CLOSED_TONE[r.status] ?? TONE.wait} fontSize={11} padding="2px 9px" /></td>
                   <td style={{ color: 'var(--ink-2)' }}>{r.closedReason ?? '—'}</td>
                   <td className="num" style={{ whiteSpace: 'nowrap' }}>{r.offerSentAt ? shortDay(r.offerSentAt) : '—'}</td>
                   <td className="num" style={{ whiteSpace: 'nowrap' }}>{r.closedAt ? longDay(r.closedAt) : '—'}</td>

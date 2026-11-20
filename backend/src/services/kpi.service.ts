@@ -42,20 +42,28 @@ function objectId(value: string, field: string): ObjectId {
 }
 
 /**
- * Assignments may only be written for a cycle that has not opened yet.
+ * Assignments may be written for the cycle in progress or a later one, never a
+ * past one.
  *
- * A manager scoring right now must not have the parameters change underneath
- * them, and two managers in one cycle must not be judging against different
- * sets. So the live cycle is frozen and every change lands in the next one —
- * the same rule parameter wording follows.
+ * HR asked (20 Nov 2026) for an employee's KPIs to be editable from their
+ * profile for the cycle in progress: the edit is what their manager scores
+ * against from now. Template bulk assignment keeps the next-cycle rule (below).
+ * A review already sent is not affected, because `FeedbackRecord` snapshots
+ * the parameters and wording it was scored on. Closed cycles stay as they were
+ * so their reports do not change after the fact.
  */
+async function requireOpenCycle(org: string, period: string): Promise<void> {
+  const live = await currentPeriodFor(org);
+  if (period < live) {
+    throw new KpiError(409, `That cycle has closed. Assign for ${live} (in progress) or later instead.`);
+  }
+}
+
+/** Template bulk assignment keeps the old rule: it lands in the next cycle, never the one in progress. */
 async function requireFutureCycle(org: string, period: string): Promise<void> {
   const live = await currentPeriodFor(org);
   if (period <= live) {
-    throw new KpiError(
-      409,
-      `The cycle in progress cannot be changed. Assign for ${nextPeriod(live)} or later instead.`,
-    );
+    throw new KpiError(409, `The cycle in progress cannot be changed. Assign for ${nextPeriod(live)} or later instead.`);
   }
 }
 
@@ -810,7 +818,7 @@ export async function assignKpis(
 
   const employee = await users().findOne({ userId, org });
   if (!employee) throw new KpiError(404, 'Employee not found in this company');
-  await requireFutureCycle(org, period);
+  await requireOpenCycle(org, period);
 
   let parameterIds: string[];
   let weights: Record<string, number>;

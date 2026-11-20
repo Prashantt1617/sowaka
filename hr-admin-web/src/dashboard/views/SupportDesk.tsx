@@ -1,6 +1,6 @@
 // Support › Tickets — concerns employees raise from the app, and the chat
 // with them. Two desks on one tab: a Support head sees every ticket and decides
-// who works it (Assign to…, Keep it); support staff see only the tickets
+// who works it (a ticket is theirs unless they assign it); support staff see only the tickets
 // assigned to them and can reply, resolve or send one back to the head.
 // Nobody gets the tab without a Support role (People › Accesses). A Support
 // head or a dashboard admin also edits the company's ticket types here.
@@ -566,7 +566,6 @@ function TicketPane({ detail, role, meId, onChanged, pending, onSend, onRetry, o
   const [showHistory, setShowHistory] = useState(false);
   // A sent reply steps aside once the server's copy, by its id, is in the thread.
   const shownPending = pending.filter((p) => !p.serverId || !messages.some((m) => m.id === p.serverId));
-  const firstName = (n: string) => n.split(/\s+/)[0] || n;
 
   const run = async (work: () => Promise<unknown>, msg: string, leavesDesk = false) => {
     setBusy(true);
@@ -586,7 +585,6 @@ function TicketPane({ detail, role, meId, onChanged, pending, onSend, onRetry, o
   // Sent with the version on screen, so a ticket changed meanwhile is refused, not overwritten.
   const assign = (p: SupportAssignee) =>
     run(() => assignSupportTicket(t.id, p.userId, t.version), p.userId === meId ? 'You kept this ticket' : `Assigned to ${p.name}`);
-  const keep = () => run(() => assignSupportTicket(t.id, meId, t.version), 'You kept this ticket');
 
   const requesterMeta = [t.requester.employeeId, t.requester.department].filter(Boolean).join(' · ');
   const resolvedEvent = [...events].reverse().find((e) => e.type === 'resolved');
@@ -607,7 +605,7 @@ function TicketPane({ detail, role, meId, onChanged, pending, onSend, onRetry, o
               {requesterMeta && <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}> · {requesterMeta}</span>}
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, marginTop: 2 }}>
-              Raised {fullDate(t.createdAt)} · {t.assignee ? <>With <strong style={{ color: 'var(--ink-2)' }}>{mineNow ? 'you' : t.assignee.name}</strong></> : 'In the head’s queue, unassigned'}
+              Raised {fullDate(t.createdAt)} · {t.assignee ? <>With <strong style={{ color: 'var(--ink-2)' }}>{mineNow ? 'you' : t.assignee.name}</strong></> : isHead ? 'Yours unless you assign it' : 'Unassigned'}
             </div>
           </div>
         </div>
@@ -616,14 +614,13 @@ function TicketPane({ detail, role, meId, onChanged, pending, onSend, onRetry, o
           {isHead && !resolved && (
             <>
               <AssignMenu label={t.assignee ? 'Reassign…' : 'Assign to…'} currentId={t.assignee?.userId} meId={meId} disabled={busy} onPick={(p) => void assign(p)} />
-              {!mineNow && <button type="button" disabled={busy} onClick={() => void keep()} style={ghostBtn}>Keep it</button>}
             </>
           )}
           {!isHead && !resolved && (
             <button type="button" disabled={busy} onClick={() => setDialog('sendback')} style={ghostBtn}>Send back to head</button>
           )}
           {!resolved && (isHead || mineNow) && (
-            <button type="button" disabled={busy} onClick={() => setDialog('resolve')} className={btnClass('ok')} style={btn('ok')}>Resolve</button>
+            <button type="button" disabled={busy} onClick={() => setDialog('resolve')} className={btnClass('ok')} style={btn('ok')}>Close ticket</button>
           )}
           <button type="button" onClick={() => setShowHistory((s) => !s)}
             style={{ ...ghostBtn, marginLeft: 'auto', background: showHistory ? 'var(--sel)' : 'var(--surface)', color: showHistory ? 'var(--on-sel)' : 'var(--ink)', borderColor: showHistory ? 'var(--sel)' : 'var(--line-2)' }}>
@@ -641,15 +638,6 @@ function TicketPane({ detail, role, meId, onChanged, pending, onSend, onRetry, o
         <FooterNote tone="done">
           Resolved{resolvedEvent ? ` ${fullDate(resolvedEvent.createdAt)}` : ''}{resolvedEvent ? ` by ${eventActor(resolvedEvent, meId)}` : ''}. The employee can’t reply; the app asks them to raise a new ticket.
         </FooterNote>
-      ) : isHead && !mineNow ? (
-        <FooterNote>
-          <span style={{ flex: 1 }}>
-            {t.assignee
-              ? <>{firstName(t.assignee.name)} has this ticket. Keep it to reply yourself; it leaves {firstName(t.assignee.name)}’s desk.</>
-              : 'Keep this ticket to reply, so the employee hears one voice.'}
-          </span>
-          <button type="button" disabled={busy} onClick={() => void keep()} style={primaryBtn}>Keep it</button>
-        </FooterNote>
       ) : (
         <Composer onSend={(text, files) => onSend(t.id, text, files)} />
       )}
@@ -660,7 +648,7 @@ function TicketPane({ detail, role, meId, onChanged, pending, onSend, onRetry, o
       )}
       {dialog === 'resolve' && (
         <ConfirmResolveDialog busy={busy} onClose={() => setDialog(null)}
-          onConfirm={() => void run(() => resolveSupportTicket(t.id), 'Ticket resolved')} />
+          onConfirm={() => void run(() => resolveSupportTicket(t.id), 'Ticket closed')} />
       )}
     </>
   );

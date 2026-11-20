@@ -319,16 +319,33 @@ const NATIONALITIES = ['Indian', 'Other'];
 const STATES = ['Andaman and Nicobar Islands', 'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chandigarh', 'Chhattisgarh', 'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jammu and Kashmir', 'Jharkhand', 'Karnataka', 'Kerala', 'Ladakh', 'Lakshadweep', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Puducherry', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** Date of birth: shows "14 Mar 1998" (the design) and opens the date picker while it has focus; kept as YYYY-MM-DD. */
+/**
+ * Date of birth: shows "14 Mar 1998" (the design), kept as YYYY-MM-DD.
+ *
+ * The native date input sits over the shown text, invisible, so the first tap
+ * opens the phone's date picker and a click opens the browser's calendar.
+ * (It used to be a text box that turned into a date input on focus: on phones
+ * the keyboard was already up, no picker came, and nothing could be entered.)
+ */
 function DateField({ label, value, onChange }: { label: string; value: string; onChange: (s: string) => void }) {
   const id = useId();
+  const input = useRef<HTMLInputElement>(null);
   const [focus, setFocus] = useState(false);
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  const shown = m ? `${Number(m[3])} ${MON[Number(m[2]) - 1]} ${m[1]}` : value;
+  const shown = m ? `${Number(m[3])} ${MON[Number(m[2]) - 1]} ${m[1]}` : '';
+  const today = new Date().toISOString().slice(0, 10);
+  const open = () => {
+    try { input.current?.showPicker?.(); } catch { /* not allowed here (e.g. not from a click): the field still takes typing */ }
+  };
   return (
     <FigField label={label} id={id}>
-      <input id={id} className="fig-input" type={focus ? 'date' : 'text'} value={focus ? value : shown} placeholder="DD Mon YYYY"
-        onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} onChange={(e) => onChange(e.target.value)} />
+      <div className="fig-date">
+        <div className="fig-input fig-date__shown" data-focus={focus || undefined} aria-hidden="true">
+          {shown || <span className="fig-date__ph">DD Mon YYYY</span>}
+        </div>
+        <input ref={input} id={id} className="fig-date__native" type="date" value={value} min="1930-01-01" max={today}
+          onClick={open} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} onChange={(e) => onChange(e.target.value)} />
+      </div>
     </FigField>
   );
 }

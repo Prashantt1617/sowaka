@@ -40,7 +40,8 @@ import { LossOfPayExplainer } from '../LossOfPayExplainer';
 import { downloadPayslipPdf } from '../payslip';
 import { downloadTdsSheetPdf } from '../tdsSheet';
 import type { CalendarDayDTO, CalendarDayStatus, EmployeeCalendarDTO, HrDayStatus, LeaveBalanceItemDTO } from '../../services/hrms';
-import { getEmployeeLeaveBalance } from '../../services/hrms';
+import { getEmployeeLeaveBalance, setEmployeeLeaveTotal } from '../../services/hrms';
+import { btn, btnClass } from '../ds';
 
 // —— Deterministic per-person derivations ————————————————————————————————
 const GENDERS = ['Male', 'Female'];
@@ -103,15 +104,39 @@ const TYPE_BY_KEY: Record<string, LeaveType> = { sick: 'Sick', casual: 'Casual',
 const leaveColour = (key: string) => (TYPE_BY_KEY[key] ? TYPE[TYPE_BY_KEY[key]] : 'var(--accent)');
 const days = (n: number) => String(Math.round(n * 10) / 10);
 
-/** The employee's real leave balance, as their app shows it: every type on their template. */
-function LeaveBalanceSection({ userId }: { userId: string }) {
+/**
+ * The employee's real leave balance, as their app shows it: every type on their template.
+ * HR can change a type's total for the year (pencil on the card); what is taken is the
+ * approved leave and never changes here, so the total cannot go below it.
+ */
+function LeaveBalanceSection({ userId, canEdit }: { userId: string; canEdit?: boolean }) {
   const [state, setState] = useState<{ types: LeaveBalanceItemDTO[] } | 'loading' | 'error'>('loading');
+  const [editing, setEditing] = useState<{ key: string; value: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   useEffect(() => {
     let live = true;
     setState('loading');
     getEmployeeLeaveBalance(userId).then((b) => live && setState({ types: b.types }), () => live && setState('error'));
     return () => { live = false; };
   }, [userId]);
+  const save = async (b: LeaveBalanceItemDTO) => {
+    if (!editing) return;
+    const total = Number(editing.value);
+    if (!Number.isFinite(total) || total < 0) { setError('Enter a number of days'); return; }
+    if (total < b.used) { setError(`${days(b.used)} days are already taken, so the total can’t be less`); return; }
+    setSaving(true);
+    setError('');
+    try {
+      const next = await setEmployeeLeaveTotal(userId, b.key, total);
+      setState({ types: next.types });
+      setEditing(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Couldn’t save the total');
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
     <Section title="Leave balance" icon={<PdCalendar />}>
       {state === 'loading' ? <SkeletonLines lines={2} />
@@ -121,17 +146,36 @@ function LeaveBalanceSection({ userId }: { userId: string }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, paddingTop: 8 }}>
             {state.types.map((b) => {
               const pct = b.total > 0 ? Math.min(100, Math.round((b.used / b.total) * 100)) : 0;
+              const open = editing?.key === b.key;
               return (
                 <div key={b.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ width: 10, height: 10, borderRadius: 3, background: leaveColour(b.key), flexShrink: 0 }} />
-                    <span style={{ fontSize: 12.5, fontWeight: 400, color: 'var(--ink-2)' }}>{b.name}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 400, color: 'var(--ink-2)', flex: 1 }}>{b.name}</span>
+                    {canEdit && b.editable && !open && (
+                      <button type="button" className="pd-sec-act" aria-label={`Edit ${b.name} total`} title="Edit the total"
+                        onClick={() => { setError(''); setEditing({ key: b.key, value: days(b.total) }); }}
+                        style={{ padding: 2 }}><PdEdit /></button>
+                    )}
                   </div>
                   {b.unpaid ? (
                     <>
                       <span style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, marginTop: 6 }}>Unpaid</span>
                       <div className="pd-subnote" style={{ marginTop: 6 }}>No balance · {days(b.used)} taken this year</div>
                     </>
+                  ) : open ? (
+                    <form onSubmit={(e) => { e.preventDefault(); void save(b); }} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+                      <label style={{ fontSize: 11.5, color: 'var(--ink-3)' }} htmlFor={`lt-${b.key}`}>Total for the year</label>
+                      <input id={`lt-${b.key}`} type="number" min={b.used} step={0.5} autoFocus value={editing.value}
+                        onChange={(e) => setEditing({ key: b.key, value: e.target.value })}
+                        style={{ height: 34, padding: '0 10px', border: '1px solid var(--line-2)', borderRadius: 8, font: 'inherit', fontSize: 14, background: 'var(--surface)', color: 'var(--ink)' }} />
+                      <div className="pd-subnote">{days(b.used)} taken · stays as it is</div>
+                      {error && <div style={{ fontSize: 12, color: 'var(--bad)' }}>{error}</div>}
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button type="submit" className={btnClass('primary')} style={{ ...btn('primary'), height: 32, padding: '0 12px', fontSize: 12.5 }} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+                        <button type="button" className={btnClass()} style={{ ...btn(), height: 32, padding: '0 12px', fontSize: 12.5 }} disabled={saving} onClick={() => { setEditing(null); setError(''); }}>Cancel</button>
+                      </div>
+                    </form>
                   ) : (
                     <>
                       <span style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>{days(b.remaining)}<span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 500 }}> / {days(b.total)}</span></span>
@@ -460,7 +504,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
       {tab === 'requests' && (
         <div className="pd-psecs">
           <div className="pd-psecs">
-            <LeaveBalanceSection userId={emp.id} />
+            <LeaveBalanceSection userId={emp.id} canEdit={canEditDetails && emp.id !== user?.id} />
           </div>
           <RequestsForEmployee emp={emp} />
         </div>

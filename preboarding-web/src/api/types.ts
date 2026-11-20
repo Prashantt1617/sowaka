@@ -189,6 +189,8 @@ export interface MeetItem {
   authorRole?: string;
   /** not in CONTRACT: the author's face beside their name (an API path; absent for no photo). */
   authorPhotoUrl?: string;
+  /** On `policies`: the company's policies as the app reads them, with their text (each opens in the portal). */
+  policies?: Array<{ key: string; title: string; summary: string; body: string }>;
 }
 
 export type LetterState = 'locked' | 'ready' | 'opened' | 'signed';
@@ -244,7 +246,8 @@ export interface ProfileView {
     ids?: { aadhaarLast4?: string; panLast4?: string };
     photoFileId?: string;
   };
-  emergencyContact?: { name: string; relation: string; phone: string };
+  emergencyContact?: { name: string; relation: string; phone: string; altPhone?: string };
+  emergencyContact2?: { name: string; relation: string; phone: string; altPhone?: string };
   pf?: { firstJob: boolean; uan?: string };
   personalEmail?: string;
   phone?: string;
@@ -262,8 +265,8 @@ export interface JoiningDetails {
   place?: string;
   mapLink?: string;
   meetingLink?: string;
-  manager?: { name: string; designation?: string };
-  buddy?: { name: string; designation?: string };
+  manager?: { name: string; designation?: string; email?: string };
+  buddy?: { name: string; designation?: string; email?: string };
   askFor?: { name: string; phone?: string };
   department?: string;
   designation?: string;

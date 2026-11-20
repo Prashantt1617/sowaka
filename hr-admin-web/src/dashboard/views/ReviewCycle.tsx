@@ -82,9 +82,9 @@ export function ReviewCycle() {
       <div style={L.note}>
         <span style={{ fontSize: 13, lineHeight: 1.5 }}>ℹ️</span>
         <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>
-          Everything under Performance is scoped to this cycle. A cycle that has opened is frozen:
-          KPI wording edits and new assignments land in the <strong>next</strong> one, so a manager
-          scoring right now never has the form change underneath them.
+          Everything under Performance is scoped to this cycle. KPI wording edits and template
+          assignments land in the <strong>next</strong> one. One person’s KPIs can be changed for the
+          cycle in progress from their profile; a review already sent keeps what it was scored on.
         </div>
       </div>
       </Card>

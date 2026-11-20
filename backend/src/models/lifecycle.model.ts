@@ -488,8 +488,11 @@ export interface CandidateProfile {
   savedAt?: Date;
 }
 
+export interface EmergencyContact { name: string; relation: 'Parent' | 'Partner' | 'Sibling' | 'Friend'; phone: string; altPhone?: string }
 export interface AboutYou {
-  emergencyContact?: { name: string; relation: 'Parent' | 'Partner' | 'Sibling' | 'Friend'; phone: string };
+  emergencyContact?: EmergencyContact;
+  /** An optional second person to call (the portal's "Add another contact"). */
+  emergencyContact2?: EmergencyContact;
   pf?: { firstJob: boolean; uan?: string };
   savedAt?: Date;
 }

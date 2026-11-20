@@ -259,3 +259,13 @@ select.a1-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .a1-culture__play { width: 44px; height: 44px; border-radius: 999px; background: rgba(255, 255, 255, .2); display: flex; align-items: center; justify-content: center; }
 .a1-story__logo { width: 40px; height: 40px; border-radius: 999px; background: #fff; color: var(--a1-brand); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex: none; overflow: hidden; }
 .a1-story__logo img { width: 100%; height: 100%; object-fit: contain; }
+.a1-story__input { flex: 1; min-width: 0; height: 48px; border-radius: 999px; border: 1.5px solid rgba(255, 255, 255, .7); background: transparent; padding: 0 18px; font: inherit; font-size: 14px; color: #fff; outline: none; }
+.a1-story__input::placeholder { color: rgba(255, 255, 255, .85); }
+.a1-story__input:focus { border-color: #fff; }
+.a1-story__icon { width: 48px; height: 48px; border-radius: 999px; border: 0; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #fff; flex: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.a1-install li.step { min-height: 40px; padding: 6px 12px; line-height: 18px; }
+.a1-install ol { flex-wrap: nowrap; }
+.a1-install li.step span { min-width: 0; }
+.a1-copy { width: 40px; height: 40px; border-radius: 999px; border: 0; background: transparent; color: var(--a1-ink-3); display: flex; align-items: center; justify-content: center; cursor: pointer; flex: none; }
+.a1-copy.is-done { color: var(--a1-green); }

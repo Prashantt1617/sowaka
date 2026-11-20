@@ -48,7 +48,7 @@ import { EmployeePaymentDetails } from '../models/employeePayment.model';
 import { TaxDeclarationRow, TdsConfigRow } from '../models/tds.model';
 import { FlexibleSplit, InvestmentProof } from '../models/employeePayroll.model';
 import { KpiAssignment, KpiParameter, KpiTemplate } from '../models/kpi.model';
-import { LeaveYearEnd, OrgShiftPolicy, ShiftAssignment, ShiftTemplate } from '../models/shift.model';
+import { LeaveBalanceAdjustment, LeaveYearEnd, OrgShiftPolicy, ShiftAssignment, ShiftTemplate } from '../models/shift.model';
 import { ReimbursementType } from '../models/reimbursement-type.model';
 import { ConnectBlock, ContentReport } from '../models/moderation.model';
 import { TalkSession } from '../models/talk.model';
@@ -292,6 +292,10 @@ export function offices(): Collection<Office> {
 
 export function shiftPolicies(): Collection<OrgShiftPolicy> {
   return getDb().collection<OrgShiftPolicy>('shift_policies');
+}
+
+export function leaveBalanceAdjustments(): Collection<LeaveBalanceAdjustment> {
+  return getDb().collection<LeaveBalanceAdjustment>('leave_balance_adjustments');
 }
 
 export function leaveYearEnds(): Collection<LeaveYearEnd> {
@@ -819,6 +823,7 @@ async function ensureIndexes(database: Db): Promise<void> {
  */
 export async function proposedHeavyPageIndexes(database: Db): Promise<void> {
   await database.collection('leave_year_ends').createIndex({ userId: 1, type: 1, year: 1 });
+  await database.collection('leave_balance_adjustments').createIndex({ userId: 1, year: 1, type: 1 }, { unique: true });
   await database.collection('employee_payment_details').createIndex({ org: 1, userId: 1 });
   await database.collection('tax_declarations').createIndex({ org: 1, fy: 1, userId: 1 });
   await database.collection('suwi_digests').createIndex({ org: 1, userId: 1, date: 1 });

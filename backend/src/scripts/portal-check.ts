@@ -333,6 +333,19 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   await portalSvc.saveAboutYou(journeyA, { emergencyContact: { name: 'Asha Mehta', relation: 'Parent', phone: '+91 91234 56789' } });
   journeyA = (await db.journeys().findOne({ id: A }))!;
   ok('step 1 saved on its own; the task waits for step 2', journeyA.aboutYou?.emergencyContact?.phone === '+919123456789' && (await db.journeyTasks().findOne({ journeyId: A, systemKey: 'about_you' }))?.status !== 'done');
+  ok('a bad second number is refused', (await refusal(() => portalSvc.saveAboutYou(journeyA, { emergencyContact: { name: 'Asha Mehta', relation: 'Parent', phone: '+91 91234 56789', altPhone: '123' } }))).status === 400);
+  await portalSvc.saveAboutYou(journeyA, {
+    emergencyContact: { name: 'Asha Mehta', relation: 'Parent', phone: '+91 91234 56789', altPhone: '+91 99887 76655' },
+    emergencyContact2: { name: 'Ravi Mehta', relation: 'Sibling', phone: '9988123456' },
+  });
+  journeyA = (await db.journeys().findOne({ id: A }))!;
+  ok('a second number and a second contact are kept', journeyA.aboutYou?.emergencyContact?.altPhone === '+919988776655' && journeyA.aboutYou?.emergencyContact2?.name === 'Ravi Mehta' && journeyA.aboutYou?.emergencyContact2?.phone === '+919988123456', journeyA.aboutYou);
+  await portalSvc.saveAboutYou(journeyA, { emergencyContact2: null });
+  journeyA = (await db.journeys().findOne({ id: A }))!;
+  ok('the second contact can be removed, the first stays', !journeyA.aboutYou?.emergencyContact2 && journeyA.aboutYou?.emergencyContact?.name === 'Asha Mehta');
+  await portalSvc.saveAboutYou(journeyA, { pf: { firstJob: false } });
+  journeyA = (await db.journeys().findOne({ id: A }))!;
+  ok('a UAN is optional when they have one (HR can find it)', journeyA.aboutYou?.pf?.firstJob === false && !journeyA.aboutYou?.pf?.uan);
   await portalSvc.saveAboutYou(journeyA, { pf: { firstJob: false, uan: '1000 0000 0001' } });
   ok('both steps saved: task done', (await db.journeyTasks().findOne({ journeyId: A, systemKey: 'about_you' }))?.status === 'done');
   ok('About you locks on the joining day', (await refusal(() => portalSvc.saveAboutYou(journeyA, { pf: { firstJob: true } }, at10(tj)))).status === 409);
@@ -343,6 +356,8 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   await db.journeys().updateOne({ id: A }, { $set: { 'meetUs.managerNote': { kind: 'text', text: 'Your portfolio made us rethink our own onboarding.' } } });
   const withNote = await portalSvc.meetItems((await db.journeys().findOne({ id: A }))!);
   ok('the manager’s note names its author and role once (the portal adds "· your manager")', withNote[0].id === 'manager_note' && withNote[0].authorName === 'Neha Rao' && withNote[0].authorRole === 'Design lead', withNote[0]);
+  const jd = await portalSvc.joiningDetails((await db.journeys().findOne({ id: A }))!);
+  ok('Joining details: the manager by name with their work email (Say hi), the pass day a week before', jd.manager?.name === 'Neha Rao' && /@/.test(jd.manager?.email ?? '') && jd.passOpensOn === addDays(tj, -7), jd);
   // A video note: a signed media link, because <video src> cannot send the portal's Bearer token.
   const clip = Buffer.from('fake mp4 bytes for the manager video note');
   const clipFile = await files.storeFile(ORG, A, { name: 'Hello from Neha.mp4', contentType: 'video/mp4', bytes: clip }, 'manager');
