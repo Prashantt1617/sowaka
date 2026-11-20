@@ -472,7 +472,7 @@ function loadSave(){ const id=playerId(), key=id?SAVE_KEY+'.'+id:SAVE_KEY; if(ke
   let s=readSave(key);
   if(id){ const old=readSave(SAVE_KEY); if(!s&&old)s=old; try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
   saveKey=key; save=Object.assign(freshSave(),s||{}); if(!Array.isArray(save.scores))save.scores=[]; save.level=Math.max(1,Math.floor(+save.level||1),reported);
-  if(!validCur(save.cur))save.cur=null;
+  if(!validCur(save.cur))save.cur=null; if(save.cur&&!save.cur.duel&&(Math.floor(+save.cur.lv)||1)<save.level)save.cur=null; /* a puzzle left from below the saved level (a phone that lost its save) gives way to where you were */
   if(s&&id)store(); reportLevel(); return true; }
 loadSave();
 let lbData=null; /* the last leaderboard seen */
