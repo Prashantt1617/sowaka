@@ -1160,6 +1160,7 @@ class ProbationMonth {
     this.reviewAt,
     this.reviewFeedback = const [],
     this.askAck = false,
+    this.sentBackAt,
   });
 
   factory ProbationMonth.fromJson(Map<String, dynamic> json) {
@@ -1176,6 +1177,7 @@ class ProbationMonth {
       reviewAt: parseLifecycleDate(review['at']),
       reviewFeedback: _strings(review['feedback']),
       askAck: _bool(review['askAck']),
+      sentBackAt: parseLifecycleDate(_map(json['sentBack'])['at']),
     );
   }
 
@@ -1192,6 +1194,9 @@ class ProbationMonth {
   /// One-tap feedback chips on the review, and "On it" for the ask.
   final List<String> reviewFeedback;
   final bool askAck;
+
+  /// When the manager sent the joiner's self check-in back to send again (team side).
+  final DateTime? sentBackAt;
 
   bool get reviewed => reviewAt != null || review != null || reviewFeedback.isNotEmpty;
 

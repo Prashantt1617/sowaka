@@ -414,6 +414,12 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
                 <Sub>Manager and buddy</Sub>
                 <PeoplePicker key={`${journey.managerUserId}-${journey.buddyUserId}`} managerUserId={journey.managerUserId} buddyUserId={journey.buddyUserId} exclude={journey.userId}
                   emps={emps} busy={busy === 'people'} onSave={(patch) => run('people', () => updateJourney(journey.id, patch), 'Saved')} />
+                {data.teamRows && data.teamRows.length > 0 && (
+                  <>
+                    <Sub>Team tasks in the app</Sub>
+                    <TeamRows rows={data.teamRows} />
+                  </>
+                )}
                 {status === 'draft' && templates.length > 1 && (
                   <Field label="Onboarding template" hint="Can change until the offer is sent">
                     <Pick value={journey.templateId} onChange={(v) => void run('template', () => updateJourney(journey.id, { templateId: v }), 'Template changed')}>
@@ -679,6 +685,21 @@ function LetterRow({ letter, name, onOpen, onDocuments }: { letter: LetterView; 
       </span>
       {file && <button type="button" className="pd-btn sm" onClick={() => onOpen(file, `${KIND_LABEL[letter.kind]} – ${name}${letter.signedPdfFileId ? ' (signed)' : ''}.pdf`)}>View</button>}
       {letter.state === 'draft' && <button type="button" className="pd-btn sm ghost" onClick={onDocuments}>Open in Documents</button>}
+    </div>
+  );
+}
+
+/** The team side's rows, read-only: what the manager, the buddy and the head of department ticked in the app. */
+const TEAM_OWNER: Record<string, string> = { manager: 'Manager', buddy: 'Buddy', head_of_department: 'Head of department' };
+function TeamRows({ rows }: { rows: NonNullable<JourneyDetail['teamRows']> }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {rows.map((r) => (
+        <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12.5, color: 'var(--ink-2)' }}>
+          <span>{r.title} <span style={{ color: 'var(--ink-3)' }}>· {TEAM_OWNER[r.owner] ?? r.owner} · {r.step}</span></span>
+          <span style={{ color: r.done ? 'var(--green, #15803D)' : 'var(--ink-3)', whiteSpace: 'nowrap' }}>{r.done ? `Done${r.doneByName ? ` · ${r.doneByName}` : ''}` : 'Not yet'}</span>
+        </div>
+      ))}
     </div>
   );
 }

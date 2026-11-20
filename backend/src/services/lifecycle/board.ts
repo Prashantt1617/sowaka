@@ -488,7 +488,7 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
   const [, nudged] = await Promise.all([markNudged(journey.waitingOn, now), nudgedToday(tasks.map((t) => t.id), now)]);
   const views = tasks.map((t) => ({ ...taskView(t, j, names, now), canNudge: !('reason' in nudgeTarget(j, t)), ...(nudged.has(t.id) ? { nudgedToday: true } : {}) }));
   const probationView = viewer.seesPay ? probation : { ...probation, decision: decisionWithoutPay(probation.decision) };
-  return { journey, tasks: views, documents, letters, offer, dateRequests, probation: probationView, batch, viewer };
+  return { journey, tasks: views, documents, letters, offer, dateRequests, probation: probationView, batch, viewer, teamRows: await (await import('./teamTasks')).teamRowsForHr(j) };
 }
 
 /** A candidate document without its files: what someone outside HR may see. */

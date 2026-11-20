@@ -241,8 +241,9 @@ async function starterViews(j: Journey, names: Map<string, string>, now: Date): 
   }));
 }
 
-export async function onboardingHome(me: Me, now = new Date()) {
-  const j = await joinerJourney(me.userId);
+/** `journey`: the team side's View progress reads the joiner's own home (teamTasks.ts), so both show the same. */
+export async function onboardingHome(me: Me, now = new Date(), journey?: Journey) {
+  const j = journey ?? await joinerJourney(me.userId);
   const tasks = await tasksOf(j.id);
   const derived = deriveJourney(j, tasks, now);
   const today = todayKey(now, companyTimeZone(j.org));
@@ -337,7 +338,7 @@ const TOUR_ALL_LESSONS = [...TOUR_LESSONS, ...TOUR_MANAGER_LESSONS] as const;
  * the laptop (`laptop_setup`), the work email (`mark_joined` creates it) and
  * this app (ready: they are in it). Ready once its task is done.
  */
-function devicesFor(tasks: JourneyTask[]) {
+export function devicesFor(tasks: JourneyTask[]) {
   const done = (key: SystemTaskKey) => tasks.some((t) => t.systemKey === key && (t.status === 'done' || t.status === 'skipped'));
   const has = (key: SystemTaskKey) => tasks.some((t) => t.systemKey === key);
   return [

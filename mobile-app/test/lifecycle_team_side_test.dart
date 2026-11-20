@@ -86,6 +86,15 @@ class _FakeApi implements TeamJoinersApi {
     calls.add('recommend:$outcome:${note ?? ''}');
     return TeamJoinerPage.fromJson(page);
   }
+
+  @override
+  Future<TeamJoinerPage> meetingDone(String journeyId, String taskId, {String? notes}) => taskAction(journeyId, taskId, 'done');
+
+  @override
+  Future<void> reviewMonth(String journeyId, int month, {String? comment}) async => calls.add('review:$month');
+
+  @override
+  Future<void> sendBackMonth(String journeyId, int month, {String? comment}) async => calls.add('back:$month');
 }
 
 Future<void> _pump(WidgetTester tester, _FakeApi api) async {

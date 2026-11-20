@@ -7,7 +7,7 @@ import '../../../../services/api_client.dart';
 import '../../../../services/api_config.dart';
 import '../../../auth/data/auth_models.dart';
 import 'onboarding_api.dart';
-import 'onboarding_models.dart' show PlantState;
+import 'onboarding_models.dart' show OnboardingHome, PlantState;
 
 /// Teams › Joiners for the manager, the buddy and the head of department
 /// (backend services/lifecycle/teamTasks.ts, routes `/lifecycle/team/…`):
@@ -125,6 +125,9 @@ class TeamTask {
     this.doneByName,
     this.recommended,
     this.recommendedNote,
+    this.systemKey,
+    this.month,
+    this.locked = false,
   });
 
   factory TeamTask.fromJson(Map<String, dynamic> json) => TeamTask(
@@ -144,6 +147,9 @@ class TeamTask {
     doneByName: _str(json['doneByName']),
     recommended: _str((json['recommended'] as Map?)?['outcome']),
     recommendedNote: _str((json['recommended'] as Map?)?['note']),
+    systemKey: _str(json['systemKey']),
+    month: json['month'] is num ? (json['month'] as num).toInt() : null,
+    locked: json['locked'] == true,
   );
 
   final String id;
@@ -156,7 +162,8 @@ class TeamTask {
   final String? note;
   final bool canTick;
 
-  /// 'meeting', 'approval' or 'recommend' (the manager's confirm/extend): the row opens a screen.
+  /// 'meeting', 'approval', 'recommend' (the manager's confirm/extend), 'review' (a month's self
+  /// check-in) or 'screen' (a template step done on its own screen, by [systemKey]): the row opens it.
   final String? opens;
   final TeamReviewState? reviewState;
   final List<String> agenda;
@@ -167,12 +174,23 @@ class TeamTask {
   final String? recommended;
   final String? recommendedNote;
 
+  /// A journey row's template step ('meet_manager', 'monthly_review' …) and its probation month.
+  final String? systemKey;
+  final int? month;
+
+  /// A journey row the engine has not opened yet (it waits on another task, or a date).
+  final bool locked;
+
   bool get isApproval => kind == TeamKind.approve;
+
+  /// Still to do by the viewer (the server's isOpenForMe): tickable, or a screen that waits on them.
+  bool get isOpenForMe =>
+      !done && !locked && (canTick || opens == 'meeting' || opens == 'recommend' || opens == 'screen' || reviewState == TeamReviewState.ready);
 
   TeamTask copyWith({bool? done}) => TeamTask(
     id: id, title: title, kind: kind, step: step, early: early, done: done ?? this.done, pair: pair, note: note,
     canTick: canTick, opens: opens, reviewState: reviewState, agenda: agenda, fromJourney: fromJourney, doneByName: doneByName,
-    recommended: recommended, recommendedNote: recommendedNote,
+    recommended: recommended, recommendedNote: recommendedNote, systemKey: systemKey, month: month, locked: locked,
   );
 }
 
@@ -199,6 +217,8 @@ class TeamJoinerPage {
     this.delayed = 0,
     this.canBrowseSteps = true,
     this.preboarding = false,
+    this.progress,
+    this.tj,
   });
 
   factory TeamJoinerPage.fromJson(Map<String, dynamic> json) {
@@ -228,6 +248,10 @@ class TeamJoinerPage {
           .whereType<Map>()
           .map((t) => TeamTask.fromJson(t.cast<String, dynamic>()))
           .toList(),
+      progress: json['progress'] is Map
+          ? OnboardingHome.fromJson({...(json['progress'] as Map).cast<String, dynamic>(), 'journeyId': '${j['journeyId'] ?? ''}'})
+          : null,
+      tj: DateTime.tryParse('${j['tj'] ?? ''}'),
     );
   }
 
@@ -259,6 +283,13 @@ class TeamJoinerPage {
   final bool canBrowseSteps;
   final List<TeamTask> tasks;
 
+  /// View progress: the joiner's own lists (their home's tasks and meetings, tour, devices), as
+  /// their tiles count them. Null from a server that does not send it.
+  final OnboardingHome? progress;
+
+  /// Their joining day.
+  final DateTime? tj;
+
   String get stepLabel => step >= 0 && step < steps.length ? steps[step] : '';
 
   /// The main card's title: "Help Priya with" for a buddy, "Your tasks for Priya" otherwise.
@@ -273,9 +304,7 @@ class TeamJoinerPage {
       : (buddyName == null || buddyName!.isEmpty ? 'No buddy yet' : 'Buddy: $buddyName');
 
   /// What is still to do now (the red count).
-  List<TeamTask> get openNow => tasks
-      .where((t) => t.step == step && !t.done && (t.canTick || t.opens == 'meeting' || t.opens == 'recommend' || t.reviewState == TeamReviewState.ready))
-      .toList();
+  List<TeamTask> get openNow => tasks.where((t) => t.step == step && t.isOpenForMe).toList();
 }
 
 class TeamApprovalFact {
@@ -342,6 +371,15 @@ abstract class TeamJoinersApi {
   /// The manager's recommendation on `mgr_recommend`: `confirm` or `extend`, with an optional note.
   Future<TeamJoinerPage> recommend(String journeyId, String outcome, {String? note}) =>
       throw UnimplementedError('recommend');
+
+  /// A meeting marked done with its notes (the month's check-in keeps them as the manager's side).
+  Future<TeamJoinerPage> meetingDone(String journeyId, String taskId, {String? notes}) => taskAction(journeyId, taskId, 'done');
+
+  /// MgrReview: "Mark as reviewed" on a month's self check-in, with optional comments the joiner sees.
+  Future<void> reviewMonth(String journeyId, int month, {String? comment}) => throw UnimplementedError('reviewMonth');
+
+  /// MgrReview: "Send back" — the joiner sends the month's self check-in again.
+  Future<void> sendBackMonth(String journeyId, int month, {String? comment}) => throw UnimplementedError('sendBackMonth');
 }
 
 class HttpTeamJoinersApi implements TeamJoinersApi {
@@ -408,6 +446,33 @@ class HttpTeamJoinersApi implements TeamJoinersApi {
       '/lifecycle/team/joiners/${Uri.encodeComponent(journeyId)}/tasks/mgr_recommend',
       body: {'action': 'recommend', 'outcome': outcome, if (note != null && note.trim().isNotEmpty) 'note': note.trim()},
     ),
+  );
+
+  @override
+  Future<TeamJoinerPage> meetingDone(String journeyId, String taskId, {String? notes}) async => TeamJoinerPage.fromJson(
+    await _json(
+      'POST',
+      '/lifecycle/team/joiners/${Uri.encodeComponent(journeyId)}/tasks/${Uri.encodeComponent(taskId)}',
+      body: {'action': 'done', if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim()},
+    ),
+  );
+
+  @override
+  Future<void> reviewMonth(String journeyId, int month, {String? comment}) => _json(
+    'PUT',
+    '/lifecycle/manager/joiners/${Uri.encodeComponent(journeyId)}/probation/$month',
+    body: {
+      'review': {'text': comment?.trim() ?? '', 'reviewed': true},
+    },
+  );
+
+  @override
+  Future<void> sendBackMonth(String journeyId, int month, {String? comment}) => _json(
+    'PUT',
+    '/lifecycle/manager/joiners/${Uri.encodeComponent(journeyId)}/probation/$month',
+    body: {
+      'sendBack': {if (comment != null && comment.trim().isNotEmpty) 'text': comment.trim()},
+    },
   );
 
   @override

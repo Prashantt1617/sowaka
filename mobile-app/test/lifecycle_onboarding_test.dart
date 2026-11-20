@@ -33,7 +33,6 @@ import 'package:mobile_app/features/lifecycle/onboarding/onboarding_launcher.dar
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/notes_screen.dart';
 import 'package:mobile_app/features/manager/data/manager_models.dart' show ManagerTab;
 import 'package:mobile_app/features/manager/presentation/manager_screen.dart' show ProfileTab, ownProfileTabs;
-import 'package:mobile_app/features/support/presentation/support_ui.dart' show SupportBackButton;
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Tj in the canvas's demo: Mon 1 Dec 2026.
@@ -774,56 +773,6 @@ void main() {
       expect(find.byKey(const ValueKey('new-joiners')), findsNothing);
     });
 
-    testWidgets('the joiner\'s week: the manager\'s tasks with their pills; assigning a starter task', (tester) async {
-      final api = FakeOnboardingApi()
-        ..joiner = JoinerDetail.fromJson({
-          'joiner': {'journeyId': 'j1', 'name': 'Kabir Mehta', 'designation': 'Product Designer', 'tj': '2026-12-01', 'stage': 'welcome_week1'},
-          'tasks': [
-            task('t1', 'Give Kabir a starter task', systemKey: 'starter_task', ownerRole: 'manager'),
-            task('t2', 'Add notes from your 1:1', systemKey: 'one_on_one_notes', ownerRole: 'manager'),
-            task('t3', 'Introduce Kabir to the team', systemKey: 'meet_team', ownerRole: 'manager', mustDo: true),
-            task('t4', 'Register your face', systemKey: 'register_face', status: 'done'),
-            task('t5', 'Week-1 tasks', systemKey: 'week1_reels'),
-          ],
-          'setup': {'people': [], 'goals': []},
-        });
-      await pumpPage(tester, JoinerScreen(shell: shellFor(api, DateTime(2026, 12, 2)), journeyId: 'j1'));
-      expect(find.text('Kabir Mehta'), findsOneWidget);
-      expect(find.text('Week 1'), findsWidgets);
-      expect(find.text('Reports to you'), findsOneWidget);
-      expect(find.text('No buddy yet'), findsOneWidget);
-      // As drawn (layout C): who they are, your tasks as the main card, two tiles.
-      expect(find.text('Your tasks for Kabir'), findsOneWidget);
-      expect(find.descendant(of: find.byKey(const ValueKey('team-tasks-count')), matching: find.text('3 to do')), findsOneWidget);
-      expect(find.text('After you meet'), findsOneWidget);
-      expect(find.text('Kabir’s onboarding'), findsOneWidget);
-      expect(find.text('Reach out to Kabir'), findsOneWidget);
-
-      // Tick what can be ticked here.
-      await tester.tap(find.descendant(of: find.byKey(const ValueKey('mgr-task-t3')), matching: find.byKey(const ValueKey('team-tick'))));
-      await tester.pumpAndSettle();
-      expect(api.calls, contains('mgr-done:t3'));
-
-      // The starter task opens its sheet.
-      await tester.tap(find.byKey(const ValueKey('mgr-task-t1')));
-      await tester.pumpAndSettle();
-      expect(find.text('Give Kabir a starter task'), findsWidgets);
-      await tester.enterText(find.byKey(const ValueKey('starter-title')), 'Redesign the leave request screen');
-      await tester.tap(find.byKey(const ValueKey('due-friday')));
-      await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('starter-assign')));
-      await tester.pumpAndSettle();
-      expect(api.calls, contains('assign:Redesign the leave request screen:2026-12-04'));
-      // View progress: the joiner's own, read-only.
-      await tester.pump(const Duration(seconds: 5));
-      await tester.ensureVisible(find.byKey(const ValueKey('tile-onboarding')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('tile-onboarding')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('progress-status')), findsOneWidget);
-      expect(find.descendant(of: find.byKey(const ValueKey('stat-tasks')), matching: find.text('1/2 done', findRichText: true)), findsOneWidget);
-      expect(find.text('You can see where Kabir is. Survey answers and meeting notes stay private.'), findsOneWidget);
-    });
   });
 
   group('the plant', () {
@@ -1217,13 +1166,6 @@ void main() {
   });
 
   group('M2 for the manager', () {
-    JoinerDetail detail({List<Map<String, dynamic>> tasks = const [], Map<String, dynamic> extra = const {}}) => JoinerDetail.fromJson({
-      'joiner': {'journeyId': 'j1', 'name': 'Kabir Mehta', 'tj': '2026-12-01', 'stage': 'welcome_week1'},
-      'tasks': tasks,
-      'setup': {'people': [], 'goals': []},
-      ...extra,
-    });
-
     testWidgets('Teams › Joiners: one card, a row each, the stage pill', (tester) async {
       final api = FakeOnboardingApi()
         ..joiners = [
@@ -1259,96 +1201,6 @@ void main() {
       expect(picked, 'requests');
     });
 
-    testWidgets('HR\'s Confirmation discussion has no Done; the server\'s word wins', (tester) async {
-      final api = FakeOnboardingApi()
-        ..joiner = detail(tasks: [
-          task('cd', 'Talk to HR about confirming Kabir', systemKey: 'confirmation_discussion', ownerRole: 'hr_manager')..['canMarkDone'] = false,
-          task('mt', 'Introduce Kabir to the team', systemKey: 'meet_team', ownerRole: 'manager')..['canMarkDone'] = true,
-        ]);
-      await pumpPage(tester, JoinerScreen(shell: shellFor(api, DateTime(2026, 12, 2)), journeyId: 'j1'));
-      expect(find.descendant(of: find.byKey(const ValueKey('mgr-task-cd')), matching: find.byKey(const ValueKey('team-tick'))), findsNothing);
-      expect(find.descendant(of: find.byKey(const ValueKey('mgr-task-cd')), matching: find.text('With HR')), findsOneWidget);
-      expect(find.descendant(of: find.byKey(const ValueKey('mgr-task-mt')), matching: find.byKey(const ValueKey('team-tick'))), findsOneWidget);
-      expect(managerMayTick(view(task('x', 'Confirmation', systemKey: 'confirmation_discussion', ownerRole: 'hr_manager'))), isFalse);
-    });
-
-    testWidgets('a meeting row: its time pill, then Join when it has a link', (tester) async {
-      Map<String, dynamic> meetingTask(DateTime at) =>
-          task('mm', 'Meet Kabir', systemKey: 'meet_manager', kind: 'meeting', ownerRole: 'manager_employee', meeting: {
-            'id': 'm1',
-            'title': 'Meet your manager',
-            'startsAt': at.toIso8601String(),
-            'link': 'https://meet.example/abc',
-          })..['dueAt'] = '2026-12-01T00:00:00.000Z';
-      final api = FakeOnboardingApi()..joiner = detail(tasks: [meetingTask(DateTime(2026, 12, 1, 11))]);
-      await pumpPage(tester, JoinerScreen(shell: shellFor(api, DateTime(2026, 12, 1, 9)), journeyId: 'j1'));
-      // The pill as drawn ("4 PM"); the time in full on the row's second line.
-      expect(find.descendant(of: find.byKey(const ValueKey('mgr-task-mm')), matching: find.text('11 AM')), findsOneWidget);
-      expect(find.descendant(of: find.byKey(const ValueKey('mgr-task-mm')), matching: find.text('Tue · 11:00 AM · must-do')), findsNothing);
-      expect(find.textContaining('5:30'), findsNothing);
-      api.joiner = detail(tasks: [meetingTask(DateTime(2026, 12, 1, 9, 5))]);
-      await pumpPage(tester, JoinerScreen(shell: shellFor(api, DateTime(2026, 12, 1, 9)), journeyId: 'j1'));
-      expect(find.descendant(of: find.byKey(const ValueKey('mgr-task-mm')), matching: find.text('Now')), findsOneWidget);
-      // The meeting opens: the agenda, a notes box per point, Join, Mark as done.
-      await tester.tap(find.byKey(const ValueKey('mgr-task-mm')));
-      await tester.pumpAndSettle();
-      expect(find.text('Agenda'), findsOneWidget);
-      expect(find.text('4 things to talk about'), findsOneWidget);
-      expect(find.text('Join the call'), findsOneWidget);
-      await tester.enterText(find.descendant(of: find.byKey(const ValueKey('agenda-0')), matching: find.byType(TextField)), 'Shadow Neha on Tuesday');
-      await scrollTo(tester, find.byKey(const ValueKey('meeting-mark-done')));
-      await tester.tap(find.byKey(const ValueKey('meeting-mark-done')));
-      await tester.pumpAndSettle();
-      expect(api.calls, containsAll(['note:false', 'mgr-done:mm']));
-    });
-
-    testWidgets('Post a welcome: Write, the sheet, posted once', (tester) async {
-      final api = FakeOnboardingApi()..joiner = detail(extra: {'welcomePost': {'canPost': true}});
-      await pumpPage(tester, JoinerScreen(shell: shellFor(api, DateTime(2026, 12, 2)), journeyId: 'j1'));
-      await tester.tap(find.byKey(const ValueKey('tile-reach-out')));
-      await tester.pumpAndSettle();
-      expect(find.text('Welcome on the feed'), findsOneWidget);
-      expect(find.text('Send a game'), findsOneWidget);
-      expect(find.text('Introduce to the team'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('reach-feed')));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const ValueKey('welcome-text')), 'Welcome, Kabir!');
-      await tester.pump();
-      api.joiner = detail(extra: {'welcomePost': {'canPost': false, 'postedAt': '2026-12-02T10:00:00.000Z'}});
-      await tester.tap(find.byKey(const ValueKey('welcome-post')));
-      await tester.pumpAndSettle();
-      expect(api.calls, contains('welcome:Welcome, Kabir!'));
-      // Posted once: on View all it is a done row.
-      await tester.tap(find.byType(SupportBackButton));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('team-view-all')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('mgr-welcome')), findsNothing);
-      expect(find.byKey(const ValueKey('mgr-welcome-done')), findsOneWidget);
-    });
-
-    testWidgets('the survey summary per kind, people not answers; the due line under On track', (tester) async {
-      final api = FakeOnboardingApi()
-        ..joiner = detail(extra: {
-          'surveySummary': {'kind': 'day7', 'count': 3, 'avg': 3.7},
-          'surveySummaries': [
-            {'kind': 'day7', 'count': 3, 'avg': 3.7},
-            {'kind': 'm3', 'count': 4, 'avg': 4.0},
-          ],
-          'joinerNextDue': {'title': 'Week-1 tasks', 'dueAt': '2026-12-06'},
-        });
-      await pumpPage(tester, JoinerScreen(shell: shellFor(api, DateTime(2026, 12, 2)), journeyId: 'j1'));
-      await tester.tap(find.byKey(const ValueKey('team-view-all')));
-      await tester.pumpAndSettle();
-      await scrollTo(tester, find.byKey(const ValueKey('survey-m3')));
-      expect(find.textContaining('first-week survey: 3 people answered, 3.7 out of 5'), findsOneWidget);
-      expect(find.textContaining('month-3 pulse survey: 4 people answered'), findsOneWidget);
-      await tester.tap(find.byType(SupportBackButton));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('tile-onboarding')));
-      await tester.pumpAndSettle();
-      expect(find.text('On track. Week-1 tasks are due Sun 6 Dec.'), findsOneWidget);
-    });
   });
 
   group('M2 paints at once', () {
@@ -1356,23 +1208,6 @@ void main() {
       'joiner': {'journeyId': 'j1', 'name': 'Kabir Mehta', 'designation': 'Product Designer', 'tj': '2026-12-01', 'stage': 'welcome_week1'},
       'tasks': [task('t1', 'Give Kabir a starter task', systemKey: 'starter_task', ownerRole: 'manager')],
       'setup': {'people': [], 'goals': []},
-    });
-
-    testWidgets('last time\'s week from the device before the live read answers', (tester) async {
-      final live = Completer<JoinerDetail>();
-      final api = _SlowJoinerApi(live.future)
-        ..keptOnDevice = true
-        ..joiner = kept();
-      await tester.pumpWidget(MaterialApp(home: JoinerScreen(shell: shellFor(api, DateTime(2026, 12, 2)), journeyId: 'j1')));
-      await tester.pump();
-      await tester.pump();
-      // Painted from the device: no spinner, the page is there.
-      expect(find.text('Your tasks for Kabir'), findsOneWidget);
-      expect(find.byKey(const ValueKey('mgr-task-t1')), findsOneWidget);
-      expect(find.byType(CircularProgressIndicator), findsNothing);
-      live.complete(kept());
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('mgr-task-t1')), findsOneWidget);
     });
 
     testWidgets('nothing kept: the Team tab\'s row paints the card while the week loads', (tester) async {

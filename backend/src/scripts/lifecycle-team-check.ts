@@ -132,6 +132,55 @@ async function main() {
   eq('HR’s panel shows the recommendation and the approval', [panel.probation.recommendation?.outcome, panel.probation.recommendation?.byName, panel.probation.hodApproval?.outcome, panel.probation.hodApproval?.byName], ['confirm', 'Sunny Manager', 'approved', 'Rahul Head']);
   ok('The approval row reads Approved for the head of department', (await team.teamJoiner(HOD, J.id)).tasks.find((t) => t.id === 'hod_approve')?.reviewState === 'reviewed');
 
+  // ───────────────────────────────────────────── the manager's page (MgrTeamsProto, 20 Nov)
+  section('The manager’s page: journey rows open their screens; the self check-in review; View progress');
+  const probation = await import('../services/lifecycle/probation');
+  const app = await import('../services/lifecycle/appOnboarding');
+  let mgrPage = await team.teamJoiner(MGR, J.id);
+  const meet = mgrPage.tasks.find((t) => t.systemKey === 'meet_manager');
+  ok('Meet the joiner: a meeting with its agenda', meet?.opens === 'meeting' && (meet.agenda?.length ?? 0) === 4, meet);
+  ok('Screen steps open their screen, never a bare tick', mgrPage.tasks.filter((t) => t.systemKey === 'starter_task' || t.systemKey === 'probation_goals').every((t) => t.opens === 'screen' && !t.canTick));
+  const review1 = () => team.teamJoiner(MGR, J.id).then((p) => p.tasks.find((t) => t.systemKey === 'monthly_review' && t.month === 1));
+  eq('Month 1’s review waits for the joiner', [(await review1())?.opens, (await review1())?.reviewState], ['review', 'waiting']);
+  const home = await app.onboardingHome({ userId: 'j1', name: 'Priya Joiner', org: ORG });
+  eq('View progress is the joiner’s own home (same rows, same tour, same devices)', [mgrPage.progress.today.length, mgrPage.progress.later.length, mgrPage.progress.done.length, mgrPage.progress.devices.length], [home.today.length, home.later.length, home.done.length, home.devices.length]);
+  ok('…without the meetings’ details or the notes', [...mgrPage.progress.today, ...mgrPage.progress.done].every((t) => !('meeting' in t) && !('note' in t)));
+  // Open month 1's check-in (it opens near the month's end) and let the joiner send theirs.
+  const checkin = (await journeyTasks().find({ journeyId: J.id, systemKey: 'monthly_checkin', month: 1 }).toArray())[0];
+  // (A save re-reads the rules and closes it again before its day: open it before each step here.)
+  const openCheckin = () => journeyTasks().updateOne({ id: checkin.id, status: 'locked' }, { $set: { status: 'todo' } });
+  await openCheckin();
+  const JOINER = { userId: 'j1', name: 'Priya Joiner' };
+  await probation.checkinByJoiner(J.id, JOINER, 1, { rating: 3, win: 'Ran my first webinar', ask: 'Time with Finance' });
+  eq('Sent: ready to review', (await review1())?.reviewState, 'ready');
+  const told = await notifications().countDocuments({ userId: 'j1', scenario: 'lifecycle_monthly_review' });
+  await probation.updateMonthByManager(J.id, MGR, 1, { sendBack: { text: 'Add your goals' } });
+  eq('Send back: the row reads Sent back', (await review1())?.reviewState, 'back');
+  ok('…and the joiner is told', (await notifications().countDocuments({ userId: 'j1', scenario: 'lifecycle_monthly_review' })) === told + 1);
+  await new Promise((r) => setTimeout(r, 5));
+  await openCheckin();
+  await probation.checkinByJoiner(J.id, JOINER, 1, { rating: 3, win: 'Ran two webinars', ask: 'Time with Finance' });
+  eq('Sent again: ready again', (await review1())?.reviewState, 'ready');
+  await openCheckin();
+  mgrPage = await team.teamJoiner(MGR, J.id);
+  const check1 = mgrPage.tasks.find((t) => t.systemKey === 'monthly_checkin' && t.month === 1);
+  ok('The month’s check-in is a meeting the manager can mark done', check1?.opens === 'meeting' && check1.canTick === true, check1);
+  await openCheckin();
+  await team.teamTaskAction(MGR, J.id, check1!.id, { action: 'done', notes: 'Webinars went well' });
+  let months = (await probation.probationOf(J.id)).months;
+  eq('Marked done: the notes are the manager’s side of the check-in', months[0].checkinManager?.text, 'Webinars went well');
+  ok('…and the row is done', (await team.teamJoiner(MGR, J.id)).tasks.find((t) => t.id === check1!.id)?.done === true);
+  const reviewTask = (await journeyTasks().find({ journeyId: J.id, systemKey: 'monthly_review', month: 1 }).toArray())[0];
+  await journeyTasks().updateOne({ id: reviewTask.id, status: 'locked' }, { $set: { status: 'todo' } });
+  await probation.updateMonthByManager(J.id, MGR, 1, { review: { text: '', reviewed: true } });
+  months = (await probation.probationOf(J.id)).months;
+  ok('Mark as reviewed without comments: the month is reviewed (HR’s probation panel reads it)', !!months[0].review, months[0].review);
+  eq('…the row reads Reviewed', (await review1())?.reviewState, 'reviewed');
+  eq('Sending back a reviewed month is refused', await refusal(() => probation.updateMonthByManager(J.id, MGR, 1, { sendBack: {} })), 409);
+
+  const hrPanel = await board.journeyPanel(ORG, J.id);
+  ok('HR’s joiner panel lists the team rows as the app ticked them', hrPanel.teamRows.some((r) => r.id === 'buddy_meet' && r.done && r.owner === 'buddy') && hrPanel.teamRows.some((r) => r.id === 'mgr_plan_week' && !r.done), hrPanel.teamRows.slice(0, 3));
+
   await getDb().dropDatabase();
   await closeDb();
   console.log(`\n${passed} passed, ${failed} failed`);

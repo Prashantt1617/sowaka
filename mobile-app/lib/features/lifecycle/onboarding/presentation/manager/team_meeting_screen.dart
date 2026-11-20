@@ -46,6 +46,7 @@ class TeamMeetingScreen extends StatefulWidget {
     this.done = false,
     this.canTick = false,
     this.savesNotes = true,
+    this.barTitle,
     required this.onFinish,
   });
 
@@ -86,6 +87,9 @@ class TeamMeetingScreen extends StatefulWidget {
   /// Whether there is somewhere to keep notes: without it the agenda shows
   /// without the notes boxes.
   final bool savesNotes;
+
+  /// The header's title (the joiner's name; "All tasks" when opened from View all, as drawn).
+  final String? barTitle;
 
   /// Saves [notes] (the points written on, one per line; empty when none)
   /// and, when [markDone], marks the meeting done. Throws to say it failed.
@@ -221,7 +225,7 @@ class _TeamMeetingScreenState extends State<TeamMeetingScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                     ),
-                    child: const Text('Done · save notes'),
+                    child: const Text('Done'),
                   )
                 : FilledButton(
                     key: const ValueKey('meeting-mark-done'),
@@ -240,7 +244,8 @@ class _TeamMeetingScreenState extends State<TeamMeetingScreen> {
           if (widget.savesNotes) TeamFootnote('Only you can see your notes. $first keeps their own.'),
       ],
     );
-    if (shell != null) return OnbScaffold(shell: shell, title: name, body: body);
-    return Scaffold(backgroundColor: OnbColors.screen, appBar: AppBar(title: Text(name)), body: body);
+    final title = widget.barTitle ?? name;
+    if (shell != null) return OnbScaffold(shell: shell, title: title, body: body);
+    return Scaffold(backgroundColor: OnbColors.screen, appBar: AppBar(title: Text(title)), body: body);
   }
 }
