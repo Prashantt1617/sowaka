@@ -106,7 +106,7 @@ Widget teamRowWidget(
 }) {
   final t = r.task;
   final review = r.locked ? null : teamReviewPill(t, page);
-  final opens = !r.locked && (t.opens == 'meeting' || (t.opens == 'approval' && t.reviewState != TeamReviewState.waiting));
+  final opens = !r.locked && (t.opens == 'meeting' || t.opens == 'recommend' || (t.opens == 'approval' && t.reviewState != TeamReviewState.waiting));
   final end = r.locked
       ? TeamRowEnd.locked
       : t.isApproval
@@ -194,6 +194,8 @@ class TeamJoinerController extends ChangeNotifier {
     if (p == null) return;
     if (t.opens == 'approval') {
       await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => HodApprovalScreen(api: api, page: p)));
+    } else if (t.opens == 'recommend') {
+      await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => RecommendScreen(api: api, page: p, task: t)));
     } else if (t.opens == 'meeting') {
       // T1's meeting screen (agenda, voice notes, Mark as done); no notes endpoint for buddies and heads yet.
       await Navigator.of(context).push(
@@ -816,6 +818,145 @@ class _HodApprovalScreenState extends State<HodApprovalScreen> {
           TeamFootnote('$mgrFirst, ${page.first} and HR see your comments.'),
         ] else if (a.answerNote != null)
           OnbCard(child: Text(a.answerNote!, style: OnbText.body)),
+      ],
+    );
+  }
+}
+
+// ─── The manager's recommendation ───────────────────────────────────────────
+
+/// "Recommend Priya's confirmation": the manager picks Confirm or Extend, adds
+/// a note (voice typing too) and sends it. It goes to the approver (head of
+/// department, else the manager's manager) and sits beside HR's decision on
+/// the dashboard; HR still decides. Can be changed until it is approved.
+class RecommendScreen extends StatefulWidget {
+  const RecommendScreen({super.key, required this.api, required this.page, required this.task});
+
+  final TeamJoinersApi api;
+  final TeamJoinerPage page;
+  final TeamTask task;
+
+  @override
+  State<RecommendScreen> createState() => _RecommendScreenState();
+}
+
+class _RecommendScreenState extends State<RecommendScreen> {
+  late String? _outcome = widget.task.recommended;
+  late final _note = TextEditingController(text: widget.task.recommendedNote ?? '');
+  final _voice = TeamVoice();
+  bool _sending = false;
+
+  @override
+  void dispose() {
+    _note.dispose();
+    _voice.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final outcome = _outcome;
+    if (outcome == null || _sending) return;
+    setState(() => _sending = true);
+    try {
+      await widget.api.recommend(widget.page.journeyId, outcome, note: _note.text);
+      if (!mounted) return;
+      showAppToast(context, 'Recommendation sent');
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _sending = false);
+        showAppToast(context, onboardingErrorText(e));
+      }
+    }
+  }
+
+  Widget _choice(String value, String title, String sub) {
+    final on = _outcome == value;
+    return Semantics(
+      button: true,
+      selected: on,
+      child: InkWell(
+        key: ValueKey('recommend-$value'),
+        borderRadius: BorderRadius.circular(16),
+        onTap: _sending ? null : () => setState(() => _outcome = value),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: on ? TeamColors.blueBg : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: on ? OnbColors.primary : OnbColors.line, width: on ? 1.5 : 1),
+          ),
+          child: Row(
+            children: [
+              Icon(on ? Icons.radio_button_checked : Icons.radio_button_off, size: 20, color: on ? OnbColors.primary : OnbColors.text3),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: OnbText.bodyStrong),
+                    const SizedBox(height: 2),
+                    Text(sub, style: OnbText.label),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final page = widget.page;
+    final approver = page.approverName;
+    final changing = widget.task.recommended != null;
+    return _TeamPage(
+      title: page.name,
+      footer: OnbPrimaryButton(
+        label: changing ? 'Update recommendation' : 'Send recommendation',
+        busy: _sending,
+        onTap: _outcome == null || _sending ? null : _send,
+      ),
+      children: [
+        OnbCard(
+          child: Row(
+            children: [
+              OnbAvatar(name: page.name, photoUrl: page.photoUrl, size: 52),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Recommend ${page.first}’s confirmation', style: OnbText.screenTitle),
+                    const SizedBox(height: 2),
+                    Text(
+                      changing ? 'You recommended ${widget.task.recommended == 'extend' ? 'Extend' : 'Confirm'}' : 'Your call at the end of probation',
+                      style: OnbText.label,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        _choice('confirm', 'Confirm', '${page.first} has done well and should be confirmed'),
+        _choice('extend', 'Extend probation', '${page.first} needs more time'),
+        TeamNotesField(
+          field: 'recommend-note',
+          controller: _note,
+          voice: _voice,
+          label: 'Why',
+          hint: 'What went well, and anything to work on',
+          minLines: 3,
+          filled: false,
+        ),
+        TeamFootnote(
+          approver == null || approver.isEmpty
+              ? 'HR sees your recommendation next to their decision. HR still decides.'
+              : '$approver approves it, and HR sees it next to their decision. HR still decides.',
+        ),
       ],
     );
   }

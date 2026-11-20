@@ -193,8 +193,10 @@ export interface TeamTaskView {
   note?: string;
   /** Can be ticked from the list (a review or approval opens its own screen instead). */
   canTick: boolean;
-  /** A meeting, a review or an approval opens a screen. */
-  opens: 'meeting' | 'approval' | null;
+  /** A meeting, a review, an approval or the manager's recommendation opens a screen. */
+  opens: 'meeting' | 'approval' | 'recommend' | null;
+  /** The manager's recommendation as it stands (`mgr_recommend` only), so the app can show and change it. */
+  recommended?: { outcome: 'confirm' | 'extend'; note?: string };
   /** Reviews and approvals: where it stands. */
   reviewState?: TeamReviewState;
   agenda?: string[];
@@ -260,7 +262,8 @@ function teamDefView(d: TeamTaskDef, j: Journey, first: string, months: number):
   const tick = j.teamTasks?.[d.id];
   let done = !!tick;
   if (d.id === 'mgr_welcome' && j.managerWelcome) done = true;
-  if (d.id === 'mgr_recommend') done = !!recommendationOf(j);
+  const rec = d.id === 'mgr_recommend' ? recommendationOf(j) : undefined;
+  if (d.id === 'mgr_recommend') done = !!rec;
   let reviewState: TeamReviewState | undefined;
   if (kind === 'approve') {
     reviewState = approvalState(j);
@@ -270,8 +273,9 @@ function teamDefView(d: TeamTaskDef, j: Journey, first: string, months: number):
     id: d.id, title: fill(d.title, first), kind, step, early: !!d.team.early, done,
     ...(d.team.pair ? { pair: d.team.pair } : {}), ...(d.note ? { note: d.note } : {}),
     canTick: kind !== 'approve' && d.id !== 'mgr_recommend',
-    opens: kind === 'meet' ? 'meeting' : kind === 'approve' ? 'approval' : null,
+    opens: kind === 'meet' ? 'meeting' : kind === 'approve' ? 'approval' : d.id === 'mgr_recommend' ? 'recommend' : null,
     ...(reviewState ? { reviewState } : {}),
+    ...(rec ? { recommended: { outcome: rec.outcome, ...(rec.note ? { note: rec.note } : {}) } } : {}),
     ...(d.team.agenda?.length ? { agenda: d.team.agenda.map((a) => fill(a, first)) } : {}),
     source: 'team', ...(tick?.byName ? { doneByName: tick.byName } : {}),
   };
@@ -329,7 +333,7 @@ export async function teamJoiners(me: Me, now = new Date()) {
     const step = currentStep(j, todayKey(now, companyTimeZone(j.org)));
     const all = await tasksOf(j.id);
     const tasks = await tasksFor(j, link, firstOf(name), all);
-    const open = tasks.filter((t) => t.step === step && !t.done && (t.canTick || t.opens === 'meeting' || t.reviewState === 'ready')).length;
+    const open = tasks.filter((t) => t.step === step && !t.done && (t.canTick || t.opens === 'meeting' || t.opens === 'recommend' || t.reviewState === 'ready')).length;
     const photoUrl = person?.userId ? await faceUrlOf(person as FaceFields) : null;
     return {
       journeyId: j.id, ...(j.userId ? { userId: j.userId } : {}), name, ...(photoUrl ? { photoUrl } : {}),

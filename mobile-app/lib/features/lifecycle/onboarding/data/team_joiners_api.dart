@@ -123,6 +123,8 @@ class TeamTask {
     this.agenda = const [],
     this.fromJourney = false,
     this.doneByName,
+    this.recommended,
+    this.recommendedNote,
   });
 
   factory TeamTask.fromJson(Map<String, dynamic> json) => TeamTask(
@@ -140,6 +142,8 @@ class TeamTask {
     agenda: (json['agenda'] as List?)?.whereType<String>().toList() ?? const [],
     fromJourney: json['source'] == 'journey',
     doneByName: _str(json['doneByName']),
+    recommended: _str((json['recommended'] as Map?)?['outcome']),
+    recommendedNote: _str((json['recommended'] as Map?)?['note']),
   );
 
   final String id;
@@ -152,18 +156,23 @@ class TeamTask {
   final String? note;
   final bool canTick;
 
-  /// 'meeting' or 'approval': the row opens a screen.
+  /// 'meeting', 'approval' or 'recommend' (the manager's confirm/extend): the row opens a screen.
   final String? opens;
   final TeamReviewState? reviewState;
   final List<String> agenda;
   final bool fromJourney;
   final String? doneByName;
 
+  /// `mgr_recommend` only: 'confirm' or 'extend' once the manager has recommended, and their note.
+  final String? recommended;
+  final String? recommendedNote;
+
   bool get isApproval => kind == TeamKind.approve;
 
   TeamTask copyWith({bool? done}) => TeamTask(
     id: id, title: title, kind: kind, step: step, early: early, done: done ?? this.done, pair: pair, note: note,
     canTick: canTick, opens: opens, reviewState: reviewState, agenda: agenda, fromJourney: fromJourney, doneByName: doneByName,
+    recommended: recommended, recommendedNote: recommendedNote,
   );
 }
 
@@ -265,7 +274,7 @@ class TeamJoinerPage {
 
   /// What is still to do now (the red count).
   List<TeamTask> get openNow => tasks
-      .where((t) => t.step == step && !t.done && (t.canTick || t.opens == 'meeting' || t.reviewState == TeamReviewState.ready))
+      .where((t) => t.step == step && !t.done && (t.canTick || t.opens == 'meeting' || t.opens == 'recommend' || t.reviewState == TeamReviewState.ready))
       .toList();
 }
 
@@ -329,6 +338,10 @@ abstract class TeamJoinersApi {
 
   /// `approve` or `discuss`.
   Future<TeamApproval> answerApproval(String journeyId, String action, {String? comment});
+
+  /// The manager's recommendation on `mgr_recommend`: `confirm` or `extend`, with an optional note.
+  Future<TeamJoinerPage> recommend(String journeyId, String outcome, {String? note}) =>
+      throw UnimplementedError('recommend');
 }
 
 class HttpTeamJoinersApi implements TeamJoinersApi {
@@ -385,6 +398,15 @@ class HttpTeamJoinersApi implements TeamJoinersApi {
       'POST',
       '/lifecycle/team/joiners/${Uri.encodeComponent(journeyId)}/tasks/${Uri.encodeComponent(taskId)}',
       body: {'action': action},
+    ),
+  );
+
+  @override
+  Future<TeamJoinerPage> recommend(String journeyId, String outcome, {String? note}) async => TeamJoinerPage.fromJson(
+    await _json(
+      'POST',
+      '/lifecycle/team/joiners/${Uri.encodeComponent(journeyId)}/tasks/mgr_recommend',
+      body: {'action': 'recommend', 'outcome': outcome, if (note != null && note.trim().isNotEmpty) 'note': note.trim()},
     ),
   );
 

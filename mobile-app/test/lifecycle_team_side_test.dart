@@ -80,6 +80,12 @@ class _FakeApi implements TeamJoinersApi {
     calls.add('approval:$action');
     return fetchApproval(journeyId);
   }
+
+  @override
+  Future<TeamJoinerPage> recommend(String journeyId, String outcome, {String? note}) async {
+    calls.add('recommend:$outcome:${note ?? ''}');
+    return TeamJoinerPage.fromJson(page);
+  }
 }
 
 Future<void> _pump(WidgetTester tester, _FakeApi api) async {
@@ -159,5 +165,41 @@ void main() {
     await tester.tap(find.text('Approve'));
     await tester.pumpAndSettle();
     expect(api.calls, contains('approval:approve'));
+  });
+
+  testWidgets('the manager recommends: pick one, add why, send', (tester) async {
+    final mgr = {
+      ..._hodPage(),
+      'relation': 'report',
+      'approverName': 'Rahul Head',
+      'approverIsYou': false,
+      'tasks': [_task('mgr_recommend', 'Recommend Dev’s confirmation', 5, kind: 'review', canTick: false, opens: 'recommend')],
+    };
+    final api = _FakeApi(mgr);
+    final page = TeamJoinerPage.fromJson(mgr);
+    final task = page.tasks.single;
+    expect(task.opens, 'recommend');
+    tester.view.physicalSize = const Size(393 * 3, 852 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(home: RecommendScreen(api: api, page: page, task: task)));
+    await tester.pumpAndSettle();
+    expect(find.text('Recommend Dev’s confirmation'), findsOneWidget);
+    expect(find.textContaining('Rahul Head approves it'), findsOneWidget);
+    // Nothing picked: Send does nothing.
+    await tester.tap(find.text('Send recommendation'));
+    await tester.pump();
+    expect(api.calls, isEmpty);
+    await tester.tap(find.byKey(const ValueKey('recommend-extend')));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField).first, 'Needs another month on the CRM');
+    await tester.tap(find.text('Send recommendation'));
+    await tester.pumpAndSettle();
+    expect(api.calls, ['recommend:extend:Needs another month on the CRM']);
+  });
+
+  test('a recommendation already made comes back on the row', () {
+    final t = TeamTask.fromJson({..._task('mgr_recommend', 'Recommend', 5, kind: 'review', canTick: false, opens: 'recommend'), 'done': true, 'recommended': {'outcome': 'confirm', 'note': 'Great'}});
+    expect([t.recommended, t.recommendedNote], ['confirm', 'Great']);
   });
 }
