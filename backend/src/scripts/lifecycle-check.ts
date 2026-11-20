@@ -349,6 +349,30 @@ async function main() {
   const w1 = await app.saveWeek1Step(ISHA, { step: 'goals', value: { read: true } });
   eq('week1 GET: the policy list, the ack apart, steps, manager name', [w1.policies.map((p) => p.id), !!w1.policiesAckAt, w1.steps, w1.managerName], [['leave'], true, { policies: true, tax: true, bank_pf: true, goals: true }, 'Neha Rao']);
   eq('Policies stored with versions and device', [w1.policiesAck?.versions, w1.policiesAck?.device], [[{ id: 'leave', version: '2026-10-01T00:00:00.000Z' }], 'Check/1.0']);
+  // One acknowledgement record for every screen (nj-1120 L4): Week-1's agree writes each policy's own, the
+  // counts are the same in GET /policies and the onboarding home, and an HR update brings it back as Updated.
+  const pol = await import('../services/policy-document.service');
+  await policyDocuments().insertOne({ org: ORG, key: 'travel', title: 'Travel', body: 'Book ahead.', order: 2, active: true, ackRequired: false, version: 1, createdAt: now, updatedAt: now } as never);
+  const pol1 = await pol.policiesFor(ISHA);
+  eq('Week-1 agree is each policy\'s acknowledgement too; a read-only one is not touched', pol1.map((p) => [p.key, p.acknowledgedVersion ?? null]), [['leave', 1], ['travel', null]]);
+  eq('Counts: GET /policies and the home agree', [pol.policyAckCounts(pol1), (await app.onboardingHome(ISHA)).policies], [{ required: 1, acknowledged: 1, toAcknowledge: 0 }, { required: 1, acknowledged: 1, toAcknowledge: 0 }]);
+  await pol.updatePolicy(ORG, 'leave', { body: 'Take leave. Casual leave is 8 days.', changeNote: 'Casual leave goes up from 6 to 8 days.' }, 'Hema HR');
+  const pol2 = await pol.policiesFor(ISHA);
+  const leave2 = pol2.find((p) => p.key === 'leave')!;
+  eq('HR changes the text: version 2, Updated (acknowledged 1), what changed, 1 to acknowledge everywhere',
+    [leave2.version, leave2.acknowledgedVersion, leave2.changeNote, pol.policyAckCounts(pol2).toAcknowledge, (await app.onboardingHome(ISHA)).policies.toAcknowledge],
+    [2, 1, 'Casual leave goes up from 6 to 8 days.', 1, 1]);
+  eq('An old version is refused', (await refusal(async () => pol.acknowledgePolicy(ISHA, 'leave', { version: 1 }))).status, 409);
+  const acked = await pol.acknowledgePolicy(ISHA, 'leave', { version: 2 });
+  eq('Acknowledging the update: none left', [acked.policy.acknowledgedVersion, pol.policyAckCounts(acked.policies).toAcknowledge, (await app.onboardingHome(ISHA)).policies.toAcknowledge], [2, 0, 0]);
+  await pol.acknowledgePolicy(ISHA, 'travel', {});
+  eq('A read-only policy can be acknowledged and never counts', pol.policyAckCounts(await pol.policiesFor(ISHA)), { required: 1, acknowledged: 1, toAcknowledge: 0 });
+  // The tour: "For managers" only for someone with direct reports.
+  eq('Tour: no manager lessons without reports', (await app.onboardingHome(ISHA)).tour.managerLessons, undefined);
+  await users().insertOne(person('isha-report', 'Report of Isha', { managerUserId: 'isha' }) as never);
+  eq('Tour: manager lessons once someone reports to her', (await app.onboardingHome(ISHA)).tour.managerLessons, ['approveLeave', 'approveOvertime']);
+  eq('A lesson done answers the same tour', (await app.tourLessonDone(ISHA, 'missed')).managerLessons, ['approveLeave', 'approveOvertime']);
+  await users().deleteOne({ userId: 'isha-report' });
   eq('All four reels: week-1 tasks done, a leaf', [byKey(await engine.tasksOf(J2.id), 'week1_reels').status, (await engine.loadJourney(J2.id)).plant?.leaves], ['done', 1]);
   const declined = await board.decideBankPfRequest(ORG, J2.id, { decision: 'decline', note: 'Send a cancelled cheque' }, HR);
   eq('HR declines the bank change; the joiner is told', [declined.journey.bankPfRequest?.status, await tellCount('isha', 'lifecycle_bank_pf_decided')], ['declined', 1]);
