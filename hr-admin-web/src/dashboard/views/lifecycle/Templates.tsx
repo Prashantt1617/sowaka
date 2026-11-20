@@ -546,6 +546,9 @@ function TaskEditor({ task, kind, first, last, onChange, onMove, onRemove, onDon
   const surfaceFor = (o: OwnerRole): TemplateTask['surface'] => (o === 'employee' ? (task.phase === 'pre_boarding' ? 'portal' : 'app') : o === 'manager' || o === 'manager_employee' || o === 'buddy' || o === 'head_of_department' ? 'app' : o === 'automatic' ? 'backend' : 'dashboard');
   const docs = task.documents ?? [];
   const showDocs = task.systemKey === 'upload_documents' || (task.kind === 'upload' && task.phase === 'pre_boarding');
+  // A meeting (a meeting, a check-in, the confirmation discussion, a team meeting): its agenda.
+  const isMeeting = task.team ? task.team.kind === 'meet' : task.kind === 'meeting' || task.kind === 'checkin' || task.systemKey === 'confirmation_discussion';
+  const agendaText = (task.team ? task.team.agenda : task.agenda)?.join('\n') ?? '';
   return (
     <div style={{ background: 'var(--surface-2)', borderRadius: 14, padding: 16, margin: '0 0 12px', display: 'grid', gap: 14 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
@@ -566,6 +569,26 @@ function TaskEditor({ task, kind, first, last, onChange, onMove, onRemove, onDon
       {!task.dueRule && (
         <Field label="Due, in words" hint="Shown instead of a date, e.g. “Manager sets” or “Each upload”">
           <input value={task.dueLabel ?? ''} onChange={(e) => onChange({ dueLabel: e.target.value || undefined })} style={inputStyle} />
+        </Field>
+      )}
+      {isMeeting && (
+        <Field label="Agenda" hint={task.team ? 'One point per line. The joiner sees it on the meeting too; {n} reads as “you” for them' : 'One point per line, shown on the meeting in the app to the joiner and the manager, each with a notes box. Empty: the standard agenda'}>
+          <textarea
+            rows={4}
+            value={agendaText}
+            onChange={(e) => {
+              const lines = e.target.value.split('\n');
+              if (task.team) onChange({ team: { ...task.team, agenda: lines } });
+              else onChange({ agenda: lines });
+            }}
+            onBlur={() => {
+              const clean = agendaText.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 8);
+              if (task.team) onChange({ team: { ...task.team, agenda: clean.length ? clean : undefined } });
+              else onChange({ agenda: clean.length ? clean : undefined });
+            }}
+            aria-label="Agenda, one point per line"
+            style={{ ...inputStyle, height: 'auto', minHeight: 96, padding: '8px 10px', fontFamily: 'inherit', resize: 'vertical' }}
+          />
         </Field>
       )}
       {showDocs && (

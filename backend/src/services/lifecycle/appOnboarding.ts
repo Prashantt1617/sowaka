@@ -29,6 +29,7 @@ import {
   type TaskView,
 } from './engine';
 import { APP_COPY } from './seed';
+import { agendaResolver, joinerMeetingRows, markMeetingRowMet, saveMeetingRowNotes } from './joinerMeetings';
 import { groupTasks, progressOf } from './board';
 import { cleanGoals, checkinByJoiner, markRevealSeen, probationForJoiner, probationOf, revealFor, updateMonthByManager } from './probation';
 
@@ -145,12 +146,6 @@ function tileSubtitle(j: Journey, tasks: JourneyTask[], derived: ReturnType<type
   return `${derived.dayLabel} · ${what(next.t)} ${verb} ${next.on === today ? 'today' : humanDay(next.on)}`;
 }
 
-const EXPECT: Partial<Record<SystemTaskKey, string[]>> = {
-  meet_manager: ['How your first week will go and who to meet', 'Your probation goals, and what good looks like by month 1', 'Bring any questions, nothing to prepare'],
-  meet_team: ['Who does what in the team', 'How the team works day to day', 'Nothing to prepare'],
-  welcome_induction: ['Your first morning: the office, your batch and HR', 'What happens this week', 'Bring the documents on your Day-1 pass'],
-  vision_culture: ['Where the company is going and why', 'How we work together', 'Questions are welcome'],
-};
 
 type Person = { name: string; designation?: string; photoUrl?: string };
 
@@ -164,7 +159,7 @@ async function peopleOf(ids: string[]): Promise<Map<string, Person>> {
   }));
 }
 
-type MeetingCtx = { joinerId?: string; managerId?: string; buddyId?: string; task?: JourneyTask; managerName?: string; journey?: Pick<Journey, 'day1Pass'> };
+type MeetingCtx = { joinerId?: string; managerId?: string; buddyId?: string; task?: JourneyTask; managerName?: string; journey?: Pick<Journey, 'day1Pass'>; agendaOf?: (t: JourneyTask) => string[] };
 
 function meetingView(m: Meeting, people: Map<string, Person>, ctx: MeetingCtx = {}) {
   const role = (id: string) => (id === ctx.joinerId ? 'joiner' : id === ctx.managerId ? 'manager' : id === ctx.buddyId ? 'buddy' : 'colleague');
@@ -177,7 +172,8 @@ function meetingView(m: Meeting, people: Map<string, Person>, ctx: MeetingCtx = 
     ...((w) => (w ? { with: w } : {}))(meetingWithName(isManagerMeetingRow(m, ctx.task, ctx.journey ?? {}), m.with, ctx.managerName)),
     canConfirm,
     attendees: m.attendeeUserIds.map((id) => ({ userId: id, name: people.get(id)?.name ?? '', ...(people.get(id)?.designation ? { designation: people.get(id)!.designation } : {}), ...(people.get(id)?.photoUrl ? { photoUrl: people.get(id)!.photoUrl } : {}), role: role(id) })),
-    expect: (ctx.task?.systemKey && EXPECT[ctx.task.systemKey]) ?? [],
+    // The template's agenda for the meeting's task (joinerMeetings.ts), the same for both sides.
+    expect: ctx.task && ctx.agendaOf ? ctx.agendaOf(ctx.task) : [],
     mustDo: ctx.task?.mustDo ?? false,
     ...(ctx.task?.systemKey ? { systemKey: ctx.task.systemKey } : {}),
     ...(m.met ? { met: m.met } : {}), ...(m.newTime ? { newTime: m.newTime.toISOString() } : {}),
@@ -254,8 +250,9 @@ export async function onboardingHome(me: Me, now = new Date()) {
   const meetings = (await lifecycleMeetings().find({ journeyId: j.id }, { projection: { _id: 0 } }).sort({ startsAt: 1 }).toArray()).map(strip);
   const meetingOf = new Map(meetings.filter((m) => m.journeyTaskId).map((m) => [m.journeyTaskId!, m]));
   const meetingPeople = await peopleOf(meetings.flatMap((m) => m.attendeeUserIds));
-  const ctxOf = (m: Meeting) => ({ joinerId: j.userId, managerId: j.managerUserId, buddyId: j.buddyUserId, task: tasks.find((t) => t.id === m.journeyTaskId), managerName: j.managerUserId ? names.get(j.managerUserId) : undefined, journey: j });
-  const badges = await countBadges(j);
+  const [badges, meetingRows, policyRow] = await Promise.all([countBadges(j), joinerMeetingRows(j, tasks), policiesRow(me, j)]);
+  const agendaOf = (t: JourneyTask) => meetingRows.extra.get(t.id)?.agenda ?? [];
+  const ctxOf = (m: Meeting) => ({ joinerId: j.userId, managerId: j.managerUserId, buddyId: j.buddyUserId, task: tasks.find((t) => t.id === m.journeyTaskId), managerName: j.managerUserId ? names.get(j.managerUserId) : undefined, journey: j, agendaOf });
   // Every meeting row carries its meeting (time, place, who, link), not only Up next.
   const views: Array<TaskView & { meetingId?: string; meeting?: ReturnType<typeof meetingView>; readOnly?: boolean; progress?: { done: number; total: number } }> = mine.map((t) => {
     const m = meetingOf.get(t.id);
@@ -263,8 +260,12 @@ export async function onboardingHome(me: Me, now = new Date()) {
       ...joinerTaskView(t, j, names, now),
       ...(m ? { meetingId: m.id, meeting: meetingView(m, meetingPeople, ctxOf(m)) } : {}),
       ...(t.systemKey && badges[t.systemKey] ? { progress: badges[t.systemKey] } : {}),
+      // A meeting row's agenda, who it is with, whether the joiner ticks it, their own notes.
+      ...(meetingRows.extra.get(t.id) ?? {}),
     };
   });
+  // The meetings that are not journey tasks (the buddy's, the people the manager picked), and Acknowledge policies.
+  views.push(...meetingRows.rows, ...(policyRow ? [policyRow] : []));
   views.push(...(await starterViews(j, names, now)));
   const shared = await oneOnOneNotes().find({ journeyId: j.id, shared: true }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray();
   if (shared.length) {
@@ -800,7 +801,7 @@ export async function meetingFor(me: Me, id: string) {
   const { j, m } = await myMeeting(me, id);
   const task = m.journeyTaskId ? (await tasksOf(j.id)).find((t) => t.id === m.journeyTaskId) : undefined;
   const managerName = j.managerUserId ? (await namesOf([j.managerUserId])).get(j.managerUserId) : undefined;
-  return meetingView(m, await peopleOf(m.attendeeUserIds), { joinerId: j.userId, managerId: j.managerUserId, buddyId: j.buddyUserId, task, managerName, journey: j });
+  return meetingView(m, await peopleOf(m.attendeeUserIds), { joinerId: j.userId, managerId: j.managerUserId, buddyId: j.buddyUserId, task, managerName, journey: j, agendaOf: await agendaResolver(j) });
 }
 
 export async function actOnMeeting(me: Me, id: string, body: Record<string, unknown>) {
@@ -819,6 +820,75 @@ export async function actOnMeeting(me: Me, id: string, body: Record<string, unkn
     await tell(m.attendeeUserIds.filter((u) => u !== me.userId), { scenario: 'lifecycle_meeting_moved', destination: 'lifecycle_joiner', title: `${m.title} moved`, body: `New time: ${humanDay(dateKeyOf(at))}`, data: { journeyId: j.id, meetingId: id } });
   } else throw new LifecycleError(400, 'met is yes or moved');
   return meetingFor(me, id);
+}
+
+// ─── Meetings list: Mark as met and the joiner's own notes (joinerMeetings.ts) ─
+
+export async function meetingRowMet(me: Me, rowId: string, body: Record<string, unknown>) {
+  const j = await joinerJourney(me.userId);
+  await markMeetingRowMet(me, j, rowId, body);
+  return onboardingHome(me);
+}
+
+export async function meetingRowNotes(me: Me, rowId: string, body: Record<string, unknown>) {
+  const j = await joinerJourney(me.userId);
+  return saveMeetingRowNotes(me, j, rowId, body);
+}
+
+/**
+ * Tasks › "Acknowledge policies" (the prototype's row that opens Policies): the policies that need
+ * acknowledging and how many are done, from the same records Policies reads. Absent when the
+ * company has none that need it.
+ */
+async function policiesRow(me: Me, j: Journey): Promise<(TaskView & { progress: { done: number; total: number }; opens: 'policies' }) | null> {
+  let list: PublicPolicy[];
+  try {
+    list = await policiesFor({ userId: me.userId, org: j.org });
+  } catch (error) {
+    logger.warn('onboarding home: policies not read', { error: String(error) });
+    return null;
+  }
+  // One rule for every count: policyAckCounts (GET /policies, the Actions tile, the home's counts).
+  const counts = policyAckCounts(list);
+  if (!counts.required) return null;
+  const done = counts.acknowledged;
+  const all = counts.toAcknowledge === 0;
+  const at = j.week1?.policies?.at;
+  return {
+    id: 'policies', phase: 'first_week', title: 'Acknowledge policies', ownerRole: 'employee', kind: 'ack', surface: 'app', mustDo: false,
+    status: all ? 'done' : 'todo', opensAt: null, dueAt: j.tj ? dayDate(j.tj).toISOString() : null, late: false,
+    ...(all && at ? { doneAt: new Date(at).toISOString() } : {}),
+    progress: { done, total: counts.required }, opens: 'policies',
+  };
+}
+
+/**
+ * Meetings › Your team (the prototype's TeamList): the joiner's department as the company records
+ * it (the journey's, else their profile's), everyone in it but them, manager and buddy first.
+ */
+export async function teamForJoiner(me: Me) {
+  const j = await joinerJourney(me.userId);
+  const joiner = await users().findOne({ userId: me.userId }, { projection: { _id: 0, department: 1 } });
+  const department = (j.department ?? joiner?.department ?? '').trim();
+  if (!department) return { department: '', people: [] };
+  const rows = await users().find<FaceFields & { name: string; designation?: string }>(
+    {
+      org: j.org, userId: { $ne: me.userId }, department: new RegExp(`^\\s*${department.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i'),
+      hiddenFromDirectory: { $ne: true }, lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
+    } as never,
+    { projection: { _id: 0, name: 1, designation: 1, ...FACE_PROJECTION } },
+  ).toArray();
+  const tagOf = (id: string) => (id === j.managerUserId ? 'manager' : id === j.buddyUserId ? 'buddy' : undefined);
+  const rank = (id: string) => (id === j.managerUserId ? 0 : id === j.buddyUserId ? 1 : 2);
+  rows.sort((a, b) => rank(a.userId) - rank(b.userId) || a.name.localeCompare(b.name));
+  return {
+    department,
+    people: rows.map((r) => {
+      const photoUrl = faceUrlOf(r);
+      const tag = tagOf(r.userId);
+      return { userId: r.userId, name: r.name, ...(r.designation ? { designation: r.designation } : {}), ...(photoUrl ? { photoUrl } : {}), ...(tag ? { tag } : {}) };
+    }),
+  };
 }
 
 // ─── Surveys (A7) ───────────────────────────────────────────────────────────
@@ -1060,7 +1130,8 @@ export async function joinerForManager(me: Me, journeyId: string, now = new Date
     j.buddyUserId ? faceUrlsFor([j.buddyUserId]).then((faces) => faces.get(j.buddyUserId!) ?? null) : Promise.resolve(null),
   ]);
   const visible = tasks.filter((t) => visibleTo('manager', t));
-  const meetingCtx = (m: Meeting) => ({ joinerId: j.userId, managerId: j.managerUserId, buddyId: j.buddyUserId, task: tasks.find((t) => t.id === m.journeyTaskId), managerName: j.managerUserId ? names.get(j.managerUserId) : undefined, journey: j });
+  const agendaOf = await agendaResolver(j);
+  const meetingCtx = (m: Meeting) => ({ joinerId: j.userId, managerId: j.managerUserId, buddyId: j.buddyUserId, task: tasks.find((t) => t.id === m.journeyTaskId), managerName: j.managerUserId ? names.get(j.managerUserId) : undefined, journey: j, agendaOf });
   const meetingOf = new Map(meetings.filter((m) => m.journeyTaskId).map((m) => [m.journeyTaskId!, m]));
   const first = (person?.name ?? j.candidate?.name ?? '').split(/\s+/)[0] || 'them';
   // Managers never see pay: the decision reaches them without the salary.

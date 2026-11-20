@@ -306,10 +306,18 @@ class TaskView {
     this.readOnly = false,
     this.doneBy,
     this.canMarkDone,
+    this.agenda = const [],
+    this.withName,
+    this.withUserId,
+    this.withPhotoUrl,
+    this.canTick,
+    this.myNotes = const [],
+    this.opens,
   });
 
   factory TaskView.fromJson(Map<String, dynamic> json) {
     final meeting = _map(json['meeting']);
+    List<String> strings(Object? v) => v is List ? [for (final x in v) x is String ? x : ''] : const [];
     return TaskView(
       id: _str(json['id']) ?? '',
       systemKey: _str(json['systemKey']),
@@ -336,6 +344,13 @@ class TaskView {
       readOnly: _bool(json['readOnly']),
       doneBy: _str(json['doneBy']),
       canMarkDone: json['canMarkDone'] is bool ? json['canMarkDone'] as bool : null,
+      agenda: strings(json['agenda']).where((a) => a.isNotEmpty).toList(),
+      withName: _str(json['withName']),
+      withUserId: _str(json['withUserId']),
+      withPhotoUrl: _str(json['withPhotoUrl']),
+      canTick: json['canTick'] is bool ? json['canTick'] as bool : null,
+      myNotes: strings(json['myNotes']),
+      opens: _str(json['opens']),
     );
   }
 
@@ -376,6 +391,19 @@ class TaskView {
   /// M2: whether the manager may tick it there. HR's decision tasks never.
   /// Null from an older server; [managerMayTick] then decides.
   final bool? canMarkDone;
+
+  /// A meeting row (the joiner's Meetings): the template's agenda, who it is
+  /// with, whether the joiner may mark it met (null: not a meeting row), and
+  /// their own notes, one per agenda point.
+  final List<String> agenda;
+  final String? withName;
+  final String? withUserId;
+  final String? withPhotoUrl;
+  final bool? canTick;
+  final List<String> myNotes;
+
+  /// A row that opens a screen of its own ('policies': Acknowledge policies).
+  final String? opens;
 
   bool get isDone => status == 'done' || status == 'skipped';
   bool get isLocked => status == 'locked';

@@ -26,6 +26,7 @@ type Row = {
   recommended?: string;
   after?: TemplateTask['after'];
   documents?: TemplateTask['documents'];
+  agenda?: string[];
 };
 
 const tj = (offset = 0, unit: DueRule['unit'] = 'days'): DueRule => ({ anchor: 'tj', offset, unit });
@@ -62,10 +63,10 @@ const ONBOARDING_ROWS: Row[] = [
   { key: 'assign_buddy', phase: 'pre_boarding', title: 'Assign a buddy', helper: 'A teammate for small questions; shows on the Day-1 pass', owner: 'manager', kind: 'assign', surface: 'app', opens: at('finalised'), due: tj(-3), recommended: 'Someone other than the manager they can ask small questions. Shows on the Day-1 pass.' },
 
   // ── First week · Employee 6 · Manager 3 · HR 2 · Manager + Employee 1 · IT / Admin 1 · Manager → Employee 1 · Automatic 1 (+ 1 recommended)
-  { key: 'welcome_induction', phase: 'first_week', title: 'Welcome and induction', helper: 'First thing on the joining day', owner: 'hr', kind: 'meeting', surface: 'dashboard', opens: tj(0), due: tj(0) },
-  { key: 'meet_manager', phase: 'first_week', title: 'Meet your manager', helper: 'First 1:1. Timed item; push 30 min before', owner: 'manager_employee', kind: 'meeting', surface: 'app', opens: tj(0), due: tj(0), mustDo: true },
-  { key: 'vision_culture', phase: 'first_week', title: 'Company vision and culture', helper: 'Batch session', owner: 'hr', kind: 'meeting', surface: 'dashboard', opens: tj(0), due: tj(0) },
-  { key: 'meet_team', phase: 'first_week', title: 'Meet your team', helper: 'Manager introduces the team', owner: 'manager', kind: 'meeting', surface: 'app', opens: tj(0), due: tj(0), mustDo: true },
+  { key: 'welcome_induction', phase: 'first_week', title: 'Welcome and induction', helper: 'First thing on the joining day', owner: 'hr', kind: 'meeting', surface: 'dashboard', opens: tj(0), due: tj(0), agenda: ['Your ID card and documents', 'Working hours and attendance', 'Payroll and your tax declaration', 'Who to ask for what'] },
+  { key: 'meet_manager', phase: 'first_week', title: 'Meet your manager', helper: 'First 1:1. Timed item; push 30 min before', owner: 'manager_employee', kind: 'meeting', surface: 'app', opens: tj(0), due: tj(0), mustDo: true, agenda: ['What a good first month looks like', 'How you’ll work together', 'Your first goals', 'Who to meet first'] },
+  { key: 'vision_culture', phase: 'first_week', title: 'Company vision and culture', helper: 'Batch session', owner: 'hr', kind: 'meeting', surface: 'dashboard', opens: tj(0), due: tj(0), agenda: ['Where the company is going and why', 'How we work together', 'Questions are welcome'] },
+  { key: 'meet_team', phase: 'first_week', title: 'Meet your team', helper: 'Manager introduces the team', owner: 'manager', kind: 'meeting', surface: 'app', opens: tj(0), due: tj(0), mustDo: true, agenda: ['Who does what in the team', 'How the team works day to day'] },
   { key: 'laptop_setup', phase: 'first_week', title: 'Set up laptop and login', helper: 'Device handed over', owner: 'it', kind: 'assign', surface: 'dashboard', opens: tj(0), due: tj(0) },
   { key: 'register_face', phase: 'first_week', title: 'Register face for punch-in', helper: 'Only for people who punch in the app; uses the existing face-check flow', owner: 'employee', kind: 'face', surface: 'app', opens: tj(0), due: tj(1) },
   { key: 'app_tour', phase: 'first_week', title: 'Take the Sowaka tour', helper: 'The in-app spotlight tour', owner: 'employee', kind: 'tour', surface: 'app', opens: tj(0), due: tj(3) },
@@ -81,10 +82,10 @@ const ONBOARDING_ROWS: Row[] = [
 
   // ── Probation · Manager 2 · Manager + Employee 1 · Employee 1 · HR + Manager 1 · HR 1 · Automatic 1 (+ 1 recommended)
   { key: 'monthly_goals', phase: 'probation', title: 'Monthly goals', helper: 'Set at the start of each probation month', owner: 'manager', kind: 'form', surface: 'app', opens: monthStart('each'), due: monthStart('each') },
-  { key: 'monthly_checkin', phase: 'probation', title: 'Monthly check-in', helper: 'Employee and manager together, at the end of each month', owner: 'manager_employee', kind: 'checkin', surface: 'app', opens: monthEnd('each', -6), due: monthEnd('each'), mustDo: true },
+  { key: 'monthly_checkin', phase: 'probation', title: 'Monthly check-in', helper: 'Employee and manager together, at the end of each month', owner: 'manager_employee', kind: 'checkin', surface: 'app', opens: monthEnd('each', -6), due: monthEnd('each'), mustDo: true, agenda: ['Progress on this month’s goals', 'Feedback both ways', 'Goals for next month'] },
   { key: 'monthly_review', phase: 'probation', title: 'Monthly review and next month’s goals', helper: 'Closes the month and opens the next', owner: 'manager', kind: 'review', surface: 'app', due: monthEnd('each'), after: { key: 'monthly_checkin' } },
   { key: 'pulse_survey', phase: 'probation', title: 'Pulse survey', helper: 'Same 4 questions as Day 7', owner: 'employee', kind: 'survey', surface: 'app', opens: monthStart([3, 6]) },
-  { key: 'confirmation_discussion', phase: 'probation', title: 'Confirmation discussion', helper: 'Opens in the last probation month: confirm or extend, salary, KPIs, designation, reporting', owner: 'hr_manager', kind: 'review', surface: 'dashboard', opens: monthStart('last'), due: monthEnd('last'), mustDo: true },
+  { key: 'confirmation_discussion', phase: 'probation', title: 'Confirmation discussion', helper: 'Opens in the last probation month: confirm or extend, salary, KPIs, designation, reporting', owner: 'hr_manager', kind: 'review', surface: 'dashboard', opens: monthStart('last'), due: monthEnd('last'), mustDo: true, agenda: ['Your months here, looking back', 'Feedback both ways', 'What happens next'] },
   { key: 'confirmation_letter', phase: 'probation', title: 'Confirmation or extension letter', helper: 'From Documents; extension restarts a review cycle', owner: 'hr', kind: 'letter', surface: 'dashboard', after: { key: 'confirmation_discussion' } },
   { key: 'confirmation_reveal', phase: 'probation', title: 'Confirmation reveal', helper: 'The outcome moment in the app', owner: 'automatic', kind: 'system', surface: 'app', after: { key: 'confirmation_letter' } },
   { key: 'manager_30day_note', phase: 'probation', title: '30-day note from the manager', helper: 'Short written note; feeds the month-1 check-in', owner: 'manager', kind: 'form', surface: 'app', opens: tj(30), due: tj(30), recommended: 'A short written note on how the first month went. Feeds the month-1 check-in.' },
@@ -101,7 +102,7 @@ type TeamRow = { key: string; owner: 'buddy' | 'head_of_department' | 'manager';
 const BEFORE = tj(-1), DAY1 = tj(0), WEEK1 = tj(6);
 const TEAM_ROWS: TeamRow[] = [
   // The buddy
-  { key: 'buddy_meet', owner: 'buddy', title: 'Meet {n} on Day 1', due: DAY1, team: { kind: 'meet', pair: 'Your buddy', agenda: ['How the team works day to day', 'Tools and shortcuts', 'Anything {n} is unsure about'] } },
+  { key: 'buddy_meet', owner: 'buddy', title: 'Meet {n} on Day 1', due: DAY1, team: { kind: 'meet', pair: 'Your buddy', agenda: ['How the team works day to day', 'Tools and shortcuts', 'Where people have lunch', 'Anything {n} is unsure about'] } },
   { key: 'buddy_show_around', owner: 'buddy', title: 'Show {n} around the office', due: DAY1, team: { kind: 'team' } },
   { key: 'buddy_punch_in', owner: 'buddy', title: 'Tell {n} how punch-in works', due: DAY1, team: { kind: 'help', pair: 'Sowaka tour: Punch in and out' } },
   { key: 'buddy_policies', owner: 'buddy', title: 'Show {n} where policies and payslips are', due: DAY1, team: { kind: 'help' } },
@@ -233,6 +234,7 @@ function toTasks(prefix: string, rows: Row[]): TemplateTask[] {
     enabled: !row.recommended,
     order: (index + 1) * 10,
     ...(row.recommended ? { recommended: { why: row.recommended, added: false } } : {}),
+    ...(row.agenda ? { agenda: [...row.agenda] } : {}),
     ...(row.after ? { after: row.after } : {}),
     ...(row.documents ? { documents: row.documents.map((d) => ({ ...d })) } : {}),
   }));

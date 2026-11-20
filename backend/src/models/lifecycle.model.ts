@@ -124,6 +124,12 @@ export interface TemplateTask {
    * (first name) and {p} (first name’s); `helper` is the row's quiet line.
    */
   team?: TeamTaskSpec;
+  /**
+   * A meeting's agenda (a meeting, a check-in or the confirmation discussion): the points the
+   * joiner's meeting screen lists with a notes box each, and the manager's for the same meeting.
+   * HR edits it in Templates; absent: the seed's for the task's systemKey.
+   */
+  agenda?: string[];
 }
 
 export type TeamTaskKind = 'help' | 'approve' | 'review' | 'task' | 'meet' | 'team' | 'goal' | 'doc' | 'chat';
@@ -577,6 +583,22 @@ export interface Meeting {
 /** "Day 1, done!" · How was today? */
 export const DAY1_FEELINGS = ['great', 'okay', 'tough'] as const;
 export type Day1Feeling = typeof DAY1_FEELINGS[number];
+
+/**
+ * Someone's own notes on a meeting's agenda (the joiner's meeting screen, "Only you can see your
+ * notes"): one text per agenda point, kept by the meeting row's id (a journey task id, `team:<key>`
+ * for a buddy or head-of-department meeting, `person:<id>` for someone the manager picked). Read by
+ * nobody but `userId`: no HR or manager view reads this collection.
+ */
+export interface MeetingNotes {
+  id: string;
+  org: string;
+  journeyId: string;
+  rowId: string;
+  userId: string;
+  notes: string[];
+  updatedAt: Date;
+}
 
 export interface Week1Reels {
   policies?: { versions: Array<{ id: string; version: string }>; at: Date; device?: string };

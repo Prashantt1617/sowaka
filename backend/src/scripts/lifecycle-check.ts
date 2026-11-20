@@ -491,7 +491,7 @@ async function main() {
   await board.updateJourneyByHr(ORG, J2.id, { day1Pass: { reportingTime: '09:30', place: 'Room 4B', agenda: [{ time: '11:00', title: 'Meet your manager', with: 'Neha' }] } });
   const meetings = await lifecycleMeetings().find({ journeyId: J2.id }).toArray();
   const mv = await app.meetingFor(ISHA, (await lifecycleMeetings().findOne({ journeyId: J2.id }))!.id);
-  eq('Meeting: attendees with roles, what to expect, must-do', [mv.attendees.map((a) => a.role), mv.expect.length, mv.mustDo, mv.systemKey], [['joiner', 'manager'], 3, true, 'meet_manager']);
+  eq('Meeting: attendees with roles, what to expect, must-do', [mv.attendees.map((a) => a.role), mv.expect.length, mv.mustDo, mv.systemKey], [['joiner', 'manager'], 4, true, 'meet_manager']);
   ok('The home links the meeting to its task', (await app.onboardingHome(ISHA)).today.some((v) => v.systemKey === 'meet_manager' && (v as { meetingId?: string }).meetingId === mv.id));
   type MeetingRow = TaskView & { meeting?: { id: string; startsAt: string; place?: string; with?: string; canConfirm?: boolean } };
   const homeRow = ((await app.onboardingHome(ISHA)).today as MeetingRow[]).find((v) => v.systemKey === 'meet_manager');
