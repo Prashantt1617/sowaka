@@ -116,12 +116,12 @@ const addr = (a?: { line: string; city: string; state: string; pin: string }) =>
 const month = (m?: string) => (m ? new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'now');
 
 /** What the candidate filled in on the portal's Employee profile (the secrets as their last four). */
-function ProfileFacts({ profile: p, emergency, pf, onPhoto }: {
-  profile: NonNullable<JourneyDetail['journey']['profile']>; emergency?: { name: string; relation: string; phone: string }; pf?: { firstJob: boolean; uan?: string }; onPhoto: (id: string) => void;
+function ProfileFacts({ profile: p, sections, emergency, pf, onPhoto }: {
+  profile: NonNullable<JourneyDetail['journey']['profile']>; sections?: { done: number; total: number }; emergency?: { name: string; relation: string; phone: string }; pf?: { firstJob: boolean; uan?: string }; onPhoto: (id: string) => void;
 }) {
   return (
     <>
-      <Sub>Employee profile</Sub>
+      <Sub>Employee profile{sections ? ` · ${sections.done} of ${sections.total} sections done` : ''}</Sub>
       <Facts strong={false} rows={[
         ['Full name', p.personal ? `${p.personal.fullName}${p.personal.preferredName ? ` (${p.personal.preferredName})` : ''}` : ''],
         ['Date of birth', p.personal?.dob ? longDay(p.personal.dob) : ''],
@@ -369,7 +369,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
               </span>
               <span style={{ height: 8, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}><i style={{ display: 'block', height: '100%', width: `${profilePct}%`, borderRadius: 99, background: pctColour(profilePct) }} /></span>
             </span>
-            {journey.profile && <ProfileFacts profile={journey.profile} emergency={journey.aboutYou?.emergencyContact} pf={journey.aboutYou?.pf} onPhoto={(id) => setDialog({ kind: 'file', id, name: `Photo – ${name}` })} />}
+            {journey.profile && <ProfileFacts profile={journey.profile} sections={journey.profileSections} emergency={journey.aboutYou?.emergencyContact} pf={journey.aboutYou?.pf} onPhoto={(id) => setDialog({ kind: 'file', id, name: `Photo – ${name}` })} />}
             {documents.length > 0 && <Sub>Documents</Sub>}
             {documents.length > 0 && !seesDocuments && <div className="pd-note">Only HR opens candidates’ documents and ID proofs. You see where each one is.</div>}
             {documents.map((d) => <DocumentRow key={d.id} doc={d} busy={busy === `doc:${d.id}`} canReview={seesDocuments}

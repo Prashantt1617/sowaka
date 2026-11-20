@@ -466,6 +466,42 @@ async function main() {
   ok('The Action tile’s subtitle follows the stage after week 1', /^Week 2 · /.test(rohanMe.onboarding?.subtitle ?? ''), rohanMe.onboarding);
   ok('…and counts steps in week 1', /^\d+ of \d+ steps done$/.test(((await app.lifecycleMe(ISHA)) as { onboarding?: { subtitle?: string } }).onboarding?.subtitle ?? ''));
 
+  // ───────────────────────────────────────────────────────── the new joiner's home tiles
+  section('The home’s Devices and accesses, Watch list and Your profile (new-joiner prototype, 20 Nov)');
+  {
+    const base = byKey(await engine.tasksOf(J2.id), 'laptop_setup');
+    const crm = { ...base, id: `crm-${J2.id}`, systemKey: undefined, title: 'Admissions CRM access', helper: undefined, status: 'todo' as const, doneAt: undefined };
+    delete (crm as { _id?: unknown })._id;
+    await journeyTasks().insertOne(crm as never);
+    const devices = (await app.onboardingHome(ISHA)).devices as Array<{ key: string; title: string; ready: boolean }>;
+    eq('Devices: the laptop, the email, the app and the template’s own IT access row, each with its task’s status',
+      devices.map((d) => [d.title, d.ready]), [['Laptop', byKey(await engine.tasksOf(J2.id), 'laptop_setup').status === 'done'], ['Email', true], ['Sowaka Connect', true], ['Admissions CRM access', false]]);
+    await board.actOnTaskByHr(ORG, J2.id, crm.id, { action: 'done' }, HR);
+    ok('…IT ticking it on the board makes it Ready in the app', ((await app.onboardingHome(ISHA)).devices as Array<{ title: string; ready: boolean }>).find((d) => d.title === 'Admissions CRM access')?.ready === true);
+
+    eq('Watch list: nothing of its own while the company has no Meet us video', (await app.onboardingHome(ISHA)).watch, []);
+    await companies().updateOne({ id: ORG }, { $set: { lifecyclePortal: { videoUrl: 'https://videos.check.test/life.mp4', videoTitle: 'Life at Check Co' } } });
+    const portal = await import('../services/lifecycle/portal');
+    const meet = (await portal.meetItems(await engine.loadJourney(J2.id))).filter((i) => i.videoUrl);
+    const withVideo = await app.onboardingHome(ISHA);
+    eq('…the portal’s Meet us videos, the same titles and links, and the company’s name',
+      [withVideo.companyName, withVideo.watch.map((v) => [v.title, v.videoUrl])], ['Check Co', meet.map((i) => [i.title, i.videoUrl])]);
+
+    const profile = await import('../services/lifecycle/profile');
+    const portalProfile = await profile.profileView(await engine.loadJourney(J2.id));
+    const panel = await board.journeyPanel(ORG, J2.id);
+    eq('Your profile: the portal’s seven sections, its count, and the dashboard joiner panel’s',
+      [withVideo.profile.sections.map((x) => [x.title, x.done]), withVideo.profile.done, withVideo.profile.total, panel.journey.profileSections],
+      [portalProfile.sections.map((x) => [x.title, x.done]), portalProfile.done, 7, { done: portalProfile.done, total: 7 }]);
+    await journeys().updateOne({ id: J2.id }, { $set: { 'profile.personal': { fullName: 'Isha Verma', dob: '1999-01-01', gender: 'Female' } } });
+    eq('…a section saved on the portal counts on all three', [(await app.onboardingHome(ISHA)).profile.done, (await board.journeyPanel(ORG, J2.id)).journey.profileSections.done], [portalProfile.done + 1, portalProfile.done + 1]);
+
+    eq('Tour: no lesson done before the first punch-in', (await app.onboardingHome(ISHA)).tour.done.includes('punch'), false);
+    const { attendanceRecords } = db;
+    await attendanceRecords().insertOne({ userId: 'isha', org: ORG, workDate: J2.tj, punchIn: at(J2.tj!, '09:05') } as never);
+    eq('…the first punch-in is “Punch in and out” done (the prototype’s first punch)', (await app.onboardingHome(ISHA)).tour.done[0], 'punch');
+  }
+
   // ───────────────────────────────────────────────────────── board
   section('The HR board');
   const pre = await board.onboardingBoard(ORG, 'hr', { tab: 'pre_boarding' });

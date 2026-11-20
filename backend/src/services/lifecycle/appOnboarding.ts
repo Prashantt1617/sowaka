@@ -30,6 +30,9 @@ import {
 } from './engine';
 import { APP_COPY } from './seed';
 import { agendaResolver, joinerMeetingRows, markMeetingRowMet, saveMeetingRowNotes } from './joinerMeetings';
+import { meetVideos } from './portal';
+import { journeyDocumentsView } from './documents';
+import { PROFILE_SECTION_TITLE, PROFILE_SECTIONS, sectionStates } from './profile';
 import { groupTasks, progressOf } from './board';
 import { cleanGoals, checkinByJoiner, markRevealSeen, probationForJoiner, probationOf, revealFor, updateMonthByManager } from './probation';
 
@@ -289,6 +292,7 @@ export async function onboardingHome(me: Me, now = new Date()) {
     }), ...(meeting ? { meetingId: meeting.id, meeting: meetingView(meeting, meetingPeople, ctxOf(meeting)) } : {}) }
     : undefined;
   const byDue = (a: TaskView, b: TaskView) => dueKey(a).localeCompare(dueKey(b));
+  const firstPunch = await firstPunchOf(me.userId, j.tj);
   return {
     journeyId: j.id, stage: derived.stage, stageName: stageName(derived.stage), dayLabel: derived.dayLabel, tj: j.tj, plant: derived.plant,
     ...(j.managerUserId && names.get(j.managerUserId) ? { managerName: names.get(j.managerUserId) } : {}),
@@ -302,13 +306,39 @@ export async function onboardingHome(me: Me, now = new Date()) {
     showWeekDone: isWeek1Done(j.tj, today) && !j.week1DoneSeenAt,
     ...(j.week1DoneSeenAt ? { weekDoneSeenAt: j.week1DoneSeenAt } : {}),
     weekDoneStats: weekDoneStats(tasks, await countBadges(j), derived.plant.leaves),
-    firstPunch: await firstPunchOf(me.userId, j.tj),
+    firstPunch,
     day1: await day1Of(j, tasks, meetings, derived.tab),
-    tour: await tourOf(me.userId, j),
+    tour: await tourOf(me.userId, j, firstPunch),
     // The same counts as GET /policies (policyAckCounts): "Acknowledge policies · n of N done".
     policies: policyAckCounts(await policiesFor({ userId: me.userId, org: me.org })),
     devices: devicesFor(tasks),
+    ...(await watchAndProfile(j)),
   };
+}
+
+/**
+ * The Watch list and Your profile (new-joiner artifact): the Meet us videos the portal plays,
+ * and the portal's Employee profile sections with their state (profile.ts, the same count the
+ * portal shows as "n of 7 sections done").
+ */
+async function watchAndProfile(j: Journey) {
+  const [watch, docs] = await Promise.all([meetVideos(j), journeyDocumentsView(j.id)]);
+  const done = sectionStates(j, docs);
+  return {
+    companyName: watch.company,
+    watch: watch.videos,
+    profile: {
+      sections: PROFILE_SECTIONS.map((key) => ({ key, title: PROFILE_SECTION_TITLE[key], done: done[key] })),
+      done: PROFILE_SECTIONS.filter((k) => done[k]).length,
+      total: PROFILE_SECTIONS.length,
+    },
+  };
+}
+
+/** The tour's lessons done; the first punch-in itself is "Punch in and out" (the artifact's first punch adds it). */
+function tourDoneOf(j: Pick<Journey, 'tour'>, firstPunch: { at?: string }): string[] {
+  const done = (j.tour?.done ?? []).filter((k) => (TOUR_ALL_LESSONS as readonly string[]).includes(k));
+  return firstPunch.at && !done.includes('punch') ? ['punch', ...done] : done;
 }
 
 /**
@@ -378,13 +408,18 @@ const TOUR_ALL_LESSONS = [...TOUR_LESSONS, ...TOUR_MANAGER_LESSONS] as const;
  * the laptop (`laptop_setup`), the work email (`mark_joined` creates it) and
  * this app (ready: they are in it). Ready once its task is done.
  */
-function devicesFor(tasks: JourneyTask[]) {
-  const done = (key: SystemTaskKey) => tasks.some((t) => t.systemKey === key && (t.status === 'done' || t.status === 'skipped'));
-  const has = (key: SystemTaskKey) => tasks.some((t) => t.systemKey === key);
+export function devicesFor(tasks: JourneyTask[]) {
+  const finished = (t: JourneyTask) => t.status === 'done' || t.status === 'skipped';
+  const done = (key: SystemTaskKey) => tasks.some((t) => t.systemKey === key && finished(t));
+  const has = (key: SystemTaskKey) => tasks.some((t) => t.systemKey === key && t.status !== 'cancelled');
+  // The template's own access rows (an "Admissions CRM access" HR added for IT or Admin in the
+  // first week): the same task, and the same status, HR and IT tick on the board.
+  const accesses = tasks.filter((t) => !t.systemKey && (t.ownerRole === 'it' || t.ownerRole === 'admin') && t.phase === 'first_week' && t.status !== 'cancelled');
   return [
     ...(has('laptop_setup') ? [{ key: 'laptop', title: 'Laptop', ready: done('laptop_setup') }] : []),
     ...(has('mark_joined') ? [{ key: 'email', title: 'Email', ready: done('mark_joined') }] : []),
     { key: 'app', title: 'Sowaka Connect', ready: true },
+    ...accesses.map((t) => ({ key: 'access', id: t.id, title: t.title, ready: finished(t) })),
   ];
 }
 
@@ -393,7 +428,8 @@ function devicesFor(tasks: JourneyTask[]) {
  * joiner manages anyone (active direct reports), who then also gets "For
  * managers" ([TOUR_MANAGER_LESSONS]).
  */
-async function tourOf(userId: string, j: Pick<Journey, 'org' | 'tour'>) {
+/** The tour as the app reads it: the lessons, the managers' two when they lead someone, and what is done (the first punch-in counts as Punch in and out). */
+async function tourOf(userId: string, j: Pick<Journey, 'org' | 'tour'>, firstPunch: { at?: string }) {
   const reports = await users().countDocuments(
     { org: j.org, managerUserId: userId, hiddenFromDirectory: { $ne: true }, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } },
     { limit: 1 },
@@ -401,7 +437,7 @@ async function tourOf(userId: string, j: Pick<Journey, 'org' | 'tour'>) {
   return {
     lessons: [...TOUR_LESSONS],
     ...(reports > 0 ? { managerLessons: [...TOUR_MANAGER_LESSONS] } : {}),
-    done: (j.tour?.done ?? []).filter((k) => (TOUR_ALL_LESSONS as readonly string[]).includes(k)),
+    done: tourDoneOf(j, firstPunch),
   };
 }
 
@@ -410,13 +446,15 @@ export async function tourLessonDone(me: Me, lesson: string) {
   if (!(TOUR_ALL_LESSONS as readonly string[]).includes(lesson)) throw new LifecycleError(400, `lesson is one of ${TOUR_ALL_LESSONS.join(', ')}`);
   const j = await joinerJourney(me.userId);
   const done = [...(j.tour?.done ?? [])];
+  const firstPunch = await firstPunchOf(me.userId, j.tj);
   if (!done.includes(lesson)) {
     done.push(lesson);
     const now = new Date();
     await journeys().updateOne({ id: j.id }, { $set: { tour: { done, updatedAt: now }, updatedAt: now } });
-    if (TOUR_LESSONS.every((k) => done.includes(k))) await completeTask(j.id, 'app_tour', { userId: me.userId, name: me.name }).catch(() => undefined);
+    const counted = tourDoneOf({ tour: { done, updatedAt: now } }, firstPunch);
+    if (TOUR_LESSONS.every((k) => counted.includes(k))) await completeTask(j.id, 'app_tour', { userId: me.userId, name: me.name }).catch(() => undefined);
   }
-  return tourOf(me.userId, { org: j.org, tour: { done, updatedAt: new Date() } });
+  return tourOf(me.userId, { org: j.org, tour: { done, updatedAt: new Date() } }, firstPunch);
 }
 
 /** "Week 1, done!" (A8): tasks done in week 1, people met, leaves grown. */

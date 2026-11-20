@@ -9,6 +9,7 @@
  */
 import { candidateAccounts, companies, dateChangeRequests, journeys, letters, offers, policyDocuments, users } from '../../config/db';
 import type { AboutYou, Day1Pass, Journey, OfferFields } from '../../models/lifecycle.model';
+import type { Company } from '../../models/company.model';
 import { journeyDocumentsView } from './documents';
 import {
   addDays, companyDisplayName, companyOf, daysBetween, fireOnce, formatDay, hrContactFor, istDate, istHour, mails, sendLifecycleEmail,
@@ -104,9 +105,25 @@ export interface MeetItem {
 
 export async function meetItems(journey: Journey): Promise<MeetItem[]> {
   const seen = new Set(journey.meetUs?.seen ?? []);
+  const items: Omit<MeetItem, 'seen'>[] = await meetVideoItems(journey);
+  const offer = await offers().findOne({ journeyId: journey.id });
+  const responsibilities = sentVersion(offer?.versions)?.fields.responsibilities;
+  if (responsibilities) items.push({ id: 'role', kind: 'card', tag: 'YOUR ROLE', title: 'Your role, explained', subtitle: journey.designation ? `What you'll do as ${journey.designation}` : 'Your job description', text: responsibilities });
+  const policies = await policyDocuments().find({ org: journey.org, active: true }, { projection: { _id: 0, title: 1, summary: 1 } }).sort({ order: 1 }).limit(20).toArray();
+  if (policies.length) {
+    items.push({ id: 'policies', kind: 'card', tag: 'POLICIES', title: 'Company policies', subtitle: `${policies.length} short read${policies.length === 1 ? '' : 's'}. You’ll confirm them in week 1`, text: policies.map((p) => (p.summary ? `${p.title}: ${p.summary}` : p.title)).join('\n') });
+  }
+  return items.map((item) => ({ ...item, seen: seen.has(item.id) }));
+}
+
+/** Meet us's first items: the manager's note (text or video) and the company video. */
+async function meetVideoItems(journey: Journey, known?: Company | null): Promise<Omit<MeetItem, 'seen'>[]> {
   const items: Omit<MeetItem, 'seen'>[] = [];
   const note = journey.meetUs?.managerNote;
-  const manager = journey.managerUserId ? await users().findOne<FaceFields & { name: string; designation?: string }>({ userId: journey.managerUserId }, { projection: { _id: 0, name: 1, designation: 1, ...FACE_PROJECTION } }) : null;
+  const [manager, company] = await Promise.all([
+    journey.managerUserId ? users().findOne<FaceFields & { name: string; designation?: string }>({ userId: journey.managerUserId }, { projection: { _id: 0, name: 1, designation: 1, ...FACE_PROJECTION } }) : null,
+    known === undefined ? companyOf(journey.org) : known,
+  ]);
   const managerFace = faceUrlOf(manager);
   if (note && (note.text || note.fileId)) {
     items.push({
@@ -120,18 +137,24 @@ export async function meetItems(journey: Journey): Promise<MeetItem[]> {
       ...(note.text ? { text: note.text } : {}), ...(note.kind === 'video' && note.fileId ? { videoUrl: mediaPath(journey.id, note.fileId) } : {}),
     });
   }
-  const company = await companyOf(journey.org);
   if (company?.lifecyclePortal?.videoUrl) {
     items.push({ id: 'company_video', kind: 'video', tag: 'HOW WE WORK', title: company.lifecyclePortal.videoTitle || `Life at ${companyDisplayName(company, journey.org)}`, subtitle: 'Who we are and what we value', videoUrl: company.lifecyclePortal.videoUrl });
   }
-  const offer = await offers().findOne({ journeyId: journey.id });
-  const responsibilities = sentVersion(offer?.versions)?.fields.responsibilities;
-  if (responsibilities) items.push({ id: 'role', kind: 'card', tag: 'YOUR ROLE', title: 'Your role, explained', subtitle: journey.designation ? `What you'll do as ${journey.designation}` : 'Your job description', text: responsibilities });
-  const policies = await policyDocuments().find({ org: journey.org, active: true }, { projection: { _id: 0, title: 1, summary: 1 } }).sort({ order: 1 }).limit(20).toArray();
-  if (policies.length) {
-    items.push({ id: 'policies', kind: 'card', tag: 'POLICIES', title: 'Company policies', subtitle: `${policies.length} short read${policies.length === 1 ? '' : 's'}. You’ll confirm them in week 1`, text: policies.map((p) => (p.summary ? `${p.title}: ${p.summary}` : p.title)).join('\n') });
-  }
-  return items.map((item) => ({ ...item, seen: seen.has(item.id) }));
+  return items;
+}
+
+/**
+ * The app's Watch list (new-joiner artifact, "Watch list"): the Meet us videos the portal
+ * plays (the manager's video hello, the company video), the same items and links, and the
+ * company's name for "About <company>". No video of its own.
+ */
+export async function meetVideos(journey: Journey): Promise<{ company: string; videos: Array<{ id: string; title: string; videoUrl: string; seen: boolean }> }> {
+  const company = await companyOf(journey.org);
+  const seen = new Set(journey.meetUs?.seen ?? []);
+  const videos = (await meetVideoItems(journey, company))
+    .filter((i) => i.videoUrl)
+    .map((i) => ({ id: i.id, title: i.title, videoUrl: i.videoUrl!, seen: seen.has(i.id) }));
+  return { company: companyDisplayName(company, journey.org), videos };
 }
 
 /** The client reports "seen" (80% of a video, 3 s on a card); the last one completes the task. */

@@ -110,9 +110,11 @@ class StageLens {
     final steps = lensSteps(months);
     final current = currentStepOf(home, now, months: months);
     final at = (selected ?? current).clamp(0, steps.length - 1);
+    // Day 1 before the first punch-in: "Your first punch-in" registers the face, not a task row.
+    final firstPunch = home.needsFirstPunchOn(now);
     final all = <TaskView>[
       for (final t in [...home.today, ...home.later, ...home.done])
-        if (t.status != 'cancelled') t,
+        if (t.status != 'cancelled' && !(firstPunch && t.systemKey == 'register_face')) t,
     ];
     // Each thing once (Up next is also in today).
     final seen = <String>{};
@@ -123,8 +125,17 @@ class StageLens {
     final mode = at == current ? LensMode.now : (at > current ? LensMode.ahead : LensMode.back);
     List<LensItem> build(List<({TaskView task, int stage})> list) => _rows(list, steps, current, at, mode);
     List<TaskView> ofStage(List<({TaskView task, int stage})> list) => [for (final s in list) if (s.stage == at) s.task];
-    List<TaskView> openNow(List<({TaskView task, int stage})> list) =>
-        [for (final s in list) if (s.stage <= current && !s.task.isDone && !s.task.isLocked) s.task];
+    // What is due now: her stage's and earlier stages' open things. With
+    // none (Day 1, when the week's tasks are due by Tj + 5), the next
+    // stage's that she can already do, so Up next is never "All done" while
+    // the week's work is open.
+    List<TaskView> openNow(List<({TaskView task, int stage})> list) {
+      final due = [for (final s in list) if (s.stage <= current && !s.task.isDone && !s.task.isLocked) s.task];
+      if (due.isNotEmpty) return due;
+      final early = [for (final s in list) if (s.stage == current + 1 && !s.task.isDone && !s.task.isLocked) s]
+        ..sort((a, b) => _byWhen(a.task, b.task));
+      return [for (final s in early) s.task];
+    }
     return StageLens._(
       steps: steps,
       current: current,

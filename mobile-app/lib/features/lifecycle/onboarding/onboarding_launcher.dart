@@ -19,11 +19,9 @@ import 'presentation/manager/joiner_screen.dart';
 import 'presentation/manager/probation_review_screen.dart';
 import 'presentation/manager/starter_review_screen.dart';
 import 'presentation/meeting_screen.dart';
-import 'presentation/notes_screen.dart';
 import 'presentation/onboarding_home_screen.dart';
 import 'presentation/onboarding_kit.dart';
 import 'presentation/onboarding_tiles.dart';
-import 'presentation/people_screen.dart';
 import 'presentation/portal_page_screen.dart';
 import 'presentation/probation_screens.dart';
 import 'presentation/intro_post_screen.dart';
@@ -100,8 +98,10 @@ Future<void> openOnboardingTask(
       return push(Week1ReelsScreen(shell: shell));
     case 'intro_post':
       return push(IntroPostScreen(shell: shell));
+    // The new-joiner prototype's Meetings tab is where people are met; the
+    // old People to meet screen is no longer opened (kept: PeopleToMeetScreen).
     case 'people_to_meet':
-      return push(PeopleToMeetScreen(shell: shell, dueAt: task.dueAt));
+      return push(OnbMeetingsScreen(shell: shell));
     case 'day7_survey':
     case 'pulse_survey':
       return push(SurveyScreen(shell: shell));
@@ -110,8 +110,10 @@ Future<void> openOnboardingTask(
       if (open != null) return push(StarterTaskScreen(shell: shell, taskId: open.id, initial: open));
       await showTaskSheet(context, shell, task);
       return;
+    // Not in the new-joiner prototype: the shared 1:1 notes are not opened
+    // from onboarding (NotesScreen kept).
     case 'one_on_one_notes':
-      return push(NotesScreen(shell: shell));
+      return;
     case 'monthly_goals':
     case 'monthly_review':
       return push(ProbationScreen(shell: shell));
@@ -185,10 +187,11 @@ bool openOnboardingDestination(BuildContext context, Map<String, dynamic> data) 
   Widget? page = switch (destination) {
     'lifecycle_meeting' when read('meetingId') != null => MeetingScreen(shell: shell, meetingId: read('meetingId')!),
     'lifecycle_starter_task' => StarterTaskScreen(shell: shell, taskId: read('starterTaskId')),
-    'lifecycle_notes' => NotesScreen(shell: shell),
+    // Not in the new-joiner prototype (NotesScreen kept): the onboarding home.
+    'lifecycle_notes' => null,
     'lifecycle_week1' => Week1ReelsScreen(shell: shell),
     'lifecycle_intro' => IntroPostScreen(shell: shell),
-    'lifecycle_people' => PeopleToMeetScreen(shell: shell),
+    'lifecycle_people' => OnbMeetingsScreen(shell: shell),
     'lifecycle_survey' => SurveyScreen(shell: shell),
     'lifecycle_probation' => ProbationScreen(shell: shell),
     'lifecycle_checkin' => ProbationScreen(shell: shell, openCheckinFor: month),
