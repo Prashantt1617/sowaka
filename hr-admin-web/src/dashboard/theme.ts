@@ -8,6 +8,7 @@ export type View =
   | 'setup'
   | 'bulkassign'
   | 'leave'
+  | 'leavebalances'
   | 'overtime'
   | 'attendance'
   | 'feedback'
@@ -168,6 +169,7 @@ export const TITLES: Record<View, [string, string]> = {
   setup: ['Setup', ''],
   bulkassign: ['Bulk assign', ''],
   leave: ['Leave requests', 'Time office'],
+  leavebalances: ['Leave balances', 'Time office'],
   overtime: ['Overtime', 'Time office'],
   attendance: ['Attendance corrections', 'Time office'],
   feedback: ['Performance Reviews', 'Performance · manager reviews & recognition'],

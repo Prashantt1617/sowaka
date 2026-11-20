@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { TO_STAT } from '../theme';
 import type { ReqStatus } from '../theme';
@@ -17,7 +16,7 @@ import {
   chartDaysOf, needsActionSummary, overlaps, peopleTotals, pendingFacts, perDay, periodRange, plural, stepRange, weekOffsetOf,
   endOf, LEAVE_COLS, SLOW_DAYS, startOf, todayISO,
 } from './leaveDays';
-import { Flag, LeaveRow, NeedsActionShell, PendingChip, PeriodStepper, StatTile, Waiting } from './leaveParts';
+import { Flag, LeaveRow, NeedsActionShell, PendingChip, PeriodStepper, StatTile, ViewToggle, Waiting } from './leaveParts';
 import type { PeriodUnit } from './leaveParts';
 import { Pager, usePaged } from './Pager';
 
@@ -236,23 +235,11 @@ export function LeaveRequests() {
     setOffset(weekOffsetOf(iso));
   };
 
-  const toggleBtn = (on: boolean): CSSProperties => ({
-    display: 'inline-flex', alignItems: 'center', gap: 8, height: 38, padding: '0 18px', borderRadius: 999, border: 0, cursor: 'pointer',
-    font: 'inherit', fontSize: 14, fontWeight: 600, transition: 'background .15s, color .15s',
-    background: on ? 'var(--accent)' : 'transparent', color: on ? 'var(--on-accent)' : 'var(--accent-ink)',
-    boxShadow: on ? '0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent)' : undefined,
-  });
   const viewToggle = (
-    <div role="group" aria-label="View" style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 999, background: 'var(--accent-soft)', border: '1.5px solid color-mix(in srgb, var(--accent) 45%, transparent)' }}>
-      <button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')} style={toggleBtn(view === 'list')}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>
-        List
-      </button>
-      <button type="button" aria-pressed={view === 'calendar'} onClick={() => setView('calendar')} style={toggleBtn(view === 'calendar')}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>
-        Calendar
-      </button>
-    </div>
+    <ViewToggle value={view} onChange={setView} options={[
+      { key: 'list', label: 'List', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg> },
+      { key: 'calendar', label: 'Calendar', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg> },
+    ]} />
   );
 
   if (view === 'calendar') {

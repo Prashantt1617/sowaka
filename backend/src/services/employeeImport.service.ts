@@ -77,14 +77,14 @@ export const IMPORT_COLUMNS: { field: Field; header: string; aliases: string[]; 
   { field: 'uan', header: 'UAN', aliases: ['uan', 'uan number', 'uan no', 'pf uan'], hint: '12 digits; stored encrypted. Payroll access only.' },
 ];
 /** A header as compared: lower case, words only, anything in brackets dropped ("DOJ (MM/DD/YY)" is "doj"). */
-const headerKey = (h: string) => norm(h.replace(/\([^)]*\)/g, ' '));
+export const headerKey = (h: string) => norm(h.replace(/\([^)]*\)/g, ' '));
 const LABEL: Record<Field, string> = Object.fromEntries(IMPORT_COLUMNS.map((c) => [c.field, c.header])) as Record<Field, string>;
 // Matching never depends on case, spacing or punctuation.
-const norm = (s: unknown) => String(s ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+export const norm = (s: unknown) => String(s ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 /** An Employee ID as matched: letters and digits only ("cs-2", "CS 2" and "CS2" are one ID). */
-const idKey = (s: unknown) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+export const idKey = (s: unknown) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 /** An email as matched and stored: lower case, no spaces, no wrapping quotes, brackets or trailing punctuation. */
-const emailKey = (s: unknown) => String(s ?? '').toLowerCase().replace(/\s+/g, '').replace(/^mailto:/, '').replace(/^[<"'([]+|[>"')\],;.:]+$/g, '');
+export const emailKey = (s: unknown) => String(s ?? '').toLowerCase().replace(/\s+/g, '').replace(/^mailto:/, '').replace(/^[<"'([]+|[>"')\],;.:]+$/g, '');
 /** A text value as stored: single spaces, trimmed. */
 const tidy = (s: string) => s.replace(/\s+/g, ' ').trim();
 const GENDERS: Record<string, string> = { m: 'Male', male: 'Male', man: 'Male', f: 'Female', female: 'Female', woman: 'Female', o: 'Other', other: 'Other', others: 'Other' };

@@ -8,48 +8,12 @@
 // Dashboard admins only.
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import type { WorkBook } from 'xlsx';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
 import './people.css';
+import { keyOf, readWorkbook } from './sheetRead';
 import { ImportRiskLine } from '../suwi/ImportRiskLine';
 import { applyEmployeeImport, cancelEmployeeImport, getEmployeeImportTemplate, previewEmployeeImport, type EmployeeImportColumn, type EmployeeImportPreview, type EmployeeImportResult } from '../../services/hrms';
-
-/** A cell as text: dates as YYYY-MM-DD (read in the sheet's own day), everything else as written. */
-const cellText = (v: unknown): string => {
-  if (v instanceof Date && !Number.isNaN(v.valueOf())) return `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, '0')}-${String(v.getDate()).padStart(2, '0')}`;
-  return v === null || v === undefined ? '' : String(v).trim();
-};
-/** A header as compared: lower case, words only, brackets dropped — as the server compares it. */
-const keyOf = (s: unknown) => String(s ?? '').toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
-
-/**
- * Finds the header: of every sheet's first 30 rows, the row naming the most
- * columns Import knows (first sheet wins a tie). The rows under it become
- * objects keyed by its cells, each with its row number in the sheet.
- */
-function readWorkbook(XLSX: typeof import('xlsx'), wb: WorkBook, names: string[]) {
-  const known = (c: unknown) => { const k = keyOf(c); return k !== '' && names.some((n) => k === n || k.startsWith(`${n} `)); };
-  let best = { score: 0, sheet: wb.SheetNames[0], at: 0, aoa: [] as unknown[][] };
-  wb.SheetNames.forEach((n, si) => {
-    const aoa = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[n], { header: 1, defval: '', raw: true, blankrows: true });
-    if (si === 0 && best.aoa.length === 0) best.aoa = aoa;
-    for (let i = 0; i < Math.min(aoa.length, 30); i++) {
-      const score = aoa[i].filter(known).length;
-      if (score > best.score) best = { score, sheet: n, at: i, aoa };
-    }
-  });
-  const seen = new Map<string, number>();
-  const header = (best.aoa[best.at] ?? []).map((c, j) => {
-    const h = cellText(c) || `Column ${j + 1}`;
-    const n = (seen.get(h) ?? 0) + 1; seen.set(h, n);
-    return n > 1 ? `${h} (${n})` : h;
-  });
-  const rows = best.aoa.slice(best.at + 1)
-    .map((r, i) => ({ __row: String(best.at + i + 2), ...Object.fromEntries(header.map((h, j) => [h, cellText(r[j])])) }))
-    .filter((r) => Object.entries(r).some(([k, v]) => k !== '__row' && v !== ''));
-  return { sheet: best.sheet, sheets: wb.SheetNames.length, headerRow: best.at + 1, rows };
-}
 
 export function EmployeeImport() {
   const s = useStore();

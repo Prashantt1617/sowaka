@@ -56,6 +56,7 @@
     "lifecycle:timeline": "MONGODB_DB=el_timeline_scratch NOTIFY_ORGS=el-timeline EMAIL_ORGS=el-timeline AWS_S3_BUCKET= tsx src/scripts/lifecycle-timeline.ts",
     "exits:plan-check": "MONGODB_DB=exits_plan_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/exits-plan-check.ts",
     "leave-monthly-credit:check": "tsx src/scripts/leave-monthly-credit-check.ts",
+    "leave-balance-import:check": "tsx src/scripts/leave-balance-import-check.ts",
     "time-office-actions:check": "NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch tsx src/scripts/time-office-actions-check.ts",
     "location-holidays:check": "MONGODB_DB=location_holiday_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/location-holidays-check.ts",
     "game-voice:check": "tsx src/scripts/game-voice-check.ts",

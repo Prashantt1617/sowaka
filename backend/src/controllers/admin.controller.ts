@@ -1,6 +1,7 @@
 import { peopleTasks } from '../services/peopleTasks.service';
 import { correctionsForAdmin, feedbackForAdmin, leavesForAdmin, overtimeForAdmin } from '../services/timeOfficeLists';
 import { getMyLeaveBalance, setLeaveTotal } from '../services/leave.service';
+import { applyLeaveImport, cancelLeaveImport, listLeaveBalances, previewLeaveImport } from '../services/leaveBalanceImport.service';
 import { users } from '../config/db';
 import { closeCase, endAccessNow, exitDetail, exitSettings, listExits, recordExit, saveInterview, setClearance, setExitSettings, settlementAction, withdrawExit } from '../services/exit.service';
 import { NextFunction, Request, Response } from 'express';
@@ -300,6 +301,32 @@ export async function setEmployeeLeaveTotalHandler(req: Request, res: Response, 
   try {
     const balance = await setLeaveTotal(adminUserId(req), String(req.params.userId ?? ''), req.params.type, req.body?.total, req.body?.year);
     res.status(200).json({ success: true, balance });
+  } catch (error) { next(error); }
+}
+
+/** Time office › Leave balances: every active employee's balance for the year. */
+export async function listLeaveBalancesHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(200).json({ success: true, ...(await listLeaveBalances(adminUserId(req), req.query.year)) });
+  } catch (error) { next(error); }
+}
+
+/** The balance import: what a sheet would change (nothing is saved). */
+export async function previewLeaveImportHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(200).json({ success: true, preview: await previewLeaveImport(adminUserId(req), req.body ?? {}) });
+  } catch (error) { next(error); }
+}
+
+export async function applyLeaveImportHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(200).json({ success: true, result: await applyLeaveImport(adminUserId(req), String(req.params.importId ?? ''), req.body ?? {}) });
+  } catch (error) { next(error); }
+}
+
+export async function cancelLeaveImportHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(200).json({ success: true, ...(await cancelLeaveImport(adminUserId(req), String(req.params.importId ?? ''))) });
   } catch (error) { next(error); }
 }
 
