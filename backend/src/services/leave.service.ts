@@ -1,5 +1,5 @@
 import { ObjectId } from 'mongodb';
-import { attendanceRecords, leaves, overtimeRequests, users } from '../config/db';
+import { attendanceRecords, leaveBalanceAdjustments, leaves, overtimeRequests, users } from '../config/db';
 import { Leave, LeaveCancelRequest, LeaveStatus } from '../models/leave.model';
 import { User } from '../models/user.model';
 import { orgUsersWithRows, sortLikeMongo } from './admin-scope';
@@ -16,6 +16,7 @@ import {
 import { OvertimeRequest, compOffDaysOf } from '../models/overtime.model';
 import { LEAVE_KEY_PATTERN, LEAVE_TYPE_KEYS, LeaveTypeKey, LeaveTypeRule, isUnpaidLeaveType, leaveTypeLabel, monthsCredited, processYearEnd } from '../models/shift.model';
 import { carriedFromRuns as carriedFromYearEndRuns } from './leave-year-end.service';
+import { logActivity } from './employee-activity.service';
 import { requestViewer, requestViewerWithPhoto } from '../middleware/request-viewer';
 import { requestUserOrg } from './request-user';
 import { patchAttendanceReport } from './attendance-report.service';
@@ -389,22 +390,25 @@ async function leaveBalanceOf(userId: string, year: number, asOf: Date) {
   const compOffEarned = settled(compOffR);
   const month = asOf.getUTCFullYear() === year ? asOf.getUTCMonth() + 1 : asOf.getUTCFullYear() > year ? 12 : 1;
   // What carried in and each monthly type's walk are independent reads.
-  const [openingFor, monthlyRows] = await Promise.all([
+  const [openingFor, monthlyRows, adjusted] = await Promise.all([
     openingBalances(year, rules, reads, employee.joiningDate),
     Promise.all(monthlyRules.map((rule) => monthlyBalance(employee, rule, year, month, reads))),
+    reads.adjustments,
   ]);
   const entitlement = (key: Leave['type']) => {
     const rule = rules.find((item) => item.key === key);
     // Credited month by month at the template's rate: the months of the year so far (from joining, if later).
     const accrued = key === 'comp_off' ? compOffEarned : (rule?.perMonth ?? 0) * monthsCredited(yearStart, yearEnd, asOf, employee.joiningDate);
-    return round(accrued + (openingFor[key] ?? 0));
+    // Plus HR's change to this year's total, if any (Employee › Requests › Leave balance).
+    return round(accrued + (openingFor[key] ?? 0) + (adjusted.get(`${year}:${key}`) ?? 0));
   };
 
   const monthly: Partial<Record<Leave['type'], MonthlyBalance>> = {};
   monthlyRules.forEach((rule, i) => {
     monthly[rule.key as Leave['type']] = monthlyRows[i];
   });
-  const item = (key: Leave['type']) => monthly[key] ?? balanceItem(entitlement(key), used[key] ?? 0);
+  // A yearly type's total is HR-editable; a monthly one resets each month, so it is not.
+  const item = (key: Leave['type']) => monthly[key] ?? { ...balanceItem(entitlement(key), used[key] ?? 0), editable: true as const };
   // Leave without pay has no balance: nothing accrues, nothing runs out, and
   // the app says "Unlimited · unpaid" instead of a count. What was taken this
   // year is still told.
@@ -505,6 +509,11 @@ function balanceReads(userId: string, year: number) {
     priorTracked: yearWasTracked(userId, priorStart, priorEnd),
     // What last year's close carried, by type; a type it never closed is absent.
     yearEnds: carriedFromYearEndRuns(userId, year),
+    // HR's changes to the totals, this year and last, as "year:type" -> days.
+    adjustments: leaveBalanceAdjustments()
+      .find({ userId, year: { $in: [year - 1, year] } }, { projection: { _id: 0, year: 1, type: 1, days: 1 } })
+      .toArray()
+      .then((rows) => new Map(rows.map((row) => [`${row.year}:${row.type}`, row.days]))),
   };
   for (const read of Object.values(reads)) (read as Promise<unknown>).catch(() => undefined);
   return reads;
@@ -601,7 +610,7 @@ async function priorYearReads(year: number, reads: BalanceReads) {
     reads.overtime.then((credit) => credit.creditedIn(priorStart, priorEnd)),
   ]);
   if (!settled(tracked)) return null;
-  return { prior: settled(prior), priorCompOff: settled(priorCompOff) };
+  return { prior: settled(prior), priorCompOff: settled(priorCompOff), adjusted: await reads.adjustments };
 }
 
 async function carriedForwardInto(
@@ -614,7 +623,7 @@ async function carriedForwardInto(
   const priorEnd = new Date(Date.UTC(year - 1, 11, 31));
   const lastYear = await reads;
   if (!lastYear) return {};
-  const { prior, priorCompOff } = lastYear;
+  const { prior, priorCompOff, adjusted } = lastYear;
   const usedLastYear: Record<string, number> = {};
   for (const leave of prior) {
     const start = leave.startDate < priorStart ? priorStart : leave.startDate;
@@ -629,7 +638,7 @@ async function carriedForwardInto(
   for (const rule of rules) {
     // Last year is over: every month of it from joining was credited.
     const accrued = rule.key === 'comp_off' ? priorCompOff : rule.perMonth * monthsCredited(priorStart, priorEnd, priorEnd, joined);
-    const closing = accrued - (usedLastYear[rule.key] ?? 0);
+    const closing = accrued + (adjusted.get(`${year - 1}:${rule.key}`) ?? 0) - (usedLastYear[rule.key] ?? 0);
     opening[rule.key as Leave['type']] = round(processYearEnd(closing, rule).carried);
   }
   return opening;
@@ -1234,6 +1243,45 @@ function addUtcDays(date: Date, days: number): Date {
 
 function balanceItem(total: number, used: number) {
   return { total, used, remaining: Math.max(0, total - used) };
+}
+
+/**
+ * HR sets one person's total for a leave type this year (dashboard › Employee ›
+ * Requests › Leave balance). Leave already taken is untouched and the total
+ * cannot go below it; what is available follows. Stored as a difference from
+ * the worked-out total, so the months still to be credited add on top, and the
+ * app, the apply check, exit settlement and the year-end close all read it.
+ */
+export async function setLeaveTotal(adminUserId: string, userId: string, typeInput: unknown, totalInput: unknown, yearInput?: unknown) {
+  const [admin, employee] = await Promise.all([
+    users().findOne({ userId: adminUserId }, { projection: { _id: 0, org: 1 } }),
+    users().findOne({ userId }, { projection: { _id: 0, userId: 1, org: 1, name: 1 } }),
+  ]);
+  if (!admin?.org || !employee || employee.org !== admin.org) throw new LeaveError(404, 'Employee not found');
+  const year = yearInput == null || yearInput === '' ? new Date().getUTCFullYear() : Number(yearInput);
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) throw new LeaveError(400, 'Invalid balance year');
+  const type = String(typeInput ?? '').trim();
+  const total = Number(totalInput);
+  if (!Number.isFinite(total) || total < 0 || total > 366) throw new LeaveError(400, 'Enter a total between 0 and 366 days');
+  if (Math.round(total * 2) !== total * 2) throw new LeaveError(400, 'Use whole or half days');
+  const balance = await getMyLeaveBalance(userId, year);
+  const now = balance.types.find((item) => item.key === type) as (ReturnType<typeof balanceItem> & { name: string; editable?: true; unpaid?: true }) | undefined;
+  if (!now) throw new LeaveError(404, 'That leave type is not on this person\'s shift template');
+  if (!now.editable) throw new LeaveError(400, now.unpaid ? 'Leave without pay has no total' : 'This type resets every month, so its total cannot be set');
+  if (total < now.used) throw new LeaveError(400, `${now.used} days are already taken, so the total cannot be less than that`);
+  const before = await leaveBalanceAdjustments().findOne({ userId, year, type });
+  const days = round((before?.days ?? 0) + (total - now.total));
+  await leaveBalanceAdjustments().updateOne(
+    { userId, year, type },
+    { $set: { org: employee.org, userId, year, type, days, updatedAt: new Date(), updatedByUserId: adminUserId } },
+    { upsert: true },
+  );
+  forgetSwrExcept(employee.org, ['suwi-org-data']);
+  void logActivity({
+    org: employee.org, userId, byUserId: adminUserId, kind: 'details', title: `${now.name} total for ${year}`,
+    changes: [{ field: `leaveTotal.${type}`, label: `${now.name} total (${year})`, from: String(now.total), to: String(total) }],
+  });
+  return getMyLeaveBalance(userId, year);
 }
 
 /**

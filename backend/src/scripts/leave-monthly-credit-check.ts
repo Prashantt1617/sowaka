@@ -10,7 +10,7 @@
  */
 import { connectDb, getDb, users } from '../config/db';
 import { createShift, setDefaultShift } from '../services/shift.service';
-import { applyForLeave, getMyLeaveBalance, LeaveError } from '../services/leave.service';
+import { applyForLeave, getMyLeaveBalance, LeaveError, setLeaveTotal } from '../services/leave.service';
 import { closeYearForUser } from '../services/leave-year-end.service';
 import { monthsCredited } from '../models/shift.model';
 import type { User } from '../models/user.model';
@@ -76,6 +76,27 @@ const d = (iso: string) => new Date(`${iso}T06:00:00Z`);
   const closed = await closeYearForUser('new', 2026, d('2027-01-01'), true);
   const casualRow = closed.rows.find((r) => r.type === 'casual');
   ok('closing 2026 for a March joiner: 10 months × 0.5 credited', casualRow?.closing === 5 - (await getMyLeaveBalance('new', 2026, d('2026-12-31'))).types.find((t) => t.key === 'casual')!.used, closed.rows);
+
+  console.log('HR sets a total (Employee › Requests › Leave balance)');
+  const yr = new Date().getUTCFullYear();
+  const before = (await getMyLeaveBalance('old', yr)).types.find((t) => t.key === 'casual')!;
+  const after = (await setLeaveTotal('hr', 'old', 'casual', before.total + 2.5)).types.find((t) => t.key === 'casual')!;
+  ok('the total becomes what HR typed', after.total === before.total + 2.5, { before: before.total, after: after.total });
+  ok('taken is untouched', after.used === before.used);
+  ok('marked editable for a yearly type', (after as { editable?: boolean }).editable === true);
+  const again = (await setLeaveTotal('hr', 'old', 'casual', before.total + 1)).types.find((t) => t.key === 'casual')!;
+  ok('setting it again replaces it (no double count)', again.total === before.total + 1, again.total);
+  ok('a negative total is refused', /between 0 and 366/.test(await refusedFor(() => setLeaveTotal('hr', 'old', 'casual', -1))));
+  ok('half days only', /half days/.test(await refusedFor(() => setLeaveTotal('hr', 'old', 'casual', 2.3))));
+  ok('a type not on the template is refused', /not on this person/.test(await refusedFor(() => setLeaveTotal('hr', 'old', 'sick', 4))));
+  ok('another company\'s person is not found', /not found/.test(await refusedFor(async () => {
+    await users().insertOne(person('other', '2025-01-01', { org: 'elsewhere' } as never));
+    return setLeaveTotal('hr', 'other', 'casual', 4);
+  })));
+  const closedOld = await closeYearForUser('old', yr, new Date(Date.UTC(yr + 1, 0, 1)), true);
+  const row = closedOld.rows.find((r) => r.type === 'casual');
+  const fullYear = 12 * 0.5;
+  ok('the year-end close counts HR\'s change', row?.closing === fullYear + 1 - before.used, row);
 
   console.log(failed ? `\n${failed} failed, ${passed} passed` : `\nall ${passed} passed`);
   process.exit(failed ? 1 : 0);

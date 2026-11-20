@@ -1,6 +1,6 @@
 import { peopleTasks } from '../services/peopleTasks.service';
 import { correctionsForAdmin, feedbackForAdmin, leavesForAdmin, overtimeForAdmin } from '../services/timeOfficeLists';
-import { getMyLeaveBalance } from '../services/leave.service';
+import { getMyLeaveBalance, setLeaveTotal } from '../services/leave.service';
 import { users } from '../config/db';
 import { closeCase, endAccessNow, exitDetail, exitSettings, listExits, recordExit, saveInterview, setClearance, setExitSettings, settlementAction, withdrawExit } from '../services/exit.service';
 import { NextFunction, Request, Response } from 'express';
@@ -292,6 +292,14 @@ export async function employeeLeaveBalanceHandler(req: Request, res: Response, n
     }
     const year = req.query.year ? Number(req.query.year) : new Date().getUTCFullYear();
     res.status(200).json({ success: true, balance: await getMyLeaveBalance(employee.userId, year) });
+  } catch (error) { next(error); }
+}
+
+/** HR sets one leave type's total for the year; taken days stay as they are. */
+export async function setEmployeeLeaveTotalHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const balance = await setLeaveTotal(adminUserId(req), String(req.params.userId ?? ''), req.params.type, req.body?.total, req.body?.year);
+    res.status(200).json({ success: true, balance });
   } catch (error) { next(error); }
 }
 
