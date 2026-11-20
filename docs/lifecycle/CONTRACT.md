@@ -132,6 +132,7 @@ JSON in and out. Errors are `{ error: string }` with 400/401/403/404/409. Dates 
 |---|---|
 | GET `/lifecycle/me` | `{ enabled, onboarding?: { journeyId, stage, dayLabel, plant, tileVisible }, offboarding?: { journeyId?, resignationId?, status, tl?, pageVisible } }` — drives the Action tiles and profile tabs |
 | GET `/lifecycle/onboarding` | `{ journeyId, stage, dayLabel, tj, plant, upNext?: TaskView & { meeting? }, today: TaskView[], later: TaskView[], done: TaskView[], journey: Array<{ key: OnboardingStage, label, state: 'done'|'current'|'todo' }> }` |
+| PUT `/lifecycle/onboarding/day1-feeling` | `{ answer: 'great'|'okay'|'tough' }` → `{ feeling, feelingAt }`: "Day 1, done!" · How was today? (on the journey as `day1Feeling`; HR sees it on the joiner panel). The home's `day1: { peopleMet, thingsDone, feeling?, feelingAt? }` carries the screen's counts |
 | POST `/lifecycle/onboarding/tasks/:taskId` | `{ action: 'done'|'skip', note? }` → `{ task }` |
 | GET/PUT `/lifecycle/onboarding/week1` | `Week1Reels` + `{ policies: Array<{ id, title, version, url? }>, bank: { masked, ifsc? }, pf: { uan? }, goals: string[] }`; PUT `{ step: 'policies'|'tax'|'bank_pf'|'goals', value }` saves one reel (bank/PF edit raises an HR-approval request; payroll keeps the old value) |
 | GET/PUT `/lifecycle/onboarding/intro` · POST `/lifecycle/onboarding/intro/post` | `IntroPost`; post creates the Connect post (new-joiner style) and pushes the manager "say hi" |

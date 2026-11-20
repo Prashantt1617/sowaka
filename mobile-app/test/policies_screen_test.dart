@@ -1,5 +1,6 @@
 // Actions › View Policies against a fake server. A company with policies of
-// its own sees those, in its own words; one without (or an older server that
+// its own sees those, in its own words, on the Policies screen (Acknowledge,
+// Acknowledged, Updated or Read on each: the new-joiner canvas); one without (or an older server that
 // answers 404) sees exactly what the app has always shown: the built-in list,
 // with the leave, attendance and overtime texts written from its shift rules.
 // The Leave screen's "leave policy" link opens the company's leave policy when
@@ -13,6 +14,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:mobile_app/features/auth/data/auth_models.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/data/lifecycle_me_store.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_models.dart';
 import 'package:mobile_app/features/manager/bloc/manager_bloc.dart';
 import 'package:mobile_app/features/manager/data/manager_api_service.dart';
 import 'package:mobile_app/features/policies/data/policies_api_service.dart';
@@ -298,6 +301,12 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// Back on the Policies screen (a page of its own over Actions).
+  Future<void> closePolicies(WidgetTester tester) async {
+    await tester.tap(find.bySemanticsLabel('Back').last);
+    await tester.pumpAndSettle();
+  }
+
   Future<void> back(
     WidgetTester tester,
     QuickActionsController controller,
@@ -421,12 +430,14 @@ void main() {
     tester,
   ) async {
     answer = () => _json(_companyPolicies);
-    final controller = await pumpActions(tester);
+    await pumpActions(tester);
     await openPolicies(tester);
 
     expect(find.text('Leave policy'), findsOneWidget);
-    expect(find.text('Types, balances and how to apply'), findsOneWidget);
     expect(find.text('Code of Conduct policy'), findsOneWidget);
+    // Read only (nothing asked of them): "Read", and no banner.
+    expect(find.text('Read'), findsNWidgets(2));
+    expect(find.byKey(const ValueKey('policies-pending')), findsNothing);
     // Only the company's: none of the built-in ones.
     for (final title in [
       'Attendance policy',
@@ -443,12 +454,9 @@ void main() {
 
     await tester.tap(find.text('Leave policy'));
     await tester.pumpAndSettle();
-    expect(find.text('Leave'), findsWidgets);
-    expect(find.text('Updated 10 Oct 2026'), findsOneWidget);
     expect(find.text('Leave types'), findsOneWidget);
     expect(find.text('Casual Leave — 12 days a year.'), findsOneWidget);
-    expect(find.text('Can be applied up to 30 days ahead.'), findsOneWidget);
-    expect(find.text('•'), findsOneWidget);
+    expect(find.text('•  Can be applied up to 30 days ahead.'), findsOneWidget);
     expect(
       find.text('Week-offs inside a leave range are not counted.'),
       findsOneWidget,
@@ -457,7 +465,7 @@ void main() {
     expect(find.text('As your company has it set up today.'), findsNothing);
     expect(find.textContaining('10 left'), findsNothing);
 
-    await back(tester, controller);
+    await closePolicies(tester);
     expect(find.text('Code of Conduct policy'), findsOneWidget);
     await tester.tap(find.text('Code of Conduct policy'));
     await tester.pumpAndSettle();
@@ -474,11 +482,9 @@ void main() {
       await tester.tap(find.text('View Policies'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
-      expect(find.byKey(const ValueKey('policies-loading')), findsOneWidget);
       expect(find.text('POSH policy'), findsNothing);
       hold!.complete();
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('policies-loading')), findsNothing);
       expect(find.text('Code of Conduct policy'), findsOneWidget);
       expect(find.text('POSH policy'), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
@@ -543,10 +549,10 @@ void main() {
     'the list is kept: shown at once offline, and refreshed on open',
     (tester) async {
       answer = () => _json(_companyPolicies);
-      var controller = await pumpActions(tester);
+      await pumpActions(tester);
       await openPolicies(tester);
       expect(find.text('Code of Conduct policy'), findsOneWidget);
-      await back(tester, controller);
+      await closePolicies(tester);
 
       // The server is unreachable: what was read stays.
       answer = () => throw http.ClientException('offline');
@@ -556,11 +562,11 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
 
       // A fresh Actions tab, still offline, draws the kept copy at once.
-      controller = await pumpActions(tester);
+      await pumpActions(tester);
       await openPolicies(tester);
       expect(find.text('Code of Conduct policy'), findsOneWidget);
       expect(find.text('Leave policy'), findsOneWidget);
-      await back(tester, controller);
+      await closePolicies(tester);
 
       // Back online with an edit: the next opening shows it.
       answer = () => _json({
@@ -578,12 +584,75 @@ void main() {
       expect(find.text('Be kinder.'), findsOneWidget);
 
       // And if the company's policies are all taken away, back to the built-in.
-      await back(tester, controller);
-      await back(tester, controller);
+      await closePolicies(tester);
+      await closePolicies(tester);
       answer = () => _json({'success': true, 'policies': <dynamic>[]});
       await openPolicies(tester);
       expectBuiltInList();
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  group('a new joiner on the joining date (the New joiner artifact\'s Actions)', () {
+    Map<String, dynamic> ackPolicy(String key, String title, {int? acknowledged}) => {
+      ..._policy(key, title, 'Read me.'),
+      'version': 2,
+      'ackRequired': true,
+      'acknowledgedVersion': ?acknowledged,
+    };
+
+    setUp(() {
+      LifecycleMeStore.instance.value = LifecycleMe.fromJson({
+        'enabled': true,
+        'onboarding': {'journeyId': 'j1', 'stage': 'welcome_week1', 'dayLabel': 'Day 1', 'tileVisible': true, 'portal': false},
+      });
+    });
+    tearDown(LifecycleMeStore.instance.clear);
+
+    // The Day-1 tile pulses for ever: frames, not settle.
+    Future<void> frames(WidgetTester tester) async {
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+    }
+
+    testWidgets('tiles in the artifact\'s order; Day 1 on Onboarding; Policies counts what is left to acknowledge', (tester) async {
+      answer = () => _json({
+        'success': true,
+        'policies': [
+          ackPolicy('leave', 'Leave'),
+          ackPolicy('posh', 'POSH', acknowledged: 2),
+          ackPolicy('conduct', 'Code of Conduct', acknowledged: 1),
+          _policy('travel', 'Travel', 'Read only.'),
+        ],
+      });
+      await pumpActions(tester);
+      await frames(tester);
+      final titles = ['Onboarding', 'Policies', 'Leave', 'Overtime', 'Payroll', 'Reimbursement', 'Support Desk'];
+      for (var i = 1; i < titles.length; i++) {
+        final a = tester.getTopLeft(find.text(titles[i - 1]));
+        final b = tester.getTopLeft(find.text(titles[i]));
+        expect(a.dy < b.dy || (a.dy == b.dy && a.dx < b.dx), isTrue, reason: '${titles[i - 1]} before ${titles[i]}');
+      }
+      expect(find.text('Today is your first day'), findsOneWidget);
+      expect(find.byKey(const ValueKey('action-card-badge')), findsOneWidget);
+      // Leave (not at v2) and Code of Conduct (acknowledged at v1, now v2): 2.
+      expect(find.text('2 to acknowledge'), findsOneWidget);
+      expect(find.text('Submit concern to HR.'), findsOneWidget);
+      expect(find.text('View Policies'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('the Policies tile opens the Policies screen with Acknowledge on each', (tester) async {
+      answer = () => _json({'success': true, 'policies': [ackPolicy('leave', 'Leave')]});
+      await pumpActions(tester);
+      await frames(tester);
+      expect(find.text('1 to acknowledge'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('policies-card')));
+      await frames(tester);
+      expect(find.text('1 to acknowledge'), findsWidgets);
+      expect(find.text('Policies'), findsWidgets);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  });
 }

@@ -1,18 +1,19 @@
-import 'dart:math' as math;
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../data/onboarding_models.dart';
-import 'onboarding_kit.dart';
 
-/// The joiner's plant (6Zs §8.3): one widget for every place it grows — the
-/// onboarding home, the profile card, the manager's cards, the moments.
+/// The joiner's plant: one widget for every place it grows (the onboarding
+/// home, the profile card, the manager's cards, the moments), drawn as the
+/// 20 Nov New joiner artifact's Plant component draws it, in its 120 × 140
+/// box: a clay pot, [stage] 0–5 (seed, sprout, seedling, sapling, bud,
+/// bloom) and, for the seed only, [water] 0–3 (wet soil and falling drops,
+/// then a crack in the seed, then a shoot peeking out). It sways gently, and
+/// stands still with reduce motion or [sway] off.
 ///
-/// A clay pot; [stage] 0–5 (seed, sprout, seedling, sapling, bud, bloom);
-/// [water] 0–3 drops before joining (seed only); [leaves] extra leaves for
-/// finished groups; [droop] bends it over and shows the "Needs water" pill
-/// (never red). It sways gently, and stands still with reduce motion. The
-/// designer's 3D stages replace the painting here and only here.
+/// [leaves] and [droop] are still accepted from the server's plant but are
+/// not drawn: the artifact's plant has neither (and no "Needs water" pill).
 class Plant extends StatefulWidget {
   const Plant({
     super.key,
@@ -43,15 +44,13 @@ class Plant extends StatefulWidget {
   final int water;
   final int leaves;
   final bool droop;
-
-  /// The "Needs water" pill under a drooping plant; off where a card says
-  /// it already.
   final bool showPill;
 
-  static String semanticsLabel({required int stage, int water = 0, bool droop = false}) {
-    final name = PlantState.stageNames[stage.clamp(0, 5)];
-    final watered = stage == 0 && water > 0 ? ', watered $water of 3' : '';
-    return 'Plant at $name stage$watered${droop ? ', needs water' : ''}';
+  /// The artifact's label: "Plant at Seed stage, watered 2 of 3".
+  static String semanticsLabel({required int stage, int water = 0}) {
+    final s = stage.clamp(0, 5);
+    final wl = s == 0 ? water.clamp(0, 3) : 0;
+    return 'Plant at ${PlantState.stageNames[s]} stage${wl > 0 ? ', watered $wl of 3' : ''}';
   }
 
   @override
@@ -59,9 +58,14 @@ class Plant extends StatefulWidget {
 }
 
 class _PlantState extends State<Plant> with SingleTickerProviderStateMixin {
-  AnimationController? _sway;
+  Ticker? _ticker;
+  final _clock = ValueNotifier<Duration>(Duration.zero);
 
-  bool _moving(BuildContext context) => widget.sway && !MediaQuery.disableAnimationsOf(context);
+  int get _stage => widget.stage.clamp(0, 5);
+  int get _water => _stage == 0 ? widget.water.clamp(0, 3) : 0;
+
+  /// Anything to move: the sway, or the seed's drops and shoot.
+  bool _moving(BuildContext context) => !MediaQuery.disableAnimationsOf(context) && (widget.sway || _water > 0);
 
   @override
   void didChangeDependencies() {
@@ -77,230 +81,322 @@ class _PlantState extends State<Plant> with SingleTickerProviderStateMixin {
 
   void _syncMotion() {
     if (_moving(context)) {
-      _sway ??= AnimationController(vsync: this, duration: const Duration(milliseconds: 3200))..repeat(reverse: true);
+      _ticker ??= createTicker((elapsed) => _clock.value = elapsed)..start();
     } else {
-      _sway?.dispose();
-      _sway = null;
+      _ticker?.dispose();
+      _ticker = null;
+      _clock.value = Duration.zero;
     }
   }
 
   @override
   void dispose() {
-    _sway?.dispose();
+    _ticker?.dispose();
+    _clock.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final width = widget.size.clamp(24.0, 320.0);
-    final height = width * 140 / 120;
-    final stage = widget.stage.clamp(0, 5);
-    Widget painted(double t) => CustomPaint(
-      size: Size(width, height),
-      painter: _PlantPainter(
-        stage: stage,
-        water: widget.water.clamp(0, 3),
-        leaves: widget.leaves.clamp(0, 8),
-        droop: widget.droop,
-        sway: t,
-      ),
-    );
-    final sway = _sway;
-    final plant = sway == null
-        ? painted(0)
-        : AnimatedBuilder(animation: sway, builder: (_, _) => painted(sway.value * 2 - 1));
+    final height = (width * 140 / 120).roundToDouble();
+    final still = MediaQuery.disableAnimationsOf(context);
     return Semantics(
       image: true,
-      label: Plant.semanticsLabel(stage: stage, water: widget.water, droop: widget.droop),
+      label: Plant.semanticsLabel(stage: _stage, water: _water),
       child: ExcludeSemantics(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(width: width, height: height, child: plant),
-            if (widget.droop && widget.showPill && width >= 60) ...[
-              const SizedBox(height: 6),
-              const OnbTag('Needs water', tone: OnbTone.needsWater, icon: Icons.water_drop_outlined),
-            ],
-          ],
+        child: SizedBox(
+          width: width,
+          height: height,
+          child: CustomPaint(
+            painter: PlantPainter(
+              stage: _stage,
+              water: _water,
+              sway: widget.sway && !still,
+              animate: !still,
+              clock: _clock,
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-class _PlantPainter extends CustomPainter {
-  _PlantPainter({required this.stage, required this.water, required this.leaves, required this.droop, required this.sway});
+/// The artifact's Plant SVG (viewBox 0 0 120 140), painted.
+class PlantPainter extends CustomPainter {
+  PlantPainter({required this.stage, required this.water, required this.sway, required this.animate, required this.clock})
+    : super(repaint: clock);
 
   final int stage;
   final int water;
-  final int leaves;
-  final bool droop;
+  final bool sway;
+  final bool animate;
+  final ValueListenable<Duration> clock;
 
-  /// −1 … 1.
-  final double sway;
+  static const _leafA = [Color(0xFF8EDB72), Color(0xFF3FA34D)];
+  static const _leafB = [Color(0xFF7BCF67), Color(0xFF358F43)];
+  static const _petal = [Color(0xFFFFC2D4), Color(0xFFEE6A93)];
+  static const _stem = Color(0xFF3E9B4A);
 
-  static const _clay = Color(0xFFC9784F);
-  static const _clayDark = Color(0xFFA85E3A);
-  static const _clayRim = Color(0xFFD98B60);
-  static const _soil = Color(0xFF6B4A33);
-  static const _stem = Color(0xFF2FA84F);
-  static const _leaf = Color(0xFF34C759);
-  static const _leafDark = Color(0xFF16A34A);
-  static const _droopLeaf = Color(0xFF8DBF6A);
-  static const _petal = Color(0xFFFFB3C7);
-  static const _petalCentre = Color(0xFFFFD166);
-  static const _bud = Color(0xFFF5A3B8);
-  static const _water = Color(0xFF5AB8E6);
-  static const _seed = Color(0xFF8C6A45);
+  // Each stage's leaves: centre, radii, rotation (degrees), gradient A or B.
+  static const _full = <_Leaf>[
+    (50, 80, 12, 6, 20, true), (70, 78, 12, 6, -20, false),
+    (51, 64, 11, 5.6, 24, true), (69, 62, 11, 5.6, -24, false),
+    (52.5, 48, 9.5, 5, 30, true), (67.5, 46, 9.5, 5, -30, false),
+  ];
+  static const _stages = <int, ({List<double> stem, List<_Leaf> leaves})>{
+    1: (stem: [60, 90, 60, 82, 61, 82, 60, 75], leaves: [(52.5, 73, 8, 4.5, 25, true), (67.5, 71, 8, 4.5, -25, false)]),
+    2: (
+      stem: [60, 90, 60, 73, 61, 73, 60, 56],
+      leaves: [(52, 74, 10, 5.2, 22, true), (68, 72, 10, 5.2, -22, false), (52, 57, 8.5, 4.6, 32, false), (68, 55, 8.5, 4.6, -32, true)],
+    ),
+    3: (
+      stem: [60, 90, 60, 64, 61, 64, 60, 38],
+      leaves: [
+        (50, 78, 12, 6, 20, true), (70, 76, 12, 6, -20, false),
+        (51, 61, 11, 5.6, 26, true), (69, 59, 11, 5.6, -26, false),
+        (53, 41, 8.5, 4.6, 34, false), (67, 39, 8.5, 4.6, -34, true),
+      ],
+    ),
+    4: (stem: [60, 90, 60, 60, 61, 60, 60, 31], leaves: _full),
+    5: (stem: [60, 90, 60, 60, 61, 60, 60, 30], leaves: _full),
+  };
+
+  /// CSS keyframes between [a] and [b] over [t] 0–1 of a segment.
+  static double _lerp(double a, double b, double t) => a + (b - a) * t;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final unit = w / 120;
+    final seconds = clock.value.inMicroseconds / 1e6;
+    canvas.save();
+    canvas.scale(size.width / 120, size.height / 140);
 
-    // Pot: a tapered trapezoid with a rim.
-    final potTop = h * 0.68;
-    final potBottom = h * 0.98;
-    final rimHeight = 10 * unit;
+    _paintPot(canvas);
+
+    if (stage == 0 && water >= 1) {
+      canvas.drawOval(_oval(60, 89.8, 24, 2.8), Paint()..color = const Color(0xFF3F2716).withValues(alpha: 0.75));
+      final bead = Paint()..color = const Color(0xFF9AD9FF).withValues(alpha: 0.8);
+      canvas.drawCircle(const Offset(47, 89), 1.2, bead);
+      canvas.drawCircle(const Offset(72, 90), 1, bead);
+      // drip: 2.2 s ease-in; down from −6 to 14, fading in by 30 % and out by the end.
+      final p = animate ? (seconds % 2.2) / 2.2 : 0.5;
+      final dy = _lerp(-6, 14, Curves.easeIn.transform(p));
+      final opacity = p < 0.3 ? Curves.easeIn.transform(p / 0.3) : 1 - Curves.easeIn.transform((p - 0.3) / 0.7);
+      canvas.save();
+      canvas.translate(0, dy);
+      final drop = Paint()..color = const Color(0xFF7FD3FF).withValues(alpha: opacity.clamp(0, 1));
+      canvas.drawPath(_dropPath(44, 70), drop);
+      canvas.drawPath(_dropPath(76, 64), drop);
+      canvas.restore();
+    }
+
+    // plantSway: 3.2 s ease-in-out, −2.5° → 2.5° → −2.5° about (60, 90).
+    canvas.save();
+    if (sway) {
+      final p = (seconds % 3.2) / 3.2;
+      final deg = p < 0.5 ? _lerp(-2.5, 2.5, Curves.easeInOut.transform(p * 2)) : _lerp(2.5, -2.5, Curves.easeInOut.transform((p - 0.5) * 2));
+      _rotateAbout(canvas, deg, 60, 90);
+    }
+    if (stage == 0) {
+      _paintSeed(canvas, seconds);
+    } else {
+      final shape = _stages[stage]!;
+      final st = shape.stem;
+      canvas.drawPath(
+        Path()
+          ..moveTo(st[0], st[1])
+          ..cubicTo(st[2], st[3], st[4], st[5], st[6], st[7]),
+        Paint()
+          ..color = _stem
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 4
+          ..strokeCap = StrokeCap.round,
+      );
+      for (final leaf in shape.leaves) {
+        _paintLeaf(canvas, leaf);
+      }
+      if (stage == 4) _paintBud(canvas);
+      if (stage == 5) _paintBloom(canvas);
+    }
+    canvas.restore();
+    canvas.restore();
+  }
+
+  void _paintPot(Canvas canvas) {
+    canvas.drawOval(_oval(60, 136, 26, 3), Paint()..color = Colors.black.withValues(alpha: 0.08));
     final pot = Path()
-      ..moveTo(w * 0.27, potTop + rimHeight)
-      ..lineTo(w * 0.73, potTop + rimHeight)
-      ..lineTo(w * 0.66, potBottom)
-      ..quadraticBezierTo(w * 0.5, potBottom + 2 * unit, w * 0.34, potBottom)
+      ..moveTo(31, 100)
+      ..lineTo(89, 100)
+      ..quadraticBezierTo(87, 120, 84, 130)
+      ..quadraticBezierTo(83, 135, 77, 135)
+      ..lineTo(43, 135)
+      ..quadraticBezierTo(37, 135, 36, 130)
+      ..quadraticBezierTo(33, 120, 31, 100)
       ..close();
-    canvas.drawPath(pot, Paint()..color = _clay);
+    canvas.drawPath(
+      pot,
+      Paint()
+        ..shader = const LinearGradient(
+          colors: [Color(0xFFE9895A), Color(0xFFD9703F), Color(0xFFB9532A)],
+          stops: [0, 0.45, 1],
+        ).createShader(const Rect.fromLTRB(31, 100, 89, 135)),
+    );
     canvas.drawPath(
       Path()
-        ..moveTo(w * 0.60, potTop + rimHeight)
-        ..lineTo(w * 0.73, potTop + rimHeight)
-        ..lineTo(w * 0.66, potBottom)
-        ..lineTo(w * 0.56, potBottom)
+        ..moveTo(31, 100)
+        ..lineTo(89, 100)
+        ..lineTo(88.4, 105)
+        ..lineTo(31.6, 105)
         ..close(),
-      Paint()..color = _clayDark.withValues(alpha: 0.35),
+      Paint()..color = const Color(0xFF9E4320).withValues(alpha: 0.35),
     );
-    final rim = RRect.fromRectAndRadius(
-      Rect.fromLTWH(w * 0.22, potTop, w * 0.56, rimHeight),
-      Radius.circular(4 * unit),
-    );
-    canvas.drawRRect(rim, Paint()..color = _clayRim);
-    // Soil.
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(w * 0.5, potTop + 1.5 * unit), width: w * 0.48, height: 6 * unit),
-      Paint()..color = _soil,
-    );
-
-    final base = Offset(w * 0.5, potTop);
-    if (stage == 0) {
-      _paintSeed(canvas, base, unit);
-      return;
-    }
-
-    // Stem: taller each stage; bent over when drooping; a little sway.
-    final heights = [0.0, 0.16, 0.28, 0.42, 0.50, 0.54];
-    final stemLength = h * heights[stage];
-    final lean = (droop ? 0.9 : 0.0) + sway * 0.06;
-    final tip = Offset(
-      base.dx + math.sin(lean) * stemLength * (droop ? 0.55 : 0.3),
-      base.dy - math.cos(lean) * stemLength * (droop ? 0.85 : 1),
-    );
-    final control = Offset(base.dx - sway * 4 * unit, base.dy - stemLength * 0.55);
-    final stemPath = Path()
-      ..moveTo(base.dx, base.dy)
-      ..quadraticBezierTo(control.dx, control.dy, tip.dx, tip.dy);
     canvas.drawPath(
-      stemPath,
+      Path()
+        ..moveTo(39, 108)
+        ..quadraticBezierTo(40, 119, 42, 127),
       Paint()
-        ..color = _stem
+        ..color = const Color(0xFFFFD0B3).withValues(alpha: 0.5)
         ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeWidth = (2.5 + stage * 0.6) * unit,
+        ..strokeWidth = 3
+        ..strokeCap = StrokeCap.round,
     );
-
-    // Leaves along the stem: two per stage step, plus the earned ones.
-    final metric = stemPath.computeMetrics().first;
-    final pairs = [0, 1, 2, 3, 3, 3][stage] + (leaves / 2).ceil().clamp(0, 3);
-    final leafColor = droop ? _droopLeaf : _leaf;
-    for (var i = 0; i < pairs; i++) {
-      final at = metric.length * (0.35 + 0.6 * (i + 1) / (pairs + 1));
-      final tangent = metric.getTangentForOffset(at.clamp(0, metric.length));
-      if (tangent == null) continue;
-      final leafSize = (9 + stage * 2.2 - i * 0.8) * unit;
-      final droopAngle = droop ? 0.9 : 0.0;
-      _paintLeaf(canvas, tangent.position, leafSize, -0.7 - droopAngle * -0.6, leafColor, left: true);
-      if (i * 2 + 1 < pairs * 2) {
-        _paintLeaf(canvas, tangent.position, leafSize * 0.92, 0.7 + droopAngle, leafColor, left: false);
-      }
-    }
-    // The top pair at the tip.
-    _paintLeaf(canvas, tip, (8 + stage * 1.6) * unit, -0.4, leafColor, left: true);
-    _paintLeaf(canvas, tip, (8 + stage * 1.6) * unit, 0.4 + (droop ? 0.6 : 0), leafColor, left: false);
-
-    if (stage == 4) {
-      canvas.drawOval(
-        Rect.fromCenter(center: tip.translate(0, -5 * unit), width: 10 * unit, height: 14 * unit),
-        Paint()..color = _bud,
-      );
-      _paintLeaf(canvas, tip.translate(0, -1 * unit), 7 * unit, -0.3, _leafDark, left: true);
-      _paintLeaf(canvas, tip.translate(0, -1 * unit), 7 * unit, 0.3, _leafDark, left: false);
-    }
-    if (stage == 5) {
-      final centre = tip.translate(0, -8 * unit);
-      for (var p = 0; p < 6; p++) {
-        final angle = p * math.pi / 3 + sway * 0.1;
-        canvas.drawCircle(
-          centre + Offset(math.cos(angle), math.sin(angle)) * 7 * unit,
-          6 * unit,
-          Paint()..color = _petal,
-        );
-      }
-      canvas.drawCircle(centre, 5 * unit, Paint()..color = _petalCentre);
-    }
-  }
-
-  void _paintSeed(Canvas canvas, Offset base, double unit) {
-    canvas.drawOval(
-      Rect.fromCenter(center: base.translate(0, -3 * unit), width: 12 * unit, height: 8 * unit),
-      Paint()..color = _seed,
-    );
-    for (var i = 0; i < 3; i++) {
-      final drop = base.translate((i - 1) * 14 * unit, -22 * unit - (i == 1 ? 6 * unit : 0));
-      final path = Path()
-        ..moveTo(drop.dx, drop.dy - 6 * unit)
-        ..quadraticBezierTo(drop.dx + 5 * unit, drop.dy + 1 * unit, drop.dx, drop.dy + 3 * unit)
-        ..quadraticBezierTo(drop.dx - 5 * unit, drop.dy + 1 * unit, drop.dx, drop.dy - 6 * unit);
-      final filled = i < water;
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = filled ? _water : OnbColors.lineDark
-          ..style = filled ? PaintingStyle.fill : PaintingStyle.stroke
-          ..strokeWidth = 1.4 * unit,
-      );
-    }
-  }
-
-  void _paintLeaf(Canvas canvas, Offset at, double size, double angle, Color color, {required bool left}) {
-    canvas.save();
-    canvas.translate(at.dx, at.dy);
-    canvas.rotate(angle + (left ? -0.6 : 0.6));
-    final dir = left ? -1.0 : 1.0;
-    final leaf = Path()
-      ..moveTo(0, 0)
-      ..quadraticBezierTo(dir * size * 0.5, -size * 0.55, dir * size, -size * 0.1)
-      ..quadraticBezierTo(dir * size * 0.45, size * 0.35, 0, 0);
-    canvas.drawPath(leaf, Paint()..color = color);
-    canvas.drawLine(
-      Offset.zero,
-      Offset(dir * size * 0.8, -size * 0.12),
+    canvas.drawRRect(
+      RRect.fromLTRBR(24, 87, 96, 102, const Radius.circular(7.5)),
       Paint()
-        ..color = _leafDark.withValues(alpha: 0.5)
-        ..strokeWidth = size * 0.06,
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFEE9466), Color(0xFFC95F32)],
+        ).createShader(const Rect.fromLTRB(24, 87, 96, 102)),
+    );
+    canvas.drawRRect(
+      RRect.fromLTRBR(29, 89.5, 55, 92.1, const Radius.circular(1.3)),
+      Paint()..color = const Color(0xFFFFD9C2).withValues(alpha: 0.55),
+    );
+    canvas.drawOval(_oval(60, 89, 31, 4.6), Paint()..color = const Color(0xFF5A3A24));
+    canvas.drawOval(_oval(60, 89.6, 25, 3), Paint()..color = const Color(0xFF6E4A2E));
+  }
+
+  void _paintSeed(Canvas canvas, double seconds) {
+    canvas.save();
+    _rotateAbout(canvas, -18, 60, 86);
+    canvas.drawOval(_oval(60, 86, 7, 4.5), Paint()..color = const Color(0xFFD69A5C));
+    canvas.drawOval(_oval(58, 84.6, 3, 1.3), Paint()..color = const Color(0xFFFFE6C8).withValues(alpha: 0.7));
+    if (water >= 2) {
+      canvas.drawPath(
+        Path()
+          ..moveTo(56, 85.5)
+          ..lineTo(59, 87)
+          ..lineTo(61, 85)
+          ..lineTo(64, 86.6),
+        Paint()
+          ..color = const Color(0xFF8B5A2B)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.1
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+      );
+    }
+    canvas.restore();
+    if (water >= 3) {
+      // peek: 2.4 s ease-in-out, scaleY 1 → 1.12 → 1 from the shoot's foot.
+      final p = animate ? (seconds % 2.4) / 2.4 : 0.0;
+      final scale = p < 0.5 ? _lerp(1, 1.12, Curves.easeInOut.transform(p * 2)) : _lerp(1.12, 1, Curves.easeInOut.transform((p - 0.5) * 2));
+      canvas.save();
+      canvas.translate(61.5, 84);
+      canvas.scale(1, scale);
+      canvas.translate(-61.5, -84);
+      canvas.drawPath(
+        Path()
+          ..moveTo(60.5, 84)
+          ..cubicTo(60.5, 80, 61, 78, 62.5, 76.5),
+        Paint()
+          ..color = _stem
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.4
+          ..strokeCap = StrokeCap.round,
+      );
+      canvas.restore();
+      canvas.save();
+      _rotateAbout(canvas, -30, 64, 76.5);
+      canvas.drawOval(_oval(64, 76.5, 3.2, 1.8), Paint()..color = const Color(0xFF6CCB78));
+      canvas.restore();
+    }
+  }
+
+  void _paintLeaf(Canvas canvas, _Leaf leaf) {
+    final (cx, cy, rx, ry, deg, a) = leaf;
+    canvas.save();
+    _rotateAbout(canvas, deg.toDouble(), cx.toDouble(), cy.toDouble());
+    final rect = _oval(cx.toDouble(), cy.toDouble(), rx.toDouble(), ry.toDouble());
+    canvas.drawOval(
+      rect,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: a ? _leafA : _leafB,
+        ).createShader(rect),
+    );
+    canvas.drawOval(
+      _oval(cx - rx * 0.25, cy - ry * 0.35, rx * 0.45, ry * 0.28),
+      Paint()..color = Colors.white.withValues(alpha: 0.35),
     );
     canvas.restore();
   }
 
+  void _paintBud(Canvas canvas) {
+    final sepal = Paint()..color = const Color(0xFF4CAF50);
+    canvas.save();
+    _rotateAbout(canvas, 30, 55.5, 31);
+    canvas.drawOval(_oval(55.5, 31, 4.5, 2.4), sepal);
+    canvas.restore();
+    canvas.save();
+    _rotateAbout(canvas, -30, 64.5, 31);
+    canvas.drawOval(_oval(64.5, 31, 4.5, 2.4), sepal);
+    canvas.restore();
+    canvas.drawPath(
+      Path()
+        ..moveTo(60, 13)
+        ..cubicTo(68, 19, 68, 28, 60, 32)
+        ..cubicTo(52, 28, 52, 19, 60, 13)
+        ..close(),
+      Paint()..shader = _petalShader(const Rect.fromLTRB(54, 13, 66, 32)),
+    );
+    canvas.drawOval(_oval(57.5, 20, 1.8, 4), Paint()..color = Colors.white.withValues(alpha: 0.45));
+  }
+
+  void _paintBloom(Canvas canvas) {
+    const petals = [Offset(60, 12.5), Offset(69, 19.1), Offset(65.6, 29.7), Offset(54.4, 29.7), Offset(51, 19.1)];
+    for (final c in petals) {
+      canvas.drawCircle(c, 8.2, Paint()..shader = _petalShader(Rect.fromCircle(center: c, radius: 8.2)));
+    }
+    canvas.drawCircle(const Offset(60, 22), 6, Paint()..color = const Color(0xFFFFC93C));
+    canvas.drawCircle(const Offset(58.2, 20.2), 2, Paint()..color = const Color(0xFFFFF3C4).withValues(alpha: 0.8));
+  }
+
+  /// The SVG's radial `petal` (cx .4, cy .35, r .75 of the shape's box).
+  static Shader _petalShader(Rect box) =>
+      const RadialGradient(center: Alignment(-0.2, -0.3), radius: 0.75, colors: _petal).createShader(box);
+
+  static Path _dropPath(double x, double y) => Path()
+    ..moveTo(x, y)
+    ..cubicTo(x + 2, y + 3, x + 3, y + 5, x, y + 7)
+    ..cubicTo(x - 3, y + 5, x - 2, y + 3, x, y)
+    ..close();
+
+  static Rect _oval(double cx, double cy, double rx, double ry) => Rect.fromLTRB(cx - rx, cy - ry, cx + rx, cy + ry);
+
+  static void _rotateAbout(Canvas canvas, double degrees, double x, double y) {
+    canvas.translate(x, y);
+    canvas.rotate(degrees * 3.141592653589793 / 180);
+    canvas.translate(-x, -y);
+  }
+
   @override
-  bool shouldRepaint(covariant _PlantPainter old) =>
-      old.stage != stage || old.water != water || old.leaves != leaves || old.droop != droop || old.sway != sway;
+  bool shouldRepaint(covariant PlantPainter old) =>
+      old.stage != stage || old.water != water || old.sway != sway || old.animate != animate || old.clock != clock;
 }
+
+typedef _Leaf = (num cx, num cy, num rx, num ry, num deg, bool a);

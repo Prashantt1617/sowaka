@@ -238,6 +238,11 @@ function applySettingsToTasks(kind: LifecycleKind, settings: LifecycleTemplateSe
 
 const SYSTEM_KEYS = new Set<SystemTaskKey>([...onboardingSeed(), ...offboardingSeed()].flatMap((t) => (t.systemKey ? [t.systemKey] : [])));
 
+/** Up to 8 agenda points of up to 120 characters, blanks dropped. */
+function cleanAgenda(raw: unknown[]): string[] {
+  return raw.filter((a): a is string => typeof a === 'string' && !!a.trim()).slice(0, 8).map((a) => a.trim().slice(0, 120));
+}
+
 /** A team row's spec, cleaned; a buddy's or head of department's row without one gets a plain task's. */
 function cleanTeam(kind: LifecycleKind, raw: unknown, owner: OwnerRole, id: string, where: string): TeamTaskSpec | undefined {
   if ((raw === undefined || raw === null) && !TEAM_ONLY_OWNERS.includes(owner)) return undefined;
@@ -246,7 +251,7 @@ function cleanTeam(kind: LifecycleKind, raw: unknown, owner: OwnerRole, id: stri
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const key = typeof r.key === 'string' && /^[a-z0-9_-]{1,40}$/.test(r.key) ? r.key : `custom_${id.replace(/[^a-z0-9]/gi, '').slice(0, 24).toLowerCase()}`;
   const teamKind = TEAM_KINDS.includes(r.kind as TeamTaskKind) ? (r.kind as TeamTaskKind) : 'task';
-  const agenda = Array.isArray(r.agenda) ? r.agenda.filter((a): a is string => typeof a === 'string' && !!a.trim()).slice(0, 8).map((a) => a.trim().slice(0, 120)) : [];
+  const agenda = Array.isArray(r.agenda) ? cleanAgenda(r.agenda) : [];
   return {
     key, kind: teamKind, ...(r.early === true ? { early: true } : {}),
     ...(typeof r.pair === 'string' && r.pair.trim() ? { pair: r.pair.trim().slice(0, 80) } : {}),
@@ -288,6 +293,11 @@ function cleanTasks(kind: LifecycleKind, input: unknown): TemplateTask[] {
       order: Number.isFinite(t.order) ? Number(t.order) : (index + 1) * 10,
     };
     if (typeof t.helper === 'string' && t.helper.trim()) task.helper = t.helper.trim().slice(0, 300);
+    // A meeting's agenda: the points both sides of the meeting see (one notes box each in the app).
+    if (Array.isArray(t.agenda)) {
+      const agenda = cleanAgenda(t.agenda);
+      if (agenda.length) task.agenda = agenda;
+    }
     const team = cleanTeam(kind, t.team, task.ownerRole, id, where);
     if (team) {
       if (seenTeam.has(team.key)) throw new LifecycleError(400, `${where}: duplicate team task`);

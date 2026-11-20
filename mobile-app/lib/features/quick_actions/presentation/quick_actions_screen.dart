@@ -31,6 +31,7 @@ import '../../placements/data/placements_api_service.dart';
 import '../../placements/data/placements_models.dart';
 import '../../policies/data/policies_api_service.dart';
 import '../../policies/data/policies_models.dart';
+import '../../policies/presentation/policies_ack_screen.dart';
 import '../../policies/presentation/policy_body_view.dart';
 import '../../shared/app_toast.dart';
 import '../../shared/attachment_picker.dart';
@@ -770,6 +771,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     _offboarding.addListener(_onOffboardingChanged);
     unawaited(_offboarding.revalidate());
     LifecycleMeStore.instance.addListener(_onLifecycleChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadJoinerPolicies();
+    });
     FirstPunchTour.requested.addListener(_onPunchTourRequested);
     if (FirstPunchTour.requested.value) {
       WidgetsBinding.instance.addPostFrameCallback(
@@ -778,9 +782,16 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     }
   }
 
-  /// The Onboarding tile comes and goes with what `/lifecycle/me` says.
+  /// The Onboarding tile comes and goes with what `/lifecycle/me` says; a
+  /// joiner's Policies tile counts what is still to acknowledge.
   void _onLifecycleChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    _loadJoinerPolicies();
+  }
+
+  void _loadJoinerPolicies() {
+    if (LifecycleMeStore.instance.value.showsOnboarding) unawaited(_loadPolicies());
   }
 
   /// Day 1's "Learn to punch in" (the New joiner artifact): the Attendance
@@ -896,7 +907,56 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         _reimbursementReceiptBytes != null;
   }
 
+  /// Actions › Policies (new-joiner canvas, "Policies · from Actions"): the
+  /// company's own policies open the Policies screen with Acknowledge,
+  /// Acknowledged or Updated on each, the same one onboarding's task opens. A
+  /// company with none keeps the built-in page.
+  Future<void> _openPoliciesScreen() async {
+    var list = _companyPolicies;
+    list ??= await _policiesApi.policiesFromCache().catchError((_) => null);
+    var fresh = false;
+    if (list == null) {
+      try {
+        list = await _policiesApi.policies();
+        fresh = true;
+        _policiesFetchedAt = DateTime.now();
+      } catch (_) {
+        // Offline with nothing kept: the built-in page, as before.
+      }
+    }
+    if (!mounted) return;
+    if (list != null) setState(() => _companyPolicies = list);
+    if (list == null || list.isEmpty) {
+      _openPage(_QuickPage.policies, refresh: !fresh);
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => PoliciesAckScreen(
+          source: HttpPoliciesSource(_policiesApi),
+          // The app's header and tabs around it, as the canvas draws it (Actions lit).
+          shell: currentOnboardingShell(),
+          // The company took all of its policies away meanwhile: the built-in page.
+          onEmpty: () {
+            if (!mounted) return;
+            setState(() => _companyPolicies = const []);
+            _openPage(_QuickPage.policies, refresh: false);
+          },
+        ),
+      ),
+    );
+    if (mounted) unawaited(_loadPolicies());
+  }
+
   void _open(_QuickPage page) {
+    if (page == _QuickPage.policies) {
+      unawaited(_openPoliciesScreen());
+      return;
+    }
+    _openPage(page);
+  }
+
+  void _openPage(_QuickPage page, {bool refresh = true}) {
     if (page == _QuickPage.placements) {
       _placementsKey = GlobalKey<_PlacementsScreenState>();
     }
@@ -909,7 +969,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     // anyone looks; the Leave screen only needs to know whether there is a
     // leave policy to link to.
     if (page == _QuickPage.policies) {
-      unawaited(_loadPolicies(force: true));
+      if (refresh) unawaited(_loadPolicies(force: true));
     } else if (page == _QuickPage.leave) {
       unawaited(_loadPolicies());
     }
@@ -1132,10 +1192,22 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       );
       return;
     }
+    // The joiner's punch-out on their joining date: "Day 1, done!".
+    if (type == 'out' && outcome?.punched == true && _isJoiningDay() && mounted) {
+      unawaited(widget.bloc.add(LoadAttendanceMonth(DateTime.now())));
+      await openDay1Done(context);
+      return;
+    }
     if (mounted) showPunchToast(context, outcome, type: type);
     if ((outcome?.punched == true || outcome?.requested == true) && mounted) {
       await widget.bloc.add(LoadAttendanceMonth(DateTime.now()));
     }
+  }
+
+  /// Today is the joiner's Day 1, as `/lifecycle/me` says (the tile's badge).
+  bool _isJoiningDay() {
+    final onboarding = LifecycleMeStore.instance.value;
+    return onboarding.showsOnboarding && onboarding.onboarding?.dayLabel == 'Day 1';
   }
 
   /// Whether a correction for today is already with the manager.
@@ -1228,6 +1300,121 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           (total, label) => total + _balanceFor(label)!.remaining,
         );
 
+    // A new joiner (onboarding runs until probation ends, where the
+    // lifecycle is on): the New joiner artifact's tiles, in its order.
+    final joiner = onboarding.showsOnboarding;
+    final onboardingTile = _HomeActionCard(
+      key: const ValueKey('onboarding-card'),
+      icon: Icons.waving_hand_rounded,
+      color: const Color(0xFF0571A6),
+      tint: const Color(0xFFE8F4FA),
+      // Figma "Quick Action-Geotag" (4166:19856): Icon · Colour/waving-hand.
+      imageAsset: 'assets/icons/action_card_onboarding_waving_hand.png',
+      title: 'Onboarding',
+      subtitle: firstDay
+          ? 'Today is your first day'
+          : onboardingTileSubtitle(onboarding),
+      onTap: () => openOnboardingHome(context),
+      highlight: firstDay,
+      badge: firstDay ? 'Day 1' : null,
+    );
+    // Someone marked present automatically has no attendance to manage: no
+    // leave to balance against days worked, and no overtime to claim beyond
+    // hours nobody records. What is left is what they can still act on.
+    final leaveTile = autoPresent
+        ? null
+        : _HomeActionCard(
+            icon: Icons.card_giftcard_rounded,
+            color: const Color(0xFFBE5A36),
+            tint: const Color(0xFFF6E5DB),
+            title: 'Leave',
+            // No balance, nothing to count down — so the card says what it
+            // is for rather than a number that would be wrong for these
+            // people.
+            subtitle: widget.dashboard.shift.leaveBalanceTracked
+                ? '${formatDays(leaveDaysAvailable)} days available'
+                : 'Apply & view requests',
+            onTap: () => _open(_QuickPage.leave),
+            imageAsset: 'assets/icons/team/calendar.png',
+          );
+    final overtimeTile = autoPresent || !widget.dashboard.overtimeEnabled
+        ? null
+        : _HomeActionCard(
+            icon: Icons.hourglass_bottom_rounded,
+            color: const Color(0xFFC98A2E),
+            tint: const Color(0xFFF4ECDD),
+            title: 'Overtime',
+            subtitle: 'Request & view hours',
+            onTap: () => _open(_QuickPage.overtime),
+            imageAsset: 'assets/icons/overtime_hourglass.png',
+          );
+    final reimbursementTile = _HomeActionCard(
+      icon: Icons.payments_rounded,
+      color: const Color(0xFF4F8C89),
+      tint: const Color(0xFFDEEBE9),
+      title: 'Reimbursement',
+      subtitle: 'Track your claims',
+      onTap: () => _open(_QuickPage.reimbursements),
+      imageAsset: 'assets/icons/action_card_reimbursement_rupee.png',
+      imageSize: 28,
+    );
+    // A recruitment company's clients, candidates and placements: only
+    // where the server switched it on.
+    final placementsTile = widget.bloc.session.user.placementsEnabled
+        ? _HomeActionCard(
+            key: const ValueKey('placements-card'),
+            icon: Icons.work_rounded,
+            color: const Color(0xFF0571A6),
+            tint: const Color(0xFFE0F2FE),
+            title: 'Placements',
+            subtitle: 'Clients & candidates',
+            onTap: () => _open(_QuickPage.placements),
+            imageAsset: 'assets/icons/placements_briefcase.png',
+          )
+        : null;
+    // Support desk (node 2896:32193): a concern raised to HR and the chat on
+    // it. Its pages keep the tabs under them, as Leave and Overtime do.
+    final supportTile = _HomeActionCard(
+      key: const ValueKey('support-desk-card'),
+      icon: Icons.support_agent_rounded,
+      color: const Color(0xFF2F7FD9),
+      tint: const Color(0xFFE3EEFB),
+      title: 'Support Desk',
+      subtitle: joiner ? 'Submit concern to HR.' : 'Raise a ticket',
+      onTap: _openSupportDesk,
+      imageAsset: 'assets/icons/support_headset.png',
+    );
+    // Payroll: the month's salary, what to fix before it runs, payslips, the
+    // flexible split and the tax declaration.
+    final payrollTile = _HomeActionCard(
+      key: const ValueKey('payroll-card'),
+      icon: Icons.account_balance_wallet_rounded,
+      color: const Color(0xFF0571A6),
+      tint: const Color(0xFFE0F2FE),
+      title: 'Payroll',
+      subtitle: 'Payslips, salary & tax',
+      onTap: () => _open(_QuickPage.payroll),
+      imageAsset: 'assets/icons/request_reimbursement_money.png',
+    );
+    // A joiner's Policies: how many are still to acknowledge, the same
+    // count the Policies screen and onboarding's "Acknowledge policies" show
+    // (policiesToAcknowledge over the server's list).
+    final toAcknowledge = policiesToAcknowledge(_companyPolicies ?? const []);
+    final policiesTile = _HomeActionCard(
+      key: const ValueKey('policies-card'),
+      icon: Icons.edit_note_rounded,
+      color: const Color(0xFF8A6AA0),
+      tint: const Color(0xFFEEE6F0),
+      title: joiner ? 'Policies' : 'View Policies',
+      subtitle: joiner && toAcknowledge > 0
+          ? '$toAcknowledge to acknowledge'
+          : 'Company guidelines',
+      onTap: joiner && (_companyPolicies?.isNotEmpty ?? false)
+          ? _openPoliciesToAcknowledge
+          : () => _open(_QuickPage.policies),
+      imageAsset: 'assets/icons/connect_icon_my_post_pencil.png',
+    );
+
     return Column(
       key: const ValueKey('quick-home'),
       children: [
@@ -1289,113 +1476,27 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     mainAxisExtent: 123.185,
                   ),
                   children: [
-                    // A new joiner's onboarding, first while it runs (until
-                    // probation ends), only where the lifecycle is on.
-                    if (onboarding.showsOnboarding)
-                      _HomeActionCard(
-                        key: const ValueKey('onboarding-card'),
-                        icon: Icons.waving_hand_rounded,
-                        color: const Color(0xFF0571A6),
-                        tint: const Color(0xFFE8F4FA),
-                        // Figma "Quick Action-Geotag" (4166:19856): Icon · Colour/waving-hand.
-                        imageAsset: 'assets/icons/action_card_onboarding_waving_hand.png',
-                        title: 'Onboarding',
-                        subtitle: firstDay
-                            ? 'Today is your first day'
-                            : onboardingTileSubtitle(onboarding),
-                        onTap: () => openOnboardingHome(context),
-                        highlight: firstDay,
-                        badge: firstDay ? 'Day 1' : null,
-                      ),
-                    // Someone marked present automatically has no attendance to
-                    // manage: no leave to balance against days worked, and no
-                    // overtime to claim beyond hours nobody records. What is
-                    // left is what they can still act on.
-                    if (!autoPresent)
-                      _HomeActionCard(
-                        icon: Icons.card_giftcard_rounded,
-                        color: const Color(0xFFBE5A36),
-                        tint: const Color(0xFFF6E5DB),
-                        title: 'Leave',
-                        // No balance, nothing to count down — so the card says
-                        // what it is for rather than a number that would be
-                        // wrong for these people.
-                        subtitle: widget.dashboard.shift.leaveBalanceTracked
-                            ? '${formatDays(leaveDaysAvailable)} days available'
-                            : 'Apply & view requests',
-                        onTap: () => _open(_QuickPage.leave),
-                        imageAsset: 'assets/icons/team/calendar.png',
-                      ),
-                    if (!autoPresent && widget.dashboard.overtimeEnabled)
-                      _HomeActionCard(
-                        icon: Icons.hourglass_bottom_rounded,
-                        color: const Color(0xFFC98A2E),
-                        tint: const Color(0xFFF4ECDD),
-                        title: 'Overtime',
-                        subtitle: 'Request & view hours',
-                        onTap: () => _open(_QuickPage.overtime),
-                        imageAsset: 'assets/icons/overtime_hourglass.png',
-                      ),
-                    _HomeActionCard(
-                      icon: Icons.payments_rounded,
-                      color: const Color(0xFF4F8C89),
-                      tint: const Color(0xFFDEEBE9),
-                      title: 'Reimbursement',
-                      subtitle: 'Track your claims',
-                      onTap: () => _open(_QuickPage.reimbursements),
-                      imageAsset:
-                          'assets/icons/action_card_reimbursement_rupee.png',
-                      imageSize: 28,
-                    ),
-                    // A recruitment company's clients, candidates and
-                    // placements: only where the server switched it on.
-                    if (widget.bloc.session.user.placementsEnabled)
-                      _HomeActionCard(
-                        key: const ValueKey('placements-card'),
-                        icon: Icons.work_rounded,
-                        color: const Color(0xFF0571A6),
-                        tint: const Color(0xFFE0F2FE),
-                        title: 'Placements',
-                        subtitle: 'Clients & candidates',
-                        onTap: () => _open(_QuickPage.placements),
-                        imageAsset: 'assets/icons/placements_briefcase.png',
-                      ),
-                    // Support desk (node 2896:32193): a concern raised to HR
-                    // and the chat on it. Its pages keep the tabs under them,
-                    // as Leave and Overtime do.
-                    _HomeActionCard(
-                      key: const ValueKey('support-desk-card'),
-                      icon: Icons.support_agent_rounded,
-                      color: const Color(0xFF2F7FD9),
-                      tint: const Color(0xFFE3EEFB),
-                      title: 'Support Desk',
-                      subtitle: 'Raise a ticket',
-                      onTap: _openSupportDesk,
-                      imageAsset: 'assets/icons/support_headset.png',
-                    ),
-                    // Payroll: the month's salary, what to fix before it runs,
-                    // payslips, the flexible split and the tax declaration.
-                    _HomeActionCard(
-                      key: const ValueKey('payroll-card'),
-                      icon: Icons.account_balance_wallet_rounded,
-                      color: const Color(0xFF0571A6),
-                      tint: const Color(0xFFE0F2FE),
-                      title: 'Payroll',
-                      subtitle: 'Payslips, salary & tax',
-                      onTap: () => _open(_QuickPage.payroll),
-                      imageAsset:
-                          'assets/icons/request_reimbursement_money.png',
-                    ),
-                    _HomeActionCard(
-                      icon: Icons.edit_note_rounded,
-                      color: const Color(0xFF8A6AA0),
-                      tint: const Color(0xFFEEE6F0),
-                      title: 'View Policies',
-                      subtitle: 'Company guidelines',
-                      onTap: () => _open(_QuickPage.policies),
-                      imageAsset:
-                          'assets/icons/connect_icon_my_post_pencil.png',
-                    ),
+                    // A new joiner, while onboarding runs: the New joiner
+                    // artifact's Actions (Onboarding, Policies, Leave,
+                    // Overtime, Payroll, Reimbursement, Support Desk).
+                    if (joiner) ...[
+                      onboardingTile,
+                      policiesTile,
+                      ?leaveTile,
+                      ?overtimeTile,
+                      payrollTile,
+                      reimbursementTile,
+                      supportTile,
+                      ?placementsTile,
+                    ] else ...[
+                      ?leaveTile,
+                      ?overtimeTile,
+                      reimbursementTile,
+                      ?placementsTile,
+                      supportTile,
+                      payrollTile,
+                      policiesTile,
+                    ],
                     // Off-boarding (R3): someone serving notice, where the
                     // lifecycle is on. Last, and quiet.
                     if (_offboarding.showsOffboardingPage)
@@ -1419,6 +1520,21 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         ),
       ],
     );
+  }
+
+  /// A joiner's Policies from Actions (the New joiner artifact's "Policies ·
+  /// from Actions"): Acknowledge, Acknowledged or Updated on each; the
+  /// tile's count is read again on the way back.
+  Future<void> _openPoliciesToAcknowledge() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => PoliciesAckScreen(
+          source: HttpPoliciesSource(_policiesApi),
+          shell: currentOnboardingShell(),
+        ),
+      ),
+    );
+    if (mounted) await _loadPolicies(force: true);
   }
 
   /// The Support desk, with the shell's tabs under it; a pick comes back to

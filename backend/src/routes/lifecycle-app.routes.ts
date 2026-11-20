@@ -3,8 +3,8 @@ import { requireAuth } from '../middleware/auth.middleware';
 import {
   actOnMeeting, actOnNote, actOnOwnTask, actOnPerson, addNote, assignStarterTask, checkinForMe, introView, joinerForManager,
   joinersForManager, lifecycleMe, managerProbationMonth, managerTaskDone, markWeekDoneSeen, meetingFor, notesForJoiner,
-  onboardingHome, peopleView, postIntro, postWelcome, probationForMe, replyToStarterTask, revealForMe, revealSeenForMe, saveIntro, saveSetup,
-  saveWeek1Step, sendSurvey, starterDone, starterTasksForJoiner, surveyView, tourLessonDone, week1View,
+  onboardingHome, peopleView, postIntro, postWelcome, probationForMe, replyToStarterTask, revealForMe, revealSeenForMe, saveDay1Feeling, saveIntro, saveSetup,
+  meetingRowMet, meetingRowNotes, saveWeek1Step, sendSurvey, starterDone, starterTasksForJoiner, surveyView, teamForJoiner, tourLessonDone, week1View,
 } from '../services/lifecycle/appOnboarding';
 import { LifecycleError } from '../services/lifecycle/engine';
 import { contentDisposition } from '../services/lifecycle/files';
@@ -40,6 +40,7 @@ lifecycleAppRouter.use(lifecycleGate);
 // The joiner
 lifecycleAppRouter.get('/onboarding', lifecycleHandler(async (req) => onboardingHome(me(req))));
 lifecycleAppRouter.post('/onboarding/tasks/:taskId', lifecycleHandler(async (req) => actOnOwnTask(me(req), param(req, 'taskId'), body(req))));
+lifecycleAppRouter.put('/onboarding/day1-feeling', lifecycleHandler(async (req) => saveDay1Feeling(me(req), body(req))));
 lifecycleAppRouter.post('/onboarding/week-done/seen', lifecycleHandler(async (req) => markWeekDoneSeen(me(req))));
 // The joining portal inside the app: a portal session for their own journey while its portal is open (no code).
 lifecycleAppRouter.post('/portal-session', lifecycleHandler(async (req) => portalSessionForAppUser(me(req))));
@@ -56,6 +57,10 @@ lifecycleAppRouter.get('/onboarding/notes', lifecycleHandler(async (req) => note
 lifecycleAppRouter.post('/onboarding/notes/:id', lifecycleHandler(async (req) => actOnNote(me(req), param(req, 'id'), body(req))));
 lifecycleAppRouter.get('/onboarding/meetings/:id', lifecycleHandler(async (req) => meetingFor(me(req), param(req, 'id'))));
 lifecycleAppRouter.post('/onboarding/meetings/:id', lifecycleHandler(async (req) => actOnMeeting(me(req), param(req, 'id'), body(req))));
+// Meetings (new-joiner prototype): Mark as met and the joiner's own agenda notes on any meeting row; Your team.
+lifecycleAppRouter.post('/onboarding/meeting-rows/:rowId', lifecycleHandler(async (req) => meetingRowMet(me(req), param(req, 'rowId'), body(req))));
+lifecycleAppRouter.put('/onboarding/meeting-rows/:rowId/notes', lifecycleHandler(async (req) => meetingRowNotes(me(req), param(req, 'rowId'), body(req))));
+lifecycleAppRouter.get('/onboarding/team', lifecycleHandler(async (req) => teamForJoiner(me(req))));
 lifecycleAppRouter.post('/onboarding/tour/:lesson', lifecycleHandler(async (req) => tourLessonDone(me(req), param(req, 'lesson'))));
 lifecycleAppRouter.get('/onboarding/survey', lifecycleHandler(async (req) => surveyView(me(req))));
 lifecycleAppRouter.post('/onboarding/survey', lifecycleHandler(async (req) => sendSurvey(me(req), body(req))));

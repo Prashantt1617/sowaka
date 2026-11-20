@@ -124,6 +124,12 @@ export interface TemplateTask {
    * (first name) and {p} (first name’s); `helper` is the row's quiet line.
    */
   team?: TeamTaskSpec;
+  /**
+   * A meeting's agenda (a meeting, a check-in or the confirmation discussion): the points the
+   * joiner's meeting screen lists with a notes box each, and the manager's for the same meeting.
+   * HR edits it in Templates; absent: the seed's for the task's systemKey.
+   */
+  agenda?: string[];
 }
 
 export type TeamTaskKind = 'help' | 'approve' | 'review' | 'task' | 'meet' | 'team' | 'goal' | 'doc' | 'chat';
@@ -260,6 +266,8 @@ export interface Journey {
   bankPfRequest?: BankPfChangeRequest;
   /** When the joiner first saw "Week 1, done!" (A8). */
   week1DoneSeenAt?: Date;
+  /** "How was today?" on "Day 1, done!" (the joiner's own answer; HR sees it on the joiner panel). */
+  day1Feeling?: { answer: Day1Feeling; at: Date };
   /** The Sowaka tour's lessons the joiner has finished (app keys: punch, missed, leave, overtime, …), in order done. */
   tour?: { done: string[]; updatedAt?: Date };
   /** The manager's welcome post on Connect for the joiner (M2 "Post a welcome"), once per joiner. */
@@ -575,6 +583,26 @@ export interface Meeting {
   agendaId?: string;
 }
 
+/** "Day 1, done!" · How was today? */
+export const DAY1_FEELINGS = ['great', 'okay', 'tough'] as const;
+export type Day1Feeling = typeof DAY1_FEELINGS[number];
+
+/**
+ * Someone's own notes on a meeting's agenda (the joiner's meeting screen, "Only you can see your
+ * notes"): one text per agenda point, kept by the meeting row's id (a journey task id, `team:<key>`
+ * for a buddy or head-of-department meeting, `person:<id>` for someone the manager picked). Read by
+ * nobody but `userId`: no HR or manager view reads this collection.
+ */
+export interface MeetingNotes {
+  id: string;
+  org: string;
+  journeyId: string;
+  rowId: string;
+  userId: string;
+  notes: string[];
+  updatedAt: Date;
+}
+
 export interface Week1Reels {
   policies?: { versions: Array<{ id: string; version: string }>; at: Date; device?: string };
   taxRegime?: { regime: 'new' | 'old'; at: Date };
@@ -616,6 +644,8 @@ export interface ProbationMonth {
   checkinManager?: { text: string; rating?: number; goalRatings?: number[]; at: Date };
   /** PB2: the review, one-tap feedback chips, and "On it" for what the joiner asked. */
   review?: { text: string; feedback?: string[]; askAck?: boolean; at: Date };
+  /** The manager sent the joiner's self check-in back (team side, MgrReview): the joiner sends it again. */
+  sentBack?: { text?: string; at: Date; byName?: string };
 }
 
 export interface ConfirmationDecision {

@@ -48,7 +48,13 @@ export function ProbationMonths({ months, total }: { months: ProbationMonthDTO[]
           {m.review && (
             <div>
               <div style={sectionLabel}>Review</div>
-              <div style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{m.review.text}</div>
+              <div style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{m.review.text || 'Marked as reviewed'}</div>
+            </div>
+          )}
+          {!m.review && m.sentBack && (!m.checkinEmployee || m.sentBack.at >= m.checkinEmployee.at) && (
+            <div>
+              <div style={sectionLabel}>Sent back</div>
+              <div style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{m.sentBack.byName ? `${m.sentBack.byName} sent the check-in back` : 'The check-in was sent back'}{m.sentBack.text ? `: ${m.sentBack.text}` : ''}</div>
             </div>
           )}
         </div>

@@ -349,6 +349,30 @@ async function main() {
   const w1 = await app.saveWeek1Step(ISHA, { step: 'goals', value: { read: true } });
   eq('week1 GET: the policy list, the ack apart, steps, manager name', [w1.policies.map((p) => p.id), !!w1.policiesAckAt, w1.steps, w1.managerName], [['leave'], true, { policies: true, tax: true, bank_pf: true, goals: true }, 'Neha Rao']);
   eq('Policies stored with versions and device', [w1.policiesAck?.versions, w1.policiesAck?.device], [[{ id: 'leave', version: '2026-10-01T00:00:00.000Z' }], 'Check/1.0']);
+  // One acknowledgement record for every screen (nj-1120 L4): Week-1's agree writes each policy's own, the
+  // counts are the same in GET /policies and the onboarding home, and an HR update brings it back as Updated.
+  const pol = await import('../services/policy-document.service');
+  await policyDocuments().insertOne({ org: ORG, key: 'travel', title: 'Travel', body: 'Book ahead.', order: 2, active: true, ackRequired: false, version: 1, createdAt: now, updatedAt: now } as never);
+  const pol1 = await pol.policiesFor(ISHA);
+  eq('Week-1 agree is each policy\'s acknowledgement too; a read-only one is not touched', pol1.map((p) => [p.key, p.acknowledgedVersion ?? null]), [['leave', 1], ['travel', null]]);
+  eq('Counts: GET /policies and the home agree', [pol.policyAckCounts(pol1), (await app.onboardingHome(ISHA)).policies], [{ required: 1, acknowledged: 1, toAcknowledge: 0 }, { required: 1, acknowledged: 1, toAcknowledge: 0 }]);
+  await pol.updatePolicy(ORG, 'leave', { body: 'Take leave. Casual leave is 8 days.', changeNote: 'Casual leave goes up from 6 to 8 days.' }, 'Hema HR');
+  const pol2 = await pol.policiesFor(ISHA);
+  const leave2 = pol2.find((p) => p.key === 'leave')!;
+  eq('HR changes the text: version 2, Updated (acknowledged 1), what changed, 1 to acknowledge everywhere',
+    [leave2.version, leave2.acknowledgedVersion, leave2.changeNote, pol.policyAckCounts(pol2).toAcknowledge, (await app.onboardingHome(ISHA)).policies.toAcknowledge],
+    [2, 1, 'Casual leave goes up from 6 to 8 days.', 1, 1]);
+  eq('An old version is refused', (await refusal(async () => pol.acknowledgePolicy(ISHA, 'leave', { version: 1 }))).status, 409);
+  const acked = await pol.acknowledgePolicy(ISHA, 'leave', { version: 2 });
+  eq('Acknowledging the update: none left', [acked.policy.acknowledgedVersion, pol.policyAckCounts(acked.policies).toAcknowledge, (await app.onboardingHome(ISHA)).policies.toAcknowledge], [2, 0, 0]);
+  await pol.acknowledgePolicy(ISHA, 'travel', {});
+  eq('A read-only policy can be acknowledged and never counts', pol.policyAckCounts(await pol.policiesFor(ISHA)), { required: 1, acknowledged: 1, toAcknowledge: 0 });
+  // The tour: "For managers" only for someone with direct reports.
+  eq('Tour: no manager lessons without reports', (await app.onboardingHome(ISHA)).tour.managerLessons, undefined);
+  await users().insertOne(person('isha-report', 'Report of Isha', { managerUserId: 'isha' }) as never);
+  eq('Tour: manager lessons once someone reports to her', (await app.onboardingHome(ISHA)).tour.managerLessons, ['approveLeave', 'approveOvertime']);
+  eq('A lesson done answers the same tour', (await app.tourLessonDone(ISHA, 'missed')).managerLessons, ['approveLeave', 'approveOvertime']);
+  await users().deleteOne({ userId: 'isha-report' });
   eq('All four reels: week-1 tasks done, a leaf', [byKey(await engine.tasksOf(J2.id), 'week1_reels').status, (await engine.loadJourney(J2.id)).plant?.leaves], ['done', 1]);
   const declined = await board.decideBankPfRequest(ORG, J2.id, { decision: 'decline', note: 'Send a cancelled cheque' }, HR);
   eq('HR declines the bank change; the joiner is told', [declined.journey.bankPfRequest?.status, await tellCount('isha', 'lifecycle_bank_pf_decided')], ['declined', 1]);
@@ -442,6 +466,42 @@ async function main() {
   ok('The Action tile’s subtitle follows the stage after week 1', /^Week 2 · /.test(rohanMe.onboarding?.subtitle ?? ''), rohanMe.onboarding);
   ok('…and counts steps in week 1', /^\d+ of \d+ steps done$/.test(((await app.lifecycleMe(ISHA)) as { onboarding?: { subtitle?: string } }).onboarding?.subtitle ?? ''));
 
+  // ───────────────────────────────────────────────────────── the new joiner's home tiles
+  section('The home’s Devices and accesses, Watch list and Your profile (new-joiner prototype, 20 Nov)');
+  {
+    const base = byKey(await engine.tasksOf(J2.id), 'laptop_setup');
+    const crm = { ...base, id: `crm-${J2.id}`, systemKey: undefined, title: 'Admissions CRM access', helper: undefined, status: 'todo' as const, doneAt: undefined };
+    delete (crm as { _id?: unknown })._id;
+    await journeyTasks().insertOne(crm as never);
+    const devices = (await app.onboardingHome(ISHA)).devices as Array<{ key: string; title: string; ready: boolean }>;
+    eq('Devices: the laptop, the email, the app and the template’s own IT access row, each with its task’s status',
+      devices.map((d) => [d.title, d.ready]), [['Laptop', byKey(await engine.tasksOf(J2.id), 'laptop_setup').status === 'done'], ['Email', true], ['Sowaka Connect', true], ['Admissions CRM access', false]]);
+    await board.actOnTaskByHr(ORG, J2.id, crm.id, { action: 'done' }, HR);
+    ok('…IT ticking it on the board makes it Ready in the app', ((await app.onboardingHome(ISHA)).devices as Array<{ title: string; ready: boolean }>).find((d) => d.title === 'Admissions CRM access')?.ready === true);
+
+    eq('Watch list: nothing of its own while the company has no Meet us video', (await app.onboardingHome(ISHA)).watch, []);
+    await companies().updateOne({ id: ORG }, { $set: { lifecyclePortal: { videoUrl: 'https://videos.check.test/life.mp4', videoTitle: 'Life at Check Co' } } });
+    const portal = await import('../services/lifecycle/portal');
+    const meet = (await portal.meetItems(await engine.loadJourney(J2.id))).filter((i) => i.videoUrl);
+    const withVideo = await app.onboardingHome(ISHA);
+    eq('…the portal’s Meet us videos, the same titles and links, and the company’s name',
+      [withVideo.companyName, withVideo.watch.map((v) => [v.title, v.videoUrl])], ['Check Co', meet.map((i) => [i.title, i.videoUrl])]);
+
+    const profile = await import('../services/lifecycle/profile');
+    const portalProfile = await profile.profileView(await engine.loadJourney(J2.id));
+    const panel = await board.journeyPanel(ORG, J2.id);
+    eq('Your profile: the portal’s seven sections, its count, and the dashboard joiner panel’s',
+      [withVideo.profile.sections.map((x) => [x.title, x.done]), withVideo.profile.done, withVideo.profile.total, panel.journey.profileSections],
+      [portalProfile.sections.map((x) => [x.title, x.done]), portalProfile.done, 7, { done: portalProfile.done, total: 7 }]);
+    await journeys().updateOne({ id: J2.id }, { $set: { 'profile.personal': { fullName: 'Isha Verma', dob: '1999-01-01', gender: 'Female' } } });
+    eq('…a section saved on the portal counts on all three', [(await app.onboardingHome(ISHA)).profile.done, (await board.journeyPanel(ORG, J2.id)).journey.profileSections.done], [portalProfile.done + 1, portalProfile.done + 1]);
+
+    eq('Tour: no lesson done before the first punch-in', (await app.onboardingHome(ISHA)).tour.done.includes('punch'), false);
+    const { attendanceRecords } = db;
+    await attendanceRecords().insertOne({ userId: 'isha', org: ORG, workDate: J2.tj, punchIn: at(J2.tj!, '09:05') } as never);
+    eq('…the first punch-in is “Punch in and out” done (the prototype’s first punch)', (await app.onboardingHome(ISHA)).tour.done[0], 'punch');
+  }
+
   // ───────────────────────────────────────────────────────── board
   section('The HR board');
   const pre = await board.onboardingBoard(ORG, 'hr', { tab: 'pre_boarding' });
@@ -467,7 +527,7 @@ async function main() {
   await board.updateJourneyByHr(ORG, J2.id, { day1Pass: { reportingTime: '09:30', place: 'Room 4B', agenda: [{ time: '11:00', title: 'Meet your manager', with: 'Neha' }] } });
   const meetings = await lifecycleMeetings().find({ journeyId: J2.id }).toArray();
   const mv = await app.meetingFor(ISHA, (await lifecycleMeetings().findOne({ journeyId: J2.id }))!.id);
-  eq('Meeting: attendees with roles, what to expect, must-do', [mv.attendees.map((a) => a.role), mv.expect.length, mv.mustDo, mv.systemKey], [['joiner', 'manager'], 3, true, 'meet_manager']);
+  eq('Meeting: attendees with roles, what to expect, must-do', [mv.attendees.map((a) => a.role), mv.expect.length, mv.mustDo, mv.systemKey], [['joiner', 'manager'], 4, true, 'meet_manager']);
   ok('The home links the meeting to its task', (await app.onboardingHome(ISHA)).today.some((v) => v.systemKey === 'meet_manager' && (v as { meetingId?: string }).meetingId === mv.id));
   type MeetingRow = TaskView & { meeting?: { id: string; startsAt: string; place?: string; with?: string; canConfirm?: boolean } };
   const homeRow = ((await app.onboardingHome(ISHA)).today as MeetingRow[]).find((v) => v.systemKey === 'meet_manager');
@@ -478,6 +538,20 @@ async function main() {
   eq('The template can change only on a draft', (await refusal(async () => board.updateJourneyByHr(ORG, J2.id, { templateId: faculty.id }))).status, 409);
   await board.updateJourneyByHr(ORG, J1b.id, { templateId: faculty.id });
   eq('A draft re-snapshots its new template', (await engine.loadJourney(J1b.id)).templateSnapshot.name, 'Faculty');
+
+  // ───────────────────────────────────────────────────────── Day 1, done!
+  section('Day 1, done! (New joiner artifact): people met, things done, How was today?');
+  const homeBefore = await app.onboardingHome(ISHA);
+  eq('Things done is the home’s own “steps done” count', homeBefore.day1.thingsDone, homeBefore.progress.done);
+  await app.actOnMeeting(ISHA, mv.id, { met: 'yes' });
+  const homeAfter = await app.onboardingHome(ISHA);
+  ok('A meeting marked met counts its people (the manager), each once', homeAfter.day1.peopleMet >= 1 && homeAfter.day1.peopleMet <= homeBefore.day1.peopleMet + 1, { before: homeBefore.day1, after: homeAfter.day1 });
+  eq('…and the meeting task done counts as a thing done', homeAfter.day1.thingsDone, homeAfter.progress.done);
+  eq('An answer outside great / okay / tough is refused', (await refusal(async () => app.saveDay1Feeling(ISHA, { answer: 'meh' }))).status, 400);
+  eq('How was today? is saved on the journey', (await app.saveDay1Feeling(ISHA, { answer: 'okay' })).feeling, 'okay');
+  await app.saveDay1Feeling(ISHA, { answer: 'great' });
+  eq('…answering again changes it; the home sends it back', (await app.onboardingHome(ISHA)).day1.feeling, 'great');
+  eq('HR’s joiner panel shows the same answer', (await board.journeyPanel(ORG, J2.id)).journey.day1Feeling?.answer, 'great');
 
   // ───────────────────────────────────────────────────────── probation
   section('Probation: months, check-ins, decision, extension, reveal');

@@ -91,9 +91,48 @@ export async function policiesFor(viewer: PolicyViewer): Promise<PublicPolicy[]>
     });
 }
 
+/** Still to acknowledge: one that needs it, not acknowledged at its current version (never, or an older one: "Updated"). */
+export const policyToAcknowledge = (p: PublicPolicy) => p.ackRequired && p.acknowledgedVersion !== p.version;
+
 /** Whether every policy the viewer must acknowledge is acknowledged at its current version. */
 export function allPoliciesAcknowledged(policies: PublicPolicy[]): boolean {
-  return policies.every((p) => !p.ackRequired || p.acknowledgedVersion === p.version);
+  return !policies.some(policyToAcknowledge);
+}
+
+/**
+ * The one count every screen shows (new-joiner canvas, Policies): Actions'
+ * Policies tile "N to acknowledge" and the Policies page's banner read
+ * `toAcknowledge`; onboarding's "Acknowledge policies · n of N done" reads
+ * `acknowledged` of `required`. All from the same per-person, per-version
+ * acknowledgements.
+ */
+export function policyAckCounts(policies: PublicPolicy[]): { required: number; acknowledged: number; toAcknowledge: number } {
+  const required = policies.filter((p) => p.ackRequired);
+  const toAcknowledge = required.filter(policyToAcknowledge).length;
+  return { required: required.length, acknowledged: required.length - toAcknowledge, toAcknowledge };
+}
+
+/**
+ * Acknowledges, for the viewer, every policy that needs it at its current
+ * version (the Week-1 "I have read and agree" for all of them at once): the
+ * same records one-by-one Acknowledge writes, so every screen agrees. Ones
+ * already acknowledged at this version keep their first date.
+ */
+export async function acknowledgeAllPolicies(viewer: PolicyViewer, device?: string): Promise<PublicPolicy[]> {
+  if (!viewer.org || !viewer.userId) throw new PolicyDocumentError(401, 'Authentication required');
+  const before = await policiesFor(viewer);
+  const due = before.filter(policyToAcknowledge);
+  if (!due.length) return before;
+  const at = new Date();
+  const where = device?.trim() ? device.trim().slice(0, 200) : undefined;
+  await policyAcknowledgements().bulkWrite(due.map((p) => ({
+    updateOne: {
+      filter: { org: viewer.org!, userId: viewer.userId, key: p.key },
+      update: { $set: { version: p.version, at, ...(where ? { device: where } : {}) } },
+      upsert: true,
+    },
+  })));
+  return policiesFor(viewer);
 }
 
 /**

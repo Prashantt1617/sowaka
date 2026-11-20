@@ -8,6 +8,7 @@ import '../../data/team_joiners_api.dart';
 import '../onboarding_kit.dart';
 import 'team_kit.dart';
 import 'team_meeting_screen.dart';
+import 'team_progress.dart';
 
 /// Teams › Joiners for the head of department and the buddy, and the full
 /// task list (“View all”) for every viewer: the Team side artifact
@@ -105,13 +106,16 @@ Widget teamRowWidget(
   required VoidCallback onOpen,
 }) {
   final t = r.task;
-  final review = r.locked ? null : teamReviewPill(t, page);
-  final opens = !r.locked && (t.opens == 'meeting' || t.opens == 'recommend' || (t.opens == 'approval' && t.reviewState != TeamReviewState.waiting));
-  final end = r.locked
+  final locked = r.locked || t.locked;
+  final review = locked ? null : teamReviewPill(t, page);
+  final waiting = t.reviewState == TeamReviewState.waiting;
+  final opens = !locked &&
+      (t.opens == 'meeting' || t.opens == 'recommend' || t.opens == 'screen' || ((t.opens == 'approval' || t.opens == 'review') && !waiting));
+  final end = locked
       ? TeamRowEnd.locked
-      : t.isApproval
-      ? (t.reviewState == TeamReviewState.waiting ? TeamRowEnd.none : TeamRowEnd.chevron)
-      : t.canTick
+      : t.isApproval || t.opens == 'review'
+      ? (waiting ? TeamRowEnd.none : TeamRowEnd.chevron)
+      : t.canTick || (t.done && t.opens == 'screen')
       ? TeamRowEnd.tick
       : opens
       ? TeamRowEnd.chevron
@@ -130,10 +134,10 @@ Widget teamRowWidget(
     pillFg: r.pillFg ?? review?.$3 ?? OnbColors.text2,
     end: end,
     done: t.done,
-    strike: !t.isApproval,
+    strike: !t.isApproval && t.opens != 'review',
     busy: busy,
     onOpen: opens ? onOpen : null,
-    onTick: end == TeamRowEnd.tick ? onTick : null,
+    onTick: end == TeamRowEnd.tick && t.canTick ? onTick : null,
     divider: divider,
   );
 }
@@ -542,6 +546,18 @@ class TeamProgressScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // MgrProgress: the joiner's own numbers, each opening its list.
+    if (page.progress != null) {
+      return _TeamPage(
+        title: page.name,
+        children: teamProgressPage(
+          page,
+          onOpen: (list) => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => _TeamPage(title: page.name, children: teamProgressList(page, list))),
+          ),
+        ),
+      );
+    }
     final delayed = page.delayed > 0;
     return _TeamPage(
       title: page.name,

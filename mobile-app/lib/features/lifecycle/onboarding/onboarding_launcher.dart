@@ -16,14 +16,12 @@ import '../../manager/data/manager_models.dart' show ManagerTab;
 import 'data/lifecycle_me_store.dart';
 import 'data/onboarding_models.dart';
 import 'presentation/manager/joiner_screen.dart';
-import 'presentation/manager/probation_review_screen.dart';
-import 'presentation/manager/starter_review_screen.dart';
+import 'data/team_joiners_api.dart';
+import 'presentation/manager/manager_review_screen.dart';
 import 'presentation/meeting_screen.dart';
-import 'presentation/notes_screen.dart';
 import 'presentation/onboarding_home_screen.dart';
 import 'presentation/onboarding_kit.dart';
 import 'presentation/onboarding_tiles.dart';
-import 'presentation/people_screen.dart';
 import 'presentation/portal_page_screen.dart';
 import 'presentation/probation_screens.dart';
 import 'presentation/intro_post_screen.dart';
@@ -35,6 +33,7 @@ import 'presentation/week1_reels_screen.dart';
 export 'data/lifecycle_me_store.dart';
 export 'presentation/onboarding_kit.dart' show OnboardingShell, OnbSpotlight, OnbPulse;
 export 'presentation/first_punch.dart' show FirstPunchTour, PunchSpotlightCallout, openYoureIn;
+export 'presentation/day1_done_screen.dart' show openDay1Done;
 export 'presentation/portal_page_screen.dart' show PortalTab;
 
 typedef OnboardingShellMaker = OnboardingShell Function();
@@ -99,8 +98,10 @@ Future<void> openOnboardingTask(
       return push(Week1ReelsScreen(shell: shell));
     case 'intro_post':
       return push(IntroPostScreen(shell: shell));
+    // The new-joiner prototype's Meetings tab is where people are met; the
+    // old People to meet screen is no longer opened (kept: PeopleToMeetScreen).
     case 'people_to_meet':
-      return push(PeopleToMeetScreen(shell: shell, dueAt: task.dueAt));
+      return push(OnbMeetingsScreen(shell: shell));
     case 'day7_survey':
     case 'pulse_survey':
       return push(SurveyScreen(shell: shell));
@@ -109,8 +110,10 @@ Future<void> openOnboardingTask(
       if (open != null) return push(StarterTaskScreen(shell: shell, taskId: open.id, initial: open));
       await showTaskSheet(context, shell, task);
       return;
+    // Not in the new-joiner prototype: the shared 1:1 notes are not opened
+    // from onboarding (NotesScreen kept).
     case 'one_on_one_notes':
-      return push(NotesScreen(shell: shell));
+      return;
     case 'monthly_goals':
     case 'monthly_review':
       return push(ProbationScreen(shell: shell));
@@ -135,7 +138,7 @@ Future<void> openOnboardingTask(
       }
       return;
     case 'app_tour':
-      return push(OnbTourScreen(shell: shell, done: home?.tourDone ?? const []));
+      return push(OnbTourScreen.of(shell, home));
   }
   final meetingId = task.meetingId;
   if (task.kind == 'meeting' && meetingId != null) {
@@ -184,10 +187,11 @@ bool openOnboardingDestination(BuildContext context, Map<String, dynamic> data) 
   Widget? page = switch (destination) {
     'lifecycle_meeting' when read('meetingId') != null => MeetingScreen(shell: shell, meetingId: read('meetingId')!),
     'lifecycle_starter_task' => StarterTaskScreen(shell: shell, taskId: read('starterTaskId')),
-    'lifecycle_notes' => NotesScreen(shell: shell),
+    // Not in the new-joiner prototype (NotesScreen kept): the onboarding home.
+    'lifecycle_notes' => null,
     'lifecycle_week1' => Week1ReelsScreen(shell: shell),
     'lifecycle_intro' => IntroPostScreen(shell: shell),
-    'lifecycle_people' => PeopleToMeetScreen(shell: shell),
+    'lifecycle_people' => OnbMeetingsScreen(shell: shell),
     'lifecycle_survey' => SurveyScreen(shell: shell),
     'lifecycle_probation' => ProbationScreen(shell: shell),
     'lifecycle_checkin' => ProbationScreen(shell: shell, openCheckinFor: month),
@@ -197,13 +201,12 @@ bool openOnboardingDestination(BuildContext context, Map<String, dynamic> data) 
       journeyId: journeyId,
       openSetup: destination == 'lifecycle_joiner_setup',
     ),
-    'lifecycle_starter_task_done' when journeyId != null => StarterReviewScreen(
+    // The manager's side draws no starter-task reply (team-side prototype): their joiner's page.
+    'lifecycle_starter_task_done' when journeyId != null => JoinerScreen(shell: shell, journeyId: journeyId),
+    // "Check-in sent": the month's self check-in to review (MgrReview).
+    'lifecycle_probation_review' when journeyId != null && month != null && HttpTeamJoinersApi.from(shell.api) != null => ManagerReviewScreen(
       shell: shell,
-      journeyId: journeyId,
-      starterTaskId: read('starterTaskId'),
-    ),
-    'lifecycle_probation_review' when journeyId != null && month != null => ProbationReviewScreen(
-      shell: shell,
+      teamApi: HttpTeamJoinersApi.from(shell.api)!,
       journeyId: journeyId,
       month: month,
     ),

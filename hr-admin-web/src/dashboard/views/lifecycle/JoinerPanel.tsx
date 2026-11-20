@@ -70,6 +70,9 @@ type Dialog =
   | null;
 
 /** Key facts, as the design's step lists them: a narrow label column, the value in medium weight. */
+/** The joiner's answer to "How was today?" on "Day 1, done!", as the app labels it. */
+const DAY1_FEELING: Record<string, string> = { great: 'Great', okay: 'Okay', tough: 'Tough' };
+
 function Facts({ rows, strong = true }: { rows: [string, ReactNode][]; strong?: boolean }) {
   const shown = rows.filter(([, v]) => v != null && v !== '');
   return (
@@ -115,12 +118,12 @@ const month = (m?: string) => (m ? new Date(`${m}-01T00:00:00Z`).toLocaleDateStr
 /** What the candidate filled in on the portal's Employee profile (the secrets as their last four). */
 type Contact = { name: string; relation: string; phone: string; altPhone?: string };
 const contactLine = (c?: Contact) => (c ? `${c.name} (${c.relation}) · ${c.phone}${c.altPhone ? ` · ${c.altPhone}` : ''}` : '');
-function ProfileFacts({ profile: p, emergency, emergency2, pf, onPhoto }: {
-  profile: NonNullable<JourneyDetail['journey']['profile']>; emergency?: Contact; emergency2?: Contact; pf?: { firstJob: boolean; uan?: string }; onPhoto: (id: string) => void;
+function ProfileFacts({ profile: p, sections, emergency, emergency2, pf, onPhoto }: {
+  profile: NonNullable<JourneyDetail['journey']['profile']>; sections?: { done: number; total: number }; emergency?: Contact; emergency2?: Contact; pf?: { firstJob: boolean; uan?: string }; onPhoto: (id: string) => void;
 }) {
   return (
     <>
-      <Sub>Employee profile</Sub>
+      <Sub>Employee profile{sections ? ` · ${sections.done} of ${sections.total} sections done` : ''}</Sub>
       <Facts strong={false} rows={[
         ['Full name', p.personal ? `${p.personal.fullName}${p.personal.preferredName ? ` (${p.personal.preferredName})` : ''}` : ''],
         ['Date of birth', p.personal?.dob ? longDay(p.personal.dob) : ''],
@@ -374,7 +377,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
               </span>
               <span style={{ height: 8, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}><i style={{ display: 'block', height: '100%', width: `${profilePct}%`, borderRadius: 99, background: pctColour(profilePct) }} /></span>
             </span>
-            {journey.profile && <ProfileFacts profile={journey.profile} emergency={journey.aboutYou?.emergencyContact} emergency2={journey.aboutYou?.emergencyContact2} pf={journey.aboutYou?.pf} onPhoto={(id) => setDialog({ kind: 'file', id, name: `Photo – ${name}` })} />}
+            {journey.profile && <ProfileFacts profile={journey.profile} sections={journey.profileSections} emergency={journey.aboutYou?.emergencyContact} emergency2={journey.aboutYou?.emergencyContact2} pf={journey.aboutYou?.pf} onPhoto={(id) => setDialog({ kind: 'file', id, name: `Photo – ${name}` })} />}
             {documents.length > 0 && <Sub>Documents</Sub>}
             {documents.length > 0 && !seesDocuments && <div className="pd-note">Only HR opens candidates’ documents and ID proofs. You see where each one is.</div>}
             {documents.map((d) => <DocumentRow key={d.id} doc={d} busy={busy === `doc:${d.id}`} canReview={seesDocuments}
@@ -422,6 +425,12 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
                 <Sub>Manager and buddy</Sub>
                 <PeoplePicker key={`${journey.managerUserId}-${journey.buddyUserId}`} managerUserId={journey.managerUserId} buddyUserId={journey.buddyUserId} exclude={journey.userId}
                   emps={emps} busy={busy === 'people'} onSave={(patch) => run('people', () => updateJourney(journey.id, patch), 'Saved')} />
+                {data.teamRows && data.teamRows.length > 0 && (
+                  <>
+                    <Sub>Team tasks in the app</Sub>
+                    <TeamRows rows={data.teamRows} />
+                  </>
+                )}
                 {status === 'draft' && templates.length > 1 && (
                   <Field label="Onboarding template" hint="Can change until the offer is sent">
                     <Pick value={journey.templateId} onChange={(v) => void run('template', () => updateJourney(journey.id, { templateId: v }), 'Template changed')}>
@@ -436,6 +445,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
       case 4:
         return (
           <>
+            {journey.day1Feeling && <Facts rows={[['How was Day 1', `${DAY1_FEELING[journey.day1Feeling.answer] ?? journey.day1Feeling.answer} · ${shortDay(journey.day1Feeling.at)}`]]} />}
             {weekTasks.length ? taskList(weekTasks) : <Para>The week-1 tasks open on the joining day.</Para>}
             {bankPf && <><Sub>Bank and PF change</Sub><BankPfCard request={bankPf} pay={pay} busy={Boolean(busy)} onDecide={(d) => setDialog({ kind: 'bankpf', decision: d })} /></>}
           </>
@@ -687,6 +697,21 @@ function LetterRow({ letter, name, onOpen, onDocuments }: { letter: LetterView; 
       </span>
       {file && <button type="button" className="pd-btn sm" onClick={() => onOpen(file, `${KIND_LABEL[letter.kind]} – ${name}${letter.signedPdfFileId ? ' (signed)' : ''}.pdf`)}>View</button>}
       {letter.state === 'draft' && <button type="button" className="pd-btn sm ghost" onClick={onDocuments}>Open in Documents</button>}
+    </div>
+  );
+}
+
+/** The team side's rows, read-only: what the manager, the buddy and the head of department ticked in the app. */
+const TEAM_OWNER: Record<string, string> = { manager: 'Manager', buddy: 'Buddy', head_of_department: 'Head of department' };
+function TeamRows({ rows }: { rows: NonNullable<JourneyDetail['teamRows']> }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {rows.map((r) => (
+        <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12.5, color: 'var(--ink-2)' }}>
+          <span>{r.title} <span style={{ color: 'var(--ink-3)' }}>· {TEAM_OWNER[r.owner] ?? r.owner} · {r.step}</span></span>
+          <span style={{ color: r.done ? 'var(--green, #15803D)' : 'var(--ink-3)', whiteSpace: 'nowrap' }}>{r.done ? `Done${r.doneByName ? ` · ${r.doneByName}` : ''}` : 'Not yet'}</span>
+        </div>
+      ))}
     </div>
   );
 }

@@ -89,7 +89,8 @@ class PolicyDocument {
   /// Acknowledged once, and the text has changed since: "Updated".
   bool get isUpdatedSinceAck => acknowledgedVersion != null && acknowledgedVersion != version;
 
-  /// Still to acknowledge: needed, and not at this version.
+  /// Still to acknowledge: needed, and not at this version (never, or an
+  /// older one: "Updated"). The server's `toAcknowledge` counts the same.
   bool get needsAck => ackRequired && !isAcknowledged;
 
   /// "Version 2 · 4 min read".
@@ -113,6 +114,32 @@ class PolicyDocument {
     if (acknowledgedAt != null) 'acknowledgedAt': acknowledgedAt!.toUtc().toIso8601String(),
     'acknowledgedVersion': ?acknowledgedVersion,
   };
+}
+
+/// The server's counts beside the list (`required`, `acknowledged`,
+/// `toAcknowledge`): one number for Actions' tile, the Policies banner and
+/// onboarding's "n of N done". An older server that sends none is counted
+/// from [policies] by the same rule ([PolicyDocument.needsAck]).
+class PolicyAckCounts {
+  const PolicyAckCounts({required this.required, required this.acknowledged, required this.toAcknowledge});
+
+  factory PolicyAckCounts.fromJson(Map<String, dynamic> json, List<PolicyDocument> policies) {
+    final to = json['toAcknowledge'];
+    final req = json['required'];
+    final ack = json['acknowledged'];
+    if (to is num && req is num && ack is num) {
+      return PolicyAckCounts(required: req.toInt(), acknowledged: ack.toInt(), toAcknowledge: to.toInt());
+    }
+    final needed = policies.where((p) => p.ackRequired).toList();
+    final left = policiesToAcknowledge(policies);
+    return PolicyAckCounts(required: needed.length, acknowledged: needed.length - left, toAcknowledge: left);
+  }
+
+  final int required;
+  final int acknowledged;
+
+  /// "3 to acknowledge".
+  final int toAcknowledge;
 }
 
 /// The policies from `{policies: [...]}`, in the order given, without the
@@ -255,3 +282,9 @@ List<PolicyBlock> parsePolicyBody(String body) {
 }
 
 String _string(Object? value) => value is String ? value : '';
+
+/// How many of [policies] are still to acknowledge (needed, and not at the
+/// version in force): one count for the Actions tile ("3 to acknowledge"),
+/// the Policies screen and onboarding's "Acknowledge policies" task.
+int policiesToAcknowledge(Iterable<PolicyDocument> policies) =>
+    policies.where((p) => p.needsAck).length;

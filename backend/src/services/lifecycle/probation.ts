@@ -143,8 +143,9 @@ export async function updateMonthByManager(journeyId: string, manager: { userId:
     const c = (body.checkin ?? {}) as Record<string, unknown>;
     const rating = cleanRating(c.rating);
     const goalRatings = cleanGoalRatings(c.goalRatings, (set.goals ?? row.goals).length);
-    // Rating each goal is a check-in on its own; the words are then optional.
-    set.checkinManager = { text: cleanText(c.text, 2000, 'The check-in', !goalRatings?.some(Boolean) && !rating), ...(rating ? { rating } : {}), ...(goalRatings ? { goalRatings } : {}), at: now };
+    // Rating each goal is a check-in on its own; the words are then optional. So is marking the
+    // check-in meeting done from the team side (`met: true`): its notes, if any, are the words.
+    set.checkinManager = { text: cleanText(c.text, 2000, 'The check-in', !goalRatings?.some(Boolean) && !rating && c.met !== true), ...(rating ? { rating } : {}), ...(goalRatings ? { goalRatings } : {}), at: now };
   }
   if (body.review !== undefined) {
     const reviewTask = monthTask(tasks, 'monthly_review', monthNo);
@@ -152,8 +153,9 @@ export async function updateMonthByManager(journeyId: string, manager: { userId:
     const r = (body.review ?? {}) as Record<string, unknown>;
     const feedback = Array.isArray(r.feedback) ? [...new Set(r.feedback.map(String))] : [];
     if (feedback.some((f) => !(REVIEW_FEEDBACK as readonly string[]).includes(f))) throw new LifecycleError(400, `feedback is any of: ${REVIEW_FEEDBACK.join(', ')}`);
+    // "Mark as reviewed" (team side, MgrReview) may come without comments.
     set.review = {
-      text: cleanText(r.text, 2000, 'The review', !feedback.length),
+      text: cleanText(r.text, 2000, 'The review', !feedback.length && r.reviewed !== true),
       ...(feedback.length ? { feedback } : {}), ...(r.askAck === true ? { askAck: true } : {}), at: now,
     };
     await finishMonthTask(reviewTask, manager);
@@ -165,6 +167,15 @@ export async function updateMonthByManager(journeyId: string, manager: { userId:
       }
     }
     if (j.userId) await tell([j.userId], { scenario: 'lifecycle_monthly_review', destination: 'lifecycle_probation', title: `Month ${monthNo} review`, body: `${manager.name} reviewed your month ${monthNo}.`, data: { journeyId, month: String(monthNo) } });
+  }
+  if (body.sendBack !== undefined) {
+    // "Send back" (team side, MgrReview): the joiner's self check-in goes back to them to send again.
+    if (!row.checkinEmployee) throw new LifecycleError(409, `Nothing to send back: month ${monthNo} has no check-in yet`);
+    if (row.review || set.review) throw new LifecycleError(409, `Month ${monthNo} is reviewed already`);
+    const s = (body.sendBack ?? {}) as Record<string, unknown>;
+    const text = cleanText(s.text, 2000, 'The comment', false);
+    set.sentBack = { ...(text ? { text } : {}), at: now, byName: manager.name };
+    if (j.userId) await tell([j.userId], { scenario: 'lifecycle_monthly_review', destination: 'lifecycle_probation', title: `Month ${monthNo} check-in`, body: `${manager.name} sent your month-${monthNo} check-in back${text ? `: ${text}` : '.'}`, data: { journeyId, month: String(monthNo) } });
   }
   await saveMonth(j, row, set, tasks, manager);
   return probationOf(journeyId);

@@ -43,6 +43,8 @@ export interface TemplateTask {
   documents?: Array<{ key: string; label: string; required: boolean }>;
   /** A team-side task (the app's Teams › Joiners for the manager, buddy or head of department); kept as it is on save. */
   team?: { key: string; kind: string; early?: boolean; pair?: string; agenda?: string[] };
+  /** A meeting's agenda: the points the joiner's and the manager's meeting screens list. Empty: the standard one. */
+  agenda?: string[];
 }
 
 /** The manager's recommendation from the app and the head of department's answer, by HR's decision. */
@@ -226,6 +228,8 @@ export interface JourneyView {
   location?: string;
   plant?: PlantState;
   day1Pass?: Day1Pass;
+  /** The joiner's "How was today?" on "Day 1, done!" in the app. */
+  day1Feeling?: { answer: 'great' | 'okay' | 'tough'; at: string };
   probation?: { months: number; extendedBy?: number; decision?: ConfirmationDecision; recommendation?: ConfirmationRecommendation; hodApproval?: ConfirmationHodApproval };
   lastActivityAt?: string;
   closedAt?: string;
@@ -236,6 +240,8 @@ export interface JourneyView {
   bankPfRequest?: BankPfRequest;
   /** The portal's Employee profile (HR only; the account number, Aadhaar and PAN as their last four). */
   profile?: CandidateProfileView;
+  /** The portal's Employee profile sections done (the portal's and the app's "n of 7 sections done"). */
+  profileSections?: { done: number; total: number };
   /** The portal's About you: the emergency contact and PF (HR only). */
   aboutYou?: {
     emergencyContact?: { name: string; relation: string; phone: string; altPhone?: string };
@@ -364,6 +370,8 @@ export interface ProbationMonthDTO {
   checkinEmployee?: { text: string; rating?: number; at: string };
   checkinManager?: { text: string; rating?: number; at: string };
   review?: { text: string; at: string };
+  /** The manager sent the joiner's self check-in back from the app (team side). */
+  sentBack?: { text?: string; at: string; byName?: string };
 }
 
 export interface JourneyDetail {
@@ -377,6 +385,8 @@ export interface JourneyDetail {
   batch: Array<{ journeyId: string; name: string }>;
   /** What this viewer may see: pay (a payroll tab) and candidates' documents (HR). */
   viewer?: { seesPay: boolean; seesDocuments: boolean };
+  /** The team side's rows (manager, buddy, head of department) as the app ticks them. */
+  teamRows?: Array<{ id: string; title: string; owner: 'manager' | 'buddy' | 'head_of_department'; step: string; done: boolean; doneByName?: string; doneAt?: string }>;
 }
 
 export interface TemplateJourney {

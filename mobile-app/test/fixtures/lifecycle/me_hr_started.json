@@ -1,9 +1,9 @@
 {
   "enabled": true,
   "offboarding": {
-    "journeyId": "fb77483d-47ae-437d-9b94-5c3377a2bd1f",
+    "journeyId": "e923dab7-54d3-4a61-8e21-e69b15f9978b",
     "status": "accepted",
-    "tl": "2026-12-07",
+    "tl": "2026-12-10",
     "pageVisible": true
   }
 }

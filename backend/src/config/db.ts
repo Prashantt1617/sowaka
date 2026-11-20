@@ -62,7 +62,7 @@ import { FaceChallenge, FaceLivenessSession, FaceVerification } from '../models/
 import { Placement, PlacementClient, PlacementCustomer } from '../models/placement.model';
 import type {
   CandidateAccount, CandidateDocument, DateChangeRequest, HandoverItem, Journey, JourneyTask, Letter, LetterTemplate,
-  LifecycleFile, LifecycleTemplate, Meeting, Offer, OneOnOneNote, PeopleToMeet, ProbationMonth, Resignation, StarterTask, SurveyResponse,
+  LifecycleFile, LifecycleTemplate, Meeting, MeetingNotes, Offer, OneOnOneNote, PeopleToMeet, ProbationMonth, Resignation, StarterTask, SurveyResponse,
 } from '../models/lifecycle.model';
 
 let client: MongoClient | null = null;
@@ -400,6 +400,7 @@ export function peopleToMeet(): Collection<PeopleToMeet> { return getDb().collec
 export function starterTasks(): Collection<StarterTask> { return getDb().collection<StarterTask>('lifecycle_starter_tasks'); }
 export function oneOnOneNotes(): Collection<OneOnOneNote> { return getDb().collection<OneOnOneNote>('lifecycle_one_on_one_notes'); }
 export function lifecycleMeetings(): Collection<Meeting> { return getDb().collection<Meeting>('lifecycle_meetings'); }
+export function meetingNotes(): Collection<MeetingNotes> { return getDb().collection<MeetingNotes>('lifecycle_meeting_notes'); }
 export function probationMonths(): Collection<ProbationMonth> { return getDb().collection<ProbationMonth>('lifecycle_probation_months'); }
 export function surveyResponses(): Collection<SurveyResponse> { return getDb().collection<SurveyResponse>('lifecycle_survey_responses'); }
 export function resignations(): Collection<Resignation> { return getDb().collection<Resignation>('lifecycle_resignations'); }
@@ -778,6 +779,7 @@ async function ensureIndexes(database: Db): Promise<void> {
   await getDb().collection('lifecycle_letters').createIndex({ org: 1, journeyId: 1 });
   await getDb().collection('lifecycle_resignations').createIndex({ org: 1, userId: 1, status: 1 });
   await getDb().collection('lifecycle_survey_responses').createIndex({ org: 1, kind: 1, createdAt: -1 });
+  await getDb().collection('lifecycle_meeting_notes').createIndex({ journeyId: 1, userId: 1 });
 
   const relayEventsCollection = database.collection<RelayEvent>('relay_events');
   await relayEventsCollection.createIndex({ id: 1 }, { unique: true });

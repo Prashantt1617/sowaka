@@ -10,13 +10,14 @@ import { randomUUID } from 'node:crypto';
 import {
   attendanceRecords, connectPosts, employeePaymentDetails, journeyTasks, journeys, lifecycleMeetings, oneOnOneNotes, peopleToMeet, starterTasks, surveyResponses, users,
 } from '../../config/db';
+import { DAY1_FEELINGS, type Day1Feeling } from '../../models/lifecycle.model';
 import type {
   AboutYou, IntroPost, Journey, JourneyTask, Meeting, OnboardingStage, SurveyKind, SystemTaskKey, Week1Reels,
 } from '../../models/lifecycle.model';
 import { createConnectPost } from '../connect.service';
 import { saveMyDeclaration } from '../employeePayroll.declaration';
 import { encryptField, fieldKeyConfigured, maskTail } from '../fieldCrypto';
-import { allPoliciesAcknowledged, policiesFor, type PublicPolicy } from '../policy-document.service';
+import { acknowledgeAllPolicies, allPoliciesAcknowledged, policiesFor, policyAckCounts, type PublicPolicy } from '../policy-document.service';
 import { FACE_PROJECTION, faceUrlOf, faceUrlsFor, type FaceFields } from '../face-photos';
 import { logger } from '../../utils/logger';
 import {
@@ -28,6 +29,10 @@ import {
   type TaskView,
 } from './engine';
 import { APP_COPY } from './seed';
+import { agendaResolver, joinerMeetingRows, markMeetingRowMet, saveMeetingRowNotes } from './joinerMeetings';
+import { meetVideos } from './portal';
+import { journeyDocumentsView } from './documents';
+import { PROFILE_SECTION_TITLE, PROFILE_SECTIONS, sectionStates } from './profile';
 import { groupTasks, progressOf } from './board';
 import { cleanGoals, checkinByJoiner, markRevealSeen, probationForJoiner, probationOf, revealFor, updateMonthByManager } from './probation';
 
@@ -144,12 +149,6 @@ function tileSubtitle(j: Journey, tasks: JourneyTask[], derived: ReturnType<type
   return `${derived.dayLabel} · ${what(next.t)} ${verb} ${next.on === today ? 'today' : humanDay(next.on)}`;
 }
 
-const EXPECT: Partial<Record<SystemTaskKey, string[]>> = {
-  meet_manager: ['How your first week will go and who to meet', 'Your probation goals, and what good looks like by month 1', 'Bring any questions, nothing to prepare'],
-  meet_team: ['Who does what in the team', 'How the team works day to day', 'Nothing to prepare'],
-  welcome_induction: ['Your first morning: the office, your batch and HR', 'What happens this week', 'Bring the documents on your Day-1 pass'],
-  vision_culture: ['Where the company is going and why', 'How we work together', 'Questions are welcome'],
-};
 
 type Person = { name: string; designation?: string; photoUrl?: string };
 
@@ -163,7 +162,7 @@ async function peopleOf(ids: string[]): Promise<Map<string, Person>> {
   }));
 }
 
-type MeetingCtx = { joinerId?: string; managerId?: string; buddyId?: string; task?: JourneyTask; managerName?: string; journey?: Pick<Journey, 'day1Pass'> };
+type MeetingCtx = { joinerId?: string; managerId?: string; buddyId?: string; task?: JourneyTask; managerName?: string; journey?: Pick<Journey, 'day1Pass'>; agendaOf?: (t: JourneyTask) => string[] };
 
 function meetingView(m: Meeting, people: Map<string, Person>, ctx: MeetingCtx = {}) {
   const role = (id: string) => (id === ctx.joinerId ? 'joiner' : id === ctx.managerId ? 'manager' : id === ctx.buddyId ? 'buddy' : 'colleague');
@@ -176,7 +175,8 @@ function meetingView(m: Meeting, people: Map<string, Person>, ctx: MeetingCtx = 
     ...((w) => (w ? { with: w } : {}))(meetingWithName(isManagerMeetingRow(m, ctx.task, ctx.journey ?? {}), m.with, ctx.managerName)),
     canConfirm,
     attendees: m.attendeeUserIds.map((id) => ({ userId: id, name: people.get(id)?.name ?? '', ...(people.get(id)?.designation ? { designation: people.get(id)!.designation } : {}), ...(people.get(id)?.photoUrl ? { photoUrl: people.get(id)!.photoUrl } : {}), role: role(id) })),
-    expect: (ctx.task?.systemKey && EXPECT[ctx.task.systemKey]) ?? [],
+    // The template's agenda for the meeting's task (joinerMeetings.ts), the same for both sides.
+    expect: ctx.task && ctx.agendaOf ? ctx.agendaOf(ctx.task) : [],
     mustDo: ctx.task?.mustDo ?? false,
     ...(ctx.task?.systemKey ? { systemKey: ctx.task.systemKey } : {}),
     ...(m.met ? { met: m.met } : {}), ...(m.newTime ? { newTime: m.newTime.toISOString() } : {}),
@@ -241,8 +241,9 @@ async function starterViews(j: Journey, names: Map<string, string>, now: Date): 
   }));
 }
 
-export async function onboardingHome(me: Me, now = new Date()) {
-  const j = await joinerJourney(me.userId);
+/** `journey`: the team side's View progress reads the joiner's own home (teamTasks.ts), so both show the same. */
+export async function onboardingHome(me: Me, now = new Date(), journey?: Journey) {
+  const j = journey ?? await joinerJourney(me.userId);
   const tasks = await tasksOf(j.id);
   const derived = deriveJourney(j, tasks, now);
   const today = todayKey(now, companyTimeZone(j.org));
@@ -253,8 +254,9 @@ export async function onboardingHome(me: Me, now = new Date()) {
   const meetings = (await lifecycleMeetings().find({ journeyId: j.id }, { projection: { _id: 0 } }).sort({ startsAt: 1 }).toArray()).map(strip);
   const meetingOf = new Map(meetings.filter((m) => m.journeyTaskId).map((m) => [m.journeyTaskId!, m]));
   const meetingPeople = await peopleOf(meetings.flatMap((m) => m.attendeeUserIds));
-  const ctxOf = (m: Meeting) => ({ joinerId: j.userId, managerId: j.managerUserId, buddyId: j.buddyUserId, task: tasks.find((t) => t.id === m.journeyTaskId), managerName: j.managerUserId ? names.get(j.managerUserId) : undefined, journey: j });
-  const badges = await countBadges(j);
+  const [badges, meetingRows, policyRow] = await Promise.all([countBadges(j), joinerMeetingRows(j, tasks), policiesRow(me, j)]);
+  const agendaOf = (t: JourneyTask) => meetingRows.extra.get(t.id)?.agenda ?? [];
+  const ctxOf = (m: Meeting) => ({ joinerId: j.userId, managerId: j.managerUserId, buddyId: j.buddyUserId, task: tasks.find((t) => t.id === m.journeyTaskId), managerName: j.managerUserId ? names.get(j.managerUserId) : undefined, journey: j, agendaOf });
   // Every meeting row carries its meeting (time, place, who, link), not only Up next.
   const views: Array<TaskView & { meetingId?: string; meeting?: ReturnType<typeof meetingView>; readOnly?: boolean; progress?: { done: number; total: number } }> = mine.map((t) => {
     const m = meetingOf.get(t.id);
@@ -262,8 +264,12 @@ export async function onboardingHome(me: Me, now = new Date()) {
       ...joinerTaskView(t, j, names, now),
       ...(m ? { meetingId: m.id, meeting: meetingView(m, meetingPeople, ctxOf(m)) } : {}),
       ...(t.systemKey && badges[t.systemKey] ? { progress: badges[t.systemKey] } : {}),
+      // A meeting row's agenda, who it is with, whether the joiner ticks it, their own notes.
+      ...(meetingRows.extra.get(t.id) ?? {}),
     };
   });
+  // The meetings that are not journey tasks (the buddy's, the people the manager picked), and Acknowledge policies.
+  views.push(...meetingRows.rows, ...(policyRow ? [policyRow] : []));
   views.push(...(await starterViews(j, names, now)));
   const shared = await oneOnOneNotes().find({ journeyId: j.id, shared: true }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray();
   if (shared.length) {
@@ -287,6 +293,7 @@ export async function onboardingHome(me: Me, now = new Date()) {
     }), ...(meeting ? { meetingId: meeting.id, meeting: meetingView(meeting, meetingPeople, ctxOf(meeting)) } : {}) }
     : undefined;
   const byDue = (a: TaskView, b: TaskView) => dueKey(a).localeCompare(dueKey(b));
+  const firstPunch = await firstPunchOf(me.userId, j.tj);
   return {
     journeyId: j.id, stage: derived.stage, stageName: stageName(derived.stage), dayLabel: derived.dayLabel, tj: j.tj, plant: derived.plant,
     ...(j.managerUserId && names.get(j.managerUserId) ? { managerName: names.get(j.managerUserId) } : {}),
@@ -300,10 +307,39 @@ export async function onboardingHome(me: Me, now = new Date()) {
     showWeekDone: isWeek1Done(j.tj, today) && !j.week1DoneSeenAt,
     ...(j.week1DoneSeenAt ? { weekDoneSeenAt: j.week1DoneSeenAt } : {}),
     weekDoneStats: weekDoneStats(tasks, await countBadges(j), derived.plant.leaves),
-    firstPunch: await firstPunchOf(me.userId, j.tj),
-    tour: { lessons: [...TOUR_LESSONS], done: (j.tour?.done ?? []).filter((k) => (TOUR_ALL_LESSONS as readonly string[]).includes(k)) },
+    firstPunch,
+    day1: await day1Of(j, tasks, meetings, derived.tab),
+    tour: await tourOf(me.userId, j, firstPunch),
+    // The same counts as GET /policies (policyAckCounts): "Acknowledge policies · n of N done".
+    policies: policyAckCounts(await policiesFor({ userId: me.userId, org: me.org })),
     devices: devicesFor(tasks),
+    ...(await watchAndProfile(j)),
   };
+}
+
+/**
+ * The Watch list and Your profile (new-joiner artifact): the Meet us videos the portal plays,
+ * and the portal's Employee profile sections with their state (profile.ts, the same count the
+ * portal shows as "n of 7 sections done").
+ */
+async function watchAndProfile(j: Journey) {
+  const [watch, docs] = await Promise.all([meetVideos(j), journeyDocumentsView(j.id)]);
+  const done = sectionStates(j, docs);
+  return {
+    companyName: watch.company,
+    watch: watch.videos,
+    profile: {
+      sections: PROFILE_SECTIONS.map((key) => ({ key, title: PROFILE_SECTION_TITLE[key], done: done[key] })),
+      done: PROFILE_SECTIONS.filter((k) => done[k]).length,
+      total: PROFILE_SECTIONS.length,
+    },
+  };
+}
+
+/** The tour's lessons done; the first punch-in itself is "Punch in and out" (the artifact's first punch adds it). */
+function tourDoneOf(j: Pick<Journey, 'tour'>, firstPunch: { at?: string }): string[] {
+  const done = (j.tour?.done ?? []).filter((k) => (TOUR_ALL_LESSONS as readonly string[]).includes(k));
+  return firstPunch.at && !done.includes('punch') ? ['punch', ...done] : done;
 }
 
 /**
@@ -324,6 +360,42 @@ async function firstPunchOf(userId: string, tj: string | undefined): Promise<{ a
 }
 
 /**
+ * "Day 1, done!" (new-joiner artifact, End of Day 1): the people met so far
+ * (everyone in a meeting marked met, and the people-to-meet ticked met, each
+ * person once), the things done (the same count as the tile's and the home's
+ * "steps done") and the joiner's "How was today?" answer when given.
+ */
+async function day1Of(j: Journey, tasks: JourneyTask[], meetings: Meeting[], tab: 'pre_boarding' | 'first_week' | 'probation') {
+  const doneTask = new Set(tasks.filter((t) => t.status === 'done').map((t) => t.id));
+  const people = new Set<string>();
+  for (const m of meetings) {
+    if (m.met !== 'yes' && !(m.journeyTaskId && doneTask.has(m.journeyTaskId))) continue;
+    const others = m.attendeeUserIds.filter((u) => u !== j.userId);
+    if (others.length) others.forEach((u) => people.add(u));
+    else people.add(`meeting:${m.id}`);
+  }
+  const met = await peopleToMeet().find({ journeyId: j.id, metAt: { $exists: true } }, { projection: { _id: 0, personUserId: 1 } }).toArray();
+  for (const p of met) people.add(p.personUserId);
+  return {
+    peopleMet: people.size,
+    thingsDone: ownProgress(tasks, tab).done,
+    ...(j.day1Feeling ? { feeling: j.day1Feeling.answer, feelingAt: j.day1Feeling.at } : {}),
+  };
+}
+
+/** "How was today?" on "Day 1, done!": great, okay or tough; answering again changes it. */
+export async function saveDay1Feeling(me: Me, body: Record<string, unknown>) {
+  const answer = body.answer;
+  if (typeof answer !== 'string' || !(DAY1_FEELINGS as readonly string[]).includes(answer)) throw new LifecycleError(400, `answer is one of ${DAY1_FEELINGS.join(', ')}`);
+  const j = await joinerJourney(me.userId);
+  if (!isJoined(j)) throw new LifecycleError(409, 'Day 1 has not started yet');
+  const now = new Date();
+  const day1Feeling = { answer: answer as Day1Feeling, at: now };
+  await journeys().updateOne({ id: j.id }, { $set: { day1Feeling, updatedAt: now } });
+  return { feeling: day1Feeling.answer, feelingAt: day1Feeling.at };
+}
+
+/**
  * The Sowaka tour (new-joiner artifact, "Sowaka tour"): one lesson a day in
  * this order; the app holds each lesson's steps. Managers also get
  * [TOUR_MANAGER_LESSONS]. All of [TOUR_LESSONS] done completes `app_tour`.
@@ -337,14 +409,37 @@ const TOUR_ALL_LESSONS = [...TOUR_LESSONS, ...TOUR_MANAGER_LESSONS] as const;
  * the laptop (`laptop_setup`), the work email (`mark_joined` creates it) and
  * this app (ready: they are in it). Ready once its task is done.
  */
-function devicesFor(tasks: JourneyTask[]) {
-  const done = (key: SystemTaskKey) => tasks.some((t) => t.systemKey === key && (t.status === 'done' || t.status === 'skipped'));
-  const has = (key: SystemTaskKey) => tasks.some((t) => t.systemKey === key);
+export function devicesFor(tasks: JourneyTask[]) {
+  const finished = (t: JourneyTask) => t.status === 'done' || t.status === 'skipped';
+  const done = (key: SystemTaskKey) => tasks.some((t) => t.systemKey === key && finished(t));
+  const has = (key: SystemTaskKey) => tasks.some((t) => t.systemKey === key && t.status !== 'cancelled');
+  // The template's own access rows (an "Admissions CRM access" HR added for IT or Admin in the
+  // first week): the same task, and the same status, HR and IT tick on the board.
+  const accesses = tasks.filter((t) => !t.systemKey && (t.ownerRole === 'it' || t.ownerRole === 'admin') && t.phase === 'first_week' && t.status !== 'cancelled');
   return [
     ...(has('laptop_setup') ? [{ key: 'laptop', title: 'Laptop', ready: done('laptop_setup') }] : []),
     ...(has('mark_joined') ? [{ key: 'email', title: 'Email', ready: done('mark_joined') }] : []),
     { key: 'app', title: 'Sowaka Connect', ready: true },
+    ...accesses.map((t) => ({ key: 'access', id: t.id, title: t.title, ready: finished(t) })),
   ];
+}
+
+/**
+ * The tour as the app draws it: the lessons, which are done, and whether the
+ * joiner manages anyone (active direct reports), who then also gets "For
+ * managers" ([TOUR_MANAGER_LESSONS]).
+ */
+/** The tour as the app reads it: the lessons, the managers' two when they lead someone, and what is done (the first punch-in counts as Punch in and out). */
+async function tourOf(userId: string, j: Pick<Journey, 'org' | 'tour'>, firstPunch: { at?: string }) {
+  const reports = await users().countDocuments(
+    { org: j.org, managerUserId: userId, hiddenFromDirectory: { $ne: true }, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } },
+    { limit: 1 },
+  );
+  return {
+    lessons: [...TOUR_LESSONS],
+    ...(reports > 0 ? { managerLessons: [...TOUR_MANAGER_LESSONS] } : {}),
+    done: tourDoneOf(j, firstPunch),
+  };
 }
 
 /** A tour lesson finished (`{ done: true }`) or replayed from the start (`{ done: false }` is ignored: done stays done). */
@@ -352,13 +447,15 @@ export async function tourLessonDone(me: Me, lesson: string) {
   if (!(TOUR_ALL_LESSONS as readonly string[]).includes(lesson)) throw new LifecycleError(400, `lesson is one of ${TOUR_ALL_LESSONS.join(', ')}`);
   const j = await joinerJourney(me.userId);
   const done = [...(j.tour?.done ?? [])];
+  const firstPunch = await firstPunchOf(me.userId, j.tj);
   if (!done.includes(lesson)) {
     done.push(lesson);
     const now = new Date();
     await journeys().updateOne({ id: j.id }, { $set: { tour: { done, updatedAt: now }, updatedAt: now } });
-    if (TOUR_LESSONS.every((k) => done.includes(k))) await completeTask(j.id, 'app_tour', { userId: me.userId, name: me.name }).catch(() => undefined);
+    const counted = tourDoneOf({ tour: { done, updatedAt: now } }, firstPunch);
+    if (TOUR_LESSONS.every((k) => counted.includes(k))) await completeTask(j.id, 'app_tour', { userId: me.userId, name: me.name }).catch(() => undefined);
   }
-  return { lessons: [...TOUR_LESSONS], done };
+  return tourOf(me.userId, { org: j.org, tour: { done, updatedAt: new Date() } }, firstPunch);
 }
 
 /** "Week 1, done!" (A8): tasks done in week 1, people met, leaves grown. */
@@ -464,8 +561,9 @@ export async function saveWeek1Step(me: Me, body: Record<string, unknown>, devic
       // Agreeing: `{ agreed: true }` or the versions read (`{ versions, device }`). The versions stored are the
       // company's current ones, so an old app cannot acknowledge a policy text that is no longer in force.
       if (value.agreed !== true && !Array.isArray(value.versions)) throw new LifecycleError(400, 'Tick “I have read and agree” first');
-      const policies = await policiesFor({ userId: me.userId, org: me.org });
       const where = typeof value.device === 'string' && value.device.trim() ? value.device.trim() : device;
+      // Each policy's own acknowledgement too (the record Policies › Acknowledge writes), so Policies, Actions and onboarding agree.
+      const policies = await acknowledgeAllPolicies({ userId: me.userId, org: me.org }, where);
       week1.policies = { versions: policies.map((p) => ({ id: p.key, version: p.updatedAt })), at: now, ...(where ? { device: where.slice(0, 200) } : {}) };
       break;
     }
@@ -742,7 +840,7 @@ export async function meetingFor(me: Me, id: string) {
   const { j, m } = await myMeeting(me, id);
   const task = m.journeyTaskId ? (await tasksOf(j.id)).find((t) => t.id === m.journeyTaskId) : undefined;
   const managerName = j.managerUserId ? (await namesOf([j.managerUserId])).get(j.managerUserId) : undefined;
-  return meetingView(m, await peopleOf(m.attendeeUserIds), { joinerId: j.userId, managerId: j.managerUserId, buddyId: j.buddyUserId, task, managerName, journey: j });
+  return meetingView(m, await peopleOf(m.attendeeUserIds), { joinerId: j.userId, managerId: j.managerUserId, buddyId: j.buddyUserId, task, managerName, journey: j, agendaOf: await agendaResolver(j) });
 }
 
 export async function actOnMeeting(me: Me, id: string, body: Record<string, unknown>) {
@@ -761,6 +859,75 @@ export async function actOnMeeting(me: Me, id: string, body: Record<string, unkn
     await tell(m.attendeeUserIds.filter((u) => u !== me.userId), { scenario: 'lifecycle_meeting_moved', destination: 'lifecycle_joiner', title: `${m.title} moved`, body: `New time: ${humanDay(dateKeyOf(at))}`, data: { journeyId: j.id, meetingId: id } });
   } else throw new LifecycleError(400, 'met is yes or moved');
   return meetingFor(me, id);
+}
+
+// ─── Meetings list: Mark as met and the joiner's own notes (joinerMeetings.ts) ─
+
+export async function meetingRowMet(me: Me, rowId: string, body: Record<string, unknown>) {
+  const j = await joinerJourney(me.userId);
+  await markMeetingRowMet(me, j, rowId, body);
+  return onboardingHome(me);
+}
+
+export async function meetingRowNotes(me: Me, rowId: string, body: Record<string, unknown>) {
+  const j = await joinerJourney(me.userId);
+  return saveMeetingRowNotes(me, j, rowId, body);
+}
+
+/**
+ * Tasks › "Acknowledge policies" (the prototype's row that opens Policies): the policies that need
+ * acknowledging and how many are done, from the same records Policies reads. Absent when the
+ * company has none that need it.
+ */
+async function policiesRow(me: Me, j: Journey): Promise<(TaskView & { progress: { done: number; total: number }; opens: 'policies' }) | null> {
+  let list: PublicPolicy[];
+  try {
+    list = await policiesFor({ userId: me.userId, org: j.org });
+  } catch (error) {
+    logger.warn('onboarding home: policies not read', { error: String(error) });
+    return null;
+  }
+  // One rule for every count: policyAckCounts (GET /policies, the Actions tile, the home's counts).
+  const counts = policyAckCounts(list);
+  if (!counts.required) return null;
+  const done = counts.acknowledged;
+  const all = counts.toAcknowledge === 0;
+  const at = j.week1?.policies?.at;
+  return {
+    id: 'policies', phase: 'first_week', title: 'Acknowledge policies', ownerRole: 'employee', kind: 'ack', surface: 'app', mustDo: false,
+    status: all ? 'done' : 'todo', opensAt: null, dueAt: j.tj ? dayDate(j.tj).toISOString() : null, late: false,
+    ...(all && at ? { doneAt: new Date(at).toISOString() } : {}),
+    progress: { done, total: counts.required }, opens: 'policies',
+  };
+}
+
+/**
+ * Meetings › Your team (the prototype's TeamList): the joiner's department as the company records
+ * it (the journey's, else their profile's), everyone in it but them, manager and buddy first.
+ */
+export async function teamForJoiner(me: Me) {
+  const j = await joinerJourney(me.userId);
+  const joiner = await users().findOne({ userId: me.userId }, { projection: { _id: 0, department: 1 } });
+  const department = (j.department ?? joiner?.department ?? '').trim();
+  if (!department) return { department: '', people: [] };
+  const rows = await users().find<FaceFields & { name: string; designation?: string }>(
+    {
+      org: j.org, userId: { $ne: me.userId }, department: new RegExp(`^\\s*${department.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i'),
+      hiddenFromDirectory: { $ne: true }, lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
+    } as never,
+    { projection: { _id: 0, name: 1, designation: 1, ...FACE_PROJECTION } },
+  ).toArray();
+  const tagOf = (id: string) => (id === j.managerUserId ? 'manager' : id === j.buddyUserId ? 'buddy' : undefined);
+  const rank = (id: string) => (id === j.managerUserId ? 0 : id === j.buddyUserId ? 1 : 2);
+  rows.sort((a, b) => rank(a.userId) - rank(b.userId) || a.name.localeCompare(b.name));
+  return {
+    department,
+    people: rows.map((r) => {
+      const photoUrl = faceUrlOf(r);
+      const tag = tagOf(r.userId);
+      return { userId: r.userId, name: r.name, ...(r.designation ? { designation: r.designation } : {}), ...(photoUrl ? { photoUrl } : {}), ...(tag ? { tag } : {}) };
+    }),
+  };
 }
 
 // ─── Surveys (A7) ───────────────────────────────────────────────────────────
@@ -1002,7 +1169,8 @@ export async function joinerForManager(me: Me, journeyId: string, now = new Date
     j.buddyUserId ? faceUrlsFor([j.buddyUserId]).then((faces) => faces.get(j.buddyUserId!) ?? null) : Promise.resolve(null),
   ]);
   const visible = tasks.filter((t) => visibleTo('manager', t));
-  const meetingCtx = (m: Meeting) => ({ joinerId: j.userId, managerId: j.managerUserId, buddyId: j.buddyUserId, task: tasks.find((t) => t.id === m.journeyTaskId), managerName: j.managerUserId ? names.get(j.managerUserId) : undefined, journey: j });
+  const agendaOf = await agendaResolver(j);
+  const meetingCtx = (m: Meeting) => ({ joinerId: j.userId, managerId: j.managerUserId, buddyId: j.buddyUserId, task: tasks.find((t) => t.id === m.journeyTaskId), managerName: j.managerUserId ? names.get(j.managerUserId) : undefined, journey: j, agendaOf });
   const meetingOf = new Map(meetings.filter((m) => m.journeyTaskId).map((m) => [m.journeyTaskId!, m]));
   const first = (person?.name ?? j.candidate?.name ?? '').split(/\s+/)[0] || 'them';
   // Managers never see pay: the decision reaches them without the salary.
