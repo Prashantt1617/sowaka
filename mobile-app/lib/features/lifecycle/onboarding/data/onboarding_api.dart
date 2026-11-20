@@ -534,6 +534,11 @@ class HttpOnboardingApi implements OnboardingApi {
 
   // ── Transport ─────────────────────────────────────────────────────────────
 
+  /// A lifecycle call outside [OnboardingApi] (joiner_meetings_api.dart), with the same token,
+  /// device copy of GETs and errors.
+  Future<Map<String, dynamic>> request(String method, String path, {Map<String, dynamic>? body}) =>
+      _json(method, path, body: body);
+
   Future<Map<String, dynamic>> _json(String method, String path, {Map<String, dynamic>? body}) async {
     if (Zone.current[_replayKey] == true) {
       if (method != 'GET') throw const _NotKept();
