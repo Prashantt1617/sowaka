@@ -22,7 +22,8 @@ import { MAX_PER_SET, ghostBtn, inputStyle, noteTag, panelCard, panelTitle, prim
 
 /**
  * The KPI block on an employee's profile: what they are scored on this cycle,
- * and the way to change it. Loads its own data so the profile does not have to
+ * and the way to change it. A change goes live in the cycle in progress (a
+ * review already sent keeps the parameters it was scored on). Loads its own data so the profile does not have to
  * carry KPI state for every employee it might show.
  */
 export function EmployeeKpiPanel({
@@ -38,9 +39,9 @@ export function EmployeeKpiPanel({
   designation: string;
   /** Shows what is set without the button to change it, e.g. on someone's own profile. */
   readOnly?: string;
-  /** The live cycle — what their manager is scoring against, read-only. */
+  /** The cycle in progress: what their manager scores against, and where edits go live. */
   period: string;
-  /** The cycle being edited. The one in progress is frozen. */
+  /** The next cycle, shown only when someone set it ahead (assignments do not carry over). */
   nextPeriod: string;
 }) {
   const [params, setParams] = useState<KpiParameterDTO[]>([]);
@@ -51,7 +52,8 @@ export function EmployeeKpiPanel({
   const [error, setError] = useState('');
   // Once anything has loaded, a refresh keeps it on screen rather than a skeleton.
   const [loaded, setLoaded] = useState(false);
-  const [open, setOpen] = useState(false);
+  /** Which cycle the editor is open for. */
+  const [open, setOpen] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -84,12 +86,13 @@ export function EmployeeKpiPanel({
           userId={userId}
           userName={userName}
           userDesignation={designation}
-          period={nextPeriod}
+          period={open}
+          live={open === period}
           params={params}
           templates={templates}
-          existing={upcoming}
-          onClose={() => setOpen(false)}
-          onSaved={() => { setOpen(false); void reload(); }}
+          existing={open === period ? assignment : upcoming}
+          onClose={() => setOpen(null)}
+          onSaved={() => { setOpen(null); void reload(); }}
         />
       )}
 
@@ -101,39 +104,41 @@ export function EmployeeKpiPanel({
         <SkeletonLines lines={4} />
       ) : (
         <>
-          {/* What their manager is scoring against right now. Frozen. */}
+          {/* What their manager scores against right now; an edit goes live here. */}
           <CycleBlock
-            label={`In effect · ${periodLabel(period)}`}
+            label={`This cycle · ${periodLabel(period)}`}
             assignment={assignment}
             templates={templates}
             empty="Nothing assigned, so their manager cannot submit a review this cycle."
           />
-
-          {/* The editable one. Every change lands here, never in the live cycle. */}
-          <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
-            <CycleBlock
-              label={`From ${periodLabel(nextPeriod)}`}
-              assignment={upcoming}
-              templates={templates}
-              empty={`Nothing set yet. Without it they carry no KPIs into ${periodLabel(nextPeriod)}.`}
-            />
-            {readOnly ? (
-              <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginTop: 12 }}>{readOnly}</div>
-            ) : (
+          {readOnly ? (
+            <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginTop: 12 }}>{readOnly}</div>
+          ) : (
             <button
-              onClick={() => setOpen(true)}
+              onClick={() => setOpen(period)}
               disabled={params.length === 0}
               title={params.length === 0 ? 'Create KPI parameters first' : undefined}
               style={{
-                ...(upcoming ? smallBtn : primaryBtn),
+                ...(assignment ? smallBtn : primaryBtn),
                 marginTop: 12, width: '100%', justifyContent: 'center', padding: '9px 12px',
                 opacity: params.length === 0 ? 0.5 : 1,
               }}
             >
-              {upcoming ? 'Edit next cycle KPIs' : 'Set KPIs for next cycle'}
+              {assignment ? 'Edit KPIs' : 'Assign KPIs'}
             </button>
-            )}
-          </div>
+          )}
+
+          {/* Set ahead for next cycle earlier: still shown and editable, so it is not lost. */}
+          {upcoming && (
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
+              <CycleBlock label={`Next cycle · ${periodLabel(nextPeriod)}`} assignment={upcoming} templates={templates} empty="" />
+              {!readOnly && (
+                <button onClick={() => setOpen(nextPeriod)} style={{ ...ghostBtn, marginTop: 8, padding: '6px 0' }}>
+                  Edit next cycle’s KPIs
+                </button>
+              )}
+            </div>
+          )}
         </>
       )}
     </>
@@ -190,12 +195,14 @@ function CycleBlock({
 }
 
 export function KpiAssignModal({
-  userId, userName, userDesignation, period, params, templates, existing, onClose, onSaved,
+  userId, userName, userDesignation, period, live = true, params, templates, existing, onClose, onSaved,
 }: {
   userId: string;
   userName: string;
   userDesignation: string;
   period: string;
+  /** `period` is the cycle in progress, so saving changes what their manager scores now. */
+  live?: boolean;
   params: KpiParameterDTO[];
   templates: KpiTemplateDTO[];
   existing: KpiAssignmentDTO | null;
@@ -262,7 +269,7 @@ export function KpiAssignModal({
   return (
     <Modal
       title={existing ? 'Edit KPIs' : 'Assign KPIs'}
-      subtitle={`${userName}${userDesignation ? ` · ${userDesignation}` : ''} · from ${periodLabel(period)}`}
+      subtitle={`${userName}${userDesignation ? ` · ${userDesignation}` : ''} · ${live ? 'this cycle, ' : ''}${periodLabel(period)}`}
       onClose={onClose}
       width={900}
       footer={
@@ -312,7 +319,9 @@ export function KpiAssignModal({
             </div>
           ) : (
             <div style={noteTag}>
-              ⓘ&nbsp; The cycle in progress is frozen, so this applies from {periodLabel(period)}.
+              ⓘ&nbsp; {live
+                ? <>Saving puts this live in {periodLabel(period)}, the cycle in progress, so their manager scores against it from now. A review already sent keeps what it was scored on.</>
+                : <>This is for {periodLabel(period)}.</>}{' '}
               One person holds one set per cycle — saving replaces whatever they have for it.
             </div>
           )}
