@@ -2,37 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../../../../shared/app_toast.dart';
 import '../../data/onboarding_api.dart';
-import '../../data/onboarding_models.dart';
 import '../links.dart';
 import '../onboarding_kit.dart';
 import '../../onboarding_launcher.dart';
 import 'team_kit.dart';
 
-/// The agenda a meeting opens with when the journey sends none (the
-/// artifact's agendas, by the kind of meeting).
-List<String> defaultMeetingAgenda(TaskView task, String first) {
-  final key = task.systemKey ?? task.meeting?.systemKey;
-  switch (key) {
-    case 'meet_manager':
-      return ['How the first week will look', 'What a good first month looks like', 'How you’ll work together', 'Who to meet first'];
-    case 'monthly_checkin':
-      return ['Progress on this month’s goals', 'What’s going well', 'What’s hard', 'Goals for next month'];
-    case 'confirmation_discussion':
-      return ['Six months, looking back', 'Feedback both ways', 'Confirm or extend, and what’s next'];
-    case 'buddy_checkin':
-      return ['How $first is settling in', 'Anything $first is stuck on'];
-    case 'week1_wrap':
-      return ['Highlights of the week', 'Questions so far', 'Plan for next week'];
-  }
-  return ['How $first is settling in', 'Anything $first needs from you'];
-}
-
 /// A meeting with a joiner (MgrMeeting): who it is with, the agenda, a notes
-/// box with voice typing under each point, and Mark as done. For the manager
-/// the notes are kept as a private 1:1 note; the joiner keeps theirs.
-/// [TeamMeetingScreen.forManager] reads a journey task; the buddy and head of
-/// department pages build it from their own task ([onFinish] says what
-/// finishing does there).
+/// box with voice typing under each point, and Mark as done. The agenda is
+/// the template's (the same points the joiner's meeting lists); for the
+/// manager the notes are kept as a private 1:1 note; the joiner keeps theirs.
+/// [onFinish] says what finishing does for each viewer.
 class TeamMeetingScreen extends StatefulWidget {
   const TeamMeetingScreen({
     super.key,
@@ -49,27 +28,6 @@ class TeamMeetingScreen extends StatefulWidget {
     this.barTitle,
     required this.onFinish,
   });
-
-  /// The manager's meeting on a journey task.
-  factory TeamMeetingScreen.forManager({Key? key, required OnboardingShell shell, required String journeyId, required TaskView task, required JoinerSummary joiner}) {
-    final sent = task.meeting?.expect ?? const <String>[];
-    return TeamMeetingScreen(
-      key: key,
-      shell: shell,
-      title: task.title,
-      joinerName: joiner.name,
-      joinerPhotoUrl: joiner.photoUrl,
-      agenda: sent.isNotEmpty ? sent : defaultMeetingAgenda(task, joiner.firstName),
-      link: task.meeting?.link,
-      startsAt: task.startsAt,
-      done: task.isDone,
-      canTick: managerMayTick(task),
-      onFinish: (notes, markDone) async {
-        if (notes.isNotEmpty) await shell.api.addNote(journeyId, '${task.title}\n$notes', shared: false);
-        if (markDone) await shell.api.managerTaskDone(journeyId, task.id);
-      },
-    );
-  }
 
   /// The app's header and tabs (the signed-in shell's when null).
   final OnboardingShell? shell;
@@ -101,7 +59,8 @@ class TeamMeetingScreen extends StatefulWidget {
 
 class _TeamMeetingScreenState extends State<TeamMeetingScreen> {
   final _voice = TeamVoice();
-  late final List<String> _agenda = widget.agenda;
+  /// No agenda on the template: one notes box, without the Agenda heading.
+  late final List<String> _agenda = widget.agenda.isEmpty ? const ['Notes'] : widget.agenda;
   late final List<TextEditingController> _notes = [for (final _ in _agenda) TextEditingController()];
   late bool _done = widget.done;
   bool _busy = false;
@@ -180,8 +139,10 @@ class _TeamMeetingScreenState extends State<TeamMeetingScreen> {
             OnbSecondaryButton(label: 'Join the call', onTap: () => openExternalLink(context, link)),
           ],
           const SizedBox(height: 14),
-          TeamSectionTitle('Agenda', meta: '${_agenda.length} things to talk about'),
-          const SizedBox(height: 10),
+          if (widget.agenda.isNotEmpty) ...[
+            TeamSectionTitle('Agenda', meta: '${_agenda.length} things to talk about'),
+            const SizedBox(height: 10),
+          ],
           for (final (i, point) in _agenda.indexed)
             Padding(
               padding: const EdgeInsets.only(bottom: 14),

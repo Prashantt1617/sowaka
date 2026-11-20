@@ -181,7 +181,7 @@ class _JoinerScreenState extends State<JoinerScreen> {
             title: t.title,
             joinerName: page.name,
             joinerPhotoUrl: page.photoUrl,
-            agenda: t.agenda.isNotEmpty ? t.agenda : ['How ${page.first} is settling in', 'Anything ${page.first} needs from you'],
+            agenda: t.agenda,
             done: t.done,
             canTick: t.canTick,
             barTitle: bar,

@@ -71,7 +71,7 @@ async function main() {
   // HR edits wording, timing and the switch.
   const edited = def.tasks.map((t) => (t.team?.key === 'buddy_show_around' ? { ...t, title: 'Walk {n} round the building' } : t.team?.key === 'buddy_policies' ? { ...t, enabled: false } : t));
   const saved = await templates.updateTemplate(ORG, def.id, { tasks: edited }, 'Hema HR');
-  ok('Saving keeps each row’s team spec', saved.tasks.filter((t) => t.team).length === rows.length && saved.tasks.find((t) => t.team?.key === 'buddy_meet')?.team?.agenda?.length === 3);
+  ok('Saving keeps each row’s team spec', saved.tasks.filter((t) => t.team).length === rows.length && saved.tasks.find((t) => t.team?.key === 'buddy_meet')?.team?.agenda?.length === 4);
   const buddyPage = await team.teamJoiner(BUDDY, J.id);
   ok('HR’s wording shows to the buddy', buddyPage.tasks.some((t) => t.title === 'Walk Priya round the building'), buddyPage.tasks.map((t) => t.title));
   ok('A row HR switched off is gone', !buddyPage.tasks.some((t) => t.id === 'buddy_policies'));

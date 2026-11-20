@@ -31,6 +31,7 @@ import {
 import { MANAGER_OWNED, devicesFor, managerMayTick, managerTaskDone, onboardingHome } from './appOnboarding';
 import { updateMonthByManager } from './probation';
 import { APP_COPY, teamSeed } from './seed';
+import { agendaResolver } from './joinerMeetings';
 
 type Me = { userId: string; name: string; org: string };
 
@@ -246,13 +247,6 @@ const PAIR_OF_KEY: Partial<Record<SystemTaskKey, string>> = {
   monthly_checkin: 'Your check-in', monthly_review: 'Your self check-in', confirmation_discussion: 'Confirmation discussion',
 };
 
-/** The agenda a journey meeting opens with (MgrMeeting), by its template step. */
-const JOURNEY_AGENDA: Partial<Record<SystemTaskKey, string[]>> = {
-  meet_manager: ['How the first week will look', 'What a good first month looks like', 'How you’ll work together', 'Who to meet first'],
-  monthly_checkin: ['Progress on this month’s goals', 'What’s going well', 'What’s hard', 'Goals for next month'],
-  confirmation_discussion: ['Six months, looking back', 'Feedback both ways', 'Confirm or extend, and what’s next'],
-};
-
 /** The template steps done on a screen of their own in the app (never a bare tick). */
 const SCREEN_KEYS = new Set<SystemTaskKey>(['starter_task', 'one_on_one_notes', 'probation_goals', 'monthly_goals', 'manager_setup', 'assign_buddy', 'manager_30day_note']);
 
@@ -264,7 +258,7 @@ export function monthReviewState(m?: ProbationMonth): TeamReviewState {
   return sent ? 'ready' : 'waiting';
 }
 
-function journeyTaskView(t: JourneyTask, j: Journey, first: string, months: number, names: Map<string, string>, month?: ProbationMonth): TeamTaskView {
+function journeyTaskView(t: JourneyTask, j: Journey, first: string, months: number, names: Map<string, string>, month?: ProbationMonth, agenda: string[] = []): TeamTaskView {
   const copy = t.systemKey ? APP_COPY[t.systemKey] : undefined;
   const on = t.dueAt ?? t.opensAt;
   const step = j.tj && on ? stepOfDay(j.tj, keyOfDay(on), months) : t.phase === 'pre_boarding' ? 0 : t.phase === 'first_week' ? 2 : 3;
@@ -282,14 +276,15 @@ function journeyTaskView(t: JourneyTask, j: Journey, first: string, months: numb
   const locked = t.status === 'locked';
   const open = !done && !locked && t.status !== 'cancelled';
   const opens: TeamTaskView['opens'] = reviewState ? 'review' : kind === 'meet' ? 'meeting' : key && SCREEN_KEYS.has(key) ? 'screen' : null;
-  const agenda = kind === 'meet' && key ? JOURNEY_AGENDA[key] : undefined;
   return {
     id: t.id, title, kind, step, early: false, done,
     ...(key && PAIR_OF_KEY[key] ? { pair: PAIR_OF_KEY[key] } : {}),
     ...(copy?.manager ? { note: copy.manager } : {}),
     canTick: open && (managerMayTick(t) || key === 'monthly_checkin'), opens, source: 'journey',
     ...(key ? { systemKey: key } : {}), ...(t.month ? { month: t.month } : {}), ...(locked && !reviewState ? { locked: true } : {}),
-    ...(reviewState ? { reviewState } : {}), ...(agenda ? { agenda: agenda.map((a) => fill(a, first)) } : {}),
+    ...(reviewState ? { reviewState } : {}),
+    // The template's agenda: the same points the joiner's meeting screen lists (joinerMeetings.ts).
+    ...(kind === 'meet' && agenda.length ? { agenda } : {}),
     ...(done && t.doneByUserId ? { doneByName: names.get(t.doneByUserId) } : {}),
   };
 }
@@ -328,12 +323,13 @@ async function tasksFor(j: Journey, link: Link, first: string, journeyTasks?: Jo
   const team = (await teamDefsFor(j)).filter((d) => d.owner === owner).map((d) => teamDefView(d, j, first, months)).filter((t): t is TeamTaskView => !!t);
   if (link.rel !== 'report') return team;
   const rows = (journeyTasks ?? await tasksOf(j.id)).filter((t) => MANAGER_OWNED.includes(t.ownerRole) && visibleTo('manager', t));
-  const [names, monthRows] = await Promise.all([
+  const [names, monthRows, agendaOf] = await Promise.all([
     namesOf(rows.map((t) => t.doneByUserId)),
     rows.some((t) => t.month) ? probationMonths().find({ journeyId: j.id }, { projection: { _id: 0 } }).toArray() : Promise.resolve([] as ProbationMonth[]),
+    agendaResolver(j),
   ]);
   const monthOf = (t: JourneyTask) => (t.month ? monthRows.find((m) => m.monthNo === t.month) : undefined);
-  const fromJourney = rows.map((t) => journeyTaskView(t, j, first, months, names, monthOf(t)));
+  const fromJourney = rows.map((t) => journeyTaskView(t, j, first, months, names, monthOf(t), agendaOf(t)));
   // One list in step order; within a step the template's order, then the team's.
   return [...fromJourney, ...team].map((t, i) => ({ t, i })).sort((a, b) => a.t.step - b.t.step || a.i - b.i).map((x) => x.t);
 }
@@ -363,12 +359,14 @@ export function isOpenForMe(t: TeamTaskView): boolean {
 /**
  * View progress (MgrProgress): the joiner's own Meetings, Tasks, Sowaka tour and Devices, read from
  * the joiner's own onboarding home, so the team side counts exactly what the joiner's tiles count.
- * Without the meetings' details or the tasks' notes: those stay the joiner's.
+ * Only the fields a row is counted and listed by: the joiner's own notes and the meetings' details stay theirs.
  */
 async function progressOf(j: Journey, name: string, all: JourneyTask[], now: Date) {
   if (!j.userId) return { today: [], later: [], done: [], tour: { done: [] as string[] }, devices: devicesFor(all) };
   const home = await onboardingHome({ userId: j.userId, name, org: j.org }, now, j);
-  const bare = (list: unknown[]) => (list as Array<Record<string, unknown>>).map(({ meeting: _m, meetingId: _id, note: _n, ...rest }) => rest);
+  // Only what a row needs to be counted and listed: never the joiner's own notes or a meeting's details.
+  const KEEP = ['id', 'systemKey', 'phase', 'title', 'ownerRole', 'ownerName', 'kind', 'surface', 'mustDo', 'status', 'opensAt', 'dueAt', 'dueLabel', 'doneAt', 'late', 'month', 'progress', 'readOnly'];
+  const bare = (list: unknown[]) => (list as Array<Record<string, unknown>>).map((row) => Object.fromEntries(KEEP.filter((k) => row[k] !== undefined).map((k) => [k, row[k]])));
   return { today: bare(home.today), later: bare(home.later), done: bare(home.done), tour: { done: home.tour.done }, devices: home.devices };
 }
 
@@ -504,7 +502,8 @@ async function approvalView(j: Journey) {
 
 // ─── Writes ─────────────────────────────────────────────────────────────────
 
-async function setTick(j: Journey, id: string, tick: TeamTaskTick | null, extra: { set?: Record<string, unknown>; unset?: string[] } = {}): Promise<void> {
+/** A team row's tick on the journey (also the joiner's Mark as met on a paired meeting, joinerMeetings.ts). */
+export async function setTick(j: Pick<Journey, 'id'>, id: string, tick: TeamTaskTick | null, extra: { set?: Record<string, unknown>; unset?: string[] } = {}): Promise<void> {
   const $set: Record<string, unknown> = { updatedAt: new Date(), ...(tick ? { [`teamTasks.${id}`]: tick } : {}), ...(extra.set ?? {}) };
   const $unset: Record<string, ''> = Object.fromEntries([...(tick ? [] : [`teamTasks.${id}`]), ...(extra.unset ?? [])].map((k) => [k, '' as const]));
   await journeys().updateOne({ id: j.id }, { $set, ...(Object.keys($unset).length ? { $unset } : {}) } as never);

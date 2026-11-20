@@ -119,7 +119,7 @@ class StageLens {
     final unique = [for (final t in all) if (seen.add(t.id)) t];
     final staged = [for (final t in unique) (task: t, stage: stepOfTask(t, home.tj, current: current, months: months))];
     final meetings = staged.where((s) => isLensMeeting(s.task)).toList();
-    final tasks = staged.where((s) => !isLensMeeting(s.task)).toList();
+    final tasks = staged.where((s) => isLensTask(s.task)).toList();
     final mode = at == current ? LensMode.now : (at > current ? LensMode.ahead : LensMode.back);
     List<LensItem> build(List<({TaskView task, int stage})> list) => _rows(list, steps, current, at, mode);
     List<TaskView> ofStage(List<({TaskView task, int stage})> list) => [for (final s in list) if (s.stage == at) s.task];
@@ -264,9 +264,21 @@ class StageLens {
 }
 
 /// A meeting through the lens: a meeting, a check-in, the confirmation
-/// discussion. Everything else is a task.
+/// discussion (People to meet shows as its people, one row each).
 bool isLensMeeting(TaskView task) =>
-    task.kind == 'meeting' || task.kind == 'checkin' || task.systemKey == 'confirmation_discussion' || task.meeting != null;
+    task.systemKey != 'people_to_meet' &&
+    (task.kind == 'meeting' || task.kind == 'checkin' || task.systemKey == 'confirmation_discussion' || task.meeting != null);
+
+/// A task through the lens: the joiner's own (the prototype's "Tasks for
+/// you"), not a meeting, not the tour (its own tile), not what someone else
+/// does, not the 1:1 notes row.
+bool isLensTask(TaskView task) =>
+    !isLensMeeting(task) &&
+    task.systemKey != 'people_to_meet' &&
+    task.systemKey != 'app_tour' &&
+    task.systemKey != 'one_on_one_notes' &&
+    !task.readOnly &&
+    (task.ownerRole == 'employee' || task.ownerRole == 'manager_employee');
 
 /// "IN MONTH 1", "ONCE CONFIRMED".
 String inStageLabel(String step) => step == 'Confirmed' ? 'ONCE CONFIRMED' : 'IN ${step.toUpperCase()}';
