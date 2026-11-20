@@ -32,8 +32,8 @@ function Face({ name, photo, className, style }: { name: string; photo?: string;
   return <span className={className} style={style} aria-hidden="true">{photo && !bad ? <img src={photo} alt="" onError={() => setBad(true)} /> : initials(name)}</span>;
 }
 
-export function G2Story({ order, at, onMove, onClose, company, candidate, hr, tj, j, note, managerName, video, role, policies, onOpenPolicy }: {
-  order: StoryKey[]; at: StoryKey; onMove: (k: StoryKey) => void; onClose: () => void; company: { name: string; logoUrl?: string }; candidate: string; hr: string; tj: string;
+export function G2Story({ order, at, onMove, onClose, company, candidate, tj, j, note, managerName, video, role, policies, onOpenPolicy }: {
+  order: StoryKey[]; at: StoryKey; onMove: (k: StoryKey) => void; onClose: () => void; company: { name: string; logoUrl?: string }; candidate: string; /** No longer used (the reply bar is gone); still passed by the About page. */ hr?: string; tj: string;
   j?: JoiningDetails; note?: MeetItem; managerName?: string; video?: MeetItem; role?: MeetItem; policies: PortalPolicy[];
   /** A quick read opens that policy (G2Policy). */
   onOpenPolicy?: (p: PortalPolicy) => void;
