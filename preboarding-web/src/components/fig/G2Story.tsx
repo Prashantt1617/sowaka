@@ -1,13 +1,13 @@
 // The full-screen story (Figma "App · Story ·" Culture, Your manager, Your team, Day 1, Policies;
-// nodes 4967:93675 … 4967:93854): the segments, HR's header with Close, one story, and the
-// reply field with Like. Moved out of A1About so the About page and the story stay apart.
-// Replies go to HR by email (as before); Like is kept on this device only.
-import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+// nodes 4967:93675 … 4967:93854): the segments, HR's header with Close and one story.
+// No reply field or Like (removed 20 Nov 2026, not needed). Moved out of A1About so the
+// About page and the story stay apart.
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import type { JoiningDetails, MeetItem } from '../../api/types';
 import { A1Logo } from '../A1';
 import { firstName, fmtTime, fmtWeekday, initials } from '../../lib/format';
+import type { PortalPolicy } from './G2Policy';
 import { G2Close } from './icons/g2-close';
-import { G2Heart } from './icons/g2-heart';
 import { G2Play } from './icons/g2-play';
 import { G2Directions } from './icons/g2-directions';
 import { G2ChevronRight } from './icons/g2-chevron-right';
@@ -32,16 +32,16 @@ function Face({ name, photo, className, style }: { name: string; photo?: string;
   return <span className={className} style={style} aria-hidden="true">{photo && !bad ? <img src={photo} alt="" onError={() => setBad(true)} /> : initials(name)}</span>;
 }
 
-export function G2Story({ order, at, onMove, onClose, company, candidate, hr, tj, j, note, managerName, video, role, policies }: {
+export function G2Story({ order, at, onMove, onClose, company, candidate, hr, tj, j, note, managerName, video, role, policies, onOpenPolicy }: {
   order: StoryKey[]; at: StoryKey; onMove: (k: StoryKey) => void; onClose: () => void; company: { name: string; logoUrl?: string }; candidate: string; hr: string; tj: string;
-  j?: JoiningDetails; note?: MeetItem; managerName?: string; video?: MeetItem; role?: MeetItem; policies: Array<{ title: string; summary: string }>;
+  j?: JoiningDetails; note?: MeetItem; managerName?: string; video?: MeetItem; role?: MeetItem; policies: PortalPolicy[];
+  /** A quick read opens that policy (G2Policy). */
+  onOpenPolicy?: (p: PortalPolicy) => void;
 }) {
   const i = Math.max(0, order.indexOf(at));
   const look = LOOK[at];
-  const [reply, setReply] = useState('');
-  const [liked, setLiked] = useState<Partial<Record<StoryKey, boolean>>>({});
   const [playing, setPlaying] = useState(false);
-  useEffect(() => { setReply(''); setPlaying(false); }, [at]);
+  useEffect(() => { setPlaying(false); }, [at]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement | null)?.tagName === 'INPUT') return;
@@ -56,13 +56,6 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, hr, tj
   const time = fmtTime(j?.reportingTime);
   const directions = j?.mapLink ?? (j?.place ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(j.place)}` : undefined);
   const mFirst = managerName ? firstName(managerName) : '';
-  const hint = at === 'welcome' ? 'Say hi to HR' : at === 'manager' && mFirst ? `Reply to ${mFirst}` : at === 'team' ? 'Say hi to the team' : at === 'day1' ? 'Ask about the office' : 'Ask HR a question';
-  const subject = at === 'manager' && mFirst ? `A message for ${mFirst}` : at === 'day1' ? 'About my first day' : 'Question before I join';
-  const send = (e: FormEvent) => {
-    e.preventDefault();
-    const body = reply.trim();
-    window.location.href = `mailto:${hr}?subject=${encodeURIComponent(subject)}${body ? `&body=${encodeURIComponent(body)}` : ''}`;
-  };
   const team = [managerName, j?.buddy?.name].filter((n): n is string => Boolean(n));
 
   let content: ReactNode = null;
@@ -119,10 +112,10 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, hr, tj
         <h2 className="g2-story__title">{policies.length === 1 ? '1 quick read' : `${policies.length} quick reads`} before you join</h2>
         <div className="g2-story__reads">
           {policies.map((p) => (
-            <div key={p.title} className="g2-story__read">
+            <button type="button" key={p.key || p.title} className="g2-story__read" onClick={() => onOpenPolicy?.(p)}>
               <span className="g2-story__read-text"><span className="g2-story__read-title">{p.title}</span>{p.summary && <span className="g2-story__read-sub">{p.summary}</span>}</span>
               <span className="g2-story__read-go"><G2ChevronRight /></span>
-            </div>
+            </button>
           ))}
         </div>
       </div>
@@ -156,12 +149,6 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, hr, tj
           {i < order.length - 1 && <button type="button" className="a1-story__tap" style={{ right: 0 }} aria-label="Next story" onClick={() => onMove(order[i + 1])} />}
           <div className="g2-story__content">{content}</div>
         </div>
-        <form className="g2-story__foot" onSubmit={send}>
-          <input className="g2-story__reply" value={reply} onChange={(e) => setReply(e.target.value)} placeholder={hint} aria-label={hint} enterKeyHint="send" />
-          <button type="button" className="g2-story__like" aria-label="Like" aria-pressed={Boolean(liked[at])} onClick={() => setLiked((c) => ({ ...c, [at]: !c[at] }))}>
-            <G2Heart color={onBrand ? '#FFFFFF' : '#0571A6'} filled={Boolean(liked[at])} />
-          </button>
-        </form>
       </div>
     </div>
   );
