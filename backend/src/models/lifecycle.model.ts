@@ -641,6 +641,8 @@ export interface ProbationMonth {
   checkinManager?: { text: string; rating?: number; goalRatings?: number[]; at: Date };
   /** PB2: the review, one-tap feedback chips, and "On it" for what the joiner asked. */
   review?: { text: string; feedback?: string[]; askAck?: boolean; at: Date };
+  /** The manager sent the joiner's self check-in back (team side, MgrReview): the joiner sends it again. */
+  sentBack?: { text?: string; at: Date; byName?: string };
 }
 
 export interface ConfirmationDecision {

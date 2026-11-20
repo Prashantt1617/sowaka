@@ -16,8 +16,8 @@ import '../../manager/data/manager_models.dart' show ManagerTab;
 import 'data/lifecycle_me_store.dart';
 import 'data/onboarding_models.dart';
 import 'presentation/manager/joiner_screen.dart';
-import 'presentation/manager/probation_review_screen.dart';
-import 'presentation/manager/starter_review_screen.dart';
+import 'data/team_joiners_api.dart';
+import 'presentation/manager/manager_review_screen.dart';
 import 'presentation/meeting_screen.dart';
 import 'presentation/onboarding_home_screen.dart';
 import 'presentation/onboarding_kit.dart';
@@ -201,13 +201,12 @@ bool openOnboardingDestination(BuildContext context, Map<String, dynamic> data) 
       journeyId: journeyId,
       openSetup: destination == 'lifecycle_joiner_setup',
     ),
-    'lifecycle_starter_task_done' when journeyId != null => StarterReviewScreen(
+    // The manager's side draws no starter-task reply (team-side prototype): their joiner's page.
+    'lifecycle_starter_task_done' when journeyId != null => JoinerScreen(shell: shell, journeyId: journeyId),
+    // "Check-in sent": the month's self check-in to review (MgrReview).
+    'lifecycle_probation_review' when journeyId != null && month != null && HttpTeamJoinersApi.from(shell.api) != null => ManagerReviewScreen(
       shell: shell,
-      journeyId: journeyId,
-      starterTaskId: read('starterTaskId'),
-    ),
-    'lifecycle_probation_review' when journeyId != null && month != null => ProbationReviewScreen(
-      shell: shell,
+      teamApi: HttpTeamJoinersApi.from(shell.api)!,
       journeyId: journeyId,
       month: month,
     ),

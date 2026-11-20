@@ -366,6 +366,8 @@ export interface ProbationMonthDTO {
   checkinEmployee?: { text: string; rating?: number; at: string };
   checkinManager?: { text: string; rating?: number; at: string };
   review?: { text: string; at: string };
+  /** The manager sent the joiner's self check-in back from the app (team side). */
+  sentBack?: { text?: string; at: string; byName?: string };
 }
 
 export interface JourneyDetail {
@@ -379,6 +381,8 @@ export interface JourneyDetail {
   batch: Array<{ journeyId: string; name: string }>;
   /** What this viewer may see: pay (a payroll tab) and candidates' documents (HR). */
   viewer?: { seesPay: boolean; seesDocuments: boolean };
+  /** The team side's rows (manager, buddy, head of department) as the app ticks them. */
+  teamRows?: Array<{ id: string; title: string; owner: 'manager' | 'buddy' | 'head_of_department'; step: string; done: boolean; doneByName?: string; doneAt?: string }>;
 }
 
 export interface TemplateJourney {

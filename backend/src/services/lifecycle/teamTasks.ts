@@ -21,14 +21,15 @@
  *
  * Stages are the artifact's steps: Before Day 1, Day 1, Week 1, Month 1…Month n, Confirmed.
  */
-import { companies, journeys, lifecycleTemplates, users } from '../../config/db';
-import type { DueRule, Journey, JourneyTask, OwnerRole, SystemTaskKey, TeamTaskKind, TeamTaskSpec, TeamTaskTick, TemplateTask } from '../../models/lifecycle.model';
+import { companies, journeys, lifecycleTemplates, probationMonths, users } from '../../config/db';
+import type { DueRule, Journey, JourneyTask, OwnerRole, ProbationMonth, SystemTaskKey, TeamTaskKind, TeamTaskSpec, TeamTaskTick, TemplateTask } from '../../models/lifecycle.model';
 import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
 import { addDaysKey, companyTimeZone, daysBetween, keyOfDay, probationMonthOn, todayKey } from './dueRules';
 import {
   LifecycleError, deriveJourney, isJoined, loadJourney, namesOf, taskLate, tasksOf, tell, totalProbationMonths, visibleTo,
 } from './engine';
-import { MANAGER_OWNED, managerMayTick, managerTaskDone } from './appOnboarding';
+import { MANAGER_OWNED, devicesFor, managerMayTick, managerTaskDone, onboardingHome } from './appOnboarding';
+import { updateMonthByManager } from './probation';
 import { APP_COPY, teamSeed } from './seed';
 import { agendaResolver } from './joinerMeetings';
 
@@ -194,8 +195,17 @@ export interface TeamTaskView {
   note?: string;
   /** Can be ticked from the list (a review or approval opens its own screen instead). */
   canTick: boolean;
-  /** A meeting, a review, an approval or the manager's recommendation opens a screen. */
-  opens: 'meeting' | 'approval' | 'recommend' | null;
+  /**
+   * A meeting, a review, an approval or the manager's recommendation opens a screen; `review` is a
+   * month's self check-in (MgrReview); `screen` a template task done on its own screen (set up, the
+   * buddy, goals, the starter task, 1:1 notes), which the app opens by its `systemKey`.
+   */
+  opens: 'meeting' | 'approval' | 'recommend' | 'review' | 'screen' | null;
+  /** Journey rows: the template step (the app opens the right screen) and the probation month. */
+  systemKey?: SystemTaskKey;
+  month?: number;
+  /** A journey row the engine has not opened yet (after another task, or later). */
+  locked?: boolean;
   /** The manager's recommendation as it stands (`mgr_recommend` only), so the app can show and change it. */
   recommended?: { outcome: 'confirm' | 'extend'; note?: string };
   /** Reviews and approvals: where it stands. */
@@ -237,21 +247,42 @@ const PAIR_OF_KEY: Partial<Record<SystemTaskKey, string>> = {
   monthly_checkin: 'Your check-in', monthly_review: 'Your self check-in', confirmation_discussion: 'Confirmation discussion',
 };
 
-function journeyTaskView(t: JourneyTask, j: Journey, first: string, months: number, names: Map<string, string>, agenda: string[] = []): TeamTaskView {
+/** The template steps done on a screen of their own in the app (never a bare tick). */
+const SCREEN_KEYS = new Set<SystemTaskKey>(['starter_task', 'one_on_one_notes', 'probation_goals', 'monthly_goals', 'manager_setup', 'assign_buddy', 'manager_30day_note']);
+
+/** A month's self check-in as the manager reviews it: waiting for it, ready, reviewed, or sent back. */
+export function monthReviewState(m?: ProbationMonth): TeamReviewState {
+  if (m?.review) return 'reviewed';
+  const sent = m?.checkinEmployee?.at;
+  if (m?.sentBack && (!sent || new Date(m.sentBack.at).getTime() >= new Date(sent).getTime())) return 'back';
+  return sent ? 'ready' : 'waiting';
+}
+
+function journeyTaskView(t: JourneyTask, j: Journey, first: string, months: number, names: Map<string, string>, month?: ProbationMonth, agenda: string[] = []): TeamTaskView {
   const copy = t.systemKey ? APP_COPY[t.systemKey] : undefined;
   const on = t.dueAt ?? t.opensAt;
   const step = j.tj && on ? stepOfDay(j.tj, keyOfDay(on), months) : t.phase === 'pre_boarding' ? 0 : t.phase === 'first_week' ? 2 : 3;
-  const done = t.status === 'done' || t.status === 'skipped';
+  let done = t.status === 'done' || t.status === 'skipped';
+  const key = t.systemKey;
+  // The month's check-in is the manager's side of it (the joiner sends theirs): done once the manager's is in.
+  if (key === 'monthly_checkin' && month?.checkinManager) done = true;
+  const reviewState = key === 'monthly_review' ? monthReviewState(month) : undefined;
+  if (reviewState) done = reviewState === 'reviewed';
   let title = copy?.managerTitle ? fill(copy.managerTitle.replace(/\{name\}/g, '{n}'), first) : t.title;
   if (t.month && (t.systemKey === 'monthly_checkin' || t.systemKey === 'monthly_goals' || t.systemKey === 'monthly_review')) {
     title = t.systemKey === 'monthly_checkin' ? `Month-${t.month} check-in` : t.systemKey === 'monthly_goals' ? `Set ${first}’s Month ${t.month} goals` : `Review ${first}’s Month-${t.month} self check-in`;
   }
-  const kind = (t.systemKey && KIND_OF_KEY[t.systemKey]) || 'task';
+  const kind = (key && KIND_OF_KEY[key]) || (t.kind === 'meeting' ? 'meet' : 'task');
+  const locked = t.status === 'locked';
+  const open = !done && !locked && t.status !== 'cancelled';
+  const opens: TeamTaskView['opens'] = reviewState ? 'review' : kind === 'meet' ? 'meeting' : key && SCREEN_KEYS.has(key) ? 'screen' : null;
   return {
     id: t.id, title, kind, step, early: false, done,
-    ...(t.systemKey && PAIR_OF_KEY[t.systemKey] ? { pair: PAIR_OF_KEY[t.systemKey] } : {}),
+    ...(key && PAIR_OF_KEY[key] ? { pair: PAIR_OF_KEY[key] } : {}),
     ...(copy?.manager ? { note: copy.manager } : {}),
-    canTick: !done && managerMayTick(t), opens: kind === 'meet' ? 'meeting' : null, source: 'journey',
+    canTick: open && (managerMayTick(t) || key === 'monthly_checkin'), opens, source: 'journey',
+    ...(key ? { systemKey: key } : {}), ...(t.month ? { month: t.month } : {}), ...(locked && !reviewState ? { locked: true } : {}),
+    ...(reviewState ? { reviewState } : {}),
     // The template's agenda: the same points the joiner's meeting screen lists (joinerMeetings.ts).
     ...(kind === 'meet' && agenda.length ? { agenda } : {}),
     ...(done && t.doneByUserId ? { doneByName: names.get(t.doneByUserId) } : {}),
@@ -292,8 +323,13 @@ async function tasksFor(j: Journey, link: Link, first: string, journeyTasks?: Jo
   const team = (await teamDefsFor(j)).filter((d) => d.owner === owner).map((d) => teamDefView(d, j, first, months)).filter((t): t is TeamTaskView => !!t);
   if (link.rel !== 'report') return team;
   const rows = (journeyTasks ?? await tasksOf(j.id)).filter((t) => MANAGER_OWNED.includes(t.ownerRole) && visibleTo('manager', t));
-  const [names, agendaOf] = await Promise.all([namesOf(rows.map((t) => t.doneByUserId)), agendaResolver(j)]);
-  const fromJourney = rows.map((t) => journeyTaskView(t, j, first, months, names, agendaOf(t)));
+  const [names, monthRows, agendaOf] = await Promise.all([
+    namesOf(rows.map((t) => t.doneByUserId)),
+    rows.some((t) => t.month) ? probationMonths().find({ journeyId: j.id }, { projection: { _id: 0 } }).toArray() : Promise.resolve([] as ProbationMonth[]),
+    agendaResolver(j),
+  ]);
+  const monthOf = (t: JourneyTask) => (t.month ? monthRows.find((m) => m.monthNo === t.month) : undefined);
+  const fromJourney = rows.map((t) => journeyTaskView(t, j, first, months, names, monthOf(t), agendaOf(t)));
   // One list in step order; within a step the template's order, then the team's.
   return [...fromJourney, ...team].map((t, i) => ({ t, i })).sort((a, b) => a.t.step - b.t.step || a.i - b.i).map((x) => x.t);
 }
@@ -312,6 +348,41 @@ async function facesOf(ids: Array<string | undefined>): Promise<Map<string, Face
 /** The joiner's own late items ("1 task delayed"), not the manager's. */
 function delayedCount(tasks: JourneyTask[], today: string): number {
   return tasks.filter((t) => !MANAGER_OWNED.includes(t.ownerRole) && taskLate(t, today)).length;
+}
+
+/** Still to do by the viewer now (the red count): tickable, or a screen to open that waits on them. */
+export function isOpenForMe(t: TeamTaskView): boolean {
+  if (t.done || t.locked) return false;
+  return t.canTick || t.opens === 'meeting' || t.opens === 'recommend' || t.opens === 'screen' || t.reviewState === 'ready';
+}
+
+/**
+ * View progress (MgrProgress): the joiner's own Meetings, Tasks, Sowaka tour and Devices, read from
+ * the joiner's own onboarding home, so the team side counts exactly what the joiner's tiles count.
+ * Only the fields a row is counted and listed by: the joiner's own notes and the meetings' details stay theirs.
+ */
+async function progressOf(j: Journey, name: string, all: JourneyTask[], now: Date) {
+  if (!j.userId) return { today: [], later: [], done: [], tour: { done: [] as string[] }, devices: devicesFor(all) };
+  const home = await onboardingHome({ userId: j.userId, name, org: j.org }, now, j);
+  // Only what a row needs to be counted and listed: never the joiner's own notes or a meeting's details.
+  const KEEP = ['id', 'systemKey', 'phase', 'title', 'ownerRole', 'ownerName', 'kind', 'surface', 'mustDo', 'status', 'opensAt', 'dueAt', 'dueLabel', 'doneAt', 'late', 'month', 'progress', 'readOnly'];
+  const bare = (list: unknown[]) => (list as Array<Record<string, unknown>>).map((row) => Object.fromEntries(KEEP.filter((k) => row[k] !== undefined).map((k) => [k, row[k]])));
+  return { today: bare(home.today), later: bare(home.later), done: bare(home.done), tour: { done: home.tour.done }, devices: home.devices };
+}
+
+/**
+ * HR's joiner panel: the team rows (the manager's, the buddy's, the head of department's) as the
+ * team side ticks them, so HR sees what the app's ticks did. Wording from the template as it is now.
+ */
+export async function teamRowsForHr(j: Journey) {
+  const months = totalProbationMonths(j);
+  const steps = stepsFor(j);
+  const first = firstOf(j.candidate?.name ?? '');
+  const views = (await teamDefsFor(j)).map((d) => ({ d, v: teamDefView(d, j, first, months) })).filter((x): x is { d: TeamTaskDef; v: TeamTaskView } => !!x.v);
+  return views.map(({ d, v }) => ({
+    id: v.id, title: v.title, owner: d.owner, step: steps[v.step] ?? '', done: v.done,
+    ...(v.doneByName ? { doneByName: v.doneByName } : {}), ...(j.teamTasks?.[d.id]?.doneAt ? { doneAt: j.teamTasks[d.id].doneAt } : {}),
+  }));
 }
 
 /** GET /lifecycle/team/joiners — everyone joining or in probation I'm connected to. */
@@ -336,7 +407,7 @@ export async function teamJoiners(me: Me, now = new Date()) {
     const step = currentStep(j, todayKey(now, companyTimeZone(j.org)));
     const all = await tasksOf(j.id);
     const tasks = await tasksFor(j, link, firstOf(name), all);
-    const open = tasks.filter((t) => t.step === step && !t.done && (t.canTick || t.opens === 'meeting' || t.opens === 'recommend' || t.reviewState === 'ready')).length;
+    const open = tasks.filter((t) => t.step === step && isOpenForMe(t)).length;
     const photoUrl = person?.userId ? await faceUrlOf(person as FaceFields) : null;
     return {
       journeyId: j.id, ...(j.userId ? { userId: j.userId } : {}), name, ...(photoUrl ? { photoUrl } : {}),
@@ -393,6 +464,7 @@ export async function teamJoiner(me: Me, journeyId: string, now = new Date()) {
     // The head of department follows along; only the manager and the buddy step ahead or back.
     canBrowseSteps: link.rel !== 'line',
     tasks: await tasksFor(j, link, first, all),
+    progress: await progressOf(j, name, all, now),
   };
 }
 
@@ -450,6 +522,13 @@ export async function teamTaskAction(me: Me, journeyId: string, taskId: string, 
   const def = (await teamDefsFor(j)).find((d) => d.id === taskId);
   if (!def) {
     if (link.rel !== 'report') throw new LifecycleError(404, 'Task not found');
+    const task = (await tasksOf(j.id)).find((t) => t.id === taskId);
+    if (task?.systemKey === 'monthly_checkin' && task.month) {
+      // The check-in meeting marked done: the manager's side of the month's check-in, its notes the words.
+      if (body.action !== 'done') throw new LifecycleError(400, 'action is done');
+      await updateMonthByManager(j.id, me, task.month, { checkin: { met: true, text: typeof body.notes === 'string' ? body.notes : '' } });
+      return teamJoiner(me, journeyId);
+    }
     await managerTaskDone(me, journeyId, taskId, { action: 'done' });
     return teamJoiner(me, journeyId);
   }

@@ -241,8 +241,9 @@ async function starterViews(j: Journey, names: Map<string, string>, now: Date): 
   }));
 }
 
-export async function onboardingHome(me: Me, now = new Date()) {
-  const j = await joinerJourney(me.userId);
+/** `journey`: the team side's View progress reads the joiner's own home (teamTasks.ts), so both show the same. */
+export async function onboardingHome(me: Me, now = new Date(), journey?: Journey) {
+  const j = journey ?? await joinerJourney(me.userId);
   const tasks = await tasksOf(j.id);
   const derived = deriveJourney(j, tasks, now);
   const today = todayKey(now, companyTimeZone(j.org));
