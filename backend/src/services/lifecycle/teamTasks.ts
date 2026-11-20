@@ -30,6 +30,7 @@ import {
 } from './engine';
 import { MANAGER_OWNED, managerMayTick, managerTaskDone } from './appOnboarding';
 import { APP_COPY, teamSeed } from './seed';
+import { agendaResolver } from './joinerMeetings';
 
 type Me = { userId: string; name: string; org: string };
 
@@ -236,7 +237,7 @@ const PAIR_OF_KEY: Partial<Record<SystemTaskKey, string>> = {
   monthly_checkin: 'Your check-in', monthly_review: 'Your self check-in', confirmation_discussion: 'Confirmation discussion',
 };
 
-function journeyTaskView(t: JourneyTask, j: Journey, first: string, months: number, names: Map<string, string>): TeamTaskView {
+function journeyTaskView(t: JourneyTask, j: Journey, first: string, months: number, names: Map<string, string>, agenda: string[] = []): TeamTaskView {
   const copy = t.systemKey ? APP_COPY[t.systemKey] : undefined;
   const on = t.dueAt ?? t.opensAt;
   const step = j.tj && on ? stepOfDay(j.tj, keyOfDay(on), months) : t.phase === 'pre_boarding' ? 0 : t.phase === 'first_week' ? 2 : 3;
@@ -251,6 +252,8 @@ function journeyTaskView(t: JourneyTask, j: Journey, first: string, months: numb
     ...(t.systemKey && PAIR_OF_KEY[t.systemKey] ? { pair: PAIR_OF_KEY[t.systemKey] } : {}),
     ...(copy?.manager ? { note: copy.manager } : {}),
     canTick: !done && managerMayTick(t), opens: kind === 'meet' ? 'meeting' : null, source: 'journey',
+    // The template's agenda: the same points the joiner's meeting screen lists (joinerMeetings.ts).
+    ...(kind === 'meet' && agenda.length ? { agenda } : {}),
     ...(done && t.doneByUserId ? { doneByName: names.get(t.doneByUserId) } : {}),
   };
 }
@@ -289,8 +292,8 @@ async function tasksFor(j: Journey, link: Link, first: string, journeyTasks?: Jo
   const team = (await teamDefsFor(j)).filter((d) => d.owner === owner).map((d) => teamDefView(d, j, first, months)).filter((t): t is TeamTaskView => !!t);
   if (link.rel !== 'report') return team;
   const rows = (journeyTasks ?? await tasksOf(j.id)).filter((t) => MANAGER_OWNED.includes(t.ownerRole) && visibleTo('manager', t));
-  const names = await namesOf(rows.map((t) => t.doneByUserId));
-  const fromJourney = rows.map((t) => journeyTaskView(t, j, first, months, names));
+  const [names, agendaOf] = await Promise.all([namesOf(rows.map((t) => t.doneByUserId)), agendaResolver(j)]);
+  const fromJourney = rows.map((t) => journeyTaskView(t, j, first, months, names, agendaOf(t)));
   // One list in step order; within a step the template's order, then the team's.
   return [...fromJourney, ...team].map((t, i) => ({ t, i })).sort((a, b) => a.t.step - b.t.step || a.i - b.i).map((x) => x.t);
 }
@@ -427,7 +430,8 @@ async function approvalView(j: Journey) {
 
 // ─── Writes ─────────────────────────────────────────────────────────────────
 
-async function setTick(j: Journey, id: string, tick: TeamTaskTick | null, extra: { set?: Record<string, unknown>; unset?: string[] } = {}): Promise<void> {
+/** A team row's tick on the journey (also the joiner's Mark as met on a paired meeting, joinerMeetings.ts). */
+export async function setTick(j: Pick<Journey, 'id'>, id: string, tick: TeamTaskTick | null, extra: { set?: Record<string, unknown>; unset?: string[] } = {}): Promise<void> {
   const $set: Record<string, unknown> = { updatedAt: new Date(), ...(tick ? { [`teamTasks.${id}`]: tick } : {}), ...(extra.set ?? {}) };
   const $unset: Record<string, ''> = Object.fromEntries([...(tick ? [] : [`teamTasks.${id}`]), ...(extra.unset ?? [])].map((k) => [k, '' as const]));
   await journeys().updateOne({ id: j.id }, { $set, ...(Object.keys($unset).length ? { $unset } : {}) } as never);
