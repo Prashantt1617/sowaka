@@ -147,9 +147,8 @@ export function LeaveTypeCard({ row, onChange, onRemove }: { row: LeaveTypeRule;
             </div>
             {unpaid && (
               <div style={{ ...note, marginTop: 10 }}>
-                No balance: it can always be applied for, and is approved like any other leave. Every
-                approved day is loss of pay in payroll, half a day for a half day, even on a paid days
-                template that pays all days. Calendars show it as Leave without pay, not as leave or absent.
+                Unpaid leave is already live on Convrse: &ldquo;Leave Without Pay&rdquo; is on all 12 shift templates.
+                Employees can apply for it now, and each approved day counts as loss of pay in payroll.
               </div>
             )}
           </>
