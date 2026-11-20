@@ -126,3 +126,16 @@
 .g2-signin .a1-input { height: 44px; padding: 0 14px; border-color: #e2e3e8; background: #f7f7f9; }
 .g2-signin .a1-input:focus { border-color: var(--a1-brand); box-shadow: none; }
 .g2-signin .a1-signin__foot .a1-link { padding: 0 3.5px; }
+
+/* One policy, full screen (G2Policy): the app's policy page, read the same way. */
+.g2-policy { width: 100%; max-width: 480px; height: 100%; display: flex; flex-direction: column; background: var(--color-bg-canvas); overflow: hidden; }
+.g2-policy__head { position: static; }
+.g2-policy__body { flex: 1; overflow-y: auto; padding: 16px 16px 32px; display: flex; flex-direction: column; gap: 12px; }
+.g2-policy__summary { margin: 0; font-size: 14px; line-height: 20px; color: var(--color-text-secondary); }
+.g2-policy__h { margin: 8px 0 0; font-size: 16px; line-height: 22px; font-weight: 600; color: var(--color-text-primary); }
+.g2-policy__card { background: var(--color-bg-surface); border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); padding: 14px 16px; font-size: 14px; line-height: 21px; color: var(--color-text-primary); }
+.g2-policy__card p { margin: 0; }
+.g2-policy__card p + p { margin-top: 8px; }
+.g2-policy__card ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; }
+.g2-policy__card .g2-policy__plain { list-style: none; margin-left: -18px; }
+.g2-story__read { cursor: pointer; border: 0; font: inherit; text-align: left; width: 100%; }

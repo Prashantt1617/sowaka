@@ -12,6 +12,7 @@ import { firstName, initials } from '../lib/format';
 import { useMe } from '../session';
 import '../styles/fig-g1.css';
 import { G2Story, type StoryKey } from '../components/fig/G2Story';
+import { G2Policy, type PortalPolicy } from '../components/fig/G2Policy';
 
 // The highlight rings in the App · 7 frame's order (the stories themselves keep G2's order).
 const RING_ORDER: StoryKey[] = ['manager', 'team', 'day1', 'policies', 'welcome', 'role'];
@@ -24,14 +25,20 @@ function Face({ name, photo, className, tone = 0 }: { name: string; photo?: stri
   return <span className={className} style={{ color: FACE_TONES[tone % FACE_TONES.length] }} aria-hidden="true">{photo && !bad ? <img src={photo} alt="" onError={() => setBad(true)} /> : initials(name)}</span>;
 }
 
-/** The policies item's lines ("Title: summary"), as reads. */
-const policiesOf = (item?: MeetItem) => (item?.text ?? '').split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const at = l.indexOf(': '); return at > 0 ? { title: l.slice(0, at), summary: l.slice(at + 2) } : { title: l, summary: '' }; });
+/**
+ * The company's policies as the app reads them (the server sends them with their text);
+ * an older server sent only "Title: summary" lines, read as titles without text.
+ */
+const policiesOf = (item?: MeetItem): PortalPolicy[] => item?.policies?.length
+  ? item.policies
+  : (item?.text ?? '').split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const at = l.indexOf(': '); return at > 0 ? { key: '', title: l.slice(0, at), summary: l.slice(at + 2), body: '' } : { key: '', title: l, summary: '', body: '' }; });
 
 export function A1About() {
   const { me } = useMe();
   const [items, setItems] = useState<MeetItem[]>();
   const [j, setJ] = useState<JoiningDetails>();
   const [open, setOpen] = useState<StoryKey | null>(null);
+  const [reading, setReading] = useState<PortalPolicy | null>(null);
   useEffect(() => {
     portal.meet().then((r) => setItems(r.items), () => setItems([]));
     portal.joining().then(setJ, () => undefined);
@@ -59,6 +66,8 @@ export function A1About() {
     if (item && !item.seen) portal.meetSeen(item.id).then(() => setItems((cur) => cur?.map((i) => (i.id === item.id ? { ...i, seen: true } : i))), () => undefined);
   }, [items]);
   const show = (k: StoryKey) => { setOpen(k); markSeen(k); };
+  /** A policy opens on its own, straight from its row (reading it counts as seeing the policies story). */
+  const read = (p: PortalPolicy) => { setReading(p); markSeen('policies'); };
   const seenStory = (k: StoryKey) => { const id = SEEN_ITEM[k]; return id ? Boolean(byId(id)?.seen) : false; };
 
   const ring = (k: StoryKey, label: string, face: ReactNode, inner = '') => (
@@ -133,7 +142,7 @@ export function A1About() {
                 <ul className="fig-list">
                   {policies.map((p, n) => (
                     <li key={p.title}>
-                      <FigRow onClick={() => show('policies')} className="g1-policy"
+                      <FigRow onClick={() => (p.body ? read(p) : show('policies'))} className="g1-policy"
                         lead={<span className={`g1-policy__icon g1-policy__icon--${n % 3}`}>{POLICY_ICON[n % 3]}</span>}
                         title={p.title} sub={p.summary || undefined} />
                     </li>
@@ -156,8 +165,10 @@ export function A1About() {
       <G3WebBottom />
       {open && (
         <G2Story order={stories} at={open} onMove={show} onClose={() => setOpen(null)}
-          company={me.company} candidate={me.candidateName} hr={me.hrContact.email} tj={me.tj} j={j} note={note} managerName={managerName} video={video} role={role} policies={policies} />
+          company={me.company} candidate={me.candidateName} hr={me.hrContact.email} tj={me.tj} j={j} note={note} managerName={managerName} video={video} role={role} policies={policies}
+          onOpenPolicy={(p) => { if (p.body) { setOpen(null); read(p); } }} />
       )}
+      {reading && <G2Policy policy={reading} onClose={() => setReading(null)} />}
     </FigPage>
   );
 }

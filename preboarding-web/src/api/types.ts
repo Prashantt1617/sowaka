@@ -189,6 +189,8 @@ export interface MeetItem {
   authorRole?: string;
   /** not in CONTRACT: the author's face beside their name (an API path; absent for no photo). */
   authorPhotoUrl?: string;
+  /** On `policies`: the company's policies as the app reads them, with their text (each opens in the portal). */
+  policies?: Array<{ key: string; title: string; summary: string; body: string }>;
 }
 
 export type LetterState = 'locked' | 'ready' | 'opened' | 'signed';

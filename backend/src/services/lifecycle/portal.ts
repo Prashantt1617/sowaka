@@ -7,7 +7,8 @@
  * about, meet, letter, pass). Up next = the first of: a document sent back →
  * the open item due soonest → an item not started.
  */
-import { candidateAccounts, companies, dateChangeRequests, journeys, letters, offers, policyDocuments, users } from '../../config/db';
+import { candidateAccounts, companies, dateChangeRequests, journeys, letters, offers, users } from '../../config/db';
+import { policiesFor } from '../policy-document.service';
 import type { AboutYou, Day1Pass, Journey, OfferFields } from '../../models/lifecycle.model';
 import { journeyDocumentsView } from './documents';
 import {
@@ -100,6 +101,8 @@ export interface MeetItem {
   tag?: string; subtitle?: string; authorName?: string; authorRole?: string;
   /** The note's author's face beside their name; absent for no photo. */
   authorPhotoUrl?: string;
+  /** On `policies`: the company's policies as the app reads them (policiesFor), with their text, so each opens in the portal. */
+  policies?: Array<{ key: string; title: string; summary: string; body: string }>;
 }
 
 export async function meetItems(journey: Journey): Promise<MeetItem[]> {
@@ -127,9 +130,15 @@ export async function meetItems(journey: Journey): Promise<MeetItem[]> {
   const offer = await offers().findOne({ journeyId: journey.id });
   const responsibilities = sentVersion(offer?.versions)?.fields.responsibilities;
   if (responsibilities) items.push({ id: 'role', kind: 'card', tag: 'YOUR ROLE', title: 'Your role, explained', subtitle: journey.designation ? `What you'll do as ${journey.designation}` : 'Your job description', text: responsibilities });
-  const policies = await policyDocuments().find({ org: journey.org, active: true }, { projection: { _id: 0, title: 1, summary: 1 } }).sort({ order: 1 }).limit(20).toArray();
+  // The same list, order and text the app shows under Policies (policiesFor): the company's own, active, with text.
+  const policies = (await policiesFor({ userId: '', org: journey.org })).slice(0, 20);
   if (policies.length) {
-    items.push({ id: 'policies', kind: 'card', tag: 'POLICIES', title: 'Company policies', subtitle: `${policies.length} short read${policies.length === 1 ? '' : 's'}. You’ll confirm them in week 1`, text: policies.map((p) => (p.summary ? `${p.title}: ${p.summary}` : p.title)).join('\n') });
+    items.push({
+      id: 'policies', kind: 'card', tag: 'POLICIES', title: 'Company policies',
+      subtitle: `${policies.length} short read${policies.length === 1 ? '' : 's'}. You’ll confirm them in week 1`,
+      text: policies.map((p) => (p.summary ? `${p.title}: ${p.summary}` : p.title)).join('\n'),
+      policies: policies.map((p) => ({ key: p.key, title: p.title, summary: p.summary, body: p.body })),
+    });
   }
   return items.map((item) => ({ ...item, seen: seen.has(item.id) }));
 }
