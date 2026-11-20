@@ -121,16 +121,19 @@ Map<String, dynamic> managerJoinerJson({String journeyId = 'j1', String name = '
 
 /// A team side that answers from [page] and records what was done.
 class FakeTeamApi implements TeamJoinersApi {
-  FakeTeamApi(this.page);
+  FakeTeamApi(this.page, {this.rows = const []});
 
   Map<String, dynamic> page;
+
+  /// `/lifecycle/team/joiners` rows.
+  final List<Map<String, dynamic>> rows;
   final calls = <String>[];
 
   @override
   Future<TeamJoinerPage> fetchJoiner(String journeyId) async => TeamJoinerPage.fromJson(page);
 
   @override
-  Future<List<TeamJoinerRow>> fetchJoiners() async => const [];
+  Future<List<TeamJoinerRow>> fetchJoiners() async => [for (final r in rows) TeamJoinerRow.fromJson(r)];
 
   @override
   Future<TeamJoinerPage> taskAction(String journeyId, String taskId, String action) async {
@@ -169,3 +172,10 @@ class FakeTeamApi implements TeamJoinersApi {
     return TeamJoinerPage.fromJson(page);
   }
 }
+
+/// The manager's Joiners list: Kavya before Day 1, Priya on Day 1, Rahul in Month 3 (all reports).
+final mgrJoinerRows = <Map<String, dynamic>>[
+  {'journeyId': 'j2', 'name': 'Kavya Iyer', 'designation': 'Admissions coordinator', 'relation': 'report', 'step': 0, 'stepLabel': 'Joins 22 Dec', 'plant': {'leaves': 0}, 'preboarding': true, 'toDo': 1},
+  {'journeyId': 'j1', 'userId': 'u1', 'name': 'Priya Menon', 'designation': 'Admissions coordinator', 'relation': 'report', 'step': 1, 'stepLabel': 'Day 1', 'plant': {'leaves': 1}, 'toDo': 3},
+  {'journeyId': 'j3', 'userId': 'u3', 'name': 'Rahul Verma', 'designation': 'Admissions executive', 'relation': 'report', 'step': 5, 'stepLabel': 'Month 3', 'plant': {'leaves': 3}, 'toDo': 2},
+];
