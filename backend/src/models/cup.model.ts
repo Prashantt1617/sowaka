@@ -162,10 +162,21 @@ export type CupMatchStatus = 'scheduled' | 'betting' | 'open' | 'live' | 'solo' 
 export interface CupScore {
   score: number;
   at: Date;
+  /** Knights only: the cells with a knight on this player's board, as last reported (`score` is then the right ones). */
+  knights?: number[];
 }
 
-/** How a match was decided. */
-export type CupDecision = 'played' | 'solo' | 'absent' | 'replays';
+/** How a match was decided. Knights adds `finished` (a right board first), `resigned` and `cap` (more right at the cap); a tie after the last replay is `replays`. */
+export type CupDecision = 'played' | 'solo' | 'absent' | 'replays' | 'finished' | 'resigned' | 'cap';
+
+/** A knights match's result: who won, how, and each player's knights in the right place. */
+export interface CupKnightsResult {
+  winnerId: string;
+  decidedBy: CupDecision;
+  right: Record<string, number>;
+  /** For `finished`: how long the winner took from the start, in ms. */
+  finishedMs?: number;
+}
 
 export interface CupMatch {
   id: string;
@@ -200,8 +211,8 @@ export interface CupMatch {
   winnerId?: string;
   decidedBy?: CupDecision;
   decidedAt?: Date;
-  /** Final scores as the result stands (an absent player's 0 included). */
-  result?: Record<string, number>;
+  /** Final scores as the result stands (an absent player's 0 included); for knights a `CupKnightsResult`. */
+  result?: Record<string, number> | CupKnightsResult;
   /** HR voided it (the match was replayed). */
   voids?: { by: string; at: Date }[];
   createdAt: Date;

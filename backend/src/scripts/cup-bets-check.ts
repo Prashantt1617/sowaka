@@ -178,6 +178,8 @@ console.log('What pages show');
   check('…a stake is "O-O-O Tournament bet", a refund "O-O-O Tournament refund"',
     ledgerRowFor(betOf('u1', 'pa', 10), 'placed', -10, { label: 'QF1', pickName: 'P' }, now).title === 'O-O-O Tournament bet'
     && ledgerRowFor(betOf('u1', 'pa', 10), 'refund', 10, { label: 'QF1', pickName: 'P' }, now).reason === 'bet_refunded');
+  const k = (step: 'placed' | 'won' | 'refund') => ledgerRowFor(betOf('u1', 'pa', 10), step, 10, { label: 'QF1', pickName: 'P', game: 'knights' }, now).title;
+  check('…a Knights Tournament names itself: bet, win, refund', k('placed') === 'Knights Tournament bet' && k('won') === 'Knights Tournament win' && k('refund') === 'Knights Tournament refund');
 }
 
 // ---------------------------------------------------------------- for real

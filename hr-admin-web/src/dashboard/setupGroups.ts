@@ -42,6 +42,10 @@ export const SETUP_GROUPS: SetupGroup[] = [
   { key: 'reimbursements', title: 'Reimbursements', icon: 'reimbursementtypes', items: [
     { view: 'reimbursementtypes', label: 'Reimbursement types' },
   ] },
+  // What people read in the app under Actions › Policies, written here as points.
+  { key: 'policies', title: 'Policies', icon: 'policies', isNew: true, items: [
+    { view: 'policies', label: 'App policies' },
+  ] },
   // Notification sounds and pictures: hidden from Setup (17 Nov 2026). Sowaka manages the looks
   // for companies directly; the page, its API and the looks themselves stay as they are.
   { key: 'lifecycle', title: 'Employee lifecycle', icon: 'onboarding', isNew: true, feature: 'lifecycle', items: [

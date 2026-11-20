@@ -67,6 +67,9 @@ import {
   updateReimbursementTypeHandler,
 } from '../controllers/reimbursement-type.controller';
 import { adminListReports, adminReviewReport } from '../controllers/moderation.controller';
+import {
+  adminPoliciesHandler, createPolicyHandler, deletePolicyHandler, reorderPoliciesHandler, updatePolicyHandler,
+} from '../controllers/policy-document.controller';
 import { adminFaceChecks, adminFaceOverview, adminFaceReset, adminFaceSettings } from '../controllers/face.controller';
 import { adminCreateGame, adminDeleteGame, adminListGames, adminPublishGame, adminUpdateGame } from '../controllers/game.controller';
 
@@ -182,6 +185,12 @@ adminRouter.get('/reimbursement-types', listReimbursementTypesHandler);
 adminRouter.post('/reimbursement-types', createReimbursementTypeHandler);
 adminRouter.patch('/reimbursement-types/:typeId', updateReimbursementTypeHandler);
 adminRouter.delete('/reimbursement-types/:typeId', deleteReimbursementTypeHandler);
+// Setup › Policies: the company's policies as the app shows them under Actions › View Policies.
+adminRouter.get('/policies', adminPoliciesHandler);
+adminRouter.post('/policies', createPolicyHandler);
+adminRouter.put('/policies/order', reorderPoliciesHandler);
+adminRouter.patch('/policies/:key', updatePolicyHandler);
+adminRouter.delete('/policies/:key', deletePolicyHandler);
 
 // Company settings: week-off days + per-team overtime toggle
 adminRouter.get('/company/settings', getCompanySettingsHandler);

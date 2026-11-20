@@ -61,6 +61,7 @@ export type View =
   | 'usersroles'
   | 'cycle'
   | 'reimbursementtypes'
+  | 'policies'
   | 'shiftbulk'
   | 'appusage'
   | 'feed'
@@ -219,6 +220,7 @@ export const TITLES: Record<View, [string, string]> = {
   usersroles: ['Accesses', 'People · users, roles and permissions'],
   cycle: ['Cycle', 'Performance · the monthly review cycle'],
   reimbursementtypes: ['Reimbursement Types', 'Claims · what can be claimed, and the cap on each'],
+  policies: ['Policies', 'What people read in the app under Policies'],
   shiftbulk: ['Bulk Assign', 'Shifts · through Suwi'],
   appusage: ['App usage', 'Engagement · who uses the app, and for what'],
   feed: ['Feed', 'Engagement · the feed as employees see it, and reported posts'],

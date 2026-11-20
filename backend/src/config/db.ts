@@ -23,6 +23,7 @@ import { ConnectPost } from '../models/connect.model';
 import { AudienceList } from '../models/audience-list.model';
 import { Game, GameScore } from '../models/game.model';
 import { GameCatalogEntry } from '../models/game-catalog.model';
+import { GameProgress } from '../models/game-progress.model';
 import { GameChallenge } from '../models/game-challenge.model';
 import {
   RelayEvent,
@@ -215,6 +216,11 @@ export function games(): Collection<Game> {
 
 export function gameScores(): Collection<GameScore> {
   return getDb().collection<GameScore>('game_scores');
+}
+
+/** How far each person has got in a levelled web game (Meow); see game-progress.service. */
+export function gameProgress(): Collection<GameProgress> {
+  return getDb().collection<GameProgress>('game_progress');
 }
 
 /** The Games tab's games, one document per game; see GameCatalogEntry. */
@@ -644,6 +650,8 @@ async function ensureIndexes(database: Db): Promise<void> {
   const scoresCollection = database.collection<GameScore>('game_scores');
   await scoresCollection.createIndex({ gameId: 1, userId: 1 }, { unique: true });
   await scoresCollection.createIndex({ gameId: 1, score: -1, achievedAt: 1 });
+  // One row per person per company per game. A new collection, so the build costs nothing.
+  await database.collection<GameProgress>('game_progress').createIndex({ org: 1, userId: 1, gameKey: 1 }, { unique: true });
   await database.collection<GameCatalogEntry>('game_catalog').createIndex({ key: 1 }, { unique: true });
   // Which version each game is at, read from the index alone (keptReads.ts): a game's document carries its
   // whole page, and the Games list only needs to know whether one changed.

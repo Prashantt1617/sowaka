@@ -14,9 +14,12 @@ import { useStore } from '../store';
 import { usePhotoFor } from '../photos';
 import { boardAt } from './cupBoards';
 import { trailAt } from './cupTrailsBoards';
+import knightPng from '../../assets/cup-knight.png';
 
+type Game = 'odd' | 'trails' | 'knights';
 /** Which game the tournament's matches are played in: the TV draws that game's boards. */
-const GameCtx = createContext<'odd' | 'trails'>('odd');
+const GameCtx = createContext<Game>('odd');
+const gameOf = (key?: string): Game => (key === 'trails' ? 'trails' : key === 'knights' ? 'knights' : 'odd');
 
 // —— the state (the Cup page's, as much as the TV draws) ————————————————————
 
@@ -34,7 +37,19 @@ interface Match {
   liveBoard?: Record<string, LiveBoard>;
   /** The match's board seed, sent with liveBoard. */
   boardSeed?: number;
-  result?: Record<string, number>;
+  /** Odd One Out / Trails: a score per player. Knights: `{ winnerId, decidedBy, right: {uid: n}, finishedMs? }`. */
+  result?: Record<string, unknown>;
+  /**
+   * A Knights match (live, solo or done): the board's size and regions (row-major, n*n). The solution only once the
+   * match is decided. `placed` / `right` / `solution` are read here or on the match itself.
+   */
+  knights?: { n: number; g: number[]; solution?: number[]; placed?: Record<string, number>; right?: Record<string, number> };
+  /** Knights: how many knights each player has on their board (never how many are right) while it is played. */
+  placed?: Record<string, number>;
+  /** Knights: how many knights each player had in the right place, once decided. */
+  right?: Record<string, number>;
+  /** Knights: the board's answer (cell indices), once decided. */
+  solution?: number[];
   winnerId?: string;
   decidedBy?: string;
   bettingEndsAt?: string;
@@ -42,7 +57,7 @@ interface Match {
   startAt?: string;
   attempt?: number;
 }
-interface LiveBoard { board: number; tap?: number; ok?: boolean }
+interface LiveBoard { board: number; tap?: number; ok?: boolean; placed?: number }
 interface Round {
   n: number;
   label: string;
@@ -60,7 +75,7 @@ interface CupState {
   event: {
     id: string;
     name: string;
-    /** 'trails' for a Trails tournament; Odd One Out otherwise. */
+    /** 'trails' for a Trails tournament, 'knights' for a Knights one; Odd One Out otherwise. */
     gameKey?: string;
     phase: 'scheduled' | 'lobby' | 'running' | 'done';
     round: number;
@@ -266,6 +281,14 @@ const CSS = `
 .ctv-board .c.no{background:${C.coral};animation:ctv-no .6s ease-out}
 .ctv-board.ok::after{content:"";position:absolute;inset:-3px;border-radius:inherit;box-shadow:0 0 0 4px ${C.green},0 0 30px ${C.green};opacity:0;animation:ctv-ok .9s ease-out;pointer-events:none}
 .ctv-board .num{position:absolute;right:8%;bottom:0;transform:translateY(50%);padding:2px 9px;border-radius:99px;background:var(--pc);color:${C.bg};font-family:var(--h);font-size:max(11px,calc(var(--w)*.07))}
+.ctv-board.kn{background:linear-gradient(160deg,#0B1440,#060B26);border-color:#1F56D8;box-shadow:0 5px 0 #060B26}
+.ctv-bside.lead .ctv-board.kn,.cs-side.lead .ctv-board.kn{box-shadow:0 5px 0 #060B26,0 0 26px -4px var(--pc)}
+.ctv-board.kn .g{gap:0}
+.ctv-board.kn .kc{position:relative;min-width:0;min-height:0}
+.ctv-board.kn .kt{position:absolute;border-radius:calc(var(--w)/var(--n)*.12);box-shadow:inset 0 0 0 1px rgba(6,11,38,.22)}
+.ctv-board.kn .kk{position:absolute;inset:14%;display:grid;place-items:center;border-radius:50%;background:#F2F8FF;box-shadow:0 0 0 2px #060B26,0 2px 0 2px #060B26}
+.ctv-board.kn .kk img{width:80%;height:80%;object-fit:contain;display:block}
+.ctv-board.kn .num{font-size:clamp(11px,calc(var(--w)*.05),20px);background:#CFE6FF;color:#060B26;font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-weight:800;letter-spacing:.5px;white-space:nowrap}
 .ctv-bwait{display:grid;place-items:center;text-align:center;border:3px dashed ${C.panel2};border-radius:22px;color:${C.ink2};font-weight:800;font-size:13px;padding:8px}
 .ctv-bm.watch{cursor:pointer}
 .ctv-bm.watch:hover,.ctv-bm.watch:focus-visible{border-color:${C.cyan};outline:none}
@@ -314,7 +337,22 @@ function clock(msLeft: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-const scoreOf = (m: Match, p: Player | null) => (p ? m.result?.[p.userId] ?? m.live?.[p.userId] ?? 0 : 0);
+const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+/** A Knights match: it carries its board, or its result counts knights right. */
+const isKnights = (m: Match) => !!m.knights || (!!m.result && typeof m.result.right === 'object' && m.result.right !== null);
+/** Knights on that player's board now (during play). */
+const placedOf = (m: Match, uid: string) => num(m.placed?.[uid]) ?? num(m.knights?.placed?.[uid]) ?? num(m.liveBoard?.[uid]?.placed) ?? num(m.live?.[uid]);
+/** Knights that player had in the right place (once decided). */
+const rightOf = (m: Match, uid: string) => num(m.right?.[uid]) ?? num(m.knights?.right?.[uid]) ?? num((m.result?.right as Record<string, unknown> | undefined)?.[uid]);
+/** The number beside a player: Knights shows knights placed while it is played and knights right once decided. */
+const scoreOf = (m: Match, p: Player | null): number => {
+  if (!p) return 0;
+  if (isKnights(m)) return (m.status === 'done' ? rightOf(m, p.userId) : undefined) ?? placedOf(m, p.userId) ?? 0;
+  return num(m.result?.[p.userId]) ?? num(m.live?.[p.userId]) ?? 0;
+};
+/** The side that glows: the higher score; in Knights only the winner, once decided (knights placed are not knights right). */
+const leads = (m: Match, p: Player | null, s: number, other: number) =>
+  isKnights(m) ? m.status === 'done' && !!p && m.winnerId === p.userId : s > other;
 
 const STATUS_PILL: Record<Status, { text: string; bg: string; fg: string }> = {
   pending: { text: 'UP NEXT', bg: C.panel2, fg: C.ink2 },
@@ -449,7 +487,7 @@ export function CupTv() {
   );
 
   return (
-    <GameCtx.Provider value={event?.gameKey === 'trails' ? 'trails' : 'odd'}>
+    <GameCtx.Provider value={gameOf(event?.gameKey)}>
     <div ref={root} className={`ctv${stream ? ' stream' : ''}`} data-testid="cup-tv">
       <style>{CSS}</style>
       <header className="ctv-top">
@@ -626,21 +664,88 @@ const TrailsBoard = memo(function TrailsBoard({ seed, at, size, colour }: { seed
   );
 });
 
+/**
+ * Knights region colours, cool and apart on navy (the Knights Tournament look): cobalts, sky, teal, indigo, violet, ice,
+ * in lightness steps so nine regions read apart.
+ */
+// Meow's soft board colours, as the match page draws them.
+const KN_REGIONS = ['#c6ddac', '#afd4e3', '#f5c2a2', '#d4c4e5', '#eedca4', '#ebbfc5', '#b7dfd3', '#c6cdf0', '#e9cfa9', '#d9e6b8'];
+
+/**
+ * A Knights board, read-only: its colour regions, and once the match is decided the answer's knights. While it is
+ * played the TV knows only how many knights each player has down (never where, never how many are right).
+ */
+const KnightsBoard = memo(function KnightsBoard({ n, g, solution, placed, right, won, size, colour }: {
+  n: number; g: number[]; solution?: number[]; placed?: number; right?: number; won?: boolean; size: number; colour: string;
+}) {
+  const cell = size / n;
+  const cut = Math.max(1.5, cell * 0.07);
+  const answer = new Set(solution ?? []);
+  const style = { '--w': `${size}px`, '--n': n, '--pc': colour } as CSSProperties;
+  const label = solution
+    ? `${n} by ${n} Knights board, the answer shown${typeof right === 'number' ? `, ${right} of ${n} right` : ''}`
+    : `${n} by ${n} Knights board${typeof placed === 'number' ? `, ${placed} knights placed` : ''}`;
+  return (
+    <div className={`ctv-board kn${won ? ' ok' : ''}`} style={style} role="img" aria-label={label}>
+      <div className="g">
+        {Array.from({ length: n * n }, (_, i) => {
+          const r = Math.floor(i / n), c = i % n, me = g[i];
+          const edge = (rr: number, cc: number) => (rr < 0 || cc < 0 || rr >= n || cc >= n || g[rr * n + cc] !== me ? cut : 0);
+          const tile: CSSProperties = {
+            top: edge(r - 1, c), right: edge(r, c + 1), bottom: edge(r + 1, c), left: edge(r, c - 1),
+            background: KN_REGIONS[(me ?? 0) % KN_REGIONS.length],
+          };
+          return (
+            <span key={i} className="kc">
+              <span className="kt" style={tile} />
+              {answer.has(i) && <span className="kk"><img src={knightPng} alt="" /></span>}
+            </span>
+          );
+        })}
+      </div>
+      {(typeof placed === 'number' || typeof right === 'number') && (
+        <span className="num" aria-hidden="true">{solution && typeof right === 'number' ? `${right}/${n} RIGHT` : `${placed ?? 0}/${n} PLACED`}</span>
+      )}
+    </div>
+  );
+});
+
 /** A key that changes with every move, so the board is drawn afresh and its flash plays again. */
 const moveKey = (at: LiveBoard) => `${at.board}:${at.tap ?? ''}:${at.ok ?? ''}`;
 
-const hasBoards = (m: Match) => (m.status === 'live' || m.status === 'solo') && typeof m.boardSeed === 'number' && !!m.liveBoard && Object.keys(m.liveBoard).length > 0;
+const knightsBoardOf = (m: Match) => (m.knights && m.knights.n > 0 && Array.isArray(m.knights.g) && m.knights.g.length === m.knights.n * m.knights.n ? m.knights : null);
+
+const hasBoards = (m: Match) => knightsBoardOf(m)
+  ? m.status === 'live' || m.status === 'solo' || m.status === 'done'
+  : (m.status === 'live' || m.status === 'solo') && typeof m.boardSeed === 'number' && !!m.liveBoard && Object.keys(m.liveBoard).length > 0;
 
 function BoardOrWait({ match, p, size, colour }: { match: Match; p: Player | null; size: number; colour: string }) {
   const at = p ? match.liveBoard?.[p.userId] : undefined;
   const game = useContext(GameCtx);
+  const kb = knightsBoardOf(match);
+  if (kb && p && (match.status === 'live' || match.status === 'solo' || match.status === 'done')) {
+    const decided = match.status === 'done';
+    const solution = decided ? kb.solution ?? match.solution : undefined;
+    return (
+      <KnightsBoard
+        n={kb.n}
+        g={kb.g}
+        solution={solution?.length ? solution : undefined}
+        placed={placedOf(match, p.userId)}
+        right={decided ? rightOf(match, p.userId) : undefined}
+        won={decided && match.winnerId === p.userId && rightOf(match, p.userId) === kb.n}
+        size={size}
+        colour={colour}
+      />
+    );
+  }
   if (at && typeof match.boardSeed === 'number') {
     return game === 'trails'
       ? <TrailsBoard key={moveKey(at)} seed={match.boardSeed} at={at} size={size} colour={colour} />
       : <CupBoard key={moveKey(at)} seed={match.boardSeed} at={at} size={size} colour={colour} />;
   }
   const box = Math.round(size * 1.07 + 6);
-  return <div className="ctv-bwait" style={{ width: box, height: box }}>{match.status === 'solo' ? 'Not playing' : game === 'trails' ? 'Board shows when they start' : 'Board shows when they tap'}</div>;
+  return <div className="ctv-bwait" style={{ width: box, height: box }}>{match.status === 'solo' ? 'Not playing' : game === 'trails' || game === 'knights' ? 'Board shows when they start' : 'Board shows when they tap'}</div>;
 }
 
 /** Both players' boards, big, with name, seed and score above each. */
@@ -654,7 +759,7 @@ function BoardsDuel({ match, size }: { match: Match; size: number }) {
         const s = i === 0 ? sa : sb;
         const other = i === 0 ? sb : sa;
         return (
-          <div key={i} className={`ctv-bside${s > other ? ' lead' : ''}`} style={{ '--pc': colour } as CSSProperties}>
+          <div key={i} className={`ctv-bside${leads(match, p, s, other) ? ' lead' : ''}`} style={{ '--pc': colour } as CSSProperties}>
             <div className="ctv-who">
               <CupFace p={p} colour={colour} />
               <span className="ctv-nm">
@@ -708,10 +813,16 @@ function leadLine(match: Match, round: Round): string {
   if (decided) {
     const w = match.winnerId === match.a.userId ? match.a : match.winnerId === match.b.userId ? match.b : null;
     if (!w) return '';
-    const how = match.decidedBy === 'absent' ? ' (neither played: the better seed goes through)' : match.decidedBy === 'solo' ? ' (the other player did not show)' : '';
+    const kn = isKnights(match);
+    const how = match.decidedBy === 'absent' ? ' (neither played: the better seed goes through)' : match.decidedBy === 'solo' ? ' (the other player did not show)'
+      : kn && match.decidedBy === 'finished' ? ' (first right board)'
+      : kn && match.decidedBy === 'resigned' ? ' (the other player resigned)'
+      : kn ? ' (most knights right at the bell)' : '';
     return `${firstName(w.name)} ${round.short === 'F' ? 'wins the tournament' : 'goes through'}${how}`;
   }
   if (match.status !== 'live' && match.status !== 'solo') return '';
+  // Knights: a knight placed is not a knight right, so nobody "leads"; the first right board wins.
+  if (isKnights(match)) return 'First right board wins';
   if (!leader) return sa === 0 ? 'Get ready…' : `Level on ${fmt(sa)}`;
   return `${firstName(leader.name)} leads by ${fmt(Math.abs(sa - sb))}`;
 }
@@ -1132,6 +1243,7 @@ function StreamDuel({ match, round, split, serverNow, roundSec, kicker }: {
 }) {
   const size = useStreamBoardSize();
   const trails = useContext(GameCtx) === 'trails';
+  const kb = knightsBoardOf(match);
   const pill = STATUS_PILL[match.status];
   const timer = matchClock(match, split, serverNow, roundSec);
   const lead = leadLine(match, round);
@@ -1145,7 +1257,7 @@ function StreamDuel({ match, round, split, serverNow, roundSec, kicker }: {
     const s = i === 0 ? sa : sb;
     const at = p ? match.liveBoard?.[p.userId] : undefined;
     return (
-      <div className={`cs-side${i ? ' b' : ''}${s > (i === 0 ? sb : sa) ? ' lead' : ''}`} style={{ '--pc': colour } as CSSProperties}>
+      <div className={`cs-side${i ? ' b' : ''}${leads(match, p, s, i === 0 ? sb : sa) ? ' lead' : ''}`} style={{ '--pc': colour } as CSSProperties}>
         <div className="cs-who">
           <CupFace p={p} colour={colour} />
           <span className="cs-nm">
@@ -1155,7 +1267,7 @@ function StreamDuel({ match, round, split, serverNow, roundSec, kicker }: {
           <span className="cs-sc" style={{ color: colour }}>{p ? fmt(s) : ''}</span>
         </div>
         {boards ? <BoardOrWait match={match} p={p} size={size} colour={colour} /> : <div className="cs-noboard" style={{ width: size * 1.07 + 6, height: size * 1.07 + 6 }}>{fmt(s)}</div>}
-        {at && (trails ? <span className="cs-bl">TRAIL <b>{at.board + 1}</b> · {at.board} DRAWN</span> : <span className="cs-bl">BOARD <b>{at.board + 1}</b> · {at.board} FOUND</span>)}
+        {!kb && at && (trails ? <span className="cs-bl">TRAIL <b>{at.board + 1}</b> · {at.board} DRAWN</span> : <span className="cs-bl">BOARD <b>{at.board + 1}</b> · {at.board} FOUND</span>)}
       </div>
     );
   };
