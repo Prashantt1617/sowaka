@@ -11,7 +11,7 @@
  * The run is idempotent: a year already closed for an employee is skipped, so
  * a restart or a second pass on the same day changes nothing.
  */
-import { leaves, leaveYearEnds, users } from '../config/db';
+import { leaveBalanceAdjustments, leaves, leaveYearEnds, users } from '../config/db';
 import { LeaveTypeKey, LeaveTypeRule, LeaveYearEnd, monthsCredited, processYearEnd } from '../models/shift.model';
 import { logger } from '../utils/logger';
 import { leaveTypeRulesFor } from './shift.service';
@@ -104,7 +104,9 @@ export async function closeYearForUser(
       // Credited monthly: every month of the closing year from joining.
       : rule.perMonth * monthsCredited(start, end, end, user.joiningDate);
     const opening = (await carriedFromRun(userId, rule.key, year)) ?? 0;
-    const closing = accrued + opening - (await usedIn(userId, rule.key, start, end));
+    // HR's change to this year's total (Leave balance on the dashboard) closes with it.
+    const adjusted = (await leaveBalanceAdjustments().findOne({ userId, year, type: rule.key }))?.days ?? 0;
+    const closing = accrued + opening + adjusted - (await usedIn(userId, rule.key, start, end));
     const split = processYearEnd(closing, rule);
     const row: LeaveYearEnd = {
       org: user.org,

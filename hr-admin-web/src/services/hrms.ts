@@ -353,10 +353,14 @@ export type EmployeeCalendarDTO = {
   totals: Record<CalendarDayStatus, number>;
 };
 /** One leave type's balance, as the employee's app shows it. Leave without pay is `unlimited` and `unpaid`. */
-export type LeaveBalanceItemDTO = { key: string; name: string; total: number; used: number; remaining: number; unlimited?: true; unpaid?: true };
+export type LeaveBalanceItemDTO = { key: string; name: string; total: number; used: number; remaining: number; unlimited?: true; unpaid?: true; /** HR may change its total (a yearly, paid type). */ editable?: true };
 /** An employee's real leave balance for the year (read only). */
 export const getEmployeeLeaveBalance = (userId: string) =>
   api<{ balance: { year: number; types: LeaveBalanceItemDTO[] } }>(`/admin/employees/${userId}/leave-balance`).then((r) => r.balance);
+
+/** HR sets a leave type's total for the year; taken days stay as they are. Answers the new balance. */
+export const setEmployeeLeaveTotal = (userId: string, type: string, total: number) =>
+  api<{ balance: { year: number; types: LeaveBalanceItemDTO[] } }>(`/admin/employees/${userId}/leave-balance/${encodeURIComponent(type)}`, { method: 'PUT', body: { total } }).then((r) => r.balance);
 
 export const getEmployeeCalendar = (userId: string, month: string) =>
   api<{ calendar: EmployeeCalendarDTO }>(`/admin/employees/${userId}/calendar?month=${month}`).then((r) => r.calendar);

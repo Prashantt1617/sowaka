@@ -20,6 +20,7 @@ import {
   saveOfficeHandler,
   employeeCalendarHandler,
   employeeLeaveBalanceHandler,
+  setEmployeeLeaveTotalHandler,
   setCalendarDayHandler,
   setMarkRemovedHandler,
   clearCalendarDayHandler,
@@ -137,6 +138,8 @@ adminRouter.get('/employees/:userId/activity', employeeActivityHandler);
 adminRouter.get('/employees/:userId/calendar', employeeCalendarHandler);
 // One employee's leave balance, as their app shows it (read only).
 adminRouter.get('/employees/:userId/leave-balance', employeeLeaveBalanceHandler);
+// HR sets a leave type's total for the year (taken days are not touched).
+adminRouter.put('/employees/:userId/leave-balance/:type', setEmployeeLeaveTotalHandler);
 // HR marks a day of the current month; it outranks punches, leave and holidays everywhere.
 adminRouter.put('/employees/:userId/calendar/:date', setCalendarDayHandler);
 adminRouter.delete('/employees/:userId/calendar/:date', clearCalendarDayHandler);
