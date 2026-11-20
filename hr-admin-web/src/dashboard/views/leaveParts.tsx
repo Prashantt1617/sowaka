@@ -399,3 +399,23 @@ export function Key({ color, children }: { color: string; children: ReactNode })
   return <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span aria-hidden style={{ width: 12, height: 12, borderRadius: 3, background: color, display: 'inline-block' }} />{children}</span>;
 }
 
+
+/** The pill switch at the top right of a Time office page: List or Calendar on Leave requests, Balances or Import on Leave balances. */
+export function ViewToggle<K extends string>({ options, value, onChange }: { options: { key: K; label: string; icon: ReactNode }[]; value: K; onChange: (k: K) => void }) {
+  const toggleBtn = (on: boolean): CSSProperties => ({
+    display: 'inline-flex', alignItems: 'center', gap: 8, height: 38, padding: '0 18px', borderRadius: 999, border: 0, cursor: 'pointer',
+    font: 'inherit', fontSize: 14, fontWeight: 600, transition: 'background .15s, color .15s',
+    background: on ? 'var(--accent)' : 'transparent', color: on ? 'var(--on-accent)' : 'var(--accent-ink)',
+    boxShadow: on ? '0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent)' : undefined,
+  });
+  return (
+    <div role="group" aria-label="View" style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 999, background: 'var(--accent-soft)', border: '1.5px solid color-mix(in srgb, var(--accent) 45%, transparent)' }}>
+      {options.map((o) => (
+        <button key={o.key} type="button" aria-pressed={value === o.key} onClick={() => onChange(o.key)} style={toggleBtn(value === o.key)}>
+          {o.icon}
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}

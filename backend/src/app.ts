@@ -38,6 +38,8 @@ app.use(
 app.use(compression());
 // An employee import carries the whole sheet (up to 2,000 rows).
 app.use('/admin/employees/import', express.json({ limit: '5mb' }));
+// A sheet of leave balances, every row and column of it, like the employee import.
+app.use('/admin/leave-balances/import', express.json({ limit: '5mb' }));
 // A question to Suwi may carry one file: an image up to 5 MB (base64) or a spreadsheet's rows.
 app.use('/suwi/ask', express.json({ limit: '8mb' }));
 // A drawn signature on the portal is an image (base64).

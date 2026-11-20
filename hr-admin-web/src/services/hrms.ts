@@ -362,6 +362,51 @@ export const getEmployeeLeaveBalance = (userId: string) =>
 export const setEmployeeLeaveTotal = (userId: string, type: string, total: number) =>
   api<{ balance: { year: number; types: LeaveBalanceItemDTO[] } }>(`/admin/employees/${userId}/leave-balance/${encodeURIComponent(type)}`, { method: 'PUT', body: { total } }).then((r) => r.balance);
 
+/** One leave type's balance in the Time office list; monthly types say which month. */
+export type LeaveBalanceCellDTO = LeaveBalanceItemDTO & { cadence?: 'monthly'; period?: string };
+/** Time office › Leave balances: one active employee and every type on their template. */
+export type LeaveBalancePersonDTO = {
+  userId: string; name: string; employeeId: string; email: string; department: string; designation: string; location: string; manager: string;
+  /** Their shift template's name, where the leave types come from. */
+  template: string;
+  /** Whether the person asking may set this person's totals (as the profile's pencil). */
+  canEdit: boolean;
+  types: LeaveBalanceCellDTO[];
+  error?: string;
+};
+export type LeaveBalanceTypeDTO = { key: string; name: string; editable: boolean; unpaid: boolean; monthly: boolean };
+export type LeaveBalancesDTO = { year: number; types: LeaveBalanceTypeDTO[]; canImport: boolean; people: LeaveBalancePersonDTO[] };
+/** Every active employee's leave balance for the year, in one read. */
+export const getLeaveBalances = (year?: number) =>
+  api<LeaveBalancesDTO & { success: boolean }>(`/admin/leave-balances${year ? `?year=${year}` : ''}`);
+
+/** One person and leave type in the balance import: Sowaka's figure now and the file's. */
+export type LeaveImportLine = {
+  row: number; userId: string; name: string; employeeId: string; department: string; type: string; typeName: string; column: string;
+  taken: number; totalNow: number; availableNow: number; totalNew: number; availableNew: number; difference: number; note?: string;
+};
+export type LeaveImportPreview = {
+  importId: string;
+  year: number;
+  mode: 'available' | 'total';
+  fileColumns: { header: string; key: string; field: string; sample: string }[];
+  fieldChoices: { field: string; label: string }[];
+  changes: LeaveImportLine[];
+  same: LeaveImportLine[];
+  unchanged: number;
+  notInFile: { userId: string; name: string; employeeId: string; department: string }[];
+  unmatched: { row: number; value: string; message: string }[];
+  errors: { row: number; name: string; employeeId: string; column: string; value: string; message: string }[];
+  rows: { row: number; name: string; employeeId: string; status: 'changed' | 'unchanged' | 'not matched' | 'not imported'; detail: string }[];
+};
+export type LeaveImportResult = { people: number; values: number; unchanged: number; failed: { row: number; name: string; message: string }[] };
+/** What a sheet of leave balances would change; nothing is saved. */
+export const previewLeaveImport = (fileName: string, rows: Record<string, string>[], opts: { mapping?: Record<string, string>; mode?: 'available' | 'total' } = {}) =>
+  api<{ preview: LeaveImportPreview }>('/admin/leave-balances/import/preview', { method: 'POST', body: { fileName, rows, ...opts } }).then((r) => r.preview);
+export const applyLeaveImport = (importId: string, declined: { row: number; type: string }[] = []) =>
+  api<{ result: LeaveImportResult }>(`/admin/leave-balances/import/${importId}/apply`, { method: 'POST', body: { declined } }).then((r) => r.result);
+export const cancelLeaveImport = (importId: string) => api(`/admin/leave-balances/import/${importId}/cancel`, { method: 'POST' });
+
 export const getEmployeeCalendar = (userId: string, month: string) =>
   api<{ calendar: EmployeeCalendarDTO }>(`/admin/employees/${userId}/calendar?month=${month}`).then((r) => r.calendar);
 

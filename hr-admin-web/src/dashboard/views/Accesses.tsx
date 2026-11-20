@@ -39,8 +39,9 @@ const titleCase = (t: string) => t.charAt(0) + t.slice(1).toLowerCase();
 // or it would read as given to everyone.
 // Placements' Clients and Candidates come with its one tab, `placements`.
 // Investment proofs, Statutory & tax settings, FBP requests and FBP splits are not tabs of their own here: they come with Payroll Runs or Salary details.
+// Time office › Leave balances comes with Leave requests.
 // Reports › Company calendar and Punch log come with the Attendance report (Punch log with Attendance and OOL check-ins too), as access.ts and the server decide it.
-const RIDES_ALONG = new Set<AccessKey>([...PLACEMENT_VIEWS.filter((v) => v !== 'placements'), 'investmentproofs', 'payrollconfig', 'exits', 'fbprequests', 'fbpsplits', 'companycalendar', 'punchlog']);
+const RIDES_ALONG = new Set<AccessKey>([...PLACEMENT_VIEWS.filter((v) => v !== 'placements'), 'investmentproofs', 'payrollconfig', 'exits', 'fbprequests', 'fbpsplits', 'companycalendar', 'punchlog', 'leavebalances']);
 const LIFECYCLE_HINTS: Partial<Record<AccessKey, string>> = {
   onboarding: 'Offers, pre-boarding, the first week and probation',
   offboarding: 'Resignations, notice, clearance and settlement. Without People, only their own clearance items, no pay',

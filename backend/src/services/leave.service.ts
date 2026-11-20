@@ -1,5 +1,5 @@
 import { ObjectId } from 'mongodb';
-import { attendanceRecords, leaveBalanceAdjustments, leaves, overtimeRequests, users } from '../config/db';
+import { attendanceRecords, leaveBalanceAdjustments, leaves, leaveYearEnds, overtimeRequests, users } from '../config/db';
 import { Leave, LeaveCancelRequest, LeaveStatus } from '../models/leave.model';
 import { User } from '../models/user.model';
 import { orgUsersWithRows, sortLikeMongo } from './admin-scope';
@@ -11,7 +11,7 @@ import { presignReceiptDownload, uploadLeaveDocument } from './s3-receipt.servic
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import {
   approvalRulesFor, fullDayHoursFor, hrMayDecide, isWeekOffDay, leaveRulesFor, leaveTypeRulesFor, withPolicyMemo,
-  managerMayDecide, policiesForPeople, weekOffGridFor,
+  managerMayDecide, policiesForPeople, policyForUser, primePolicyMemo, weekOffGridFor,
 } from './shift.service';
 import { OvertimeRequest, compOffDaysOf } from '../models/overtime.model';
 import { LEAVE_KEY_PATTERN, LEAVE_TYPE_KEYS, LeaveTypeKey, LeaveTypeRule, isUnpaidLeaveType, leaveTypeLabel, monthsCredited, processYearEnd } from '../models/shift.model';
@@ -340,11 +340,14 @@ export function getMyLeaveBalance(userId: string, year = new Date().getUTCFullYe
   return withPolicyMemo(() => leaveBalanceOf(userId, year, asOf));
 }
 
-async function leaveBalanceOf(userId: string, year: number, asOf: Date) {
+/** What a company-wide read (`leaveBalancesFor`) has already fetched for one person. */
+type BalancePrefetch = { employee: User; reads: BalanceReads };
+
+async function leaveBalanceOf(userId: string, year: number, asOf: Date, pre?: BalancePrefetch) {
   // The signed-in person, as requireAuth read them, when it is them.
-  const viewer = requestViewer(userId);
+  const viewer = pre ? null : requestViewer(userId);
   // Not the old inline photo, the enrolled face or the document list: none is read here, and they can be megabytes.
-  const employeeP: Promise<User | null> = viewer ? Promise.resolve(viewer as User) : users().findOne({ userId }, { projection: { _id: 0, profilePhotoUrl: 0, faceId: 0, documents: 0 } }) as Promise<User | null>;
+  const employeeP: Promise<User | null> = pre ? Promise.resolve(pre.employee) : viewer ? Promise.resolve(viewer as User) : users().findOne({ userId }, { projection: { _id: 0, profilePhotoUrl: 0, faceId: 0, documents: 0 } }) as Promise<User | null>;
   if (!Number.isInteger(year) || year < 2000 || year > 2100) {
     if (!(await employeeP)) throw new LeaveError(404, 'Employee not found');
     throw new LeaveError(400, 'Invalid balance year');
@@ -353,7 +356,7 @@ async function leaveBalanceOf(userId: string, year: number, asOf: Date) {
   const yearEnd = new Date(Date.UTC(year, 11, 31));
   // Everything a balance can need, asked for at once rather than in the four
   // or five rounds it used to take (each ~200 ms to the cluster).
-  const reads = balanceReads(userId, year);
+  const reads = pre?.reads ?? balanceReads(userId, year);
   // The person, their leave types, the year's approved leave and the comp-off
   // it earned depend only on who and which year, so they are read together
   // rather than one after another; a failure is still reported in the old order.
@@ -517,6 +520,82 @@ function balanceReads(userId: string, year: number) {
   };
   for (const read of Object.values(reads)) (read as Promise<unknown>).catch(() => undefined);
   return reads;
+}
+
+/** One person's balance, as `getMyLeaveBalance` answers it. */
+export type LeaveBalance = Awaited<ReturnType<typeof leaveBalanceOf>>;
+
+/**
+ * Many people's balances for `year` at once (Time office › Leave balances, the
+ * balance import): exactly what `getMyLeaveBalance` gives each of them, but
+ * read as a company. Their policies come from one batched lookup, and their
+ * approved leave, overtime, last year's close and HR's changes from one query
+ * each by `$in`, cut per person in memory; only "was last year tracked" for
+ * someone with no leave last year is still asked per person (one indexed
+ * count). Someone whose balance cannot be worked out is in `failed`.
+ */
+export function leaveBalancesFor(people: User[], year = new Date().getUTCFullYear(), asOf = new Date()) {
+  return withPolicyMemo(async () => {
+    const out = new Map<string, LeaveBalance>();
+    const failed = new Map<string, string>();
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) throw new LeaveError(400, 'Invalid balance year');
+    const ids = people.map((p) => p.userId);
+    if (ids.length === 0) return { balances: out, failed, policies: new Map<string, Awaited<ReturnType<typeof policyForUser>>>() };
+    const priorStart = new Date(Date.UTC(year - 1, 0, 1));
+    const priorEnd = new Date(Date.UTC(year - 1, 11, 31));
+    const yearEnd = new Date(Date.UTC(year, 11, 31));
+    const [, approved, overtime, leftLeaveLastYear, yearEndRows, adjustmentRows] = await Promise.all([
+      primePolicyMemo(people),
+      leaves().find({ userId: { $in: ids }, status: 'approved', startDate: { $lte: yearEnd }, endDate: { $gte: priorStart } }).toArray(),
+      overtimeRequests().find({ userId: { $in: ids }, status: 'approved', workDate: { $gte: priorStart, $lte: yearEnd } }).toArray(),
+      // A leave taken back is no sign the year was tracked (as `yearWasTracked`).
+      leaves().distinct('userId', { userId: { $in: ids }, status: { $ne: 'cancelled' }, startDate: { $lte: priorEnd }, endDate: { $gte: priorStart } }),
+      leaveYearEnds().find({ userId: { $in: ids }, year: year - 1 }, { projection: { _id: 0, userId: 1, type: 1, carried: 1 } }).toArray(),
+      leaveBalanceAdjustments().find({ userId: { $in: ids }, year: { $in: [year - 1, year] } }, { projection: { _id: 0, userId: 1, year: 1, type: 1, days: 1 } }).toArray(),
+    ]);
+    const group = <T extends { userId: string }>(rows: T[]) => {
+      const by = new Map<string, T[]>();
+      for (const row of rows) by.set(row.userId, [...(by.get(row.userId) ?? []), row]);
+      return by;
+    };
+    const approvedBy = group(approved);
+    const overtimeBy = group(overtime);
+    const yearEndsBy = group(yearEndRows as { userId: string; type: LeaveTypeKey; carried: number }[]);
+    const adjustmentsBy = group(adjustmentRows);
+    const trackedByLeave = new Set(leftLeaveLastYear as string[]);
+    const policies = new Map<string, Awaited<ReturnType<typeof policyForUser>>>();
+    const one = async (employee: User) => {
+      const userId = employee.userId;
+      const carried = new Map<LeaveTypeKey, number>();
+      // The first row per type, as `carriedFromRuns` picks it.
+      for (const row of yearEndsBy.get(userId) ?? []) if (!carried.has(row.type)) carried.set(row.type, row.carried);
+      const reads: BalanceReads = {
+        approved: Promise.resolve(approvedBy.get(userId) ?? []),
+        overtime: fullDayHoursFor(userId).then((hours) => compOffCredit(overtimeBy.get(userId) ?? [], hours)),
+        priorTracked: trackedByLeave.has(userId)
+          ? Promise.resolve(true)
+          : attendanceRecords()
+            .countDocuments({ userId, workDate: { $gte: priorStart.toISOString().slice(0, 10), $lte: priorEnd.toISOString().slice(0, 10) } }, { limit: 1 })
+            .then((n) => n > 0),
+        yearEnds: Promise.resolve(carried),
+        adjustments: Promise.resolve(new Map((adjustmentsBy.get(userId) ?? []).map((row) => [`${row.year}:${row.type}`, row.days]))),
+      };
+      for (const read of Object.values(reads)) (read as Promise<unknown>).catch(() => undefined);
+      try {
+        const [balance, policy] = await Promise.all([leaveBalanceOf(userId, year, asOf, { employee, reads }), policyForUser(userId)]);
+        out.set(userId, balance);
+        policies.set(userId, policy);
+      } catch (error) {
+        failed.set(userId, error instanceof Error ? error.message : 'Could not work out the balance');
+      }
+    };
+    // A few at a time: the per-person count above is the only read left, and the pool stays free for others.
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(16, people.length) }, async () => {
+      while (next < people.length) await one(people[next++]);
+    }));
+    return { balances: out, failed, policies };
+  });
 }
 
 /**
@@ -1265,23 +1344,50 @@ export async function setLeaveTotal(adminUserId: string, userId: string, typeInp
   if (!Number.isFinite(total) || total < 0 || total > 366) throw new LeaveError(400, 'Enter a total between 0 and 366 days');
   if (Math.round(total * 2) !== total * 2) throw new LeaveError(400, 'Use whole or half days');
   const balance = await getMyLeaveBalance(userId, year);
+  const now = editableBalanceItem(balance, type);
+  if (total < now.used) throw new LeaveError(400, `${now.used} days are already taken, so the total cannot be less than that`);
+  await writeLeaveTotals(adminUserId, employee.org!, userId, year, [{ type, name: now.name, from: now.total, to: total }]);
+  return getMyLeaveBalance(userId, year);
+}
+
+/** One leave type's balance item; the refusal when it is not on the template, or has no total HR can set. */
+export function editableBalanceItem(balance: LeaveBalance, type: string) {
   const now = balance.types.find((item) => item.key === type) as (ReturnType<typeof balanceItem> & { name: string; editable?: true; unpaid?: true }) | undefined;
   if (!now) throw new LeaveError(404, 'That leave type is not on this person\'s shift template');
   if (!now.editable) throw new LeaveError(400, now.unpaid ? 'Leave without pay has no total' : 'This type resets every month, so its total cannot be set');
-  if (total < now.used) throw new LeaveError(400, `${now.used} days are already taken, so the total cannot be less than that`);
-  const before = await leaveBalanceAdjustments().findOne({ userId, year, type });
-  const days = round((before?.days ?? 0) + (total - now.total));
-  await leaveBalanceAdjustments().updateOne(
-    { userId, year, type },
-    { $set: { org: employee.org, userId, year, type, days, updatedAt: new Date(), updatedByUserId: adminUserId } },
-    { upsert: true },
-  );
-  forgetSwrExcept(employee.org, ['suwi-org-data']);
+  return now;
+}
+
+/**
+ * Sets one person's totals for the year, each from the total it reads as now
+ * (`from`) to the one wanted (`to`): stored as the difference on top of HR's
+ * earlier change, so later credits still add and taken days are not touched.
+ * The one write behind the profile's pencil and the balance import; logged on
+ * the person's Activity as one entry.
+ */
+export async function writeLeaveTotals(
+  adminUserId: string,
+  org: string,
+  userId: string,
+  year: number,
+  changes: { type: string; name: string; from: number; to: number }[],
+) {
+  if (changes.length === 0) return;
+  const before = new Map((await leaveBalanceAdjustments().find({ userId, year, type: { $in: changes.map((c) => c.type) } }).toArray()).map((row) => [row.type, row.days]));
+  const now = new Date();
+  await leaveBalanceAdjustments().bulkWrite(changes.map((change) => ({
+    updateOne: {
+      filter: { userId, year, type: change.type },
+      update: { $set: { org, userId, year, type: change.type, days: round((before.get(change.type) ?? 0) + (change.to - change.from)), updatedAt: now, updatedByUserId: adminUserId } },
+      upsert: true,
+    },
+  })), { ordered: false });
+  forgetSwrExcept(org, ['suwi-org-data']);
   void logActivity({
-    org: employee.org, userId, byUserId: adminUserId, kind: 'details', title: `${now.name} total for ${year}`,
-    changes: [{ field: `leaveTotal.${type}`, label: `${now.name} total (${year})`, from: String(now.total), to: String(total) }],
+    org, userId, byUserId: adminUserId, kind: 'details',
+    title: changes.length === 1 ? `${changes[0].name} total for ${year}` : `Leave totals for ${year}`,
+    changes: changes.map((change) => ({ field: `leaveTotal.${change.type}`, label: `${change.name} total (${year})`, from: String(change.from), to: String(change.to) })),
   });
-  return getMyLeaveBalance(userId, year);
 }
 
 /**

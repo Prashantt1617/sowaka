@@ -1069,6 +1069,23 @@ export function withPolicyMemo<T>(work: () => Promise<T>): Promise<T> {
   return policyMemo.getStore() ? work() : policyMemo.run(new Map(), work);
 }
 
+/**
+ * Inside a memo scope: these people's policies as of `asOf`, resolved in one
+ * batched read (`policiesForPeople`, the same merge `policyForUser` makes) and
+ * kept in the scope, so a company's worth of balances asks for none of them
+ * one by one. Outside a scope it does nothing.
+ */
+export async function primePolicyMemo(people: { userId: string; org?: string }[], asOf: string = todayIso()): Promise<void> {
+  const memo = policyMemo.getStore();
+  if (!memo || people.length === 0) return;
+  const resolved = await policiesForPeople(people, asOf);
+  for (const person of people) {
+    const policy = resolved.get(person.userId);
+    const key = `${person.userId}|${asOf}`;
+    if (policy && !memo.has(key)) memo.set(key, Promise.resolve(policy));
+  }
+}
+
 async function resolvePolicyForUser(userId: string, asOf: string): Promise<ResolvedShiftPolicy> {
   // Asked in two trips rather than four or five: leave balances, overtime and
   // punches all come through here, often several times for one answer. The

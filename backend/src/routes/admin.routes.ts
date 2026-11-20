@@ -21,6 +21,10 @@ import {
   employeeCalendarHandler,
   employeeLeaveBalanceHandler,
   setEmployeeLeaveTotalHandler,
+  listLeaveBalancesHandler,
+  previewLeaveImportHandler,
+  applyLeaveImportHandler,
+  cancelLeaveImportHandler,
   setCalendarDayHandler,
   setMarkRemovedHandler,
   clearCalendarDayHandler,
@@ -140,6 +144,11 @@ adminRouter.get('/employees/:userId/calendar', employeeCalendarHandler);
 adminRouter.get('/employees/:userId/leave-balance', employeeLeaveBalanceHandler);
 // HR sets a leave type's total for the year (taken days are not touched).
 adminRouter.put('/employees/:userId/leave-balance/:type', setEmployeeLeaveTotalHandler);
+// Time office › Leave balances: everyone's balance, and the Excel import that sets them (approved before it saves).
+adminRouter.get('/leave-balances', listLeaveBalancesHandler);
+adminRouter.post('/leave-balances/import/preview', previewLeaveImportHandler);
+adminRouter.post('/leave-balances/import/:importId/apply', applyLeaveImportHandler);
+adminRouter.post('/leave-balances/import/:importId/cancel', cancelLeaveImportHandler);
 // HR marks a day of the current month; it outranks punches, leave and holidays everywhere.
 adminRouter.put('/employees/:userId/calendar/:date', setCalendarDayHandler);
 adminRouter.delete('/employees/:userId/calendar/:date', clearCalendarDayHandler);

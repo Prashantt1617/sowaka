@@ -57,6 +57,8 @@ export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boo
   }
   // Time office › Punch log goes with any of the attendance pages, as the server allows it.
   if (view === 'punchlog') return canOpen(user, 'attendancereport') || canOpen(user, 'attendance') || canOpen(user, 'oolcheckins');
+  // Time office › Leave balances goes with Leave requests, as the server allows it (its edits need Employees too).
+  if (view === 'leavebalances') return canOpen(user, 'leave');
   // People › Tasks goes with Employees.
   if (view === 'peopletasks') return canOpen(user, 'employees');
   // The Diwali Cup TV (and its void) is HR's: an admin, or someone never limited to some tabs.

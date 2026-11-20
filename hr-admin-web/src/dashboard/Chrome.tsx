@@ -41,6 +41,7 @@ const REQUESTS: NavItem[] = [
   { key: 'punchlog', label: 'Punch log' },
   { key: 'attendance', label: 'Attendance corrections' },
   { key: 'leave', label: 'Leave requests' },
+  { key: 'leavebalances', label: 'Leave balances' },
   { key: 'overtime', label: 'Overtime' },
   { key: 'oolcheckins', label: 'OOL check-ins', hidden: true },
 ];

@@ -87,6 +87,9 @@ const RULES: Rule[] = [
   { path: /^\/admin\/employees\/[^/]+\/calendar/, read: ['employees', 'attendancereport'], write: ['employees'] },
   { path: /^\/admin\/employees/, write: ['employees'] },
   { path: /^\/admin\/reporting/, write: ['employees', 'orgchart'] },
+  // Time office › Leave balances goes with Leave requests (or Employees, whose profile shows one balance);
+  // the import writes totals as the profile's pencil does, so it needs what that needs.
+  { path: /^\/admin\/leave-balances/, read: ['leave', 'employees'], write: ['employees'] },
   // Requests
   { path: /^\/admin\/leaves/, read: ['leave', 'overview'], write: ['leave', 'overview'] },
   { path: /^\/admin\/overtime/, read: ['overtime', 'overview'], write: ['overtime', 'overview'] },
