@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../manager/data/manager_api_service.dart';
 import '../../../manager/data/manager_models.dart' show LeaveBalance, LeaveBalanceItem;
 import '../../../policies/data/policies_api_service.dart';
+import '../../../policies/data/policies_models.dart';
 import '../../../policies/presentation/policies_ack_screen.dart';
 import '../../../shared/app_toast.dart';
 import '../data/onboarding_api.dart';
@@ -387,8 +388,9 @@ class _OnbTasksScreenState extends _HomeListState<OnbTasksScreen> {
     if (source == null) return;
     try {
       final list = await source.load();
-      final needed = list.where((p) => p.ackRequired).toList();
-      if (mounted) setState(() => _pol = (done: needed.where((p) => p.isAcknowledged).length, total: needed.length));
+      // The same count as Actions' tile and the Policies screen (policiesToAcknowledge).
+      final total = list.where((p) => p.ackRequired).length;
+      if (mounted) setState(() => _pol = (done: total - policiesToAcknowledge(list), total: total));
     } catch (_) {
       // The row just waits for the next open.
     }
@@ -582,6 +584,43 @@ class _TaskLine extends StatelessWidget {
 
 // ─── Sowaka tour ────────────────────────────────────────────────────────────
 
+/// Plays [lesson] straight away (the home's "SOWAKA TOUR · TODAY" card, which
+/// opens today's lesson without the list): the drawing filled in from the
+/// joiner's record, and Done told to the server. The lessons done after it,
+/// as the server has them, or null when it could not be told.
+Future<List<String>?> playTourLesson(BuildContext context, OnboardingShell shell, OnboardingHome? home, TourLesson lesson) async {
+  final api = shell.api;
+  LeaveBalance? balance;
+  if (lesson.key == 'leave' && api is HttpOnboardingApi) {
+    balance = await ManagerApiService(session: api.session).fetchLeaveBalance().then<LeaveBalance?>((b) => b).catchError((Object _) => null);
+  }
+  if (!context.mounted) return null;
+  List<String>? done;
+  await Navigator.of(context).push<void>(
+    MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => TourLessonScreen(
+        lesson: lesson,
+        facts: tourFactsFor(shell, home?.managerName, balance),
+        onDone: (key) async => done = await reportTourLessonDone(shell, key),
+      ),
+    ),
+  );
+  return done;
+}
+
+/// What a lesson's drawing is filled in with: today, the manager's name, the balance.
+TourFacts tourFactsFor(OnboardingShell shell, String? managerName, LeaveBalance? balance) {
+  double? left(LeaveBalanceItem item) => item.unpaid ? null : item.remaining;
+  return TourFacts(
+    today: shell.now(),
+    managerName: managerName,
+    casual: balance == null ? null : left(balance.casual),
+    sick: balance == null ? null : left(balance.sick),
+    earned: balance == null ? null : left(balance.earned),
+  );
+}
+
 /// "Sowaka tour · today’s lesson, play ahead, replay": each lesson with its
 /// number (a tick once done), Today / Day n / Done, and Start, Play or
 /// Replay. Managers also see "For managers".
@@ -635,17 +674,7 @@ class _OnbTourScreenState extends State<OnbTourScreen> {
     }
   }
 
-  TourFacts get _facts {
-    double? left(LeaveBalanceItem item) => item.unpaid ? null : item.remaining;
-    final b = _balance;
-    return TourFacts(
-      today: widget.shell.now(),
-      managerName: widget.managerName,
-      casual: b == null ? null : left(b.casual),
-      sick: b == null ? null : left(b.sick),
-      earned: b == null ? null : left(b.earned),
-    );
-  }
+  TourFacts get _facts => tourFactsFor(widget.shell, widget.managerName, _balance);
 
   Future<void> _play(TourLesson lesson) async {
     await Navigator.of(context).push<void>(

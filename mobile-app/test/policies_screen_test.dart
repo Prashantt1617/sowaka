@@ -547,7 +547,7 @@ void main() {
     'the list is kept: shown at once offline, and refreshed on open',
     (tester) async {
       answer = () => _json(_companyPolicies);
-      var controller = await pumpActions(tester);
+      await pumpActions(tester);
       await openPolicies(tester);
       expect(find.text('Code of Conduct policy'), findsOneWidget);
       await closePolicies(tester);
@@ -560,7 +560,7 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
 
       // A fresh Actions tab, still offline, draws the kept copy at once.
-      controller = await pumpActions(tester);
+      await pumpActions(tester);
       await openPolicies(tester);
       expect(find.text('Code of Conduct policy'), findsOneWidget);
       expect(find.text('Leave policy'), findsOneWidget);
