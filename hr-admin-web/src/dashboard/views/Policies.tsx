@@ -110,7 +110,6 @@ export function Policies() {
         <PolicySheet
           initial={editing}
           startTitle={adding ?? ''}
-          first={policies.length === 0}
           onClose={() => { setAdding(null); setEditing(null); }}
           onSaved={async (message) => { await reload(); flash(message); setAdding(null); setEditing(null); }}
         />
@@ -209,10 +208,9 @@ export function Policies() {
   );
 }
 
-function PolicySheet({ initial, startTitle, first, onClose, onSaved }: {
+function PolicySheet({ initial, startTitle, onClose, onSaved }: {
   initial: PolicyDTO | null;
   startTitle: string;
-  first: boolean;
   onClose: () => void;
   onSaved: (message: string) => void;
 }) {
@@ -247,11 +245,6 @@ function PolicySheet({ initial, startTitle, first, onClose, onSaved }: {
         </div>
 
         <div style={{ padding: 20, flex: 1, overflowY: 'auto' }}>
-          {first && !initial && (
-            <div style={warnTag}>
-              This is your first policy, so the app stops showing its standard ones and lists only the policies you add here.
-            </div>
-          )}
           <Field label="Name" required>
             <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Leave" className="ds-inp" style={inp} maxLength={80} autoFocus={!startTitle} />
             <div style={{ ...hint, marginTop: 6 }}>The app lists it as "{heading(title || 'Leave')}".</div>
@@ -359,7 +352,6 @@ const note: CSSProperties = { display: 'flex', gap: 12, alignItems: 'flex-start'
 const onPill = { bg: 'var(--p-green)', fg: 'var(--on-accent)' };
 const offPill = { bg: 'var(--mute-bg)', fg: 'var(--ink-2)' };
 const errorTag: CSSProperties = { fontSize: 13, fontWeight: 600, color: 'var(--bad)', background: 'var(--bad-bg)', borderRadius: 14, padding: '10px 14px' };
-const warnTag: CSSProperties = { fontSize: 13, color: 'var(--ink)', background: 'var(--surface-2)', border: '1px solid var(--line)', borderLeft: '3px solid var(--accent)', borderRadius: 12, padding: '10px 14px', marginBottom: 16, lineHeight: 1.5 };
 const checkRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', cursor: 'pointer', accentColor: 'var(--accent)' };
 const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'var(--scrim)', display: 'flex', justifyContent: 'flex-end', zIndex: 60, animation: 'ovl .2s ease both' };
 const sheet: CSSProperties = { width: 560, maxWidth: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRadius: '24px 0 0 24px', boxShadow: 'var(--shadow-drawer)', animation: 'drwIn .25s ease both' };
