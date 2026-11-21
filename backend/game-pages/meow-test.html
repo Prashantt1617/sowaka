@@ -174,7 +174,7 @@ h1 .face{width:26px;height:24px}
 .cover .nb{font-family:var(--pixel);font-size:12px;color:var(--muted);letter-spacing:0}
 .cover.m{position:static;inset:auto;background:none;border-radius:0;padding:0;align-items:stretch;justify-content:flex-start;gap:14px;text-align:left}
 /* The tools under the board. */
-.toolbar{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:stretch}
+.toolbar{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;align-items:stretch}
 .taphelp{margin:-4px 0 0;text-align:center;font:700 10.5px/1.4 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .tool{display:inline-flex;align-items:center;justify-content:center;gap:7px;font-weight:700;font-size:14px;min-height:46px;padding:4px 8px;box-shadow:var(--sh);border:1px solid var(--line);border-radius:12px;background:var(--paper);white-space:nowrap;min-width:0}
 .tool:active:not(:disabled){transform:translateY(1px);box-shadow:var(--sh)}
@@ -340,6 +340,7 @@ html.app .howto{padding-top:20px}
   </div>
   <div class="toolbar" id="toolbar" hidden>
     <button class="tool" id="undo" type="button"><i data-icon="undo"></i>Undo</button>
+    <button class="tool" id="clear" type="button" aria-label="Clear the board"><i data-icon="restart"></i>Clear</button>
     <button class="tool" id="hint" type="button"><i data-icon="bulb"></i>Hint <small>−150</small></button>
   </div>
   <p class="taphelp" id="taphelp" hidden>Tap: × then cat · slide to cross many</p>
@@ -386,7 +387,7 @@ function puzzleFor(sd,n){ const list=[]; BANK.forEach((b,i)=>{ if(!n||b.n===n)li
 const num=i=>String(i).padStart(3,'0');
 
 /* ---------- pixel art (the Pocket Puzzles cat, meadow and icons) ---------- */
-const paths={timer:'M9 2h6 M12 5a8 8 0 1 0 .01 0 M12 8v5h4',cross:'m6 6 12 12M18 6 6 18',cat:'M3 4l5 4h8l5-4v12l-4 4H7l-4-4z M8 12v2m8-2v2m-5 2h2',undo:'M4 10h10a6 6 0 0 1 0 12 M4 10l6-6 M4 10l6 6',bulb:'M9 17v-2a7 7 0 1 1 6 0v2z M9 20h6 M11 23h2',lock:'M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0v4'};
+const paths={timer:'M9 2h6 M12 5a8 8 0 1 0 .01 0 M12 8v5h4',cross:'m6 6 12 12M18 6 6 18',cat:'M3 4l5 4h8l5-4v12l-4 4H7l-4-4z M8 12v2m8-2v2m-5 2h2',undo:'M4 10h10a6 6 0 0 1 0 12 M4 10l6-6 M4 10l6 6',restart:'M20 12a8 8 0 1 1-2.3-5.6 M20 4v5h-5',bulb:'M9 17v-2a7 7 0 1 1 6 0v2z M9 20h6 M11 23h2',lock:'M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0v4'};
 function icon(k){ return '<svg aria-hidden="true" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="'+paths[k]+'"/></svg>'; }
 document.querySelectorAll('[data-icon]').forEach(e=>e.replaceWith(document.createRange().createContextualFragment(icon(e.dataset.icon))));
 /* The cat: a clean flat face, dark on the pastel squares. */
@@ -631,7 +632,7 @@ function paint(){ const {n,g,f}=pz(), bad=conflicts(), kids=$('board').children;
       e.innerHTML=(v===1?FACE:v===2?'<svg class="mark" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>':'')+(i===f?'<span class="pin">'+icon('lock').replace('class="icon"','style="width:100%;height:100%"')+'</span>':''); }
     e.classList.toggle('bad',bad.includes(i)); e.tabIndex=i===focusIndex?0:-1;
     e.setAttribute('aria-label','Row '+(Math.floor(i/n)+1)+', column '+(i%n+1)+', region '+(g[i]+1)+', '+(v===1?'cat':v===2?'marked':'empty')+(i===f?', starting cat':'')+(bad.includes(i)?', clashes':'')); });
-  $('undo').disabled=!round.history.length||mode!=='play'; $('hint').disabled=mode!=='play';
+  $('undo').disabled=!round.history.length||mode!=='play'; $('hint').disabled=mode!=='play'; $('clear').disabled=mode!=='play'||!round.cells.some((v,i)=>v!==0&&i!==f);
   renderHud(); }
 /* The clock, what solving it now would score (and its stars), the cats placed, and in a challenge the score to beat. */
 function renderHud(){ if(!round)return; const n=pz().n, w=round.gaveUp?0:worthOf(n,round.elapsed,round.hints,round.lv,round.mistakes), k=round.gaveUp?0:count();
@@ -668,6 +669,12 @@ function hint(){ if(mode!=='play')return; const b=pz(), wrong=round.cells.findIn
   const e=$('board').children[i]; if(e){ e.classList.remove('hint'); void e.offsetWidth; e.classList.add('hint'); } }
 function undo(){ if(mode!=='play'||!round.history.length)return; round.cells=round.history.pop(); sfx.undo(); buzz(8);
   message(conflicts().length?'A clash remains. Check the cats marked !.':'Move undone.'); keep(); paint(); }
+/* Clear: every cat and × off the board (the starting cat stays) in one move, so Undo puts it all back. The clock,
+   hints and mistakes carry on, so starting again never resets the score. */
+function clearBoard(){ if(mode!=='play'||!round)return; const f=pz().f; if(!round.cells.some((v,i)=>v!==0&&i!==f))return;
+  round.history.push(round.cells.slice()); if(round.history.length>60)round.history.shift();
+  round.cells=blank(round.idx); focusIndex=f; sfx.clear(); buzz(14);
+  message('Board cleared. Undo brings it back.'); keep(); paint(); }
 /* The round in progress, on the device: every move, and the clock every few seconds. */
 function keep(){ if(round&&(mode==='play'||mode==='pause'||mode==='count')){ save.cur=round; store(); lastSaved=performance.now(); } }
 
@@ -1062,7 +1069,7 @@ board.addEventListener('keydown',e=>{ if(mode!=='play')return; const t=e.target.
   else if(e.key==='ArrowUp')j=Math.max(i%n,i-n); else if(e.key==='ArrowDown')j=Math.min((n-1)*n+i%n,i+n);
   else return;
   e.preventDefault(); focusIndex=j; t.tabIndex=-1; board.children[j].tabIndex=0; board.children[j].focus(); });
-$('undo').onclick=undo; $('hint').onclick=hint;
+$('undo').onclick=undo; $('clear').onclick=clearBoard; $('hint').onclick=hint;
 $('snd').onclick=()=>{ save.sound=!save.sound; store(); sndLabel(); if(save.sound){ audioChecked=false; unlockAudio(); sfx.go(); } };
 $('help').onclick=()=>{ sfx.ui(); showHowTo(null); };
 $('howok').onclick=()=>{ sfx.ui(); save.seenHowTo=true; store(); const then=howThen; hideHowTo(); if(then)then(); };

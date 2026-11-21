@@ -133,6 +133,7 @@ export function Contests() {
                     setSel(null);
                     void load();
                   }}
+                  onClosed={() => void load()}
                 />
               ) : state === 'ready' ? (
                 <EmptyRow text="Pick a contest on the left, or start a new one." />

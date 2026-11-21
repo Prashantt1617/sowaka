@@ -3,9 +3,10 @@
  * Best photo, Most likely) with what really happened in each — entries, who
  * voted for whom, who tagged whom, and who in the audience has not taken part.
  *
- * Read only. Starting a contest still goes through POST /connect/posts and
- * deleting through DELETE /connect/posts/:id, so the app's rules (points
- * clamped, points taken back on a running contest) stay in one place.
+ * Starting a contest still goes through POST /connect/posts and deleting
+ * through DELETE /connect/posts/:id, so the app's rules (points clamped,
+ * points taken back on a running contest) stay in one place. The one write
+ * here is closing a contest early (`closeContest`).
  */
 import { connectPosts, users } from '../config/db';
 import type { ConnectPost } from '../models/connect.model';
@@ -271,4 +272,26 @@ export async function contestDetail(org: string, id: string) {
     byDepartment: groupBy('department'),
     byLocation: groupBy('location'),
   };
+}
+
+export class ContestCloseError extends Error {
+  constructor(public statusCode: number, message: string) {
+    super(message);
+  }
+}
+
+/**
+ * HR closes a running contest now: its closing time becomes this moment, so
+ * everything that already reads `body.closesAt` treats it as ended — the app
+ * takes no more entries or votes, Games drops its LIVE card, and the results
+ * push goes out on the notification job's next tick exactly as it does when a
+ * contest reaches its own closing time. Entries, votes and points stay.
+ */
+export async function closeContest(org: string, id: string, now = new Date()) {
+  const post = await connectPosts().findOne({ id, org, type: { $in: [...CONTEST_TYPES] } });
+  if (!post) throw new ContestCloseError(404, 'That contest is gone');
+  if (isClosed(post as ConnectPost)) throw new ContestCloseError(409, 'This contest has already closed');
+  const closesAt = now.toISOString();
+  await connectPosts().updateOne({ id, org }, { $set: { 'body.closesAt': closesAt } });
+  return { id, closesAt };
 }
