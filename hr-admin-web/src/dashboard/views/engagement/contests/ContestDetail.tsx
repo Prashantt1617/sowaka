@@ -1,9 +1,9 @@
 // One contest, opened from the Contests list: the card as employees see it,
 // its numbers and leaderboard, who took part (and who voted for or tagged
-// whom), taking part by department and location, and Delete.
+// whom), taking part by department and location, Close (while it runs) and Delete.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { deleteEngagementPost } from '../../../../services/hrms';
-import { getContest, type ContestDetailDTO, type ContestPersonDTO, type ContestSummaryDTO } from '../../../../services/engagement-contests';
+import { CLOSE_CONTEST_CONFIRM, closeContest, getContest, type ContestDetailDTO, type ContestPersonDTO, type ContestSummaryDTO } from '../../../../services/engagement-contests';
 import { ApiError } from '../../../../services/http';
 import { downloadCsv } from '../../../export';
 import { useStore } from '../../../store';
@@ -39,7 +39,7 @@ function Kpi({ label, value, sub }: { label: string; value: number | string; sub
   );
 }
 
-export function ContestDetail({ summary, onDeleted }: { summary: ContestSummaryDTO; onDeleted: () => void }) {
+export function ContestDetail({ summary, onDeleted, onClosed }: { summary: ContestSummaryDTO; onDeleted: () => void; onClosed: () => void }) {
   const { flash } = useStore();
   const [detail, setDetail] = useState<ContestDetailDTO | null>(null);
   const [failed, setFailed] = useState(false);
@@ -93,6 +93,20 @@ export function ContestDetail({ summary, onDeleted }: { summary: ContestSummaryD
     }
   };
 
+  const close = async () => {
+    if (!window.confirm(CLOSE_CONTEST_CONFIRM)) return;
+    setBusy(true);
+    try {
+      await closeContest(summary.id);
+      flash('Contest closed');
+      onClosed();
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not close the contest', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const depts = useMemo(() => {
     if (!detail) return [];
     const all = [...detail.entries.map((e) => e.by), ...detail.voters.map((v) => v.voter), ...detail.nominations.map((x) => x.by), ...detail.tagged.map((t) => t.person), ...detail.notYet];
@@ -114,7 +128,8 @@ export function ContestDetail({ summary, onDeleted }: { summary: ContestSummaryD
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {detail && <button type="button" style={L.btnSm} onClick={() => exportCsv(detail)}>Export</button>}
-        <button type="button" style={L.btnDanger} disabled={busy} onClick={() => void remove()}>{busy ? 'Deleting…' : 'Delete'}</button>
+        {!closed && <button type="button" style={L.btnSm} disabled={busy} onClick={() => void close()}>Close contest</button>}
+        <button type="button" style={L.btnDanger} disabled={busy} onClick={() => void remove()}>{busy ? 'Working…' : 'Delete'}</button>
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess, requireDashboardTabs } from '../middleware/admin.middleware';
-import { contestDetail, listContests } from '../services/engagement-contests.service';
+import { closeContest, ContestCloseError, contestDetail, listContests } from '../services/engagement-contests.service';
 import { addPlanItem, deletePlanItem, planFor, PlanItemError, updatePlanItem } from '../services/engagement-plan.service';
 import { logger } from '../utils/logger';
 
@@ -20,7 +20,7 @@ function handle(fn: (req: Request) => Promise<Record<string, unknown>>) {
     try {
       res.json({ success: true, ...(await fn(req)) });
     } catch (error) {
-      if (error instanceof PlanItemError) {
+      if (error instanceof PlanItemError || error instanceof ContestCloseError) {
         res.status(error.statusCode).json({ success: false, message: error.message, requestId: req.requestId });
         return;
       }
@@ -56,3 +56,6 @@ engagementContestsRouter.get('/:id', handle(async (req) => {
   if (!detail) throw new PlanItemError(404, 'That contest is gone');
   return detail;
 }));
+// Close a running contest now (Feed and the contest page). The /admin write
+// hook in routes/index.ts forgets the cached contests, plan and games answers.
+engagementContestsRouter.post('/:id/close', handle(async (req) => closeContest(orgOf(req), String(req.params.id))));

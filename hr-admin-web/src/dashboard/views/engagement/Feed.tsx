@@ -3,7 +3,7 @@
 // of what employees reported. Replaces Engagement posts and Moderate feed.
 //
 // Everything here is the org's own stored data. Nothing on this page posts
-// to the feed or sends a push.
+// to the feed. Closing a contest early lets its usual results push go out.
 import { useCallback, useEffect, useState } from 'react';
 import {
   getFeedPage,
@@ -14,6 +14,7 @@ import {
   type FeedAs,
   type FeedCardDTO,
 } from '../../../services/engagement-feed';
+import { CLOSE_CONTEST_CONFIRM, closeContest } from '../../../services/engagement-contests';
 import { btn, btnClass } from '../../ds';
 import { IconStar } from '../../icons';
 import { useStore } from '../../store';
@@ -81,6 +82,20 @@ export function Feed() {
       changed();
     } catch (error) {
       flash(error instanceof Error ? error.message : 'Could not remove the post', 'error');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function closeNow(post: FeedCardDTO) {
+    if (!window.confirm(CLOSE_CONTEST_CONFIRM)) return;
+    setBusy(post.id);
+    try {
+      await closeContest(post.id);
+      flash('Contest closed. Entries and votes are shut, and the results go out.');
+      changed();
+    } catch (error) {
+      flash(error instanceof Error ? error.message : 'Could not close the contest', 'error');
     } finally {
       setBusy('');
     }
@@ -172,6 +187,7 @@ export function Feed() {
                       onPin={() => setPinFor(post)}
                       onUnpin={() => unpin(post)}
                       onRemove={() => remove(post)}
+                      onCloseContest={() => closeNow(post)}
                     />
                   ))}
                   {feed.hasMore && (
@@ -239,6 +255,7 @@ function FeedItem({
   onPin,
   onUnpin,
   onRemove,
+  onCloseContest,
 }: {
   post: FeedCardDTO;
   on: boolean;
@@ -247,7 +264,11 @@ function FeedItem({
   onPin: () => void;
   onUnpin: () => void;
   onRemove: () => void;
+  onCloseContest: () => void;
 }) {
+  // A contest still taking entries: no closing time yet, or one ahead.
+  const closes = post.body.challenge?.closesAt;
+  const running = Boolean(post.body.challenge) && (!closes || new Date(closes).getTime() > Date.now());
   const stop = (fn: () => void) => (e: React.MouseEvent) => {
     e.stopPropagation();
     fn();
@@ -281,8 +302,13 @@ function FeedItem({
             <PinGlyph size={13} /> Pin
           </button>
         )}
-        <button className={btnClass('no')} style={sm('no')} disabled={busy} onClick={stop(onRemove)} aria-label="Remove post">
-          Remove
+        {running && (
+          <button className={btnClass()} style={sm('secondary')} disabled={busy} onClick={stop(onCloseContest)}>
+            Close contest
+          </button>
+        )}
+        <button className={btnClass('no')} style={sm('no')} disabled={busy} onClick={stop(onRemove)} aria-label="Delete post">
+          Delete post
         </button>
       </div>
     </div>

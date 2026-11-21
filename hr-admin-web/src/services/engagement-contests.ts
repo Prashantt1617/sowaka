@@ -80,6 +80,18 @@ export async function getContest(id: string): Promise<ContestDetailDTO> {
   };
 }
 
+/**
+ * Close a running contest now: no more entries or votes, off the app's Games
+ * tab, and the results push goes out as when a contest reaches its own end.
+ */
+export function closeContest(id: string) {
+  return api<{ id: string; closesAt: string }>(`/admin/engagement/contests/${encodeURIComponent(id)}/close`, { method: 'POST' });
+}
+
+/** The confirm text both Close buttons (Feed and the contest page) show. */
+export const CLOSE_CONTEST_CONFIRM =
+  'Close this contest now? Nobody can enter or vote after this, and it leaves the Games tab in the app. Everyone who took part gets the results notification. Entries and points stay.';
+
 // ---- Engagement plan ----
 
 export type PlanKind = 'contest' | 'poll' | 'tournament' | 'game';
