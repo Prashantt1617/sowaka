@@ -12,12 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_api.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_models.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/presentation/manager/joiner_screen.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/presentation/manager/joiner_setup_screen.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/presentation/manager/joiners_tab.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/manager/team_kit.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/presentation/manager/new_joiners_section.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/presentation/manager/probation_review_screen.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/meeting_screen.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/people_screen.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/task_row.dart';
@@ -74,15 +69,11 @@ class FakeOnboardingApi implements OnboardingApi {
   Week1Data week1 = const Week1Data();
   SurveyState survey = const SurveyState(kind: 'day7', open: true);
   Meeting? meeting;
-  JoinerDetail? joiner;
-  List<JoinerSummary> joiners = const [];
-  List<DirectoryPerson> directory = const [];
   LifecycleMe me = LifecycleMe.off;
 
   final calls = <String>[];
   final week1Saves = <(Week1Step, Object)>[];
   SurveyAnswers? sentAnswers;
-  Map<String, Object?>? savedSetup;
 
   @override
   String? get viewerId => 'me';
@@ -149,8 +140,6 @@ class FakeOnboardingApi implements OnboardingApi {
   @override
   Future<void> markWeekDoneSeen() async => calls.add('week-done-seen');
   @override
-  Future<void> postWelcome(String journeyId, String text) async => calls.add('welcome:$text');
-  @override
   Future<List<PersonToMeet>?> markPerson(String id, String action) async => null;
   @override
   Future<List<StarterTask>> fetchStarterTasks() async => const [];
@@ -199,51 +188,6 @@ class FakeOnboardingApi implements OnboardingApi {
   Future<void> revealSeen() async => calls.add('reveal-seen');
   @override
   Future<Uint8List> download(String url) async => Uint8List(0);
-
-  @override
-  Future<List<JoinerSummary>> fetchJoiners() async => joiners;
-
-  @override
-  Future<JoinerDetail> fetchJoiner(String journeyId) async => joiner!;
-
-  @override
-  Future<void> saveSetup(
-    String journeyId, {
-    List<SetupPerson>? people,
-    String? buddyUserId,
-    String? welcomeNote,
-    List<String>? goals,
-  }) async {
-    savedSetup = {
-      'people': people?.map((p) => p.userId).toList(),
-      'buddyUserId': buddyUserId,
-      'welcomeNote': welcomeNote,
-      'goals': goals,
-    };
-  }
-
-  @override
-  Future<void> assignStarterTask(String journeyId, {required String title, List<String> links = const [], String? note, DateTime? dueAt}) async =>
-      calls.add('assign:$title:${dueAt == null ? '' : lifecycleYmd(dueAt)}');
-  @override
-  Future<void> replyStarterTask(String id, String text) async => calls.add('reply:$id');
-  @override
-  Future<void> addNote(String journeyId, String text, {required bool shared}) async => calls.add('note:$shared');
-  @override
-  Future<void> managerTaskDone(String journeyId, String taskId) async => calls.add('mgr-done:$taskId');
-  @override
-  Future<void> saveProbationMonth(
-    String journeyId,
-    int month, {
-    List<String>? goals,
-    CheckinEntry? checkin,
-    String? review,
-    List<String>? feedback,
-    bool? askAck,
-    List<String>? nextGoals,
-  }) async => calls.add('month:$month${feedback == null ? '' : ':${feedback.join('+')}'}${nextGoals == null ? '' : ':next=${nextGoals.join('+')}'}');
-  @override
-  Future<List<DirectoryPerson>> fetchDirectory() async => directory;
 }
 
 class FakePortalSurface implements PortalSurface {
@@ -459,44 +403,6 @@ void main() {
       expect(probationGoalsLocked(now: DateTime(2027, 1, 3)), isFalse);
     });
 
-    JoinerDetail detailWith() => JoinerDetail.fromJson({
-      'joiner': {'journeyId': 'j1', 'name': 'Kabir Mehta', 'userId': 'kabir', 'tj': '2026-12-01', 'stage': 'welcome_week1'},
-      'tasks': [],
-      'setup': {
-        'people': [
-          {'userId': 'priya', 'name': 'Priya S.', 'why': 'Your buddy'},
-        ],
-        'goals': ['Ship the leave request redesign'],
-      },
-    });
-
-    testWidgets('before the lock the goals are fields and are saved', (tester) async {
-      final api = FakeOnboardingApi()..directory = const [DirectoryPerson(userId: 'arjun', name: 'Arjun M.')];
-      final detail = detailWith();
-      await pumpPage(tester, JoinerSetupScreen(shell: shellFor(api, DateTime(2026, 12, 3)), journeyId: 'j1', detail: detail));
-      expect(find.text('1 of 6'), findsOneWidget);
-      await scrollTo(tester, find.byKey(const ValueKey('setup-goal-0')));
-      expect(find.byKey(const ValueKey('setup-goal-0')), findsOneWidget);
-      expect(find.text('Locked'), findsNothing);
-      await tester.enterText(find.byKey(const ValueKey('setup-goal-0')), 'Ship the redesign');
-      await tester.tap(find.byKey(const ValueKey('setup-save')));
-      await tester.pumpAndSettle();
-      expect(api.savedSetup!['goals'], ['Ship the redesign']);
-      expect(api.savedSetup!['people'], ['priya']);
-    });
-
-    testWidgets('after Tj + 7 the goals read-only, never sent', (tester) async {
-      final api = FakeOnboardingApi();
-      await pumpPage(tester, JoinerSetupScreen(shell: shellFor(api, DateTime(2026, 12, 12)), journeyId: 'j1', detail: detailWith()));
-      await scrollTo(tester, find.byKey(const ValueKey('setup-goals-note')));
-      expect(find.byKey(const ValueKey('setup-goal-0')), findsNothing);
-      expect(find.text('Locked'), findsOneWidget);
-      expect(find.text('1. Ship the leave request redesign'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('setup-save')));
-      await tester.pumpAndSettle();
-      expect(api.savedSetup!.containsKey('goals'), isTrue);
-      expect(api.savedSetup!['goals'], isNull);
-    });
   });
 
   group('onboarding home', () {
@@ -666,99 +572,6 @@ void main() {
         const JoinerSummary(journeyId: 'c', name: 'Dev', overdue: 1),
       ]);
       expect(sorted.map((j) => j.journeyId), ['c', 'b', 'a']);
-    });
-
-    test('the starter task\'s due choices are this Friday and the Monday after', () {
-      final (friday, monday) = starterDueChoices(DateTime(2026, 12, 2)); // a Wednesday
-      expect(friday, DateTime(2026, 12, 4));
-      expect(monday, DateTime(2026, 12, 7));
-      final (fridayAgain, _) = starterDueChoices(DateTime(2026, 12, 4)); // on a Friday: the next one
-      expect(fridayAgain, DateTime(2026, 12, 11));
-    });
-
-    testWidgets('New joiners shows only while the lifecycle is on and there are joiners', (tester) async {
-      final store = LifecycleMeStore();
-      final api = FakeOnboardingApi()
-        ..joiners = const [
-          JoinerSummary(journeyId: 'j1', name: 'Kabir Mehta', designation: 'Product Designer', dayLabel: 'Day 1', stage: 'welcome_week1', todayCount: 4),
-        ];
-      final shell = shellFor(api, DateTime(2026, 12, 1, 9));
-      await pumpPage(tester, Scaffold(body: ListView(children: [NewJoinersSection(shell: shell, store: store)])));
-      expect(find.byKey(const ValueKey('new-joiners')), findsNothing);
-
-      store.value = const LifecycleMe(enabled: true);
-      await tester.pumpAndSettle();
-      // Direct Reports' filter pills: All · New joiners n; New joiners shows only them.
-      expect(find.text('New joiners 1'), findsOneWidget);
-      expect(find.byKey(const ValueKey('filter-all')), findsOneWidget);
-      expect(NewJoinersSection.joinerUserIds.value, isEmpty, reason: 'not joined yet: no user id to leave out of the list');
-      await tester.tap(find.byKey(const ValueKey('filter-joiners')));
-      await tester.pump();
-      expect(NewJoinersSection.joinersOnly.value, isTrue);
-      await tester.tap(find.byKey(const ValueKey('filter-all')));
-      await tester.pump();
-      expect(find.text('Kabir Mehta'), findsOneWidget);
-      expect(find.text('🌱 New joiner · Day 1'), findsOneWidget);
-      expect(find.text('4 to do today'), findsOneWidget);
-    });
-
-    testWidgets('on the Team tab\'s tree (M0) the section only hands the joiners over', (tester) async {
-      final store = LifecycleMeStore()..value = const LifecycleMe(enabled: true);
-      final api = FakeOnboardingApi()
-        ..joiners = const [
-          JoinerSummary(journeyId: 'j2', name: 'Riya Joshi', userId: 'riya', stage: 'probation', dayLabel: 'Week 6'),
-          JoinerSummary(journeyId: 'j1', name: 'Kabir Mehta', userId: 'kabir', stage: 'welcome_week1', dayLabel: 'Day 1', todayCount: 4),
-        ];
-      await pumpPage(tester, Scaffold(body: ListView(children: [NewJoinersSection(shell: shellFor(api, DateTime(2026, 12, 1, 9)), store: store, inTree: true)])));
-      // The Team tab draws them on its Direct Reports tree; nothing here.
-      expect(find.byKey(const ValueKey('new-joiners')), findsNothing);
-      expect(find.text('Kabir Mehta'), findsNothing);
-      final tree = NewJoinersSection.tree.value;
-      expect(tree, isNotNull);
-      expect(tree!.joiners.map((j) => j.name), ['Kabir Mehta', 'Riya Joshi'], reason: 'most urgent first');
-      expect(NewJoinersSection.joinerUserIds.value, {'kabir', 'riya'});
-      await tester.pumpWidget(const SizedBox.shrink());
-      expect(NewJoinersSection.tree.value, isNull, reason: 'gone with the tab');
-    });
-
-    testWidgets('the Direct Reports filter pills: All n · New joiners n, black when on', (tester) async {
-      await pumpPage(tester, const Scaffold(body: Center(child: JoinersFilterPills(allCount: 4, joinersCount: 2))));
-      expect(find.text('All 4'), findsOneWidget);
-      expect(find.text('New joiners 2'), findsOneWidget);
-      expect(NewJoinersSection.joinersOnly.value, isFalse);
-      await tester.tap(find.byKey(const ValueKey('filter-joiners')));
-      await tester.pump();
-      expect(NewJoinersSection.joinersOnly.value, isTrue);
-      final on = tester.widget<Material>(find.descendant(of: find.byKey(const ValueKey('filter-joiners')), matching: find.byType(Material)));
-      expect(on.color, OnbColors.text);
-      await tester.tap(find.byKey(const ValueKey('filter-all')));
-      await tester.pump();
-      expect(NewJoinersSection.joinersOnly.value, isFalse);
-    });
-
-    testWidgets('a joiner card in probation: the week in blue, what is next in green (M0 Riya)', (tester) async {
-      await pumpPage(
-        tester,
-        Scaffold(
-          body: JoinerCard(
-            joiner: const JoinerSummary(journeyId: 'j2', name: 'Riya Joshi', designation: 'UX Writer', stage: 'probation', dayLabel: 'Week 6', nextEvent: 'Check-in Fri'),
-            now: DateTime(2026, 12, 1),
-            onTap: () {},
-          ),
-        ),
-      );
-      expect(find.text('🌱 Week 6'), findsOneWidget);
-      expect(find.text('Check-in Fri'), findsOneWidget);
-      expect(find.text('🌱 Week 6 · Check-in Fri'), findsNothing);
-      expect(find.byKey(const ValueKey('joiner-plant-badge')), findsOneWidget);
-      expect(find.bySemanticsLabel('Riya Joshi, UX Writer, Week 6, Check-in Fri'), findsOneWidget);
-    });
-
-    testWidgets('no joiners → no section', (tester) async {
-      final store = LifecycleMeStore()..value = const LifecycleMe(enabled: true);
-      final api = FakeOnboardingApi();
-      await pumpPage(tester, Scaffold(body: ListView(children: [NewJoinersSection(shell: shellFor(api, DateTime(2026, 12, 1)), store: store)])));
-      expect(find.byKey(const ValueKey('new-joiners')), findsNothing);
     });
 
   });
@@ -1162,20 +975,7 @@ void main() {
     });
   });
 
-  group('M2 for the manager', () {
-    testWidgets('Teams › Joiners: one card, a row each, the stage pill', (tester) async {
-      final api = FakeOnboardingApi()
-        ..joiners = [
-          JoinerSummary(journeyId: 'j1', name: 'Kabir Mehta', designation: 'Product Designer', tj: DateTime(2026, 12, 1), stage: 'welcome_week1'),
-          JoinerSummary(journeyId: 'j2', name: 'Kavya Iyer', designation: 'Admissions coordinator', tj: DateTime(2026, 12, 22), preboarding: true, stage: 'pre_boarding'),
-        ];
-      await pumpPage(tester, Scaffold(body: JoinersTab(shell: shellFor(api, DateTime(2026, 12, 2)))));
-      expect(find.byKey(const ValueKey('joiner-row-j1')), findsOneWidget);
-      expect(find.descendant(of: find.byKey(const ValueKey('joiner-row-j1')), matching: find.text('Week 1')), findsOneWidget);
-      expect(find.descendant(of: find.byKey(const ValueKey('joiner-row-j2')), matching: find.text('Joins Tue 22 Dec')), findsOneWidget);
-      expect(JoinersTab.count.value, 2);
-    });
-
+  group('Teams pills', () {
     testWidgets('the pill row: Joiners last, black when open, its count', (tester) async {
       var picked = '';
       await pumpPage(
@@ -1200,43 +1000,7 @@ void main() {
 
   });
 
-  group('M2 paints at once', () {
-    JoinerDetail kept() => JoinerDetail.fromJson({
-      'joiner': {'journeyId': 'j1', 'name': 'Kabir Mehta', 'designation': 'Product Designer', 'tj': '2026-12-01', 'stage': 'welcome_week1'},
-      'tasks': [task('t1', 'Give Kabir a starter task', systemKey: 'starter_task', ownerRole: 'manager')],
-      'setup': {'people': [], 'goals': []},
-    });
-
-    testWidgets('nothing kept: the Team tab\'s row paints the card while the week loads', (tester) async {
-      final live = Completer<JoinerDetail>();
-      final api = _SlowJoinerApi(live.future);
-      const row = JoinerSummary(journeyId: 'j1', name: 'Kabir Mehta', designation: 'Product Designer', dayLabel: 'Week 1', stage: 'welcome_week1');
-      await tester.pumpWidget(MaterialApp(home: JoinerScreen(shell: shellFor(api, DateTime(2026, 12, 2)), journeyId: 'j1', summary: row)));
-      await tester.pump();
-      expect(find.byKey(const ValueKey('mgr-hero')), findsOneWidget);
-      expect(find.text('Week 1'), findsOneWidget);
-      expect(find.text('Kabir Mehta'), findsOneWidget);
-      live.complete(kept());
-      await tester.pumpAndSettle();
-      expect(find.text('Your tasks for Kabir'), findsOneWidget);
-    });
-  });
-
   group('offline: the last copy, said so', () {
-    testWidgets('M2: the live read fails after the device copy painted → the note, not an error card', (tester) async {
-      final api = _FailingJoinerApi()
-        ..keptOnDevice = true
-        ..joiner = JoinerDetail.fromJson({
-          'joiner': {'journeyId': 'j1', 'name': 'Kabir Mehta', 'tj': '2026-12-01', 'stage': 'welcome_week1'},
-          'tasks': [task('t1', 'Give Kabir a starter task', systemKey: 'starter_task', ownerRole: 'manager')],
-          'setup': {'people': [], 'goals': []},
-        });
-      await pumpPage(tester, JoinerScreen(shell: shellFor(api, DateTime(2026, 12, 2)), journeyId: 'j1'));
-      expect(find.text('Your tasks for Kabir'), findsOneWidget);
-      expect(find.text(OnbOfflineNote.text), findsOneWidget);
-      expect(find.text('Try again'), findsNothing);
-    });
-
     testWidgets('the onboarding home: the device copy with the note when offline', (tester) async {
       final api = _FailingHomeApi()..keptOnDevice = true;
       await pumpPage(tester, OnboardingHomeScreen(shell: shellFor(api, DateTime(2026, 12, 2))));
@@ -1246,36 +1010,6 @@ void main() {
   });
 
   group('PB2 and PB3', () {
-    testWidgets('the review: goal by goal, On it, one-tap feedback, next month\'s goals', (tester) async {
-      final api = FakeOnboardingApi()
-        ..joiner = JoinerDetail.fromJson({
-          'joiner': {'journeyId': 'j1', 'name': 'Ananya Rao', 'tj': '2026-11-01', 'stage': 'growing_gains'},
-          'probation': {
-            'months': [
-              {
-                'monthNo': 1,
-                'goals': ['Ship the first feature'],
-                'checkinEmployee': {'text': 'x', 'rating': 3, 'goalRatings': [4], 'win': 'Shipped it', 'ask': 'Access to analytics'},
-              },
-              {'monthNo': 2, 'goals': []},
-            ],
-          },
-        });
-      await pumpPage(tester, ProbationReviewScreen(shell: shellFor(api, DateTime(2026, 12, 2)), journeyId: 'j1', month: 1));
-      expect(find.byKey(const ValueKey('their-goal-0')), findsOneWidget);
-      expect(find.text('Access to analytics'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('my-goal-0-5')));
-      await tester.tap(find.byKey(const ValueKey('on-it')));
-      await scrollTo(tester, find.byKey(const ValueKey('feedback-Great start')));
-      await tester.tap(find.byKey(const ValueKey('feedback-Great start')));
-      await scrollTo(tester, find.byKey(const ValueKey('next-goal-0')));
-      await tester.enterText(find.byKey(const ValueKey('next-goal-0')), 'Own the weekly report');
-      await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('month-save')));
-      await tester.pumpAndSettle();
-      expect(api.calls, contains('month:1:Great start:next=Own the weekly report'));
-    });
-
     testWidgets('the reveal: new title, their own new CTC, KPIs, the letter', (tester) async {
       final api = _RevealApi(RevealView.fromJson({
         'ready': true,
@@ -1351,47 +1085,6 @@ class _RevealApi extends FakeOnboardingApi {
 
   @override
   Future<RevealView> fetchReveal() async => reveal;
-}
-
-/// M2's live read held until the test lets it answer.
-class _SlowJoinerApi extends FakeOnboardingApi {
-  _SlowJoinerApi(this.live);
-
-  final Future<JoinerDetail> live;
-  bool _replaying = false;
-
-  @override
-  Future<T?> fromDevice<T>(Future<T> Function(OnboardingApi api) read) async {
-    if (!keptOnDevice) return null;
-    _replaying = true;
-    try {
-      return await read(this);
-    } finally {
-      _replaying = false;
-    }
-  }
-
-  @override
-  Future<JoinerDetail> fetchJoiner(String journeyId) => _replaying ? super.fetchJoiner(journeyId) : live;
-}
-
-/// The live read fails; the device copy (the fake's own data) answers.
-class _FailingJoinerApi extends FakeOnboardingApi {
-  bool _replaying = false;
-
-  @override
-  Future<T?> fromDevice<T>(Future<T> Function(OnboardingApi api) read) async {
-    _replaying = true;
-    try {
-      return await read(this);
-    } finally {
-      _replaying = false;
-    }
-  }
-
-  @override
-  Future<JoinerDetail> fetchJoiner(String journeyId) =>
-      _replaying ? super.fetchJoiner(journeyId) : Future.error(const OnboardingApiException(OnboardingApiException.offline));
 }
 
 class _FailingHomeApi extends FakeOnboardingApi {

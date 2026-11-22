@@ -5,7 +5,7 @@
  * are the journey's `teamTasks` (one tick per row, shared with the joiner for meetings).
  */
 import { randomUUID } from 'node:crypto';
-import { journeys, leaves, lifecycleMeetings, probationMonths, users } from '../../config/db';
+import { journeys, leaves, lifecycleMeetings, meetingNotes, probationMonths, users } from '../../config/db';
 import type { Journey, JourneyTask, TeamRole } from '../../models/lifecycle.model';
 import { reportDaysOfPerson } from '../attendance-report.service';
 import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
@@ -77,6 +77,8 @@ export interface RowView {
   pill?: { text: string; tone: 'blue' | 'green' | 'grey' | 'amber' | 'red' };
   opens: string | null; canTick: boolean; agenda?: string[]; month?: number; checkinId?: string; doneByName?: string;
   dueOn?: string; due?: { text: string; tone: 'red' | 'amber' | 'grey' }; late?: boolean;
+  /** Team page meetings only (lane T): my own agenda notes and the time set for it. */
+  notes?: string[]; startsAt?: string;
 }
 
 /** One of my rows, as Teams › Joiners (viewer 'team') or HR / IT (viewer 'hr' | 'it') shows it. */
@@ -268,16 +270,40 @@ export async function teamJoinerPage(me: Me, journeyId: string) {
   const { j, p, link } = await teamJourney(me, journeyId);
   const tasks = await tasksOf(j.id);
   const { first, joiner, names } = await heroOf(p, me, tasks);
-  const mine = rowsFor(p, link.roles).map((r) => rowView(r, p, tasks, first, 'team', names));
+  // Lane T (MgrMeeting, MgrSchedule, MgrWelcome): my own notes and the set time on my meeting rows,
+  // and, for the manager, every Day-1 / Week-1 meeting with who it is with and its time.
+  const own = await meetingNotes().find({ journeyId: j.id, userId: me.userId }, { projection: { _id: 0, rowId: 1, notes: 1 } }).toArray();
+  const notesOf = new Map(own.map((n) => [n.rowId, n.notes]));
+  const mine = rowsFor(p, link.roles).map((r) => {
+    const v = rowView(r, p, tasks, first, 'team', names);
+    if (r.row.design?.section === 'meeting') {
+      v.notes = notesOf.get(`team:${r.rowKey}`) ?? [];
+      const at = p.startsAt.get(r.rowKey);
+      if (at) v.startsAt = at.toISOString();
+    }
+    return v;
+  });
   const progress = await progressOf(p, tasks, 'team', names);
   const reporting = p.design.settings.reporting;
+  let schedule: Array<{ rowKey: string; title: string; step: number; withName?: string; withInitials?: string; startsAt?: string }> | undefined;
+  if (link.roles.includes('manager')) {
+    const firstWeek = p.meetings.filter((m) => m.step === 1 || m.step === 2);
+    const ids = [...new Set(firstWeek.map((m) => p.people[m.role as keyof typeof p.people]).filter((x): x is string => !!x))];
+    const who = new Map((await users().find({ userId: { $in: ids } }, { projection: { _id: 0, userId: 1, name: 1 } }).toArray()).map((u) => [u.userId, u.name]));
+    schedule = firstWeek.map((m) => {
+      const name = who.get(p.people[m.role as keyof typeof p.people] ?? '');
+      const at = p.startsAt.get(m.rowKey);
+      return { rowKey: m.rowKey, title: m.row.title, step: m.step, ...(name ? { withName: name, withInitials: initialsOf(name) } : {}), ...(at ? { startsAt: at.toISOString() } : {}) };
+    });
+  }
   return {
-    joiner, relation: link.rel, readOnly: !link.roles.length,
+    joiner: { ...joiner, step: p.step }, relation: link.rel, readOnly: !link.roles.length,
     card: { title: link.roles.length === 1 && link.roles[0] === 'buddy' ? `Help ${first} with` : `Your tasks for ${first}`, toDo: mine.filter((t) => !t.done && !t.locked && t.step <= p.step).length },
     tasks: mine,
     progress: { rows: progress.rows, ...(p.step === 0 && j.tj ? { joining: { on: j.tj, ...(reporting?.time ?? j.day1Pass?.reportingTime ? { time: reporting?.time ?? j.day1Pass?.reportingTime } : {}), ...(reporting?.place ?? j.day1Pass?.place ? { place: reporting?.place ?? j.day1Pass?.place } : {}) } } : {}) },
     lists: progress.lists,
     reachOut: isJoined(j) ? ['feed', 'game', 'announcement', 'team_post', 'chat'] : ['welcome_message', 'announcement'],
+    ...(schedule ? { schedule } : {}),
   };
 }
 

@@ -15,9 +15,8 @@ import 'package:flutter/material.dart';
 import '../../manager/data/manager_models.dart' show ManagerTab;
 import 'data/lifecycle_me_store.dart';
 import 'data/onboarding_models.dart';
-import 'presentation/manager/joiner_screen.dart';
 import 'data/team_joiners_api.dart';
-import 'presentation/manager/manager_review_screen.dart';
+import 'presentation/manager/team_joiner_screens.dart';
 import 'presentation/meeting_screen.dart';
 import 'presentation/onboarding_home_screen.dart';
 import 'presentation/onboarding_kit.dart';
@@ -73,10 +72,13 @@ Future<void> openOnboardingHome(BuildContext context, {OnboardingShell? shell}) 
   return _push(context, (s) => OnboardingHomeScreen(shell: s), shell: shell);
 }
 
-/// M2, a joiner's week as their manager sees it.
-/// [summary]: the Team tab's row, so M2's card paints at once.
-Future<void> openJoiner(BuildContext context, String journeyId, {OnboardingShell? shell, JoinerSummary? summary}) =>
-    _push(context, (s) => JoinerScreen(shell: s, journeyId: journeyId, summary: summary), shell: shell);
+/// Teams › Joiners, a joiner's page (Final designs; manager, buddy, head of department).
+Future<void> openJoiner(BuildContext context, String journeyId, {OnboardingShell? shell}) {
+  final resolved = shell ?? currentOnboardingShell();
+  final api = resolved == null ? null : HttpTeamJoinersApi.from(resolved.api);
+  if (resolved == null || api == null) return Future.value();
+  return openTeamJoiner(context, shell: resolved, api: api, journeyId: journeyId);
+}
 
 /// Opens a task from the joiner's home or Up next on the screen that does it.
 /// Back lands where it came from; the caller reads its list again after.
@@ -196,22 +198,12 @@ bool openOnboardingDestination(BuildContext context, Map<String, dynamic> data) 
     'lifecycle_probation' => ProbationScreen(shell: shell),
     'lifecycle_checkin' => ProbationScreen(shell: shell, openCheckinFor: month),
     'lifecycle_reveal' => RevealScreen(shell: shell),
-    'lifecycle_joiner' || 'lifecycle_joiner_setup' when journeyId != null => JoinerScreen(
-      shell: shell,
-      journeyId: journeyId,
-      openSetup: destination == 'lifecycle_joiner_setup',
-    ),
-    // The manager's side draws no starter-task reply (team-side prototype): their joiner's page.
-    'lifecycle_starter_task_done' when journeyId != null => JoinerScreen(shell: shell, journeyId: journeyId),
-    // "Check-in sent": the month's self check-in to review (MgrReview).
-    'lifecycle_probation_review' when journeyId != null && month != null && HttpTeamJoinersApi.from(shell.api) != null => ManagerReviewScreen(
-      shell: shell,
-      teamApi: HttpTeamJoinersApi.from(shell.api)!,
-      journeyId: journeyId,
-      month: month,
-    ),
-    // A manager's push without a month: their joiner's page, never the joiner's own home.
-    'lifecycle_probation_review' when journeyId != null => JoinerScreen(shell: shell, journeyId: journeyId),
+    // Final designs (lane T): every manager / buddy / head-of-department push lands on the joiner's page.
+    'lifecycle_joiner' ||
+    'lifecycle_joiner_setup' ||
+    'lifecycle_starter_task_done' ||
+    'lifecycle_probation_review' when journeyId != null && HttpTeamJoinersApi.from(shell.api) != null =>
+      TeamPersonScreen(shell: shell, api: HttpTeamJoinersApi.from(shell.api)!, journeyId: journeyId),
     _ => null,
   };
   page ??= OnboardingHomeScreen(shell: shell);

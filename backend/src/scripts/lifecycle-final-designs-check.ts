@@ -226,6 +226,14 @@ async function main() {
   await team.scheduleMeetings(MGR, J1, { meetings: firstWeek.map((m, i) => ({ rowKey: m.id.slice(5), startsAt: new Date(Date.now() + (i + 1) * 3_600_000).toISOString() })) });
   ok('Schedule: every first-week meeting has a time for the joiner, and the row ticks', (await joiner.joinerOnboarding(PRIYA)).meetings.filter((m) => m.step === 'd1' || m.step === 'w1').every((m) => !!m.startsAt)
     && (await team.teamJoinerPage(MGR, J1)).tasks.find((t) => t.id === 'mgr_schedule')?.done === true);
+  // Lane T: the page carries the joiner's step, the manager's schedule list, and my own notes and the time on my meeting rows.
+  await team.teamRowNotes(MGR, J1, 'mgr_first_goals', { notes: ['Talk about the first week'] });
+  const tPage = await team.teamJoinerPage(MGR, J1);
+  const firstGoals = tPage.tasks.find((t) => t.id === 'mgr_first_goals');
+  ok('Team page: the step, my notes and the time on my meeting, the first-week schedule with who', typeof tPage.joiner.step === 'number'
+    && firstGoals?.notes?.[0] === 'Talk about the first week' && !!firstGoals?.startsAt
+    && !!tPage.schedule?.length && tPage.schedule.every((m) => (m.step === 1 || m.step === 2) && !!m.startsAt) && tPage.schedule.some((m) => m.rowKey === 'hr_welcome' && !!m.withInitials), tPage.schedule);
+  ok('…the schedule list is the manager’s only (the buddy gets none)', !(await team.teamJoinerPage(me('rohan', 'Rohan Das'), J1)).schedule);
 
   section('Goals: the joiner’s "How’s it going?", the manager’s comments');
   await probation.updateMonthByManager(J2, { userId: 'meera', name: 'Meera Joshi' }, 1, { goals: ['Close 20 tickets', 'Shadow 3 calls'] });
