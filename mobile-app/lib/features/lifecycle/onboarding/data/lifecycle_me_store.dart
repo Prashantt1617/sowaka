@@ -39,7 +39,8 @@ class LifecycleMeStore extends ValueNotifier<LifecycleMe> {
 
   static Future<LifecycleMe> _meOf(OnboardingApi api) async {
     var me = await api.fetchMe();
-    if (me.showsOnboarding && me.onboarding!.progress == null) {
+    // The Final designs tile (`onboarding.tile`) needs nothing else.
+    if (me.showsOnboarding && me.onboarding!.progress == null && me.onboarding!.tile == null) {
       try {
         final home = await api.fetchHome();
         me = me.withProgress(home.progress);

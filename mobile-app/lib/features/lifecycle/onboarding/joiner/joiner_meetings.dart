@@ -113,7 +113,8 @@ class _MeetingRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final m = row.item;
     final name = m.person?.name;
-    final sub = [?name, row.sub ?? (name == null ? m.roleLabel : (m.roleLabel))].join(' · ');
+    // "Ritu Sharma · HR"; locked, "Sunny Kapoor · Opens in Month 1".
+    final sub = [?name, row.sub ?? m.roleLabel].join(' · ');
     final on = !row.locked && m.met;
     return Opacity(
       opacity: row.locked ? 0.6 : 1,
