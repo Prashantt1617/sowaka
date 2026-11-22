@@ -12,7 +12,7 @@ import { boardData } from './board';
 import { designOf } from './design';
 import { shortDay } from './designRules';
 import { TEAM_EARLY } from './designSeed';
-import { accessTasks, initialsOf, place, setRowTick, type Placed, type PlacedRow } from './designRows';
+import { accessTasks, firstOf, initialsOf, place, setRowTick, type Placed, type PlacedRow } from './designRows';
 import { LifecycleError, finishTaskById, loadJourney, reopenTaskById, tasksOf } from './engine';
 import { heroOf, progressOf, rowDone, rowView, rowsFor, type RowView } from './teamApp';
 import { journeyDocumentsView } from './documents';
@@ -305,8 +305,11 @@ export async function staffTaskScreen(me: Me, journeyId: string, key: string, as
     const a = j.probation?.hodApproval;
     const decision = j.probation?.decision;
     const letter = await letters().find({ journeyId: j.id, kind: { $in: ['confirmation', 'extension'] } }, { projection: { _id: 0, id: 1, kind: 1, pdfFileId: 1, email: 1 } }).sort({ createdAt: -1 }).limit(1).next();
+    // "Waiting for Anita": the head of department by first name (HRLetter).
+    const hodId = p.people.head_of_department;
+    const hod = hodId ? (await users().findOne({ userId: hodId }, { projection: { _id: 0, name: 1 } }))?.name : undefined;
     out.facts = [
-      { label: 'Approved by', value: a && a.outcome !== 'discuss' ? `${a.byName ?? ''} · ${shortDay(new Date(a.at).toISOString().slice(0, 10))}` : 'Waiting for the head of department' },
+      { label: 'Approved by', value: a && a.outcome !== 'discuss' ? `${a.byName ?? ''} · ${shortDay(new Date(a.at).toISOString().slice(0, 10))}` : hod ? `Waiting for ${firstOf(hod)}` : 'Waiting for the head of department' },
       ...(rec ? [{ label: 'Recommended by', value: rec.byName ?? '' }] : []),
       ...(decision ? [{ label: 'Confirmed from', value: shortDay(new Date(decision.decidedAt).toISOString().slice(0, 10)) }] : []),
       ...((decision?.designation ?? j.designation) ? [{ label: 'Designation', value: decision?.designation ?? j.designation ?? '' }] : []),

@@ -1353,22 +1353,15 @@ class _TeamMessageScreenState extends State<TeamMessageScreen> {
         title: widget.title,
         children: [
           TeamTaskHeader(joiner: j, title: row.title, line: 'For ${j.name}', pill: row.done ? 'Done' : null),
-          if (row.how != null) TeamHowBox(row.how!),
           TeamCard(
             padding: const EdgeInsets.all(14),
             children: [
               if (widget.post) ...[
                 Row(
                   children: [
-                    OnbAvatar(name: shell.viewerName, photoUrl: shell.viewerPhotoUrl, size: 36),
+                    OnbAvatar(name: shell.viewerName, photoUrl: shell.viewerPhotoUrl, size: 28),
                     const SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(shell.viewerName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TeamColors.ink)),
-                        const Text('Posting to everyone', style: TextStyle(fontSize: 12, color: OnbColors.text3)),
-                      ],
-                    ),
+                    const Text('Posting to everyone', style: TextStyle(fontSize: 12, color: OnbColors.text3)),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -1617,7 +1610,6 @@ class _TeamConfReviewScreenState extends State<TeamConfReviewScreen> {
       title: widget.title,
       children: [
         TeamTaskHeader(joiner: j, title: row.title, line: 'For ${j.name}', pill: sent ? 'Done' : null),
-        if (row.how != null) TeamHowBox(row.how!),
         if (v.facts.isNotEmpty) ...[
           const _BlockLabel('Their probation', meta: 'For your review'),
           TeamCard(

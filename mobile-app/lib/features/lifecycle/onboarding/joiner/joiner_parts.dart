@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../data/onboarding_api.dart';
 import '../presentation/onboarding_kit.dart';
@@ -141,9 +142,15 @@ class JPill extends StatelessWidget {
 }
 
 class JIconChip extends StatelessWidget {
-  const JIconChip({super.key, required this.icon, required this.tint, required this.color, this.size = 36, this.radius = 10, this.iconSize = 20});
+  const JIconChip({super.key, required this.icon, required this.tint, required this.color, this.size = 36, this.radius = 10, this.iconSize = 20, this.round = false});
+
+  /// The canvas's round speech bubble (Check-ins, Say hi) in place of [icon].
+  const JIconChip.chat({super.key, required this.tint, required this.color, this.size = 36, this.radius = 10, this.iconSize = 20})
+    : icon = Icons.chat_bubble_outline_rounded,
+      round = true;
 
   final IconData icon;
+  final bool round;
   final Color tint;
   final Color color;
   final double size;
@@ -155,8 +162,27 @@ class JIconChip extends StatelessWidget {
     width: size,
     height: size,
     decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(radius)),
-    child: Icon(icon, size: iconSize, color: color),
+    alignment: Alignment.center,
+    child: round ? RoundChatIcon(size: iconSize, color: color) : Icon(icon, size: iconSize, color: color),
   );
+}
+
+/// The canvas's round speech bubble (an 8-radius circle with a tail, 1.8 stroke).
+class RoundChatIcon extends StatelessWidget {
+  const RoundChatIcon({super.key, this.size = 20, required this.color});
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final hex = '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
+    return SvgPicture.string(
+      '<svg viewBox="0 0 24 24" fill="none" stroke="$hex" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 1 3.5 6.6L4 20l1.4-3.5A8 8 0 0 1 4 12z"/></svg>',
+      width: size,
+      height: size,
+    );
+  }
 }
 
 /// A rounded pill at the row's end: the verb ("Start", "Review"), outlined;

@@ -78,7 +78,7 @@ export interface Placed {
   step: number;
   meetings: PlacedRow[];
   team: PlacedRow[];
-  checkins: Array<PlacedRow & { answers?: CheckinAnswers; state: 'locked' | 'open' | 'sent' }>;
+  checkins: Array<PlacedRow & { answers?: CheckinAnswers; state: 'locked' | 'open' | 'sent' | 'closed' }>;
   watch: PlacedRow[];
   trainings: PlacedRow[];
   people: People;
@@ -154,8 +154,13 @@ export async function place(j: Journey, now = new Date(), design?: JourneyDesign
       step: fin ? 3 + months : stepOfStage(c.design!.stage, months),
       ...(opens ? { opensOn: opens } : {}), done: !!sent, ...(sent ? { doneAt: sent.sentAt } : {}),
     });
-    return { ...base, ...(sent ? { answers: sent } : {}), state };
+    return { ...base, ...(sent ? { answers: sent } : {}), state: state as 'locked' | 'open' | 'sent' | 'closed' };
   });
+  // One check-in at a time, as the canvas draws it: an unsent one closes once a later one opens or is sent, or the joiner is confirmed.
+  for (const c of checkins) {
+    if (c.state !== 'open' || c.row.design?.stage === 'fin') continue;
+    if (confirmed || checkins.some((x) => x !== c && x.step > c.step && (x.state === 'open' || x.state === 'sent'))) c.state = 'closed';
+  }
   const watched = j.watched ?? {};
   const watchRow = (row: TemplateTask): PlacedRow => ({
     ...placed(row, row.id), step: row.design!.stage === 'pre' ? 1 : stepOfStage(row.design!.stage, months),

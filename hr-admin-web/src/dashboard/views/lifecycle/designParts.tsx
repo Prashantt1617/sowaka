@@ -26,8 +26,15 @@ export function IconCircle({ d }: { d: string }) {
   return <span style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--surface-2)', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Glyph d={d} /></span>;
 }
 
-export function RemoveButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return <button type="button" className="pd-row-hover" aria-label={`Remove ${label}`} title="Remove" onClick={onClick} style={removeBtn}><IconClose size={15} stroke="currentColor" /></button>;
+/** A row's bin; an agenda point's or question's cross ([cross]), as the canvas draws them. */
+export function RemoveButton({ label, onClick, cross }: { label: string; onClick: () => void; cross?: boolean }) {
+  return (
+    <button type="button" className="pd-row-hover" aria-label={`Remove ${label}`} title="Remove" onClick={onClick} style={removeBtn}>
+      {cross ? <IconClose size={15} stroke="currentColor" /> : (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 7h14M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
+      )}
+    </button>
+  );
 }
 
 /** One row of a list: its icon, its title, what sits on the right; `onOpen` makes the whole row open it. */
@@ -59,12 +66,32 @@ export function GroupHead({ title, count, open, onToggle, last }: { title: strin
 }
 
 /** A row of pills that pick one value (role="radio"). */
-export function RadioPills<T extends string>({ label, options, value, onPick }: { label: string; options: Array<[T, string]>; value: T | undefined; onPick: (v: T) => void }) {
+/**
+ * The canvas's three pickers: `seg` the grey track (Probation length), `who` separate pills with the
+ * picked one outlined in blue (who meets them, who sets it up), `when` separate pills with the picked one black.
+ */
+export function RadioPills<T extends string>({ label, options, value, onPick, look = 'when' }: { label: string; options: Array<[T, string]>; value: T | undefined; onPick: (v: T) => void; look?: 'seg' | 'who' | 'when' }) {
+  if (look === 'seg') {
+    return (
+      <div role="radiogroup" aria-label={label} style={{ ...SOFT_SEG, display: 'inline-flex' }}>
+        {options.map(([v, t]) => (
+          <button key={v} type="button" role="radio" aria-checked={value === v} onClick={() => onPick(v)} style={{ ...softSegBtn(value === v), flex: 'none' }}>{t}</button>
+        ))}
+      </div>
+    );
+  }
   return (
-    <div role="radiogroup" aria-label={label} style={{ ...SEG, borderRadius: 14 }}>
-      {options.map(([v, t]) => (
-        <button key={v} type="button" role="radio" aria-checked={value === v} onClick={() => onPick(v)} style={segBtn(value === v)}>{t}</button>
-      ))}
+    <div role="radiogroup" aria-label={label} style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {options.map(([v, t]) => {
+        const on = value === v;
+        const tone = look === 'who'
+          ? { background: on ? 'var(--accent-soft)' : 'var(--surface)', color: on ? 'var(--accent)' : 'var(--ink)', border: on ? '1.5px solid var(--accent)' : '1px solid var(--line-strong, var(--line))' }
+          : { background: on ? 'var(--ink)' : 'var(--surface)', color: on ? 'var(--surface)' : 'var(--ink)', border: on ? '1px solid var(--ink)' : '1px solid var(--line)' };
+        return (
+          <button key={v} type="button" role="radio" aria-checked={on} onClick={() => onPick(v)}
+            style={{ height: 36, padding: '0 12px', borderRadius: 999, fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', ...tone }}>{t}</button>
+        );
+      })}
     </div>
   );
 }
@@ -164,14 +191,14 @@ export function NameDropdown({ label, value, options, onPick, placeholder = '' }
 
 
 /** The face of a tile (also the story dialog's preview, bigger). */
-export function TileFace({ media, w, h, emptyText, textShown }: { media: DesignMedia; w: number; h: number; emptyText: string; textShown?: string }) {
+export function TileFace({ media, w, h, emptyText, textShown, preview }: { media: DesignMedia; w: number; h: number; emptyText: string; textShown?: string; preview?: boolean }) {
   const look = tileLook(media);
   return (
     <span style={{ width: w, height: h, borderRadius: 14, background: look.bg, border: look.border, boxSizing: 'border-box', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 10px', flex: 'none' }}>
       <span style={{ position: 'absolute', left: 8, right: 8, top: 6, height: 2, borderRadius: 2, background: look.bar }} />
       {look.text
         ? <span style={{ color: '#FFFFFF', fontSize: w > 120 ? 14 : 11, fontWeight: 600, lineHeight: 1.35, textAlign: 'center', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', overflowWrap: 'anywhere' }}>{textShown ?? media.text ?? ''}</span>
-        : <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}><Glyph d={look.icon} size={22} color={look.iconColor} />{look.empty && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent-ink)', textAlign: 'center' }}>{emptyText}</span>}</span>}
+        : <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: preview ? 8 : 6 }}><Glyph d={look.icon} size={preview ? 34 : 22} color={look.iconColor} />{look.empty && <span style={preview ? { fontSize: 12, color: 'var(--ink-3)', textAlign: 'center' } : { fontSize: 11, fontWeight: 600, color: 'var(--accent-ink)', textAlign: 'center' }}>{emptyText}</span>}</span>}
     </span>
   );
 }
@@ -198,3 +225,11 @@ export function TileStrip({ items, onAdd, addLabel, onOpen, whenOf }: {
   );
 }
 
+
+/** The canvas's white-on-grey toggle (Probation length, a watch item's type): the picked one white, raised. */
+export const SOFT_SEG: CSSProperties = { display: 'flex', gap: 4, padding: 4, background: 'var(--surface-2)', borderRadius: 12 };
+export const softSegBtn = (on: boolean): CSSProperties => ({
+  flex: 1, height: 36, borderRadius: 9, border: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '0 14px',
+  background: on ? 'var(--surface)' : 'transparent', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13, fontWeight: on ? 700 : 500,
+  cursor: 'pointer', boxShadow: on ? '0 1px 3px rgba(0,0,0,.12)' : 'none',
+});

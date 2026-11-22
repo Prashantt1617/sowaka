@@ -561,7 +561,7 @@ class _PersonRow extends StatelessWidget {
                 key: ValueKey('say-hi-${p.userId}'),
                 customBorder: const CircleBorder(),
                 onTap: canOpenPersonProfile && p.userId.isNotEmpty ? () => openPersonProfile(p.userId) : null,
-                child: const SizedBox(width: 40, height: 40, child: Icon(Icons.chat_bubble_outline_rounded, size: 20, color: OnbColors.primary)),
+                child: const SizedBox(width: 40, height: 40, child: Center(child: RoundChatIcon(size: 20, color: OnbColors.primary))),
               ),
             ),
           ),

@@ -53,7 +53,7 @@ class JoinerCheckinsScreen extends StatelessWidget {
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                               child: Row(
                                 children: [
-                                  const JIconChip(icon: Icons.chat_bubble_outline_rounded, tint: OnbColors.violetTint, color: OnbColors.violet),
+                                  const JIconChip.chat(tint: OnbColors.violetTint, color: OnbColors.violet),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: Column(

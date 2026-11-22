@@ -147,7 +147,8 @@ async function main() {
   ok('A Day-1 meeting not met is carried ("From Day 1"), with HR as the person', welcome.carriedFrom === 'd1' && welcome.person?.name === 'Ritu Sharma' && welcome.roleLabel === 'HR', welcome);
   const monthly = home.meetings.filter((m) => m.title === 'Monthly goals');
   ok('Monthly goals: one per month, the first locked "Opens in Month 1"', monthly.length === 6 && monthly[0].locked && monthly[0].everyMonth && !!monthly[0].opensOn, monthly[0]);
-  eq('Tasks end in their verb', home.tasks.map((t) => t.verb).sort().join(','), 'Open,Read,Review,Review,Review,Sign,Start,Start,Start,Start');
+  eq('Tasks end in their verb', home.tasks.map((t) => t.verb).sort().join(','), 'Open,Read,Review,Review,Review,Sign,Start,Start,Start');
+  ok('First punch-in is the Day-1 card, not a row in Tasks (editor: "Shown on top on Day 1")', !home.tasks.some((t) => t.title === 'First punch-in'), home.tasks.map((t) => t.title));
   const w1 = home.checkins.find((c) => c.title === 'Week 1 check-in')!;
   eq('Week 1 check-in is open (2 days before the end of Week 1); the others locked', [w1.state, home.checkins.filter((c) => c.state === 'locked').length, home.summary.checkinDue?.title], ['open', 2, 'Week 1 check-in']);
   eq('Watch list: pre-boarding videos show from Day 1, trainings apart', [home.watch.length, home.trainings.length, home.watch[0].step], [6, 2, 'd1']);
@@ -188,8 +189,8 @@ async function main() {
   eq('Policies tick from App policies, not a tap', await refusal(() => joiner.joinerTaskAction(PRIYA, policies.id, { action: 'acknowledged' })), 409);
   ok('No required policy: Acknowledge company policies ticks itself', policies.state === 'done', policies);
   await policyDocuments().insertOne({ id: 'pol1', org: ORG, title: 'Code of conduct', active: true, ackRequired: true, version: '2', order: 1, createdAt: new Date() } as never);
-  const firstPunch = home.tasks.find((t) => t.title === 'First punch-in')!;
-  eq('First punch-in waits for the punch (Start)', [firstPunch.state, firstPunch.verb, (firstPunch.opens as { screen?: string }).screen], ['todo', 'Start', 'punch']);
+  const firstPunch = (await journeyTasks().findOne({ journeyId: home.journeyId, title: 'First punch-in' }))!;
+  eq('First punch-in waits for the punch', firstPunch.status, 'todo');
   eq('Do in Sowaka cannot be ticked by hand', await refusal(() => joiner.joinerTaskAction(PRIYA, firstPunch.id, { action: 'done' })), 409);
   const other = home.tasks.find((t) => t.title === 'Fill in the joining form')!;
   await joiner.joinerTaskAction(PRIYA, other.id, { action: 'opened' });

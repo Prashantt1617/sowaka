@@ -396,12 +396,12 @@ export async function templatePreview(org: string, id: string, stageRaw: unknown
       watch: view.preboarding.rows.watch && watchAll.length ? { first: watchAll[0].title, ready: watchAll.filter((w) => !!w.media.fileId || w.media.type === 'text').length, total: watchAll.length } : null,
     };
   }
-  const meetings = view.meetings.filter((m) => at(m.stage) || (m.everyMonth && order >= DESIGN_STAGES.indexOf(m.stage)));
+  const meetings = view.meetings.filter((m) => at(m.stage));
   const tasks = view.tasks.filter((x) => at(x.stage));
   const early = stage === 'd1' || stage === 'w1';
   return {
     stage, header: 'Onboarding' as const, stageLabel: STAGE_LABEL(stage, months),
-    meetings: { count: meetings.length, who: [...new Set(meetings.map((m) => m.meetWith))].slice(0, 3) },
+    meetings: { count: meetings.length, who: meetings.map((m) => m.meetWith).slice(0, 3) },
     tasks: { first: tasks[0]?.title, count: tasks.length },
     tour: early && view.tour.length ? { first: stage === 'd1' ? 'punch' : view.tour.find((l) => l !== 'punch') ?? null } : null,
     watch: order <= DESIGN_STAGES.indexOf('m1') && watchAll.length ? { first: watchAll[0].title, ready: watchAll.filter((w) => !!w.media.fileId || w.media.type === 'text').length, total: watchAll.length } : null,

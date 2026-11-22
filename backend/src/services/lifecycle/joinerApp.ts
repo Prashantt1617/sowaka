@@ -22,7 +22,7 @@ import { LifecycleError, deriveJourney, finishTaskById, isJoined, tasksOf } from
 import { readFileBytes, storeFile, uploadName, checkUpload } from './files';
 import { letterPdfForPortal, openLetter, portalLetters, signLetter, type PortalLetter } from './letters';
 import { journeyDocumentsView } from './documents';
-import { PROFILE_SECTIONS, PROFILE_SECTION_TITLE, sectionStates } from './profile';
+import { PROFILE_SECTIONS, appSectionTitle, sectionStates } from './profile';
 import { ensureMonths } from './probation';
 
 type Me = { userId: string; name: string; org: string };
@@ -133,11 +133,18 @@ export async function joinerOnboarding(me: Me, now = new Date()) {
   const notesOf = new Map(notes.map((n) => [n.rowId, n.notes]));
   const meetings = p.meetings.map((m) => {
     const withRole = m.row.design!.meetWith!;
-    const who = p.people[withRole] ? people.get(p.people[withRole]!) : undefined;
+    let who = p.people[withRole] ? people.get(p.people[withRole]!) : undefined;
+    let roleLabel = MEET_ROLE_LABEL[withRole];
+    // The confirmation discussion is with the manager and HR (New joiner canvas: "Sunny Kapoor and Ritu Sharma · Your manager and HR").
+    const hr = p.people.hr ? people.get(p.people.hr) : undefined;
+    if (m.row.team?.key === 'mgr_confirmation' && who && hr && hr.userId !== who.userId) {
+      who = { ...who, name: `${who.name} and ${hr.name}` };
+      roleLabel = 'Your manager and HR';
+    }
     const locked = !!m.opensOn && today < m.opensOn && !m.done;
     const id = `team:${m.rowKey}`;
     return {
-      id, title: m.row.title, withRole, roleLabel: MEET_ROLE_LABEL[withRole], ...(who ? { person: who } : {}),
+      id, title: m.row.title, withRole, roleLabel, ...(who ? { person: who } : {}),
       step: keyOf(m.step), everyMonth: !!m.row.design!.everyMonth, ...(m.month ? { month: m.month } : {}),
       met: m.done, ...(m.doneAt ? { metAt: new Date(m.doneAt).toISOString() } : {}), locked, ...(m.opensOn ? { opensOn: m.opensOn } : {}),
       ...(!m.done && m.step < step && step > 0 ? { carriedFrom: keyOf(m.step) } : {}),
@@ -147,7 +154,8 @@ export async function joinerOnboarding(me: Me, now = new Date()) {
   });
 
   // Tasks.
-  const designTasks = joinerDesignTasks(j, tasks, design);
+  // First punch-in is the Day-1 card on top (editor: "Shown on top on Day 1"), not a row in Tasks.
+  const designTasks = joinerDesignTasks(j, tasks, design).filter(({ row }) => row.design?.screen !== 'punch');
   const taskRows = designTasks.length
     ? await Promise.all(designTasks.map(async ({ task, row }) => taskRowView(j, task, row, facts, months, step)))
     : legacyTaskRows(j, tasks, months, step);
@@ -163,7 +171,7 @@ export async function joinerOnboarding(me: Me, now = new Date()) {
   }
 
   // Check-ins, watch list, devices, tour, profile, goals.
-  const checkins = p.checkins.map((c) => ({
+  const checkins = p.checkins.filter((c) => c.state !== 'closed').map((c) => ({
     id: c.row.id, title: c.row.title, step: keyOf(c.step), questions: (c.row.design!.questions ?? []).length, state: c.state,
     ...(c.opensOn ? { opensOn: c.opensOn } : {}), ...(c.answers ? { sentAt: c.answers.sentAt.toISOString() } : {}),
   }));
@@ -176,16 +184,16 @@ export async function joinerOnboarding(me: Me, now = new Date()) {
     : devicesFor(tasks).map((d) => ({ id: 'id' in d && d.id ? d.id : d.key, title: d.title, ready: d.ready }));
   const tour = await tourView(me, j, facts.firstPunch, design.settings.tourLessons);
   const profile = {
-    sections: PROFILE_SECTIONS.map((key) => ({ key, title: PROFILE_SECTION_TITLE[key], state: facts.sections[key] ? 'done' as const : 'todo' as const })),
+    sections: PROFILE_SECTIONS.map((key) => ({ key, title: appSectionTitle(key), state: facts.sections[key] ? 'done' as const : 'todo' as const })),
     done: facts.profileDone, total: PROFILE_SECTIONS.length, pct: Math.round((facts.profileDone / PROFILE_SECTIONS.length) * 100),
   };
   const goals = await goalsCard(j, p, people);
 
   // "Now" counts for the tiles.
-  const nowRows = <T extends { step: string; carriedFrom?: string }>(list: T[]) => list.filter((r) => r.step === keyOf(step) || !!r.carriedFrom);
+  const nowRows = <T extends { step: string; carriedFrom?: string }>(list: T[]) => list.filter((r) => r.step === keyOf(step) || (!!r.carriedFrom && !confirmed));
   const nowMeetings = nowRows(meetings);
   const openTasks = nowRows(taskRows).filter((t) => t.state !== 'done');
-  const unwatched = [...watch, ...trainings].filter((w) => !w.watched && p.watch.concat(p.trainings).find((x) => x.row.id === w.id)!.step <= Math.max(step, 1));
+  const unwatched = [...watch, ...trainings].filter((w) => !w.watched && p.watch.concat(p.trainings).find((x) => x.row.id === w.id)!.step === Math.max(step, 1));
   const due = checkins.find((c) => c.state === 'open');
   const hero = confirmed ? { eyebrow: 'PROBATION COMPLETE' as const, label: 'Confirmed!' } : { eyebrow: 'YOU ARE HERE' as const, label: labels[Math.max(step, 1)] };
   return {
@@ -381,6 +389,7 @@ export async function joinerCheckin(me: Me, id: string) {
 export async function sendJoinerCheckin(me: Me, id: string, body: Record<string, unknown>) {
   const { j, p, c } = await checkinOf(me, id);
   if (c.state === 'sent') throw new LifecycleError(409, 'Sent already');
+  if (c.state === 'closed') throw new LifecycleError(409, 'This check-in has closed');
   if (c.state === 'locked') throw new LifecycleError(409, c.opensOn ? `This opens on ${c.opensOn}` : 'This opens after confirmation');
   if (!Array.isArray(body.answers)) throw new LifecycleError(400, 'answers is a list');
   const given = new Map((body.answers as Array<Record<string, unknown>>).map((a) => [String(a?.questionId ?? ''), a?.value]));

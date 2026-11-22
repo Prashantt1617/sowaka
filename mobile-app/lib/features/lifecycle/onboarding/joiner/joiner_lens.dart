@@ -146,6 +146,9 @@ class JoinerLens {
   late final List<JoinerTask> tasksThere = [
     for (final t in d.tasks)
       if (_idx(t.step) == at && t.carriedFrom == null && !tasksNow.any((n) => n.id == t.id)) t,
+    // The canvas's look at Confirmed: HR's letter, which exists only once it is sent.
+    if (viewedKey == 'confirmed' && !isNow && !d.tasks.any((t) => t.step == 'confirmed'))
+      const JoinerTask(id: 'letter:ahead', title: 'Read your confirmation letter', type: 'ack', verb: 'Read', meta: 'From HR', step: 'confirmed', state: 'locked'),
   ];
 
   List<LensRow<JoinerTask>> get taskRows => isNow
@@ -200,7 +203,7 @@ class JoinerLens {
 
   List<JoinerWatch> _of(List<JoinerWatch> list) => [
     for (final w in list)
-      if (isNow ? (_idx(w.step) == current || (_idx(w.step) < current && !w.watched)) : _idx(w.step) == at) w,
+      if (_idx(w.step) == (isNow ? current : at)) w,
   ];
 
   late final List<JoinerWatch> videos = _of(d.watch);
@@ -223,8 +226,8 @@ class JoinerLens {
 
   // ── Devices, profile, check-ins ───────────────────────────────────────────
 
-  /// Day 1's, and later while something is still being set up.
-  bool get showsDevices => isNow && d.devices.isNotEmpty && (d.step == 'd1' || d.devices.any((x) => !x.ready));
+  /// Day 1's only, as the canvas draws it.
+  bool get showsDevices => isNow && d.devices.isNotEmpty && d.step == 'd1';
 
   /// Day 1 and Week 1.
   bool get showsProfile => isNow && d.profile.total > 0 && (d.step == 'd1' || d.step == 'w1');

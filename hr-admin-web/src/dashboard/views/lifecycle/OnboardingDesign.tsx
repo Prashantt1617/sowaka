@@ -12,7 +12,7 @@ import { SEG, btn, btnClass, segBtn } from '../../ds';
 import { IconEye } from '../../icons';
 import { usePageHead } from '../../pageHead';
 import { htmlToPdfBlob } from '../../pdf';
-import { getTemplateDesign, getTemplatePreview, listLetterTemplates, saveTemplateDesign, uploadTemplateMedia } from '../../../services/lifecycle';
+import { getTemplateDesign, listLetterTemplates, saveTemplateDesign, uploadTemplateMedia } from '../../../services/lifecycle';
 import type {
   CheckinAnswerType, DesignAccess, DesignCheckin, DesignMedia, DesignMeeting, DesignQuestion, DesignStage, DesignTask, DesignTeamTask, DesignWatchItem,
   FormAnswerType, JoinerTaskType, LetterTemplateDTO, MeetWith, TeamRole, TemplateDesign, TemplatePreview, TourLesson,
@@ -21,7 +21,7 @@ import { Modal } from './shared';
 import { areaStyle, errText, inputStyle, longDay, todayKey } from './format';
 import { LETTER_CSS, LETTER_TITLE, labelledBody, letterDocument } from './letterDoc';
 import { useCompanyName } from './hooks';
-import { Block, Glyph, GroupHead, InfoNote, InfoToggle, ItemRow, NameDropdown, Overlay, RadioPills, RemoveButton, SidePanel, TileFace, TileStrip } from './designParts';
+import { Block, Glyph, GroupHead, InfoNote, InfoToggle, ItemRow, NameDropdown, Overlay, RadioPills, RemoveButton, SidePanel, SOFT_SEG, softSegBtn, TileFace, TileStrip } from './designParts';
 import {
   BACKGROUNDS, GLYPH, MEETS_LABEL, MEET_LABEL, MEET_WITH, ROLE_LABEL, STAGES, TOUR, addBtn, checkinWhen, chip, clock, pickFile, rowLine, smallBtn, stageName,
   stageOrBefore, tourName, whoChip,
@@ -37,6 +37,20 @@ const CATS: Array<[Cat, string]> = [['meet', 'Meetings'], ['tasks', 'Tasks'], ['
 const TCATS: Array<[TCat, string]> = [['manager', 'Manager'], ['buddy', 'Buddy'], ['hr', 'HR'], ['it', 'IT & admin'], ['lead', 'Leadership']];
 const TASK_GROUPS: Array<[JoinerTaskType, string]> = [['do', 'Do in Sowaka'], ['review', 'Review'], ['ack', 'Read and acknowledge'], ['sign', 'Sign'], ['other', 'More tasks'], ['form', 'Fill in a form']];
 const TASK_GLYPH: Record<JoinerTaskType, string> = { do: GLYPH.task, review: GLYPH.review, ack: GLYPH.ack, sign: GLYPH.sign, other: GLYPH.task, form: GLYPH.form };
+/** "+ Add a point" / "+ Add a question": the canvas's grey chip with blue words. */
+const ADD_LINE: CSSProperties = { justifySelf: 'start', height: 34, padding: '0 12px', borderRadius: 10, border: 0, background: 'var(--surface-2)', color: 'var(--accent)', fontSize: 12, fontWeight: 700 };
+/** "09:30" → "9:30 AM" (the canvas writes the reporting time as text). */
+const ampm = (t?: string) => { if (!t) return ''; const [h, m] = t.split(':').map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
+/** "9:30 am", "9.30", "14:00", "9 AM" → "HH:mm"; null when it isn't a time. */
+const parseTime = (raw: string): string | null => {
+  const m = raw.trim().toLowerCase().match(/^(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?$/);
+  if (!m) return null;
+  let h = Number(m[1]); const min = Number(m[2] ?? '0');
+  if (min > 59 || h > 23 || (m[3] && (h < 1 || h > 12))) return null;
+  if (m[3] === 'pm' && h < 12) h += 12;
+  if (m[3] === 'am' && h === 12) h = 0;
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+};
 const CHECKIN_TYPES: Array<[CheckinAnswerType, string]> = [['rating', 'Rating 1 to 5'], ['yes_no', 'Yes or no'], ['short', 'Short answer'], ['long', 'Long answer'], ['choice', 'Choice']];
 const FORM_TYPES: Array<[FormAnswerType, string]> = [['short', 'Short answer'], ['long', 'Long answer'], ['choice', 'Choice'], ['date', 'Date'], ['file', 'File']];
 
@@ -61,7 +75,6 @@ const PICK_KINDS: Array<[AddKind, string, string, string, string, string]> = [
   ['review', 'Review', 'They check a page, like their shift, and tap “Looks good”', GLYPH.review, 'var(--t-lilac)', 'var(--t-lilac-i)'],
   ['ack', 'Read and acknowledge', 'They read a policy or PDF and tap “I’ve read this”', GLYPH.ack, 'var(--t-mint)', 'var(--t-mint-i)'],
   ['other', 'More tasks', 'Anything else. Paste a link if it lives somewhere else.', GLYPH.task, 'var(--t-butter)', 'var(--t-butter-i)'],
-  ['form', 'Fill in a form', 'A few questions, each with its own answer type. Answers are saved to their profile.', GLYPH.form, 'var(--t-peach)', 'var(--t-peach-i)'],
 ];
 const ACCEPT: Record<DesignMedia['type'], string> = { video: 'video/mp4,video/quicktime', image: 'image/jpeg,image/png', pdf: 'application/pdf', text: '' };
 
@@ -163,6 +176,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
   const [profileInfo, setProfileInfo] = useState(false);
   const [panel, setPanel] = useState<null | 'offer' | 'report'>(null);
   const [rep, setRep] = useState<TemplateDesign['preboarding']['reporting'] | null>(null);
+  const [repTime, setRepTime] = useState('');
   const [drawer, setDrawer] = useState<DocsDrawer | null>(null);
   const [meet, setMeet] = useState<MeetEdit | null>(null);
   const [ci, setCi] = useState<CiEdit | null>(null);
@@ -173,7 +187,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
   const [preview, setPreview] = useState(false);
   const [pvStage, setPvStage] = useState<DesignStage>('d1');
   const [pv, setPv] = useState<TemplatePreview | null>(null);
-  const [pvError, setPvError] = useState('');
+  const pvError = '';
 
   useEffect(() => {
     let live = true;
@@ -182,19 +196,19 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
     return () => { live = false; };
   }, [id, attempt]);
   useEffect(() => { listLetterTemplates().then(setLetters).catch(() => setLetters([])); }, []);
-  useEffect(() => {
-    if (!preview) return undefined;
-    let live = true;
-    setPv(null); setPvError('');
-    getTemplatePreview(id, pvStage).then((p) => { if (live) setPv(p); }).catch((e) => { if (live) setPvError(errText(e, 'Could not load the preview')); });
-    return () => { live = false; };
-  }, [preview, pvStage, id, saved?.updatedAt]);
+  // The preview follows the editor as it is now, saved or not (canvas: switch to 3 months and the phone shows Month 1–3).
+  useEffect(() => { if (preview && d) setPv(previewOf(d, pvStage)); }, [preview, pvStage, d]);
 
   const dirty = useMemo(() => Boolean(saved && d && JSON.stringify(saved) !== JSON.stringify(d)), [saved, d]);
   const leave = (go: () => void) => { if (!dirty || window.confirm('Leave without saving your changes?')) go(); };
   usePageHead({ title: d?.name ?? 'Onboarding template', eyebrow: 'Setup / Employee lifecycle / Onboarding templates', onBack: () => leave(onBack), backLabel: 'All templates', tag: saved?.isDefault ? 'Default' : undefined });
 
-  const people = useMemo(() => emps.filter((e) => !e.exit?.left).map((e) => ({ id: e.id, name: e.name })).sort((a, b) => a.name.localeCompare(b.name)), [emps]);
+  const people = useMemo(() => emps.filter((e) => !e.exit?.left).map((e) => ({ id: e.id, name: e.name, dept: `${e.department ?? ''} ${e.designation ?? ''}` })).sort((a, b) => a.name.localeCompare(b.name)), [emps]);
+  // The canvas lists HR people for the HR tasks and IT/admin people for IT's; everyone when the company has none on record.
+  const teamOf = (re: RegExp, current?: string) => {
+    const mine = people.filter((p) => re.test(p.dept) || p.id === current);
+    return (mine.some((p) => p.id !== current) ? mine : people).map(({ id, name }) => ({ id, name }));
+  };
 
   if (!d) {
     return <section className="pd-card"><ListPending state={error ? 'error' : 'loading'} errorText={error} onRetry={() => setAttempt((n) => n + 1)} rows={6} cols={3} avatar={false} /></section>;
@@ -239,9 +253,9 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
     </ItemRow>
   ) });
   if (pr.joiningDetails) preRows.push({ key: 'joiningDetails', node: (last) => (
-    <ItemRow icon={GLYPH.meet} title="Joining and reporting details" titleNode={titleBtn('Joining and reporting details', () => { setRep({ ...d.preboarding.reporting }); setPanel('report'); })} last={last}
+    <ItemRow icon={GLYPH.meet} title="Joining and reporting details" titleNode={titleBtn('Joining and reporting details', () => { setRep({ ...d.preboarding.reporting }); setRepTime(ampm(d.preboarding.reporting.time)); setPanel('report'); })} last={last}
       onRemove={() => { setRow('joiningDetails', false); removed('Joining and reporting details'); }}>
-      <button type="button" className={smallAction} onClick={() => { setRep({ ...d.preboarding.reporting }); setPanel('report'); }}>Edit</button>
+      <button type="button" className={smallAction} onClick={() => { setRep({ ...d.preboarding.reporting }); setRepTime(ampm(d.preboarding.reporting.time)); setPanel('report'); }}>Edit</button>
     </ItemRow>
   ) });
   if (pr.profile) preRows.push({ key: 'profile', node: (last) => (
@@ -387,9 +401,9 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
   const whoRow = (): ReactNode => {
     if (tcat === 'manager') return <><span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink-2)' }}>Who is the manager</span><span style={{ fontSize: 13, fontWeight: 500 }}>From each joiner’s offer</span></>;
     if (tcat === 'buddy') return <><span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink-2)' }}>Who is the buddy</span><span style={{ fontSize: 13, fontWeight: 500 }}>Picked by the manager</span></>;
-    const [key, label, opts, ph] = tcat === 'hr' ? ['hrUserId', 'Who does the HR tasks', people, 'Choose someone'] as const
-      : tcat === 'it' ? ['itUserId', 'Who does the IT & admin tasks', people, 'Choose someone'] as const
-        : ['seniorUserId', 'Who counts as someone senior', [{ id: '', name: 'Head of department' }, ...people], ''] as const;
+    const [key, label, opts, ph] = tcat === 'hr' ? ['hrUserId', 'Who does the HR tasks', teamOf(/\b(hr|human resources?|people|payroll)\b/i, assignees.hrUserId), 'Choose someone'] as const
+      : tcat === 'it' ? ['itUserId', 'Who does the IT & admin tasks', teamOf(/\b(it|admin|administration|information technology|systems?)\b/i, assignees.itUserId), 'Choose someone'] as const
+        : ['seniorUserId', 'Who counts as someone senior', [{ id: '', name: 'Head of department' }, ...people.map(({ id, name }) => ({ id, name }))], ''] as const;
     return <><span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink-2)' }}>{label}</span><NameDropdown label={label} value={assignees[key] ?? ''} options={opts} placeholder={ph} onPick={(v) => setAssignee(key, v)} /></>;
   };
 
@@ -454,7 +468,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
           <div style={body}>
             <div style={{ minHeight: 60, padding: '10px 0', borderBottom: rowLine, display: 'flex', alignItems: 'center', gap: 12 }}>
               <span style={{ flex: 1, fontSize: 13.5, fontWeight: 500 }}>Length</span>
-              <RadioPills<'3' | '6'> label="Probation length" options={[['3', '3 months'], ['6', '6 months']]} value={String(months) as '3' | '6'} onPick={(v) => up((x) => ({ ...x, probation: { ...x.probation, months: v === '3' ? 3 : 6 } }))} />
+              <RadioPills<'3' | '6'> label="Probation length" look="seg" options={[['3', '3 months'], ['6', '6 months']]} value={String(months) as '3' | '6'} onPick={(v) => up((x) => ({ ...x, probation: { ...x.probation, months: v === '3' ? 3 : 6 } }))} />
             </div>
             <div style={{ minHeight: 60, padding: '10px 0', display: 'flex', alignItems: 'center', gap: 12 }}>
               <span style={{ flex: 1, fontSize: 13.5, fontWeight: 500 }}>Probation template</span>
@@ -510,14 +524,18 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
         <SidePanel title="Joining and reporting details" sub="Set these once. Every joiner on this template sees them; the joining date comes from each joiner’s offer." width={560} onClose={() => { setPanel(null); setRep(null); }}
           footer={<>
             <button type="button" className="pd-btn" onClick={() => { setPanel(null); setRep(null); }}>Cancel</button>
-            <button type="button" className="pd-btn primary" onClick={() => { up((x) => ({ ...x, preboarding: { ...x.preboarding, reporting: rep } })); setPanel(null); setRep(null); flash('Reporting details saved'); }}>Save details</button>
+            <button type="button" className="pd-btn primary" onClick={() => {
+              const time = repTime.trim() ? parseTime(repTime) : undefined;
+              if (time === null) { flash('Write the reporting time like 9:30 AM', 'error'); return; }
+              up((x) => ({ ...x, preboarding: { ...x.preboarding, reporting: { ...rep, time } } })); setPanel(null); setRep(null); flash('Reporting details saved');
+            }}>Save details</button>
           </>}>
-          <label style={fieldLabel}><span>Reporting time</span><input type="time" value={rep.time ?? ''} onChange={(e) => setRep({ ...rep, time: e.target.value || undefined })} style={inputStyle} /></label>
+          <label style={fieldLabel}><span>Reporting time</span><input value={repTime} maxLength={12} onChange={(e) => setRepTime(e.target.value)} placeholder="e.g. 9:30 AM" style={inputStyle} /></label>
           <label style={fieldLabel}><span>Where to report</span><input value={rep.place ?? ''} maxLength={200} onChange={(e) => setRep({ ...rep, place: e.target.value })} placeholder="e.g. Reception, Pune office, 2nd floor" style={inputStyle} /><span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>Add a maps link if it helps.</span></label>
           <label style={fieldLabel}><span>What to bring</span><input value={rep.bring ?? ''} maxLength={300} onChange={(e) => setRep({ ...rep, bring: e.target.value })} placeholder="e.g. Original ID, address proof, two photos" style={inputStyle} /></label>
           <label style={fieldLabel}><span>Anything else</span><input value={rep.notes ?? ''} maxLength={300} onChange={(e) => setRep({ ...rep, notes: e.target.value })} placeholder="e.g. Business casual. Parking at Gate 2." style={inputStyle} /></label>
           <Block label="Who meets them">
-            <RadioPills<'hr' | 'manager' | 'buddy'> label="Who meets them" options={[['hr', 'HR'], ['manager', 'Manager'], ['buddy', 'Buddy']]} value={rep.meets} onPick={(v) => setRep({ ...rep, meets: v })} />
+            <RadioPills<'hr' | 'manager' | 'buddy'> label="Who meets them" look="who" options={[['hr', 'HR'], ['manager', 'Manager'], ['buddy', 'Buddy']]} value={rep.meets} onPick={(v) => setRep({ ...rep, meets: v })} />
             <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>The employee sees their name, photo and phone number.</span>
           </Block>
         </SidePanel>
@@ -555,7 +573,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
                     </div>
                   );
                 })}
-                <button type="button" className="pd-btn ghost sm" style={{ justifySelf: 'start' }} onClick={() => leave(() => { setDrawer(null); setView('lifecycle_letter_templates'); })}>Manage in Document templates →</button>
+                <button type="button" className="pd-btn ghost sm" style={ADD_LINE} onClick={() => leave(() => { setDrawer(null); setView('lifecycle_letter_templates'); })}>Manage in Document templates →</button>
               </div>
               <div style={{ display: 'grid', gap: 10, minWidth: 0 }}>
                 <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', color: 'var(--ink-3)' }}>PREVIEW · {shown.t.toUpperCase()}</span>
@@ -587,10 +605,10 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
               <div key={j} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ width: 20, fontSize: 12, color: 'var(--ink-3)', textAlign: 'right', flex: 'none' }}>{j + 1}</span>
                 <input aria-label={`Agenda point ${j + 1}`} value={a} maxLength={160} placeholder="An agenda point" onChange={(e) => setMeet({ ...meet, agenda: meet.agenda.map((x, n) => (n === j ? e.target.value : x)) })} style={inputStyle} />
-                <RemoveButton label={`point ${j + 1}`} onClick={() => setMeet({ ...meet, agenda: meet.agenda.filter((_, n) => n !== j) })} />
+                <RemoveButton label={`point ${j + 1}`} cross onClick={() => setMeet({ ...meet, agenda: meet.agenda.filter((_, n) => n !== j) })} />
               </div>
             ))}
-            {meet.agenda.length < 12 && <button type="button" className="pd-btn ghost sm" style={{ justifySelf: 'start' }} onClick={() => setMeet({ ...meet, agenda: [...meet.agenda, ''] })}>+ Add a point</button>}
+            {meet.agenda.length < 12 && <button type="button" className="pd-btn ghost sm" style={ADD_LINE} onClick={() => setMeet({ ...meet, agenda: [...meet.agenda, ''] })}>+ Add a point</button>}
           </Block>
         </SidePanel>
       )}
@@ -616,11 +634,11 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ width: 20, fontSize: 12, color: 'var(--ink-3)', textAlign: 'right', flex: 'none' }}>{j + 1}</span>
                 <input aria-label={`Question ${j + 1}`} value={q.text} maxLength={200} placeholder="A question" onChange={(e) => setCi({ ...ci, questions: ci.questions.map((x, n) => (n === j ? { ...x, text: e.target.value } : x)) })} style={inputStyle} />
-                <button type="button" className="pd-btn sm" aria-label={`Answer type: ${CHECKIN_TYPES.find(([k]) => k === q.type)?.[1]}`} style={{ flex: 'none' }}
+                <button type="button" className="pd-btn sm" aria-label={`Answer type: ${CHECKIN_TYPES.find(([k]) => k === q.type)?.[1]}`} style={{ flex: 'none', width: 124, height: 40, justifyContent: 'center' }}
                   onClick={() => setCi({ ...ci, questions: ci.questions.map((x, n) => (n === j ? { ...x, type: CHECKIN_TYPES[(CHECKIN_TYPES.findIndex(([k]) => k === x.type) + 1) % CHECKIN_TYPES.length][0] } : x)) })}>
                   {CHECKIN_TYPES.find(([k]) => k === q.type)?.[1]}
                 </button>
-                <RemoveButton label={`question ${j + 1}`} onClick={() => setCi({ ...ci, questions: ci.questions.filter((_, n) => n !== j) })} />
+                <RemoveButton label={`question ${j + 1}`} cross onClick={() => setCi({ ...ci, questions: ci.questions.filter((_, n) => n !== j) })} />
               </div>
               {q.type === 'choice' && (
                 <div style={{ paddingLeft: 28 }}>
@@ -629,7 +647,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
               )}
               </div>
             ))}
-            {ci.questions.length < 20 && <button type="button" className="pd-btn ghost sm" style={{ justifySelf: 'start' }} onClick={() => setCi({ ...ci, questions: [...ci.questions, { text: '', type: 'long' }] })}>+ Add a question</button>}
+            {ci.questions.length < 20 && <button type="button" className="pd-btn ghost sm" style={ADD_LINE} onClick={() => setCi({ ...ci, questions: [...ci.questions, { text: '', type: 'long' }] })}>+ Add a question</button>}
           </Block>
         </SidePanel>
       )}
@@ -747,12 +765,13 @@ function AddDialog({ add, months, templateId, letters, company, onChange, onClos
   if (!add.kind) {
     return (
       <Modal title="Add to Tasks" width={600} onClose={onClose}>
-        <div style={{ display: 'grid', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {PICK_KINDS.map(([k, t, m, glyph, bg, fg]) => (
             <button key={k} type="button" onClick={() => set({ kind: k })}
-              style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 14, border: rowLine, background: 'var(--surface)', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', color: 'var(--ink)' }}>
-              <span style={{ width: 40, height: 40, borderRadius: 12, background: bg, color: fg, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Glyph d={glyph} size={19} /></span>
-              <span style={{ display: 'grid', gap: 2 }}><span style={{ fontSize: 14, fontWeight: 600 }}>{t}</span><span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{m}</span></span>
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8, padding: 14, borderRadius: 14, border: rowLine, background: 'var(--surface)', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', color: 'var(--ink)' }}>
+              <span style={{ width: 36, height: 36, borderRadius: 10, background: bg, color: fg, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Glyph d={glyph} size={18} /></span>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>{t}</span>
+              <span style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.4 }}>{m}</span>
             </button>
           ))}
         </div>
@@ -805,8 +824,8 @@ function AddDialog({ add, months, templateId, letters, company, onChange, onClos
       <div style={{ display: 'grid', gap: 18 }}>
         <label style={fieldLabel}><span>{nameLabel}</span><input value={add.name} maxLength={120} onChange={(e) => set({ name: e.target.value })} placeholder={namePh} style={inputStyle} autoFocus /></label>
         {k === 'other' && <label style={fieldLabel}><span>Link (optional)</span><input value={add.link} onChange={(e) => set({ link: e.target.value })} placeholder="https://" style={inputStyle} /></label>}
-        {isMeet && <Block label="Who they meet"><RadioPills<MeetWith> label="Who they meet" options={MEET_WITH.map((w) => [w, MEET_LABEL[w]])} value={add.meetWith} onPick={(v) => set({ meetWith: v })} /></Block>}
-        {isAccess && <Block label="Who sets it up"><RadioPills<'it' | 'hr'> label="Who sets it up" options={[['it', 'IT & admin'], ['hr', 'HR']]} value={add.accessRole} onPick={(v) => set({ accessRole: v })} /></Block>}
+        {isMeet && <Block label="Who they meet"><RadioPills<MeetWith> label="Who they meet" look="who" options={MEET_WITH.map((w) => [w, MEET_LABEL[w]])} value={add.meetWith} onPick={(v) => set({ meetWith: v })} /></Block>}
+        {isAccess && <Block label="Who sets it up"><RadioPills<'it' | 'hr'> label="Who sets it up" look="who" options={[['it', 'IT & admin'], ['hr', 'HR']]} value={add.accessRole} onPick={(v) => set({ accessRole: v })} /></Block>}
         {isMeet && (
           <Block label="Agenda · what they’ll talk about">
             {add.agenda.map((a, j) => (
@@ -850,7 +869,7 @@ function AddDialog({ add, months, templateId, letters, company, onChange, onClos
               {f.type === 'choice' && <ChoiceOptions n={j + 1} options={f.options} onChange={(options) => set({ fields: add.fields.map((x, n) => (n === j ? { ...x, options } : x)) })} />}
               </div>
             ))}
-            {add.fields.length < 20 && <button type="button" className="pd-btn ghost sm" style={{ justifySelf: 'start' }} onClick={() => set({ fields: [...add.fields, { text: '', type: 'short' }] })}>+ Add a question</button>}
+            {add.fields.length < 20 && <button type="button" className="pd-btn ghost sm" style={ADD_LINE} onClick={() => set({ fields: [...add.fields, { text: '', type: 'short' }] })}>+ Add a question</button>}
             <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>Answer types: short answer, long answer, choice, date or file. Answers are saved to the joiner’s profile.</span>
           </Block>
         )}
@@ -891,17 +910,17 @@ function StoryDialog({ story, templateId, months, onChange, onClose, onRemove, o
   return (
     <Modal title={title} width={680} onClose={onClose} busy={story.busy}
       footer={<>
-        {story.index !== null && <button type="button" className="pd-btn" style={{ color: 'var(--bad)' }} onClick={onRemove} disabled={story.busy}>Remove</button>}
+        {story.index !== null && <button type="button" style={{ height: 44, padding: '0 12px', borderRadius: 12, border: 0, background: 'transparent', color: 'var(--ink-2)', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }} onClick={onRemove} disabled={story.busy}>Remove</button>}
         <span style={{ flex: 1 }} />
         <button type="button" className="pd-btn" onClick={onClose} disabled={story.busy}>Cancel</button>
         <button type="button" className="pd-btn primary" onClick={save} disabled={story.busy}>{story.index !== null ? 'Save' : 'Add'}</button>
       </>}>
       <div style={{ display: 'flex', gap: 22, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        <TileFace media={m} w={168} h={280} emptyText={emptyText} textShown={m.text || 'Your text shows here'} />
+        <TileFace media={m} w={168} h={280} emptyText={emptyText} textShown={m.text || 'Your text shows here'} preview />
         <div style={{ flex: 1, minWidth: 260, display: 'grid', gap: 16 }}>
-          <div role="radiogroup" aria-label="Type" style={{ ...SEG, borderRadius: 14 }}>
+          <div role="radiogroup" aria-label="Type" style={SOFT_SEG}>
             {types.map(([k, t, glyph]) => (
-              <button key={k} type="button" role="radio" aria-checked={m.type === k} style={segBtn(m.type === k)}
+              <button key={k} type="button" role="radio" aria-checked={m.type === k} style={softSegBtn(m.type === k)}
                 onClick={() => onChange({ ...story, media: k === 'text' ? { type: 'text', text: m.text, bg: m.bg ?? 'rust' } : m.type === k ? m : { type: k } })}>
                 <Glyph d={glyph} size={14} />{t}
               </button>
@@ -912,7 +931,8 @@ function StoryDialog({ story, templateId, months, onChange, onClose, onRemove, o
             <Block label={fileLabel}>
               {m.fileId
                 ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', border: rowLine, borderRadius: 12 }}><span style={{ flex: 1, minWidth: 0, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name ?? fileLabel}</span><button type="button" className="pd-btn sm" onClick={() => onChange({ ...story, media: { type: m.type } })}>Replace</button></div>
-                : <button type="button" className="pd-btn" style={{ justifySelf: 'start' }} onClick={() => void upload()} disabled={story.busy}><Glyph d={GLYPH.upload} size={15} />{story.busy ? 'Uploading…' : uploadText}</button>}
+                : <button type="button" onClick={() => void upload()} disabled={story.busy}
+                    style={{ height: 72, borderRadius: 12, border: '1.5px dashed var(--line-2)', background: 'var(--surface-2)', color: 'var(--accent)', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{story.busy ? 'Uploading…' : uploadText}</button>}
             </Block>
           )}
           {m.type === 'text' && <>
@@ -976,4 +996,34 @@ function Phone({ preview, error }: { preview: TemplatePreview | null; error: str
       )}
     </div>
   );
+}
+
+/** What the phone shows at a stage (the same rules as GET /admin/lifecycle/templates/:id/preview), from the editor's copy. */
+function previewOf(view: TemplateDesign, stage: DesignStage): TemplatePreview {
+  const months = view.probation.months;
+  const order = STAGES.indexOf(stage);
+  const ready = (list: TemplateDesign['watch']) => list.filter((w) => !!w.media.fileId || w.media.type === 'text').length;
+  if (stage === 'pre') {
+    const v = view.preboarding.videos;
+    return {
+      stage, header: 'Welcome', stageLabel: stageName(stage, months),
+      joining: view.preboarding.rows.joiningDetails ? { ...view.preboarding.reporting } : null,
+      offerLetter: view.preboarding.rows.offerLetter,
+      profile: view.preboarding.rows.profile ? { sections: 7 } : null,
+      watch: view.preboarding.rows.watch && v.length ? { first: v[0].title, ready: ready(v), total: v.length } : null,
+    };
+  }
+  const watchAll = [...view.watch, ...view.trainings].filter((w) => STAGES.indexOf(w.stage) <= order);
+  const meetings = view.meetings.filter((m) => m.stage === stage);
+  const tasks = view.tasks.filter((x) => x.stage === stage);
+  const early = stage === 'd1' || stage === 'w1';
+  return {
+    stage, header: 'Onboarding', stageLabel: stageName(stage, months),
+    meetings: { count: meetings.length, who: meetings.map((m) => m.meetWith).slice(0, 3) },
+    tasks: { first: tasks[0]?.title, count: tasks.length },
+    tour: early && view.tour.length ? { first: stage === 'd1' ? 'punch' : view.tour.find((l) => l !== 'punch') ?? null } : null,
+    watch: order <= STAGES.indexOf('m1') && watchAll.length ? { first: watchAll[0].title, ready: ready(watchAll), total: watchAll.length } : null,
+    devices: early && view.accesses.length ? { count: view.accesses.length } : null,
+    profile: true,
+  };
 }

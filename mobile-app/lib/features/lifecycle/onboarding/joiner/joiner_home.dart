@@ -495,7 +495,7 @@ class _Tiles extends StatelessWidget {
         _WideTile(
           key: const ValueKey('tile-checkins'),
           onTap: () => open(JoinerCheckinsScreen(c: c)),
-          icon: const JIconChip(icon: Icons.chat_bubble_outline_rounded, tint: OnbColors.violetTint, color: OnbColors.violet, size: 48, radius: 14, iconSize: 24),
+          icon: const JIconChip.chat(tint: OnbColors.violetTint, color: OnbColors.violet, size: 48, radius: 14, iconSize: 24),
           title: 'Check-ins',
           meta: '${d.summary.checkinDueTitle} · about a minute',
           end: const JVerbPill('Start', filled: true),

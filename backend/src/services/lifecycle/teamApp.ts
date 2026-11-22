@@ -18,7 +18,7 @@ import { daysBetween, keyOfDay } from './dueRules';
 import { LifecycleError, deriveJourney, isJoined, loadJourney, tasksOf, tell } from './engine';
 import { goalsOfJourney } from './joinerApp';
 import { saveMeetingRowNotes } from './joinerMeetings';
-import { PROFILE_SECTIONS, PROFILE_SECTION_TITLE, sectionStates } from './profile';
+import { PROFILE_SECTIONS, appSectionTitle, sectionStates } from './profile';
 import { journeyDocumentsView } from './documents';
 import { relationTo, type TeamRelation } from './teamTasks';
 
@@ -160,7 +160,7 @@ export async function progressOf(p: Placed, tasks: JourneyTask[], viewer: Viewer
     const isDone = task.status === 'done' || task.status === 'skipped';
     lists.tasks.push({ title: row.title, status: isDone ? 'Done' : at(s) ? 'To do' : soon(s), tone: isDone ? 'ok' : at(s) ? 'todo' : 'soon', comingUp: !at(s) });
   }
-  for (const c of p.checkins) lists.ci.push({ title: c.row.title, status: c.state === 'sent' ? 'Sent' : c.state === 'open' ? 'Not yet' : soon(c.step), tone: c.state === 'sent' ? 'ok' : c.state === 'open' ? 'todo' : 'soon', comingUp: c.state === 'locked' });
+  for (const c of p.checkins.filter((x) => x.state !== 'closed')) lists.ci.push({ title: c.row.title, status: c.state === 'sent' ? 'Sent' : c.state === 'open' ? 'Not yet' : soon(c.step), tone: c.state === 'sent' ? 'ok' : c.state === 'open' ? 'todo' : 'soon', comingUp: c.state === 'locked' });
   for (const w of [...p.watch, ...p.trainings]) {
     const m = w.row.design!.media;
     lists.watch.push({ title: w.row.title, ...(m?.type === 'pdf' ? { meta: 'PDF' } : m?.minutes ? { meta: `${m.minutes} min` } : {}), status: w.done ? 'Watched' : at(w.step) ? 'Not yet' : soon(w.step), tone: w.done ? 'ok' : at(w.step) ? 'todo' : 'soon', comingUp: !at(w.step) });
@@ -175,7 +175,7 @@ export async function progressOf(p: Placed, tasks: JourneyTask[], viewer: Viewer
     lists.dev.push({ title: t.title, status: ready ? 'Ready' : late > 0 ? `Waiting ${late} day${late === 1 ? '' : 's'}` : 'Setting up', tone: ready ? 'ok' : 'warn', comingUp: false });
   }
   const sections = sectionStates(j, await journeyDocumentsView(j.id));
-  for (const k of PROFILE_SECTIONS) lists.prof.push({ title: PROFILE_SECTION_TITLE[k], status: sections[k] ? 'Done' : 'To do', tone: sections[k] ? 'ok' : 'todo', comingUp: false });
+  for (const k of PROFILE_SECTIONS) lists.prof.push({ title: appSectionTitle(k), status: sections[k] ? 'Done' : 'To do', tone: sections[k] ? 'ok' : 'todo', comingUp: false });
   const profilePct = Math.round((PROFILE_SECTIONS.filter((k) => sections[k]).length / PROFILE_SECTIONS.length) * 100);
 
   type Stat = { key: keyof typeof lists; title: string; done: number; total: number; unit: string; flag: { text: string; tone: 'ok' | 'warn' | 'todo' } };
@@ -191,6 +191,12 @@ export async function progressOf(p: Placed, tasks: JourneyTask[], viewer: Viewer
   if (viewer === 'team') {
     const teamFlag: Record<string, (n: number) => string> = { meet: (n) => `${n} to go`, ci: (n) => `${n} not sent`, tasks: (n) => `${n} not done`, watch: (n) => `${n} to watch`, tour: (n) => `${n} to go` };
     if (p.step === 0) {
+      // Before Day 1 (MgrTeamsProto, Kavya): the videos to watch before joining, then devices and the profile.
+      const pre = [...p.watch, ...p.trainings].filter((w) => w.row.design?.stage === 'pre');
+      if (pre.length) {
+        const seen = pre.filter((w) => w.done).length;
+        rows.push({ key: 'watch', title: TITLES.watch, done: seen, total: pre.length, unit: UNITS.watch, flag: seen === pre.length ? { text: 'Done', tone: 'ok' } : { text: teamFlag.watch(pre.length - seen), tone: 'todo' } });
+      }
       const dev = count('dev', OK.dev, true);
       if (dev.total) rows.push({ key: 'dev', title: TITLES.dev, done: dev.done, total: dev.total, unit: UNITS.dev, flag: dev.done === dev.total ? { text: 'Done', tone: 'ok' } : { text: `${dev.total - dev.done} setting up`, tone: 'warn' } });
       rows.push({ key: 'prof', title: TITLES.prof, done: profilePct, total: 100, unit: UNITS.prof, flag: profilePct === 100 ? { text: 'Done', tone: 'ok' } : { text: 'Not complete', tone: 'warn' } });
