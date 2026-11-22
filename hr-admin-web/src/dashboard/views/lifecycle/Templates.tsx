@@ -1,10 +1,10 @@
-// Setup › Employee lifecycle › Templates (S2), and one template (S3 for
-// onboarding, S4 for offboarding). A template sets the tasks every joiner or
-// leaver gets, by phase: who does each one, when it is due (from Tj, the
-// joining day, or Tl, the last working day), whether it is a must-do, and
-// whether it is on. The Recommended panel holds our suggestions, off until HR
-// adds one. One template per kind is the default; changes apply to journeys
-// that start after saving.
+// Setup › Employee lifecycle › Templates (S2), and one template. An onboarding
+// template opens the Final designs' editor (OnboardingDesign.tsx: pre-boarding,
+// onboarding, probation, the team's part). An offboarding template (S4) sets the
+// tasks every leaver gets, by phase: who does each one, when it is due (from Tl,
+// the last working day), whether it is a must-do, and whether it is on. The
+// Recommended panel holds our suggestions, off until HR adds one. One template
+// per kind is the default; changes apply to journeys that start after saving.
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useStore } from '../../store';
@@ -14,7 +14,7 @@ import { downloadCsv } from '../../export';
 import { LIFECYCLE_TEMPLATES_KIND_KEY } from '../../setupGroups';
 import { createTemplate, deleteTemplate, getTemplate, getTemplateJourneys, isNotAvailable, listTemplates, updateTemplate } from '../../../services/lifecycle';
 import type { DueAnchor, DueRule, ExitTypeKey, LifecycleKind, LifecyclePhase, LifecycleTemplate, OwnerRole, TemplateJourney, TemplateListItem, TemplateTask } from '../../../services/lifecycle';
-import { JoinerPanel } from './JoinerPanel';
+import { OnboardingDesign } from './OnboardingDesign';
 import { ConfirmDialog, Field, Modal, NotSwitchedOn, OwnerChip, Pick, Switch } from './shared';
 import { OWNER_LABEL, PHASES, errText, readHandoff, inputStyle, linkBtn, longDay, phaseTitle, ruleText, sectionLabel } from './format';
 import '../people.css';
@@ -25,11 +25,8 @@ const LEAD: Record<LifecycleKind, ReactNode> = {
   onboarding: <>Templates set the tasks every joiner gets, from the offer to confirmation. Anyone not assigned to one follows the <strong style={{ fontWeight: 500, color: 'var(--ink-2)' }}>default</strong>.</>,
   offboarding: <>Every exit gets these tasks, dated from the last working day (Tl). Anyone not given another template follows the <strong style={{ fontWeight: 500, color: 'var(--ink-2)' }}>default</strong>.</>,
 };
-const OWNERS: OwnerRole[] = ['employee', 'manager', 'manager_employee', 'hr', 'hr_manager', 'it', 'admin', 'finance', 'automatic', 'buddy', 'head_of_department'];
-/** Owners only the app's Teams › Joiners has (onboarding only). */
-const TEAM_OWNERS: OwnerRole[] = ['manager', 'buddy', 'head_of_department'];
-const ownersFor = (kind: LifecycleKind, task: TemplateTask): OwnerRole[] =>
-  task.team ? TEAM_OWNERS : kind === 'onboarding' ? OWNERS : OWNERS.filter((o) => o !== 'buddy' && o !== 'head_of_department');
+/** Who can do an offboarding task. */
+const OWNERS: OwnerRole[] = ['employee', 'manager', 'manager_employee', 'hr', 'hr_manager', 'it', 'admin', 'finance', 'automatic'];
 const EXIT_TYPES: [ExitTypeKey, string][] = [['resignation', 'Resignation'], ['retirement', 'Retirement'], ['end_of_contract', 'End of contract'], ['termination', 'Termination'], ['absconding', 'Absconding']];
 
 const visibleTasks = (tasks: TemplateTask[]) => tasks.filter((t) => !t.recommended || t.recommended.added);
@@ -62,6 +59,8 @@ export function LifecycleTemplates() {
   const reload = () => setAttempt((n) => n + 1);
 
   if (editing) {
+    // Onboarding: the Final designs' editor (the older task-table editor is offboarding's only).
+    if (kind === 'onboarding') return <OnboardingDesign key={editing} id={editing} onBack={() => { setEditing(null); reload(); }} />;
     return <TemplateEditor key={editing} id={editing} siblings={rows ?? []} onBack={() => { setEditing(null); reload(); }} onOpen={(id) => { setEditing(id); reload(); }} />;
   }
 
@@ -153,7 +152,7 @@ function CreateTemplateDialog({ kind, templates, onClose, onCreated }: { kind: L
     } catch (e) { setError(errText(e, 'Could not create the template')); setBusy(false); }
   };
   return (
-    <Modal title={`New ${kind} template`} sub="It starts as a copy, with our recommended tasks ready to add." onClose={onClose} busy={busy} width={480}
+    <Modal title={`New ${kind} template`} sub={kind === 'onboarding' ? 'It starts as a copy.' : 'It starts as a copy, with our recommended tasks ready to add.'} onClose={onClose} busy={busy} width={480}
       footer={<><button type="button" className="pd-btn" onClick={onClose} disabled={busy}>Cancel</button><button type="button" className="pd-btn primary" onClick={() => void go()} disabled={busy}>{busy ? 'Creating…' : 'Create'}</button></>}>
       <Field label="Template name" required error={error}>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder={kind === 'onboarding' ? 'e.g. Faculty' : 'e.g. Interns'} style={inputStyle} autoFocus />
@@ -171,7 +170,7 @@ function CreateTemplateDialog({ kind, templates, onClose, onCreated }: { kind: L
   );
 }
 
-// —— Joiners on a template (S3's Joiners tab) ————————————————————————————
+// —— Leavers on a template (S4's Leavers tab) ————————————————————————————
 
 const JOURNEY_STATUS: Record<string, string> = {
   draft: 'Offer not sent', offer_sent: 'Offer sent', accepted: 'Accepted', finalised: 'Finalised', active: 'On the portal', docs_approved: 'Documents approved',
@@ -186,29 +185,27 @@ const COLUMN_NAME: Record<string, string> = {
 /**
  * Who follows this template. Each journey keeps the tasks the template had
  * when it started (a snapshot), so nobody is moved from here: the list opens
- * each joiner's panel (or the Offboarding board for a leaver).
+ * the Offboarding board.
  */
-function TemplatePeople({ id, kind }: { id: string; kind: LifecycleKind }) {
+function TemplatePeople({ id }: { id: string }) {
   const { setView } = useStore();
   const [rows, setRows] = useState<TemplateJourney[] | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
-  const [open, setOpen] = useState('');
   useEffect(() => {
     let live = true;
     setError('');
     getTemplateJourneys(id).then((r) => { if (live) setRows(r); }).catch((e) => { if (live) setError(errText(e, 'Could not load who follows this template')); });
     return () => { live = false; };
   }, [id, attempt]);
-  const who = kind === 'onboarding' ? 'joiner' : 'leaver';
   return (
     <section className="pd-card">
       <p className="pd-lead" style={{ marginTop: 0 }}>
-        Everyone {kind === 'onboarding' ? 'joining' : 'leaving'} on this template now. Each one keeps the tasks the template had when they started, so changes you save apply to people who start after that, and nobody moves to another template part-way.
+        Everyone leaving on this template now. Each one keeps the tasks the template had when they started, so changes you save apply to people who start after that, and nobody moves to another template part-way.
       </p>
       {error ? <LoadError text={error} onRetry={() => setAttempt((n) => n + 1)} />
         : !rows ? <SkeletonLines lines={5} />
-          : rows.length === 0 ? <div className="pd-empty">No {who}s on this template right now.</div>
+          : rows.length === 0 ? <div className="pd-empty">No leavers on this template right now.</div>
             : (
               <div className="pd-list">
                 {rows.map((r) => (
@@ -221,14 +218,11 @@ function TemplatePeople({ id, kind }: { id: string; kind: LifecycleKind }) {
                         r.tj ? `joins ${longDay(r.tj)}` : r.tl ? `last day ${longDay(r.tl)}` : '',
                       ].filter(Boolean).join(' · ')}</span>
                     </span>
-                    {kind === 'onboarding'
-                      ? <button type="button" className="pd-btn sm" onClick={() => setOpen(r.journeyId)}>Open</button>
-                      : <button type="button" className="pd-btn sm" onClick={() => setView('offboarding')}>Open board</button>}
+                    <button type="button" className="pd-btn sm" onClick={() => setView('offboarding')}>Open board</button>
                   </div>
                 ))}
               </div>
             )}
-      {open && <JoinerPanel journeyId={open} onClose={() => setOpen('')} onChanged={() => setAttempt((n) => n + 1)} />}
     </section>
   );
 }
@@ -285,7 +279,7 @@ function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings
     setT({ tasks: t.tasks.map((x) => (x.id === task.id ? { ...x, order: other.order } : x.id === other.id ? { ...x, order: task.order } : x)) });
   };
   const addTask = (p: LifecyclePhase) => {
-    const anchor: DueAnchor = t.kind === 'onboarding' ? 'tj' : 'tl';
+    const anchor: DueAnchor = 'tl';
     const task: TemplateTask = {
       id: newId(), phase: p, title: '', ownerRole: 'hr', kind: 'ack', surface: 'dashboard', mustDo: false, enabled: true,
       order: nextOrder(p), dueRule: { anchor, offset: 0, unit: 'days' }, opensRule: null,
@@ -344,7 +338,7 @@ function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings
         <StatusTabs<'template' | 'joiners'> options={['template', 'joiners']} active={tab} onSelect={setTab}
           labels={{ template: 'Template', joiners: t.kind === 'onboarding' ? 'Joiners' : 'Leavers' }} counts={{ joiners: usage }} />
       </div>
-      {tab === 'joiners' && <TemplatePeople id={id} kind={t.kind} />}
+      {tab === 'joiners' && <TemplatePeople id={id} />}
 
       <div style={{ display: tab === 'template' ? 'flex' : 'none', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
         <div style={{ flex: '1 1 600px', minWidth: 0, display: 'grid', gap: 16 }}>
@@ -356,20 +350,7 @@ function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings
               <Field label="Who it is for" hint="Optional">
                 <input value={t.group ?? ''} onChange={(e) => setT({ group: e.target.value })} placeholder="e.g. Full-time staff" style={inputStyle} />
               </Field>
-              {t.kind === 'onboarding' ? <>
-                <Field label="Probation">
-                  <Pick value={String(t.settings.probationMonths ?? 6)} onChange={(v) => setSettings({ probationMonths: Number(v) as 3 | 6 })}>
-                    <option value="6">6 months</option>
-                    <option value="3">3 months</option>
-                  </Pick>
-                </Field>
-                <Field label="Portal open until">
-                  <Pick value={t.settings.portalOpenUntil ?? 'week_1'} onChange={(v) => setSettings({ portalOpenUntil: v as 'week_1' | 'month_1' })}>
-                    <option value="week_1">End of week 1</option>
-                    <option value="month_1">End of month 1</option>
-                  </Pick>
-                </Field>
-              </> : <>
+              <>
                 <Field label="Notice period">
                   <Pick value={String(t.settings.noticeDays ?? 60)} onChange={(v) => setSettings({ noticeDays: Number(v) })}>
                     {[...new Set([30, 60, 90, t.settings.noticeDays ?? 60])].sort((a, b) => a - b).map((n) => <option key={n} value={n}>{n} days</option>)}
@@ -392,13 +373,10 @@ function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings
                 <Field label="Gratuity within" hint="Days after the last day">
                   <input type="number" min={0} max={90} value={t.settings.gratuityDays ?? 30} onChange={(e) => setSettings({ gratuityDays: Math.max(0, Number(e.target.value) || 0) })} style={inputStyle} />
                 </Field>
-              </>}
+              </>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 24px', marginTop: 14 }}>
               <label style={checkRow}><input type="checkbox" checked={t.active} onChange={(e) => setT({ active: e.target.checked })} style={checkBox} disabled={saved.isDefault} /> Active{saved.isDefault ? <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 }}> · the default stays on</span> : null}</label>
-              {t.kind === 'onboarding' && (
-                <label style={checkRow}><input type="checkbox" checked={t.settings.signLettersOnDay1 === true} onChange={(e) => setSettings({ signLettersOnDay1: e.target.checked })} style={checkBox} /> Sign the appointment letter and NDA in the app on Day 1, not on the portal</label>
-              )}
             </div>
             {t.kind === 'offboarding' && (
               <div style={{ marginTop: 14 }}>
@@ -445,7 +423,7 @@ function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings
                     </div>
                     {list.length === 0 && <div className="pd-empty" style={{ padding: 20 }}>No tasks in this phase.</div>}
                     {list.map((task, n) => (
-                      <TaskRow key={task.id} task={task} kind={t.kind} open={openTask === task.id} first={n === 0} last={n === list.length - 1}
+                      <TaskRow key={task.id} task={task} open={openTask === task.id} first={n === 0} last={n === list.length - 1}
                         onToggle={() => setOpenTask(openTask === task.id ? null : task.id)}
                         onChange={(patch) => setTask(task.id, patch)}
                         onMove={(by) => move(task, by)}
@@ -493,9 +471,7 @@ function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings
           )}
           <section className="pd-note" style={{ display: 'block' }}>
             <b style={{ display: 'block', marginBottom: 4 }}>How due dates work</b>
-            {t.kind === 'onboarding'
-              ? <>Tj is the joining day on the offer. “Tj − 5” means five days before it. If HR moves the joining date, every due date moves with it.<br /><br />Changes apply to people who join after you save. Joiners already in progress keep their current tasks.</>
-              : <>Tl is the last working day. “Tl − 5” is five days before it. If the last day moves (another day agreed, or early release), every due date moves with it.<br /><br />Changes apply to exits that start after you save.</>}
+            Tl is the last working day. “Tl − 5” is five days before it. If the last day moves (another day agreed, or early release), every due date moves with it.<br /><br />Changes apply to exits that start after you save.
           </section>
         </aside>
       </div>
@@ -512,8 +488,8 @@ function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings
 
 const TASK_COLS = 'minmax(0, 1fr) minmax(110px, 170px) minmax(110px, 170px) 46px';
 
-function TaskRow({ task, kind, open, first, last, onToggle, onChange, onMove, onRemove }: {
-  task: TemplateTask; kind: LifecycleKind; open: boolean; first: boolean; last: boolean;
+function TaskRow({ task, open, first, last, onToggle, onChange, onMove, onRemove }: {
+  task: TemplateTask; open: boolean; first: boolean; last: boolean;
   onToggle: () => void; onChange: (p: Partial<TemplateTask>) => void; onMove: (by: -1 | 1) => void; onRemove: () => void;
 }) {
   return (
@@ -525,7 +501,6 @@ function TaskRow({ task, kind, open, first, last, onToggle, onChange, onMove, on
             {task.title || <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}>New task</span>}
             {task.recommended?.added && <span style={tagStyle('var(--accent-soft)', 'var(--accent-ink)')}>Added</span>}
             {task.mustDo && <span style={tagStyle('var(--warn-bg)', 'var(--p-orange)')}>Must-do</span>}
-            {task.team && <span style={tagStyle('var(--t-sky)', 'var(--t-sky-i)')} title="Shown in the app under Teams › Joiners">Teams › Joiners</span>}
           </div>
           {task.helper && <div style={{ fontSize: 12, color: 'var(--ink-3)', overflowWrap: 'anywhere' }}>{task.helper}</div>}
         </div>
@@ -533,38 +508,34 @@ function TaskRow({ task, kind, open, first, last, onToggle, onChange, onMove, on
         <div style={{ fontSize: 12.5, color: 'var(--ink-2)' }}>{ruleText(task.dueRule, task.dueLabel)}</div>
         <div onClick={(e) => e.stopPropagation()}><Switch on={task.enabled} onChange={(v) => onChange({ enabled: v })} label={`${task.enabled ? 'Turn off' : 'Turn on'} ${task.title || 'this task'}`} /></div>
       </div>
-      {open && <TaskEditor task={task} kind={kind} first={first} last={last} onChange={onChange} onMove={onMove} onRemove={onRemove} onDone={onToggle} />}
+      {open && <TaskEditor task={task} first={first} last={last} onChange={onChange} onMove={onMove} onRemove={onRemove} onDone={onToggle} />}
     </div>
   );
 }
 
-function TaskEditor({ task, kind, first, last, onChange, onMove, onRemove, onDone }: {
-  task: TemplateTask; kind: LifecycleKind; first: boolean; last: boolean;
+function TaskEditor({ task, first, last, onChange, onMove, onRemove, onDone }: {
+  task: TemplateTask; first: boolean; last: boolean;
   onChange: (p: Partial<TemplateTask>) => void; onMove: (by: -1 | 1) => void; onRemove: () => void; onDone: () => void;
 }) {
   const system = Boolean(task.systemKey);
-  const surfaceFor = (o: OwnerRole): TemplateTask['surface'] => (o === 'employee' ? (task.phase === 'pre_boarding' ? 'portal' : 'app') : o === 'manager' || o === 'manager_employee' || o === 'buddy' || o === 'head_of_department' ? 'app' : o === 'automatic' ? 'backend' : 'dashboard');
-  const docs = task.documents ?? [];
-  const showDocs = task.systemKey === 'upload_documents' || (task.kind === 'upload' && task.phase === 'pre_boarding');
-  // A meeting (a meeting, a check-in, the confirmation discussion, a team meeting): its agenda.
-  const isMeeting = task.team ? task.team.kind === 'meet' : task.kind === 'meeting' || task.kind === 'checkin' || task.systemKey === 'confirmation_discussion';
-  const agendaText = (task.team ? task.team.agenda : task.agenda)?.join('\n') ?? '';
+  const surfaceFor = (o: OwnerRole): TemplateTask['surface'] => (o === 'employee' || o === 'manager' || o === 'manager_employee' ? 'app' : o === 'automatic' ? 'backend' : 'dashboard');
+  // A meeting: its agenda.
+  const isMeeting = task.kind === 'meeting' || task.kind === 'checkin';
+  const agendaText = task.agenda?.join('\n') ?? '';
   return (
     <div style={{ background: 'var(--surface-2)', borderRadius: 14, padding: 16, margin: '0 0 12px', display: 'grid', gap: 14 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-        <Field label="Task" required hint={task.team ? 'In the app: {n} is the joiner’s first name, {p} their name with ’s' : undefined}><input value={task.title} onChange={(e) => onChange({ title: e.target.value })} style={inputStyle} autoFocus={!task.title} /></Field>
+        <Field label="Task" required><input value={task.title} onChange={(e) => onChange({ title: e.target.value })} style={inputStyle} autoFocus={!task.title} /></Field>
         <Field label="Helper text" hint="One line under the task"><input value={task.helper ?? ''} onChange={(e) => onChange({ helper: e.target.value })} style={inputStyle} /></Field>
         <Field label="Done by" hint={system ? 'Set by the product for this task' : undefined}>
           <Pick value={task.ownerRole} disabled={system} onChange={(v) => onChange({ ownerRole: v as OwnerRole, surface: surfaceFor(v as OwnerRole) })}>
-            {ownersFor(kind, task).map((o) => <option key={o} value={o}>{OWNER_LABEL[o]}</option>)}
+            {OWNERS.map((o) => <option key={o} value={o}>{OWNER_LABEL[o]}</option>)}
           </Pick>
         </Field>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
-        <RuleEditor label="Due" kind={kind} value={task.dueRule ?? null} onChange={(r) => onChange({ dueRule: r, dueLabel: r ? undefined : task.dueLabel })} />
-        {task.team
-          ? <div style={{ fontSize: 12.5, color: 'var(--ink-3)', alignSelf: 'center' }}>The due date sets where it shows in the app: before the joining day, Day 1, Week 1 or a probation month. No date: once they are confirmed.</div>
-          : <RuleEditor label="Opens" kind={kind} value={task.opensRule ?? null} onChange={(r) => onChange({ opensRule: r })} noneLabel="As soon as the journey starts" />}
+        <RuleEditor label="Due" value={task.dueRule ?? null} onChange={(r) => onChange({ dueRule: r, dueLabel: r ? undefined : task.dueLabel })} />
+        <RuleEditor label="Opens" value={task.opensRule ?? null} onChange={(r) => onChange({ opensRule: r })} noneLabel="As soon as the journey starts" />
       </div>
       {!task.dueRule && (
         <Field label="Due, in words" hint="Shown instead of a date, e.g. “Manager sets” or “Each upload”">
@@ -572,39 +543,21 @@ function TaskEditor({ task, kind, first, last, onChange, onMove, onRemove, onDon
         </Field>
       )}
       {isMeeting && (
-        <Field label="Agenda" hint={task.team ? 'One point per line. The joiner sees it on the meeting too; {n} reads as “you” for them' : 'One point per line, shown on the meeting in the app to the joiner and the manager, each with a notes box. Empty: the standard agenda'}>
+        <Field label="Agenda" hint="One point per line, shown on the meeting in the app, each with a notes box. Empty: the standard agenda">
           <textarea
             rows={4}
             value={agendaText}
             onChange={(e) => {
-              const lines = e.target.value.split('\n');
-              if (task.team) onChange({ team: { ...task.team, agenda: lines } });
-              else onChange({ agenda: lines });
+              onChange({ agenda: e.target.value.split('\n') });
             }}
             onBlur={() => {
               const clean = agendaText.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 8);
-              if (task.team) onChange({ team: { ...task.team, agenda: clean.length ? clean : undefined } });
-              else onChange({ agenda: clean.length ? clean : undefined });
+              onChange({ agenda: clean.length ? clean : undefined });
             }}
             aria-label="Agenda, one point per line"
             style={{ ...inputStyle, height: 'auto', minHeight: 96, padding: '8px 10px', fontFamily: 'inherit', resize: 'vertical' }}
           />
         </Field>
-      )}
-      {showDocs && (
-        <div>
-          <div style={{ fontSize: 11.5, color: 'var(--ink-2)', marginBottom: 6 }}>Documents the candidate uploads</div>
-          <div style={{ display: 'grid', gap: 6 }}>
-            {docs.map((d, i) => (
-              <div key={d.key} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto auto', gap: 8, alignItems: 'center' }}>
-                <input value={d.label} onChange={(e) => onChange({ documents: docs.map((x, n) => (n === i ? { ...x, label: e.target.value } : x)) })} aria-label="Document" style={inputStyle} />
-                <label style={{ ...checkRow, fontWeight: 400, fontSize: 13 }}><input type="checkbox" checked={d.required} style={checkBox} onChange={(e) => onChange({ documents: docs.map((x, n) => (n === i ? { ...x, required: e.target.checked } : x)) })} /> Required</label>
-                <button type="button" className="pd-btn sm ghost" aria-label={`Remove ${d.label}`} onClick={() => onChange({ documents: docs.filter((_, n) => n !== i) })}>×</button>
-              </div>
-            ))}
-            <div><button type="button" className="pd-btn sm" onClick={() => onChange({ documents: [...docs, { key: `doc_${Date.now().toString(36)}`, label: '', required: true }] })}>+ Add a document</button></div>
-          </div>
-        </div>
       )}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
         <label style={checkRow}><input type="checkbox" checked={task.mustDo} onChange={(e) => onChange({ mustDo: e.target.checked })} style={checkBox} /> Must-do <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--ink-3)' }}>· can’t be skipped</span></label>
@@ -620,10 +573,8 @@ function TaskEditor({ task, kind, first, last, onChange, onMove, onRemove, onDon
 }
 
 /** A due or opens rule: what it counts from, how many days before or after, and in which probation month. */
-function RuleEditor({ label, kind, value, onChange, noneLabel = 'No date' }: { label: string; kind: LifecycleKind; value: DueRule | null; onChange: (r: DueRule | null) => void; noneLabel?: string }) {
-  const anchors: [DueAnchor, string][] = kind === 'onboarding'
-    ? [['tj', 'Joining day (Tj)'], ['offer_sent', 'Offer sent'], ['accepted', 'Offer accepted'], ['finalised', 'HR finalised'], ['month_start', 'Start of a probation month'], ['month_end', 'End of a probation month']]
-    : [['tl', 'Last working day (Tl)'], ['exit_accepted', 'Exit accepted']];
+function RuleEditor({ label, value, onChange, noneLabel = 'No date' }: { label: string; value: DueRule | null; onChange: (r: DueRule | null) => void; noneLabel?: string }) {
+  const anchors: [DueAnchor, string][] = [['tl', 'Last working day (Tl)'], ['exit_accepted', 'Exit accepted']];
   const r = value;
   const n = r?.offset ?? 0;
   const set = (patch: Partial<DueRule>) => r && onChange({ ...r, ...patch });

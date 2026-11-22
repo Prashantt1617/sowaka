@@ -65,6 +65,9 @@ export function cleanMedia(v: unknown, types: ReadonlyArray<DesignMedia['type']>
   const media: DesignMedia = { type };
   const fileId = str(r.fileId, 64);
   if (fileId && type !== 'text') media.fileId = fileId;
+  // The uploaded file's name, shown in the dashboard editor (lane D).
+  const name = str(r.name, 120);
+  if (name && media.fileId) media.name = name;
   if (type === 'text') {
     const text = str(r.text, 160);
     if (text) media.text = text;

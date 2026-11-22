@@ -220,7 +220,7 @@ interface TemplateDesign {
     tasks: Array<{ id: string; key: string; title: string; role: TeamRole; stage: DesignStage; how?: string; everyMonth?: boolean }>;
   };
 }
-interface WatchItem { id: string; title: string; stage: DesignStage; media: { type: 'video' | 'image' | 'text' | 'pdf'; fileId?: string; text?: string; bg?: string; minutes?: number } }
+interface WatchItem { id: string; title: string; stage: DesignStage; media: { type: 'video' | 'image' | 'text' | 'pdf'; fileId?: string; text?: string; bg?: string; minutes?: number; name?: string /* lane D: the uploaded file's name, kept only with a fileId */ } }
 /** The phone tiles' facts at one stage (the app copy — "Fill in your details", "A lesson a day" — is the dashboard's). */
 type TemplatePreview =
   | { stage: 'pre'; header: 'Welcome'; stageLabel: string; joining: { time?: string; place?: string; meets: 'hr' | 'manager' | 'buddy' } | null;
