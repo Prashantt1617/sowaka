@@ -208,7 +208,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
   const leave = (go: () => void) => { if (!dirty || window.confirm('Leave without saving your changes?')) go(); };
   usePageHead({ title: d?.name ?? 'Onboarding template', eyebrow: 'Setup / Employee lifecycle / Onboarding templates', onBack: () => leave(onBack), backLabel: 'All templates', tag: saved?.isDefault ? 'Default' : undefined });
 
-  const people = useMemo(() => emps.filter((e) => !e.exit?.left).map((e) => ({ id: e.id, name: e.name, dept: `${e.department ?? ''} ${e.designation ?? ''}` })).sort((a, b) => a.name.localeCompare(b.name)), [emps]);
+  const people = useMemo(() => emps.filter((e) => !e.exit?.left).map((e) => ({ id: e.id, name: e.name, dept: `${e.team} ${e.role}` })).sort((a, b) => a.name.localeCompare(b.name)), [emps]);
   // The canvas lists HR people for the HR tasks and IT/admin people for IT's; everyone when the company has none on record.
   const teamOf = (re: RegExp, current?: string) => {
     const mine = people.filter((p) => re.test(p.dept) || p.id === current);
