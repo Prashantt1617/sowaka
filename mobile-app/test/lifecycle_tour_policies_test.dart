@@ -1,28 +1,9 @@
-// The Sowaka tour (new-joiner canvas: OnbTour, TourLesson, TourLessonDone):
-// the list with Today / Day n / Done and Start / Play / Replay, "For
-// managers" only when the server says the joiner manages anyone, and each
-// lesson's drawing filled in from the joiner's own record.
-import 'package:flutter/material.dart';
+// The Sowaka tour's lessons (New joiner canvas, AppLesson): each lesson's
+// drawing filled in from the joiner's own record, plainly when not known.
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_api.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_models.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/presentation/onboarding_kit.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/presentation/onboarding_tiles.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/tour_lessons.dart';
 import 'package:mobile_app/features/manager/data/manager_models.dart';
-
-class _NoApi implements OnboardingApi {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
-}
-
-OnboardingShell _shell() => OnboardingShell(
-  api: _NoApi(),
-  profileAction: const SizedBox(width: 30, height: 30),
-  onNotifications: () {},
-  viewerName: 'Isha Verma',
-  now: () => DateTime(2026, 12, 16, 10),
-);
 
 const _balance = LeaveBalance(
   year: 2026,
@@ -46,46 +27,18 @@ void main() {
     expect(plain.policyCounts, isNull);
   });
 
-  testWidgets('the tour list: today first, play ahead, replay, and For managers only for a manager', (tester) async {
-    await tester.pumpWidget(MaterialApp(home: OnbTourScreen(shell: _shell(), done: const ['punch'])));
-    await tester.pumpAndSettle();
-    expect(find.text('1 of 4 done'), findsOneWidget);
-    expect(find.text('Done · 1 min'), findsOneWidget);
-    expect(find.text('Replay'), findsOneWidget);
-    expect(find.text('Today · 1 min'), findsOneWidget);
-    expect(find.text('Start'), findsOneWidget);
-    expect(find.text('Day 3 · 2 min'), findsOneWidget);
-    expect(find.text('Day 4 · 1 min'), findsOneWidget);
-    expect(find.text('Play'), findsNWidgets(2));
-    expect(find.text('For managers'), findsNothing);
-    expect(find.text('Approving leave'), findsNothing);
-
-    await tester.pumpWidget(MaterialApp(home: OnbTourScreen(shell: _shell(), done: const ['punch'], forManager: true)));
-    await tester.pumpAndSettle();
-    expect(find.text('For managers'), findsOneWidget);
-    expect(find.text('Approving leave'), findsOneWidget);
-    expect(find.text('Approving overtime'), findsOneWidget);
-  });
-
-  testWidgets('a lesson\'s drawing is filled in from the joiner\'s record', (tester) async {
-    await tester.pumpWidget(MaterialApp(
-      home: OnbTourScreen(shell: _shell(), done: const ['punch', 'missed'], managerName: 'Meera Iyer', leaveBalance: () async => _balance),
-    ));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('lesson-leave')));
-    await tester.pumpAndSettle();
-    expect(find.text('Leave policy and applying for leave'), findsOneWidget);
-    // The balance the server keeps, not a drawn one.
-    expect(find.text('6'), findsOneWidget);
-    expect(find.text('4'), findsOneWidget);
-    expect(find.text('1.5'), findsOneWidget);
-    expect(find.text('18 – 19 Dec'), findsOneWidget);
-    expect(find.text('Send to Meera'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('lesson-next')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('lesson-next')));
-    await tester.pumpAndSettle();
-    expect(find.text('Meera gets it straight away.'), findsOneWidget);
+  test('a lesson\'s drawing is filled in from the joiner\'s record', () {
+    final facts = TourFacts(
+      today: DateTime(2026, 12, 16),
+      managerName: 'Sunny Kapoor',
+      casual: _balance.casual.remaining,
+      sick: _balance.sick.remaining,
+      earned: _balance.earned.remaining,
+    );
+    final missed = facts.apply(joinerTourLessons[1]);
+    expect((missed.blocks[3] as TourRow).title, 'Sent to Sunny');
+    final leave = facts.apply(joinerTourLessons[2]);
+    expect((leave.blocks[0] as TourChips).chips.map((c) => c.$1), ['6', '4', '1.5']);
   });
 
   test('without a manager or a balance, the drawing says so plainly', () {

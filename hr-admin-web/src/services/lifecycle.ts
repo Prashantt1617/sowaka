@@ -78,7 +78,55 @@ export interface LifecycleTemplate {
   updatedAt?: string;
   updatedByName?: string;
 }
-export type TemplateListItem = LifecycleTemplate & { journeysUsing: number; recommendedNotAdded: number };
+export type TemplateListItem = LifecycleTemplate & { journeysUsing: number; recommendedNotAdded: number; /** An onboarding template with Final-designs rows. */ design?: boolean };
+
+// —— Onboarding template design (Final designs; docs/lifecycle/FINAL-DESIGNS.md §2, §4.1) ——————————
+
+export type DesignStage = 'pre' | 'd1' | 'w1' | 'm1' | 'mid' | 'fin';
+export type JoinerTaskType = 'do' | 'review' | 'ack' | 'sign' | 'other' | 'form';
+export type MeetWith = 'hr' | 'manager' | 'buddy' | 'it' | 'head_of_department';
+export type TeamRole = 'manager' | 'buddy' | 'hr' | 'it' | 'senior' | 'head_of_department';
+export type CheckinAnswerType = 'rating' | 'yes_no' | 'short' | 'long' | 'choice';
+export type FormAnswerType = 'short' | 'long' | 'choice' | 'date' | 'file';
+export type TourLesson = 'punch' | 'missed' | 'leave' | 'overtime' | 'approveLeave' | 'approveOvertime';
+export type MediaBackground = 'rust' | 'blue' | 'ink' | 'green' | 'purple' | 'sand';
+export interface DesignQuestion<T extends string = string> { id?: string; text: string; type: T; options?: string[] }
+export interface DesignMedia { type: 'video' | 'image' | 'text' | 'pdf'; fileId?: string; text?: string; bg?: MediaBackground; minutes?: number; name?: string }
+export interface DesignWatchItem { id?: string; title: string; stage: DesignStage; media: DesignMedia }
+export interface DesignReporting { time?: string; place?: string; bring?: string; notes?: string; meets: 'hr' | 'manager' | 'buddy' }
+export interface DesignMeeting { id?: string; title: string; meetWith: MeetWith; stage: DesignStage; agenda: string[]; everyMonth?: boolean }
+export interface DesignTask {
+  id?: string; title: string; type: JoinerTaskType; stage: DesignStage;
+  screen?: string; source?: 'policies'; link?: string; fileId?: string; letterTemplateId?: string; signDocs?: string[];
+  questions?: Array<DesignQuestion<FormAnswerType>>;
+}
+export interface DesignCheckin { id?: string; title: string; stage: DesignStage; questions: Array<DesignQuestion<CheckinAnswerType>> }
+export interface DesignAccess { id?: string; title: string; role: 'it' | 'hr' }
+export interface DesignTeamTask { id?: string; key?: string; title: string; role: TeamRole; stage: DesignStage; how?: string; everyMonth?: boolean }
+export interface TemplateDesign {
+  templateId: string; name: string; isDefault: boolean; updatedAt?: string; updatedByName?: string;
+  preboarding: {
+    rows: { offerLetter: boolean; joiningDetails: boolean; profile: boolean; watch: boolean };
+    reporting: DesignReporting;
+    videos: DesignWatchItem[];
+  };
+  meetings: DesignMeeting[];
+  tasks: DesignTask[];
+  checkins: DesignCheckin[];
+  tour: TourLesson[];
+  watch: DesignWatchItem[];
+  trainings: DesignWatchItem[];
+  accesses: DesignAccess[];
+  probation: { months: 3 | 6; shiftTemplateId?: string };
+  team: { remindLate: boolean; assignees: { hrUserId?: string; itUserId?: string; seniorUserId?: string }; tasks: DesignTeamTask[] };
+}
+export type TemplatePreview =
+  | { stage: 'pre'; header: 'Welcome'; stageLabel: string; joining: { time?: string; place?: string; meets: 'hr' | 'manager' | 'buddy' } | null;
+      offerLetter: boolean; profile: { sections: number } | null; watch: { first: string; ready: number; total: number } | null }
+  | { stage: Exclude<DesignStage, 'pre'>; header: 'Onboarding'; stageLabel: string; meetings: { count: number; who: MeetWith[] };
+      tasks: { first?: string; count: number }; tour: { first: TourLesson | null } | null; watch: { first: string; ready: number; total: number } | null;
+      devices: { count: number } | null; profile: true };
+export interface TemplateMediaFile { id: string; name: string; contentType: string; size: number; minutes?: number }
 
 // —— Board and journeys ——————————————————————————————————————————————————
 
@@ -419,6 +467,17 @@ export const getTemplate = (id: string) => api<{ template: LifecycleTemplate }>(
 export const updateTemplate = (id: string, patch: Partial<Pick<LifecycleTemplate, 'name' | 'group' | 'active' | 'isDefault' | 'settings' | 'tasks'>>) =>
   api<{ template: LifecycleTemplate }>(`${L}/templates/${id}`, json('PUT', patch)).then((r) => r.template);
 export const deleteTemplate = (id: string) => api<unknown>(`${L}/templates/${id}`, { method: 'DELETE' });
+export const getTemplateDesign = (id: string) => api<TemplateDesign>(`${L}/templates/${id}/design`);
+/** "Save template": the whole design (read-only fields left out; a new row has no id). */
+export const saveTemplateDesign = (id: string, design: Omit<TemplateDesign, 'templateId' | 'name' | 'isDefault' | 'updatedAt' | 'updatedByName'>) =>
+  api<TemplateDesign>(`${L}/templates/${id}/design`, json('PUT', design));
+export const getTemplatePreview = (id: string, stage: DesignStage) => api<TemplatePreview>(`${L}/templates/${id}/preview${qs({ stage })}`);
+/** A pre-boarding or watch-list video, an image, or a PDF (a training, a document to acknowledge). */
+export const uploadTemplateMedia = (templateId: string, file: Blob, filename: string) => {
+  const form = new FormData();
+  form.append('file', file instanceof File ? file : new File([file], filename, { type: file.type || 'application/octet-stream' }));
+  return apiUpload<{ file: TemplateMediaFile }>(`${L}/templates/${templateId}/media`, form).then((r) => r.file);
+};
 
 // Board and journeys
 export const getBoard = (p: { tab: BoardTab; q?: string; filter?: BoardFilter; from?: string; to?: string }) =>

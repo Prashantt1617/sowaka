@@ -29,6 +29,8 @@ class _TeamHomeState extends State<_TeamHome> {
   void initState() {
     super.initState();
     unawaited(_offboarding.revalidate());
+    // Teams › Joiners' count (Final designs): the pill shows it before the tab is opened.
+    if (LifecycleMeStore.instance.value.enabled) unawaited(JoinersTab.refreshCount());
   }
 
   @override
@@ -74,13 +76,27 @@ class _TeamHomeState extends State<_TeamHome> {
                           widget.bloc.add(ShowTeamSection(value)),
                       extraRequests: _offboarding.pendingForManager,
                     ),
+                  )
+                // Not a manager, but a buddy or up the reporting line of a
+                // joiner (Final designs, BuddyProto / HodProto): My Team and Joiners.
+                else
+                  ListenableBuilder(
+                    listenable: Listenable.merge([LifecycleMeStore.instance, JoinersTab.count]),
+                    builder: (context, _) => JoinersTab.showsPill(lifecycleOn: LifecycleMeStore.instance.value.enabled, joiners: JoinersTab.count.value, open: section == TeamSection.joiners)
+                        ? _TeamSectionBar(
+                            data: data,
+                            section: section,
+                            onChanged: (value) => widget.bloc.add(ShowTeamSection(value)),
+                            joinersOnly: true,
+                          )
+                        : const SizedBox.shrink(),
                   ),
               ],
             ),
           ),
           Expanded(
             child: !canManage
-                ? _myTeam(data, canManage)
+                ? (section == TeamSection.joiners ? const JoinersTab() : _myTeam(data, canManage))
                 : switch (section) {
                     TeamSection.myTeam => _myTeam(data, canManage),
                     TeamSection.requests => Padding(
@@ -151,7 +167,11 @@ class _TeamSectionBar extends StatelessWidget {
     required this.section,
     required this.onChanged,
     this.extraRequests = 0,
+    this.joinersOnly = false,
   });
+
+  /// Not a manager: My Team and Joiners only.
+  final bool joinersOnly;
 
   final ManagerDashboard data;
   final TeamSection section;
@@ -166,23 +186,25 @@ class _TeamSectionBar extends StatelessWidget {
     return ListenableBuilder(
       listenable: Listenable.merge([LifecycleMeStore.instance, JoinersTab.count]),
       builder: (context, _) {
-        final joiners = LifecycleMeStore.instance.value.enabled;
+        final joiners = JoinersTab.showsPill(lifecycleOn: LifecycleMeStore.instance.value.enabled, joiners: JoinersTab.count.value, open: section == TeamSection.joiners);
         return TeamSectionPills(
           selected: section.name,
           onSelect: (key) => onChanged(TeamSection.values.byName(key)),
           pills: [
             TeamPillSpec(key: TeamSection.myTeam.name, label: 'My Team'),
-            TeamPillSpec(
-              key: TeamSection.requests.name,
-              label: 'Requests',
-              count: _pendingTeamRequests(data) + extraRequests,
-            ),
-            TeamPillSpec(
-              key: TeamSection.feedback.name,
-              label: 'Feedback',
-              count: _pendingTeamFeedback(data),
-            ),
-            if (joiners || section == TeamSection.joiners)
+            if (!joinersOnly) ...[
+              TeamPillSpec(
+                key: TeamSection.requests.name,
+                label: 'Requests',
+                count: _pendingTeamRequests(data) + extraRequests,
+              ),
+              TeamPillSpec(
+                key: TeamSection.feedback.name,
+                label: 'Feedback',
+                count: _pendingTeamFeedback(data),
+              ),
+            ],
+            if (joiners)
               TeamPillSpec(
                 key: TeamSection.joiners.name,
                 label: 'Joiners',
@@ -249,45 +271,11 @@ class _MyTeamViewState extends State<_MyTeamView> {
   void _toggleTeam(String title) =>
       setState(() => _openTeam = _openTeam == title ? null : title);
 
-  // M0: the New joiners section's joiners and its filter pill.
-  void _onJoiners() {
-    if (mounted) setState(() {});
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    NewJoinersSection.joinerUserIds.addListener(_onJoiners);
-    NewJoinersSection.joinersOnly.addListener(_onJoiners);
-    NewJoinersSection.tree.addListener(_onJoiners);
-  }
-
-  @override
-  void dispose() {
-    NewJoinersSection.joinerUserIds.removeListener(_onJoiners);
-    NewJoinersSection.joinersOnly.removeListener(_onJoiners);
-    NewJoinersSection.tree.removeListener(_onJoiners);
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
-    final showJoiners = widget.canManage && _query.isEmpty;
-    // M0 (artboard AppTeams): with one department of reports, the joiners
-    // are the first cards on the Direct Reports tree and the filter pills sit
-    // on that heading. With several departments they keep their own section
-    // above the team cards.
-    final inTree = _ledTeams(data.team).length <= 1;
-    final tree = showJoiners && inTree ? NewJoinersSection.tree.value : null;
-    // Joiners are drawn as joiner cards; they are not listed a second time
-    // as plain rows (unless searching).
-    final joiners = showJoiners
-        ? NewJoinersSection.joinerUserIds.value
-        : const <String>{};
-    final joinersOnly = (joiners.isNotEmpty || tree != null) && NewJoinersSection.joinersOnly.value;
     final filtered = _query.isEmpty
-        ? data.team.where((member) => member.isSelf || !joiners.contains(member.userId)).toList()
+        ? data.team
         : data.team
               .where(
                 (member) =>
@@ -305,18 +293,9 @@ class _MyTeamViewState extends State<_MyTeamView> {
           hint: 'Search employee',
         ),
         const SizedBox(height: 12),
-        // M0: a manager's reports in onboarding or probation, first; no
-        // joiners (or the lifecycle off) and it is not there at all.
-        if (showJoiners)
-          NewJoinersSection(
-            allCount: _directReportCount(data.team, tree),
-            inTree: inTree,
-          ),
         // The viewer is part of the team the server sends, so there is no
         // separate card for them any more — their row simply says "(You)".
-        if (joinersOnly && tree == null)
-          const SizedBox.shrink()
-        else if (filtered.isEmpty)
+        if (filtered.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 40),
             child: Center(
@@ -333,28 +312,11 @@ class _MyTeamViewState extends State<_MyTeamView> {
             ),
           )
         else
-          // The joiners are the device's copy: say so above the tree.
-          if (tree != null && tree.offline) const Padding(padding: EdgeInsets.only(bottom: 8), child: JoinersOfflineNote()),
           ..._teamTree(
             members: filtered,
             openTeam: _openTeam,
             onToggle: _toggleTeam,
             searching: _query.isNotEmpty,
-            directReportsTrailing: tree == null
-                ? null
-                : JoinersFilterPills(
-                    allCount: _directReportCount(data.team, tree),
-                    joinersCount: tree.joiners.length,
-                  ),
-            leadingReports: [
-              for (final joiner in tree?.joiners ?? const <JoinerSummary>[])
-                JoinerCard(
-                  joiner: joiner,
-                  now: tree!.now,
-                  onTap: () => tree.open(joiner),
-                ),
-            ],
-            onlyLeadingReports: joinersOnly && tree != null,
             row: (member) => _TeamMemberRow(
               member: member,
               canManage: widget.canManage,
@@ -368,17 +330,6 @@ class _MyTeamViewState extends State<_MyTeamView> {
       ],
     );
   }
-}
-
-/// "All n": everyone who reports to the viewer, and the joiners not yet in
-/// the team list (still pre-boarding, so no account yet).
-int _directReportCount(List<TeamMember> team, JoinersInTree? tree) {
-  final reports = team.where((m) => m.reportsToViewer && !m.isSelf).toList();
-  final ids = {for (final m in reports) m.userId};
-  final notListed = (tree?.joiners ?? const <JoinerSummary>[])
-      .where((j) => j.userId == null || !ids.contains(j.userId))
-      .length;
-  return reports.length + notListed;
 }
 
 // ── One person's team, as the Team tab draws it ──────────────────────────────
@@ -519,16 +470,12 @@ List<Widget> _teamTree({
   bool searching = false,
   String coreTitle = 'My Team',
   _TeamSizing sizing = _TeamSizing.teamTab,
-  Widget? directReportsTrailing,
-  List<Widget> leadingReports = const [],
-  bool onlyLeadingReports = false,
 }) {
   final led = _ledTeams(members);
   final self = members.where((member) => member.isSelf).firstOrNull;
   // Level 1: nobody reports to them, so their team is one flat list —
-  // their manager, them, their peers (node 2488:90748). Joiners still
-  // pre-boarding are reports too: they make it a Direct Reports tree.
-  if (led.isEmpty && leadingReports.isEmpty) {
+  // their manager, them, their peers (node 2488:90748).
+  if (led.isEmpty) {
     return [
       _teamHeading(coreTitle, sizing: sizing),
       for (final member in _coreTeam(members))
@@ -585,26 +532,12 @@ List<Widget> _teamTree({
       // card off the tree, their reports on it, always shown in full
       // rather than behind a card to open (node 2488:91055).
       ...[
-        if (directReportsTrailing == null)
-          _teamHeading('Direct Reports', sizing: sizing)
-        else
-          // M0: the filter pills on the heading's right.
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Row(
-              children: [
-                Expanded(child: _teamHeadingText('Direct Reports', sizing: sizing)),
-                directReportsTrailing,
-              ],
-            ),
-          ),
+        _teamHeading('Direct Reports', sizing: sizing),
         if (self != null) row(self),
         _DirectReportsTree(
           children: [
-            ...leadingReports,
-            if (!onlyLeadingReports)
-              for (final member in led.firstOrNull?.members ?? const <TeamMember>[])
-                row(member),
+            for (final member in led.firstOrNull?.members ?? const <TeamMember>[])
+              row(member),
           ],
         ),
       ],

@@ -597,6 +597,7 @@ export function Topbar() {
               </button>
             )}
             <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.02em', lineHeight: 1.2, margin: '4px 0' }}>{title}</h1>
+            {head?.tag && <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 11.5, fontWeight: 500, lineHeight: 1.5, color: '#fff', background: 'var(--p-blue)', borderRadius: 99, padding: '3px 10px', flexShrink: 0 }}>{head.tag}</span>}
           </div>
         </div>
         {/* A view's own buttons land here (ui.tsx PageActions). */}

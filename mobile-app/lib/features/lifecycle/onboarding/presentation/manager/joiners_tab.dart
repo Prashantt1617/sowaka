@@ -3,46 +3,58 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../data/onboarding_api.dart';
-import '../../data/onboarding_models.dart';
+import '../../data/onboarding_models.dart' show PlantState;
 import '../../data/team_joiners_api.dart';
 import '../../onboarding_launcher.dart';
 import '../onboarding_kit.dart';
-import 'new_joiners_section.dart';
+import 'team_joiner_screens.dart';
 import 'team_kit.dart';
-import 'team_side_screens.dart';
 
-/// Teams › Joiners (MgrTeamsProto): everyone joining or in probation the
-/// viewer is connected to, in one card — photo with the plant, name,
-/// designation, stage. Tap one for their page.
+/// Teams › Joiners (Onboarding · Final designs, MgrProtoJoiners / BuddyProto /
+/// HodProto): everyone joining or in probation the viewer is connected to —
+/// direct reports, the people they are a buddy for, and for a head of
+/// department the reporting line — each with their face and plant, name,
+/// designation, "You’re the buddy" / "Reports to …" and their stage. Tap one
+/// for their page. `GET /lifecycle/team/joiners`.
 class JoinersTab extends StatefulWidget {
   const JoinersTab({super.key, this.shell, this.teamApi});
 
   /// Supplied by tests; the signed-in shell's otherwise.
   final OnboardingShell? shell;
-
-  /// `/lifecycle/team/joiners` (direct reports, buddies and a head of
-  /// department's line); from the shell's session when not given. Without
-  /// one (an offline test shell) the manager's own `/manager/joiners`.
   final TeamJoinersApi? teamApi;
 
-  /// How many joiners the pill counts: set by whichever read them last
-  /// (this tab, or My Team's joiners).
+  /// The Joiners pill's count: how many joiners the viewer is connected to.
   static final count = ValueNotifier<int>(0);
+
+  /// Whether Teams shows the "Joiners" pill: only for someone with joiners there (a manager, buddy or
+  /// someone up the line). HR and IT & admin with none work from Actions › Onboarding instead.
+  /// [open] keeps it while its section is on screen.
+  static bool showsPill({required bool lifecycleOn, required int joiners, required bool open}) => open || (lifecycleOn && joiners > 0);
+
+  /// Reads the count for the pill (the Team tab calls it as it opens).
+  static Future<void> refreshCount({OnboardingShell? shell, TeamJoinersApi? api}) async {
+    final s = shell ?? currentOnboardingShell();
+    final team = api ?? (s == null ? null : HttpTeamJoinersApi.from(s.api));
+    if (team == null) return;
+    try {
+      count.value = (await team.fetchJoiners()).length;
+    } catch (_) {}
+  }
 
   @override
   State<JoinersTab> createState() => _JoinersTabState();
 }
 
-/// A row on the list: the joiner as the rows draw them, and how the viewer
-/// is connected to them.
-typedef _Row = ({JoinerSummary joiner, TeamRelation relation, String? relationLine});
-
 class _JoinersTabState extends State<JoinersTab> {
-  List<_Row>? _joiners;
-  bool _offline = false;
+  List<TeamJoinerRow>? _joiners;
   String? _error;
 
   OnboardingShell? get _shell => widget.shell ?? currentOnboardingShell();
+
+  TeamJoinersApi? get _team {
+    final shell = _shell;
+    return widget.teamApi ?? (shell == null ? null : HttpTeamJoinersApi.from(shell.api));
+  }
 
   @override
   void initState() {
@@ -50,132 +62,35 @@ class _JoinersTabState extends State<JoinersTab> {
     unawaited(_load());
   }
 
-  TeamJoinersApi? get _team {
-    final shell = _shell;
-    return widget.teamApi ?? (shell == null ? null : HttpTeamJoinersApi.from(shell.api));
-  }
-
-  static _Row _report(JoinerSummary j) => (joiner: j, relation: TeamRelation.report, relationLine: null);
-
-  static _Row _fromTeam(TeamJoinerRow r) => (
-    joiner: JoinerSummary(
-      journeyId: r.journeyId,
-      name: r.name,
-      designation: r.designation,
-      photoUrl: r.photoUrl,
-      dayLabel: r.stepLabel.isEmpty ? null : r.stepLabel,
-      plant: r.plant,
-      preboarding: r.preboarding,
-      todayCount: r.toDo,
-    ),
-    relation: r.relation,
-    relationLine: r.relationLine,
-  );
-
-  Future<List<_Row>> _fetch(OnboardingShell shell) async {
-    final team = _team;
-    if (team != null) return [for (final r in await team.fetchJoiners()) _fromTeam(r)];
-    return [for (final j in await shell.api.fetchJoiners()) _report(j)];
-  }
-
   Future<void> _load() async {
-    final shell = _shell;
-    if (shell == null) return;
-    if (_joiners == null && _team == null) {
-      final kept = await shell.api.fromDevice((api) => api.fetchJoiners());
-      if (kept != null && mounted && _joiners == null) _show([for (final j in kept) _report(j)]);
-    }
+    final team = _team;
+    if (team == null) return;
     try {
-      final live = await _fetch(shell);
-      if (!mounted) return;
-      _offline = false;
-      _error = null;
-      _show(live);
-    } catch (error) {
+      final rows = await team.fetchJoiners();
       if (!mounted) return;
       setState(() {
-        if (_joiners != null) {
-          _offline = true;
-        } else {
-          _error = onboardingErrorText(error);
-        }
+        _joiners = rows;
+        _error = null;
       });
+      JoinersTab.count.value = rows.length;
+    } catch (error) {
+      if (mounted && _joiners == null) setState(() => _error = onboardingErrorText(error));
     }
   }
 
-  void _show(List<_Row> rows) {
-    final order = sortJoinersByUrgency([for (final r in rows) r.joiner]);
-    final byId = {for (final r in rows) r.joiner.journeyId: r};
-    setState(() => _joiners = [for (final j in order) byId[j.journeyId]!]);
-    JoinersTab.count.value = rows.length;
-  }
-
-  /// Your report: their page as their manager. A buddy's or a head of
-  /// department's joiner: the team side's page for them.
-  Future<void> _open(_Row row) async {
+  Future<void> _open(TeamJoinerRow row) async {
     final shell = _shell;
     final team = _team;
-    if (shell == null) return;
-    if (row.relation == TeamRelation.report || team == null) {
-      await openJoiner(context, row.joiner.journeyId, shell: shell, summary: row.joiner);
-    } else {
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute(
-          builder: (_) => TeamJoinerScreen(api: team, journeyId: row.joiner.journeyId, reachOutWays: _reachOutWays),
-        ),
-      );
-    }
+    if (shell == null || team == null) return;
+    await openTeamJoiner(context, shell: shell, api: team, journeyId: row.journeyId);
     if (mounted) await _load();
-  }
-
-  /// A buddy's or a head of department's ways to reach out: a game, a post on Connect.
-  List<TeamReachOutWay> _reachOutWays(BuildContext context, TeamJoinerPage page) {
-    void composer() {
-      final open = TeamReachOutDoors.openComposer;
-      if (open != null) open(context);
-    }
-
-    return [
-      TeamReachOutWay(
-        key: 'game',
-        title: 'Send a game',
-        meta: 'A quick one to break the ice',
-        icon: Icons.sports_esports_outlined,
-        tint: TeamTaskKind.team.tint,
-        fg: TeamTaskKind.team.fg,
-        onTap: () {
-          final open = TeamReachOutDoors.openGames;
-          if (open != null) open(context);
-        },
-      ),
-      TeamReachOutWay(
-        key: 'announce',
-        title: 'Make an announcement',
-        meta: 'Share the news with everyone',
-        icon: Icons.campaign_outlined,
-        tint: TeamColors.warnBg,
-        fg: TeamColors.warnFg,
-        onTap: composer,
-      ),
-      TeamReachOutWay(
-        key: 'introduce',
-        title: 'Introduce to the team',
-        meta: 'A post for your team',
-        icon: TeamTaskKind.team.icon,
-        tint: TeamColors.okBg,
-        fg: TeamColors.okFg,
-        onTap: composer,
-      ),
-    ];
   }
 
   @override
   Widget build(BuildContext context) {
-    final shell = _shell;
     final joiners = _joiners;
-    if (shell == null) return const SizedBox.shrink();
+    if (_shell == null || _team == null) return const SizedBox.shrink();
     if (joiners == null) return OnbLoadState(error: _error, onRetry: _load);
-    final now = shell.now();
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -183,38 +98,76 @@ class _JoinersTabState extends State<JoinersTab> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [
-          if (_offline) const Padding(padding: EdgeInsets.only(bottom: 10), child: JoinersOfflineNote()),
-          if (joiners.isEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: OnbColors.line)),
-              child: const Column(
-                children: [
-                  Text('No joiners right now', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: TeamColors.ink)),
-                  SizedBox(height: 6),
-                  Text(
-                    'People joining or in probation you’re connected to show here.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 13, color: OnbColors.text3),
-                  ),
-                ],
-              ),
-            )
-          else
+          if (joiners.isNotEmpty)
             TeamListCard(
               children: [
                 for (final (i, row) in joiners.indexed)
-                  JoinerListRow(
-                    joiner: row.joiner,
-                    now: now,
-                    relation: row.relationLine,
-                    relationIsYou: row.relation == TeamRelation.buddy,
-                    divider: i < joiners.length - 1,
-                    onTap: () => _open(row),
-                  ),
+                  TeamJoinerListRow(row: row, divider: i < joiners.length - 1, onTap: () => _open(row)),
               ],
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// One joiner in the list: photo (initials) with the plant, name,
+/// designation, the relation line, the stage pill and a chevron.
+class TeamJoinerListRow extends StatelessWidget {
+  const TeamJoinerListRow({super.key, required this.row, required this.onTap, this.divider = true});
+
+  final TeamJoinerRow row;
+  final VoidCallback onTap;
+  final bool divider;
+
+  @override
+  Widget build(BuildContext context) {
+    final pre = row.preboarding;
+    final buddy = row.relation == TeamRelation.buddy;
+    return Semantics(
+      button: true,
+      label: 'Open ${row.name}',
+      excludeSemantics: true,
+      child: Material(
+        key: ValueKey('joiner-row-${row.journeyId}'),
+        color: Colors.white,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 76),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(border: divider ? const Border(bottom: BorderSide(color: OnbColors.line)) : null),
+            child: Row(
+              children: [
+                TeamAvatarWithPlant(name: row.name, photoUrl: row.photoUrl, plant: PlantState(stage: row.plantStage)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(row.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: TeamColors.ink)),
+                      if (row.designation != null) ...[
+                        const SizedBox(height: 3),
+                        Text(row.designation!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: OnbColors.text3)),
+                      ],
+                      if (row.relationLine != null) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          row.relationLine!,
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: buddy ? TeamColors.reachOut : OnbColors.text3),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                TeamPill(row.stepLabel, background: pre ? OnbColors.screen : TeamColors.blueBg, foreground: pre ? OnbColors.text2 : OnbColors.primary, height: 26),
+                const SizedBox(width: 4),
+                const Icon(Icons.chevron_right_rounded, size: 18, color: OnbColors.icon),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

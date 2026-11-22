@@ -38,6 +38,8 @@ import '../../shared/attachment_picker.dart';
 import '../../shared/image_source_sheet.dart' show ImageSourceChoice;
 import '../../support/presentation/support_desk_screen.dart';
 import '../../lifecycle/onboarding/onboarding_launcher.dart';
+import '../../lifecycle/onboarding/presentation/staff/staff_screens.dart'
+    show openStaffOnboarding, staffTileOf, staffTilePillColors, staffTileSubtitle;
 import '../../face_id/face_check_screen.dart' show FaceCheckOutcome;
 
 part 'placements_screen.dart';
@@ -1192,22 +1194,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       );
       return;
     }
-    // The joiner's punch-out on their joining date: "Day 1, done!".
-    if (type == 'out' && outcome?.punched == true && _isJoiningDay() && mounted) {
-      unawaited(widget.bloc.add(LoadAttendanceMonth(DateTime.now())));
-      await openDay1Done(context);
-      return;
-    }
     if (mounted) showPunchToast(context, outcome, type: type);
     if ((outcome?.punched == true || outcome?.requested == true) && mounted) {
       await widget.bloc.add(LoadAttendanceMonth(DateTime.now()));
     }
-  }
-
-  /// Today is the joiner's Day 1, as `/lifecycle/me` says (the tile's badge).
-  bool _isJoiningDay() {
-    final onboarding = LifecycleMeStore.instance.value;
-    return onboarding.showsOnboarding && onboarding.onboarding?.dayLabel == 'Day 1';
   }
 
   /// Whether a correction for today is already with the manager.
@@ -1240,11 +1230,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   Widget _home() {
     final today = DateTime.now();
     final onboarding = LifecycleMeStore.instance.value;
-    // The joiner's first day: the Onboarding tile is ringed, says so and
-    // carries a "Day 1" pill (the New joiner artifact's Actions).
+    // The joiner's Onboarding tile (Final designs, AppActions): the server's
+    // line and badge (`/lifecycle/me` onboarding.tile); on Day 1 it is ringed
+    // and carries the "Day 1" pill.
+    final joinerTile = onboarding.onboarding?.tile;
     final firstDay =
         onboarding.showsOnboarding &&
-        onboarding.onboarding?.dayLabel == 'Day 1';
+        (joinerTile?.badge ?? onboarding.onboarding?.dayLabel) == 'Day 1';
     final todayRecord = widget.dashboard.attendance
         .where((record) => _sameDay(record.workDate, today))
         .firstOrNull;
@@ -1311,13 +1303,36 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       // Figma "Quick Action-Geotag" (4166:19856): Icon · Colour/waving-hand.
       imageAsset: 'assets/icons/action_card_onboarding_waving_hand.png',
       title: 'Onboarding',
-      subtitle: firstDay
-          ? 'Today is your first day'
-          : onboardingTileSubtitle(onboarding),
+      subtitle: joinerTile?.subtitle ??
+          (firstDay
+              ? 'Today is your first day'
+              : onboardingTileSubtitle(onboarding)),
       onTap: () => openOnboardingHome(context),
       highlight: firstDay,
-      badge: firstDay ? 'Day 1' : null,
+      badge: firstDay ? (joinerTile?.badge ?? 'Day 1') : null,
     );
+    // HR or IT & admin for someone joining (Onboarding · Final designs, page
+    // 4): Actions › Onboarding, highlighted while something is open, its pill
+    // what is late (or due today, or to do). They never see joiners in Teams.
+    final staff = staffTileOf(onboarding);
+    final staffPill = staff == null ? null : staffTilePillColors(staff);
+    final staffTile = staff == null
+        ? null
+        : _HomeActionCard(
+            key: const ValueKey('staff-onboarding-card'),
+            icon: Icons.waving_hand_rounded,
+            color: const Color(0xFF0571A6),
+            tint: const Color(0xFFE8F4FA),
+            imageAsset: 'assets/icons/action_card_onboarding_waving_hand.png',
+            title: 'Onboarding',
+            subtitle: staffTileSubtitle(staff),
+            onTap: () => openStaffOnboarding(context),
+            highlight: staff.open > 0,
+            badge: staff.open > 0 ? staff.pill : null,
+            badgeColor: staffPill?.$1,
+            badgeTextColor: staffPill?.$2,
+            pulse: false,
+          );
     // Someone marked present automatically has no attendance to manage: no
     // leave to balance against days worked, and no overtime to claim beyond
     // hours nobody records. What is left is what they can still act on.
@@ -1481,6 +1496,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     // Overtime, Payroll, Reimbursement, Support Desk).
                     if (joiner) ...[
                       onboardingTile,
+                      ?staffTile,
                       policiesTile,
                       ?leaveTile,
                       ?overtimeTile,
@@ -1489,6 +1505,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                       supportTile,
                       ?placementsTile,
                     ] else ...[
+                      ?staffTile,
                       ?leaveTile,
                       ?overtimeTile,
                       reimbursementTile,
@@ -8356,6 +8373,9 @@ class _HomeActionCard extends StatelessWidget {
     this.imageSize = 24,
     this.highlight = false,
     this.badge,
+    this.badgeColor,
+    this.badgeTextColor,
+    this.pulse = true,
   });
 
   final IconData icon;
@@ -8376,6 +8396,13 @@ class _HomeActionCard extends StatelessWidget {
 
   /// A brand pill in the top-right corner ("Day 1").
   final String? badge;
+
+  /// The pill's colours when not the brand's (HR's "3 late" is red).
+  final Color? badgeColor;
+  final Color? badgeTextColor;
+
+  /// Whether a highlighted tile's icon pulses (the joiner's Day 1); HR's tile is ringed only.
+  final bool pulse;
 
   @override
   Widget build(BuildContext context) {
@@ -8413,7 +8440,7 @@ class _HomeActionCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (highlight)
+                    if (highlight && pulse)
                       OnbPulse(radius: BorderRadius.circular(13), child: iconTile)
                     else
                       iconTile,
@@ -8458,14 +8485,14 @@ class _HomeActionCard extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 9),
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF0571A6),
+                      color: badgeColor ?? const Color(0xFF0571A6),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
                       badge,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: 'Sora',
-                        color: Colors.white,
+                        color: badgeTextColor ?? Colors.white,
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                       ),

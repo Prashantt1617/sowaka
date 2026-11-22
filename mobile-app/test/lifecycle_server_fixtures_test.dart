@@ -341,24 +341,6 @@ void main() {
       expect(onboardingTileSubtitle(me), startsWith('Week 2 · '));
     });
 
-    test('M2: meeting rows carry their meeting, manager wording, HR’s decision never tickable', () async {
-      final d = await onboardingApi(FixtureServer([('GET', '/lifecycle/manager/joiners/', 'manager_joiner')]), id: 'mgr', name: 'Meera Iyer').fetchJoiner('j');
-      final meet = d.tasks.firstWhere((t) => t.systemKey == 'meet_manager');
-      expect(meet.title, 'Meet Isha');
-      expect(meet.meeting?.id, 'fx-meeting');
-      expect(meet.startsAt, isNotNull);
-      expect(d.tasks.firstWhere((t) => t.systemKey == 'meet_team').title, 'Introduce Isha to the team');
-      final decision = d.tasks.firstWhere((t) => t.systemKey == 'confirmation_discussion');
-      expect([decision.canMarkDone, onb.managerMayTick(decision)], [false, false]);
-      expect(d.journey.map((s) => s.label), contains('Months 2–5'));
-      expect(d.welcomeCanPost, isTrue);
-      final after = await onboardingApi(FixtureServer([('GET', '/lifecycle/manager/joiners/', 'manager_joiner_after_welcome')]), id: 'mgr').fetchJoiner('j');
-      expect([after.welcomeCanPost, after.welcomePostedAt != null], [false, true]);
-      final server = FixtureServer([('POST', '/lifecycle/manager/joiners/', 'manager_welcome_post')]);
-      await onboardingApi(server, id: 'mgr').postWelcome('j', 'Welcome!');
-      expect(server.calls.single, endsWith('/welcome'));
-    });
-
     test('PB1/PB2 on the new shape: per-goal ratings, the win and ask, chips, next goals', () async {
       final months = onb.ProbationView.fromJson(fixture('manager_probation_review')).months;
       final m1 = months.firstWhere((m) => m.monthNo == 1);
@@ -378,43 +360,6 @@ void main() {
     });
   });
 
-  group('onboarding: the manager', () {
-    test('New joiners: the card', () async {
-      final joiners = await onboardingApi(FixtureServer([('GET', '/lifecycle/manager/joiners', 'manager_joiners')]), id: 'mgr', name: 'Meera Iyer').fetchJoiners();
-      final isha = joiners.firstWhere((j) => j.name == 'Isha Verma');
-      expect(isha.journeyId, fixture('me_joiner')['onboarding']['journeyId']);
-      expect(isha.userId, 'isha');
-      expect(isha.dayLabel, 'Week 1');
-      expect(isha.stage, 'welcome_week1');
-      expect(isha.preboarding, isFalse);
-      expect(isha.tj, isNotNull);
-    });
-
-    test('the joiner: tasks, set-up, starter tasks, notes, meetings, probation, goal lock', () async {
-      final raw = fixture('manager_joiner');
-      final d = await onboardingApi(FixtureServer([('GET', '/lifecycle/manager/joiners/', 'manager_joiner')]), id: 'mgr', name: 'Meera Iyer').fetchJoiner('j');
-      expect(d.joiner.name, 'Isha Verma');
-      expect(d.joiner.probationMonths, 6);
-      expect(d.joiner.goalsLocked, raw['goalsLocked'], reason: 'the server’s lock, not the app’s own day count');
-      expect(d.goalsLockedOn(DateTime(2100)), raw['goalsLocked']);
-      expect(d.managerTasks, isNotEmpty);
-      expect(d.setup.people.map((p) => p.userId), ['p1', 'p2']);
-      expect(d.setup.people.first.name, 'Kiran Shah');
-      expect(d.setup.buddy!.userId, 'p1');
-      expect(d.setup.buddy!.name, 'Kiran Shah');
-      expect(d.setup.welcomeNote, 'Welcome aboard, Isha!');
-      expect(d.setup.goals, ['Ship the leave redesign', 'Meet every designer']);
-      expect(d.starterTasks.single.assignedByName, 'Meera Iyer');
-      expect(d.starterTasks.single.managerReply, 'Nice start!');
-      expect(d.notes.map((n) => n.shared), containsAll([true, false]), reason: 'the manager sees their private notes too');
-      expect(d.meetings.single.met, 'moved');
-      expect(d.probation!.months, hasLength(6));
-      expect(d.surveyCount, isNull, reason: 'one answer: no team summary');
-      expect(jsonEncode(raw).contains('1600000'), isFalse, reason: 'managers never see pay');
-    });
-  });
-
-  // ─────────────────────────────────────────────────────────────── resigning
   group('offboarding: resigning', () {
     test('before: the notice and Resign', () async {
       final s = await offboardingApi(FixtureServer([('GET', '/lifecycle/resignation', 'resignation_get_none')])).fetchResignation();

@@ -122,7 +122,9 @@ function ownerFor(role: OwnerRole, j: Journey): string | undefined {
 
 /** Whether a template task runs: switched on, and (if recommended) added. */
 /** Team-side rows (Teams › Joiners) are never journey tasks: the app ticks them on the journey. */
-const runs = (t: TemplateTask) => !t.team && t.enabled && (!t.recommended || t.recommended.added);
+const runs = (t: TemplateTask) => !t.team && t.enabled && (!t.recommended || t.recommended.added)
+  // Final designs: only joiner tasks and accesses are journey tasks (check-ins and the watch list are read-time rows).
+  && (!t.design || t.design.section === 'task' || t.design.section === 'access');
 
 function monthsFor(t: TemplateTask, total: number): Array<number | undefined> {
   const months = monthsOfRule(t.opensRule, total) ?? monthsOfRule(t.dueRule, total);
@@ -310,7 +312,9 @@ async function tellDueMoved(j: Journey, dueMoved: Map<string, number>): Promise<
 export type Destination =
   | 'lifecycle_onboarding' | 'lifecycle_meeting' | 'lifecycle_starter_task' | 'lifecycle_notes' | 'lifecycle_week1'
   | 'lifecycle_intro' | 'lifecycle_people' | 'lifecycle_survey' | 'lifecycle_probation' | 'lifecycle_checkin' | 'lifecycle_reveal'
-  | 'lifecycle_joiner' | 'lifecycle_joiner_setup' | 'lifecycle_starter_task_done' | 'lifecycle_probation_review';
+  | 'lifecycle_joiner' | 'lifecycle_joiner_setup' | 'lifecycle_starter_task_done' | 'lifecycle_probation_review'
+  /** Final designs: HR's / IT & admin's person page for one joiner (`data.as` = 'hr' | 'it'). */
+  | 'lifecycle_staff';
 
 /**
  * Every push of the lifecycle goes through here: a delivery failure never fails the write.

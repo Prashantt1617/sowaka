@@ -7,6 +7,8 @@
  * about, meet, letter, pass). Up next = the first of: a document sent back →
  * the open item due soonest → an item not started.
  */
+import { designOf, templateReporting } from './design';
+import { peopleOf } from './designRows';
 import { candidateAccounts, companies, dateChangeRequests, journeys, letters, offers, users } from '../../config/db';
 import { policiesFor } from '../policy-document.service';
 import type { AboutYou, Day1Pass, Journey, OfferFields } from '../../models/lifecycle.model';
@@ -256,6 +258,26 @@ export async function portalPassOrLocked(journey: Journey, now = new Date()): Pr
   return { state: 'open', ...(await portalPass(journey, now)) };
 }
 
+/**
+ * Final designs: the template's "Joining and reporting details" fill what HR has not typed on this joiner's
+ * pass (`day1Pass` wins); none when the template removed that pre-boarding row. One reading for the Day-1
+ * pass, the joining details tile and the home's reporting time. `withWho` false skips "who meets them".
+ */
+async function passWithTemplate(journey: Journey, withWho = true): Promise<Day1Pass> {
+  const { settings } = await designOf(journey);
+  const reporting = templateReporting(settings);
+  let meets: { name: string; phone?: string } | null = null;
+  if (withWho && reporting && !journey.day1Pass?.askFor) {
+    const meetsId = reporting.meets === 'manager' ? journey.managerUserId : reporting.meets === 'buddy' ? journey.buddyUserId : (await peopleOf(journey, settings)).hr;
+    meets = meetsId ? await users().findOne({ userId: meetsId }, { projection: { _id: 0, name: 1, phone: 1 } }) : null;
+  }
+  return {
+    ...(reporting?.time ? { reportingTime: reporting.time } : {}), ...(reporting?.place ? { place: reporting.place } : {}),
+    ...(reporting?.bring ? { bring: [reporting.bring] } : {}), ...(meets ? { askFor: { name: meets.name, ...(meets.phone ? { phone: meets.phone } : {}) } } : {}),
+    ...(journey.day1Pass ?? {}),
+  };
+}
+
 export async function portalPass(journey: Journey, now = new Date(), opts: { anyDay?: boolean } = {}): Promise<PortalPass> {
   if (!journey.tj) throw new LifecycleOfferError(403, 'Your Day-1 pass is not ready yet');
   if (!opts.anyDay && !passOpen(journey, now)) throw new LifecycleOfferError(403, `Your Day-1 pass opens on ${formatDay(addDays(journey.tj, -PASS_OPENS_DAYS))}`);
@@ -264,7 +286,7 @@ export async function portalPass(journey: Journey, now = new Date(), opts: { any
     journey.buddyUserId ? users().findOne({ userId: journey.buddyUserId }, { projection: { _id: 0, name: 1 } }) : null,
     companyOf(journey.org),
   ]);
-  const pass = journey.day1Pass ?? {};
+  const pass = await passWithTemplate(journey);
   return {
     ...pass,
     // The manager meeting names the current manager (the line HR typed goes stale when the manager changes).
@@ -310,8 +332,8 @@ export async function portalPassIcs(journey: Journey, now = new Date(), opts: { 
  * itself (with its agenda) still opens a week before.
  */
 export async function joiningDetails(journey: Journey, now = new Date()) {
-  const pass = journey.day1Pass ?? {};
-  const [manager, buddy, pending] = await Promise.all([
+  const [pass, manager, buddy, pending] = await Promise.all([
+    passWithTemplate(journey),
     journey.managerUserId ? users().findOne({ userId: journey.managerUserId }, { projection: { _id: 0, name: 1, designation: 1, email: 1 } }) : null,
     journey.buddyUserId ? users().findOne({ userId: journey.buddyUserId }, { projection: { _id: 0, name: 1, designation: 1, email: 1 } }) : null,
     dateChangeRequests().findOne({ journeyId: journey.id, status: 'pending' }, { projection: { _id: 0, requestedTj: 1 } }),
@@ -348,6 +370,7 @@ export async function portalHome(journey: Journey, now = new Date()): Promise<Po
   const meetRead = pre ? quiet(meetItems(journey)) : null;
   const lettersRead = pre && journey.templateSnapshot.settings.signLettersOnDay1 !== true ? quiet(portalLetters(journey)) : null;
   const company = await companyRead;
+  const reportingTime = (await passWithTemplate(journey, false)).reportingTime;
   const base = {
     status, candidateName: journey.candidate?.name ?? '',
     ...(journey.candidate?.personalEmail ? { personalEmail: journey.candidate.personalEmail } : {}),
@@ -355,7 +378,7 @@ export async function portalHome(journey: Journey, now = new Date()): Promise<Po
     tj: journey.tj, daysToGo: journey.tj ? daysBetween(today, journey.tj) : null,
     hrContact: await hrContactFor(journey, company),
     ...(journey.designation ? { designation: journey.designation } : {}),
-    ...(journey.day1Pass?.reportingTime ? { reportingTime: journey.day1Pass.reportingTime } : {}),
+    ...(reportingTime ? { reportingTime } : {}),
     ...(journey.tj ? { portalOpenUntil: journey.templateSnapshot.settings.portalOpenUntil === 'month_1' ? addMonthsDay(journey.tj, 1) : addDays(journey.tj, 7) } : {}),
   };
   const plantOf = (water: number) => journey.plant ?? { stage: status === 'joined' ? 1 : 0, water, leaves: 0, droop: false };

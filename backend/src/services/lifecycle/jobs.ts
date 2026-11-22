@@ -28,6 +28,10 @@ export function registerLifecycleJob(name: string, job: Job): void {
   extraJobs.set(name, job);
 }
 
+import { designOf } from './design';
+import { place, teammatePushTarget, teamRowTitle } from './designRows';
+import { rowDone } from './teamApp';
+
 const DAY_JOB_HOUR = 9;
 const WINDOW_DAYS = 2;
 const MEETING_LEAD_MS = 30 * 60_000;
@@ -94,13 +98,21 @@ async function meetingReminders(org: string, now: Date): Promise<number> {
     const claimed = await lifecycleMeetings().updateOne({ id: m.id, remindedAt: { $exists: false } }, { $set: { remindedAt: now } });
     if (!claimed.modifiedCount) continue;
     const mins = Math.max(1, Math.round((m.startsAt.getTime() - now.getTime()) / 60_000));
-    const joinerId = (await journeys().findOne({ id: m.journeyId }, { projection: { _id: 0, userId: 1 } }))?.userId;
+    const j = await journeys().findOne({ id: m.journeyId }, { projection: { _id: 0 } });
+    const joinerId = j?.userId;
     const push = {
       scenario: 'lifecycle_meeting_soon' as const, title: `${m.title} in ${mins} minutes`,
       body: [m.place, m.link ? 'Online' : undefined].filter(Boolean).join(' · ') || 'Tap for the details', data: { journeyId: m.journeyId, meetingId: m.id },
     };
-    await tell(m.attendeeUserIds.filter((u) => u === joinerId), { ...push, destination: 'lifecycle_meeting' });
-    await tell(m.attendeeUserIds.filter((u) => u !== joinerId), { ...push, destination: 'lifecycle_joiner' });
+    // A design meeting (one with a row key) opens the joiner's home for them; the 20 Nov meeting card otherwise.
+    await tell(m.attendeeUserIds.filter((u) => u === joinerId), { ...push, destination: m.rowKey ? 'lifecycle_onboarding' : 'lifecycle_meeting' });
+    // Teammates: HR / IT & admin their person page, the others the Teams person page.
+    const p = j ? await place(j as Journey, now) : null;
+    const role = p && m.rowKey ? [...p.meetings, ...p.team].find((r) => r.rowKey === m.rowKey)?.role : undefined;
+    for (const u of m.attendeeUserIds.filter((x) => x !== joinerId)) {
+      const target = p ? teammatePushTarget(p.people, u, role) : { destination: 'lifecycle_joiner' as const };
+      await tell([u], { ...push, destination: target.destination, data: { ...push.data, ...(target.as ? { as: target.as } : {}) } });
+    }
     sent += 1;
   }
   return sent;
@@ -123,11 +135,38 @@ async function orgJobs(org: string, companyName: string, now: Date, result: Jobs
         await journeyDayJobs(j, tasks, today, companyName, now, result);
         await revealReady(j, tasks, result);
         result.reminded += await overdueReminders(j, tasks, today, now);
+        result.reminded += await lateTeamRowReminders(j, tasks, today);
       }
     } catch (error) {
       logger.error('Lifecycle job failed for a journey', { journeyId: id }, error);
     }
   }
+}
+
+/**
+ * Final designs, "Remind teammates when a task is late" (template `remindLateTeamTasks`, on unless
+ * HR switched it off): once per row, the day after its due day passes undone, a push to whoever does
+ * it (the manager, the buddy, HR, IT & admin, someone senior, the head of department).
+ */
+export async function lateTeamRowReminders(j: Journey, tasks: JourneyTask[], today: string): Promise<number> {
+  if (!j.tj) return 0;
+  const p = await place(j, new Date(), await designOf(j));
+  if (!p.design.isDesign || p.design.settings.remindLateTeamTasks === false) return 0;
+  let sent = 0;
+  const name = j.candidate?.name ?? 'your new joiner';
+  const first = name.split(/\s+/)[0] ?? name;
+  for (const r of [...p.meetings, ...p.team]) {
+    if (!r.dueOn || r.dueOn >= today || !r.role || rowDone(r, j, tasks, p.design)) continue;
+    const owner = p.people[r.role as keyof typeof p.people];
+    if (!owner || !(await claim(j.id, `team-late:${r.rowKey}`))) continue;
+    const target = teammatePushTarget(p.people, owner, r.role);
+    await tell([owner], {
+      scenario: 'lifecycle_team_task_late', destination: target.destination, title: 'A task is late', body: teamRowTitle(r, first),
+      data: { journeyId: j.id, rowKey: r.rowKey, name, ...(target.as ? { as: target.as } : {}) },
+    });
+    sent += 1;
+  }
+  return sent;
 }
 
 async function journeyDayJobs(j: Journey, tasks: JourneyTask[], today: string, companyName: string, now: Date, result: JobsResult): Promise<void> {

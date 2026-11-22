@@ -1,4 +1,4 @@
-/// Day 1's first punch-in, from the 20 Nov New joiner artifact (lane J1):
+/// Day 1's first punch-in (New joiner canvas, AppActions tour and AppPunch):
 /// the "Your first punch-in" card on the onboarding home, the Actions tab's
 /// spotlight on the Attendance card ("Slide to punch in · Later · Try it
 /// now"), and "You're in!" after the punch.
@@ -126,22 +126,9 @@ class _YoureInScreenState extends State<YoureInScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(_tickFaceTask());
-  }
-
-  /// The punch saved a face: "Register face for punch-in" is done too. Best
-  /// effort; the home reads it again when it opens.
-  Future<void> _tickFaceTask() async {
-    if (!widget.faceRegistered) return;
-    final api = widget.shell.api;
-    try {
-      final home = await api.fetchHome();
-      final face = home.all.where((t) => t.systemKey == 'register_face' && !t.isDone && !t.isLocked).firstOrNull;
-      if (face != null) await api.taskAction(face.id, 'done');
-    } catch (_) {
-      // Offline or already ticked: nothing to show.
-    }
-    unawaited(LifecycleMeStore.instance.refresh(api));
+    // The punch is a fact the server reads ("Punch in and out" ticks itself);
+    // the Actions tile's words follow it.
+    unawaited(LifecycleMeStore.instance.refresh(widget.shell.api));
   }
 
   void _backToOnboarding() {

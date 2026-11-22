@@ -30,7 +30,9 @@ export type SwrKind = 'ool'
   // One person's own payroll screens (keptReads.ts): kept per person, params carry the userId.
   | 'pay-home' | 'pay-salary' | 'pay-earnings'
   // The Games list and the Games home page (keptReads.ts): Sowaka's scripts change them, so they are checked by version.
-  | 'games-catalog' | 'app-page';
+  | 'games-catalog' | 'app-page'
+  // The org's onboarding templates (lifecycle/design.ts): every joiner, teammate and HR/IT view reads their design rows.
+  | 'lc-templates';
 
 const FRESH_MS = 60_000;
 const MAX_STALE_MS = 15 * 60_000;

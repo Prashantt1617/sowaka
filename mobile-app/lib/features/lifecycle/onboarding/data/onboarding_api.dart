@@ -83,40 +83,6 @@ abstract class OnboardingApi {
   Future<void> revealSeen();
   Future<Uint8List> download(String url);
 
-  // Manager
-  Future<List<JoinerSummary>> fetchJoiners();
-  Future<JoinerDetail> fetchJoiner(String journeyId);
-  Future<void> saveSetup(
-    String journeyId, {
-    List<SetupPerson>? people,
-    String? buddyUserId,
-    String? welcomeNote,
-    List<String>? goals,
-  });
-  Future<void> assignStarterTask(
-    String journeyId, {
-    required String title,
-    List<String> links = const [],
-    String? note,
-    DateTime? dueAt,
-  });
-  Future<void> replyStarterTask(String id, String text);
-  Future<void> addNote(String journeyId, String text, {required bool shared});
-  Future<void> managerTaskDone(String journeyId, String taskId);
-
-  /// M2 "Post a welcome": the manager's welcome for the joiner on Connect.
-  Future<void> postWelcome(String journeyId, String text);
-  Future<void> saveProbationMonth(
-    String journeyId,
-    int month, {
-    List<String>? goals,
-    CheckinEntry? checkin,
-    String? review,
-    List<String>? feedback,
-    bool? askAck,
-    List<String>? nextGoals,
-  });
-  Future<List<DirectoryPerson>> fetchDirectory();
 }
 
 /// [OnboardingApi] over HTTP, with the signed-in person's token.
@@ -405,140 +371,6 @@ class HttpOnboardingApi implements OnboardingApi {
     return response.bodyBytes;
   }
 
-  // ── Manager ───────────────────────────────────────────────────────────────
-
-  @override
-  Future<List<JoinerSummary>> fetchJoiners() async {
-    final Map<String, dynamic> json;
-    try {
-      json = await _json('GET', '/lifecycle/manager/joiners');
-    } on OnboardingApiException catch (error) {
-      if (error.isOff) return const [];
-      rethrow;
-    }
-    return [
-      for (final item in json['joiners'] as List? ?? const [])
-        if (item is Map) JoinerSummary.fromJson(Map<String, dynamic>.from(item)),
-    ];
-  }
-
-  @override
-  Future<JoinerDetail> fetchJoiner(String journeyId) async => JoinerDetail.fromJson(
-    await _json('GET', '/lifecycle/manager/joiners/${Uri.encodeComponent(journeyId)}'),
-    viewerId: viewerId,
-  );
-
-  @override
-  Future<void> saveSetup(
-    String journeyId, {
-    List<SetupPerson>? people,
-    String? buddyUserId,
-    String? welcomeNote,
-    List<String>? goals,
-  }) async {
-    await _json(
-      'PUT',
-      '/lifecycle/manager/joiners/${Uri.encodeComponent(journeyId)}/setup',
-      body: {
-        if (people != null) 'people': [for (final person in people) person.toJson()],
-        'buddyUserId': ?buddyUserId,
-        if (welcomeNote != null) 'welcomeNote': {'kind': 'text', 'text': welcomeNote},
-        'goals': ?goals,
-      },
-    );
-  }
-
-  @override
-  Future<void> assignStarterTask(
-    String journeyId, {
-    required String title,
-    List<String> links = const [],
-    String? note,
-    DateTime? dueAt,
-  }) async {
-    await _json(
-      'POST',
-      '/lifecycle/manager/joiners/${Uri.encodeComponent(journeyId)}/starter-tasks',
-      body: {
-        'title': title,
-        if (links.isNotEmpty) 'links': links,
-        if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
-        if (dueAt != null) 'dueAt': lifecycleYmd(dueAt),
-      },
-    );
-  }
-
-  @override
-  Future<void> replyStarterTask(String id, String text) async {
-    await _json('POST', '/lifecycle/manager/starter-tasks/${Uri.encodeComponent(id)}/reply', body: {'text': text});
-  }
-
-  @override
-  Future<void> addNote(String journeyId, String text, {required bool shared}) async {
-    await _json(
-      'POST',
-      '/lifecycle/manager/joiners/${Uri.encodeComponent(journeyId)}/notes',
-      body: {'text': text, 'shared': shared},
-    );
-  }
-
-  @override
-  Future<void> managerTaskDone(String journeyId, String taskId) async {
-    await _json(
-      'POST',
-      '/lifecycle/manager/joiners/${Uri.encodeComponent(journeyId)}/tasks/${Uri.encodeComponent(taskId)}',
-      body: {'action': 'done'},
-    );
-  }
-
-  @override
-  Future<void> postWelcome(String journeyId, String text) async {
-    await _json('POST', '/lifecycle/manager/joiners/${Uri.encodeComponent(journeyId)}/welcome', body: {'text': text});
-  }
-
-  @override
-  Future<void> saveProbationMonth(
-    String journeyId,
-    int month, {
-    List<String>? goals,
-    CheckinEntry? checkin,
-    String? review,
-    List<String>? feedback,
-    bool? askAck,
-    List<String>? nextGoals,
-  }) async {
-    final reviewing = review != null || (feedback != null && feedback.isNotEmpty);
-    await _json(
-      'PUT',
-      '/lifecycle/manager/joiners/${Uri.encodeComponent(journeyId)}/probation/$month',
-      body: {
-        'goals': ?goals,
-        if (checkin != null)
-          'checkin': {
-            'text': checkin.text,
-            if (checkin.rating != null) 'rating': checkin.rating,
-            if (checkin.goalRatings.any((r) => r > 0)) 'goalRatings': [for (final r in checkin.goalRatings) r > 0 ? r : null],
-          },
-        if (reviewing)
-          'review': {
-            'text': review ?? '',
-            if (feedback != null && feedback.isNotEmpty) 'feedback': feedback,
-            if (askAck == true) 'askAck': true,
-            if (nextGoals != null && nextGoals.isNotEmpty) 'nextGoals': nextGoals,
-          },
-      },
-    );
-  }
-
-  @override
-  Future<List<DirectoryPerson>> fetchDirectory() async {
-    final json = await _json('GET', '/connect/audience-lists/people');
-    return [
-      for (final item in json['people'] as List? ?? const [])
-        if (item is Map) DirectoryPerson.fromJson(Map<String, dynamic>.from(item)),
-    ];
-  }
-
   // ── Transport ─────────────────────────────────────────────────────────────
 
   /// A lifecycle call outside [OnboardingApi] (joiner_meetings_api.dart), with the same token,
@@ -559,11 +391,23 @@ class HttpOnboardingApi implements OnboardingApi {
     return json;
   }
 
-  Future<Map<String, dynamic>> _live(String method, String path, {Map<String, dynamic>? body}) async {
-    final startedAt = DateTime.now();
+  /// A multipart upload of one file (field `file`), answered and refused like any other call.
+  Future<Map<String, dynamic>> upload(String path, {required String filename, required Uint8List bytes}) {
+    final request = http.MultipartRequest('POST', Uri.parse('$_baseUrl$path'))
+      ..headers['Authorization'] = 'Bearer ${session.token}'
+      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+    return _send(request, 'POST', path);
+  }
+
+  Future<Map<String, dynamic>> _live(String method, String path, {Map<String, dynamic>? body}) {
     final request = http.Request(method, Uri.parse('$_baseUrl$path'))
       ..headers.addAll({'Authorization': 'Bearer ${session.token}', 'Content-Type': 'application/json'});
     if (body != null) request.body = jsonEncode(body);
+    return _send(request, method, path);
+  }
+
+  Future<Map<String, dynamic>> _send(http.BaseRequest request, String method, String path) async {
+    final startedAt = DateTime.now();
     final http.Response response;
     try {
       response = await _client.send(request).then(http.Response.fromStream).timeout(requestTimeout);

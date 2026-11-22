@@ -10,6 +10,9 @@ import { nudgeTask } from '../services/lifecycle/nudges';
 import { LifecycleError, lifecycleEnabled, loadJourney, requireLifecycle } from '../services/lifecycle/engine';
 import { probationOf, recordDecision } from '../services/lifecycle/probation';
 import { createTemplate, deleteTemplate, getTemplate, isKind, listTemplates, templateJourneys, updateTemplate } from '../services/lifecycle/templates';
+import multer from 'multer';
+import { MAX_VIDEO_BYTES, saveTemplateDesign, templateDesign, templateMediaBytes, templatePreview, uploadTemplateMedia } from '../services/lifecycle/design';
+import { UTF8_FILE_NAMES, contentDisposition } from '../services/lifecycle/files';
 
 /**
  * The dashboard's onboarding side of the employee lifecycle, mounted at
@@ -90,6 +93,31 @@ lifecycleAdminRouter.post('/templates', lifecycleHandler(async (req) => {
   const me = caller(req);
   return { template: await createTemplate(me.org, body(req), me.name) };
 }, 201));
+// Onboarding · Final designs (docs/lifecycle/FINAL-DESIGNS.md §4.1): the template editor's whole document, media, the Employee preview.
+const mediaUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_VIDEO_BYTES + 1, files: 1 }, ...UTF8_FILE_NAMES }).single('file');
+lifecycleAdminRouter.get('/templates/media/:fileId', async (req, res, next) => {
+  try {
+    const file = await templateMediaBytes(caller(req).org, String(req.params.fileId));
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader('Content-Disposition', contentDisposition(file.name));
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(file.bytes);
+  } catch (error) {
+    const code = (error as { statusCode?: unknown }).statusCode;
+    if (typeof code === 'number' && code >= 400 && code < 500) { res.status(code).json({ error: (error as Error).message }); return; }
+    next(error);
+  }
+});
+lifecycleAdminRouter.get('/templates/:id/design', lifecycleHandler(async (req) => templateDesign(caller(req).org, String(req.params.id))));
+lifecycleAdminRouter.put('/templates/:id/design', lifecycleHandler(async (req) => {
+  const me = caller(req);
+  return saveTemplateDesign(me.org, String(req.params.id), body(req), me.name);
+}));
+lifecycleAdminRouter.get('/templates/:id/preview', lifecycleHandler(async (req) => templatePreview(caller(req).org, String(req.params.id), req.query.stage)));
+lifecycleAdminRouter.post('/templates/:id/media', (req, res, next) => mediaUpload(req, res, (error) => {
+  if (error) { res.status(400).json({ error: error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE' ? 'A video can be up to 50 MB' : 'The upload did not work' }); return; }
+  next();
+}), lifecycleHandler(async (req) => uploadTemplateMedia(caller(req).org, String(req.params.id), req.file as never), 201));
 // S3's Joiners tab: who follows this template (listed and opened, never moved: a journey keeps its snapshot).
 lifecycleAdminRouter.get('/templates/:id/journeys', lifecycleHandler(async (req) => templateJourneys(caller(req).org, String(req.params.id))));
 lifecycleAdminRouter.get('/templates/:id', lifecycleHandler(async (req) => ({ template: await getTemplate(caller(req).org, String(req.params.id)) })));

@@ -19,6 +19,9 @@ import { CLOSED_STATUSES } from './portalAuth';
 
 export const PROFILE_SECTIONS = ['personal', 'contact', 'emergency', 'bank', 'education', 'ids', 'photo'] as const;
 export type ProfileSection = (typeof PROFILE_SECTIONS)[number];
+/** The Final designs' wording (App and team pages): "ID documents". The portal keeps its own titles. */
+export const appSectionTitle = (k: ProfileSection) => (k === 'ids' ? 'ID documents' : PROFILE_SECTION_TITLE[k]);
+
 export const PROFILE_SECTION_TITLE: Record<ProfileSection, string> = {
   personal: 'Personal details', contact: 'Contact and address', emergency: 'Emergency contact', bank: 'Bank account and PF',
   education: 'Education and experience', ids: 'ID documents (Aadhaar, PAN)', photo: 'Photo',
