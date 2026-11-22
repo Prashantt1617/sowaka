@@ -244,7 +244,7 @@ row is deleted from the template (running journeys keep their journey tasks; the
 | POST `/lifecycle/joiner/watch/:itemId` | `{}` | `{ watched: true, at }` |
 | GET `/lifecycle/joiner/media/:fileId` | | the bytes of a template media file of the joiner's template (Range supported for video) |
 | GET `/lifecycle/joiner/letters` · POST `/lifecycle/joiner/letters/:id/opened` · POST `/lifecycle/joiner/letters/:id/sign` `{ method: 'draw' \| 'type', typedName?, imageDataUrl? }` · GET `/lifecycle/joiner/letters/:id/pdf` | | the Sign task's documents, same shapes as the portal's (`portalLetters`), signing through the same service |
-| kept: POST `/lifecycle/onboarding/meeting-rows/:rowId` `{ met: boolean }` · PUT `/lifecycle/onboarding/meeting-rows/:rowId/notes` `{ notes: string[] }` | | Mark as met (the shared tick) and own notes; `rowId` = `JoinerMeetingRow.id` |
+| kept: POST `/lifecycle/onboarding/meeting-rows/:rowId` `{ action: 'met' }` · PUT `/lifecycle/onboarding/meeting-rows/:rowId/notes` `{ notes: string[] }` | | Mark as met (the shared tick) and own notes; `rowId` = `JoinerMeetingRow.id` |
 | kept: POST `/lifecycle/onboarding/tour/:lesson` | | Sowaka tour lesson done |
 | kept: `/policies` (App policies) | | "Acknowledge company policies" ticks itself when every required policy is acknowledged |
 | kept: GET `/lifecycle/me` | | adds `onboarding.tile: { title: 'Onboarding', subtitle: string, badge: string }` and `staff?: StaffTile` (HR / IT & admin's Actions tile) |
@@ -310,8 +310,8 @@ the server holds the value).
 | Method + path | Body | Returns |
 |---|---|---|
 | GET `/lifecycle/team/joiners` | | `{ joiners: TeamJoinerRow[] }` |
-| GET `/lifecycle/team/joiners/:journeyId` | | `TeamJoinerPage` |
-| POST `/lifecycle/team/joiners/:journeyId/tasks/:taskId` | `{ action: 'done' \| 'undo' }` | `TeamJoinerPage` (kept; meetings tick the shared row) |
+| GET `/lifecycle/team/joiners/:journeyId/page` | | `TeamJoinerPage` (new path: the old `/team/joiners/:journeyId` keeps its 20 Nov shape for app builds in use) |
+| POST `/lifecycle/team/joiners/:journeyId/rows/:rowId` | `{ action: 'done' \| 'undo' }` | `TeamJoinerPage` (a tick; meetings tick the shared row the joiner's Mark as met writes) |
 | GET `/lifecycle/team/joiners/:journeyId/buddy-options` · POST `…/buddy` `{ buddyUserId }` | | `{ options: Array<{ userId, name, designation?, photoUrl? }>, current?: string }` / `TeamJoinerPage` (ticks `mgr_assign_buddy`) |
 | POST `/lifecycle/team/joiners/:journeyId/schedule` | `{ meetings: Array<{ rowKey: string; startsAt: string }> }` | `TeamJoinerPage` (writes `lifecycle_meetings`, pushes the invite to both, ticks `mgr_schedule` when every Day-1/Week-1 meeting has a time) |
 | POST `/lifecycle/team/joiners/:journeyId/welcome-message` | `{ text }` (≤ 1000) | `TeamJoinerPage` (`meetUs.managerNote`, ticks `mgr_welcome`) |
@@ -481,11 +481,104 @@ access ready → joiner device ready, the migration dry run and apply on a legac
 still reading, cache drop after a design save. The existing `lifecycle:check`, `lifecycle:team-check`,
 `lifecycle:meetings-check` keep passing (they seed the legacy template explicitly).
 
+## 8a. Artboard → facts → endpoint · field → source
+
+Every artboard and prototype state on the canvas. "Copy" is fixed UI text the app holds (the same for
+everyone: checklists like "Pantry and where people eat", lesson steps, reach-out block titles); every name,
+number, date and status is data from the endpoint named, the same value on every surface.
+J = `GET /lifecycle/joiner/onboarding`, P = `GET /lifecycle/team/joiners/:id/page`,
+S = `GET /lifecycle/staff/joiners/:id`, O = `GET /lifecycle/staff/onboarding`, D = `GET/PUT /admin/lifecycle/templates/:id/design`.
+
+### Joiner (page 1)
+
+| Artboard / state | Facts shown or changed | Endpoint · field | Source |
+|---|---|---|---|
+| AppActions · Onboarding tile | title, line ("Today is your first day"), badge ("Day 1") | `GET /lifecycle/me` · `onboarding.tile` | journey (`tj`, step) |
+| AppActions · Policies tile | "3 to acknowledge" | kept `GET /policies` · `toAcknowledge` | `policy_documents`, `policy_acknowledgements` |
+| AppActions · tour overlay, Attendance card | slide to punch in | existing attendance | `attendance_records` |
+| AppPunch · first punch-in | punch time + date, "Face registered" | J · `firstPunch.at`, `firstPunch.faceEnrolled` | `attendance_records`, `users.faceId` |
+| AppHome · Day 1 (before / after punch) | step strip (Day 1 … Confirmed: done / current / future), hero eyebrow + label, plant; punch card until the first punch; tour card after; Meetings avatars + "x of y met"; Tasks UP NEXT + "n to do"; Tour "len · x of 4 done"; Watch "len · n items"; Devices "x of y ready"; Profile "n of 7 sections done" + % | J · `steps`, `hero`, `plant`, `firstPunch`, `tour`, `summary`, `meetings[].person`, `devices`, `profile` | journey, journey tasks, template design rows, `journey.watched`, `journey.tour` |
+| AppHomeWeek1 · check-in due | Check-ins tile "<title> · about a minute", Start | J · `summary.checkinDue` | template check-in rows + `lifecycle_checkin_answers` |
+| AppHomeMonth1 / Month3 / Month6 | "This month’s goals": "n goals · next talk in x days"; Meetings "x of y met" | J · `goals`, `summary.meetings` | `lifecycle_probation_months.goals`; Monthly goals meeting (`lifecycle_meetings.startsAt`, else the month's end) |
+| AppHomeConfirmed | "PROBATION COMPLETE", "Confirmed!", Tasks "Read your confirmation letter", End of probation check-in | J · `hero`, `tasks[]`, `checkins[]` | journey `confirmed` + decision, `confirmation_letter` task, check-in rows |
+| Look ahead (future chip) | that step's meetings / tasks / watch / tour lines, "IN WEEK 1", "Opens in …" | J · the same lists filtered by `step`; `locked`, `opensOn` | same rows (no extra call) |
+| AppMeetings | topic, person name · role label, pills "From Day 1" / stage / "Every month", COMING UP, locked "Opens in Month 1", Met checkbox (toggles), Your team row | J · `meetings[]`; `POST /lifecycle/onboarding/meeting-rows/:rowId {action: 'met' \| 'unmet'}` | template meeting rows; `journey.teamTasks[key]` (shared with the teammate) |
+| AppMeetingGoals · agenda and notes | topic, person + role, Met badge, "n things to talk about", agenda, own note per point (voice typing is the device's), Mark as met / Met | J · `meetings[].agenda`, `notes`, `met`; `PUT …/meeting-rows/:rowId/notes` | template agenda; `lifecycle_meeting_notes` (own only) |
+| AppTeam · Your team | department, people count, Manager / Buddy badges, designations, Say hi | kept `GET /lifecycle/onboarding/team` | `users` |
+| AppTasks | title, icon by type, meta ("Appointment letter", "0 of 3 done", "Bank account, PF and nominees"), % bar, pills, COMING UP, lock, done tick, verb Start / Continue / Review / Read / Sign / Open | J · `tasks[]` | journey tasks (from the template's task rows) + product facts (punch, profile, tax, payroll, policies, letters) |
+| Task taps | Do in Sowaka → its screen; Review → page + "Looks good"; Read and acknowledge → App policies or the PDF + "I've read this"; Sign → documents to sign; More tasks → the link | `POST /lifecycle/joiner/tasks/:id`, `/policies/*`, `/lifecycle/joiner/letters/*` | journey task status, `policy_acknowledgements`, `lifecycle_letters` |
+| AppPolicies (new joiner / policy updated) | n to acknowledge, title, version, read time, Acknowledged date, Updated + what changed, required / optional | kept `GET /policies`, `POST /policies/:id/acknowledge` | `policy_documents`, `policy_acknowledgements` |
+| AppCheckins | title, "n questions · about a minute" / Done, Start / tick | J · `checkins[]` | template check-in rows + `lifecycle_checkin_answers` |
+| AppCheckinRate / Yes / Long | "k of N", question, type (rating 1–5 and yes/no move on at a tap; long: Next / Send + Skip) | `GET /lifecycle/joiner/checkins/:id` | template `design.questions` |
+| AppCheckinDone | "Thanks, <first name>" | `POST /lifecycle/joiner/checkins/:id`; J · `firstName` | `lifecycle_checkin_answers` |
+| AppWatch | company name, n videos (duration, title, colour), Trainings (Read / Watch, "5 min read" / "20 min") | J · `companyName`, `watch[]`, `trainings[]`; `POST /lifecycle/joiner/watch/:id`; `GET /lifecycle/joiner/media/:fileId` | template rows + `lifecycle_files`; `journey.watched` |
+| AppAccess | items, Ready / Setting up, "x of y ready" | J · `devices[]` | access journey tasks |
+| Tour + AppLesson | 4 lessons (+2 "For managers"), Done / Today / Day n · len, Replay / Start / Play | J · `tour`; kept `POST /lifecycle/onboarding/tour/:lesson` | `journey.tour` + first punch; template `settings.tourLessons` |
+| Your profile | 7 sections Done / To do / By HR, "n of 7 sections done", % | J · `profile` | `journey.profile`, `aboutYou`, documents |
+| AppGoals | this month: goal, "How’s it going?" (3 values), note (Add / Edit note), manager comment; "Next talk with <manager>" + "In x days · date"; earlier months collapsed, most recent first | `GET /lifecycle/joiner/goals`, `PUT /lifecycle/joiner/goals/:month/:index` | `lifecycle_probation_months.goals[]` |
+
+### Teammates (page 3)
+
+| Artboard / state | Facts shown or changed | Endpoint · field | Source |
+|---|---|---|---|
+| Teams pills · Joiners badge | number of connected joiners | `GET /lifecycle/team/joiners` | journeys + relation |
+| MgrProtoJoiners / BuddyProto / HodProto | photo / initials + plant, name, designation, "You’re the buddy" / "Reports to X", stage pill ("Joins 1 Dec", "Day 1" …) | `GET /lifecycle/team/joiners` · `TeamJoinerRow` | journeys, `users` |
+| MgrProtoPriya / BuddyPriya / HodProtoSana | hero (photo, name, designation, Reports to you / X, Buddy: X / You’re the buddy / No buddy yet, stage + plant); card title + "n to do" / All done; first 3 open rows or "Nothing due right now. Next: …"; tiles (status + View progress; Reach out line) | P · `joiner`, `card`, `tasks`, `reachOut` | journey, team rows + ticks, journey tasks |
+| MgrAllTasks · View all | every row, "n to do" / "All done for now", COMING UP | P · `tasks` | same |
+| Task rows | title, pair line, "Opens in …", pills (stage / Ready to read / Read / Waiting for X / Ready to approve / Approved / Extended), tick or chevron, how-to (i) | P · `tasks[]` | template team rows (`design.how`), `teamTasks`, `lifecycle_checkin_answers`, `probation.*` |
+| Tick a meeting ("Marked as done · Add notes") | the shared met tick | `POST /lifecycle/team/joiners/:id/rows/:rowId` | `teamTasks[key]` |
+| MgrMeeting | title, "With <joiner>", agenda, own notes, Mark as done / Done, footer | P · `tasks[].agenda`; `PUT /lifecycle/team/joiners/:id/rows/:rowId/notes` | template agenda; `lifecycle_meeting_notes` (own) |
+| MgrProgress · View progress | status, DELAYED (title, days, who), stat rows (Meetings met, Check-ins sent, Tasks done, Watch list watched, Sowaka tour lessons, Devices ready; before Day 1: Devices + Profile %), JOINING DETAILS, each stat's list | P · `progress`, `joiner.delayed`, `lists` | joiner's journey tasks, team rows, watched, tour, accesses, profile, `day1Pass` |
+| MgrReachOut | the ways (before Day 1: 2; after: 5) | P · `reachOut` | journey (joined or not) |
+| MgrAssignBuddy | colleagues (name, designation), current buddy, Assign / Save | `GET …/buddy-options`, `POST …/buddy` | `users`; `journey.buddyUserId` |
+| MgrSchedule | Day 1 / Week 1 meetings (initials, title), "n of 3 set", a time each, Send invites | P · meeting rows `startsAt`; `POST …/schedule` | `lifecycle_meetings` |
+| MgrWelcome | message prefilled (first name, joining date, first meeting time) | P · `joiner.first`, `joiner.tj`, meetings `startsAt`; `POST …/welcome-message` | `journey.meetUs.managerNote` |
+| MgrFeed | author, post prefilled (name, designation, department), Post | P · `joiner`; `POST …/feed` | Connect post + `journey.managerWelcome` |
+| Set KPIs (plain) | how-to line, Mark as done | P · `tasks[].how` | template `design.how`; `teamTasks` |
+| MgrReview · a check-in | "<first>’s <check-in>", "Sent <when>", questions + answers, Mark as read | `GET …/checkins/:id`, `POST …/checkins/:id/read` | `lifecycle_checkin_answers`, `teamTasks['mgr_read_checkin@<id>']` |
+| MgrGoals | goals with status + joiner's note, a comment box each, Send to <first> | `GET/POST …/goals/:month` | `lifecycle_probation_months.goals[]` |
+| MgrConfReview | facts (monthly goals, check-ins sent, attendance on time %, leave taken, confirmation discussion), Confirm / Extend (1–3 months), three answers, Send to <head of department> | `GET …/review` (facts, approver name) + `POST …/review` | goals, answers, `attendance_records`, `leaves`, ticks → `journey.probation.recommendation` |
+| HodApprove | recommended by + when, three answers, recommendation + note, facts, comments, Approve / Extend by n months | `GET/POST …/approval` | `probation.recommendation`, `probation.hodApproval` |
+| BuddyAround / BuddyHowTo | checklist (copy), how-to line, Done | P · `tasks[].how`; `POST …/rows/:rowId` | template `design.how`; `teamTasks` |
+| HodMeet | One to one / With other new joiners (the viewer's joiners at Day 1–Week 1), a time, Send invite | `GET /lifecycle/team/joiners` (step 1–2) + `POST …/senior-meeting` | `lifecycle_meetings`, `teamTasks['senior_meet']` |
+
+### HR and IT & admin (page 4)
+
+| Artboard / state | Facts shown or changed | Endpoint · field | Source |
+|---|---|---|---|
+| HRProto / ITProto · Actions | Onboarding tile: "n tasks for new joiners" / All done, pill (n late / n due today / n to do), highlighted | `GET /lifecycle/me` · `staff` | `lc-board-data` + template team rows |
+| HROnboarding / ITOnboarding | "Viewing as HR / IT & admin", 4 cards (n employees / No one right now, "n late"), rows (name, stage, worst pill) | O · `cards` | same |
+| HRAll | "Everyone in onboarding · n employees" | O · `everyone` | same |
+| HRPerson / ITPerson | hero; "Your tasks for X" + n to do; due pills; COMING UP (meetings locked till their step, other tasks open early); "<first>’s onboarding" status + 7 stats and their lists | S | journeys, team rows + ticks, journey tasks, watched, tour, profile |
+| HRProfile | nine sections (n missing / Complete), rows, "Not filled yet" | `GET …/profile` | `journey.profile`, `aboutYou`, `employee_payment_details`, `salary_structures`, `tax_declarations` |
+| HRKit (prepare / hand over) | ID card (photo, company, name, designation · department, employee id, blood group, emergency contact, photo status), checklist (copy), access card number, Kit ready / Handed over | `GET/POST …/tasks/hr_prepare_kit` · `hr_hand_kit` | `users`, `journey.profile`, `aboutYou`, `journey.staffChecks` |
+| HRPayroll | bank rows, cancelled cheque, PF and UAN, tax and investments, Looks right / Ask per section, Done | `GET/POST …/tasks/hr_check_payroll` | profile sections; `staffChecks` |
+| HRForm | personal, contact, emergency, education (rows, n missing), Looks right / Ask, Done | `GET/POST …/tasks/hr_check_form` | same |
+| HRLetter | approved by, recommended by, confirmed from, designation, salary change; letter preview; Send | `GET …/tasks/hr_confirmation_letter` | `probation.*`, decision, `lifecycle_letters` |
+| ITAccess | "x of 4 ready", per access Ready / Not yet + setup rows, Save | `GET/POST …/tasks/it_accesses` | access journey tasks; `users` (work email, phone, manager) |
+
+### Dashboard (page 2)
+
+| Artboard / state | Facts shown or changed | Endpoint · field | Source |
+|---|---|---|---|
+| Header | template name, Default, Save template | D · `name`, `isDefault` | `lifecycle_templates` |
+| Pre-boarding (4 rows) | Offer letter panel (from Document templates), Joining and reporting details (time, place, bring, anything else, who meets them), Employee profile, pre-boarding watch list (Video / Image / Text, file, text + background) | D · `preboarding.*`; `POST …/media` | template settings + rows, `lifecycle_files` |
+| Onboarding · Meetings | groups by stage, title, who, agenda, key Monthly goals, Add a meeting | D · `meetings[]` | template rows |
+| Onboarding · Tasks | groups by kind, title, stage, Sign: documents (Document templates), Add (kind first) | D · `tasks[]`; `GET /admin/lifecycle/letter-templates` | template rows |
+| Onboarding · Check-ins | rows, when, questions (5 answer types) | D · `checkins[]` | template rows |
+| Onboarding · Sowaka tour | six rows, removable | D · `tour` | template settings |
+| Onboarding · Watch list / Trainings | tiles (title, stage, uploaded / Upload), "n to upload" | D · `watch[]`, `trainings[]` | template rows + `lifecycle_files` |
+| Onboarding · Devices and accesses | title, who, By end of Week 1, Add | D · `accesses[]` | template rows |
+| Probation | 3 / 6 months, probation template → Shift templates | D · `probation` | template settings |
+| The team's part | reminder switch, tab counts, who does it (HR, IT & admin, someone senior pickers), rows by stage, task panel (title, when, how-to), Add | D · `team.*` | template settings + rows |
+| Employee preview | stage tabs, phone tiles | `GET …/templates/:id/preview?stage=` | template |
+
 ## 9. Gaps (the canvas has no source; nothing is invented)
 
 - Goal text: no screen in the canvas writes it. Kept: the manager's existing `PUT …/probation/:month {goals}`.
-- ID card "Blood group", T-shirt size, desk, laptop asset number, Wi-Fi network: no field anywhere. Shown only
-  when a value exists (none today); the kit/access screens list what is set.
+- ID card "Blood group", T-shirt size, desk, laptop asset number, Wi-Fi network: no field anywhere. The server
+  reads `journey.profile.personal.bloodGroup` (new optional field; nothing writes it until the profile form
+  asks for it) and shows the others only when a value exists (none today).
 - Buddy "groups and channels" (team groups with member counts): no Connect groups API; the screen is a tick.
 - "Send a game", "Make an announcement", "Introduce to the team" reach-out blocks open existing app screens;
   no server change.
