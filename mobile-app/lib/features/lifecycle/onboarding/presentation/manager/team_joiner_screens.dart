@@ -470,7 +470,7 @@ class TeamProgressScreen extends StatelessWidget {
       final j = page.joiner;
       final joining = page.joiningOn == null
           ? null
-          : ['Joins ${teamDayMonth(page.joiningOn!)}', ?page.joiningTime, ?page.joiningPlace].join(' · ');
+          : ['Joins ${teamDayMonth(page.joiningOn!)}', ?reportingClock(page.joiningTime), ?page.joiningPlace].join(' · ');
       return TeamFrame(
         shell: shell,
         title: j.name,
@@ -708,4 +708,13 @@ class TeamReachOutScreen extends StatelessWidget {
       _ => null,
     };
   }
+}
+
+/// The template's reporting time ('HH:mm') as the canvas writes it, "9:30 AM"; older free text as it is.
+String? reportingClock(String? hm) {
+  if (hm == null) return null;
+  final m = RegExp(r'^(\d{2}):(\d{2})$').firstMatch(hm);
+  if (m == null) return hm;
+  final h = int.parse(m.group(1)!);
+  return '${h % 12 == 0 ? 12 : h % 12}:${m.group(2)} ${h < 12 ? 'AM' : 'PM'}';
 }

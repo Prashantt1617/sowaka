@@ -39,8 +39,6 @@ const TASK_GROUPS: Array<[JoinerTaskType, string]> = [['do', 'Do in Sowaka'], ['
 const TASK_GLYPH: Record<JoinerTaskType, string> = { do: GLYPH.task, review: GLYPH.review, ack: GLYPH.ack, sign: GLYPH.sign, other: GLYPH.task, form: GLYPH.form };
 /** "+ Add a point" / "+ Add a question": the canvas's grey chip with blue words. */
 const ADD_LINE: CSSProperties = { justifySelf: 'start', height: 34, padding: '0 12px', borderRadius: 10, border: 0, background: 'var(--surface-2)', color: 'var(--accent)', fontSize: 12, fontWeight: 700 };
-/** "09:30" → "9:30 AM" (the canvas writes the reporting time as text). */
-const ampm = (t?: string) => { if (!t) return ''; const [h, m] = t.split(':').map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
 /** "9:30 am", "9.30", "14:00", "9 AM" → "HH:mm"; null when it isn't a time. */
 const parseTime = (raw: string): string | null => {
   const m = raw.trim().toLowerCase().match(/^(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?$/);
@@ -50,6 +48,13 @@ const parseTime = (raw: string): string | null => {
   if (m[3] === 'pm' && h < 12) h += 12;
   if (m[3] === 'am' && h === 12) h = 0;
   return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+};
+/** "09:30" → "9:30 AM" (the canvas writes the reporting time as text). */
+const ampm = (t?: string) => {
+  const hm = t ? parseTime(t) : null;
+  if (!hm) return t ?? '';
+  const [h, m] = hm.split(':').map(Number);
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 };
 const CHECKIN_TYPES: Array<[CheckinAnswerType, string]> = [['rating', 'Rating 1 to 5'], ['yes_no', 'Yes or no'], ['short', 'Short answer'], ['long', 'Long answer'], ['choice', 'Choice']];
 const FORM_TYPES: Array<[FormAnswerType, string]> = [['short', 'Short answer'], ['long', 'Long answer'], ['choice', 'Choice'], ['date', 'Date'], ['file', 'File']];

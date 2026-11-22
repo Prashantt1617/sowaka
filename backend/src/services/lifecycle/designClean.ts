@@ -128,7 +128,7 @@ export function cleanDesignSettings(s: Record<string, unknown>): Partial<Lifecyc
   if (s.reporting !== undefined) {
     const r = (s.reporting ?? {}) as Record<string, unknown>;
     out.reporting = {
-      ...(str(r.time, 20) ? { time: str(r.time, 20) } : {}), ...(str(r.place, 200) ? { place: str(r.place, 200) } : {}),
+      ...(hhmm(str(r.time, 20)) ? { time: hhmm(str(r.time, 20))! } : {}), ...(str(r.place, 200) ? { place: str(r.place, 200) } : {}),
       ...(str(r.bring, 300) ? { bring: str(r.bring, 300) } : {}), ...(str(r.notes, 300) ? { notes: str(r.notes, 300) } : {}),
       meets: r.meets === 'manager' || r.meets === 'buddy' ? r.meets : 'hr',
     };
@@ -153,4 +153,15 @@ export function cleanDesignSettings(s: Record<string, unknown>): Partial<Lifecyc
     if (id) out.probationShiftTemplateId = id;
   }
   return out;
+}
+
+/** The reporting time as 'HH:mm' (the Day-1 pass and its calendar file read it so): "9:30 AM", "9.30", "14:00". */
+function hhmm(raw: string | undefined): string | undefined {
+  const m = raw?.trim().toLowerCase().match(/^(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?$/);
+  if (!m) return undefined;
+  let h = Number(m[1]); const min = Number(m[2] ?? '0');
+  if (min > 59 || h > 23 || (m[3] && (h < 1 || h > 12))) return undefined;
+  if (m[3] === 'pm' && h < 12) h += 12;
+  if (m[3] === 'am' && h === 12) h = 0;
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
 }
