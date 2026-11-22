@@ -156,10 +156,11 @@ export async function place(j: Journey, now = new Date(), design?: JourneyDesign
     });
     return { ...base, ...(sent ? { answers: sent } : {}), state: state as 'locked' | 'open' | 'sent' | 'closed' };
   });
-  // One check-in at a time, as the canvas draws it: an unsent one closes once a later one opens or is sent, or the joiner is confirmed.
+  // One check-in at a time, as the canvas draws it: an unsent one closes once the joiner has moved past its stage,
+  // a later one opens or is sent, or the joiner is confirmed (Month 1 shows "Week 1 check-in · Done"-style history only).
   for (const c of checkins) {
     if (c.state !== 'open' || c.row.design?.stage === 'fin') continue;
-    if (confirmed || checkins.some((x) => x !== c && x.step > c.step && (x.state === 'open' || x.state === 'sent'))) c.state = 'closed';
+    if (confirmed || step > c.step || checkins.some((x) => x !== c && x.step > c.step && (x.state === 'open' || x.state === 'sent'))) c.state = 'closed';
   }
   const watched = j.watched ?? {};
   const watchRow = (row: TemplateTask): PlacedRow => ({
