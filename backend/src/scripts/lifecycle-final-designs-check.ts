@@ -260,6 +260,7 @@ async function main() {
   eq('…her onboarding: 7 rows, Profile first', [hrPage.onboarding.rows.length, hrPage.onboarding.rows[0].key], [7, 'prof']);
   const hrProfile = await staff.staffProfile(HR, J1);
   eq('HR’s profile: nine sections', hrProfile.sections.map((s) => s.key), ['personal', 'contact', 'emergency', 'education', 'ids', 'bank', 'pf', 'salary', 'tax']);
+  eq('…its Profile % is the full profile’s (the same number the profile screen says)', (await staff.staffJoinerPage(HR, J1)).onboarding.rows[0].done, hrProfile.pct);
   const itProfile = await staff.staffProfile(IT, J1, 'it');
   eq('IT never sees bank, PF, salary or tax', itProfile.sections.length, 5);
   const access = await staff.staffTaskScreen(IT, J1, 'it_accesses', 'it') as { accesses: Array<{ id: string; title: string; ready: boolean; details: unknown[] }> };
@@ -273,6 +274,15 @@ async function main() {
   await staff.staffTaskAction(HR, J1, 'hr_check_payroll', { checks: { bank: 'looks_right', pf: 'ask' }, action: 'done' });
   const payScreen = await staff.staffTaskScreen(HR, J1, 'hr_check_payroll') as { done: boolean; checks?: Record<string, string>; sections: Array<{ key: string }> };
   eq('Payroll check: bank, PF, tax; the checks kept; done', [payScreen.sections.map((s) => s.key), payScreen.checks, payScreen.done], [['bank', 'pf', 'tax'], { bank: 'looks_right', pf: 'ask' }, true]);
+  // Lane H (the app's HR and IT screens): the facts the task screens draw.
+  const kitScreen = await staff.staffTaskScreen(HR, J1, 'hr_prepare_kit') as { idCard: { company: string; name: string }; possessive: string };
+  ok('Kit: the ID card names the company; a possessive for the copy', !!kitScreen.idCard.company && ['her', 'his', 'their'].includes(kitScreen.possessive), kitScreen);
+  const letterScreen = await staff.staffTaskScreen(HR, J1, 'hr_confirmation_letter') as { preview: { head: string; title: string; paragraphs: string[] } };
+  ok('Letter: a preview from the confirmation template', letterScreen.preview.title === 'Confirmation of employment' && letterScreen.preview.paragraphs.length > 2 && !letterScreen.preview.paragraphs.some((x) => x.includes('<')), letterScreen.preview);
+  await staff.staffTaskNotes(HR, J1, 'hr_welcome', { notes: ['Bring the PAN original', ''] });
+  const meetScreen = await staff.staffTaskScreen(HR, J1, 'hr_welcome') as { meeting: { agenda: string[]; notes: string[] } };
+  eq('HR’s own notes on a meeting come back on its screen', meetScreen.meeting.notes[0], 'Bring the PAN original');
+  eq('…and are HR’s alone (the joiner keeps her own)', (await joiner.joinerOnboarding(PRIYA)).meetings.find((m) => m.id === 'team:hr_welcome')?.notes, ['Bring the PAN card']);
   eq('A task that is not HR’s: 404', await refusal(() => staff.staffTaskAction(HR, J1, 'mgr_kpis', { action: 'done' })), 404);
   eq('Someone who is neither HR nor IT for her: 404', await refusal(() => staff.staffJoinerPage(MGR, J1)), 404);
 

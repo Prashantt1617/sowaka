@@ -38,6 +38,8 @@ import '../../shared/attachment_picker.dart';
 import '../../shared/image_source_sheet.dart' show ImageSourceChoice;
 import '../../support/presentation/support_desk_screen.dart';
 import '../../lifecycle/onboarding/onboarding_launcher.dart';
+import '../../lifecycle/onboarding/presentation/staff/staff_screens.dart'
+    show openStaffOnboarding, staffTileOf, staffTilePillColors, staffTileSubtitle;
 import '../../face_id/face_check_screen.dart' show FaceCheckOutcome;
 
 part 'placements_screen.dart';
@@ -1318,6 +1320,28 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       highlight: firstDay,
       badge: firstDay ? 'Day 1' : null,
     );
+    // HR or IT & admin for someone joining (Onboarding · Final designs, page
+    // 4): Actions › Onboarding, highlighted while something is open, its pill
+    // what is late (or due today, or to do). They never see joiners in Teams.
+    final staff = staffTileOf(onboarding);
+    final staffPill = staff == null ? null : staffTilePillColors(staff);
+    final staffTile = staff == null
+        ? null
+        : _HomeActionCard(
+            key: const ValueKey('staff-onboarding-card'),
+            icon: Icons.waving_hand_rounded,
+            color: const Color(0xFF0571A6),
+            tint: const Color(0xFFE8F4FA),
+            imageAsset: 'assets/icons/action_card_onboarding_waving_hand.png',
+            title: 'Onboarding',
+            subtitle: staffTileSubtitle(staff),
+            onTap: () => openStaffOnboarding(context),
+            highlight: staff.open > 0,
+            badge: staff.open > 0 ? staff.pill : null,
+            badgeColor: staffPill?.$1,
+            badgeTextColor: staffPill?.$2,
+            pulse: false,
+          );
     // Someone marked present automatically has no attendance to manage: no
     // leave to balance against days worked, and no overtime to claim beyond
     // hours nobody records. What is left is what they can still act on.
@@ -1481,6 +1505,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     // Overtime, Payroll, Reimbursement, Support Desk).
                     if (joiner) ...[
                       onboardingTile,
+                      ?staffTile,
                       policiesTile,
                       ?leaveTile,
                       ?overtimeTile,
@@ -1489,6 +1514,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                       supportTile,
                       ?placementsTile,
                     ] else ...[
+                      ?staffTile,
                       ?leaveTile,
                       ?overtimeTile,
                       reimbursementTile,
@@ -8356,6 +8382,9 @@ class _HomeActionCard extends StatelessWidget {
     this.imageSize = 24,
     this.highlight = false,
     this.badge,
+    this.badgeColor,
+    this.badgeTextColor,
+    this.pulse = true,
   });
 
   final IconData icon;
@@ -8376,6 +8405,13 @@ class _HomeActionCard extends StatelessWidget {
 
   /// A brand pill in the top-right corner ("Day 1").
   final String? badge;
+
+  /// The pill's colours when not the brand's (HR's "3 late" is red).
+  final Color? badgeColor;
+  final Color? badgeTextColor;
+
+  /// Whether a highlighted tile's icon pulses (the joiner's Day 1); HR's tile is ringed only.
+  final bool pulse;
 
   @override
   Widget build(BuildContext context) {
@@ -8413,7 +8449,7 @@ class _HomeActionCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (highlight)
+                    if (highlight && pulse)
                       OnbPulse(radius: BorderRadius.circular(13), child: iconTile)
                     else
                       iconTile,
@@ -8458,14 +8494,14 @@ class _HomeActionCard extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 9),
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF0571A6),
+                      color: badgeColor ?? const Color(0xFF0571A6),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
                       badge,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: 'Sora',
-                        color: Colors.white,
+                        color: badgeTextColor ?? Colors.white,
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                       ),

@@ -269,6 +269,21 @@ void main() {
     });
   });
 
+  testWidgets('HR for someone joining: Actions › Onboarding, ringed, its pill what is late', (tester) async {
+    final staff = {'role': 'hr', 'open': 4, 'late': 3, 'dueToday': 0, 'pill': '3 late'};
+    (FakeLifecycle()..staff = staff).install();
+    addTearDown(LifecycleMeStore.instance.clear);
+    LifecycleMeStore.instance.value = LifecycleMe.fromJson({'enabled': true, 'staff': staff});
+    final bloc = await pumpShell(tester, leaverSession, leaverTeam);
+    bloc.add(const ChangeManagerTab(ManagerTab.quick));
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+    expect(find.byKey(const ValueKey('staff-onboarding-card')), findsOneWidget);
+    expect(find.text('4 tasks for new joiners'), findsOneWidget);
+    expect(find.text('3 late'), findsOneWidget);
+    expect(find.byKey(const ValueKey('onboarding-card')), findsNothing);
+    await finish(tester, bloc);
+  });
+
   testWidgets('Action tab: no tile before HR accepts', (tester) async {
     final fake = FakeLifecycle()..resignation = reportResignation();
     fake.install();

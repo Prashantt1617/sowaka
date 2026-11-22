@@ -23,7 +23,7 @@ import {
   answerApprovalV2, approvalViewV2, assignBuddy, buddyOptions, commentOnGoals, introduceOnFeed, inviteSenior, markCheckinRead, reviewView, scheduleMeetings,
   sendReview, sendWelcomeMessage, teamCheckin, teamGoals, teamJoinerPage, teamRowAction, teamRowNotes,
 } from '../services/lifecycle/teamApp';
-import { staffJoinerPage, staffOnboarding, staffProfile, staffTaskAction, staffTaskScreen } from '../services/lifecycle/staffApp';
+import { staffJoinerPage, staffOnboarding, staffProfile, staffTaskAction, staffTaskNotes, staffTaskScreen } from '../services/lifecycle/staffApp';
 
 /**
  * The app's lifecycle endpoints for the joiner and their manager, mounted at
@@ -193,3 +193,4 @@ lifecycleAppRouter.get('/staff/joiners/:journeyId', lifecycleHandler(async (req)
 lifecycleAppRouter.get('/staff/joiners/:journeyId/profile', lifecycleHandler(async (req) => staffProfile(me(req), param(req, 'journeyId'), req.query.as)));
 lifecycleAppRouter.get('/staff/joiners/:journeyId/tasks/:key', lifecycleHandler(async (req) => staffTaskScreen(me(req), param(req, 'journeyId'), param(req, 'key'), req.query.as)));
 lifecycleAppRouter.post('/staff/joiners/:journeyId/tasks/:key', lifecycleHandler(async (req) => staffTaskAction(me(req), param(req, 'journeyId'), param(req, 'key'), body(req), req.query.as)));
+lifecycleAppRouter.put('/staff/joiners/:journeyId/tasks/:key/notes', lifecycleHandler(async (req) => staffTaskNotes(me(req), param(req, 'journeyId'), param(req, 'key'), body(req), req.query.as)));
