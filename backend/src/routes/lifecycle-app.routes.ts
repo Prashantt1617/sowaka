@@ -12,6 +12,18 @@ import { letterPdfForEmployee } from '../services/lifecycle/letters';
 import { portalSessionForAppUser } from '../services/lifecycle/portalAuth';
 import { answerApproval, teamApproval, teamJoiner, teamJoiners, teamTaskAction } from '../services/lifecycle/teamTasks';
 import { lifecycleGate, lifecycleHandler } from './lifecycle-admin.routes';
+import multer from 'multer';
+import type { Response, NextFunction } from 'express';
+import { MULTER_FILE_LIMIT, UTF8_FILE_NAMES } from '../services/lifecycle/files';
+import {
+  joinerCheckin, joinerForm, joinerGoals, joinerLetterPdf, joinerLetters, joinerMedia, joinerOnboarding, joinerOpenLetter, joinerSignLetter, joinerTaskAction,
+  markWatched, saveJoinerGoal, sendJoinerCheckin, sendJoinerForm, uploadJoinerFormFile,
+} from '../services/lifecycle/joinerApp';
+import {
+  answerApprovalV2, approvalViewV2, assignBuddy, buddyOptions, commentOnGoals, introduceOnFeed, inviteSenior, markCheckinRead, reviewView, scheduleMeetings,
+  sendReview, sendWelcomeMessage, teamCheckin, teamGoals, teamJoinerPage, teamRowAction, teamRowNotes,
+} from '../services/lifecycle/teamApp';
+import { staffJoinerPage, staffOnboarding, staffProfile, staffTaskAction, staffTaskScreen } from '../services/lifecycle/staffApp';
 
 /**
  * The app's lifecycle endpoints for the joiner and their manager, mounted at
@@ -102,3 +114,82 @@ lifecycleAppRouter.get('/team/joiners/:journeyId', lifecycleHandler(async (req) 
 lifecycleAppRouter.post('/team/joiners/:journeyId/tasks/:taskId', lifecycleHandler(async (req) => teamTaskAction(me(req), param(req, 'journeyId'), param(req, 'taskId'), body(req))));
 lifecycleAppRouter.get('/team/joiners/:journeyId/approval', lifecycleHandler(async (req) => teamApproval(me(req), param(req, 'journeyId'))));
 lifecycleAppRouter.post('/team/joiners/:journeyId/approval', lifecycleHandler(async (req) => answerApproval(me(req), param(req, 'journeyId'), body(req))));
+
+// ─── Onboarding · Final designs (docs/lifecycle/FINAL-DESIGNS.md §4.2–§4.4) ──
+
+const oneFile = multer({ storage: multer.memoryStorage(), limits: { fileSize: MULTER_FILE_LIMIT, files: 1 }, ...UTF8_FILE_NAMES }).single('file');
+const withFile = (req: Request, res: Response, next: NextFunction) => oneFile(req, res, (error) => {
+  if (error) { res.status(400).json({ error: 'A file can be up to 10 MB' }); return; }
+  next();
+});
+/** Bytes with Range (a watch-list video is played in pieces). */
+function sendBytes(req: Request, res: Response, file: { name: string; contentType: string; bytes: Buffer }) {
+  res.setHeader('Content-Type', file.contentType);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('Accept-Ranges', 'bytes');
+  const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ''));
+  const size = file.bytes.length;
+  if (range && (range[1] || range[2])) {
+    const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+    const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (start >= size || start > end) { res.status(416).setHeader('Content-Range', `bytes */${size}`); res.end(); return; }
+    res.status(206).setHeader('Content-Range', `bytes ${start}-${end}/${size}`);
+    res.send(file.bytes.subarray(start, end + 1));
+    return;
+  }
+  res.send(file.bytes);
+}
+const bytesRoute = (load: (req: Request) => Promise<{ name: string; contentType?: string; bytes: Buffer }>) =>
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const file = await load(req);
+      sendBytes(req, res, { ...file, contentType: file.contentType ?? 'application/pdf' });
+    } catch (error) {
+      const code = (error as { statusCode?: unknown }).statusCode;
+      if (typeof code === 'number' && code >= 400 && code < 500) { res.status(code).json({ error: (error as Error).message }); return; }
+      next(error);
+    }
+  };
+
+// The joiner
+lifecycleAppRouter.get('/joiner/onboarding', lifecycleHandler(async (req) => joinerOnboarding(me(req))));
+lifecycleAppRouter.post('/joiner/tasks/:taskId', lifecycleHandler(async (req) => joinerTaskAction(me(req), param(req, 'taskId'), body(req))));
+lifecycleAppRouter.get('/joiner/forms/:taskId', lifecycleHandler(async (req) => joinerForm(me(req), param(req, 'taskId'))));
+lifecycleAppRouter.post('/joiner/forms/:taskId', lifecycleHandler(async (req) => sendJoinerForm(me(req), param(req, 'taskId'), body(req))));
+lifecycleAppRouter.post('/joiner/forms/:taskId/files', withFile, lifecycleHandler(async (req) => uploadJoinerFormFile(me(req), param(req, 'taskId'), req.file as never), 201));
+lifecycleAppRouter.get('/joiner/checkins/:id', lifecycleHandler(async (req) => joinerCheckin(me(req), param(req, 'id'))));
+lifecycleAppRouter.post('/joiner/checkins/:id', lifecycleHandler(async (req) => sendJoinerCheckin(me(req), param(req, 'id'), body(req))));
+lifecycleAppRouter.get('/joiner/goals', lifecycleHandler(async (req) => joinerGoals(me(req))));
+lifecycleAppRouter.put('/joiner/goals/:month/:index', lifecycleHandler(async (req) => saveJoinerGoal(me(req), param(req, 'month'), param(req, 'index'), body(req))));
+lifecycleAppRouter.post('/joiner/watch/:itemId', lifecycleHandler(async (req) => markWatched(me(req), param(req, 'itemId'))));
+lifecycleAppRouter.get('/joiner/media/:fileId', bytesRoute((req) => joinerMedia(me(req), param(req, 'fileId'))));
+lifecycleAppRouter.get('/joiner/letters', lifecycleHandler(async (req) => joinerLetters(me(req))));
+lifecycleAppRouter.post('/joiner/letters/:id/opened', lifecycleHandler(async (req) => joinerOpenLetter(me(req), param(req, 'id'))));
+lifecycleAppRouter.post('/joiner/letters/:id/sign', lifecycleHandler(async (req) => joinerSignLetter(me(req), param(req, 'id'), body(req), { ip: req.ip ?? '', userAgent: String(req.get('user-agent') ?? '') })));
+lifecycleAppRouter.get('/joiner/letters/:id/pdf', bytesRoute((req) => joinerLetterPdf(me(req), param(req, 'id'))));
+
+// Teams › Joiners (manager, buddy, head of department, someone senior)
+lifecycleAppRouter.get('/team/joiners/:journeyId/page', lifecycleHandler(async (req) => teamJoinerPage(me(req), param(req, 'journeyId'))));
+lifecycleAppRouter.post('/team/joiners/:journeyId/rows/:rowId', lifecycleHandler(async (req) => teamRowAction(me(req), param(req, 'journeyId'), param(req, 'rowId'), body(req))));
+lifecycleAppRouter.put('/team/joiners/:journeyId/rows/:rowId/notes', lifecycleHandler(async (req) => teamRowNotes(me(req), param(req, 'journeyId'), param(req, 'rowId'), body(req))));
+lifecycleAppRouter.get('/team/joiners/:journeyId/buddy-options', lifecycleHandler(async (req) => buddyOptions(me(req), param(req, 'journeyId'))));
+lifecycleAppRouter.post('/team/joiners/:journeyId/buddy', lifecycleHandler(async (req) => assignBuddy(me(req), param(req, 'journeyId'), body(req))));
+lifecycleAppRouter.post('/team/joiners/:journeyId/schedule', lifecycleHandler(async (req) => scheduleMeetings(me(req), param(req, 'journeyId'), body(req))));
+lifecycleAppRouter.post('/team/joiners/:journeyId/welcome-message', lifecycleHandler(async (req) => sendWelcomeMessage(me(req), param(req, 'journeyId'), body(req))));
+lifecycleAppRouter.post('/team/joiners/:journeyId/feed', lifecycleHandler(async (req) => introduceOnFeed(me(req), param(req, 'journeyId'), body(req))));
+lifecycleAppRouter.get('/team/joiners/:journeyId/goals/:month', lifecycleHandler(async (req) => teamGoals(me(req), param(req, 'journeyId'), param(req, 'month'))));
+lifecycleAppRouter.post('/team/joiners/:journeyId/goals/:month', lifecycleHandler(async (req) => commentOnGoals(me(req), param(req, 'journeyId'), param(req, 'month'), body(req))));
+lifecycleAppRouter.get('/team/joiners/:journeyId/checkins/:checkinId', lifecycleHandler(async (req) => teamCheckin(me(req), param(req, 'journeyId'), param(req, 'checkinId'))));
+lifecycleAppRouter.post('/team/joiners/:journeyId/checkins/:checkinId/read', lifecycleHandler(async (req) => markCheckinRead(me(req), param(req, 'journeyId'), param(req, 'checkinId'))));
+lifecycleAppRouter.get('/team/joiners/:journeyId/review', lifecycleHandler(async (req) => reviewView(me(req), param(req, 'journeyId'))));
+lifecycleAppRouter.post('/team/joiners/:journeyId/review', lifecycleHandler(async (req) => sendReview(me(req), param(req, 'journeyId'), body(req))));
+lifecycleAppRouter.get('/team/joiners/:journeyId/confirmation', lifecycleHandler(async (req) => approvalViewV2(me(req), param(req, 'journeyId'))));
+lifecycleAppRouter.post('/team/joiners/:journeyId/confirmation', lifecycleHandler(async (req) => answerApprovalV2(me(req), param(req, 'journeyId'), body(req))));
+lifecycleAppRouter.post('/team/joiners/:journeyId/senior-meeting', lifecycleHandler(async (req) => inviteSenior(me(req), param(req, 'journeyId'), body(req))));
+
+// HR and IT & admin (Actions › Onboarding)
+lifecycleAppRouter.get('/staff/onboarding', lifecycleHandler(async (req) => staffOnboarding(me(req), req.query.as)));
+lifecycleAppRouter.get('/staff/joiners/:journeyId', lifecycleHandler(async (req) => staffJoinerPage(me(req), param(req, 'journeyId'), req.query.as)));
+lifecycleAppRouter.get('/staff/joiners/:journeyId/profile', lifecycleHandler(async (req) => staffProfile(me(req), param(req, 'journeyId'), req.query.as)));
+lifecycleAppRouter.get('/staff/joiners/:journeyId/tasks/:key', lifecycleHandler(async (req) => staffTaskScreen(me(req), param(req, 'journeyId'), param(req, 'key'), req.query.as)));
+lifecycleAppRouter.post('/staff/joiners/:journeyId/tasks/:key', lifecycleHandler(async (req) => staffTaskAction(me(req), param(req, 'journeyId'), param(req, 'key'), body(req), req.query.as)));

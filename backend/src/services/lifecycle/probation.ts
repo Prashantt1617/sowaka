@@ -133,7 +133,8 @@ export async function updateMonthByManager(journeyId: string, manager: { userId:
   const now = new Date();
   if (body.goals !== undefined) {
     if (row.lockedAt) throw new LifecycleError(409, `Month ${monthNo} goals are locked`);
-    set.goals = cleanGoals(body.goals).map((text) => ({ text }));
+    // A goal kept as it was keeps the joiner's "How's it going?", their note and the comment (Final designs).
+    set.goals = cleanGoals(body.goals).map((text) => row.goals.find((g) => g.text === text) ?? { text });
     set.goalsSetAt = now;
     if (set.goals.length) await finishMonthTask(monthTask(tasks, 'monthly_goals', monthNo), manager);
   }

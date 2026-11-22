@@ -32,6 +32,7 @@ import { MANAGER_OWNED, devicesFor, managerMayTick, managerTaskDone, onboardingH
 import { updateMonthByManager } from './probation';
 import { APP_COPY, teamSeed } from './seed';
 import { agendaResolver } from './joinerMeetings';
+import { listExtras } from './teamApp';
 
 type Me = { userId: string; name: string; org: string };
 
@@ -416,6 +417,8 @@ export async function teamJoiners(me: Me, now = new Date()) {
       ...approverFields(link, me, faces),
       step, stepLabel: step === 0 && j.tj ? `Joins ${joinsLabel(j.tj)}` : steps[step], plant: deriveJourney(j, all, now).plant,
       preboarding: !isJoined(j), toDo: open, ...(j.tj ? { tj: j.tj } : {}),
+      // Final designs (FINAL-DESIGNS.md §4.3): initials, "You’re the buddy" / "Reports to X", the plant's stage.
+      ...listExtras({ name, relation: link.rel, managerName: j.managerUserId ? faces.get(j.managerUserId)?.name : undefined, plant: deriveJourney(j, all, now).plant }),
     };
   }));
   const rank: Record<TeamRelation, number> = { report: 0, buddy: 1, line: 2 };

@@ -23,6 +23,7 @@ import { addDaysKey, dayDate, probationMonthEnd, probationMonthStart } from './d
 import { LifecycleError, completeTask, finishTaskById, joinerSeesReadOnly, tasksOf, visibleTo, type TaskView } from './engine';
 import { ONBOARDING_SEED } from './seed';
 import { approverOf, setTick, teamDefsFor, type TeamTaskDef } from './teamTasks';
+import { place, setRowTick, type PlacedRow } from './designRows';
 
 type Me = { userId: string; name: string; org: string };
 
@@ -181,8 +182,13 @@ export async function joinerMeetingRows(j: Journey, tasks: JourneyTask[]): Promi
 }
 
 /** The row behind an id, checked against the joiner's journey. */
-async function rowOf(j: Journey, rowId: string): Promise<{ kind: 'task'; task: JourneyTask } | { kind: 'team'; def: TeamTaskDef } | { kind: 'person'; id: string }> {
+async function rowOf(j: Journey, rowId: string): Promise<{ kind: 'task'; task: JourneyTask } | { kind: 'team'; def: TeamTaskDef } | { kind: 'person'; id: string } | { kind: 'design'; row: PlacedRow; today: string }> {
   if (rowId.startsWith('team:')) {
+    // Final designs: a meeting row of the template (`team:<key>` or `team:<key>@<month>`).
+    const p = await place(j);
+    const row = p.meetings.find((m) => `team:${m.rowKey}` === rowId);
+    if (row) return { kind: 'design', row, today: p.today };
+    if (p.design.isDesign) throw new LifecycleError(404, 'Meeting not found');
     const key = rowId.slice(5);
     const approver = await approverOf(j);
     const ownerOf: Partial<Record<OwnerRole, string | undefined>> = { manager: j.managerUserId, buddy: j.buddyUserId, head_of_department: approver };
@@ -206,9 +212,16 @@ async function rowOf(j: Journey, rowId: string): Promise<{ kind: 'task'; task: J
  * through the engine, which has none.
  */
 export async function markMeetingRowMet(me: Me, j: Journey, rowId: string, body: Record<string, unknown>): Promise<void> {
-  if (body.action !== 'met') throw new LifecycleError(400, 'action is met');
+  if (body.action !== 'met' && body.action !== 'unmet') throw new LifecycleError(400, 'action is met or unmet');
   const row = await rowOf(j, rowId);
   const by = { userId: me.userId, name: me.name };
+  if (row.kind === 'design') {
+    // The tick both people read (FINAL-DESIGNS.md §1): Mark as met here, Mark as done on the teammate's side.
+    if (row.row.opensOn && row.today < row.row.opensOn) throw new LifecycleError(409, 'This meeting opens later');
+    await setRowTick(j.id, row.row.rowKey, body.action === 'met' ? by : null);
+    return;
+  }
+  if (body.action !== 'met') throw new LifecycleError(400, 'action is met');
   if (row.kind === 'task') {
     if (row.task.status === 'done') return;
     if (!joinerMayTick(row.task)) throw new LifecycleError(409, 'Someone else marks this one');
@@ -229,7 +242,7 @@ export async function markMeetingRowMet(me: Me, j: Journey, rowId: string, body:
 /** PUT /lifecycle/onboarding/meeting-rows/:rowId/notes `{ notes: string[] }` — the joiner's own notes, one per agenda point. */
 export async function saveMeetingRowNotes(me: Me, j: Journey, rowId: string, body: Record<string, unknown>): Promise<{ notes: string[] }> {
   if (!Array.isArray(body.notes)) throw new LifecycleError(400, 'notes is a list');
-  if (body.notes.length > 8) throw new LifecycleError(400, 'At most 8 notes');
+  if (body.notes.length > 12) throw new LifecycleError(400, "At most 12 notes");
   await rowOf(j, rowId);
   const notes = body.notes.map((n) => (typeof n === 'string' ? n.slice(0, 2000) : ''));
   const id = `${j.id}:${rowId}:${me.userId}`;

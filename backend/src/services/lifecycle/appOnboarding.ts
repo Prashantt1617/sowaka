@@ -34,6 +34,9 @@ import { meetVideos } from './portal';
 import { journeyDocumentsView } from './documents';
 import { PROFILE_SECTION_TITLE, PROFILE_SECTIONS, sectionStates } from './profile';
 import { groupTasks, progressOf } from './board';
+import { designOf } from './design';
+import { joinerOnboarding, joinerTile } from './joinerApp';
+import { staffTile } from './staffApp';
 import { cleanGoals, checkinByJoiner, markRevealSeen, probationForJoiner, probationOf, revealFor, updateMonthByManager } from './probation';
 
 type Me = { userId: string; name: string; org: string };
@@ -85,6 +88,9 @@ export async function lifecycleMe(me: Me, now = new Date()) {
       // Before Day 1 the Action tab is their joining portal (portalJourneyForAppUser); from Tj on, never.
       portal: (await portalJourneyForAppUser(me.userId, me.org, now))?.id === j.id,
     };
+    // Final designs: the Actions tile's words (FINAL-DESIGNS.md §4.2).
+    const tile = await joinerTile(j, now);
+    if (tile) (out.onboarding as Record<string, unknown>).tile = tile;
   } else {
     // Signed in to the app before Mark joined binds the journey: only the portal, until Day 1.
     const pre = await portalJourneyForAppUser(me.userId, me.org, now);
@@ -93,6 +99,9 @@ export async function lifecycleMe(me: Me, now = new Date()) {
   // Resigning / on notice: the Resignation tab and the Off-boarding page (offboarding.ts).
   const leaving = await offboardingMe(me.userId);
   if (leaving) out.offboarding = leaving;
+  // HR or IT & admin for someone joining: their Actions › Onboarding tile.
+  const staff = await staffTile(me, now);
+  if (staff) out.staff = staff;
   return out;
 }
 
@@ -337,7 +346,7 @@ async function watchAndProfile(j: Journey) {
 }
 
 /** The tour's lessons done; the first punch-in itself is "Punch in and out" (the artifact's first punch adds it). */
-function tourDoneOf(j: Pick<Journey, 'tour'>, firstPunch: { at?: string }): string[] {
+export function tourDoneOf(j: Pick<Journey, 'tour'>, firstPunch: { at?: string }): string[] {
   const done = (j.tour?.done ?? []).filter((k) => (TOUR_ALL_LESSONS as readonly string[]).includes(k));
   return firstPunch.at && !done.includes('punch') ? ['punch', ...done] : done;
 }
@@ -347,7 +356,7 @@ function tourDoneOf(j: Pick<Journey, 'tour'>, firstPunch: { at?: string }): stri
  * first punched in on or after joining (absent until they have), and whether
  * a face is on their record, so the app can say "Face registered" after it.
  */
-async function firstPunchOf(userId: string, tj: string | undefined): Promise<{ at?: string; faceEnrolled: boolean }> {
+export async function firstPunchOf(userId: string, tj: string | undefined): Promise<{ at?: string; faceEnrolled: boolean }> {
   const [punch, user] = await Promise.all([
     attendanceRecords().findOne(
       { userId, ...(tj ? { workDate: { $gte: tj } } : {}), punchIn: { $exists: true } },
@@ -866,7 +875,8 @@ export async function actOnMeeting(me: Me, id: string, body: Record<string, unkn
 export async function meetingRowMet(me: Me, rowId: string, body: Record<string, unknown>) {
   const j = await joinerJourney(me.userId);
   await markMeetingRowMet(me, j, rowId, body);
-  return onboardingHome(me);
+  // A Final-designs journey answers with the new joiner view (FINAL-DESIGNS.md §4.2); an older one with the 20 Nov home.
+  return (await designOf(j)).isDesign ? joinerOnboarding(me) : onboardingHome(me);
 }
 
 export async function meetingRowNotes(me: Me, rowId: string, body: Record<string, unknown>) {

@@ -693,19 +693,27 @@ export async function maybeSendLettersReady(journeyId: string): Promise<boolean>
 
 export interface PortalLetter { id: string; kind: LetterKind; title: string; fileName: string; state: 'locked' | 'ready' | 'opened' | 'signed'; pdfUrl: string | null; signedAt?: Date; /** P12's card before the PDF is opened. */ pages?: number }
 
-export async function portalLetters(journey: Journey): Promise<PortalLetter[]> {
-  const unlocked = !signsOnDay1(journey) && (await docsApproved(journey.id));
-  const rows = await letters().find({ journeyId: journey.id, kind: { $in: SIGNED_KINDS } }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray();
+/**
+ * `app`: the Day-1 Sign task in the app (Final designs, the template's "Sign your joining documents"):
+ * open once they have joined and the template signs on Day 1; `kinds` the documents it lists.
+ */
+export interface AppLetterOpts { app?: boolean; kinds?: LetterKind[] }
+const APP_SIGN_STATUSES = new Set(['joined', 'moved_to_app']);
+
+export async function portalLetters(journey: Journey, opts: AppLetterOpts = {}): Promise<PortalLetter[]> {
+  const unlocked = opts.app ? signsOnDay1(journey) && APP_SIGN_STATUSES.has(String(journey.status)) : !signsOnDay1(journey) && (await docsApproved(journey.id));
+  const KINDS = opts.kinds?.length ? SIGNED_KINDS.filter((k) => opts.kinds!.includes(k)) : SIGNED_KINDS;
+  const rows = await letters().find({ journeyId: journey.id, kind: { $in: KINDS } }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray();
   const fileIds = rows.flatMap((r) => [r.signedPdfFileId, r.pdfFileId]).filter((id): id is string => Boolean(id));
   const fileRows = await lifecycleFiles().find({ id: { $in: fileIds } }, { projection: { _id: 0 } }).toArray();
   const fileNames = new Map(fileRows.map((f) => [f.id, f.name]));
   const pageCounts = new Map<string, number | undefined>();
   for (const f of fileRows) pageCounts.set(f.id, await pdfPageCount(f));
   // The newest of a kind (a regenerated letter replaces a signed one).
-  const newest = SIGNED_KINDS.map((kind) => rows.find((r) => r.kind === kind));
+  const newest = KINDS.map((kind) => rows.find((r) => r.kind === kind));
   // Signing opens for the set, as the "ready to sign" mail does: once every unsigned letter has its PDF.
   const setReady = newest.every((r) => r && (r.signature || r.pdfFileId));
-  return SIGNED_KINDS.map((kind, i) => {
+  return KINDS.map((kind, i) => {
     const row = newest[i];
     const title = kind === 'nda' ? 'Non-disclosure agreement' : 'Appointment letter';
     const fallback = kind === 'nda' ? 'NDA.pdf' : 'Appointment letter.pdf';
@@ -713,30 +721,30 @@ export async function portalLetters(journey: Journey): Promise<PortalLetter[]> {
     const state = row.signature ? 'signed' as const : row.openedAt ? 'opened' as const : 'ready' as const;
     const fileName = fileNames.get(row.signedPdfFileId ?? '') ?? fileNames.get(row.pdfFileId) ?? fallback;
     const pages = pageCounts.get(row.signedPdfFileId ?? '') ?? pageCounts.get(row.pdfFileId);
-    return { id: row.id, kind, title, fileName, state, pdfUrl: `/portal/letters/${row.id}/pdf`, ...(row.signature ? { signedAt: row.signature.signedAt } : {}), ...(pages ? { pages } : {}) };
+    return { id: row.id, kind, title, fileName, state, pdfUrl: `${opts.app ? '/lifecycle/joiner/letters' : '/portal/letters'}/${row.id}/pdf`, ...(row.signature ? { signedAt: row.signature.signedAt } : {}), ...(pages ? { pages } : {}) };
   });
 }
 
-async function portalLetter(journey: Journey, letterId: string): Promise<{ letter: Letter; view: PortalLetter }> {
-  const view = (await portalLetters(journey)).find((l) => l.id === letterId);
+async function portalLetter(journey: Journey, letterId: string, opts: AppLetterOpts = {}): Promise<{ letter: Letter; view: PortalLetter }> {
+  const view = (await portalLetters(journey, opts)).find((l) => l.id === letterId);
   const letter = view ? await letters().findOne({ id: letterId, journeyId: journey.id }) : null;
   if (!view || !letter) throw new LifecycleOfferError(404, 'Letter not found');
-  if (view.state === 'locked') throw new LifecycleOfferError(403, 'This letter opens once HR has approved your documents');
+  if (view.state === 'locked') throw new LifecycleOfferError(403, opts.app ? 'This opens on your first day' : 'This letter opens once HR has approved your documents');
   return { letter, view };
 }
 
-export async function letterPdfForPortal(journey: Journey, letterId: string): Promise<{ name: string; bytes: Buffer }> {
-  const { letter } = await portalLetter(journey, letterId);
+export async function letterPdfForPortal(journey: Journey, letterId: string, opts: AppLetterOpts = {}): Promise<{ name: string; bytes: Buffer }> {
+  const { letter } = await portalLetter(journey, letterId, opts);
   const file = await lifecycleFiles().findOne({ id: letter.signedPdfFileId ?? letter.pdfFileId, journeyId: journey.id });
   if (!file) throw new LifecycleOfferError(404, 'File not found');
   return { name: file.name, bytes: await readFileBytes(file) };
 }
 
-export async function openLetter(journey: Journey, letterId: string, now = new Date()): Promise<PortalLetter[]> {
-  const { letter } = await portalLetter(journey, letterId);
+export async function openLetter(journey: Journey, letterId: string, now = new Date(), opts: AppLetterOpts = {}): Promise<PortalLetter[]> {
+  const { letter } = await portalLetter(journey, letterId, opts);
   if (!letter.openedAt) await letters().updateOne({ id: letter.id }, { $set: { openedAt: now } });
   await journeys().updateOne({ id: journey.id }, { $set: { lastActivityAt: now } });
-  return portalLetters(journey);
+  return portalLetters(journey, opts);
 }
 
 const PORTAL_OPEN = new Set(['active', 'docs_approved', 'finalised']);
@@ -747,9 +755,10 @@ export async function signLetter(
   input: { method?: unknown; typedName?: unknown; imageDataUrl?: unknown },
   meta: { ip: string; userAgent?: string },
   now = new Date(),
+  opts: AppLetterOpts = {},
 ): Promise<PortalLetter[]> {
-  if (!PORTAL_OPEN.has(String(journey.status))) throw new LifecycleOfferError(409, 'Letters can’t be signed right now');
-  const { letter, view } = await portalLetter(journey, letterId);
+  if (!(opts.app ? APP_SIGN_STATUSES : PORTAL_OPEN).has(String(journey.status))) throw new LifecycleOfferError(409, 'Letters can’t be signed right now');
+  const { letter, view } = await portalLetter(journey, letterId, opts);
   if (view.state === 'signed') throw new LifecycleOfferError(409, 'Already signed');
   if (!letter.openedAt) throw new LifecycleOfferError(409, 'Open the PDF to sign');
   const method = String(input.method ?? '');
@@ -790,7 +799,7 @@ export async function signLetter(
     }
   }
   await journeys().updateOne({ id: journey.id }, { $set: { lastActivityAt: now } });
-  const list = await portalLetters(journey);
+  const list = await portalLetters(journey, opts);
   if (list.every((l) => l.state === 'signed')) await completeTask(journey.id, 'sign_letters', { name: journey.candidate?.name });
   return list;
 }

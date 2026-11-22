@@ -36,7 +36,8 @@ export type OwnerRole =
   | 'hr_manager'
   | 'automatic'
   | 'buddy'               // the joiner's buddy (team-side task, Teams › Joiners)
-  | 'head_of_department'; // the joiner's head of department: the department head, else the manager's manager
+  | 'head_of_department' // the joiner's head of department: the department head, else the manager's manager
+  | 'senior';            // Final designs: "someone senior" (template assignees.seniorUserId, else the head of department)
 
 export type TaskKind =
   | 'ack' | 'form' | 'upload' | 'sign' | 'meeting' | 'reel' | 'survey'
@@ -130,6 +131,83 @@ export interface TemplateTask {
    * HR edits it in Templates; absent: the seed's for the task's systemKey.
    */
   agenda?: string[];
+  /** A Final-designs row (FINAL-DESIGNS.md §2): what it is on the template editor and in the apps. */
+  design?: DesignItem;
+  /** An older row the Final designs replace (the migration): kept, switched off. */
+  replacedBy?: 'final_designs';
+}
+
+// ─── Onboarding · Final designs (23 Nov; docs/lifecycle/FINAL-DESIGNS.md) ────
+
+/** pre "Before joining", d1 "Day 1", w1 "Week 1", m1 "Month 1", mid "Months 2 to 5" ("Month 2" on 3 months), fin the last month. */
+export type DesignStage = 'pre' | 'd1' | 'w1' | 'm1' | 'mid' | 'fin';
+export const DESIGN_STAGES: readonly DesignStage[] = ['pre', 'd1', 'w1', 'm1', 'mid', 'fin'];
+export type DesignSection = 'meeting' | 'task' | 'checkin' | 'watch' | 'training' | 'access' | 'team';
+export type JoinerTaskType = 'do' | 'review' | 'ack' | 'sign' | 'other' | 'form';
+/** "Do in Sowaka": the app screen it opens (it ticks itself off). */
+export type DoScreen = 'punch' | 'profile' | 'tax' | 'payroll' | 'leave' | 'overtime';
+/** "Review": the page it opens, then "Looks good". */
+export type ReviewPage = 'shift' | 'payroll_policy' | 'kpis' | 'leave_balance';
+export type MeetWith = 'hr' | 'manager' | 'buddy' | 'it' | 'head_of_department';
+/** Leadership has two: someone senior (settings.assignees.seniorUserId, else the head of department) and the head of department. */
+export type TeamRole = 'manager' | 'buddy' | 'hr' | 'it' | 'senior' | 'head_of_department';
+export type CheckinAnswerType = 'rating' | 'yes_no' | 'short' | 'long' | 'choice';
+export type FormAnswerType = 'short' | 'long' | 'choice' | 'date' | 'file';
+export type TourLessonKey = 'punch' | 'missed' | 'leave' | 'overtime' | 'approveLeave' | 'approveOvertime';
+export type MediaBackground = 'rust' | 'blue' | 'ink' | 'green' | 'purple' | 'sand';
+
+export interface DesignQuestion { id: string; text: string; type: CheckinAnswerType | FormAnswerType; options?: string[] }
+export interface DesignMedia { type: 'video' | 'image' | 'text' | 'pdf'; fileId?: string; text?: string; bg?: MediaBackground; minutes?: number }
+
+/** What a Final-designs template row is (absent on older rows). */
+export interface DesignItem {
+  section: DesignSection;
+  stage: DesignStage;
+  meetWith?: MeetWith;
+  /** The key "Monthly goals" meeting (and the manager's goal comments): one per probation month. */
+  everyMonth?: boolean;
+  taskType?: JoinerTaskType;
+  screen?: DoScreen | ReviewPage;
+  /** "Acknowledge company policies" reads App policies instead of one PDF. */
+  source?: 'policies';
+  link?: string;
+  fileId?: string;
+  letterTemplateId?: string;
+  /** Sign: 'appointment' (made from the accepted offer) and letter template ids. */
+  signDocs?: string[];
+  questions?: DesignQuestion[];
+  media?: DesignMedia;
+  /** team / access: who does it. */
+  role?: TeamRole;
+  /** HR's optional how-to line (≤ 140) the teammate sees behind an (i). */
+  how?: string;
+}
+
+/** The joiner's answers to one check-in (lifecycle_checkin_answers). Seen by the joiner, their manager and HR. */
+export interface CheckinAnswers {
+  id: string;
+  org: string;
+  journeyId: string;
+  userId: string;
+  /** The template row's id. */
+  checkinId: string;
+  title: string;
+  questions: Array<{ id: string; text: string; type: CheckinAnswerType; options?: string[] }>;
+  answers: Array<{ questionId: string; value: number | string | null }>;
+  sentAt: Date;
+}
+
+/** One monthly goal (lifecycle_probation_months.goals[]). */
+export interface ProbationGoal {
+  text: string;
+  /** The joiner's "How's it going?": Just started, Making progress, Going well. */
+  status?: 'start' | 'progress' | 'well';
+  note?: string;
+  noteAt?: Date;
+  /** The manager's comment after the monthly talk. */
+  comment?: string;
+  commentAt?: Date;
+  commentByName?: string;
 }
 
 export type TeamTaskKind = 'help' | 'approve' | 'review' | 'task' | 'meet' | 'team' | 'goal' | 'doc' | 'chat';
@@ -149,6 +227,18 @@ export interface LifecycleTemplateSettings {
   portalOpenUntil?: 'week_1' | 'month_1';
   /** Appointment letter + NDA are signed in the app on Day 1 instead of the portal. */
   signLettersOnDay1?: boolean;
+  /** Final designs: the four fixed pre-boarding rows (false = removed). */
+  preboarding?: { offerLetter: boolean; joiningDetails: boolean; profile: boolean; watch: boolean };
+  /** Final designs: "Joining and reporting details", the same for every joiner on the template. */
+  reporting?: { time?: string; place?: string; bring?: string; notes?: string; meets: 'hr' | 'manager' | 'buddy' };
+  /** Final designs: Sowaka tour lessons kept (absent: all). */
+  tourLessons?: TourLessonKey[];
+  /** Final designs: "Remind teammates when a task is late" (absent: on). */
+  remindLateTeamTasks?: boolean;
+  /** Final designs: who does the HR tasks, the IT & admin tasks, and counts as someone senior. */
+  assignees?: { hrUserId?: string; itUserId?: string; seniorUserId?: string };
+  /** Final designs: the probation template, a shift template (Setup › Shift templates). */
+  probationShiftTemplateId?: string;
   // offboarding
   noticeDays?: 30 | 60 | 90 | number;
   exitInterviewOpensDays?: 5 | 7 | number;   // Tl − n
@@ -253,9 +343,13 @@ export interface Journey {
   probation?: {
     months: number; extendedBy?: number; decision?: ConfirmationDecision; goals?: string[]; goalsLockedAt?: Date;
     /** The manager's recommendation from the app (Teams › Joiners); HR still decides. */
-    recommendation?: { outcome: 'confirm' | 'extend'; note?: string; byUserId: string; byName?: string; at: Date };
-    /** The head of department's answer to it. */
-    hodApproval?: { outcome: 'approved' | 'discuss'; comment?: string; byUserId: string; byName?: string; at: Date };
+    recommendation?: {
+      outcome: 'confirm' | 'extend'; note?: string; byUserId: string; byName?: string; at: Date;
+      /** Final designs (MgrConfReview): extend by, and the three answers. */
+      extendMonths?: number; review?: { kpis: string; strengths: string; next: string };
+    };
+    /** The head of department's answer to it ('extended' — Final designs HodApprove: extend by `extendMonths`). */
+    hodApproval?: { outcome: 'approved' | 'discuss' | 'extended'; extendMonths?: number; comment?: string; byUserId: string; byName?: string; at: Date };
   };
   /** Offboarding: how they leave, and whether the app's off-boarding page shows (O2 override of the template's appPageFor). */
   exitType?: ExitType;
@@ -278,6 +372,12 @@ export interface Journey {
    * manager's recommendation and the head of department's approval carry an outcome and a note.
    */
   teamTasks?: Record<string, TeamTaskTick>;
+  /** Final designs: when the joiner watched / read each watch-list item or training (template row id). */
+  watched?: Record<string, Date>;
+  /** Final designs: HR's and IT's checks on their task screens (by team key). */
+  staffChecks?: Record<string, { checks?: Record<string, string>; accessCardNo?: string; at: Date; byName?: string }>;
+  /** Final designs: fill-in form answers saved to the profile (by journey task id). */
+  forms?: Record<string, { answers: Array<{ questionId: string; value: string | null }>; sentAt: Date }>;
   /** Timed jobs already fired for this journey (each key once). */
   firedJobs?: string[];
   /** Kept by refreshJourney for lists and counts; the board recomputes them on read. */
@@ -478,7 +578,7 @@ export interface LetterAttachment { fileId: string; name: string; kind: 'salary_
 export interface ProfileAddress { line: string; city: string; state: string; pin: string }
 /** The candidate's own details from the portal's Employee profile. Secrets are kept encrypted (`*Enc`) with their last four. */
 export interface CandidateProfile {
-  personal?: { fullName: string; preferredName?: string; dob: string; gender: string; maritalStatus?: string; nationality?: string };
+  personal?: { fullName: string; preferredName?: string; dob: string; gender: string; maritalStatus?: string; nationality?: string; bloodGroup?: string };
   contact?: { mobile: string; current: ProfileAddress; permanentSame: boolean; permanent?: ProfileAddress };
   bank?: { holderName: string; ifsc: string; accountLast4: string; accountNumberEnc?: string; bankName?: string };
   education?: { qualification: string; institution: string; year: string };
@@ -581,6 +681,8 @@ export interface Meeting {
   with?: string;
   /** The Day-1 agenda line it was made from (its `id`); removed with the line. */
   agendaId?: string;
+  /** Final designs: the team row it times (`<key>` or `<key>@<month>`; Schedule first-week meetings, the senior meeting). */
+  rowKey?: string;
 }
 
 /** "Day 1, done!" · How was today? */
@@ -635,7 +737,7 @@ export interface ProbationMonth {
   org: string;
   journeyId: string;
   monthNo: number;
-  goals: Array<{ text: string }>;
+  goals: ProbationGoal[];
   goalsSetAt?: Date;
   lockedAt?: Date;
   /** The joiner's side (PB1): how the month felt 1–4, a 1–5 self-rating per goal (in goal order), one win, one ask. */

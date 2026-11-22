@@ -162,6 +162,8 @@ const BOARD_JOURNEY_PROJECTION = {
   _id: 0, id: 1, org: 1, kind: 1, userId: 1, candidate: 1, managerUserId: 1, buddyUserId: 1, templateId: 1, status: 1, stage: 1, tj: 1, tl: 1,
   anchors: 1, designation: 1, department: 1, location: 1, plant: 1, probation: 1, lastActivityAt: 1, createdAt: 1, createdByUserId: 1, updatedAt: 1,
   closedAt: 1, 'templateSnapshot.settings': 1, 'templateSnapshot.name': 1,
+  // Final designs: HR's and IT's Actions › Onboarding read the teammate rows' ticks and what their screens wrote (lifecycle/staffApp.ts).
+  teamTasks: 1, 'meetUs.managerNote': 1, managerWelcome: 1,
 } as const;
 async function boardJourneys(org: string, now: Date, full = false, only?: string[]): Promise<Journey[]> {
   const since = new Date(now.getTime() - CONFIRMED_DAYS * 86_400_000);

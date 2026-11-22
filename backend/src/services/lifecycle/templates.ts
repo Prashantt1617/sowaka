@@ -11,30 +11,48 @@ import type {
 import { isValidRule } from './dueRules';
 import { LifecycleError } from './errors';
 import { OFFBOARDING_SETTINGS, ONBOARDING_SETTINGS, offboardingSeed, onboardingSeed, teamSeed } from './seed';
+import { FINAL_ONBOARDING_SETTINGS, finalOnboardingSeed } from './designSeed';
+import { cleanDesign, cleanDesignSettings } from './designClean';
+
+/**
+ * Which rows a new company's Standard onboarding template starts from: the Final designs (default),
+ * or the older seed ('legacy': only the check scripts that test journeys made from it, i.e. running
+ * journeys in production made before the Final designs; `LIFECYCLE_ONBOARDING_SEED=legacy` in their npm scripts).
+ */
+let onboardingSeedKind: 'final' | 'legacy' = process.env.LIFECYCLE_ONBOARDING_SEED === 'legacy' ? 'legacy' : 'final';
+export function setOnboardingSeedKind(kind: 'final' | 'legacy'): void { onboardingSeedKind = kind; }
 
 const KINDS: LifecycleKind[] = ['onboarding', 'offboarding'];
 const PHASES: Record<LifecycleKind, LifecyclePhase[]> = {
   onboarding: ['pre_boarding', 'first_week', 'probation'],
   offboarding: ['resignation', 'when_accepted', 'notice_period', 'last_day', 'after_exit'],
 };
-const OWNERS: OwnerRole[] = ['employee', 'manager', 'hr', 'it', 'admin', 'finance', 'manager_employee', 'hr_manager', 'automatic', 'buddy', 'head_of_department'];
+const OWNERS: OwnerRole[] = ['employee', 'manager', 'hr', 'it', 'admin', 'finance', 'manager_employee', 'hr_manager', 'automatic', 'buddy', 'head_of_department', 'senior'];
 /** Owners that exist only on the team side (a row of theirs is always a team row). */
-const TEAM_ONLY_OWNERS: OwnerRole[] = ['buddy', 'head_of_department'];
+const TEAM_ONLY_OWNERS: OwnerRole[] = ['buddy', 'head_of_department', 'senior'];
+/** Owners a team row may have (Final designs add HR, IT & admin and someone senior). */
+const TEAM_OWNERS: OwnerRole[] = ['manager', 'buddy', 'head_of_department', 'senior', 'hr', 'it'];
 const TEAM_KINDS: TeamTaskKind[] = ['help', 'approve', 'review', 'task', 'meet', 'team', 'goal', 'doc', 'chat'];
 const TASK_KINDS: TaskKind[] = ['ack', 'form', 'upload', 'sign', 'meeting', 'reel', 'survey', 'assign', 'review', 'system', 'post', 'tour', 'face', 'checkin', 'letter'];
 const SURFACES: TaskSurface[] = ['portal', 'app', 'dashboard', 'backend', 'outside'];
 const EXIT_TYPES = ['resignation', 'retirement', 'end_of_contract', 'termination', 'absconding'] as const;
 
+async function companyName(org: string): Promise<string | undefined> {
+  const company = await companies().findOne({ id: org }, { projection: { _id: 0, name: 1 } });
+  return company?.name;
+}
+
 export function isKind(value: unknown): value is LifecycleKind {
   return KINDS.includes(value as LifecycleKind);
 }
 
-function fresh(org: string, kind: LifecycleKind, name: string, isDefault: boolean, byName?: string): LifecycleTemplate {
+function fresh(org: string, kind: LifecycleKind, name: string, isDefault: boolean, byName?: string, company?: string): LifecycleTemplate {
   const now = new Date();
+  const final = kind === 'onboarding' && onboardingSeedKind === 'final';
   return {
     id: randomUUID(), org, kind, name, isDefault, active: true,
-    settings: { ...(kind === 'onboarding' ? ONBOARDING_SETTINGS : OFFBOARDING_SETTINGS) },
-    tasks: kind === 'onboarding' ? onboardingSeed() : offboardingSeed(),
+    settings: structuredClone(kind === 'onboarding' ? (final ? FINAL_ONBOARDING_SETTINGS : ONBOARDING_SETTINGS) : OFFBOARDING_SETTINGS),
+    tasks: kind === 'onboarding' ? (final ? finalOnboardingSeed(company) : onboardingSeed()) : offboardingSeed(),
     createdAt: now, updatedAt: now, ...(byName ? { updatedByName: byName } : {}),
   };
 }
@@ -55,7 +73,7 @@ export async function ensureDefaultTemplates(org: string): Promise<void> {
       continue;
     }
     // Keyed so two first visits at once still make one Standard.
-    const doc = fresh(org, kind, 'Standard', true);
+    const doc = fresh(org, kind, 'Standard', true, undefined, await companyName(org));
     // The company's own notice period (Payroll › Exit settings), not the seed's 60 days:
     // otherwise the first look at templates would quietly change everyone's last day.
     if (kind === 'offboarding') {
@@ -116,6 +134,7 @@ export async function listTemplates(org: string, kind?: LifecycleKind) {
   const count = new Map(using.map((row) => [row._id, row.n]));
   return docs.map((doc) => ({
     ...strip(doc),
+    design: doc.tasks.some((t) => !!t.design),
     journeysUsing: count.get(doc.id) ?? 0,
     recommendedNotAdded: doc.tasks.filter((t) => t.recommended && !t.recommended.added).length,
   }));
@@ -126,7 +145,7 @@ export async function createTemplate(org: string, input: Record<string, unknown>
   const kind = input.kind;
   if (!isKind(kind)) throw new LifecycleError(400, 'kind must be onboarding or offboarding');
   const name = cleanName(input.name);
-  const doc = fresh(org, kind, name, false, byName);
+  const doc = fresh(org, kind, name, false, byName, await companyName(org));
   if (typeof input.group === 'string' && input.group.trim()) doc.group = input.group.trim().slice(0, 80);
   if (input.copyFromId) {
     const from = await getTemplate(org, String(input.copyFromId));
@@ -174,6 +193,7 @@ function cleanSettings(kind: LifecycleKind, input: unknown, current: LifecycleTe
       out.portalOpenUntil = s.portalOpenUntil;
     }
     if (s.signLettersOnDay1 !== undefined) out.signLettersOnDay1 = s.signLettersOnDay1 === true;
+    Object.assign(out, cleanDesignSettings(s));
   } else {
     if (s.noticeDays !== undefined) out.noticeDays = int(s.noticeDays, 0, 365, 'Notice days');
     if (s.exitInterviewOpensDays !== undefined) out.exitInterviewOpensDays = int(s.exitInterviewOpensDays, 0, 60, 'Exit interview opens');
@@ -247,7 +267,7 @@ function cleanAgenda(raw: unknown[]): string[] {
 function cleanTeam(kind: LifecycleKind, raw: unknown, owner: OwnerRole, id: string, where: string): TeamTaskSpec | undefined {
   if ((raw === undefined || raw === null) && !TEAM_ONLY_OWNERS.includes(owner)) return undefined;
   if (kind !== 'onboarding') throw new LifecycleError(400, `${where}: team tasks are for onboarding`);
-  if (!['manager', ...TEAM_ONLY_OWNERS].includes(owner)) throw new LifecycleError(400, `${where}: a team task is the manager’s, the buddy’s or the head of department’s`);
+  if (!TEAM_OWNERS.includes(owner)) throw new LifecycleError(400, `${where}: a team task is the manager’s, the buddy’s, HR’s, IT & admin’s, someone senior’s or the head of department’s`);
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const key = typeof r.key === 'string' && /^[a-z0-9_-]{1,40}$/.test(r.key) ? r.key : `custom_${id.replace(/[^a-z0-9]/gi, '').slice(0, 24).toLowerCase()}`;
   const teamKind = TEAM_KINDS.includes(r.kind as TeamTaskKind) ? (r.kind as TeamTaskKind) : 'task';
@@ -305,6 +325,9 @@ function cleanTasks(kind: LifecycleKind, input: unknown): TemplateTask[] {
       task.team = team;
     }
     if (systemKey) task.systemKey = systemKey;
+    // A Final-designs row keeps what it is (the design editor writes these; the older editor sends them back as it got them).
+    if (t.design !== undefined && t.design !== null) task.design = cleanDesign(kind, t.design, where);
+    if (t.replacedBy === 'final_designs') task.replacedBy = 'final_designs';
     if (typeof t.dueLabel === 'string' && t.dueLabel.trim()) task.dueLabel = t.dueLabel.trim().slice(0, 60);
     if (t.recommended && typeof t.recommended === 'object') {
       const r = t.recommended as Record<string, unknown>;
@@ -407,6 +430,8 @@ export async function addTeamRowsToTemplates(opts: { apply: boolean; org?: strin
   const docs = await lifecycleTemplates().find({ kind: 'onboarding', ...(opts.org ? { org: opts.org } : {}) }, { projection: { _id: 0 } }).toArray();
   const out: Array<{ org: string; templateId: string; name: string; added: string[] }> = [];
   for (const doc of docs) {
+    // A Final-designs template has its own team rows (designSeed.ts): the 20 Nov ones are never added to it.
+    if (doc.tasks.some((t) => !!t.design)) continue;
     const have = new Set(doc.tasks.flatMap((t) => (t.team ? [t.team.key] : [])));
     const ids = new Set(doc.tasks.map((t) => t.id));
     const start = Math.max(0, ...doc.tasks.map((t) => t.order ?? 0));

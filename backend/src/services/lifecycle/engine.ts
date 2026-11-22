@@ -122,7 +122,9 @@ function ownerFor(role: OwnerRole, j: Journey): string | undefined {
 
 /** Whether a template task runs: switched on, and (if recommended) added. */
 /** Team-side rows (Teams › Joiners) are never journey tasks: the app ticks them on the journey. */
-const runs = (t: TemplateTask) => !t.team && t.enabled && (!t.recommended || t.recommended.added);
+const runs = (t: TemplateTask) => !t.team && t.enabled && (!t.recommended || t.recommended.added)
+  // Final designs: only joiner tasks and accesses are journey tasks (check-ins and the watch list are read-time rows).
+  && (!t.design || t.design.section === 'task' || t.design.section === 'access');
 
 function monthsFor(t: TemplateTask, total: number): Array<number | undefined> {
   const months = monthsOfRule(t.opensRule, total) ?? monthsOfRule(t.dueRule, total);

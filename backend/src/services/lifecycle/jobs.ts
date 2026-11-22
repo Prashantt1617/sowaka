@@ -28,6 +28,10 @@ export function registerLifecycleJob(name: string, job: Job): void {
   extraJobs.set(name, job);
 }
 
+import { designOf } from './design';
+import { place, teamRowTitle } from './designRows';
+import { rowDone } from './teamApp';
+
 const DAY_JOB_HOUR = 9;
 const WINDOW_DAYS = 2;
 const MEETING_LEAD_MS = 30 * 60_000;
@@ -123,11 +127,34 @@ async function orgJobs(org: string, companyName: string, now: Date, result: Jobs
         await journeyDayJobs(j, tasks, today, companyName, now, result);
         await revealReady(j, tasks, result);
         result.reminded += await overdueReminders(j, tasks, today, now);
+        result.reminded += await lateTeamRowReminders(j, tasks, today);
       }
     } catch (error) {
       logger.error('Lifecycle job failed for a journey', { journeyId: id }, error);
     }
   }
+}
+
+/**
+ * Final designs, "Remind teammates when a task is late" (template `remindLateTeamTasks`, on unless
+ * HR switched it off): once per row, the day after its due day passes undone, a push to whoever does
+ * it (the manager, the buddy, HR, IT & admin, someone senior, the head of department).
+ */
+export async function lateTeamRowReminders(j: Journey, tasks: JourneyTask[], today: string): Promise<number> {
+  if (!j.tj) return 0;
+  const p = await place(j, new Date(), await designOf(j));
+  if (!p.design.isDesign || p.design.settings.remindLateTeamTasks === false) return 0;
+  let sent = 0;
+  const name = j.candidate?.name ?? 'your new joiner';
+  const first = name.split(/\s+/)[0] ?? name;
+  for (const r of [...p.meetings, ...p.team]) {
+    if (!r.dueOn || r.dueOn >= today || !r.role || rowDone(r, j, tasks, p.design)) continue;
+    const owner = p.people[r.role as keyof typeof p.people];
+    if (!owner || !(await claim(j.id, `team-late:${r.rowKey}`))) continue;
+    await tell([owner], { scenario: 'lifecycle_team_task_late', title: 'A task is late', body: teamRowTitle(r, first), data: { journeyId: j.id, rowKey: r.rowKey } });
+    sent += 1;
+  }
+  return sent;
 }
 
 async function journeyDayJobs(j: Journey, tasks: JourneyTask[], today: string, companyName: string, now: Date, result: JobsResult): Promise<void> {
