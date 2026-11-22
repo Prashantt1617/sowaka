@@ -28,6 +28,15 @@ abstract class JoinerApi {
   /// `null` values are skipped long answers.
   Future<JoinerCheckin> sendCheckin(String id, List<({String questionId, Object? value})> answers);
 
+  /// A "Fill in a form" task: its questions, and the answers once sent.
+  Future<JoinerForm> fetchForm(String taskId);
+
+  /// Submit: one value per question (null = left empty); saved to the profile.
+  Future<JoinerForm> sendForm(String taskId, Map<String, String?> answers);
+
+  /// A file answer, uploaded before Submit: its id is the answer.
+  Future<({String fileId, String name})> uploadFormFile(String taskId, String filename, Uint8List bytes);
+
   Future<JoinerGoals> fetchGoals();
   Future<JoinerGoals> saveGoal(int month, int index, {String? status, String? note});
 
@@ -90,6 +99,22 @@ class HttpJoinerApi implements JoinerApi {
       'answers': [for (final a in answers) {'questionId': a.questionId, 'value': a.value}],
     }),
   );
+
+  @override
+  Future<JoinerForm> fetchForm(String taskId) async => JoinerForm.fromJson(await api.request('GET', '$_base/forms/${_e(taskId)}'));
+
+  @override
+  Future<JoinerForm> sendForm(String taskId, Map<String, String?> answers) async => JoinerForm.fromJson(
+    await api.request('POST', '$_base/forms/${_e(taskId)}', body: {
+      'answers': [for (final a in answers.entries) {'questionId': a.key, 'value': a.value}],
+    }),
+  );
+
+  @override
+  Future<({String fileId, String name})> uploadFormFile(String taskId, String filename, Uint8List bytes) async {
+    final json = await api.upload('$_base/forms/${_e(taskId)}/files', filename: filename, bytes: bytes);
+    return (fileId: '${json['fileId'] ?? ''}', name: '${json['name'] ?? filename}');
+  }
 
   @override
   Future<JoinerGoals> fetchGoals() async => JoinerGoals.fromJson(await api.request('GET', '$_base/goals'));

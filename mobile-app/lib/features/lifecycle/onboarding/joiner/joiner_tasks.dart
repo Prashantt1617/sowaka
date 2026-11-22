@@ -10,6 +10,7 @@ import '../data/onboarding_api.dart';
 import '../presentation/first_punch.dart' show FirstPunchTour;
 import '../presentation/links.dart' show openExternalLink;
 import '../presentation/onboarding_kit.dart';
+import 'joiner_form.dart';
 import 'joiner_lens.dart';
 import 'joiner_models.dart';
 import 'joiner_parts.dart';
@@ -195,6 +196,9 @@ Future<void> openJoinerTask(BuildContext context, JoinerController c, JoinerTask
       await _confirm(context, c, t, label: 'Looks good', action: 'looks_good', page: t.screen);
     case 'sign':
       await Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => JoinerSignScreen(c: c, title: t.title)));
+      await c.load();
+    case 'form':
+      await Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => JoinerFormScreen(c: c, taskId: t.id, title: t.title)));
       await c.load();
     case 'other':
       final link = t.link;

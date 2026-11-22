@@ -359,7 +359,14 @@ async function main() {
   readCache.enableLifecycleReadCache(true);
   const before = await design.onboardingTemplatesOf(ORG);
   const cur = await design.templateDesign(ORG, def.id);
-  await design.saveTemplateDesign(ORG, def.id, { ...cur, meetings: cur.meetings.map((m) => (m.title === 'Salary and tax' ? { ...m, title: 'Salary, tax and PF' } : m)) } as never);
+  await design.saveTemplateDesign(ORG, def.id, {
+    ...cur, meetings: cur.meetings.map((m) => (m.title === 'Salary and tax' ? { ...m, title: 'Salary, tax and PF' } : m)),
+    // A "Fill in a form" task with the five answer types (the app's one renderer).
+    tasks: [...cur.tasks, { title: 'Your welcome kit', type: 'form', stage: 'd1', questions: [
+      { text: 'Your name on the ID card', type: 'short' }, { text: 'Anything we should know', type: 'long' },
+      { text: 'T-shirt size', type: 'choice', options: ['S', 'M', 'L'] }, { text: 'Date of birth', type: 'date' }, { text: 'A photo for the ID card', type: 'file' },
+    ] }],
+  } as never);
   const after = await design.onboardingTemplatesOf(ORG);
   ok('The kept copy is dropped by the save', before.get(def.id)?.tasks.some((t) => t.title === 'Salary and tax') && after.get(def.id)?.tasks.some((t) => t.title === 'Salary, tax and PF'));
   ok('A running joiner keeps the version they started with', (await joiner.joinerOnboarding(PRIYA)).meetings.some((m) => m.title === 'Salary and tax')
@@ -367,6 +374,21 @@ async function main() {
   ok('…and so does their manager’s and HR’s side', (await team.teamJoinerPage(MGR, J1)).tasks.every((t) => t.title !== 'Salary, tax and PF') && (await staff.staffJoinerPage(HR, J1)).tasks.some((t) => t.title === 'Salary and tax'));
   await mk('j6', 'Dev Arora', 'mgr', rules.addDaysKey(today, -3));
   ok('A joiner who starts after the save reads the new title', (await joiner.joinerOnboarding(me('j6', 'Dev Arora'))).meetings.some((m) => m.title === 'Salary, tax and PF'));
+  const DEV = me('j6', 'Dev Arora');
+  const formRow = (await joiner.joinerOnboarding(DEV)).tasks.find((t) => t.title === 'Your welcome kit')!;
+  ok('Form task: opens the form', !!(formRow?.opens as { form?: true }).form && formRow.type === 'form', formRow);
+  const blank = (await joiner.joinerForm(DEV, formRow.id)).form;
+  eq('…the five types in order, the choice’s options', [blank.questions.map((q) => q.type), blank.questions[2].options, 'sentAt' in blank], [['short', 'long', 'choice', 'date', 'file'], ['S', 'M', 'L'], false]);
+  eq('…a choice outside its options is refused', await refusal(() => joiner.sendJoinerForm(DEV, formRow.id, { answers: [{ questionId: blank.questions[2].id, value: 'XL' }] })), 400);
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  const up = await joiner.uploadJoinerFormFile(DEV, formRow.id, { originalname: 'me.png', buffer: png });
+  const q = blank.questions;
+  const formSent = (await joiner.sendJoinerForm(DEV, formRow.id, { answers: [
+    { questionId: q[0].id, value: 'Dev Arora' }, { questionId: q[1].id, value: '' }, { questionId: q[2].id, value: 'M' }, { questionId: q[3].id, value: '1999-04-02' }, { questionId: q[4].id, value: up.fileId },
+  ] })).form as typeof blank & { files?: Record<string, string> };
+  ok('Submit: saved to the profile, read back with the file’s name; the task is done', !!formSent.sentAt && formSent.answers?.[2].value === 'M' && formSent.answers?.[1].value === null && formSent.files?.[up.fileId] === up.name
+    && (await engine.loadJourney((await joiner.joinerOnboarding(DEV)).journeyId)).forms?.[formRow.id]?.answers.length === 5
+    && (await joiner.joinerOnboarding(DEV)).tasks.find((t) => t.id === formRow.id)?.state === 'done', formSent);
   readCache.enableLifecycleReadCache(false);
 
   section('Migration of an older template; an older journey still reads');

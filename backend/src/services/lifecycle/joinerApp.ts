@@ -313,7 +313,17 @@ async function formTask(me: Me, taskId: string) {
 export async function joinerForm(me: Me, taskId: string) {
   const { j, row } = await formTask(me, taskId);
   const saved = j.forms?.[taskId];
-  return { form: { taskId, title: row.title, questions: row.design!.questions ?? [], ...(saved ? { answers: saved.answers, sentAt: saved.sentAt } : {}) } };
+  const questions = row.design!.questions ?? [];
+  // A file answer is its file id: the read-only form shows the file's name.
+  const fileIds = (saved?.answers ?? []).filter((a) => a.value && questions.find((q) => q.id === a.questionId)?.type === 'file').map((a) => String(a.value));
+  const files = fileIds.length ? await lifecycleFiles().find({ id: { $in: fileIds }, journeyId: j.id }, { projection: { _id: 0, id: 1, name: 1 } }).toArray() : [];
+  return {
+    form: {
+      taskId, title: row.title, questions,
+      ...(saved ? { answers: saved.answers, sentAt: saved.sentAt } : {}),
+      ...(files.length ? { files: Object.fromEntries(files.map((f) => [f.id, f.name])) } : {}),
+    },
+  };
 }
 
 export async function sendJoinerForm(me: Me, taskId: string, body: Record<string, unknown>) {
@@ -341,7 +351,7 @@ export async function uploadJoinerFormFile(me: Me, taskId: string, file: { origi
   const { j } = await formTask(me, taskId);
   if (!file?.buffer?.length) throw new LifecycleError(400, 'Choose a file');
   const stored = await storeFile(j.org, j.id, { name: uploadName(file.originalname ?? 'file'), contentType: checkUpload(file.buffer), bytes: file.buffer }, 'employee');
-  return { fileId: stored.id };
+  return { fileId: stored.id, name: stored.name };
 }
 
 // ─── Check-ins ──────────────────────────────────────────────────────────────

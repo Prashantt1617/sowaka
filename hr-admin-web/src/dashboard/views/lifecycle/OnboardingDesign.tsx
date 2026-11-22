@@ -39,6 +39,17 @@ const TASK_GROUPS: Array<[JoinerTaskType, string]> = [['do', 'Do in Sowaka'], ['
 const TASK_GLYPH: Record<JoinerTaskType, string> = { do: GLYPH.task, review: GLYPH.review, ack: GLYPH.ack, sign: GLYPH.sign, other: GLYPH.task, form: GLYPH.form };
 const CHECKIN_TYPES: Array<[CheckinAnswerType, string]> = [['rating', 'Rating 1 to 5'], ['yes_no', 'Yes or no'], ['short', 'Short answer'], ['long', 'Long answer'], ['choice', 'Choice']];
 const FORM_TYPES: Array<[FormAnswerType, string]> = [['short', 'Short answer'], ['long', 'Long answer'], ['choice', 'Choice'], ['date', 'Date'], ['file', 'File']];
+
+/** A "Choice" question's options, typed comma-separated (the one thing that answer type needs). */
+function ChoiceOptions({ n, options, onChange }: { n: number; options?: string[]; onChange: (options: string[]) => void }) {
+  return <input aria-label={`Question ${n} choices`} value={(options ?? []).join(',')} maxLength={800} placeholder="Choices, separated by commas" onChange={(e) => onChange(e.target.value.split(','))} style={inputStyle} />;
+}
+/** A question as saved: a choice keeps its non-empty options, other types none. */
+const savedQuestion = <T extends string>(q: DesignQuestion<T>): DesignQuestion<T> => {
+  const { options, ...rest } = q;
+  const kept = (options ?? []).map((o) => o.trim()).filter(Boolean);
+  return { ...rest, text: q.text.trim(), ...(q.type === 'choice' && kept.length ? { options: kept } : {}) };
+};
 const NAME: Record<string, [string, string]> = {
   help: ['Task', 'e.g. Take them for lunch on Day 1'], meet: ['What it’s about', 'e.g. Office walkthrough'], do: ['Task', 'e.g. Apply for your first leave'],
   review: ['What they review', 'e.g. Your leave balance'], other: ['Task', 'e.g. Fill in the joining form'], form: ['Form name', 'e.g. Uniform size'],
@@ -56,7 +67,7 @@ const ACCEPT: Record<DesignMedia['type'], string> = { video: 'video/mp4,video/qu
 
 interface AddState {
   kind: AddKind | null; pickFrom: boolean; role?: TeamRole; name: string; link: string; meetWith: MeetWith; accessRole: 'it' | 'hr'; stage: DesignStage;
-  agenda: string[]; fields: Array<{ text: string; type: FormAnswerType }>; file?: { fileId: string; name: string; letterTemplateId?: string }; busy?: boolean; docPick?: boolean;
+  agenda: string[]; fields: Array<{ text: string; type: FormAnswerType; options?: string[] }>; file?: { fileId: string; name: string; letterTemplateId?: string }; busy?: boolean; docPick?: boolean;
 }
 interface MeetEdit { index: number; title: string; meetWith: MeetWith; stage: DesignStage; agenda: string[]; info: boolean }
 interface CiEdit { index: number | null; title: string; stage: DesignStage; questions: Array<DesignQuestion<CheckinAnswerType>>; info: boolean }
@@ -589,7 +600,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
           footer={<>
             <button type="button" className="pd-btn" onClick={() => setCi(null)}>Cancel</button>
             <button type="button" className="pd-btn primary" onClick={() => {
-              const questions = ci.questions.filter((q) => q.text.trim()).map((q) => ({ ...q, text: q.text.trim() }));
+              const questions = ci.questions.filter((q) => q.text.trim()).map(savedQuestion);
               const title = ci.title.trim() || `${sn(ci.stage)} check-in`;
               if (ci.index === null) up((x) => ({ ...x, checkins: [...x.checkins, { id: newId(), title, stage: ci.stage, questions } as DesignCheckin] }));
               else up((x) => ({ ...x, checkins: x.checkins.map((c, i) => (i === ci.index ? { ...c, title, stage: ci.stage, questions } : c)) }));
@@ -601,7 +612,8 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
           <Block label="Questions" aside={<InfoToggle label="About the questions" open={ci.info} onToggle={() => setCi({ ...ci, info: !ci.info })} />}>
             {ci.info && <InfoNote>The employee answers these in the app. Answers go to HR and their manager. Tap an answer type to change it.</InfoNote>}
             {ci.questions.map((q, j) => (
-              <div key={j} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div key={j} style={{ display: 'grid', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ width: 20, fontSize: 12, color: 'var(--ink-3)', textAlign: 'right', flex: 'none' }}>{j + 1}</span>
                 <input aria-label={`Question ${j + 1}`} value={q.text} maxLength={200} placeholder="A question" onChange={(e) => setCi({ ...ci, questions: ci.questions.map((x, n) => (n === j ? { ...x, text: e.target.value } : x)) })} style={inputStyle} />
                 <button type="button" className="pd-btn sm" aria-label={`Answer type: ${CHECKIN_TYPES.find(([k]) => k === q.type)?.[1]}`} style={{ flex: 'none' }}
@@ -609,6 +621,12 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
                   {CHECKIN_TYPES.find(([k]) => k === q.type)?.[1]}
                 </button>
                 <RemoveButton label={`question ${j + 1}`} onClick={() => setCi({ ...ci, questions: ci.questions.filter((_, n) => n !== j) })} />
+              </div>
+              {q.type === 'choice' && (
+                <div style={{ paddingLeft: 28 }}>
+                  <ChoiceOptions n={j + 1} options={q.options} onChange={(options) => setCi({ ...ci, questions: ci.questions.map((x, n) => (n === j ? { ...x, options } : x)) })} />
+                </div>
+              )}
               </div>
             ))}
             {ci.questions.length < 20 && <button type="button" className="pd-btn ghost sm" style={{ justifySelf: 'start' }} onClick={() => setCi({ ...ci, questions: [...ci.questions, { text: '', type: 'long' }] })}>+ Add a question</button>}
@@ -774,7 +792,7 @@ function AddDialog({ add, months, templateId, letters, company, onChange, onClos
     const task: DesignTask = { id: newId(), title, type: k as JoinerTaskType, stage: add.stage };
     if (k === 'other' && add.link.trim()) task.link = add.link.trim();
     if (k === 'ack' && add.file) { task.fileId = add.file.fileId; if (add.file.letterTemplateId) task.letterTemplateId = add.file.letterTemplateId; }
-    if (k === 'form') task.questions = add.fields.filter((f) => f.text.trim()).map((f) => ({ text: f.text.trim(), type: f.type }));
+    if (k === 'form') task.questions = add.fields.filter((f) => f.text.trim()).map(savedQuestion);
     onAdd({ title, task });
   };
 
@@ -821,12 +839,15 @@ function AddDialog({ add, months, templateId, letters, company, onChange, onClos
         {k === 'form' && (
           <Block label="Questions">
             {add.fields.map((f, j) => (
-              <div key={j} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div key={j} style={{ display: 'grid', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <input aria-label={`Question ${j + 1}`} value={f.text} maxLength={200} placeholder="Question" onChange={(e) => set({ fields: add.fields.map((x, n) => (n === j ? { ...x, text: e.target.value } : x)) })} style={inputStyle} />
                 <button type="button" className="pd-btn sm" style={{ flex: 'none' }}
                   onClick={() => set({ fields: add.fields.map((x, n) => (n === j ? { ...x, type: FORM_TYPES[(FORM_TYPES.findIndex(([t]) => t === x.type) + 1) % FORM_TYPES.length][0] } : x)) })}>
                   {FORM_TYPES.find(([t]) => t === f.type)?.[1]} ▾
                 </button>
+              </div>
+              {f.type === 'choice' && <ChoiceOptions n={j + 1} options={f.options} onChange={(options) => set({ fields: add.fields.map((x, n) => (n === j ? { ...x, options } : x)) })} />}
               </div>
             ))}
             {add.fields.length < 20 && <button type="button" className="pd-btn ghost sm" style={{ justifySelf: 'start' }} onClick={() => set({ fields: [...add.fields, { text: '', type: 'short' }] })}>+ Add a question</button>}

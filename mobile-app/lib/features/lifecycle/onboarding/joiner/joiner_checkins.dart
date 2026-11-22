@@ -230,7 +230,7 @@ class _JoinerCheckinScreenState extends State<JoinerCheckinScreen> {
                 children: [
                   for (var v = 1; v <= 5; v++) ...[
                     if (v > 1) const SizedBox(width: 8),
-                    Expanded(child: _Choice(key: ValueKey('rate-$v'), label: '$v', on: picked == v, height: 60, size: 20, weight: FontWeight.w800, onTap: () => _answer(v))),
+                    Expanded(child: JChoice(key: ValueKey('rate-$v'), label: '$v', on: picked == v, height: 60, size: 20, weight: FontWeight.w800, onTap: () => _answer(v))),
                   ],
                 ],
               ),
@@ -246,9 +246,9 @@ class _JoinerCheckinScreenState extends State<JoinerCheckinScreen> {
           ),
           'yes_no' => Row(
             children: [
-              Expanded(child: _Choice(key: const ValueKey('answer-yes'), label: 'Yes', on: picked == 'yes', onTap: () => _answer('yes'))),
+              Expanded(child: JChoice(key: const ValueKey('answer-yes'), label: 'Yes', on: picked == 'yes', onTap: () => _answer('yes'))),
               const SizedBox(width: 10),
-              Expanded(child: _Choice(key: const ValueKey('answer-no'), label: 'No', on: picked == 'no', onTap: () => _answer('no'))),
+              Expanded(child: JChoice(key: const ValueKey('answer-no'), label: 'No', on: picked == 'no', onTap: () => _answer('no'))),
             ],
           ),
           'choice' => Column(
@@ -256,7 +256,7 @@ class _JoinerCheckinScreenState extends State<JoinerCheckinScreen> {
             children: [
               for (final (i, o) in q.options.indexed) ...[
                 if (i > 0) const SizedBox(height: 10),
-                _Choice(key: ValueKey('choice-$i'), label: o, on: picked == o, onTap: () => _answer(o)),
+                JChoice(key: ValueKey('choice-$i'), label: o, on: picked == o, onTap: () => _answer(o)),
               ],
             ],
           ),
@@ -309,8 +309,9 @@ class _JoinerCheckinScreenState extends State<JoinerCheckinScreen> {
   }
 }
 
-class _Choice extends StatelessWidget {
-  const _Choice({super.key, required this.label, required this.on, required this.onTap, this.height = 64, this.size = 17, this.weight = FontWeight.w700});
+/// One answer to pick, as the check-ins and forms draw it.
+class JChoice extends StatelessWidget {
+  const JChoice({super.key, required this.label, required this.on, required this.onTap, this.height = 64, this.size = 17, this.weight = FontWeight.w700});
 
   final String label;
   final bool on;

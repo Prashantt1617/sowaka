@@ -391,11 +391,23 @@ class HttpOnboardingApi implements OnboardingApi {
     return json;
   }
 
-  Future<Map<String, dynamic>> _live(String method, String path, {Map<String, dynamic>? body}) async {
-    final startedAt = DateTime.now();
+  /// A multipart upload of one file (field `file`), answered and refused like any other call.
+  Future<Map<String, dynamic>> upload(String path, {required String filename, required Uint8List bytes}) {
+    final request = http.MultipartRequest('POST', Uri.parse('$_baseUrl$path'))
+      ..headers['Authorization'] = 'Bearer ${session.token}'
+      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+    return _send(request, 'POST', path);
+  }
+
+  Future<Map<String, dynamic>> _live(String method, String path, {Map<String, dynamic>? body}) {
     final request = http.Request(method, Uri.parse('$_baseUrl$path'))
       ..headers.addAll({'Authorization': 'Bearer ${session.token}', 'Content-Type': 'application/json'});
     if (body != null) request.body = jsonEncode(body);
+    return _send(request, method, path);
+  }
+
+  Future<Map<String, dynamic>> _send(http.BaseRequest request, String method, String path) async {
+    final startedAt = DateTime.now();
     final http.Response response;
     try {
       response = await _client.send(request).then(http.Response.fromStream).timeout(requestTimeout);

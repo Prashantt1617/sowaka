@@ -253,9 +253,37 @@ class CheckinQuestion {
   final String id;
   final String text;
 
-  /// 'rating' | 'yes_no' | 'short' | 'long' | 'choice'.
+  /// A check-in's: 'rating' | 'yes_no' | 'short' | 'long' | 'choice'; a form's: 'short' | 'long' | 'choice' | 'date' | 'file'.
   final String type;
   final List<String> options;
+}
+
+/// A "Fill in a form" task (GET `/lifecycle/joiner/forms/:taskId`): HR's
+/// questions and, once sent, the answers saved to the joiner's profile (a
+/// file answer is its file id, named in [files]; a date is YYYY-MM-DD).
+class JoinerForm {
+  const JoinerForm({required this.taskId, required this.title, required this.questions, this.answers = const {}, this.sentAt, this.files = const {}});
+
+  factory JoinerForm.fromJson(Map<String, dynamic> json) {
+    final j = _map(json['form']);
+    return JoinerForm(
+      taskId: _str(j['taskId']) ?? '',
+      title: _str(j['title']) ?? '',
+      questions: [for (final q in _maps(j['questions'])) CheckinQuestion.fromJson(q)],
+      answers: {for (final a in _maps(j['answers'])) _str(a['questionId']) ?? '': _str(a['value'])},
+      sentAt: _str(j['sentAt']),
+      files: {for (final e in _map(j['files']).entries) e.key: '${e.value}'},
+    );
+  }
+
+  final String taskId;
+  final String title;
+  final List<CheckinQuestion> questions;
+  final Map<String, String?> answers;
+  final String? sentAt;
+  final Map<String, String> files;
+
+  bool get sent => sentAt != null;
 }
 
 class JoinerCheckin {

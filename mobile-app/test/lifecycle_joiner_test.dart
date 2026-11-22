@@ -12,6 +12,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/data/joiner_meetings_api.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_models.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/joiner/joiner_api.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/joiner/joiner_form.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/joiner/joiner_parts.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/joiner/joiner_home.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/joiner/joiner_lens.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/joiner/joiner_models.dart';
@@ -193,6 +195,36 @@ class FakeJoinerApi implements JoinerApi {
     calls.add('checkin:$id:${answers.map((a) => '${a.questionId}=${a.value}').join(',')}');
     return fetchCheckin(id);
   }
+
+  /// The form task's questions (one of each type); [form] holds the answers once sent.
+  Map<String, dynamic> form = {
+    'taskId': 't-kit',
+    'title': 'Your welcome kit',
+    'questions': [
+      {'id': 'q1', 'text': 'Your name on the ID card', 'type': 'short'},
+      {'id': 'q2', 'text': 'Anything we should know', 'type': 'long'},
+      {'id': 'q3', 'text': 'T-shirt size', 'type': 'choice', 'options': ['S', 'M', 'L']},
+      {'id': 'q4', 'text': 'Date of birth', 'type': 'date'},
+      {'id': 'q5', 'text': 'A photo for the ID card', 'type': 'file'},
+    ],
+  };
+
+  @override
+  Future<JoinerForm> fetchForm(String taskId) async => JoinerForm.fromJson({'form': form});
+
+  @override
+  Future<JoinerForm> sendForm(String taskId, Map<String, String?> answers) async {
+    calls.add('form:$taskId:${answers.entries.map((a) => '${a.key}=${a.value}').join(',')}');
+    form = {
+      ...form,
+      'answers': [for (final a in answers.entries) {'questionId': a.key, 'value': a.value}],
+      'sentAt': '2026-12-01T06:00:00.000Z',
+    };
+    return fetchForm(taskId);
+  }
+
+  @override
+  Future<({String fileId, String name})> uploadFormFile(String taskId, String filename, Uint8List bytes) async => (fileId: 'f1', name: filename);
 
   @override
   Future<JoinerGoals> fetchGoals() async => JoinerGoals.fromJson(goals);
@@ -414,6 +446,62 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('task-confirm-t-kpi')));
       await tester.pumpAndSettle();
       expect(api.calls, contains('task:t-kpi:looks_good'));
+    });
+  });
+
+  group('forms', () {
+    Future<FakeJoinerApi> openForm(WidgetTester tester, {Map<String, dynamic>? sent}) async {
+      final api = FakeJoinerApi(_home('d1'));
+      if (sent != null) api.form = {...api.form, ...sent};
+      final c = JoinerController(shell: shellFor(FakeOnboardingApi(), DateTime(2026, 12, 1)), api: api);
+      addTearDown(c.dispose);
+      await pumpPage(tester, JoinerFormScreen(c: c, taskId: 't-kit', title: 'Your welcome kit'));
+      return api;
+    }
+
+    testWidgets('one renderer: every question with its answer, Submit, then read-only', (tester) async {
+      final api = await openForm(tester);
+      for (final q in ['Your name on the ID card', 'Anything we should know', 'T-shirt size', 'Date of birth', 'A photo for the ID card']) {
+        expect(find.text(q), findsOneWidget);
+      }
+      for (final o in ['S', 'M', 'L']) {
+        expect(find.text(o), findsOneWidget);
+      }
+      await tester.enterText(find.byKey(const ValueKey('form-in-q1')), 'Priya Shah');
+      await tester.tap(find.byKey(const ValueKey('form-in-q3-1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const ValueKey('form-submit')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('form-submit')));
+      await tester.pumpAndSettle();
+      expect(api.calls, contains('form:t-kit:q1=Priya Shah,q2=null,q3=M,q4=null,q5=null'));
+      expect(find.byKey(const ValueKey('form-submit')), findsNothing);
+      expect(find.byType(TextField), findsNothing);
+      expect(tester.widget<Text>(find.byKey(const ValueKey('form-a-q1'))).data, 'Priya Shah');
+      expect(tester.widget<Text>(find.byKey(const ValueKey('form-a-q3'))).data, 'M');
+      expect(tester.widget<Text>(find.byKey(const ValueKey('form-a-q2'))).data, '—');
+    });
+
+    testWidgets('a sent form shows its date and file answers read-only', (tester) async {
+      await openForm(tester, sent: {
+        'answers': [
+          {'questionId': 'q4', 'value': '1999-04-02'},
+          {'questionId': 'q5', 'value': 'f9'},
+        ],
+        'sentAt': '2026-12-01T06:00:00.000Z',
+        'files': {'f9': 'me.png'},
+      });
+      expect(find.text('2 Apr 1999'), findsOneWidget);
+      expect(find.text('me.png'), findsOneWidget);
+      expect(find.byKey(const ValueKey('form-submit')), findsNothing);
+    });
+
+    test('a form task opens the form (opens.form)', () {
+      final d = JoinerOnboarding.fromJson(_home('d1', extra: {
+        'tasks': [_task('t-kit', 'Your welcome kit', 'form', 'Start', 'd1', opens: {'form': true})],
+      }));
+      expect(d.tasks.single.form, isTrue);
+      expect(d.tasks.single.type, 'form');
     });
   });
 
