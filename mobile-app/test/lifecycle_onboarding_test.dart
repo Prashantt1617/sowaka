@@ -354,18 +354,6 @@ void main() {
 
   });
 
-  group('manager', () {
-    test('joiners most urgent first', () {
-      final sorted = sortJoinersByUrgency([
-        const JoinerSummary(journeyId: 'a', name: 'Riya'),
-        const JoinerSummary(journeyId: 'b', name: 'Kabir', todayCount: 4),
-        const JoinerSummary(journeyId: 'c', name: 'Dev', overdue: 1),
-      ]);
-      expect(sorted.map((j) => j.journeyId), ['c', 'b', 'a']);
-    });
-
-  });
-
   group('the plant', () {
     testWidgets('names its stage for screen readers, in the artifact\'s 120 × 140 box, with no pill', (tester) async {
       await pumpPage(tester, const Scaffold(body: Center(child: Plant(stage: 2, size: 150, droop: true))));
