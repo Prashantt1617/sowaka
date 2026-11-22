@@ -620,6 +620,27 @@ S = `GET /lifecycle/staff/joiners/:id`, O = `GET /lifecycle/staff/onboarding`, D
 | The team's part | reminder switch, tab counts, who does it (HR, IT & admin, someone senior pickers), rows by stage, task panel (title, when, how-to), Add | D · `team.*` | template settings + rows |
 | Employee preview | stage tabs, phone tiles | `GET …/templates/:id/preview?stage=` | template |
 
+## 8b. Integration (branch fd-all)
+
+- **Push taps.** `data.destination` for a teammate's push comes from the row's role (`designRows.teammatePushTarget`):
+  HR and IT & admin get `lifecycle_staff` with `data.as` (`hr` | `it`) and open their person page; the manager, buddy,
+  someone senior and head of department get `lifecycle_joiner` (the Teams person page); the joiner's own get
+  `lifecycle_onboarding` (Actions › Onboarding). Used by late-teammate reminders (`lifecycle_team_task_late`, + `name`),
+  meeting invites (`lifecycle_meeting_invite`) and meeting reminders (`lifecycle_meeting_soon`).
+- **HR's letter row** (`hr_confirmation_letter`) is done when the confirmation or extension letter is sent from the
+  dashboard (`probation.decision.letterId`, or the `confirmation_letter` task done); the app draws no button.
+- **How-to lines** on HR's `hr_hand_kit`, `hr_check_form`, `hr_confirmation_letter` (MgrTeamsProto). The migration adds
+  them (dry run by default) to a design template whose rows have none; running journeys keep their version.
+- **Reporting details.** One reading (`portal.ts passWithTemplate`) for the Day-1 pass, the joining details tile and the
+  portal home's reporting time: what HR typed on the joiner wins, then the template's `reporting`, and none of the
+  template's when its pre-boarding row "Joining and reporting details" is removed (`design.templateReporting`). The
+  teammates' JOINING DETAILS read the same order. `reporting.notes` ("Anything else") is dashboard-only: no canvas
+  screen shows it.
+- **Forms.** GET `/lifecycle/joiner/forms/:taskId` adds `files: Record<fileId, name>` for file answers; the upload
+  answers `{ fileId, name }`. The app's one renderer (`joiner_form.dart`) draws each question by type and Submit, then
+  the answers read-only. The dashboard's form and check-in editors take a choice's options (comma-separated).
+- **Teams › Joiners pill** shows only when the viewer has joiners there (HR / IT & admin with none never see it).
+
 ## 9. Gaps (the canvas has no source; nothing is invented)
 
 - Goal text: no screen in the canvas writes it. Kept: the manager's existing `PUT …/probation/:month {goals}`.
