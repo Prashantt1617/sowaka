@@ -68,6 +68,9 @@ Map<String, dynamic> task(
 
 class FakeLifecycle {
   bool enabled = true;
+
+  /// `/lifecycle/me` · `staff`: HR's or IT & admin's Actions › Onboarding tile.
+  Map<String, dynamic>? staff;
   bool canResign = true;
   bool pageVisible = false;
   String? tl;
@@ -280,6 +283,7 @@ class FakeLifecycle {
         return json({
           'enabled': enabled,
           if (enabled) 'offboarding': ?_summary,
+          if (enabled) 'staff': ?staff,
         });
       case ('GET', '/lifecycle/resignation'):
         return json({
