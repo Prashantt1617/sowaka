@@ -6,7 +6,7 @@ import '../../data/onboarding_models.dart';
 import '../onboarding_kit.dart';
 import '../plant.dart';
 
-/// The team side's shared pieces (Teams › Joiners, artifact 8C82Qv57Z88eV7VTVQpFGZ,
+/// The team side's shared pieces (Teams › Joiners, Onboarding · Final designs,
 /// prototype MgrTeamsProto): the pills over the Team tab, a joiner's row, the
 /// person page's hero, its tasks card and two tiles, a task row, the reach-out
 /// blocks, a list card with section heads and a notes box with voice typing.
@@ -50,38 +50,6 @@ enum TeamTaskKind {
   final Color tint;
   final Color fg;
 
-  /// A journey task's kind, from its system key (else its own kind).
-  static TeamTaskKind of(TaskView task) {
-    switch (task.systemKey) {
-      case 'assign_buddy':
-      case 'people_to_meet':
-      case 'team_intro':
-        return team;
-      case 'probation_goals':
-      case 'monthly_goals':
-        return goal;
-      case 'monthly_review':
-      case 'self_review':
-        return review;
-      case 'monthly_checkin':
-      case 'confirmation_discussion':
-      case 'one_on_one':
-        return meet;
-      case 'confirmation_review':
-      case 'confirmation_recommendation':
-      case 'manager_30day_note':
-      case 'one_on_one_notes':
-        return doc;
-      case 'welcome_message':
-        return chat;
-      case 'starter_task':
-      case 'manager_setup':
-        return TeamTaskKind.task;
-    }
-    if (task.kind == 'meeting' || task.isTimed) return meet;
-    if (task.kind == 'approval') return approve;
-    return TeamTaskKind.task;
-  }
 }
 
 // ─── Teams: the pill row ────────────────────────────────────────────────────
@@ -223,7 +191,7 @@ class _TeamPill extends StatelessWidget {
               children: [
                 Text(
                   spec.label,
-                  style: TextStyle(fontFamily: 'Sora', fontSize: 14, fontWeight: selected ? FontWeight.w700 : FontWeight.w600, color: fg),
+                  style: TextStyle(fontSize: 14, fontWeight: selected ? FontWeight.w700 : FontWeight.w600, color: fg),
                 ),
                 if (spec.count > 0) ...[
                   const SizedBox(width: 6),
@@ -252,87 +220,6 @@ class _TeamPill extends StatelessWidget {
 }
 
 // ─── Joiners: the list ──────────────────────────────────────────────────────
-
-/// The stage pill's words (the design's STEPS): "Joins 22 Dec" before Day 1,
-/// then "Day 1", "Week 1", "Month 3" …, "Confirmed".
-String teamStageLabel(JoinerSummary joiner, DateTime now) {
-  if (joiner.stage == 'confirmed') return 'Confirmed';
-  if (joiner.preboarding) return joiner.tj == null ? (joiner.dayLabel ?? 'Before Day 1') : 'Joins ${onbDay(joiner.tj!)}';
-  return joiner.dayLabelOn(now);
-}
-
-/// The plant a row's badge shows (seed before Day 1, sprout to week 1 …).
-PlantState teamPlantOf(JoinerSummary joiner) => joiner.preboarding ? const PlantState(stage: 0) : joiner.plant;
-
-/// One joiner in Joiners (MgrTeamsProto): photo with the plant badge, name,
-/// designation, the relation line ("You’re the buddy", "Reports to …") and
-/// the stage pill.
-class JoinerListRow extends StatelessWidget {
-  const JoinerListRow({super.key, required this.joiner, required this.now, required this.onTap, this.relation, this.relationIsYou = false, this.divider = true});
-
-  final JoinerSummary joiner;
-  final DateTime now;
-  final VoidCallback onTap;
-
-  /// "You’re the buddy", "Reports to Sunny Kapoor"; none for your own report.
-  final String? relation;
-
-  /// The relation is the viewer's own (the buddy line, in orange-red).
-  final bool relationIsYou;
-  final bool divider;
-
-  @override
-  Widget build(BuildContext context) {
-    final stage = teamStageLabel(joiner, now);
-    final pre = joiner.preboarding;
-    return Semantics(
-      button: true,
-      label: 'Open ${joiner.name}',
-      excludeSemantics: true,
-      child: Material(
-        key: ValueKey('joiner-row-${joiner.journeyId}'),
-        color: Colors.white,
-        child: InkWell(
-          onTap: onTap,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 76),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(border: divider ? const Border(bottom: BorderSide(color: OnbColors.line)) : null),
-            child: Row(
-              children: [
-                TeamAvatarWithPlant(name: joiner.name, photoUrl: joiner.photoUrl, plant: teamPlantOf(joiner)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(joiner.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: TeamColors.ink)),
-                      if (joiner.designation != null) ...[
-                        const SizedBox(height: 3),
-                        Text(joiner.designation!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: OnbColors.text3)),
-                      ],
-                      if (relation != null) ...[
-                        const SizedBox(height: 3),
-                        Text(
-                          relation!,
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: relationIsYou ? TeamColors.reachOut : OnbColors.text3),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                TeamPill(stage, background: pre ? OnbColors.screen : TeamColors.blueBg, foreground: pre ? OnbColors.text2 : OnbColors.primary, height: 26),
-                const SizedBox(width: 4),
-                const Icon(Icons.chevron_right_rounded, size: 18, color: OnbColors.icon),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 /// A 48 photo with the plant on a small green tile at its corner.
 class TeamAvatarWithPlant extends StatelessWidget {

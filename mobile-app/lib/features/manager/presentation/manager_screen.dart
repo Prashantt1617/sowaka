@@ -71,7 +71,6 @@ import '../../lifecycle/onboarding/data/onboarding_api.dart';
 import '../../lifecycle/onboarding/data/onboarding_models.dart';
 import '../../lifecycle/onboarding/onboarding_launcher.dart';
 import '../../lifecycle/onboarding/presentation/manager/joiners_tab.dart';
-import '../../lifecycle/onboarding/presentation/manager/new_joiners_section.dart';
 import '../../lifecycle/onboarding/presentation/manager/team_kit.dart';
 import '../../lifecycle/onboarding/presentation/profile_onboarding_card.dart';
 

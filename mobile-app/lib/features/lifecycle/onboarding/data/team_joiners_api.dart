@@ -7,12 +7,12 @@ import '../../../../services/api_client.dart';
 import '../../../../services/api_config.dart';
 import '../../../auth/data/auth_models.dart';
 import 'onboarding_api.dart';
-import 'onboarding_models.dart' show OnboardingHome, PlantState;
 
 /// Teams › Joiners for the manager, the buddy and the head of department
-/// (backend services/lifecycle/teamTasks.ts, routes `/lifecycle/team/…`):
-/// how I'm connected to a joiner, their page, my full task list for them,
-/// and the confirmation approval.
+/// (Onboarding · Final designs, docs/lifecycle/FINAL-DESIGNS.md §4.3; server
+/// services/lifecycle/teamApp.ts, routes `/lifecycle/team/…`). Every name,
+/// count, stage and status here is the server's: the screens never count or
+/// fill them in.
 
 /// How the viewer is connected to the joiner.
 enum TeamRelation {
@@ -27,359 +27,567 @@ enum TeamRelation {
   };
 }
 
-/// A task's look (the artifact's icon and tint per kind).
-enum TeamKind { help, approve, review, task, meet, team, goal, doc, chat }
-
-TeamKind _kind(Object? value) => TeamKind.values.firstWhere((k) => k.name == value, orElse: () => TeamKind.task);
-
-/// A review's or an approval's state.
-enum TeamReviewState { waiting, ready, reviewed, back }
-
-TeamReviewState? _review(Object? value) {
-  for (final s in TeamReviewState.values) {
-    if (s.name == value) return s;
-  }
-  return null;
-}
-
 String? _str(Object? v) => v is String && v.isNotEmpty ? v : null;
 int _int(Object? v) => v is num ? v.toInt() : 0;
+int? _intOrNull(Object? v) => v is num ? v.toInt() : null;
+List<String> _strings(Object? v) => (v as List?)?.whereType<String>().toList() ?? const [];
+List<Map<String, dynamic>> _maps(Object? v) => ((v as List?) ?? const []).whereType<Map>().map((m) => m.cast<String, dynamic>()).toList();
+Map<String, dynamic> _map(Object? v) => (v as Map?)?.cast<String, dynamic>() ?? const {};
 
+/// One row on Teams › Joiners (`TeamJoinerRow`).
 class TeamJoinerRow {
   const TeamJoinerRow({
     required this.journeyId,
     required this.name,
+    required this.initials,
     required this.relation,
     required this.step,
     required this.stepLabel,
-    required this.plant,
     this.userId,
     this.designation,
     this.photoUrl,
-    this.managerName,
-    this.approverName,
-    this.approverIsYou = false,
-    this.toDo = 0,
+    this.relationLine,
+    this.plantStage = 0,
     this.preboarding = false,
+    this.toDo = 0,
   });
 
   factory TeamJoinerRow.fromJson(Map<String, dynamic> json) => TeamJoinerRow(
     journeyId: '${json['journeyId'] ?? ''}',
     userId: _str(json['userId']),
-    approverName: _str(json['approverName']),
-    approverIsYou: json['approverIsYou'] == true,
     name: _str(json['name']) ?? '—',
+    initials: _str(json['initials']) ?? '',
     designation: _str(json['designation']),
     photoUrl: _str(json['photoUrl']),
     relation: TeamRelation.parse(json['relation']),
-    managerName: _str(json['managerName']),
+    relationLine: _str(json['relationLine']),
     step: _int(json['step']),
     stepLabel: _str(json['stepLabel']) ?? '',
-    plant: PlantState.fromJson(json['plant']),
-    toDo: _int(json['toDo']),
+    plantStage: _int(json['plantStage']),
     preboarding: json['preboarding'] == true,
+    toDo: _int(json['toDo']),
   );
 
   final String journeyId;
-
-  /// The joiner's account (absent before they join), for their profile.
   final String? userId;
   final String name;
+  final String initials;
   final String? designation;
   final String? photoUrl;
   final TeamRelation relation;
-  final String? managerName;
 
-  /// Who approves their confirmation (the head of department); [approverIsYou] when it is the viewer.
-  final String? approverName;
-  final bool approverIsYou;
+  /// "You’re the buddy", "Reports to Sunny Kapoor"; none for a direct report.
+  final String? relationLine;
+
+  /// 0 Before Day 1, 1 Day 1, 2 Week 1, 3 … Month n, then Confirmed.
   final int step;
-  final String stepLabel;
-  final PlantState plant;
-  final int toDo;
-  final bool preboarding;
 
-  /// The list's third line: "You’re the buddy", "Reports to Sunny Kapoor", or none for a report.
-  String? get relationLine => switch (relation) {
-    TeamRelation.buddy => 'You’re the buddy',
-    TeamRelation.line => managerName == null || managerName!.isEmpty ? null : 'Reports to $managerName',
-    TeamRelation.report => null,
-  };
+  /// "Joins 1 Dec", "Day 1", "Week 1", "Month 1" … "Confirmed".
+  final String stepLabel;
+  final int plantStage;
+  final bool preboarding;
+  final int toDo;
 }
 
+/// A tone the server gives a pill.
+enum TeamTone { blue, green, grey, amber, red, ok, todo, warn, soon }
+
+TeamTone _tone(Object? v) => TeamTone.values.firstWhere((t) => t.name == v, orElse: () => TeamTone.grey);
+
+/// A pill on a row ("Ready to read", "Waiting for Priya", "Week 1" …).
+class TeamPillText {
+  const TeamPillText(this.text, this.tone);
+  final String text;
+  final TeamTone tone;
+
+  static TeamPillText? fromJson(Object? json) {
+    final m = _map(json);
+    final text = _str(m['text']);
+    return text == null ? null : TeamPillText(text, _tone(m['tone']));
+  }
+}
+
+/// One of my tasks for the joiner (`TeamTask`).
 class TeamTask {
   const TeamTask({
     required this.id,
     required this.title,
     required this.kind,
     required this.step,
-    required this.done,
+    required this.stepLabel,
     this.early = false,
-    this.pair,
-    this.note,
-    this.canTick = false,
-    this.opens,
-    this.reviewState,
-    this.agenda = const [],
-    this.fromJourney = false,
-    this.doneByName,
-    this.recommended,
-    this.recommendedNote,
-    this.systemKey,
-    this.month,
+    this.done = false,
     this.locked = false,
+    this.pair,
+    this.how,
+    this.note,
+    this.pill,
+    this.opens,
+    this.canTick = false,
+    this.agenda = const [],
+    this.notes = const [],
+    this.startsAt,
+    this.month,
+    this.checkinId,
+    this.doneByName,
   });
 
   factory TeamTask.fromJson(Map<String, dynamic> json) => TeamTask(
     id: '${json['id'] ?? ''}',
     title: _str(json['title']) ?? '',
-    kind: _kind(json['kind']),
+    kind: _str(json['kind']) ?? 'task',
     step: _int(json['step']),
+    stepLabel: _str(json['stepLabel']) ?? '',
     early: json['early'] == true,
     done: json['done'] == true,
-    pair: _str(json['pair']),
-    note: _str(json['note']),
-    canTick: json['canTick'] == true,
-    opens: _str(json['opens']),
-    reviewState: _review(json['reviewState']),
-    agenda: (json['agenda'] as List?)?.whereType<String>().toList() ?? const [],
-    fromJourney: json['source'] == 'journey',
-    doneByName: _str(json['doneByName']),
-    recommended: _str((json['recommended'] as Map?)?['outcome']),
-    recommendedNote: _str((json['recommended'] as Map?)?['note']),
-    systemKey: _str(json['systemKey']),
-    month: json['month'] is num ? (json['month'] as num).toInt() : null,
     locked: json['locked'] == true,
+    pair: _str(json['pair']),
+    how: _str(json['how']),
+    note: _str(json['note']),
+    pill: TeamPillText.fromJson(json['pill']),
+    opens: _str(json['opens']),
+    canTick: json['canTick'] == true,
+    agenda: _strings(json['agenda']),
+    notes: _strings(json['notes']),
+    startsAt: DateTime.tryParse('${json['startsAt'] ?? ''}')?.toLocal(),
+    month: _intOrNull(json['month']),
+    checkinId: _str(json['checkinId']),
+    doneByName: _str(json['doneByName']),
   );
 
   final String id;
   final String title;
-  final TeamKind kind;
+
+  /// help | approve | review | task | meet | team | goal | doc | chat: its icon tile.
+  final String kind;
   final int step;
+  final String stepLabel;
   final bool early;
   final bool done;
+  final bool locked;
   final String? pair;
-  final String? note;
-  final bool canTick;
 
-  /// 'meeting', 'approval', 'recommend' (the manager's confirm/extend), 'review' (a month's self
-  /// check-in) or 'screen' (a template step done on its own screen, by [systemKey]): the row opens it.
+  /// HR's how-to line from the template.
+  final String? how;
+  final String? note;
+  final TeamPillText? pill;
+
+  /// The screen the row opens: meeting, buddy, schedule, chat, feed, goals,
+  /// checkin, review, approval, around, groups, invite, plain; null: a tick.
   final String? opens;
-  final TeamReviewState? reviewState;
+  final bool canTick;
   final List<String> agenda;
-  final bool fromJourney;
+
+  /// A meeting's own notes (only mine) and the time set for it.
+  final List<String> notes;
+  final DateTime? startsAt;
+  final int? month;
+  final String? checkinId;
   final String? doneByName;
 
-  /// `mgr_recommend` only: 'confirm' or 'extend' once the manager has recommended, and their note.
-  final String? recommended;
-  final String? recommendedNote;
-
-  /// A journey row's template step ('meet_manager', 'monthly_review' …) and its probation month.
-  final String? systemKey;
-  final int? month;
-
-  /// A journey row the engine has not opened yet (it waits on another task, or a date).
-  final bool locked;
-
-  bool get isApproval => kind == TeamKind.approve;
-
-  /// Still to do by the viewer (the server's isOpenForMe): tickable, or a screen that waits on them.
-  bool get isOpenForMe =>
-      !done && !locked && (canTick || opens == 'meeting' || opens == 'recommend' || opens == 'screen' || reviewState == TeamReviewState.ready);
+  bool get isMeeting => opens == 'meeting';
 
   TeamTask copyWith({bool? done}) => TeamTask(
-    id: id, title: title, kind: kind, step: step, early: early, done: done ?? this.done, pair: pair, note: note,
-    canTick: canTick, opens: opens, reviewState: reviewState, agenda: agenda, fromJourney: fromJourney, doneByName: doneByName,
-    recommended: recommended, recommendedNote: recommendedNote, systemKey: systemKey, month: month, locked: locked,
+    id: id, title: title, kind: kind, step: step, stepLabel: stepLabel, early: early, done: done ?? this.done, locked: locked,
+    pair: pair, how: how, note: note, pill: pill, opens: opens, canTick: canTick, agenda: agenda, notes: notes,
+    startsAt: startsAt, month: month, checkinId: checkinId, doneByName: doneByName,
   );
 }
 
-class TeamJoinerPage {
-  const TeamJoinerPage({
+/// One number on View progress (`ProgressStat`).
+class TeamProgressStat {
+  const TeamProgressStat({required this.key, required this.title, required this.done, required this.total, required this.unit, required this.flag, required this.flagTone});
+
+  factory TeamProgressStat.fromJson(Map<String, dynamic> json) {
+    final flag = _map(json['flag']);
+    return TeamProgressStat(
+      key: _str(json['key']) ?? '',
+      title: _str(json['title']) ?? '',
+      done: _int(json['done']),
+      total: _int(json['total']),
+      unit: _str(json['unit']) ?? '',
+      flag: _str(flag['text']) ?? '',
+      flagTone: _tone(flag['tone']),
+    );
+  }
+
+  /// meet | ci | tasks | watch | tour | dev | prof: the list it opens.
+  final String key;
+  final String title;
+  final int done;
+  final int total;
+  final String unit;
+  final String flag;
+  final TeamTone flagTone;
+}
+
+/// One row of a progress list (`ProgressListRow`).
+class TeamProgressListRow {
+  const TeamProgressListRow({required this.title, required this.status, required this.tone, this.meta, this.comingUp = false});
+
+  factory TeamProgressListRow.fromJson(Map<String, dynamic> json) => TeamProgressListRow(
+    title: _str(json['title']) ?? '',
+    meta: _str(json['meta']),
+    status: _str(json['status']) ?? '',
+    tone: _tone(json['tone']),
+    comingUp: json['comingUp'] == true,
+  );
+
+  final String title;
+  final String? meta;
+  final String status;
+  final TeamTone tone;
+  final bool comingUp;
+}
+
+/// A Day-1 or Week-1 meeting the manager schedules (MgrSchedule).
+class TeamScheduleMeeting {
+  const TeamScheduleMeeting({required this.rowKey, required this.title, required this.step, this.withName, this.withInitials, this.startsAt});
+
+  factory TeamScheduleMeeting.fromJson(Map<String, dynamic> json) => TeamScheduleMeeting(
+    rowKey: '${json['rowKey'] ?? ''}',
+    title: _str(json['title']) ?? '',
+    step: _int(json['step']),
+    withName: _str(json['withName']),
+    withInitials: _str(json['withInitials']),
+    startsAt: DateTime.tryParse('${json['startsAt'] ?? ''}')?.toLocal(),
+  );
+
+  final String rowKey;
+  final String title;
+
+  /// 1 Day 1, 2 Week 1.
+  final int step;
+  final String? withName;
+  final String? withInitials;
+  final DateTime? startsAt;
+}
+
+/// Who the joiner is, at the top of every page (`TeamJoinerPage.joiner`).
+class TeamJoiner {
+  const TeamJoiner({
     required this.journeyId,
     required this.name,
     required this.first,
-    required this.relation,
-    required this.steps,
+    required this.initials,
+    required this.reportsTo,
+    required this.stepLabel,
     required this.step,
-    required this.tasks,
-    required this.status,
+    required this.statusLabel,
     this.userId,
+    this.photoUrl,
     this.designation,
     this.department,
-    this.photoUrl,
-    this.managerName,
-    this.buddyName,
-    this.approverName,
-    this.approverIsYou = false,
-    this.readOnly = false,
-    this.plant = const PlantState(),
-    this.delayed = 0,
-    this.canBrowseSteps = true,
+    this.buddy,
+    this.plantStage = 0,
     this.preboarding = false,
-    this.progress,
+    this.statusWarn = false,
+    this.delayedTitle,
+    this.delayedDays = 0,
+    this.delayedOwner,
     this.tj,
   });
 
-  factory TeamJoinerPage.fromJson(Map<String, dynamic> json) {
-    final j = (json['joiner'] as Map?)?.cast<String, dynamic>() ?? const {};
-    return TeamJoinerPage(
-      journeyId: '${j['journeyId'] ?? ''}',
-      userId: _str(j['userId']),
-      approverName: _str(json['approverName']),
-      approverIsYou: json['approverIsYou'] == true,
-      readOnly: json['readOnly'] == true,
-      name: _str(j['name']) ?? '—',
-      first: _str(j['first']) ?? '',
-      designation: _str(j['designation']),
-      department: _str(j['department']),
-      photoUrl: _str(j['photoUrl']),
-      managerName: _str(j['managerName']),
-      buddyName: _str(j['buddyName']),
-      plant: PlantState.fromJson(j['plant']),
-      status: _str(j['status']) ?? 'On track',
-      delayed: _int(j['delayed']),
-      preboarding: j['preboarding'] == true,
-      relation: TeamRelation.parse(json['relation']),
-      steps: (json['steps'] as List?)?.whereType<String>().toList() ?? const [],
+  factory TeamJoiner.fromJson(Map<String, dynamic> json) {
+    final status = _map(json['status']);
+    final delayed = json['delayed'] is Map ? _map(json['delayed']) : null;
+    return TeamJoiner(
+      journeyId: '${json['journeyId'] ?? ''}',
+      userId: _str(json['userId']),
+      name: _str(json['name']) ?? '—',
+      first: _str(json['first']) ?? '',
+      initials: _str(json['initials']) ?? '',
+      photoUrl: _str(json['photoUrl']),
+      designation: _str(json['designation']),
+      department: _str(json['department']),
+      reportsTo: _str(json['reportsTo']) ?? '',
+      buddy: _str(json['buddy']),
+      stepLabel: _str(json['stepLabel']) ?? '',
       step: _int(json['step']),
-      canBrowseSteps: json['canBrowseSteps'] != false,
-      tasks: ((json['tasks'] as List?) ?? const [])
-          .whereType<Map>()
-          .map((t) => TeamTask.fromJson(t.cast<String, dynamic>()))
-          .toList(),
-      progress: json['progress'] is Map
-          ? OnboardingHome.fromJson({...(json['progress'] as Map).cast<String, dynamic>(), 'journeyId': '${j['journeyId'] ?? ''}'})
-          : null,
-      tj: DateTime.tryParse('${j['tj'] ?? ''}'),
+      plantStage: _int(json['plantStage']),
+      preboarding: json['preboarding'] == true,
+      statusLabel: _str(status['label']) ?? '',
+      statusWarn: status['warn'] == true,
+      delayedTitle: _str(delayed?['title']),
+      delayedDays: _int(delayed?['waitingDays']),
+      delayedOwner: _str(delayed?['ownerLabel']),
+      tj: _str(json['tj']),
     );
   }
 
   final String journeyId;
-
-  /// The joiner's account (absent before they join), for their profile.
   final String? userId;
   final String name;
   final String first;
-
-  /// Who approves their confirmation (the head of department); [approverIsYou] when it is the viewer.
-  final String? approverName;
-  final bool approverIsYou;
-
-  /// Up the reporting line but not the head of department: following along, no tasks.
-  final bool readOnly;
+  final String initials;
+  final String? photoUrl;
   final String? designation;
   final String? department;
-  final String? photoUrl;
-  final String? managerName;
-  final String? buddyName;
-  final PlantState plant;
-  final String status;
-  final int delayed;
-  final bool preboarding;
-  final TeamRelation relation;
-  final List<String> steps;
+
+  /// 'you' or their manager's name.
+  final String reportsTo;
+
+  /// 'you', their buddy's name, or null (no buddy yet).
+  final String? buddy;
+  final String stepLabel;
   final int step;
-  final bool canBrowseSteps;
-  final List<TeamTask> tasks;
+  final int plantStage;
+  final bool preboarding;
 
-  /// View progress: the joiner's own lists (their home's tasks and meetings, tour, devices), as
-  /// their tiles count them. Null from a server that does not send it.
-  final OnboardingHome? progress;
+  /// "On track", "Joining soon", "Confirmation due", "1 task delayed".
+  final String statusLabel;
+  final bool statusWarn;
+  final String? delayedTitle;
+  final int delayedDays;
+  final String? delayedOwner;
 
-  /// Their joining day.
-  final DateTime? tj;
-
-  String get stepLabel => step >= 0 && step < steps.length ? steps[step] : '';
-
-  /// The main card's title: "Help Priya with" for a buddy, "Your tasks for Priya" otherwise.
-  String get tasksTitle => relation == TeamRelation.buddy ? 'Help $first with' : 'Your tasks for $first';
-
-  String get reportsLine => relation == TeamRelation.report
-      ? 'Reports to you'
-      : (managerName == null || managerName!.isEmpty ? '' : 'Reports to $managerName');
-
-  String get buddyLine => relation == TeamRelation.buddy
-      ? 'You’re the buddy'
-      : (buddyName == null || buddyName!.isEmpty ? 'No buddy yet' : 'Buddy: $buddyName');
-
-  /// What is still to do now (the red count).
-  List<TeamTask> get openNow => tasks.where((t) => t.step == step && t.isOpenForMe).toList();
+  /// Their joining day, YYYY-MM-DD.
+  final String? tj;
 }
 
-class TeamApprovalFact {
-  const TeamApprovalFact(this.label, this.value, this.ok);
-  final String label;
-  final String value;
-  final bool ok;
-}
-
-class TeamApproval {
-  const TeamApproval({
-    required this.state,
-    required this.managerName,
-    this.recommendedBy,
-    this.outcome,
-    this.note,
-    this.recommendedAt,
-    this.facts = const [],
-    this.answerNote,
+/// A joiner's page for the viewer (`TeamJoinerPage`).
+class TeamJoinerPage {
+  const TeamJoinerPage({
+    required this.joiner,
+    required this.relation,
+    required this.cardTitle,
+    required this.toDo,
+    required this.tasks,
+    this.readOnly = false,
+    this.stats = const [],
+    this.joiningOn,
+    this.joiningTime,
+    this.joiningPlace,
+    this.lists = const {},
+    this.reachOut = const [],
+    this.schedule = const [],
   });
 
-  factory TeamApproval.fromJson(Map<String, dynamic> json) {
-    final rec = (json['recommendation'] as Map?)?.cast<String, dynamic>();
-    final answer = (json['answer'] as Map?)?.cast<String, dynamic>();
-    return TeamApproval(
-      state: _review(json['state']) ?? TeamReviewState.waiting,
-      managerName: _str(json['managerName']) ?? '',
-      recommendedBy: _str(rec?['byName']),
-      outcome: _str(rec?['outcome']),
-      note: _str(rec?['note']),
-      recommendedAt: DateTime.tryParse('${rec?['at'] ?? ''}')?.toLocal(),
-      answerNote: _str(answer?['note']),
-      facts: ((json['facts'] as List?) ?? const [])
-          .whereType<Map>()
-          .map((f) => TeamApprovalFact('${f['label'] ?? ''}', '${f['value'] ?? ''}', f['ok'] == true))
-          .toList(),
+  factory TeamJoinerPage.fromJson(Map<String, dynamic> json) {
+    final card = _map(json['card']);
+    final progress = _map(json['progress']);
+    final joining = progress['joining'] is Map ? _map(progress['joining']) : null;
+    final lists = _map(json['lists']);
+    return TeamJoinerPage(
+      joiner: TeamJoiner.fromJson(_map(json['joiner'])),
+      relation: TeamRelation.parse(json['relation']),
+      readOnly: json['readOnly'] == true,
+      cardTitle: _str(card['title']) ?? '',
+      toDo: _int(card['toDo']),
+      tasks: _maps(json['tasks']).map(TeamTask.fromJson).toList(),
+      stats: _maps(progress['rows']).map(TeamProgressStat.fromJson).toList(),
+      joiningOn: _str(joining?['on']),
+      joiningTime: _str(joining?['time']),
+      joiningPlace: _str(joining?['place']),
+      lists: {for (final e in lists.entries) e.key: _maps(e.value).map(TeamProgressListRow.fromJson).toList()},
+      reachOut: _strings(json['reachOut']),
+      schedule: _maps(json['schedule']).map(TeamScheduleMeeting.fromJson).toList(),
     );
   }
 
-  final TeamReviewState state;
-  final String managerName;
-  final String? recommendedBy;
+  final TeamJoiner joiner;
+  final TeamRelation relation;
+  final bool readOnly;
 
-  /// 'confirm' or 'extend'.
-  final String? outcome;
+  /// "Your tasks for Priya" or "Help Priya with".
+  final String cardTitle;
+
+  /// The card's count ("2 to do"; 0 → All done).
+  final int toDo;
+
+  /// Mine, in step order.
+  final List<TeamTask> tasks;
+  final List<TeamProgressStat> stats;
+
+  /// JOINING DETAILS before Day 1.
+  final String? joiningOn;
+  final String? joiningTime;
+  final String? joiningPlace;
+
+  /// meet | tasks | ci | watch | tour | dev | prof.
+  final Map<String, List<TeamProgressListRow>> lists;
+
+  /// The ways to reach out, in order: welcome_message, announcement, feed, game, team_post, chat.
+  final List<String> reachOut;
+
+  /// The manager's: every Day-1 and Week-1 meeting.
+  final List<TeamScheduleMeeting> schedule;
+
+  TeamJoinerPage withTask(TeamTask row) => TeamJoinerPage(
+    joiner: joiner, relation: relation, readOnly: readOnly, cardTitle: cardTitle, toDo: toDo,
+    tasks: [for (final t in tasks) t.id == row.id ? row : t],
+    stats: stats, joiningOn: joiningOn, joiningTime: joiningTime, joiningPlace: joiningPlace, lists: lists, reachOut: reachOut, schedule: schedule,
+  );
+}
+
+/// Someone the manager can make the buddy.
+class TeamBuddyOption {
+  const TeamBuddyOption({required this.userId, required this.name, this.designation, this.photoUrl});
+
+  factory TeamBuddyOption.fromJson(Map<String, dynamic> json) => TeamBuddyOption(
+    userId: '${json['userId'] ?? ''}',
+    name: _str(json['name']) ?? '—',
+    designation: _str(json['designation']),
+    photoUrl: _str(json['photoUrl']),
+  );
+
+  final String userId;
+  final String name;
+  final String? designation;
+  final String? photoUrl;
+}
+
+/// A goal on "Comment on Rahul’s goals".
+class TeamGoal {
+  const TeamGoal({required this.index, required this.text, this.status, this.note, this.comment});
+
+  factory TeamGoal.fromJson(Map<String, dynamic> json) => TeamGoal(
+    index: _int(json['index']),
+    text: _str(json['text']) ?? '',
+    status: _str(json['status']),
+    note: _str(json['note']),
+    comment: _str(json['comment']),
+  );
+
+  final int index;
+  final String text;
+
+  /// start | progress | well.
+  final String? status;
   final String? note;
-  final DateTime? recommendedAt;
-  final List<TeamApprovalFact> facts;
-  final String? answerNote;
+  final String? comment;
+}
+
+/// A question and what the joiner answered.
+class TeamCheckinAnswer {
+  const TeamCheckinAnswer({required this.question, required this.type, this.value});
+  final String question;
+
+  /// rating | yes_no | short | long | choice.
+  final String type;
+  final Object? value;
+}
+
+/// A check-in as the manager reads it (MgrReview).
+class TeamCheckin {
+  const TeamCheckin({required this.title, required this.state, this.sentAt, this.answers = const []});
+
+  factory TeamCheckin.fromJson(Map<String, dynamic> json) {
+    final answers = {for (final a in _maps(json['answers'])) '${a['questionId'] ?? ''}': a['value']};
+    return TeamCheckin(
+      title: _str(json['title']) ?? '',
+      state: _str(json['state']) ?? 'waiting',
+      sentAt: DateTime.tryParse('${json['sentAt'] ?? ''}')?.toLocal(),
+      answers: [
+        for (final q in _maps(json['questions']))
+          TeamCheckinAnswer(question: _str(q['text']) ?? '', type: _str(q['type']) ?? 'short', value: answers['${q['id'] ?? ''}']),
+      ],
+    );
+  }
+
+  final String title;
+
+  /// waiting | ready | read.
+  final String state;
+  final DateTime? sentAt;
+  final List<TeamCheckinAnswer> answers;
+}
+
+/// A fact on the confirmation review and the approval.
+class TeamFact {
+  const TeamFact(this.label, this.value);
+  final String label;
+  final String value;
+
+  static List<TeamFact> listOf(Object? json) => [for (final f in _maps(json)) TeamFact(_str(f['label']) ?? '', _str(f['value']) ?? '')];
+}
+
+/// The manager's recommendation (sent, or as the head of department reads it).
+class TeamRecommendation {
+  const TeamRecommendation({required this.outcome, this.extendMonths, this.kpis = '', this.strengths = '', this.next = '', this.note, this.byName, this.at});
+
+  factory TeamRecommendation.fromJson(Map<String, dynamic> json) => TeamRecommendation(
+    outcome: _str(json['outcome']) ?? 'confirm',
+    extendMonths: _intOrNull(json['extendMonths']),
+    kpis: _str(json['kpis']) ?? '',
+    strengths: _str(json['strengths']) ?? '',
+    next: _str(json['next']) ?? '',
+    note: _str(json['note']),
+    byName: _str(json['byName']),
+    at: DateTime.tryParse('${json['at'] ?? ''}')?.toLocal(),
+  );
+
+  /// confirm | extend.
+  final String outcome;
+  final int? extendMonths;
+  final String kpis;
+  final String strengths;
+  final String next;
+  final String? note;
+  final String? byName;
+  final DateTime? at;
+}
+
+/// MgrConfReview's facts and who approves.
+class TeamReviewView {
+  const TeamReviewView({this.facts = const [], this.approverName, this.sent});
+
+  factory TeamReviewView.fromJson(Map<String, dynamic> json) => TeamReviewView(
+    facts: TeamFact.listOf(json['facts']),
+    approverName: _str(json['approverName']),
+    sent: json['sent'] is Map ? TeamRecommendation.fromJson(_map(json['sent'])) : null,
+  );
+
+  final List<TeamFact> facts;
+  final String? approverName;
+  final TeamRecommendation? sent;
+}
+
+/// HodApprove: the recommendation, the facts and the answer.
+class TeamConfirmation {
+  const TeamConfirmation({required this.state, this.recommendation, this.facts = const [], this.answerComment, this.answerMonths});
+
+  factory TeamConfirmation.fromJson(Map<String, dynamic> json) {
+    final answer = json['answer'] is Map ? _map(json['answer']) : null;
+    return TeamConfirmation(
+      state: _str(json['state']) ?? 'waiting',
+      recommendation: json['recommendation'] is Map ? TeamRecommendation.fromJson(_map(json['recommendation'])) : null,
+      facts: TeamFact.listOf(json['facts']),
+      answerComment: _str(answer?['comment']),
+      answerMonths: _intOrNull(answer?['extendMonths']),
+    );
+  }
+
+  /// waiting | ready | approved | extended.
+  final String state;
+  final TeamRecommendation? recommendation;
+  final List<TeamFact> facts;
+  final String? answerComment;
+  final int? answerMonths;
 }
 
 /// The team side's calls. The screens only talk to this, so tests hand them a fake.
 abstract class TeamJoinersApi {
   Future<List<TeamJoinerRow>> fetchJoiners();
-  Future<TeamJoinerPage> fetchJoiner(String journeyId);
+  Future<TeamJoinerPage> fetchPage(String journeyId);
 
-  /// `done` or `undo`; the page as it is after.
-  Future<TeamJoinerPage> taskAction(String journeyId, String taskId, String action);
-  Future<TeamApproval> fetchApproval(String journeyId);
-
-  /// `approve` or `discuss`.
-  Future<TeamApproval> answerApproval(String journeyId, String action, {String? comment});
-
-  /// The manager's recommendation on `mgr_recommend`: `confirm` or `extend`, with an optional note.
-  Future<TeamJoinerPage> recommend(String journeyId, String outcome, {String? note}) =>
-      throw UnimplementedError('recommend');
-
-  /// A meeting marked done with its notes (the month's check-in keeps them as the manager's side).
-  Future<TeamJoinerPage> meetingDone(String journeyId, String taskId, {String? notes}) => taskAction(journeyId, taskId, 'done');
-
-  /// MgrReview: "Mark as reviewed" on a month's self check-in, with optional comments the joiner sees.
-  Future<void> reviewMonth(String journeyId, int month, {String? comment}) => throw UnimplementedError('reviewMonth');
-
-  /// MgrReview: "Send back" — the joiner sends the month's self check-in again.
-  Future<void> sendBackMonth(String journeyId, int month, {String? comment}) => throw UnimplementedError('sendBackMonth');
+  /// A tick: `done` or `undo`.
+  Future<TeamJoinerPage> rowAction(String journeyId, String rowId, String action);
+  Future<List<String>> saveNotes(String journeyId, String rowId, List<String> notes);
+  Future<({List<TeamBuddyOption> options, String? current})> buddyOptions(String journeyId);
+  Future<TeamJoinerPage> assignBuddy(String journeyId, String buddyUserId);
+  Future<TeamJoinerPage> schedule(String journeyId, Map<String, DateTime> times);
+  Future<TeamJoinerPage> welcomeMessage(String journeyId, String text);
+  Future<TeamJoinerPage> feedPost(String journeyId, String text);
+  Future<List<TeamGoal>> goals(String journeyId, int month);
+  Future<List<TeamGoal>> commentOnGoals(String journeyId, int month, Map<int, String> comments);
+  Future<TeamCheckin> checkin(String journeyId, String checkinId);
+  Future<TeamCheckin> markCheckinRead(String journeyId, String checkinId);
+  Future<TeamReviewView> review(String journeyId);
+  Future<TeamJoinerPage> sendReview(String journeyId, {required String outcome, int? extendMonths, required String kpis, required String strengths, required String next});
+  Future<TeamConfirmation> confirmation(String journeyId);
+  Future<TeamConfirmation> answerConfirmation(String journeyId, String action, {int? extendMonths, String? comment});
+  Future<TeamJoinerPage> seniorMeeting(String journeyId, {required String mode, required DateTime startsAt, List<String> journeyIds = const []});
 }
 
 class HttpTeamJoinersApi implements TeamJoinersApi {
@@ -393,6 +601,8 @@ class HttpTeamJoinersApi implements TeamJoinersApi {
   final AuthSession session;
   final String _baseUrl;
   final http.Client _client;
+
+  String _j(String journeyId) => '/lifecycle/team/joiners/${Uri.encodeComponent(journeyId)}';
 
   Future<Map<String, dynamic>> _json(String method, String path, {Map<String, dynamic>? body}) async {
     final request = http.Request(method, Uri.parse('$_baseUrl$path'))
@@ -417,74 +627,99 @@ class HttpTeamJoinersApi implements TeamJoinersApi {
     return json;
   }
 
+  Future<TeamJoinerPage> _page(String method, String path, {Map<String, dynamic>? body}) async =>
+      TeamJoinerPage.fromJson(await _json(method, path, body: body));
+
   @override
-  Future<List<TeamJoinerRow>> fetchJoiners() async {
-    final json = await _json('GET', '/lifecycle/team/joiners');
-    return ((json['joiners'] as List?) ?? const [])
-        .whereType<Map>()
-        .map((r) => TeamJoinerRow.fromJson(r.cast<String, dynamic>()))
-        .toList();
+  Future<List<TeamJoinerRow>> fetchJoiners() async =>
+      _maps((await _json('GET', '/lifecycle/team/joiners'))['joiners']).map(TeamJoinerRow.fromJson).toList();
+
+  @override
+  Future<TeamJoinerPage> fetchPage(String journeyId) => _page('GET', '${_j(journeyId)}/page');
+
+  @override
+  Future<TeamJoinerPage> rowAction(String journeyId, String rowId, String action) =>
+      _page('POST', '${_j(journeyId)}/rows/${Uri.encodeComponent(rowId)}', body: {'action': action});
+
+  @override
+  Future<List<String>> saveNotes(String journeyId, String rowId, List<String> notes) async =>
+      _strings((await _json('PUT', '${_j(journeyId)}/rows/${Uri.encodeComponent(rowId)}/notes', body: {'notes': notes}))['notes']);
+
+  @override
+  Future<({List<TeamBuddyOption> options, String? current})> buddyOptions(String journeyId) async {
+    final json = await _json('GET', '${_j(journeyId)}/buddy-options');
+    return (options: _maps(json['options']).map(TeamBuddyOption.fromJson).toList(), current: _str(json['current']));
   }
 
   @override
-  Future<TeamJoinerPage> fetchJoiner(String journeyId) async =>
-      TeamJoinerPage.fromJson(await _json('GET', '/lifecycle/team/joiners/${Uri.encodeComponent(journeyId)}'));
+  Future<TeamJoinerPage> assignBuddy(String journeyId, String buddyUserId) =>
+      _page('POST', '${_j(journeyId)}/buddy', body: {'buddyUserId': buddyUserId});
 
   @override
-  Future<TeamJoinerPage> taskAction(String journeyId, String taskId, String action) async => TeamJoinerPage.fromJson(
-    await _json(
-      'POST',
-      '/lifecycle/team/joiners/${Uri.encodeComponent(journeyId)}/tasks/${Uri.encodeComponent(taskId)}',
-      body: {'action': action},
-    ),
-  );
-
-  @override
-  Future<TeamJoinerPage> recommend(String journeyId, String outcome, {String? note}) async => TeamJoinerPage.fromJson(
-    await _json(
-      'POST',
-      '/lifecycle/team/joiners/${Uri.encodeComponent(journeyId)}/tasks/mgr_recommend',
-      body: {'action': 'recommend', 'outcome': outcome, if (note != null && note.trim().isNotEmpty) 'note': note.trim()},
-    ),
-  );
-
-  @override
-  Future<TeamJoinerPage> meetingDone(String journeyId, String taskId, {String? notes}) async => TeamJoinerPage.fromJson(
-    await _json(
-      'POST',
-      '/lifecycle/team/joiners/${Uri.encodeComponent(journeyId)}/tasks/${Uri.encodeComponent(taskId)}',
-      body: {'action': 'done', if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim()},
-    ),
-  );
-
-  @override
-  Future<void> reviewMonth(String journeyId, int month, {String? comment}) => _json(
-    'PUT',
-    '/lifecycle/manager/joiners/${Uri.encodeComponent(journeyId)}/probation/$month',
+  Future<TeamJoinerPage> schedule(String journeyId, Map<String, DateTime> times) => _page(
+    'POST',
+    '${_j(journeyId)}/schedule',
     body: {
-      'review': {'text': comment?.trim() ?? '', 'reviewed': true},
+      'meetings': [for (final e in times.entries) {'rowKey': e.key, 'startsAt': e.value.toUtc().toIso8601String()}],
     },
   );
 
   @override
-  Future<void> sendBackMonth(String journeyId, int month, {String? comment}) => _json(
-    'PUT',
-    '/lifecycle/manager/joiners/${Uri.encodeComponent(journeyId)}/probation/$month',
-    body: {
-      'sendBack': {if (comment != null && comment.trim().isNotEmpty) 'text': comment.trim()},
-    },
+  Future<TeamJoinerPage> welcomeMessage(String journeyId, String text) => _page('POST', '${_j(journeyId)}/welcome-message', body: {'text': text});
+
+  @override
+  Future<TeamJoinerPage> feedPost(String journeyId, String text) => _page('POST', '${_j(journeyId)}/feed', body: {'text': text});
+
+  @override
+  Future<List<TeamGoal>> goals(String journeyId, int month) async =>
+      _maps((await _json('GET', '${_j(journeyId)}/goals/$month'))['goals']).map(TeamGoal.fromJson).toList();
+
+  @override
+  Future<List<TeamGoal>> commentOnGoals(String journeyId, int month, Map<int, String> comments) async => _maps(
+    (await _json(
+      'POST',
+      '${_j(journeyId)}/goals/$month',
+      body: {
+        'comments': [for (final e in comments.entries) {'index': e.key, 'text': e.value}],
+      },
+    ))['goals'],
+  ).map(TeamGoal.fromJson).toList();
+
+  @override
+  Future<TeamCheckin> checkin(String journeyId, String checkinId) async =>
+      TeamCheckin.fromJson(await _json('GET', '${_j(journeyId)}/checkins/${Uri.encodeComponent(checkinId)}'));
+
+  @override
+  Future<TeamCheckin> markCheckinRead(String journeyId, String checkinId) async =>
+      TeamCheckin.fromJson(await _json('POST', '${_j(journeyId)}/checkins/${Uri.encodeComponent(checkinId)}/read'));
+
+  @override
+  Future<TeamReviewView> review(String journeyId) async => TeamReviewView.fromJson(await _json('GET', '${_j(journeyId)}/review'));
+
+  @override
+  Future<TeamJoinerPage> sendReview(String journeyId, {required String outcome, int? extendMonths, required String kpis, required String strengths, required String next}) =>
+      _page(
+        'POST',
+        '${_j(journeyId)}/review',
+        body: {'outcome': outcome, 'extendMonths': ?extendMonths, 'kpis': kpis, 'strengths': strengths, 'next': next},
+      );
+
+  @override
+  Future<TeamConfirmation> confirmation(String journeyId) async => TeamConfirmation.fromJson(await _json('GET', '${_j(journeyId)}/confirmation'));
+
+  @override
+  Future<TeamConfirmation> answerConfirmation(String journeyId, String action, {int? extendMonths, String? comment}) async => TeamConfirmation.fromJson(
+    await _json(
+      'POST',
+      '${_j(journeyId)}/confirmation',
+      body: {'action': action, 'extendMonths': ?extendMonths, if (comment != null && comment.trim().isNotEmpty) 'comment': comment.trim()},
+    ),
   );
 
   @override
-  Future<TeamApproval> fetchApproval(String journeyId) async =>
-      TeamApproval.fromJson(await _json('GET', '/lifecycle/team/joiners/${Uri.encodeComponent(journeyId)}/approval'));
-
-  @override
-  Future<TeamApproval> answerApproval(String journeyId, String action, {String? comment}) async => TeamApproval.fromJson(
-    await _json(
-      'POST',
-      '/lifecycle/team/joiners/${Uri.encodeComponent(journeyId)}/approval',
-      body: {'action': action, if (comment != null && comment.trim().isNotEmpty) 'comment': comment.trim()},
-    ),
+  Future<TeamJoinerPage> seniorMeeting(String journeyId, {required String mode, required DateTime startsAt, List<String> journeyIds = const []}) => _page(
+    'POST',
+    '${_j(journeyId)}/senior-meeting',
+    body: {'mode': mode, 'startsAt': startsAt.toUtc().toIso8601String(), if (journeyIds.isNotEmpty) 'journeyIds': journeyIds},
   );
 }

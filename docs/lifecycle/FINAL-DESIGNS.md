@@ -355,7 +355,11 @@ interface TeamJoinerPage {
   lists: Record<'meet' | 'tasks' | 'ci' | 'watch' | 'tour' | 'dev' | 'prof', ProgressListRow[]>;
   /** The ways, in order (titles and lines are the app's copy): before Day 1 welcome_message, announcement; after: feed, game, announcement, team_post, chat. */
   reachOut: Array<'welcome_message' | 'announcement' | 'feed' | 'game' | 'team_post' | 'chat'>;
+  /** Lane T addition: the manager's only — every Day-1 / Week-1 meeting (MgrSchedule, MgrWelcome's first-meeting time). */
+  schedule?: Array<{ rowKey: string; title: string; step: 1 | 2; withName?: string; withInitials?: string; startsAt?: string }>;
 }
+// Lane T additions: `joiner.step` (0 Before Day 1 … Confirmed: the app splits now / COMING UP by it);
+// meeting rows in `tasks` carry `notes: string[]` (my own, lifecycle_meeting_notes) and `startsAt` (lifecycle_meetings).
 interface TeamTaskRow {
   id: string; title: string; kind: TeamTaskKind; step: number; stepLabel: string; early: boolean; done: boolean; locked: boolean;
   pair?: string; how?: string; note?: string;
