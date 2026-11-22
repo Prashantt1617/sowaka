@@ -10,6 +10,7 @@ import type { Journey, JourneyTask, TeamRole } from '../../models/lifecycle.mode
 import { reportDaysOfPerson } from '../attendance-report.service';
 import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
 import { postWelcome } from './appOnboarding';
+import { templateReporting } from './design';
 import { dueText, shortDay, stepLabels, stepOfStage } from './designRules';
 import { TEAM_APP_COPY, TEAM_EARLY, TEAM_SCREEN } from './designSeed';
 import { accessTasks, fillNames, firstOf, initialsOf, joinerDesignTasks, place, setRowTick, teammatePushTarget, teamRowTitle, type Placed, type PlacedRow } from './designRows';
@@ -286,7 +287,7 @@ export async function teamJoinerPage(me: Me, journeyId: string) {
     return v;
   });
   const progress = await progressOf(p, tasks, 'team', names);
-  const reporting = p.design.settings.reporting;
+  const reporting = templateReporting(p.design.settings);
   let schedule: Array<{ rowKey: string; title: string; step: number; withName?: string; withInitials?: string; startsAt?: string }> | undefined;
   if (link.roles.includes('manager')) {
     const firstWeek = p.meetings.filter((m) => m.step === 1 || m.step === 2);
@@ -302,7 +303,7 @@ export async function teamJoinerPage(me: Me, journeyId: string) {
     joiner: { ...joiner, step: p.step }, relation: link.rel, readOnly: !link.roles.length,
     card: { title: link.roles.length === 1 && link.roles[0] === 'buddy' ? `Help ${first} with` : `Your tasks for ${first}`, toDo: mine.filter((t) => !t.done && !t.locked && t.step <= p.step).length },
     tasks: mine,
-    progress: { rows: progress.rows, ...(p.step === 0 && j.tj ? { joining: { on: j.tj, ...(reporting?.time ?? j.day1Pass?.reportingTime ? { time: reporting?.time ?? j.day1Pass?.reportingTime } : {}), ...(reporting?.place ?? j.day1Pass?.place ? { place: reporting?.place ?? j.day1Pass?.place } : {}) } } : {}) },
+    progress: { rows: progress.rows, ...(p.step === 0 && j.tj ? { joining: { on: j.tj, ...(j.day1Pass?.reportingTime ?? reporting?.time ? { time: j.day1Pass?.reportingTime ?? reporting?.time } : {}), ...(j.day1Pass?.place ?? reporting?.place ? { place: j.day1Pass?.place ?? reporting?.place } : {}) } } : {}) },
     lists: progress.lists,
     reachOut: isJoined(j) ? ['feed', 'game', 'announcement', 'team_post', 'chat'] : ['welcome_message', 'announcement'],
     ...(schedule ? { schedule } : {}),

@@ -65,6 +65,15 @@ export async function designOf(j: Pick<Journey, 'org' | 'templateId' | 'template
   return { rows, settings, isDesign: rows.length > 0 };
 }
 
+/**
+ * The template's "Joining and reporting details" a joiner reads (portal Day-1 pass and joining details, the
+ * teammates' JOINING DETAILS): none when the template removed that pre-boarding row. What HR typed on the
+ * joiner (`journey.day1Pass`) wins over it wherever it is read.
+ */
+export function templateReporting(settings: LifecycleTemplateSettings): LifecycleTemplateSettings['reporting'] {
+  return settings.preboarding?.joiningDetails === false ? undefined : settings.reporting;
+}
+
 /** The template row behind a journey task (its snapshot first: the task was made from it). */
 export function designRowOfTask(j: Pick<Journey, 'templateSnapshot'>, templateTaskId: string, design?: JourneyDesign): TemplateTask | undefined {
   return j.templateSnapshot?.tasks?.find((t) => t.id === templateTaskId && !!t.design) ?? design?.rows.find((t) => t.id === templateTaskId);

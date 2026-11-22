@@ -157,6 +157,14 @@ async function main() {
   const portal = await import('../services/lifecycle/portal');
   const pass = await portal.portalPass(await engine.loadJourney(J1), new Date(), { anyDay: true });
   eq('The portal’s Day-1 pass reads the template’s joining and reporting details (who meets them: HR)', [pass.reportingTime, pass.place, pass.askFor?.name], ['9:30 AM', 'Reception, Pune office', 'Ritu Sharma']);
+  const details = await portal.joiningDetails(await engine.loadJourney(J1));
+  eq('…and so does the joining details tile (one reading)', [details.reportingTime, details.place, details.askFor?.name], ['9:30 AM', 'Reception, Pune office', 'Ritu Sharma']);
+  const preRows = (await engine.loadJourney(J1)).templateSnapshot.settings.preboarding!;
+  await journeys().updateOne({ id: J1 }, { $set: { 'templateSnapshot.settings.preboarding': { ...preRows, joiningDetails: false } } });
+  const hiddenPass = await portal.portalPass(await engine.loadJourney(J1), new Date(), { anyDay: true });
+  const hiddenDetails = await portal.joiningDetails(await engine.loadJourney(J1));
+  eq('Row removed in the template: neither the pass nor the tile shows its details', [hiddenPass.reportingTime, hiddenPass.place, hiddenPass.askFor, hiddenDetails.reportingTime, hiddenDetails.place], [undefined, undefined, undefined, undefined, undefined]);
+  await journeys().updateOne({ id: J1 }, { $set: { 'templateSnapshot.settings.preboarding': preRows } });
 
   section('Meetings: one tick, read by both sides');
   await meetings.markMeetingRowMet(PRIYA, await engine.loadJourney(J1), welcome.id, { action: 'met' });
