@@ -42,6 +42,7 @@ filled by the server before it answers (the app never fills them).
 | Confirmation review / recommendation | `lifecycle_journeys` · `probation.recommendation` (+ `review` text) | manager | head of department, HR, dashboard decision |
 | Head of department's approval | `lifecycle_journeys` · `probation.hodApproval` | head of department | HR, dashboard decision |
 | Who does HR / IT & admin / "someone senior" tasks | template `settings.assignees` | dashboard | server (who sees what) |
+| Joining and reporting details (time, place, what to bring, who meets them) | template `settings.reporting`, under what HR typed on the joiner (`journey.day1Pass` wins) | dashboard | portal's Day-1 pass (`portalPass`), teammates' JOINING DETAILS |
 
 Nothing in the app is counted or faked on the device: every count, percentage, "late", "due" text and stage
 label below comes in the response. The app may filter a list it got by `step` (the joiner's "look ahead").
@@ -170,7 +171,7 @@ task (`design: { section: 'task', taskType: 'sign', stage: 'd1', signDocs: ['app
 | Manager | `mgr_assign_buddy` Assign {n} a buddy (pre) · `mgr_schedule` Schedule {p} first-week meetings (pre) · `mgr_welcome` Send {n} a welcome message (pre, early) · `mgr_kpis` Set {p} KPIs (pre) · `mgr_feed_intro` Introduce {n} on the feed (d1, early) · `mgr_read_checkin` Read {p} <check-in> (one per check-in except end of probation, at its stage) · `mgr_goal_comments` Comment on {p} goals (m1, every month) · `mgr_confirmation_review` Write {p} confirmation review (fin) |
 | Buddy | `buddy_show_around` Show {n} around the office · `buddy_punch_in` Tell {n} how punch-in works · `buddy_groups` Add {n} to the team’s groups and channels (all d1) |
 | HR | `hr_prepare_kit` Prepare {p} onboarding kit (pre) · `hr_hand_kit` Hand over the onboarding kit (d1) · `hr_check_payroll` Check {p} payroll details (w1) · `hr_check_form` Check {p} joining form (w1) · `hr_confirmation_letter` Issue {p} confirmation letter (fin) |
-| IT & admin | the access rows (Laptop, Work email, Office Wi-Fi, Sowaka Connect), shown to IT as one row `it_accesses` "Set up {p} accesses" (w1, early) |
+| IT & admin | the access rows (Laptop, Work email, Office Wi-Fi, Sowaka Connect), shown to IT as one row `it_accesses` "Set up {p} accesses" (w1, early; made on read from the access rows, not stored); an access HR sets up gives HR the same row `hr_accesses` |
 | Leadership | `senior_meet` Meet {n}, one to one or with other new joiners (w1, someone senior) · `hod_approve` Approve {p} confirmation (fin, head of department) |
 
 Defaults: probation 6 months; reminder switch on; tour all six; preboarding rows all on; reporting
@@ -188,7 +189,7 @@ the offer; IT = nobody until set: the IT tasks then show only on the dashboard).
 | GET `/admin/lifecycle/templates?kind=onboarding` | | as today; each template adds `design: boolean` (has Final-designs rows) |
 | GET `/admin/lifecycle/templates/:id/design` | | `TemplateDesign` |
 | PUT `/admin/lifecycle/templates/:id/design` | `TemplateDesign` minus read-only fields (whole document; "Save template") | `TemplateDesign` (saved). Applies to journeys that start after saving for tasks and accesses; meetings, check-ins, watch list and team rows follow the template as it is now (as team rows do today). |
-| POST `/admin/lifecycle/templates/:id/media` | multipart `file` (video mp4/mov ≤ 50 MB; image jpg/png; pdf ≤ 10 MB) | `{ file: { id, name, contentType, size } }` |
+| POST `/admin/lifecycle/templates/:id/media` | multipart `file` (video mp4/mov ≤ 50 MB; image jpg/png; pdf ≤ 10 MB) | `{ file: { id, name, contentType, size, minutes? } }` (`minutes`: a video's length, a PDF's pages; the editor puts it in `media.minutes`: "3 min", "5 min read") |
 | GET `/admin/lifecycle/templates/media/:fileId` | | the bytes (same org) |
 | GET `/admin/lifecycle/templates/:id/preview?stage=pre|d1|w1|m1|mid|fin` | | `TemplatePreview` (Employee preview's phone tiles) |
 
@@ -220,8 +221,13 @@ interface TemplateDesign {
   };
 }
 interface WatchItem { id: string; title: string; stage: DesignStage; media: { type: 'video' | 'image' | 'text' | 'pdf'; fileId?: string; text?: string; bg?: string; minutes?: number } }
-interface TemplatePreview { stage: DesignStage; header: 'Welcome' | 'Onboarding'; stageLabel: string;
-  tiles: Array<{ key: 'joining' | 'offer' | 'profile' | 'watch' | 'meetings' | 'tasks' | 'tour' | 'devices'; title: string; line: string; sub: string }> }
+/** The phone tiles' facts at one stage (the app copy — "Fill in your details", "A lesson a day" — is the dashboard's). */
+type TemplatePreview =
+  | { stage: 'pre'; header: 'Welcome'; stageLabel: string; joining: { time?: string; place?: string; meets: 'hr' | 'manager' | 'buddy' } | null;
+      offerLetter: boolean; profile: { sections: 7 } | null; watch: { first: string; ready: number; total: number } | null }
+  | { stage: Exclude<DesignStage, 'pre'>; header: 'Onboarding'; stageLabel: string; meetings: { count: number; who: MeetWith[] };
+      tasks: { first?: string; count: number }; tour: { first: TourLesson | null } | null; watch: { first: string; ready: number; total: number } | null;
+      devices: { count: number } | null; profile: true };
 ```
 
 Validation: titles 1–120; agenda ≤ 12 points ≤ 160; questions ≤ 20 ≤ 200; `link` https; `how` ≤ 140;
@@ -235,7 +241,7 @@ row is deleted from the template (running journeys keep their journey tasks; the
 | Method + path | Body | Returns |
 |---|---|---|
 | GET `/lifecycle/joiner/onboarding` | | `JoinerOnboarding` (home + every tile's screen; the app opens tiles from this one answer) |
-| POST `/lifecycle/joiner/tasks/:taskId` | `{ action: 'looks_good' \| 'acknowledged' \| 'opened' \| 'done' }` (Review → looks_good; Read and acknowledge (PDF) → acknowledged; More tasks → opened (after the link opens) or done) | `{ task: JoinerTaskRow }` (409 for Do in Sowaka, Sign, policies, forms: they finish from their own screen) |
+| POST `/lifecycle/joiner/tasks/:taskId` | `{ action: 'looks_good' \| 'acknowledged' \| 'opened' \| 'done' }` (Review → looks_good; Read and acknowledge (PDF) → acknowledged; More tasks → opened (after the link opens) or done; Confirmed's "Read your confirmation letter" (`id` `letter:<letterId>`) → any action marks it opened) | `JoinerOnboarding` (409 for Do in Sowaka, Sign, policies, forms: they finish from their own screen or the fact itself) |
 | GET `/lifecycle/joiner/forms/:taskId` · POST same `{ answers: Array<{ questionId, value: string \| null }> }` · POST `/lifecycle/joiner/forms/:taskId/files` multipart `file` → `{ fileId }` | | `{ form: { taskId, title, questions, answers?, sentAt? } }` — answers saved to the joiner's profile (`journey.forms[taskId]`) |
 | GET `/lifecycle/joiner/checkins/:id` | | `JoinerCheckin` |
 | POST `/lifecycle/joiner/checkins/:id` | `{ answers: Array<{ questionId: string; value: number \| 'yes' \| 'no' \| string \| null }> }` (null = skipped long answer) | `JoinerCheckin` (409 once sent, or before it opens) |
@@ -319,7 +325,9 @@ the server holds the value).
 | GET `/lifecycle/team/joiners/:journeyId/goals/:month` · POST same `{ comments: Array<{ index: number; text: string }> }` | | `{ month, goals: GoalView[] }` ("Send to {n}" ticks `mgr_goal_comments@month`) |
 | GET `/lifecycle/team/joiners/:journeyId/checkins/:checkinId` · POST `…/read` | | `{ title, sentAt?, state: 'waiting' \| 'ready' \| 'read', questions, answers }` (manager only) |
 | POST `/lifecycle/team/joiners/:journeyId/review` | `{ outcome: 'confirm' \| 'extend', extendMonths?: 1 \| 2 \| 3, kpis: string, strengths: string, next: string }` | `TeamJoinerPage` (onto `probation.recommendation`; ticks `mgr_confirmation_review`; head of department told) |
-| GET `/lifecycle/team/joiners/:journeyId/approval` · POST same `{ action: 'approve' \| 'extend', extendMonths?: 1 \| 2 \| 3, comment? }` | | approval view: `{ state: 'waiting' \| 'ready' \| 'approved' \| 'extended', recommendation?: { byName, outcome, extendMonths?, kpis, strengths, next, note?, at }, facts: Array<{ label, value }>, answer? }` |
+| PUT `/lifecycle/team/joiners/:journeyId/rows/:rowId/notes` | `{ notes: string[] }` | `{ notes }` (my own notes on a meeting's agenda) |
+| GET `/lifecycle/team/joiners/:journeyId/review` | | `{ facts: Array<{ label, value }>, approverName?, sent?: { outcome, extendMonths?, kpis, strengths, next, at } }` (MgrConfReview's block; "Send to <approverName>") |
+| GET `/lifecycle/team/joiners/:journeyId/confirmation` · POST same `{ action: 'approve' \| 'extend', extendMonths?: 1 \| 2 \| 3, comment? }` (new path: the old `/approval` keeps approve / discuss for app builds in use) | | approval view: `{ state: 'waiting' \| 'ready' \| 'approved' \| 'extended', recommendation?: { byName, outcome, extendMonths?, kpis, strengths, next, note?, at }, facts: Array<{ label, value }>, answer? }` |
 | POST `/lifecycle/team/joiners/:journeyId/senior-meeting` | `{ mode: 'one' \| 'group', startsAt, journeyIds?: string[] }` | `TeamJoinerPage` (one `lifecycle_meetings` row per joiner; ticks `senior_meet` on each) |
 
 ```ts
@@ -337,9 +345,10 @@ interface TeamJoinerPage {
   relation: 'report' | 'buddy' | 'line'; readOnly: boolean;
   card: { title: string /* "Your tasks for Priya" | "Help Priya with" */; toDo: number };
   tasks: TeamTaskRow[];                 // current first, then coming up; the card shows the first 3 open
-  progress: { rows: ProgressStat[]; footer: string; joining?: string /* "Joins 1 Dec · 9:30 AM · Pune office" */ };
+  progress: { rows: ProgressStat[]; joining?: { on: string; time?: string; place?: string } /* JOINING DETAILS before Day 1 */ };
   lists: Record<'meet' | 'tasks' | 'ci' | 'watch' | 'tour' | 'dev' | 'prof', ProgressListRow[]>;
-  reachOut: Array<{ key: 'welcome_message' | 'announcement' | 'feed' | 'game' | 'team_post' | 'chat'; title: string; line: string }>;
+  /** The ways, in order (titles and lines are the app's copy): before Day 1 welcome_message, announcement; after: feed, game, announcement, team_post, chat. */
+  reachOut: Array<'welcome_message' | 'announcement' | 'feed' | 'game' | 'team_post' | 'chat'>;
 }
 interface TeamTaskRow {
   id: string; title: string; kind: TeamTaskKind; step: number; stepLabel: string; early: boolean; done: boolean; locked: boolean;
@@ -391,13 +400,15 @@ interface StaffJoinerPage {
 interface StaffProfile { name: string; pct: number;
   sections: Array<{ key: 'personal' | 'contact' | 'emergency' | 'education' | 'ids' | 'bank' | 'pf' | 'salary' | 'tax'; title: string;
                     missing: number; rows: Array<{ label: string; value?: string /* absent = "Not filled yet" */ }> }> }
+/** Every screen answers `{ key, done, checks? }` plus: */
 type StaffTaskScreen =
-  | { key: 'hr_prepare_kit' | 'hr_hand_kit'; idCard: { name; designation?; department?; employeeId?; emergencyContact?; photoUrl?; missing: string[] }; accessCardNo?: string }
-  | { key: 'hr_check_payroll'; sections: StaffProfile['sections']; checks: Record<string, string> }
-  | { key: 'hr_check_form'; sections: StaffProfile['sections']; checks: Record<string, string> }
-  | { key: 'hr_confirmation_letter'; facts: Array<{ label; value }>; letter?: { id: string; state: string; pdfUrl?: string } }
-  | { key: 'it_accesses'; accesses: Array<{ id: string; title: string; ready: boolean; details: Array<{ label: string; value: string }> }> }
-  | { key: string; meeting: { agenda: string[]; notes: string[] } };
+  | { key: 'hr_prepare_kit' | 'hr_hand_kit'; idCard: { name: string; designation?: string; department?: string; employeeId?: string; bloodGroup?: string; emergencyContact?: string; photo: 'uploaded' | 'missing' }; accessCardNo?: string }
+  | { key: 'hr_check_payroll'; sections: StaffProfile['sections'] /* bank, pf, tax */ }
+  | { key: 'hr_check_form'; sections: StaffProfile['sections'] /* personal, contact, emergency, education */ }
+  | { key: 'hr_confirmation_letter'; facts: Array<{ label: string; value: string }>; letter?: { id: string; state: 'draft' | 'ready' | 'sent' } }
+  | { key: 'it_accesses' | 'hr_accesses'; accesses: Array<{ id: string; title: string; ready: boolean; details: Array<{ label: string; value: string }> }> }
+  | { key: string; meeting: { agenda: string[] } }   // HR's / IT's meetings; own notes via the meeting-row notes
+  | { key: string };                                  // a custom row: the how-to line and Mark as done
 ```
 
 Due text (server): late `"1 day late"` / `"N days late"` (red), `"Due today"` (amber), `"Due tomorrow"`,
@@ -422,7 +433,7 @@ No new cache. The lifecycle jobs (`runLifecycleJobs`) already call `forgetLifecy
 ## 6. Old endpoints and screens these designs replace
 
 Server endpoints stay until the app release with lanes J/T/H is the oldest one in use (old builds call them);
-the screen lanes remove every screen/entry below now. Marked `@deprecated final-designs` in the routes.
+the screen lanes remove every screen/entry below now. (They are listed here; the routes keep working unchanged.)
 
 | Old (server) | Old screen (remove) | Replaced by |
 |---|---|---|
@@ -439,13 +450,18 @@ the screen lanes remove every screen/entry below now. Marked `@deprecated final-
 | PUT `/lifecycle/onboarding/day1-feeling`, POST `…/week-done/seen` | Day 1 done / Week 1 done | — |
 | GET `/lifecycle/onboarding/team` | Your team (static) | (kept read; J lane decides — the canvas's "Your team" row) |
 | GET `/lifecycle/manager/joiners[/:id]`, PUT `…/setup`, POST `…/starter-tasks`, `…/notes`, `…/welcome`, `…/tasks/:taskId`, POST `/lifecycle/manager/starter-tasks/:id/reply` | M0–M3 manager joiner screens | `/lifecycle/team/*` |
+| GET `/lifecycle/team/joiners/:id`, POST `…/tasks/:taskId`, GET/POST `…/approval` (20 Nov shapes) | Teams › Joiners person page (20 Nov), recommend screen, approve / ask to discuss | GET `…/page`, POST `…/rows/:rowId`, the task screens of §4.3, GET/POST `…/confirmation` |
 | PUT `/lifecycle/manager/joiners/:id/probation/:month` | monthly review / check-in (PB2) | **kept only for `goals` (goal text)**; check-in/review parts replaced by goal comments + check-in read |
 | team rows `mgr_plan_week`, `mgr_buddy_check`, `mgr_week_chat`, `mgr_mid_feedback`, `mgr_write_review`, `mgr_recommend`, `buddy_meet`, `buddy_policies`, `buddy_tools`, `buddy_intros`, `buddy_leave_ot`, `buddy_week1` (old wording), `buddy_month1` (old), `hod_meet`, `mgr_share_news` | Teams › Joiners rows (20 Nov) | the §3 keys (migration switches the old ones off) |
 | Dashboard template editor (task table, Recommended panel, settings form) for onboarding | Setup › Employee lifecycle › Onboarding templates (old editor) | design editor on `/templates/:id/design` (offboarding keeps the old editor) |
 
-Kept exactly: `/lifecycle/me`, `/lifecycle/portal-session` and the portal (Quick Actions opens the portal
-inside the app before app access exists), `/lifecycle/onboarding/tour/:lesson`, `/onboarding/meeting-rows/*`,
-`/onboarding/letters/:id/pdf`, `/lifecycle/team/joiners/:id/approval` (body gains `extend`), the board.
+Kept exactly: `/lifecycle/me` (gains `onboarding.tile` and `staff`), `/lifecycle/portal-session` and the portal
+(Quick Actions opens the portal inside the app before app access exists), `/lifecycle/onboarding/tour/:lesson`,
+`/onboarding/meeting-rows/*` (gains `action: 'unmet'` and the design meeting rows), `/onboarding/letters/:id/pdf`,
+GET `/lifecycle/team/joiners` (gains `initials`, `relationLine`, `plantStage`), the board.
+
+Every deprecated route above stays for app builds in use (the 20 Nov app reads them) and answers as before;
+remove them once the release with lanes J/T/H is the oldest build in use.
 
 ---
 
@@ -461,6 +477,8 @@ Never run against a real database without the user's yes. Per onboarding templat
    `one_on_one_notes`, `probation_goals`, `day7_survey`, `week1_done`, `check_logins`, `monthly_goals`,
    `monthly_checkin`, `monthly_review`, `pulse_survey`, `manager_30day_note`, `manager_setup`, `assign_buddy`,
    `device_request`) and the old team rows (§6). Old HR custom rows are kept as they are (enabled) and listed.
+   The two 20 Nov team rows whose keys the designs reuse (`hod_approve`, `mgr_welcome`) keep their row with a
+   key of their own (`…_20nov`), so no key is listed twice and the older editor can still save the template.
 3. `sign_letters` gets `design` (Day-1 Sign task) and `settings.signLettersOnDay1 = true`.
 
 Nothing is deleted. Running journeys keep their journey tasks and snapshot; their new views read meetings,
@@ -479,7 +497,8 @@ stage, joiner view per step (Day 1 … Confirmed), task actions, check-in send/r
 watch, team page for manager/buddy/head of department (Meera both), staff cards/tile/person/profile/tasks,
 access ready → joiner device ready, the migration dry run and apply on a legacy template, a legacy journey
 still reading, cache drop after a design save. The existing `lifecycle:check`, `lifecycle:team-check`,
-`lifecycle:meetings-check` keep passing (they seed the legacy template explicitly).
+`lifecycle:meetings-check` keep passing (their npm scripts set `LIFECYCLE_ONBOARDING_SEED=legacy`, so they test
+journeys made from the older template, as production's running journeys are).
 
 ## 8a. Artboard → facts → endpoint · field → source
 

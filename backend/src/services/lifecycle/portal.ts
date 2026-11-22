@@ -7,6 +7,8 @@
  * about, meet, letter, pass). Up next = the first of: a document sent back →
  * the open item due soonest → an item not started.
  */
+import { designOf } from './design';
+import { peopleOf } from './designRows';
 import { candidateAccounts, companies, dateChangeRequests, journeys, letters, offers, users } from '../../config/db';
 import { policiesFor } from '../policy-document.service';
 import type { AboutYou, Day1Pass, Journey, OfferFields } from '../../models/lifecycle.model';
@@ -264,7 +266,19 @@ export async function portalPass(journey: Journey, now = new Date(), opts: { any
     journey.buddyUserId ? users().findOne({ userId: journey.buddyUserId }, { projection: { _id: 0, name: 1 } }) : null,
     companyOf(journey.org),
   ]);
-  const pass = journey.day1Pass ?? {};
+  // Final designs: the template's "Joining and reporting details" fill what HR has not typed on this joiner's pass.
+  const { settings } = await designOf(journey);
+  const reporting = settings.reporting;
+  let meets: { name: string; phone?: string } | null = null;
+  if (reporting && !journey.day1Pass?.askFor) {
+    const meetsId = reporting.meets === 'manager' ? journey.managerUserId : reporting.meets === 'buddy' ? journey.buddyUserId : (await peopleOf(journey, settings)).hr;
+    meets = meetsId ? await users().findOne({ userId: meetsId }, { projection: { _id: 0, name: 1, phone: 1 } }) : null;
+  }
+  const pass = {
+    ...(reporting?.time ? { reportingTime: reporting.time } : {}), ...(reporting?.place ? { place: reporting.place } : {}),
+    ...(reporting?.bring ? { bring: [reporting.bring] } : {}), ...(meets ? { askFor: { name: meets.name, ...(meets.phone ? { phone: meets.phone } : {}) } } : {}),
+    ...(journey.day1Pass ?? {}),
+  };
   return {
     ...pass,
     // The manager meeting names the current manager (the line HR typed goes stale when the manager changes).

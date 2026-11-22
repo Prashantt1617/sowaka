@@ -142,6 +142,10 @@ async function main() {
   eq('Devices and accesses: 4, none ready', [home.devices.length, home.summary.devices.ready], [4, 0]);
   eq('Tour: 4 lessons (no reports), today is Punch in and out', [home.tour.lessons.length, home.tour.today], [4, 'punch']);
 
+  const portal = await import('../services/lifecycle/portal');
+  const pass = await portal.portalPass(await engine.loadJourney(J1), new Date(), { anyDay: true });
+  eq('The portal’s Day-1 pass reads the template’s joining and reporting details (who meets them: HR)', [pass.reportingTime, pass.place, pass.askFor?.name], ['9:30 AM', 'Reception, Pune office', 'Ritu Sharma']);
+
   section('Meetings: one tick, read by both sides');
   await meetings.markMeetingRowMet(PRIYA, await engine.loadJourney(J1), welcome.id, { action: 'met' });
   home = await joiner.joinerOnboarding(PRIYA);
@@ -319,6 +323,10 @@ async function main() {
   ok('Applied: design rows, old rows switched off (never deleted), probation kept at 3',
     migrated.tasks.filter((t) => t.design).length === 53 && migrated.tasks.some((t) => t.systemKey === 'week1_reels' && !t.enabled && t.replacedBy === 'final_designs') && migrated.settings.probationMonths === 3, migrated.tasks.length);
   eq('Again: nothing to do', (await migrate.migrateTemplatesToFinalDesigns({ apply: true, org: ORG })).length, 0);
+  const keys = migrated.tasks.flatMap((t) => (t.team ? [t.team.key] : []));
+  ok('No team key twice (the old Approve keeps its own)', new Set(keys).size === keys.length && keys.includes('hod_approve_20nov'), keys);
+  const resaved = await templates.updateTemplate(ORG, 'old-tpl', { tasks: migrated.tasks });
+  ok('The older editor can still save a migrated template', resaved.tasks.length === migrated.tasks.length);
   eq('The running journey keeps its tasks', await journeyTasks().countDocuments({ journeyId: oldJ.id }), oldTasksBefore);
   const oldHome = await joiner.joinerOnboarding(me('j3', 'Rahul Verma'));
   ok('…its new view reads: meetings from the template, its own tasks by kind', oldHome.meetings.length > 0 && oldHome.tasks.length > 0 && oldHome.step === 'w1', { m: oldHome.meetings.length, t: oldHome.tasks.length });

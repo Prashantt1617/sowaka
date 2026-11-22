@@ -26,6 +26,7 @@ export interface TemplateMigration {
 export function migrateTemplate(t: Pick<LifecycleTemplate, 'tasks' | 'settings'>, company?: string): { tasks: TemplateTask[]; settings: LifecycleTemplate['settings']; report: Omit<TemplateMigration, 'org' | 'templateId' | 'name'> } {
   const design = finalDesignRows(company);
   const signDesign = design.find((r) => r.design?.taskType === 'sign')!;
+  const newKeys = new Set(design.flatMap((r) => (r.team ? [r.team.key] : [])));
   const switchedOff: string[] = [];
   const keptCustom: string[] = [];
   const old = t.tasks.map((row): TemplateTask => {
@@ -35,7 +36,11 @@ export function migrateTemplate(t: Pick<LifecycleTemplate, 'tasks' | 'settings'>
     const replaced = (row.systemKey && REPLACED_KEYS.includes(row.systemKey)) || (row.team && OLD_TEAM_KEYS.has(row.team.key));
     if (replaced) {
       if (row.enabled !== false) switchedOff.push(row.title);
-      return { ...row, enabled: false, replacedBy: 'final_designs' };
+      // A 20 Nov row whose key the designs reuse (hod_approve, mgr_welcome): the new row takes the key
+      // (and the ticks under it, which mean the same); the old one keeps a key of its own, so a
+      // template never lists one key twice.
+      const team = row.team && newKeys.has(row.team.key) ? { ...row.team, key: `${row.team.key}_20nov` } : row.team;
+      return { ...row, ...(team ? { team } : {}), enabled: false, replacedBy: 'final_designs' };
     }
     if (!row.systemKey && !row.team) keptCustom.push(row.title);
     return row;
