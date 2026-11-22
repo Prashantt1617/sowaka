@@ -183,6 +183,7 @@ class OnboardingMe {
     this.progress,
     this.subtitle,
     this.portal = false,
+    this.tile,
   });
 
   factory OnboardingMe.fromJson(Map<String, dynamic> json) => OnboardingMe(
@@ -194,6 +195,7 @@ class OnboardingMe {
     progress: TaskProgress.maybe(json['progress']),
     subtitle: _str(json['subtitle']),
     portal: _bool(json['portal']),
+    tile: OnboardingTile.maybe(json['tile']),
   );
 
   final String journeyId;
@@ -215,6 +217,9 @@ class OnboardingMe {
   /// joining day, IST, and the tab is the usual Actions tab again).
   final bool portal;
 
+  /// Final designs: the Actions tile's words (`onboarding.tile`).
+  final OnboardingTile? tile;
+
   OnboardingMe withProgress(TaskProgress? value) => OnboardingMe(
     journeyId: journeyId,
     stage: stage,
@@ -224,7 +229,25 @@ class OnboardingMe {
     progress: value ?? progress,
     subtitle: subtitle,
     portal: portal,
+    tile: tile,
   );
+}
+
+/// Final designs (FINAL-DESIGNS.md §4.2): the joiner's Actions › Onboarding
+/// tile as the server words it ("Today is your first day", badge "Day 1").
+class OnboardingTile {
+  const OnboardingTile({required this.title, required this.subtitle, required this.badge});
+
+  static OnboardingTile? maybe(Object? json) {
+    final map = _map(json);
+    final subtitle = _str(map['subtitle']);
+    if (subtitle == null) return null;
+    return OnboardingTile(title: _str(map['title']) ?? 'Onboarding', subtitle: subtitle, badge: _str(map['badge']) ?? '');
+  }
+
+  final String title;
+  final String subtitle;
+  final String badge;
 }
 
 /// What `/lifecycle/me` says: whether the lifecycle is on for the company at

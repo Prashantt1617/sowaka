@@ -72,7 +72,6 @@ import '../../lifecycle/onboarding/data/onboarding_models.dart';
 import '../../lifecycle/onboarding/onboarding_launcher.dart';
 import '../../lifecycle/onboarding/presentation/manager/joiners_tab.dart';
 import '../../lifecycle/onboarding/presentation/manager/team_kit.dart';
-import '../../lifecycle/onboarding/presentation/profile_onboarding_card.dart';
 
 part '../../connect/presentation/connect_tab.dart';
 part '../../games/presentation/games_tab.dart';
@@ -479,6 +478,29 @@ class _ManagerScreenState extends State<ManagerScreen> {
         WidgetsBinding.instance.addPostFrameCallback(
           (_) => _connectComposerController.openPost(postId),
         );
+      },
+      // Final designs: a joiner task's page in the app (Do in Sowaka, Review).
+      openAppScreen: (screen) {
+        if (screen == 'profile') {
+          Navigator.of(context).popUntil((route) => route.isFirst);
+          _openProfile();
+          return;
+        }
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        _bloc.add(const ChangeManagerTab(ManagerTab.quick));
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          switch (screen) {
+            case 'leave' || 'leave_balance':
+              _quickActionsController.openLeave();
+            case 'overtime':
+              _quickActionsController.openOvertime();
+            case 'shift':
+              _quickActionsController.openCalendar();
+            case 'tax' || 'payroll' || 'payroll_policy':
+              _quickActionsController.openPayroll();
+          }
+        });
       },
       viewerName: user.name,
       viewerDesignation: user.designation,

@@ -1194,22 +1194,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       );
       return;
     }
-    // The joiner's punch-out on their joining date: "Day 1, done!".
-    if (type == 'out' && outcome?.punched == true && _isJoiningDay() && mounted) {
-      unawaited(widget.bloc.add(LoadAttendanceMonth(DateTime.now())));
-      await openDay1Done(context);
-      return;
-    }
     if (mounted) showPunchToast(context, outcome, type: type);
     if ((outcome?.punched == true || outcome?.requested == true) && mounted) {
       await widget.bloc.add(LoadAttendanceMonth(DateTime.now()));
     }
-  }
-
-  /// Today is the joiner's Day 1, as `/lifecycle/me` says (the tile's badge).
-  bool _isJoiningDay() {
-    final onboarding = LifecycleMeStore.instance.value;
-    return onboarding.showsOnboarding && onboarding.onboarding?.dayLabel == 'Day 1';
   }
 
   /// Whether a correction for today is already with the manager.
@@ -1242,11 +1230,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   Widget _home() {
     final today = DateTime.now();
     final onboarding = LifecycleMeStore.instance.value;
-    // The joiner's first day: the Onboarding tile is ringed, says so and
-    // carries a "Day 1" pill (the New joiner artifact's Actions).
+    // The joiner's Onboarding tile (Final designs, AppActions): the server's
+    // line and badge (`/lifecycle/me` onboarding.tile); on Day 1 it is ringed
+    // and carries the "Day 1" pill.
+    final joinerTile = onboarding.onboarding?.tile;
     final firstDay =
         onboarding.showsOnboarding &&
-        onboarding.onboarding?.dayLabel == 'Day 1';
+        (joinerTile?.badge ?? onboarding.onboarding?.dayLabel) == 'Day 1';
     final todayRecord = widget.dashboard.attendance
         .where((record) => _sameDay(record.workDate, today))
         .firstOrNull;
@@ -1313,12 +1303,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       // Figma "Quick Action-Geotag" (4166:19856): Icon · Colour/waving-hand.
       imageAsset: 'assets/icons/action_card_onboarding_waving_hand.png',
       title: 'Onboarding',
-      subtitle: firstDay
-          ? 'Today is your first day'
-          : onboardingTileSubtitle(onboarding),
+      subtitle: joinerTile?.subtitle ??
+          (firstDay
+              ? 'Today is your first day'
+              : onboardingTileSubtitle(onboarding)),
       onTap: () => openOnboardingHome(context),
       highlight: firstDay,
-      badge: firstDay ? 'Day 1' : null,
+      badge: firstDay ? (joinerTile?.badge ?? 'Day 1') : null,
     );
     // HR or IT & admin for someone joining (Onboarding · Final designs, page
     // 4): Actions › Onboarding, highlighted while something is open, its pill

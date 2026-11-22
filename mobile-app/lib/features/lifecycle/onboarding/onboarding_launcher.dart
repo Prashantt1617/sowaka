@@ -14,25 +14,16 @@ import 'package:flutter/material.dart';
 
 import '../../manager/data/manager_models.dart' show ManagerTab;
 import 'data/lifecycle_me_store.dart';
-import 'data/onboarding_models.dart';
 import 'data/team_joiners_api.dart';
+import 'joiner/joiner_checkins.dart' show joinerHomeRoute;
+import 'joiner/joiner_home.dart';
 import 'presentation/manager/team_joiner_screens.dart';
-import 'presentation/meeting_screen.dart';
-import 'presentation/onboarding_home_screen.dart';
 import 'presentation/onboarding_kit.dart';
-import 'presentation/onboarding_tiles.dart';
 import 'presentation/portal_page_screen.dart';
-import 'presentation/probation_screens.dart';
-import 'presentation/intro_post_screen.dart';
-import 'presentation/starter_task_screen.dart';
-import 'presentation/survey_screen.dart';
-import 'presentation/task_sheet.dart';
-import 'presentation/week1_reels_screen.dart';
 
 export 'data/lifecycle_me_store.dart';
 export 'presentation/onboarding_kit.dart' show OnboardingShell, OnbSpotlight, OnbPulse;
 export 'presentation/first_punch.dart' show FirstPunchTour, PunchSpotlightCallout, openYoureIn;
-export 'presentation/day1_done_screen.dart' show openDay1Done;
 export 'presentation/portal_page_screen.dart' show PortalTab;
 
 typedef OnboardingShellMaker = OnboardingShell Function();
@@ -56,9 +47,10 @@ Future<T?> _push<T>(BuildContext context, Widget Function(OnboardingShell shell)
   return Navigator.of(context).push<T>(MaterialPageRoute(builder: (_) => page(resolved)));
 }
 
-/// A2, the joiner's onboarding home. Before Day 1 (`/lifecycle/me` says
-/// `portal`) the Action tab is the pre-boarding portal, so this goes there (the portal as a page over the shell where there is no Action
-/// tab), never to the app's own onboarding cards.
+/// Actions › Onboarding, the joiner's home (Final designs, `JoinerHomeScreen`).
+/// Before Day 1 (`/lifecycle/me` says `portal`) the Action tab is the
+/// pre-boarding portal, so this goes there (the portal as a page over the
+/// shell where there is no Action tab), never to the app's own screens.
 Future<void> openOnboardingHome(BuildContext context, {OnboardingShell? shell}) {
   if (LifecycleMeStore.instance.value.onboarding?.portal ?? false) {
     final resolved = shell ?? currentOnboardingShell();
@@ -69,7 +61,11 @@ Future<void> openOnboardingHome(BuildContext context, {OnboardingShell? shell}) 
     }
     return _push(context, (s) => PortalPageScreen(shell: s), shell: shell);
   }
-  return _push(context, (s) => OnboardingHomeScreen(shell: s), shell: shell);
+  final resolved = shell ?? currentOnboardingShell();
+  if (resolved == null) return Future.value();
+  return Navigator.of(context).push<void>(
+    MaterialPageRoute(settings: const RouteSettings(name: joinerHomeRoute), builder: (_) => JoinerHomeScreen(shell: resolved)),
+  );
 }
 
 /// Teams › Joiners, a joiner's page (Final designs; manager, buddy, head of department).
@@ -78,76 +74,6 @@ Future<void> openJoiner(BuildContext context, String journeyId, {OnboardingShell
   final api = resolved == null ? null : HttpTeamJoinersApi.from(resolved.api);
   if (resolved == null || api == null) return Future.value();
   return openTeamJoiner(context, shell: resolved, api: api, journeyId: journeyId);
-}
-
-/// Opens a task from the joiner's home or Up next on the screen that does it.
-/// Back lands where it came from; the caller reads its list again after.
-Future<void> openOnboardingTask(
-  BuildContext context,
-  OnboardingShell shell,
-  TaskView task, {
-  OnboardingHome? home,
-  List<StarterTask> starterTasks = const [],
-}) async {
-  Future<void> push(Widget page) => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => page));
-  if (task.isLocked) {
-    await showTaskSheet(context, shell, task);
-    return;
-  }
-  switch (task.systemKey) {
-    case 'week1_reels':
-    case 'probation_goals':
-      return push(Week1ReelsScreen(shell: shell));
-    case 'intro_post':
-      return push(IntroPostScreen(shell: shell));
-    // The new-joiner prototype's Meetings tab is where people are met; the
-    // old People to meet screen is no longer opened (kept: PeopleToMeetScreen).
-    case 'people_to_meet':
-      return push(OnbMeetingsScreen(shell: shell));
-    case 'day7_survey':
-    case 'pulse_survey':
-      return push(SurveyScreen(shell: shell));
-    case 'starter_task':
-      final open = starterTasks.where((t) => !t.done).firstOrNull ?? starterTasks.firstOrNull;
-      if (open != null) return push(StarterTaskScreen(shell: shell, taskId: open.id, initial: open));
-      await showTaskSheet(context, shell, task);
-      return;
-    // Not in the new-joiner prototype: the shared 1:1 notes are not opened
-    // from onboarding (NotesScreen kept).
-    case 'one_on_one_notes':
-      return;
-    case 'monthly_goals':
-    case 'monthly_review':
-      return push(ProbationScreen(shell: shell));
-    case 'monthly_checkin':
-      return push(ProbationScreen(shell: shell, openCheckinFor: task.month));
-    case 'confirmation_reveal':
-    case 'confirmation_letter':
-      return push(RevealScreen(shell: shell));
-    case 'register_face':
-      final register = shell.registerFace;
-      if (register == null) {
-        await showTaskSheet(context, shell, task);
-        return;
-      }
-      final saved = await register(context);
-      if (saved) {
-        try {
-          await shell.api.taskAction(task.id, 'done');
-        } catch (_) {
-          // The server may already have ticked it from the face setup.
-        }
-      }
-      return;
-    case 'app_tour':
-      return push(OnbTourScreen.of(shell, home));
-  }
-  final meetingId = task.meetingId;
-  if (task.kind == 'meeting' && meetingId != null) {
-    return push(MeetingScreen(shell: shell, meetingId: meetingId, task: task));
-  }
-  if (!context.mounted) return;
-  await showTaskSheet(context, shell, task);
 }
 
 /// The notification destinations these screens answer (the server sets
@@ -185,28 +111,21 @@ bool openOnboardingDestination(BuildContext context, Map<String, dynamic> data) 
   }
 
   final journeyId = read('journeyId');
-  final month = int.tryParse(read('month') ?? '');
-  Widget? page = switch (destination) {
-    'lifecycle_meeting' when read('meetingId') != null => MeetingScreen(shell: shell, meetingId: read('meetingId')!),
-    'lifecycle_starter_task' => StarterTaskScreen(shell: shell, taskId: read('starterTaskId')),
-    // Not in the new-joiner prototype (NotesScreen kept): the onboarding home.
-    'lifecycle_notes' => null,
-    'lifecycle_week1' => Week1ReelsScreen(shell: shell),
-    'lifecycle_intro' => IntroPostScreen(shell: shell),
-    'lifecycle_people' => OnbMeetingsScreen(shell: shell),
-    'lifecycle_survey' => SurveyScreen(shell: shell),
-    'lifecycle_probation' => ProbationScreen(shell: shell),
-    'lifecycle_checkin' => ProbationScreen(shell: shell, openCheckinFor: month),
-    'lifecycle_reveal' => RevealScreen(shell: shell),
-    // Final designs (lane T): every manager / buddy / head-of-department push lands on the joiner's page.
+  // The joiner's own pushes (Final designs, lane J) all open Actions › Onboarding (JoinerHomeScreen);
+  // every manager / buddy / head-of-department push (lane T) lands on the joiner's team page.
+  final teamApi = HttpTeamJoinersApi.from(shell.api);
+  final Widget? page = switch (destination) {
     'lifecycle_joiner' ||
     'lifecycle_joiner_setup' ||
     'lifecycle_starter_task_done' ||
-    'lifecycle_probation_review' when journeyId != null && HttpTeamJoinersApi.from(shell.api) != null =>
-      TeamPersonScreen(shell: shell, api: HttpTeamJoinersApi.from(shell.api)!, journeyId: journeyId),
+    'lifecycle_probation_review' when journeyId != null && teamApi != null =>
+      TeamPersonScreen(shell: shell, api: teamApi, journeyId: journeyId),
     _ => null,
   };
-  page ??= OnboardingHomeScreen(shell: shell);
-  unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => page!)));
+  if (page == null) {
+    unawaited(openOnboardingHome(context, shell: shell));
+    return true;
+  }
+  unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => page)));
   return true;
 }

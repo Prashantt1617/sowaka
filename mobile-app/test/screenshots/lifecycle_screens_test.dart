@@ -40,19 +40,8 @@ import 'package:local_auth_platform_interface/local_auth_platform_interface.dart
 import 'package:mobile_app/features/auth/data/auth_models.dart';
 import 'package:mobile_app/features/connect/data/connect_api_service.dart';
 import 'package:mobile_app/features/lifecycle/offboarding/offboarding.dart' as off;
-import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_api.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_models.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/onboarding_launcher.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/presentation/meeting_screen.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/presentation/notes_screen.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/presentation/intro_post_screen.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/presentation/onboarding_home_screen.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/presentation/people_screen.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/presentation/probation_screens.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/presentation/starter_task_screen.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/presentation/survey_screen.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/presentation/week1_reels_screen.dart';
-import 'package:mobile_app/features/lifecycle/onboarding/presentation/week_done_screen.dart';
 import 'package:mobile_app/features/manager/bloc/manager_bloc.dart';
 import 'package:mobile_app/features/manager/data/manager_api_service.dart';
 import 'package:mobile_app/features/manager/data/manager_models.dart';
@@ -533,39 +522,6 @@ Widget _app(Widget home) => RepaintBoundary(
 
 // ───────────────────────────────────────────────────────────────── onboarding shell
 
-/// The header's avatar, as the signed-in shell draws it.
-Widget _avatar(String name) => Container(
-  width: 30,
-  height: 30,
-  alignment: Alignment.center,
-  decoration: const BoxDecoration(color: Color(0xFFE0F2FE), shape: BoxShape.circle),
-  child: Text(name.substring(0, 1), style: const TextStyle(fontFamily: 'Plus Jakarta Sans', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0571A6))),
-);
-
-/// What the signed-in shell hands the onboarding screens, at a chosen time.
-OnboardingShell _shell(AuthSession session, DateTime now) => OnboardingShell(
-  api: HttpOnboardingApi(session: session, baseUrl: 'https://api.sowaka.test', client: _router),
-  profileAction: _avatar(session.user.name),
-  onNotifications: () {},
-  tabs: visibleTabs(const []),
-  selectedTab: session.user.role == 'manager' ? ManagerTab.manage : ManagerTab.quick,
-  onSelectTab: (_) {},
-  registerFace: (_) async => false,
-  changePhoto: (_) async => null,
-  openPost: (_) {},
-  viewerName: session.user.name,
-  viewerDesignation: session.user.designation,
-  viewerDepartment: session.user.department,
-  now: () => now,
-);
-
-/// [page] pushed over a blank root, as the shell pushes it.
-Future<void> _push(WidgetTester tester, Widget page) async {
-  await tester.pumpWidget(_app(const Scaffold(body: SizedBox.expand())));
-  unawaited(_nav.currentState!.push(MaterialPageRoute<void>(builder: (_) => page)));
-  await _settle(tester);
-}
-
 // ───────────────────────────────────────────────────────────────── the signed-in app
 
 /// The real signed-in app (ManagerScreen) as [session], every call answered
@@ -708,213 +664,6 @@ void _joinerRoutes() {
 }
 
 void _joinerScreens() {
-  _scenario('A2 onboarding home, day 1', (tester, shot) async {
-    _joinerRoutes();
-    _server
-      ..on('GET', r'/lifecycle/onboarding$', _homeDay1())
-      ..on('GET', r'/lifecycle/onboarding/starter-tasks$', {'tasks': <dynamic>[]})
-      ..on('GET', r'/lifecycle/onboarding/notes$', {'notes': <dynamic>[]});
-    await _push(tester, OnboardingHomeScreen(shell: _shell(_joiner, _at(0, 10, 35))));
-    await shot('A2', 'day1');
-    await _tap(tester, find.byKey(const ValueKey('stage-step-Month 1')));
-    await shot('A2', 'day1-lens-month1', full: false);
-    await _tap(tester, find.byKey(const ValueKey('lens-back')));
-    await _tap(tester, find.byKey(const ValueKey('done-toggle')));
-    await shot('A2', 'day1-done', full: false);
-    // The tour opens a sheet; a locked item says when it opens.
-    await _scrollTop(tester);
-    final tour = find.textContaining('Sowaka tour');
-    await _tap(tester, tour);
-    await shot('A2', 'tour-sheet', full: false);
-    await tester.tapAt(const Offset(20, 120));
-    await _settle(tester);
-    await _tap(tester, find.textContaining('check-in').first);
-    await shot('A2', 'locked-task-sheet', full: false);
-  });
-
-  _scenario('A2 onboarding home, day 4', (tester, shot) async {
-    _joinerRoutes();
-    _server
-      ..on('GET', r'/lifecycle/onboarding$', _homeDay4())
-      ..on('GET', r'/lifecycle/onboarding/starter-tasks$', _starterTasks(done: false))
-      ..on('GET', r'/lifecycle/onboarding/notes$', _notes());
-    await _push(tester, OnboardingHomeScreen(shell: _shell(_joiner, _at(3, 10))));
-    await shot('A2', 'day4');
-    await _tap(tester, find.byKey(const ValueKey('stage-step-Month 1')));
-    await shot('A2', 'day4-lens-month1', full: false);
-    await _tap(tester, find.byKey(const ValueKey('lens-back')));
-    await _tap(tester, find.byKey(const ValueKey('done-toggle')));
-    await shot('A2', 'day4-done', full: false);
-  });
-
-  _scenario('A2 onboarding home, from the fixtures as sent', (tester, shot) async {
-    _joinerRoutes();
-    _server.on('GET', r'/lifecycle/onboarding$', fx('home_with_meeting'));
-    await _push(tester, OnboardingHomeScreen(shell: _shell(_joiner, _at(6, 18))));
-    await shot('A2', 'server-as-sent', note: 'home_with_meeting.json unchanged, at the time it was made');
-  });
-
-  _scenario('A3 meeting', (tester, shot) async {
-    _joinerRoutes();
-    var meeting = _meeting();
-    _server
-      ..on('GET', r'/lifecycle/onboarding/meetings/', (_, _) => meeting)
-      ..on('POST', r'/lifecycle/onboarding/meetings/', (_, body) {
-        meeting = {...meeting, 'met': (body as Map?)?['met'] ?? 'yes'};
-        return meeting;
-      });
-    await _push(tester, MeetingScreen(shell: _shell(_joiner, _at(0, 10, 35)), meetingId: 'fx-meeting'));
-    await shot('A3', 'before');
-    await _push(tester, MeetingScreen(shell: _shell(_joiner, _at(0, 11, 40)), meetingId: 'fx-meeting'));
-    await shot('A3', 'after');
-    await _tap(tester, find.byKey(const ValueKey('meeting-yes')));
-    await shot('A3', 'after-done');
-  });
-
-  _scenario('A4 week-1 reels', (tester, shot) async {
-    _joinerRoutes();
-    var week1 = _week1(fx('week1_get'));
-    _server
-      ..on('GET', r'/lifecycle/onboarding/week1$', (_, _) => week1)
-      ..on('PUT', r'/lifecycle/onboarding/week1$', (_, body) {
-        final step = (body as Map?)?['step'];
-        week1 = _week1(switch (step) {
-          'policies' => fx('week1_put_policies'),
-          'tax' => fx('week1_put_tax'),
-          'bank_pf' => fx('week1_put_tax')
-            ..['bankPf'] = {'confirmedAt': _iso(_at(3, 10, 5))}
-            ..['steps'] = {'policies': true, 'tax': true, 'bank_pf': true, 'goals': false},
-          _ => fx('week1_done'),
-        });
-        return week1;
-      });
-    await _push(tester, Week1ReelsScreen(shell: _shell(_joiner, _at(3, 10))));
-    await shot('A4', '1-policies', full: false);
-    await _tap(tester, find.byKey(const ValueKey('policies-agree')));
-    await shot('A4', '1-policies-ticked', full: false);
-    await _tap(tester, find.text('Agree and continue'));
-    await shot('A4', '2-tax', full: false);
-    await _tap(tester, find.text('Confirm choice'));
-    await shot('A4', '3-bank-pf', full: false);
-    await _tap(tester, find.text('All correct'));
-    await shot('A4', '4-goals', full: false);
-    await _tap(tester, find.text('Got it'));
-    await shot('A4', 'done', full: false);
-  });
-
-  _scenario('A5 intro post', (tester, shot) async {
-    _joinerRoutes();
-    var intro = fx('intro_put');
-    _server
-      ..on('GET', r'/lifecycle/onboarding/intro$', (_, _) => intro)
-      ..on('PUT', r'/lifecycle/onboarding/intro$', (_, _) => intro)
-      ..on('POST', r'/lifecycle/onboarding/intro/post$', (_, _) => intro = fx('intro_post'));
-    await _push(tester, IntroPostScreen(shell: _shell(_joiner, _at(3, 10))));
-    await shot('A5', 'questions');
-    await _tap(tester, find.byKey(const ValueKey('intro-preview')));
-    await shot('A5', 'preview');
-    await _tap(tester, find.byKey(const ValueKey('intro-post')));
-    await shot('A5', 'posted');
-  });
-
-  _scenario('A5 intro post, empty', (tester, shot) async {
-    _joinerRoutes();
-    _server.on('GET', r'/lifecycle/onboarding/intro$', fx('intro_get'));
-    await _push(tester, IntroPostScreen(shell: _shell(_joiner, _at(3, 10))));
-    await shot('A5', 'questions-empty');
-  });
-
-  _scenario('A6 people to meet', (tester, shot) async {
-    _joinerRoutes();
-    final people = _people();
-    _server
-      ..on('GET', r'/lifecycle/onboarding/people$', (_, _) => {'people': people, 'meetBy': fx('people_get')['meetBy']})
-      ..on('POST', r'/lifecycle/onboarding/people/', (request, body) {
-        final id = request.url.pathSegments.last == 'met' || request.url.pathSegments.last == 'not_yet'
-            ? request.url.pathSegments[request.url.pathSegments.length - 2]
-            : request.url.pathSegments.last;
-        for (final person in people) {
-          if (person['id'] == id && (body as Map?)?['action'] != 'not_yet') person['metAt'] = _iso(_at(3, 15));
-        }
-        return {'people': people};
-      });
-    await _push(tester, PeopleToMeetScreen(shell: _shell(_joiner, _at(3, 10))));
-    await shot('A6', 'first', full: false);
-    await _tap(tester, find.byKey(const ValueKey('we-met')));
-    await shot('A6', 'second', full: false);
-    for (final person in people) {
-      person['metAt'] ??= _iso(_at(5, 15));
-    }
-    await _push(tester, PeopleToMeetScreen(shell: _shell(_joiner, _at(5, 16))));
-    await shot('A6', 'done', full: false);
-  });
-
-  _scenario('A7 day-7 survey', (tester, shot) async {
-    _joinerRoutes();
-    _server
-      ..on('GET', r'/lifecycle/onboarding/survey$', fx('survey_get'))
-      ..on('POST', r'/lifecycle/onboarding/survey$', fx('survey_post'));
-    await _push(tester, SurveyScreen(shell: _shell(_joiner, _at(6, 18))));
-    await shot('A7', 'q1', full: false);
-    await _tap(tester, find.byKey(const ValueKey('scale-4')));
-    await shot('A7', 'q1-answered', full: false);
-    await _tap(tester, find.byKey(const ValueKey('survey-next')));
-    await _tap(tester, find.byKey(const ValueKey('choice-mostly')));
-    await shot('A7', 'q2', full: false);
-    await _tap(tester, find.byKey(const ValueKey('survey-next')));
-    await _tap(tester, find.byKey(const ValueKey('scale-5')));
-    await shot('A7', 'q3', full: false);
-    await _tap(tester, find.byKey(const ValueKey('survey-next')));
-    await tester.enterText(find.byKey(const ValueKey('survey-fix')), 'The laptop arrived at noon, so I lost the first morning.');
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await _settle(tester, rounds: 2);
-    FocusManager.instance.primaryFocus?.unfocus();
-    await _settle(tester, rounds: 2);
-    await shot('A7', 'q4', full: false);
-    await _tap(tester, find.byKey(const ValueKey('survey-next')));
-    await shot('A7', 'thanks', full: false);
-  });
-
-  _scenario('A8 week 1 done', (tester, shot) async {
-    final home = fx('home_with_meeting')
-      ..['stage'] = 'settling_in'
-      ..['dayLabel'] = 'Week 2'
-      ..['plant'] = {'stage': 2, 'water': 0, 'leaves': 3, 'droop': false};
-    await _push(tester, WeekDoneScreen(shell: _shell(_joiner, _at(7, 9)), home: OnboardingHome.fromJson(home), peopleMet: 6));
-    await shot('A8', '', full: false);
-  });
-
-  _scenario('A9 starter task', (tester, shot) async {
-    _joinerRoutes();
-    var tasks = _starterTasks(done: false);
-    _server
-      ..on('GET', r'/lifecycle/onboarding/starter-tasks$', (_, _) => tasks)
-      ..on('POST', r'/lifecycle/onboarding/starter-tasks/', (_, _) => tasks = _starterTasks(done: true));
-    final id = _list(tasks['tasks']).single['id'] as String;
-    await _push(tester, StarterTaskScreen(shell: _shell(_joiner, _at(3, 10)), taskId: id));
-    await shot('A9', 'todo');
-    await tester.enterText(find.byKey(const ValueKey('starter-note')), 'First version is in the folder. I kept the half-day option on one screen; happy to talk it through Friday.');
-    FocusManager.instance.primaryFocus?.unfocus();
-    await _settle(tester, rounds: 2);
-    await _tap(tester, find.byKey(const ValueKey('starter-mark-done')));
-    await shot('A9', 'done');
-  });
-
-  _scenario('A10 notes from the 1:1', (tester, shot) async {
-    _joinerRoutes();
-    var notes = _notes();
-    _server
-      ..on('GET', r'/lifecycle/onboarding/notes$', (_, _) => notes)
-      ..on('POST', r'/lifecycle/onboarding/notes/', (_, _) => notes = _notes(replied: true));
-    await _push(tester, NotesScreen(shell: _shell(_joiner, _at(3, 10))));
-    await shot('A10', 'unread');
-    await tester.enterText(find.byKey(const ValueKey('note-reply')), 'Thanks, Meera!');
-    await _tap(tester, find.byKey(const ValueKey('note-send')));
-    FocusManager.instance.primaryFocus?.unfocus();
-    await _settle(tester, rounds: 2);
-    await shot('A10', 'replied');
-  });
-
   _scenario('A12 notifications', (tester, shot) async {
     for (final (user, session, code) in [('isha', _joiner, 'A12'), ('mgr', _manager, 'A12-manager'), ('ravi', _leaver, 'A12-leaver')]) {
       _server = _Server()..on('GET', r'/notifications$', {'notifications': _inbox(user)});
@@ -928,47 +677,6 @@ void _joinerScreens() {
 // ═════════════════════════════════════════════════════════════════ probation
 
 void _probationScreens() {
-  _scenario('PB1 monthly check-in', (tester, shot) async {
-    _joinerRoutes();
-    _server.on('GET', r'/lifecycle/onboarding/probation$', _probation());
-    _server.on('POST', r'/lifecycle/onboarding/probation/', {'ok': true});
-    final shell = _shell(_joiner, _at(27, 10));
-    await _push(tester, ProbationScreen(shell: shell));
-    await shot('PB1', 'months');
-    final month = ProbationView.fromJson(_probation()).months.first;
-    await _push(tester, CheckinReelScreen(shell: shell, month: month, managerName: 'Meera Iyer'));
-    await shot('PB1', '1-feeling', full: false);
-    await _tap(tester, find.byKey(const ValueKey('feeling-3')));
-    await shot('PB1', '1-feeling-picked', full: false);
-    await _tap(tester, find.byKey(const ValueKey('checkin-next')));
-    await tester.enterText(find.byKey(const ValueKey('checkin-win')), 'Shipped the first version of the leave request redesign.');
-    FocusManager.instance.primaryFocus?.unfocus();
-    await _settle(tester, rounds: 2);
-    await shot('PB1', '2-win', full: false);
-    await _tap(tester, find.byKey(const ValueKey('checkin-next')));
-    await tester.enterText(find.byKey(const ValueKey('checkin-ask')), 'Access to the analytics dashboard.');
-    FocusManager.instance.primaryFocus?.unfocus();
-    await _settle(tester, rounds: 2);
-    await shot('PB1', '3-ask', full: false);
-    await _tap(tester, find.byKey(const ValueKey('checkin-next')));
-    await shot('PB1', 'sent', full: false);
-  });
-
-  _scenario('PB3 confirmation reveal', (tester, shot) async {
-    _joinerRoutes();
-    var reveal = fx('reveal_ready');
-    _server
-      ..on('GET', r'/lifecycle/onboarding/reveal$', (_, _) => reveal)
-      ..on('POST', r'/lifecycle/onboarding/reveal/seen$', (_, _) => reveal = fx('reveal_seen'));
-    final shell = _shell(_joiner, _at(182, 10));
-    await _push(tester, RevealScreen(shell: shell));
-    await shot('PB3', 'before-tap', full: false);
-    await _tap(tester, find.byKey(const ValueKey('reveal-tap')));
-    await shot('PB3', 'revealed', full: false);
-    reveal = fx('reveal_not_ready');
-    await _push(tester, RevealScreen(shell: shell));
-    await shot('PB3', 'not-decided', full: false);
-  });
 }
 
 // ═════════════════════════════════════════════════════════════════ leaver (in the signed-in app)
@@ -1154,7 +862,7 @@ void _leaverScreens() {
 // ═════════════════════════════════════════════════════════════════ hooks in the signed-in app
 
 void _shellHooks() {
-  _scenario('A1 Action tile, A1b profile Onboarding tab', (tester, shot) async {
+  _scenario('A1 Action tile', (tester, shot) async {
     _joinerRoutes();
     _server.on('GET', r'/lifecycle/onboarding$', fx('home_with_meeting'));
     final bloc = await _boot(tester, _joiner, [
@@ -1164,9 +872,6 @@ void _shellHooks() {
     await _tab(tester, bloc, ManagerTab.quick);
     await _scrollTo(tester, find.byKey(const ValueKey('onboarding-card')));
     await shot('A1', 'action-tile', full: false);
-    await _scrollTop(tester);
-    await _openOwnProfile(tester);
-    await shot('A1b', 'profile-onboarding-tab');
   });
 
   _scenario('R7 Requests, a resignation', (tester, shot) async {
@@ -1223,141 +928,6 @@ void _shellHooks() {
 
 // ───────────────────────────────────────────────────────────────── data
 
-/// The meeting with the manager at 11:00 on [day].
-Map<String, dynamic> _meeting({int day = 0}) {
-  final meeting = fx('meeting_get');
-  meeting['startsAt'] = _iso(_at(day, 11));
-  meeting['endsAt'] = _iso(_at(day, 11, 30));
-  meeting['place'] = 'Room 4B, Floor 4';
-  return meeting;
-}
-
-/// Day 1, 10:35: the pre-boarding items done in the portal, the manager's
-/// meeting at 11:00, the survey not open yet.
-Map<String, dynamic> _homeDay1() {
-  final home = fx('onboarding_home');
-  final today = _list(home['today']);
-  final later = _list(home['later']);
-  final done = <Map<String, dynamic>>[];
-  for (final task in [...today]) {
-    task['late'] = false;
-    if (task['phase'] == 'pre_boarding') {
-      task['status'] = 'done';
-      task['doneAt'] = _iso(_at(-3, 19, 12));
-      today.remove(task);
-      done.add(task);
-    } else if (task['systemKey'] == 'day7_survey') {
-      task['status'] = 'locked';
-      today.remove(task);
-      later.insert(0, task);
-    }
-  }
-  final meeting = _meeting();
-  final upNext = (fx('home_with_meeting')['upNext'] as Map).cast<String, dynamic>()
-    ..['late'] = false
-    ..['meeting'] = meeting;
-  home
-    ..['dayLabel'] = 'Day 1'
-    ..['plant'] = {'stage': 1, 'water': 0, 'leaves': 0, 'droop': false}
-    ..['upNext'] = upNext
-    ..['today'] = today
-    ..['later'] = later
-    ..['done'] = done
-    ..['meetings'] = [meeting]
-    ..['progress'] = {'done': done.length, 'total': done.length + today.length};
-  return home;
-}
-
-/// Day 4, 10:00: the first meetings and the face done, the starter task and
-/// shared notes in, the intro post up next, the survey not open yet.
-Map<String, dynamic> _homeDay4() {
-  final home = fx('home_with_meeting');
-  final today = <Map<String, dynamic>>[];
-  final later = _list(home['later']);
-  final done = <Map<String, dynamic>>[];
-  final doneAt = {
-    'about_you': _at(-3, 19, 12),
-    'meet_us': _at(-2, 21, 4),
-    'meet_manager': _at(0, 11, 30),
-    'register_face': _at(1, 9, 30),
-    'app_tour': _at(0, 15, 10),
-  };
-  Map<String, dynamic>? intro;
-  for (final task in [..._list(home['today']), ..._list(home['done'])]) {
-    task['late'] = false;
-    final key = task['systemKey'] as String;
-    if (doneAt.containsKey(key)) {
-      done.add(task
-        ..['status'] = 'done'
-        ..['doneAt'] = _iso(doneAt[key]!));
-    } else if (key == 'day7_survey') {
-      later.insert(0, task..['status'] = 'locked');
-    } else if (key == 'intro_post') {
-      intro = task..['status'] = 'todo';
-    } else if (key == 'one_on_one_notes' || key == 'starter_task') {
-      // Shown from the starter tasks and notes themselves.
-    } else {
-      task['status'] = 'todo';
-      today.add(task);
-    }
-  }
-  home
-    ..['dayLabel'] = 'Week 1'
-    ..['plant'] = {'stage': 1, 'water': 2, 'leaves': 0, 'droop': false}
-    ..['upNext'] = intro
-    ..['today'] = today
-    ..['later'] = later
-    ..['done'] = done
-    ..['meetings'] = [_meeting()..['met'] = 'yes']
-    ..['progress'] = {'done': done.length, 'total': done.length + today.length + 1};
-  return home;
-}
-
-/// The starter task, assigned on day 2, due on day 8.
-Map<String, dynamic> _starterTasks({required bool done}) {
-  final tasks = fx(done ? 'starter_task_done' : 'starter_tasks_get');
-  for (final task in _list(tasks['tasks'])) {
-    task['assignedAt'] = _iso(_at(1, 10, 20));
-    task['note'] = 'Start with the research notes in the shared folder. A rough first version is fine; we’ll go through it together on Friday.';
-    if (done) {
-      task['doneAt'] = _iso(_at(3, 18, 10));
-      task['doneNote'] = 'First version is in the folder. I kept the half-day option on one screen; happy to talk it through Friday.';
-    }
-  }
-  return {'tasks': tasks['tasks']};
-}
-
-/// Meera's shared note from the first 1:1.
-Map<String, dynamic> _notes({bool replied = false}) {
-  final notes = fx(replied ? 'note_action' : 'notes_get');
-  for (final note in _list(notes['notes'])) {
-    note['sharedAt'] = _iso(_at(0, 17, 40));
-    note['createdAt'] = _iso(_at(0, 17, 40));
-    if (replied) {
-      note['seenAt'] = _iso(_at(3, 10, 2));
-      for (final reply in _list(note['replies'])) {
-        reply['at'] = _iso(_at(3, 10, 2));
-      }
-    }
-  }
-  return notes;
-}
-
-/// The week-1 reels as the server sends them, with bank and PF on file (the
-/// scratch company had none).
-Map<String, dynamic> _week1(Map<String, dynamic> week1) => week1
-  ..['bank'] = {'masked': '···· ···· 4417', 'ifsc': 'HDFC0001234', 'name': 'HDFC Bank'}
-  ..['pf'] = {'uan': '1000 ···· 2231'};
-
-/// people_get's two, and four more of the same shape.
-List<Map<String, dynamic>> _people() => [
-  ..._list(fx('people_get')['people']),
-  {'id': 'pm-3', 'userId': 'arjun', 'name': 'Arjun Sen', 'designation': 'Engineering lead', 'why': 'Builds what you design. Agree early on how you hand off work.'},
-  {'id': 'pm-4', 'userId': 'sara', 'name': 'Sara Khan', 'designation': 'Product manager', 'why': 'Decides what the team builds next and why.'},
-  {'id': 'pm-5', 'userId': 'rohit', 'name': 'Rohit Verma', 'designation': 'Customer support lead', 'why': 'Hears every user complaint first. Great source of design ideas.'},
-  {'id': 'pm-6', 'userId': 'meeraj', 'name': 'Meera Joshi', 'designation': 'Research', 'why': 'Runs user interviews you can sit in on from month 2.'},
-];
-
 /// The pushes the server sends [userId], as inbox rows: the newest first,
 /// the first two unread.
 List<Map<String, dynamic>> _inbox(String userId) {
@@ -1377,18 +947,6 @@ List<Map<String, dynamic>> _inbox(String userId) {
     });
   }
   return rows;
-}
-
-/// The joiner's probation, month 1's goals set by the manager.
-Map<String, dynamic> _probation() {
-  final probation = fx('probation_get');
-  final goals = _list(fx('manager_probation_month')['months']).first['goals'];
-  final months = _list(probation['months']);
-  months.first
-    ..['goals'] = [for (final g in goals as List) (g as Map)['text']]
-    ..['goalsSetAt'] = _iso(_at(1, 10));
-  probation['months'] = months;
-  return probation;
 }
 
 /// Payroll for the leaver: November held, October paid.

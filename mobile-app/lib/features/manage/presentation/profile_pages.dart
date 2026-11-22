@@ -97,9 +97,8 @@ List<ProfileTab> ownProfileTabs({
   bool showsResignation = false,
   bool showsOnboarding = false,
 }) => [
-  // The new-joiner prototype opens onboarding only from the Actions tab's
-  // Onboarding tile: the profile's Onboarding tab is not shown (its card,
-  // OnboardingProfileCard, is kept).
+  // Onboarding opens only from the Actions tab's Onboarding tile (Final
+  // designs): the profile's Onboarding tab is not shown.
   if (showsOnboarding && _profileOnboardingTab) ProfileTab.onboarding,
   ProfileTab.workDetail,
   ProfileTab.request,
@@ -1609,7 +1608,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
       ProfileTab.settings => [
         ProfileSettingsTab(session: session, onLogOut: widget.onLogout),
       ],
-      ProfileTab.onboarding => [const OnboardingProfileCard()],
+      ProfileTab.onboarding => const <Widget>[],
     };
 
     return ColoredBox(
