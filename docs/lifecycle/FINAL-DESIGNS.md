@@ -20,7 +20,8 @@ filled by the server before it answers (the app never fills them).
 
 | Fact | Single source (collection · field) | Written by | Read by |
 |---|---|---|---|
-| The template (every item, every setting) | `lifecycle_templates` · `tasks[]` rows with `design` (+ `settings`) | Dashboard `PUT …/templates/:id/design` | everything below |
+| The template (every item, every setting) | `lifecycle_templates` · `tasks[]` rows with `design` (+ `settings`) | Dashboard `PUT …/templates/:id/design` | the dashboard editor and preview, and new journeys (copied at start) |
+| A joiner's version of the template (every design row and setting: meetings and agendas, check-in questions, watch list, trainings, teammate rows and how-to lines, assignees, reporting details, reminder switch, tour) | `lifecycle_journeys` · `templateSnapshot` (copied from the template when the journey starts; the migration wrote it for journeys already running) | engine at journey start; the migration | every joiner, teammate and HR/IT view of that joiner, the Day-1 pass, the reminder job. A template edit reaches new joiners only ("New joiners get this from now on") |
 | Joiner's tasks (Do in Sowaka, Review, Read and acknowledge, Sign, More tasks, forms) | `lifecycle_journey_tasks` (one row per template task row, made by the engine when the journey starts) | engine; product facts (first punch, profile, tax, payroll, policies, letters) sync on read; joiner `POST /lifecycle/joiner/tasks/:id` | joiner app, HR/IT app stats, dashboard board/panel |
 | Devices and accesses (ready / setting up) | `lifecycle_journey_tasks` rows with `design.section = 'access'` (owner `it` or `hr`) | IT/HR app `POST /lifecycle/staff/…/tasks/accesses`, dashboard board tick | joiner app, teammates' View progress, HR/IT app, board |
 | Meetings: met / done | `lifecycle_journeys` · `teamTasks[<rowKey>]` (one tick shared by both people) | joiner "Mark as met", teammate "Mark as done" (either one) | joiner, teammate, HR/IT, dashboard panel |
@@ -41,8 +42,8 @@ filled by the server before it answers (the app never fills them).
 | Feed introduction | `lifecycle_journeys` · `managerWelcome` + the Connect post | manager | feed, teammates |
 | Confirmation review / recommendation | `lifecycle_journeys` · `probation.recommendation` (+ `review` text) | manager | head of department, HR, dashboard decision |
 | Head of department's approval | `lifecycle_journeys` · `probation.hodApproval` | head of department | HR, dashboard decision |
-| Who does HR / IT & admin / "someone senior" tasks | template `settings.assignees` | dashboard | server (who sees what) |
-| Joining and reporting details (time, place, what to bring, who meets them) | template `settings.reporting`, under what HR typed on the joiner (`journey.day1Pass` wins) | dashboard | portal's Day-1 pass (`portalPass`), teammates' JOINING DETAILS |
+| Who does HR / IT & admin / "someone senior" tasks | the joiner's `templateSnapshot.settings.assignees` (from the template at start) | dashboard (for new joiners) | server (who sees what) |
+| Joining and reporting details (time, place, what to bring, who meets them) | the joiner's `templateSnapshot.settings.reporting`, under what HR typed on the joiner (`journey.day1Pass` wins) | dashboard | portal's Day-1 pass (`portalPass`), teammates' JOINING DETAILS |
 
 Nothing in the app is counted or faked on the device: every count, percentage, "late", "due" text and stage
 label below comes in the response. The app may filter a list it got by `step` (the joiner's "look ahead").
@@ -125,7 +126,12 @@ export interface LifecycleTemplateSettings {   // existing fields unchanged; add
 }
 ```
 
-How rows become behaviour (no engine changes):
+A journey keeps the template version it started with for everything: `templateSnapshot` (tasks and settings,
+design rows included) is copied when the journey starts, and every view of that joiner reads its design rows and
+settings from there (`design.ts designOf`). Only a journey the migration has not reached (no design rows in
+its snapshot) reads its template as it is now.
+
+How rows become behaviour (one engine change: only `task` and `access` design rows become journey tasks):
 
 | `design.section` | Becomes | Done state |
 |---|---|---|
@@ -188,7 +194,7 @@ the offer; IT = nobody until set: the IT tasks then show only on the dashboard).
 |---|---|---|
 | GET `/admin/lifecycle/templates?kind=onboarding` | | as today; each template adds `design: boolean` (has Final-designs rows) |
 | GET `/admin/lifecycle/templates/:id/design` | | `TemplateDesign` |
-| PUT `/admin/lifecycle/templates/:id/design` | `TemplateDesign` minus read-only fields (whole document; "Save template") | `TemplateDesign` (saved). Applies to journeys that start after saving for tasks and accesses; meetings, check-ins, watch list and team rows follow the template as it is now (as team rows do today). |
+| PUT `/admin/lifecycle/templates/:id/design` | `TemplateDesign` minus read-only fields (whole document; "Save template") | `TemplateDesign` (saved). Applies to journeys that start after saving, for everything; running joiners keep the version they started with. |
 | POST `/admin/lifecycle/templates/:id/media` | multipart `file` (video mp4/mov ≤ 50 MB; image jpg/png; pdf ≤ 10 MB) | `{ file: { id, name, contentType, size, minutes? } }` (`minutes`: a video's length, a PDF's pages; the editor puts it in `media.minutes`: "3 min", "5 min read") |
 | GET `/admin/lifecycle/templates/media/:fileId` | | the bytes (same org) |
 | GET `/admin/lifecycle/templates/:id/preview?stage=pre|d1|w1|m1|mid|fin` | | `TemplatePreview` (Employee preview's phone tiles) |
@@ -421,10 +427,10 @@ step label ("Week 1") and `"Opens in Week 1"`. Any HR/IT task can be done early 
 
 | Read | How it is kept | Dropped / patched by |
 |---|---|---|
-| The org's onboarding templates (design rows), read by every joiner / team / staff view and the dashboard's design GET | `cachedLifecycle(org, 'lc-templates', null, …)` (new `SwrKind`, swr-cache: fresh 60 s, Redis cache-bus drop across blue/green) | in `LIFECYCLE_READ_KINDS`: every API write in the org (`forgetReadsOnWrite`), and explicitly `forgetLifecycleReads(org)` after a design save |
-| HR / IT & admin's Actions › Onboarding (cards, everyone, tile counts) | built per request from `boardData(org)` (`lc-board-data`, existing; its journey projection gains `teamTasks`, `templateId` already in) | patched per journey by every write (`patchBoardData`), as the board is |
+| The org's onboarding templates, read by the dashboard's design view and by a journey the migration has not reached (design journeys read their own snapshot, live) | `cachedLifecycle(org, 'lc-templates', null, …)` (new `SwrKind`, swr-cache: fresh 60 s, Redis cache-bus drop across blue/green) | in `LIFECYCLE_READ_KINDS`: every API write in the org (`forgetReadsOnWrite`), and explicitly `forgetLifecycleReads(org)` after a design save |
+| HR / IT & admin's Actions › Onboarding (cards, everyone, tile counts) | built per request from `boardData(org)` (`lc-board-data`, existing; its journey projection gains `teamTasks`; who is HR / IT is read from the kept `templateSnapshot.settings`), then only my joiners are read whole | patched per journey by every write (`patchBoardData`), as the board is |
 | `/lifecycle/me` staff tile | same `boardData` | same |
-| Joiner home, team person page, staff person page | read live (one journey, its tasks: a few KB), templates from `lc-templates` | — |
+| Joiner home, team person page, staff person page | read live (one journey with its snapshot, its tasks: a few KB) | — |
 
 No new cache. The lifecycle jobs (`runLifecycleJobs`) already call `forgetLifecycleReads(null)`.
 
@@ -481,11 +487,16 @@ Never run against a real database without the user's yes. Per onboarding templat
    key of their own (`…_20nov`), so no key is listed twice and the older editor can still save the template.
 3. `sign_letters` gets `design` (Day-1 Sign task) and `settings.signLettersOnDay1 = true`.
 
-Nothing is deleted. Running journeys keep their journey tasks and snapshot; their new views read meetings,
-check-ins, watch list and team rows from the migrated template, and their tasks from their own journey tasks
-(older tasks show by kind: an `ack` row as Read and acknowledge, `sign` as Sign, others as More tasks;
-old meetings and surveys are not listed). Ticks under old team keys stay on the journey (history).
-The dry run prints, per template: rows added, rows switched off, custom rows kept.
+4. Running journeys on the template (open, snapshot without design rows) get, in their own `templateSnapshot`,
+   the migrated template's meeting, check-in, watch-list, training and teammate rows and the new settings keys
+   (`preboarding`, `reporting`, `tourLessons`, `remindLateTeamTasks`, `assignees`) — the view they have today,
+   from then on fixed like any journey's. Never task or access rows (their tasks stay their own journey tasks),
+   never `probationMonths` or `signLettersOnDay1` (their probation and where they sign stay as they started).
+
+Nothing is deleted. Running journeys keep their journey tasks; their tasks show by kind (an `ack` row as Read
+and acknowledge, `sign` as Sign, others as More tasks; old meetings and surveys are not listed). Ticks under
+old team keys stay on the journey (history). The dry run prints, per template: rows added, rows switched off,
+custom rows kept, and how many running journeys get the rows; it writes nothing.
 
 ---
 

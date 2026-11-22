@@ -9,7 +9,7 @@
  *
  * HR's own rows (no systemKey, not a seeded team row) stay as they are and are listed.
  */
-import { companies, lifecycleTemplates } from '../../config/db';
+import { companies, journeys, lifecycleTemplates } from '../../config/db';
 import type { LifecycleTemplate, TemplateTask } from '../../models/lifecycle.model';
 import { rulesOfStage } from './designRules';
 import { FINAL_ONBOARDING_SETTINGS, REPLACED_KEYS, finalDesignRows } from './designSeed';
@@ -20,10 +20,15 @@ const OLD_TEAM_KEYS = new Set(teamSeed().map((t) => t.team!.key));
 export interface TemplateMigration {
   org: string; templateId: string; name: string;
   added: string[]; switchedOff: string[]; keptCustom: string[]; signOnDay1: boolean;
+  /** Running journeys on it that get the design rows as their own snapshot (their view as it is today). */
+  journeys: number;
 }
 
+/** The Final-designs settings a running journey's snapshot gains (never its probation length or signing place). */
+const DESIGN_SETTING_KEYS = ['preboarding', 'reporting', 'tourLessons', 'remindLateTeamTasks', 'assignees'] as const;
+
 /** What the migration does to one template (the new tasks and settings), without writing. */
-export function migrateTemplate(t: Pick<LifecycleTemplate, 'tasks' | 'settings'>, company?: string): { tasks: TemplateTask[]; settings: LifecycleTemplate['settings']; report: Omit<TemplateMigration, 'org' | 'templateId' | 'name'> } {
+export function migrateTemplate(t: Pick<LifecycleTemplate, 'tasks' | 'settings'>, company?: string): { tasks: TemplateTask[]; settings: LifecycleTemplate['settings']; report: Omit<TemplateMigration, 'org' | 'templateId' | 'name' | 'journeys'> } {
   const design = finalDesignRows(company);
   const signDesign = design.find((r) => r.design?.taskType === 'sign')!;
   const newKeys = new Set(design.flatMap((r) => (r.team ? [r.team.key] : [])));
@@ -71,7 +76,18 @@ export async function migrateTemplatesToFinalDesigns(opts: { apply: boolean; org
     if (doc.tasks.some((t) => !!t.design)) continue;
     if (!names.has(doc.org)) names.set(doc.org, (await companies().findOne({ id: doc.org }, { projection: { _id: 0, name: 1 } }))?.name);
     const { tasks, settings, report } = migrateTemplate(doc, names.get(doc.org));
-    out.push({ org: doc.org, templateId: doc.id, name: doc.name, ...report });
+    // Running journeys on it: each keeps the version it started with, so the design rows it reads (meetings,
+    // check-ins, watch list, teammate rows: never tasks or accesses, which stay its own journey tasks) go into
+    // its snapshot now, as the template has them after the migration — the view it has today.
+    const readRows = tasks.filter((t) => t.design && t.design.section !== 'task' && t.design.section !== 'access');
+    const running = { org: doc.org, kind: 'onboarding' as const, templateId: doc.id, closedAt: { $exists: false }, 'templateSnapshot.tasks.design': { $exists: false } };
+    const count = await journeys().countDocuments(running);
+    out.push({ org: doc.org, templateId: doc.id, name: doc.name, ...report, journeys: count });
+    if (opts.apply && count) {
+      const set: Record<string, unknown> = { updatedAt: new Date() };
+      for (const k of DESIGN_SETTING_KEYS) if (settings[k] !== undefined) set[`templateSnapshot.settings.${k}`] = settings[k];
+      await journeys().updateMany(running, { $push: { 'templateSnapshot.tasks': { $each: readRows } }, $set: set } as never);
+    }
     if (opts.apply) {
       // Only while it still has no design rows (a second run, or a save meanwhile, writes nothing).
       await lifecycleTemplates().updateOne(

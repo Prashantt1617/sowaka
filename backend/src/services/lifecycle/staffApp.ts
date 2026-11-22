@@ -25,13 +25,23 @@ const onScreen = (j: Journey) => OPEN_STATUSES.has(String(j.status)) && !j.close
 /** My staff roles over the org's open journeys, and each journey placed. */
 async function myJourneys(me: Me, now = new Date()): Promise<Array<{ p: Placed; tasks: JourneyTask[]; roles: StaffRole[] }>> {
   const data = await boardData(me.org, now);
+  const open = data.all.filter(onScreen);
+  if (!open.length) return [];
+  // Who is HR for each (the joiner's template version names them, else their HR contact, else whoever made the
+  // offer) and IT (named only): from the kept data and one small read, so only my joiners are read whole.
+  const ids = open.map((j) => j.userId).filter((x): x is string => !!x);
+  const contacts = ids.length ? await users().find({ userId: { $in: ids } }, { projection: { _id: 0, userId: 1, hrPrimaryUserId: 1 } }).toArray() : [];
+  const hrContact = new Map(contacts.map((u) => [u.userId, u.hrPrimaryUserId]));
   const out: Array<{ p: Placed; tasks: JourneyTask[]; roles: StaffRole[] }> = [];
-  for (const j of data.all.filter(onScreen)) {
+  for (const kept of open) {
+    const a = kept.templateSnapshot?.settings?.assignees ?? {};
+    const hr = a.hrUserId ?? (kept.userId ? hrContact.get(kept.userId) : undefined) ?? kept.createdByUserId;
+    if (hr !== me.userId && a.itUserId !== me.userId) continue;
+    // Mine: the whole journey (its snapshot holds its design rows).
+    const j = (await journeys().findOne({ id: kept.id }, { projection: { _id: 0 } })) as Journey | null;
+    if (!j) continue;
     const design = await designOf(j);
     if (!design.isDesign) continue;
-    const a = design.settings.assignees ?? {};
-    // Quick test before placing: HR is the assignee, else the joiner's HR contact or the offer's maker; IT only the assignee.
-    if (a.itUserId !== me.userId && a.hrUserId && a.hrUserId !== me.userId) continue;
     const p = await place(j, now, design);
     const roles: StaffRole[] = [];
     if (p.people.hr === me.userId) roles.push('hr');

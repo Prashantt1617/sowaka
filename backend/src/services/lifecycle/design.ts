@@ -39,22 +39,28 @@ export const isDesignRow = (t: Pick<TemplateTask, 'design'>) => !!t.design;
 const live = (t: TemplateTask) => t.enabled !== false && (!t.recommended || t.recommended.added);
 
 export interface JourneyDesign {
-  /** The design rows, switched on, in order: the template as it is now, else the journey's snapshot. */
+  /** The design rows, switched on, in order: the template as it was when the journey started (its snapshot). */
   rows: TemplateTask[];
   settings: LifecycleTemplateSettings;
-  /** The journey's template has design rows (else: an older journey on an older template). */
+  /** The journey has design rows (else: an older journey on an older template). */
   isDesign: boolean;
 }
 
 /**
- * A journey's design rows. Meetings, check-ins, the watch list and team rows follow the template as
- * it is now (as team rows always have); joiner tasks and accesses are the journey's own journey tasks.
+ * A journey's design rows: everything (meetings, check-ins and their questions, the watch list,
+ * trainings, teammate rows, the settings) is the template as it was when the journey started — the
+ * journey's snapshot — so a template edit reaches new joiners only ("New joiners get this from now
+ * on"). The migration writes the design rows into running journeys' snapshots. Only a journey the
+ * migration has not reached reads its template as it is now (and has no design rows if that has none).
+ * The journey must be read with `templateSnapshot.tasks` (the board's kept copy is not).
  */
 export async function designOf(j: Pick<Journey, 'org' | 'templateId' | 'templateSnapshot'>): Promise<JourneyDesign> {
-  const template = j.templateId ? (await onboardingTemplatesOf(j.org)).get(j.templateId) : undefined;
-  const fromTemplate = (template?.tasks ?? []).filter(isDesignRow);
   const fromSnapshot = (j.templateSnapshot?.tasks ?? []).filter(isDesignRow);
-  const rows = (fromTemplate.length ? fromTemplate : fromSnapshot).filter(live).sort((a, b) => a.order - b.order);
+  if (fromSnapshot.length) {
+    return { rows: fromSnapshot.filter(live).sort((a, b) => a.order - b.order), settings: { ...(j.templateSnapshot?.settings ?? {}) }, isDesign: true };
+  }
+  const template = j.templateId ? (await onboardingTemplatesOf(j.org)).get(j.templateId) : undefined;
+  const rows = (template?.tasks ?? []).filter(isDesignRow).filter(live).sort((a, b) => a.order - b.order);
   const settings = { ...(j.templateSnapshot?.settings ?? {}), ...(template?.settings ?? {}) };
   return { rows, settings, isDesign: rows.length > 0 };
 }

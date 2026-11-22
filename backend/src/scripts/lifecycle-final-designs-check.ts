@@ -282,7 +282,10 @@ async function main() {
   ok('Late rows remind whoever does them, once', sentNow > 0 && (await jobs.lateTeamRowReminders(await engine.loadJourney(J1), await engine.tasksOf(J1), today)) === 0, sentNow);
   const curT = await design.templateDesign(ORG, def.id);
   await design.saveTemplateDesign(ORG, def.id, { ...curT, team: { ...curT.team, remindLate: false } } as never);
-  eq('Switched off: none', await jobs.lateTeamRowReminders(await engine.loadJourney(J2), await engine.tasksOf(J2), today), 0);
+  ok('Switched off in the template: a running joiner keeps the version they started with (still reminded)', (await jobs.lateTeamRowReminders(await engine.loadJourney(J2), await engine.tasksOf(J2), today)) > 0);
+  await users().insertMany([person('j5', 'Kavya Iyer', { managerUserId: 'mgr', hrPrimaryUserId: 'hr' }), person('j6', 'Dev Arora', { managerUserId: 'mgr', hrPrimaryUserId: 'hr' })] as never[]);
+  const J5 = await mk('j5', 'Kavya Iyer', 'mgr', rules.addDaysKey(today, -40));
+  eq('…a joiner who starts after the save: none', await jobs.lateTeamRowReminders(await engine.loadJourney(J5), await engine.tasksOf(J5), today), 0);
   await design.saveTemplateDesign(ORG, def.id, { ...curT, team: { ...curT.team, remindLate: true } } as never);
 
   section('Confirmation: review → approval');
@@ -297,14 +300,18 @@ async function main() {
   eq('Extend: on the confirmation record HR decides from', [sanaJ.probation?.hodApproval?.outcome, sanaJ.probation?.hodApproval?.extendMonths], ['extended', 2]);
   eq('Answered once', await refusal(() => team.answerApprovalV2(HOD, J2, { action: 'approve' })), 409);
 
-  section('Kept templates: a save is read at once');
+  section('Kept templates: a save is read at once, and reaches new joiners only');
   readCache.enableLifecycleReadCache(true);
   const before = await design.onboardingTemplatesOf(ORG);
   const cur = await design.templateDesign(ORG, def.id);
   await design.saveTemplateDesign(ORG, def.id, { ...cur, meetings: cur.meetings.map((m) => (m.title === 'Salary and tax' ? { ...m, title: 'Salary, tax and PF' } : m)) } as never);
   const after = await design.onboardingTemplatesOf(ORG);
   ok('The kept copy is dropped by the save', before.get(def.id)?.tasks.some((t) => t.title === 'Salary and tax') && after.get(def.id)?.tasks.some((t) => t.title === 'Salary, tax and PF'));
-  ok('…and the joiner reads the new title', (await joiner.joinerOnboarding(PRIYA)).meetings.some((m) => m.title === 'Salary, tax and PF'));
+  ok('A running joiner keeps the version they started with', (await joiner.joinerOnboarding(PRIYA)).meetings.some((m) => m.title === 'Salary and tax')
+    && !(await joiner.joinerOnboarding(PRIYA)).meetings.some((m) => m.title === 'Salary, tax and PF'));
+  ok('…and so does their manager’s and HR’s side', (await team.teamJoinerPage(MGR, J1)).tasks.every((t) => t.title !== 'Salary, tax and PF') && (await staff.staffJoinerPage(HR, J1)).tasks.some((t) => t.title === 'Salary and tax'));
+  await mk('j6', 'Dev Arora', 'mgr', rules.addDaysKey(today, -3));
+  ok('A joiner who starts after the save reads the new title', (await joiner.joinerOnboarding(me('j6', 'Dev Arora'))).meetings.some((m) => m.title === 'Salary, tax and PF'));
   readCache.enableLifecycleReadCache(false);
 
   section('Migration of an older template; an older journey still reads');
@@ -317,7 +324,8 @@ async function main() {
   const oldTasksBefore = await journeyTasks().countDocuments({ journeyId: oldJ.id });
   const dry = await migrate.migrateTemplatesToFinalDesigns({ apply: false, org: ORG });
   ok('Dry run: lists the old template only, writes nothing', dry.length === 1 && dry[0].templateId === 'old-tpl' && !(await templates.getTemplate(ORG, 'old-tpl')).tasks.some((t) => t.design), dry);
-  ok('…what it would switch off and add', dry[0].switchedOff.includes('Week-1 tasks') && dry[0].added.length === 52 && dry[0].signOnDay1, dry[0]);
+  ok('…what it would switch off and add, and the running journey it would give the rows to', dry[0].switchedOff.includes('Week-1 tasks') && dry[0].added.length === 52 && dry[0].signOnDay1 && dry[0].journeys === 1, dry[0]);
+  ok('…the dry run gives no journey anything', !(await engine.loadJourney(oldJ.id)).templateSnapshot.tasks.some((t) => t.design));
   await migrate.migrateTemplatesToFinalDesigns({ apply: true, org: ORG });
   const migrated = await templates.getTemplate(ORG, 'old-tpl');
   ok('Applied: design rows, old rows switched off (never deleted), probation kept at 3',
@@ -328,6 +336,13 @@ async function main() {
   const resaved = await templates.updateTemplate(ORG, 'old-tpl', { tasks: migrated.tasks });
   ok('The older editor can still save a migrated template', resaved.tasks.length === migrated.tasks.length);
   eq('The running journey keeps its tasks', await journeyTasks().countDocuments({ journeyId: oldJ.id }), oldTasksBefore);
+  const oldSnap = (await engine.loadJourney(oldJ.id)).templateSnapshot;
+  eq('…and gets the meetings, check-ins, watch list and teammate rows as its own snapshot (no tasks or accesses), its probation and signing place kept',
+    [oldSnap.tasks.filter((t) => t.design).length, oldSnap.tasks.some((t) => t.design?.section === 'task' || t.design?.section === 'access'), oldSnap.settings.probationMonths, oldSnap.settings.signLettersOnDay1 === true, !!oldSnap.settings.preboarding],
+    [39, false, 3, false, true]);
+  const oldView = await design.templateDesign(ORG, 'old-tpl');
+  await design.saveTemplateDesign(ORG, 'old-tpl', { ...oldView, meetings: oldView.meetings.map((m) => (m.title === 'First goals' ? { ...m, title: 'Your first goals' } : m)) } as never);
+  ok('…so a later edit of the migrated template does not reach it', (await joiner.joinerOnboarding(me('j3', 'Rahul Verma'))).meetings.some((m) => m.title === 'First goals'));
   const oldHome = await joiner.joinerOnboarding(me('j3', 'Rahul Verma'));
   ok('…its new view reads: meetings from the template, its own tasks by kind', oldHome.meetings.length > 0 && oldHome.tasks.length > 0 && oldHome.step === 'w1', { m: oldHome.meetings.length, t: oldHome.tasks.length });
   ok('…and the 20 Nov home still answers for older app builds', !!(await app.onboardingHome(me('j3', 'Rahul Verma'))).journeyId);

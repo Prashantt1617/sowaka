@@ -23,6 +23,7 @@ import { migrateTemplatesToFinalDesigns } from '../services/lifecycle/designMigr
     console.log(`  ${apply ? 'switched off' : 'would switch off'} ${c.switchedOff.length}: ${c.switchedOff.join(' · ') || '—'}`);
     console.log(`  HR's own rows kept as they are: ${c.keptCustom.join(' · ') || '—'}`);
     console.log(`  Sign your joining documents on Day 1: ${c.signOnDay1 ? 'yes (the portal row becomes the Day-1 task)' : 'no sign row'}`);
+    console.log(`  Running journeys that ${apply ? 'got' : 'would get'} its meetings, check-ins, watch list and teammate rows as their own snapshot: ${c.journeys}`);
   }
   console.log(`\n${apply ? 'Updated' : 'Dry run: would update'} ${changes.length} template${changes.length === 1 ? '' : 's'}.${apply ? '' : ' Run with --apply to write.'}`);
   if (apply) forgetLifecycleReads(org ?? null);
