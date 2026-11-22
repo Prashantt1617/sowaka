@@ -338,6 +338,14 @@ async function main() {
   const sanaJ = await engine.loadJourney(J2);
   eq('Extend: on the confirmation record HR decides from', [sanaJ.probation?.hodApproval?.outcome, sanaJ.probation?.hodApproval?.extendMonths], ['extended', 2]);
   eq('Answered once', await refusal(() => team.answerApprovalV2(HOD, J2, { action: 'approve' })), 409);
+  const letterRow = async () => ((await staff.staffTaskScreen(HR, J2, 'hr_confirmation_letter')) as { done: boolean }).done;
+  eq('HR’s letter row: not done before the letter', await letterRow(), false);
+  // HR's decision on the board (its own rules are lifecycle:check's): confirm.
+  await journeys().updateOne({ id: J2 }, { $set: { 'probation.decision': { outcome: 'confirm', decidedAt: new Date(), decidedByName: 'Ritu Sharma' } } });
+  const lettersSvc = await import('../services/lifecycle/letters');
+  await lettersSvc.closeLetterTask(HR, { id: 'letter-check', org: ORG, kind: 'confirmation', journeyId: J2 } as never);
+  ok('…done once the confirmation letter is sent from the dashboard, on HR’s page too', await letterRow()
+    && (await staff.staffJoinerPage(HR, J2)).tasks.find((t) => t.id === 'hr_confirmation_letter')?.done === true);
 
   section('Kept templates: a save is read at once, and reaches new joiners only');
   readCache.enableLifecycleReadCache(true);

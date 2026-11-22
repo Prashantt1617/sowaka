@@ -63,6 +63,8 @@ export function rowDone(r: PlacedRow, j: Journey, tasks: JourneyTask[], design?:
   if (key === 'mgr_welcome') return r.done || !!j.meetUs?.managerNote;
   if (key === 'mgr_feed_intro') return r.done || !!j.managerWelcome;
   if (key === 'mgr_confirmation_review') return !!j.probation?.recommendation;
+  // HR's letter row: done when the confirmation (or extension) letter is sent from the dashboard (the app draws no button).
+  if (key === 'hr_confirmation_letter') return r.done || !!j.probation?.decision?.letterId || tasks.some((t) => t.systemKey === 'confirmation_letter' && t.status === 'done');
   if (key === 'hod_approve') return j.probation?.hodApproval?.outcome === 'approved' || j.probation?.hodApproval?.outcome === 'extended';
   if (key === 'it_accesses' || key === 'hr_accesses') {
     const list = accessTasks(j, tasks, design).filter((t) => t.ownerRole === (key === 'it_accesses' ? 'it' : 'hr'));
