@@ -82,7 +82,7 @@ class _TeamHomeState extends State<_TeamHome> {
                 else
                   ListenableBuilder(
                     listenable: Listenable.merge([LifecycleMeStore.instance, JoinersTab.count]),
-                    builder: (context, _) => LifecycleMeStore.instance.value.enabled && (JoinersTab.count.value > 0 || section == TeamSection.joiners)
+                    builder: (context, _) => JoinersTab.showsPill(lifecycleOn: LifecycleMeStore.instance.value.enabled, joiners: JoinersTab.count.value, open: section == TeamSection.joiners)
                         ? _TeamSectionBar(
                             data: data,
                             section: section,
@@ -186,7 +186,7 @@ class _TeamSectionBar extends StatelessWidget {
     return ListenableBuilder(
       listenable: Listenable.merge([LifecycleMeStore.instance, JoinersTab.count]),
       builder: (context, _) {
-        final joiners = LifecycleMeStore.instance.value.enabled;
+        final joiners = JoinersTab.showsPill(lifecycleOn: LifecycleMeStore.instance.value.enabled, joiners: JoinersTab.count.value, open: section == TeamSection.joiners);
         return TeamSectionPills(
           selected: section.name,
           onSelect: (key) => onChanged(TeamSection.values.byName(key)),
@@ -204,7 +204,7 @@ class _TeamSectionBar extends StatelessWidget {
                 count: _pendingTeamFeedback(data),
               ),
             ],
-            if (joiners || section == TeamSection.joiners)
+            if (joiners)
               TeamPillSpec(
                 key: TeamSection.joiners.name,
                 label: 'Joiners',

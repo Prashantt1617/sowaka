@@ -298,6 +298,13 @@ void main() {
       expect(JoinersTab.count.value, 3);
       expect(find.text('No joiners right now'), findsNothing);
     });
+
+    test('the Joiners pill: only with joiners in Teams (HR / IT & admin with none never see it)', () {
+      expect(JoinersTab.showsPill(lifecycleOn: true, joiners: 2, open: false), isTrue);
+      expect(JoinersTab.showsPill(lifecycleOn: true, joiners: 0, open: false), isFalse);
+      expect(JoinersTab.showsPill(lifecycleOn: false, joiners: 2, open: false), isFalse);
+      expect(JoinersTab.showsPill(lifecycleOn: true, joiners: 0, open: true), isTrue);
+    });
   });
 
   group('the person page (MgrProtoPriya)', () {

@@ -26,6 +26,11 @@ class JoinersTab extends StatefulWidget {
   /// The Joiners pill's count: how many joiners the viewer is connected to.
   static final count = ValueNotifier<int>(0);
 
+  /// Whether Teams shows the "Joiners" pill: only for someone with joiners there (a manager, buddy or
+  /// someone up the line). HR and IT & admin with none work from Actions › Onboarding instead.
+  /// [open] keeps it while its section is on screen.
+  static bool showsPill({required bool lifecycleOn, required int joiners, required bool open}) => open || (lifecycleOn && joiners > 0);
+
   /// Reads the count for the pill (the Team tab calls it as it opens).
   static Future<void> refreshCount({OnboardingShell? shell, TeamJoinersApi? api}) async {
     final s = shell ?? currentOnboardingShell();
