@@ -6,7 +6,7 @@
  * Built from the onboarding board's kept data (`lc-board-data`, patched per journey by every write)
  * and the kept templates (`lc-templates`); a person's page reads their journey live.
  */
-import { employeePaymentDetails, journeys, letters, salaryStructures, taxDeclarations, users } from '../../config/db';
+import { employeePaymentDetails, journeys, letterTemplates, letters, meetingNotes, salaryStructures, taxDeclarations, users } from '../../config/db';
 import type { Journey, JourneyTask } from '../../models/lifecycle.model';
 import { boardData } from './board';
 import { designOf } from './design';
@@ -15,6 +15,10 @@ import { TEAM_EARLY } from './designSeed';
 import { accessTasks, initialsOf, place, setRowTick, type Placed, type PlacedRow } from './designRows';
 import { LifecycleError, finishTaskById, loadJourney, reopenTaskById, tasksOf } from './engine';
 import { heroOf, progressOf, rowDone, rowView, rowsFor, type RowView } from './teamApp';
+import { journeyDocumentsView } from './documents';
+import { companyDisplayName, companyOf } from './emails';
+import { saveMeetingRowNotes } from './joinerMeetings';
+import { DEFAULT_LETTER_TEMPLATES, fillTemplate, mergeValues, valuesWithoutPay } from './letters';
 
 type Me = { userId: string; name: string; org: string };
 type StaffRole = 'hr' | 'it';
@@ -125,11 +129,18 @@ export async function staffJoinerPage(me: Me, journeyId: string, as?: unknown) {
   const { first, joiner, names } = await heroOf(p, me, tasks);
   const rows = rowsFor(p, [role]).map((r) => rowView(r, p, tasks, first, role, names));
   const progress = await progressOf(p, tasks, role, names);
+  // Profile % is the full profile's (nine sections for HR, five for IT): the same number its screen says.
+  const { pct } = await profileSections(p.j, role);
+  const statRows = progress.rows.map((r) => (r.key === 'prof'
+    ? { ...r, done: pct, flag: pct >= 100 ? { text: 'Done', tone: 'ok' as const } : { text: `${100 - pct}% to go`, tone: 'warn' as const } }
+    : r));
   return {
     joiner, viewingAs: role,
+    /** The joiner's step (the rows' `step` numbers): which rows are now and which are coming up. */
+    step: p.step,
     card: { title: `Your tasks for ${first}`, toDo: rows.filter((r) => !r.done && r.step <= p.step).length },
     tasks: rows,
-    onboarding: { status: joiner.status.label, rows: progress.rows },
+    onboarding: { status: joiner.status.label, rows: statRows },
     lists: progress.lists,
   };
 }
@@ -137,7 +148,8 @@ export async function staffJoinerPage(me: Me, journeyId: string, as?: unknown) {
 // ─── The nine-section profile ───────────────────────────────────────────────
 
 type Row = { label: string; value?: string };
-type Section = { key: string; title: string; missing: number; rows: Row[] };
+/** `meta`: the tax section's financial year ("FY 2026–27"), shown when nothing is missing (HRPayroll). */
+type Section = { key: string; title: string; missing: number; rows: Row[]; meta?: string };
 const section = (key: string, title: string, rows: Row[]): Section => ({ key, title, missing: rows.filter((r) => !r.value).length, rows });
 const rupees = (n?: number) => (typeof n === 'number' ? `₹${Math.round(n).toLocaleString('en-IN')}` : undefined);
 const addressOf = (a?: { line: string; city: string; state: string; pin: string }) => (a ? `${a.line}, ${a.city}, ${a.state} ${a.pin}` : undefined);
@@ -204,7 +216,7 @@ export async function profileSections(j: Journey, role: StaffRole): Promise<{ pc
     ]));
     const d = tax?.declarations ?? {};
     const paise = (n?: number) => (typeof n === 'number' ? rupees(n / 100) : undefined);
-    sections.push(section('tax', 'Tax and investments', [
+    sections.push({ ...section('tax', 'Tax and investments', [
       { label: 'Tax regime', value: tax?.regime ? (tax.regime === 'old' ? 'Old regime' : 'New regime') : undefined },
       ...(tax?.regime === 'new' ? [] : [
         { label: 'Section 80C', value: rupees(d.sec80C) },
@@ -212,7 +224,7 @@ export async function profileSections(j: Journey, role: StaffRole): Promise<{ pc
         { label: 'Rent (HRA)', value: paise(d.rentPaidPaise) },
       ]),
       { label: 'Last employer, this year', value: d.previousEmployerSalaryPaise ? `${paise(d.previousEmployerSalaryPaise)} · TDS ${paise(d.previousEmployerTdsPaise ?? 0)}` : undefined },
-    ]));
+    ]), ...(tax?.fy ? { meta: `FY ${tax.fy.replace('-', '–')}` } : {}) });
   }
   const filled = sections.reduce((n, s) => n + s.rows.filter((r) => r.value).length, 0);
   const total = sections.reduce((n, s) => n + s.rows.length, 0);
@@ -241,14 +253,22 @@ export async function staffTaskScreen(me: Me, journeyId: string, key: string, as
   const r = myStaffRow(p, role, key);
   const base = r.row.team?.key ?? key;
   const checks = j.staffChecks?.[key];
-  const out: Record<string, unknown> = { key, done: rowDone(r, j, tasks, p.design), ...(checks?.checks ? { checks: checks.checks } : {}) };
+  // `possessive`: the screens' "From her profile" / "his" / "their", from the profile's gender (app copy, not a fact).
+  const gender = j.profile?.personal?.gender;
+  const out: Record<string, unknown> = {
+    key, done: rowDone(r, j, tasks, p.design), ...(checks?.checks ? { checks: checks.checks } : {}),
+    possessive: gender === 'Female' ? 'her' : gender === 'Male' ? 'his' : 'their',
+  };
   if (r.row.design?.section === 'meeting') {
-    out.meeting = { agenda: [...(r.row.agenda ?? r.row.team?.agenda ?? [])] };
+    // My own notes on the agenda (the meeting-row notes, private to me): HRMeeting's notes boxes.
+    const mine = await meetingNotes().findOne({ id: `${j.id}:team:${key}:${me.userId}` }, { projection: { _id: 0, notes: 1 } });
+    out.meeting = { agenda: [...(r.row.agenda ?? r.row.team?.agenda ?? [])], notes: mine?.notes ?? [] };
     return out;
   }
   if (base === 'hr_prepare_kit' || base === 'hr_hand_kit') {
     const user = j.userId ? await users().findOne({ userId: j.userId }, { projection: { _id: 0, name: 1, designation: 1, department: 1, employeeId: 1 } }) : null;
     const idCard = {
+      company: companyDisplayName(await companyOf(j.org), j.org),
       name: user?.name ?? j.candidate?.name ?? '—', ...((j.designation ?? user?.designation) ? { designation: j.designation ?? user?.designation } : {}),
       ...((j.department ?? user?.department) ? { department: j.department ?? user?.department } : {}), ...(user?.employeeId ? { employeeId: user.employeeId } : {}),
       ...(j.profile?.personal?.bloodGroup ? { bloodGroup: j.profile.personal.bloodGroup } : {}),
@@ -263,6 +283,11 @@ export async function staffTaskScreen(me: Me, journeyId: string, key: string, as
     const { sections } = await profileSections(j, 'hr');
     const keys = base === 'hr_check_payroll' ? ['bank', 'pf', 'tax'] : ['personal', 'contact', 'emergency', 'education'];
     out.sections = sections.filter((s) => keys.includes(s.key));
+    if (base === 'hr_check_payroll') {
+      // The cancelled cheque, when the joiner's document list asks for one (HRPayroll's cheque row).
+      const cheque = (await journeyDocumentsView(j.id)).find((d) => /cheque/i.test(`${d.docKey} ${d.label}`));
+      if (cheque) out.cheque = { uploaded: cheque.files.length > 0 };
+    }
     return out;
   }
   if (base === 'hr_confirmation_letter') {
@@ -277,6 +302,7 @@ export async function staffTaskScreen(me: Me, journeyId: string, key: string, as
       ...((decision?.designation ?? j.designation) ? [{ label: 'Designation', value: decision?.designation ?? j.designation ?? '' }] : []),
     ];
     if (letter) out.letter = { id: letter.id, state: letter.email?.sentAt ? 'sent' : letter.pdfFileId ? 'ready' : 'draft' };
+    out.preview = await letterPreview(j, letter?.id, me.name);
     return out;
   }
   if (base === 'it_accesses' || base === 'hr_accesses') {
@@ -294,6 +320,33 @@ export async function staffTaskScreen(me: Me, journeyId: string, key: string, as
     return out;
   }
   return out;
+}
+
+/**
+ * HRLetter's "Letter preview · From Document templates": the confirmation letter as the org's template
+ * words it (the letter made on the dashboard, else the default confirmation template), filled with the
+ * merge values the dashboard uses, pay left out. Paragraphs as plain text; the dashboard makes and sends it.
+ */
+async function letterPreview(j: Journey, letterId: string | undefined, hrName: string): Promise<{ head: string; title: string; paragraphs: string[] }> {
+  const made = letterId ? await letters().findOne({ id: letterId }, { projection: { _id: 0, templateId: 1, values: 1 } }) : null;
+  const template = made?.templateId ? await letterTemplates().findOne({ id: made.templateId, org: j.org }, { projection: { _id: 0, body: 1 } })
+    : await letterTemplates().find({ org: j.org, kind: 'confirmation' }, { projection: { _id: 0, body: 1 } }).sort({ isDefault: -1, name: 1 }).limit(1).next();
+  const values = valuesWithoutPay(made?.values ?? (await mergeValues(j.org, { kind: 'confirmation', journeyId: j.id }, hrName)).values);
+  const html = fillTemplate(template?.body ?? DEFAULT_LETTER_TEMPLATES.confirmation.body, values);
+  const decode = (t: string) => t.replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+  const paragraphs = html.split(/<\/(?:p|li|h\d|div|tr)>/i)
+    .map((part) => decode(part.replace(/<br\s*\/?>/gi, ' · ').replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  const head = [values.companyName, values.location].filter(Boolean).join(' · ');
+  return { head, title: 'Confirmation of employment', paragraphs };
+}
+
+/** PUT /lifecycle/staff/joiners/:journeyId/tasks/:key/notes `{ notes: string[] }` — my own notes on one of my meetings' agenda. */
+export async function staffTaskNotes(me: Me, journeyId: string, key: string, body: Record<string, unknown>, as?: unknown) {
+  const { j, p, role } = await staffJourney(me, journeyId, as);
+  const r = myStaffRow(p, role, key);
+  if (r.row.design?.section !== 'meeting') throw new LifecycleError(404, 'Meeting not found');
+  return saveMeetingRowNotes(me, j, `team:${key}`, body);
 }
 
 /** POST /lifecycle/staff/joiners/:journeyId/tasks/:key */

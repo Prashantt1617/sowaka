@@ -411,6 +411,19 @@ type StaffTaskScreen =
   | { key: string };                                  // a custom row: the how-to line and Mark as done
 ```
 
+Added by lane H (the app's HR / IT screens needed them; staffApp.ts only):
+- `StaffJoinerPage.step` (the joiner's step: which rows are now and which are COMING UP); its Profile row's
+  `done` is the full profile's % (nine sections for HR, five for IT), the same number `…/profile` says.
+- `StaffProfile.sections[].meta`: the tax section's `"FY 2026–27"` (HRPayroll shows it when nothing is missing).
+- Every `StaffTaskScreen` has `possessive: 'her' | 'his' | 'their'` (from the profile's gender) for the
+  screens' copy ("From her profile"); the kit's `idCard.company`; the payroll check's `cheque?: { uploaded }`
+  (when the joiner's documents ask for a cancelled cheque); the letter's
+  `preview: { head, title: 'Confirmation of employment', paragraphs }` (the org's confirmation template, or the
+  letter made on the dashboard, filled with the dashboard's merge values, pay left out); a meeting's
+  `meeting.notes` (my own).
+- PUT `/lifecycle/staff/joiners/:journeyId/tasks/:key/notes` `{ notes: string[] }` → `{ notes }`: my own notes on
+  one of my meetings (the meeting-row notes, `lifecycle_meeting_notes`, private to me).
+
 Due text (server): late `"1 day late"` / `"N days late"` (red), `"Due today"` (amber), `"Due tomorrow"`,
 `"Due <Mon…Sun>"` within 5 days, else `"Due 30 Nov"` (grey). A future row that cannot start early shows its
 step label ("Week 1") and `"Opens in Week 1"`. Any HR/IT task can be done early except meetings.
