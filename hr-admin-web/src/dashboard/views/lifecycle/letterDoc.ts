@@ -96,6 +96,19 @@ export function fillBody(body: string, values: Record<string, string>, mode: 'pr
   });
 }
 
+/**
+ * The body as a template reads before anyone's details are in it: each field highlighted by its
+ * name ("Full name"), except the values given (the company's name). For the onboarding template
+ * editor's Offer letter and Documents to sign previews.
+ */
+export function labelledBody(body: string, values: Record<string, string> = {}): string {
+  return sanitizeHtml(body).replace(FIELD, (_, raw: string) => {
+    const key = norm(raw);
+    const v = (values[key] ?? '').trim();
+    return v ? esc(v) : `<mark class="lf-on">${esc(fieldLabel(key))}</mark>`;
+  });
+}
+
 /** The fields the letter needs that have no value yet (the template's fields plus anything the server says is missing). */
 export function missingFields(body: string, values: Record<string, string>, serverMissing: string[] = []): string[] {
   const need = [...placeholders(body), ...serverMissing.map(norm)];

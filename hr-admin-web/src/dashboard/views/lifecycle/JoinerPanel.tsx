@@ -13,10 +13,10 @@ import { useStore } from '../../store';
 import { canSeePay } from '../../access';
 import { LoadError, Pill, SkeletonLines } from '../../ui';
 import {
-  AGENDA_TASK_KEYS, AGENDA_TASK_LABEL, decideBankPfRequest, decideDateRequest, fetchLifecycleFile, getJourney, isNotAvailable, journeyTaskAction, listTemplates, nudgeTask, offerStatusAction, reviewDocument, updateJourney,
+  AGENDA_TASK_KEYS, AGENDA_TASK_LABEL, decideBankPfRequest, decideDateRequest, fetchLifecycleFile, getJourney, getTemplateDesign, isNotAvailable, journeyTaskAction, listTemplates, nudgeTask, offerStatusAction, reviewDocument, updateJourney,
 } from '../../../services/lifecycle';
 import type {
-  BankPfRequest, CandidateDocumentView, ConfirmationDecision, Day1Pass, JourneyDetail, LetterKind, LetterView, TaskView, TemplateListItem,
+  BankPfRequest, CandidateDocumentView, ConfirmationDecision, Day1Pass, DesignReporting, JourneyDetail, LetterKind, LetterView, TaskView, TemplateListItem,
 } from '../../../services/lifecycle';
 import { FilePreview, NoteDialog, OwnerChip, Pick, PlantFace, Field } from './shared';
 import { IconChevronDown, IconDownload } from '../../icons';
@@ -180,6 +180,16 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   }, [journeyId, attempt]);
   useEffect(() => { setOpenStep(null); setNudgeMenu(false); setClosing(null); setCloseNote(''); }, [journeyId]);
   useEffect(() => { listTemplates('onboarding').then(setTemplates).catch(() => undefined); }, []);
+  // The template's joining and reporting details: what the portal's Day-1 pass shows where HR has not typed this joiner's own.
+  const [reporting, setReporting] = useState<DesignReporting | null>(null);
+  const templateId = data?.journey.templateId;
+  useEffect(() => {
+    setReporting(null);
+    if (!templateId) return undefined;
+    let live = true;
+    getTemplateDesign(templateId).then((t) => { if (live) setReporting(t.preboarding.reporting); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [templateId]);
   useEffect(() => {
     if (!nudgeMenu) return undefined;
     const close = (e: globalThis.MouseEvent) => { if (!nudgeRef.current?.contains(e.target as Node)) setNudgeMenu(false); };
@@ -395,7 +405,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
           <>
             <Facts rows={[
               ['Joining date', journey.tj ? longDay(journey.tj) : 'Not set'], ['When', journey.tj ? weekOf(journey.tj) : ''],
-              ['Reporting time', pass?.reportingTime ?? 'Not set'], ['Reporting place', pass?.place ?? (pass?.meetingLink ? 'Online' : 'Not set')],
+              ['Reporting time', pass?.reportingTime ?? reporting?.time ?? 'Not set'], ['Reporting place', pass?.place ?? (pass?.meetingLink ? 'Online' : reporting?.place ?? 'Not set')],
               ['Report to', journey.managerName ?? 'Not picked'], ['Buddy', journey.buddyName ?? 'Not picked'],
               ['Day-1 pass', passFilled ? 'Filled in' : 'Not filled in yet'], ['Template', template?.name],
               ['Joining with', batch.length ? batch.map((b) => b.name).join(', ') : ''],

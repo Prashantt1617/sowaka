@@ -157,7 +157,7 @@ export type TourLessonKey = 'punch' | 'missed' | 'leave' | 'overtime' | 'approve
 export type MediaBackground = 'rust' | 'blue' | 'ink' | 'green' | 'purple' | 'sand';
 
 export interface DesignQuestion { id: string; text: string; type: CheckinAnswerType | FormAnswerType; options?: string[] }
-export interface DesignMedia { type: 'video' | 'image' | 'text' | 'pdf'; fileId?: string; text?: string; bg?: MediaBackground; minutes?: number }
+export interface DesignMedia { type: 'video' | 'image' | 'text' | 'pdf'; fileId?: string; text?: string; bg?: MediaBackground; minutes?: number; /** The uploaded file's name, for the editor (lane D). */ name?: string }
 
 /** What a Final-designs template row is (absent on older rows). */
 export interface DesignItem {

@@ -32,6 +32,7 @@ async function main() {
   const seed = await import('../services/lifecycle/seed');
   const templates = await import('../services/lifecycle/templates');
   const design = await import('../services/lifecycle/design');
+  const designClean = await import('../services/lifecycle/designClean');
   const engine = await import('../services/lifecycle/engine');
   const rules = await import('../services/lifecycle/dueRules');
   const joiner = await import('../services/lifecycle/joinerApp');
@@ -105,6 +106,8 @@ async function main() {
   eq('Another company’s file is refused', await refusal(() => design.saveTemplateDesign(ORG, def.id, { ...saved, watch: [{ title: 'V', stage: 'd1', media: { type: 'video', fileId: 'nope' } }] } as never)), 400);
   eq('A new Sign row is refused (only the template’s own)', await refusal(() => design.saveTemplateDesign(ORG, def.id, { ...saved, tasks: [...saved.tasks, { title: 'Sign more', type: 'sign', stage: 'd1' }] } as never)), 400);
   eq('An assignee who does not work here is refused', await refusal(() => design.saveTemplateDesign(ORG, def.id, { ...saved, team: { ...saved.team, assignees: { hrUserId: 'ghost' } } } as never)), 400);
+  // Lane D: the editor keeps an uploaded file's name on its media (shown beside Replace).
+  eq('Media keeps the uploaded file’s name (only with a file)', [designClean.cleanMedia({ type: 'video', fileId: 'f1', name: 'welcome.mp4' }, ['video'], 'x').name, designClean.cleanMedia({ type: 'video', name: 'x.mp4' }, ['video'], 'x').name], ['welcome.mp4', undefined]);
   const preview = await design.templatePreview(ORG, def.id, 'pre') as Record<string, unknown>;
   ok('Employee preview before joining: joining details, offer letter, profile, watch list', preview.header === 'Welcome' && !!preview.joining && preview.offerLetter === true, preview);
   const previewD1 = await design.templatePreview(ORG, def.id, 'd1') as { tasks: { count: number }; devices: { count: number } | null };
