@@ -1,7 +1,8 @@
 /**
  * Onboarding · Final designs: moves older onboarding templates to the design rows
  * (services/lifecycle/designMigrate.ts, docs/lifecycle/FINAL-DESIGNS.md §7). Non-destructive: rows
- * the designs replace are switched off, never deleted; a template that has design rows is skipped.
+ * the designs replace are switched off, never deleted; a template that has design rows only gains the
+ * canvas's how-to lines on HR's seeded rows that have none (hand over, joining form, letter).
  *
  * Dry run by default (prints what it would change); `--apply` writes. `--org <id>` for one company.
  * Never against a real database without the user's yes.
@@ -19,6 +20,10 @@ import { migrateTemplatesToFinalDesigns } from '../services/lifecycle/designMigr
   const changes = await migrateTemplatesToFinalDesigns({ apply, ...(org ? { org } : {}) });
   for (const c of changes) {
     console.log(`\n${c.org} · ${c.name} (${c.templateId})`);
+    if (c.howAdded) {
+      console.log(`  already on the designs; ${apply ? 'added' : 'would add'} the how-to line to: ${c.howAdded.join(' · ')}`);
+      continue;
+    }
     console.log(`  ${apply ? 'added' : 'would add'} ${c.added.length}: ${c.added.join(' · ')}`);
     console.log(`  ${apply ? 'switched off' : 'would switch off'} ${c.switchedOff.length}: ${c.switchedOff.join(' · ') || '—'}`);
     console.log(`  HR's own rows kept as they are: ${c.keptCustom.join(' · ') || '—'}`);

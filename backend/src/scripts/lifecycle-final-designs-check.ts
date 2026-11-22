@@ -378,6 +378,17 @@ async function main() {
   ok('Applied: design rows, old rows switched off (never deleted), probation kept at 3',
     migrated.tasks.filter((t) => t.design).length === 53 && migrated.tasks.some((t) => t.systemKey === 'week1_reels' && !t.enabled && t.replacedBy === 'final_designs') && migrated.settings.probationMonths === 3, migrated.tasks.length);
   eq('Again: nothing to do', (await migrate.migrateTemplatesToFinalDesigns({ apply: true, org: ORG })).length, 0);
+  const standard = (await templates.getTemplate(ORG, def.id)).tasks.filter((t) => ['hr_hand_kit', 'hr_check_form', 'hr_confirmation_letter'].includes(t.team?.key ?? ''));
+  eq('HR’s hand over, joining form and letter rows carry the canvas’s how-to lines', standard.map((t) => t.design?.how),
+    ['ID card, welcome kit, notebook and pen.', 'Answers arrive in the HR inbox. Tick this once they’re in.', 'From Document templates, once the confirmation is approved.']);
+  // A design template saved before those lines existed: the migration adds them (dry run first).
+  await lifecycleTemplates().updateOne({ org: ORG, id: 'old-tpl' }, { $unset: { 'tasks.$[t].design.how': '' } }, { arrayFilters: [{ 't.team.key': { $in: ['hr_hand_kit', 'hr_check_form', 'hr_confirmation_letter'] } }] });
+  const howDry = await migrate.migrateTemplatesToFinalDesigns({ apply: false, org: ORG });
+  ok('Dry run: lists the three how-to lines, writes nothing', howDry.length === 1 && howDry[0].howAdded?.length === 3
+    && !(await templates.getTemplate(ORG, 'old-tpl')).tasks.some((t) => t.team?.key === 'hr_check_form' && t.design?.how), howDry);
+  await migrate.migrateTemplatesToFinalDesigns({ apply: true, org: ORG });
+  ok('Applied: the lines are on the template; again: nothing to do', (await templates.getTemplate(ORG, 'old-tpl')).tasks.find((t) => t.team?.key === 'hr_check_form')?.design?.how === 'Answers arrive in the HR inbox. Tick this once they’re in.'
+    && (await migrate.migrateTemplatesToFinalDesigns({ apply: true, org: ORG })).length === 0);
   const keys = migrated.tasks.flatMap((t) => (t.team ? [t.team.key] : []));
   ok('No team key twice (the old Approve keeps its own)', new Set(keys).size === keys.length && keys.includes('hod_approve_20nov'), keys);
   const resaved = await templates.updateTemplate(ORG, 'old-tpl', { tasks: migrated.tasks });

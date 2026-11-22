@@ -218,14 +218,14 @@ export function finalDesignRows(company = 'the company'): TemplateTask[] {
     taskRow({ title: 'Acknowledge company policies', stage: 'd1', design: { taskType: 'ack', source: 'policies' } }),
     contentRow({ section: 'watch', title: 'Our values', stage: 'd1', media: { type: 'video' } }),
     contentRow({ section: 'watch', title: 'A day in your team', stage: 'd1', media: { type: 'video' } }),
-    teamRow({ key: 'hr_hand_kit', title: 'Hand over the onboarding kit', role: 'hr', stage: 'd1' }),
+    teamRow({ key: 'hr_hand_kit', title: 'Hand over the onboarding kit', role: 'hr', stage: 'd1', how: 'ID card, welcome kit, notebook and pen.' }),
     teamRow({ key: 'mgr_feed_intro', title: 'Introduce them on the feed', role: 'manager', stage: 'd1', how: 'Opens a ready-made post with their photo and role.' }),
     teamRow({ key: 'buddy_show_around', title: 'Show them around the office', role: 'buddy', stage: 'd1' }),
     teamRow({ key: 'buddy_punch_in', title: 'Tell them how punch-in works', role: 'buddy', stage: 'd1' }),
     teamRow({ key: 'buddy_groups', title: 'Add them to the team’s groups and channels', role: 'buddy', stage: 'd1' }),
     teamRow({ key: 'mgr_read_checkin', title: 'Read their check-ins', role: 'manager', stage: 'w1' }),
     teamRow({ key: 'hr_check_payroll', title: 'Check their payroll details', role: 'hr', stage: 'w1' }),
-    teamRow({ key: 'hr_check_form', title: 'Check the joining form', role: 'hr', stage: 'w1' }),
+    teamRow({ key: 'hr_check_form', title: 'Check the joining form', role: 'hr', stage: 'w1', how: 'Answers arrive in the HR inbox. Tick this once they’re in.' }),
     teamRow({ key: 'senior_meet', title: 'Meet them, one to one or with other new joiners', role: 'senior', stage: 'w1' }),
     accessRow({ title: 'Laptop', role: 'it' }),
     accessRow({ title: 'Work email', role: 'it' }),
@@ -248,7 +248,7 @@ export function finalDesignRows(company = 'the company'): TemplateTask[] {
     meetingRow({ key: 'mgr_confirmation', title: 'Confirmation discussion', meetWith: 'manager', stage: 'fin', agenda: AGENDA.confirmation }),
     teamRow({ key: 'mgr_confirmation_review', title: 'Write the confirmation review', role: 'manager', stage: 'fin', how: 'Opens the review questions in Teams › Joiners.' }),
     teamRow({ key: 'hod_approve', title: 'Approve the confirmation', role: 'head_of_department', stage: 'fin' }),
-    teamRow({ key: 'hr_confirmation_letter', title: 'Issue the confirmation letter', role: 'hr', stage: 'fin' }),
+    teamRow({ key: 'hr_confirmation_letter', title: 'Issue the confirmation letter', role: 'hr', stage: 'fin', how: 'From Document templates, once the confirmation is approved.' }),
   ];
 }
 

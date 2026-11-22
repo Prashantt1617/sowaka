@@ -19,6 +19,8 @@ const OLD_TEAM_KEYS = new Set(teamSeed().map((t) => t.team!.key));
 
 export interface TemplateMigration {
   org: string; templateId: string; name: string;
+  /** A template that already has design rows: the seeded HR rows whose how-to line it gains (the canvas's, when it has none). */
+  howAdded?: string[];
   added: string[]; switchedOff: string[]; keptCustom: string[]; signOnDay1: boolean;
   /** Running journeys on it that get the design rows as their own snapshot (their view as it is today). */
   journeys: number;
@@ -67,13 +69,37 @@ export function migrateTemplate(t: Pick<LifecycleTemplate, 'tasks' | 'settings'>
   return { tasks, settings, report: { added: add.map((r) => r.title), switchedOff, keptCustom, signOnDay1: hasSign } };
 }
 
+/** HR's rows whose how-to line came after the first design seed (MgrTeamsProto): key → the canvas's line. */
+export const LATER_HOW_LINES: Record<string, string> = Object.fromEntries(
+  finalDesignRows().filter((r) => ['hr_hand_kit', 'hr_check_form', 'hr_confirmation_letter'].includes(r.team?.key ?? '') && r.design?.how).map((r) => [r.team!.key, r.design!.how!]),
+);
+
+/** A design template's seeded HR rows with no how-to line get the canvas's; nothing else changes. */
+export function addLaterHowLines(tasks: TemplateTask[]): { tasks: TemplateTask[]; added: string[] } {
+  const added: string[] = [];
+  const out = tasks.map((t) => {
+    const how = t.design?.section === 'team' && t.team?.key ? LATER_HOW_LINES[t.team.key] : undefined;
+    if (!how || t.design?.how) return t;
+    added.push(t.title);
+    return { ...t, design: { ...t.design!, how } };
+  });
+  return { tasks: out, added };
+}
+
 /** Every onboarding template without design rows (one org, or all); `apply` false only reports. */
 export async function migrateTemplatesToFinalDesigns(opts: { apply: boolean; org?: string }): Promise<TemplateMigration[]> {
   const docs = await lifecycleTemplates().find({ kind: 'onboarding', ...(opts.org ? { org: opts.org } : {}) }, { projection: { _id: 0 } }).toArray();
   const out: TemplateMigration[] = [];
   const names = new Map<string, string | undefined>();
   for (const doc of docs) {
-    if (doc.tasks.some((t) => !!t.design)) continue;
+    if (doc.tasks.some((t) => !!t.design)) {
+      // Already on the designs: only the later how-to lines (new joiners read them; running ones keep their version).
+      const later = addLaterHowLines(doc.tasks);
+      if (!later.added.length) continue;
+      out.push({ org: doc.org, templateId: doc.id, name: doc.name, added: [], switchedOff: [], keptCustom: [], signOnDay1: false, journeys: 0, howAdded: later.added });
+      if (opts.apply) await lifecycleTemplates().updateOne({ org: doc.org, id: doc.id, updatedAt: doc.updatedAt }, { $set: { tasks: later.tasks, updatedAt: new Date() } });
+      continue;
+    }
     if (!names.has(doc.org)) names.set(doc.org, (await companies().findOne({ id: doc.org }, { projection: { _id: 0, name: 1 } }))?.name);
     const { tasks, settings, report } = migrateTemplate(doc, names.get(doc.org));
     // Running journeys on it: each keeps the version it started with, so the design rows it reads (meetings,
