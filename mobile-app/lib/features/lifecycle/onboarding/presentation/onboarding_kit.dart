@@ -119,6 +119,7 @@ class OnboardingShell {
     this.registerFace,
     this.changePhoto,
     this.openPost,
+    this.openAppScreen,
     this.viewerName = '',
     this.viewerDesignation,
     this.viewerDepartment,
@@ -141,6 +142,11 @@ class OnboardingShell {
 
   /// Opens a Connect post in the feed.
   final void Function(String postId)? openPost;
+
+  /// Final designs (joiner lane): a joiner task's "Do in Sowaka" / "Review"
+  /// page in the app — `profile`, `tax`, `payroll`, `leave`, `overtime`,
+  /// `shift`, `payroll_policy`, `leave_balance` (FINAL-DESIGNS.md §2).
+  final void Function(String screen)? openAppScreen;
 
   final String viewerName;
   final String? viewerDesignation;
