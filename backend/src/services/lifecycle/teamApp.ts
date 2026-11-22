@@ -12,7 +12,7 @@ import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
 import { postWelcome } from './appOnboarding';
 import { dueText, shortDay, stepLabels, stepOfStage } from './designRules';
 import { TEAM_APP_COPY, TEAM_EARLY, TEAM_SCREEN } from './designSeed';
-import { accessTasks, fillNames, firstOf, initialsOf, joinerDesignTasks, place, setRowTick, teamRowTitle, type Placed, type PlacedRow } from './designRows';
+import { accessTasks, fillNames, firstOf, initialsOf, joinerDesignTasks, place, setRowTick, teammatePushTarget, teamRowTitle, type Placed, type PlacedRow } from './designRows';
 import { daysBetween, keyOfDay } from './dueRules';
 import { LifecycleError, deriveJourney, isJoined, loadJourney, tasksOf, tell } from './engine';
 import { goalsOfJourney } from './joinerApp';
@@ -398,9 +398,13 @@ export async function scheduleMeetings(me: Me, journeyId: string, body: Record<s
       { $set: { title: m.row.title, startsAt: at, attendeeUserIds: attendees, org: j.org }, $setOnInsert: { id: randomUUID(), journeyId: j.id, rowKey: m.rowKey } },
       { upsert: true },
     );
-    await tell(attendees.filter((u) => u !== me.userId), {
-      scenario: 'lifecycle_meeting_invite', title: m.row.title, body: `${me.name} set a time: ${at.toISOString()}`, data: { journeyId: j.id, rowKey: m.rowKey },
-    });
+    const invite = { scenario: 'lifecycle_meeting_invite' as const, title: m.row.title, body: `${me.name} set a time: ${at.toISOString()}` };
+    // The joiner: their home; HR / IT & admin: their person page; the buddy and others: the Teams person page.
+    if (j.userId && j.userId !== me.userId) await tell([j.userId], { ...invite, destination: 'lifecycle_onboarding', data: { journeyId: j.id, rowKey: m.rowKey } });
+    if (owner && owner !== me.userId && owner !== j.userId) {
+      const target = teammatePushTarget(p.people, owner, m.role);
+      await tell([owner], { ...invite, destination: target.destination, data: { journeyId: j.id, rowKey: m.rowKey, ...(target.as ? { as: target.as } : {}) } });
+    }
   }
   const set = await lifecycleMeetings().countDocuments({ journeyId: j.id, rowKey: { $in: firstWeek.map((m) => m.rowKey) } });
   if (set >= firstWeek.length) await setRowTick(j.id, 'mgr_schedule', me);
@@ -623,7 +627,7 @@ export async function inviteSenior(me: Me, journeyId: string, body: Record<strin
       { upsert: true },
     );
     await setRowTick(id, 'senior_meet', me);
-    if (other.j.userId) await tell([other.j.userId], { scenario: 'lifecycle_meeting_invite', title: `${me.name} would like to meet you`, body: at.toISOString(), data: { journeyId: id } });
+    if (other.j.userId) await tell([other.j.userId], { scenario: 'lifecycle_meeting_invite', destination: 'lifecycle_onboarding', title: `${me.name} would like to meet you`, body: at.toISOString(), data: { journeyId: id } });
   }
   return teamJoinerPage(me, journeyId);
 }

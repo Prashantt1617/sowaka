@@ -312,7 +312,9 @@ async function tellDueMoved(j: Journey, dueMoved: Map<string, number>): Promise<
 export type Destination =
   | 'lifecycle_onboarding' | 'lifecycle_meeting' | 'lifecycle_starter_task' | 'lifecycle_notes' | 'lifecycle_week1'
   | 'lifecycle_intro' | 'lifecycle_people' | 'lifecycle_survey' | 'lifecycle_probation' | 'lifecycle_checkin' | 'lifecycle_reveal'
-  | 'lifecycle_joiner' | 'lifecycle_joiner_setup' | 'lifecycle_starter_task_done' | 'lifecycle_probation_review';
+  | 'lifecycle_joiner' | 'lifecycle_joiner_setup' | 'lifecycle_starter_task_done' | 'lifecycle_probation_review'
+  /** Final designs: HR's / IT & admin's person page for one joiner (`data.as` = 'hr' | 'it'). */
+  | 'lifecycle_staff';
 
 /**
  * Every push of the lifecycle goes through here: a delivery failure never fails the write.

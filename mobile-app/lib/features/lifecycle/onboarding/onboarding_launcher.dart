@@ -14,12 +14,15 @@ import 'package:flutter/material.dart';
 
 import '../../manager/data/manager_models.dart' show ManagerTab;
 import 'data/lifecycle_me_store.dart';
+import 'data/onboarding_api.dart';
+import 'data/staff_api.dart';
 import 'data/team_joiners_api.dart';
 import 'joiner/joiner_checkins.dart' show joinerHomeRoute;
 import 'joiner/joiner_home.dart';
 import 'presentation/manager/team_joiner_screens.dart';
 import 'presentation/onboarding_kit.dart';
 import 'presentation/portal_page_screen.dart';
+import 'presentation/staff/staff_screens.dart' show StaffPersonScreen, openStaffOnboarding;
 
 export 'data/lifecycle_me_store.dart';
 export 'presentation/onboarding_kit.dart' show OnboardingShell, OnbSpotlight, OnbPulse;
@@ -27,6 +30,10 @@ export 'presentation/first_punch.dart' show FirstPunchTour, PunchSpotlightCallou
 export 'presentation/portal_page_screen.dart' show PortalTab;
 
 typedef OnboardingShellMaker = OnboardingShell Function();
+
+/// The `/lifecycle/staff/*` client a `lifecycle_staff` push opens with (tests hand in a fake).
+@visibleForTesting
+StaffApi? Function(OnboardingApi api) launcherStaffApi = HttpStaffApi.from;
 
 OnboardingShellMaker? _maker;
 
@@ -96,6 +103,7 @@ const onboardingDestinations = {
   'lifecycle_joiner_setup',
   'lifecycle_starter_task_done',
   'lifecycle_probation_review',
+  'lifecycle_staff',
 };
 
 /// Takes a tapped lifecycle notification to its screen. False when [data]
@@ -120,8 +128,20 @@ bool openOnboardingDestination(BuildContext context, Map<String, dynamic> data) 
     'lifecycle_starter_task_done' ||
     'lifecycle_probation_review' when journeyId != null && teamApi != null =>
       TeamPersonScreen(shell: shell, api: teamApi, journeyId: journeyId),
+    // HR's / IT & admin's (late-task reminders, meeting invites): their person page for that joiner.
+    'lifecycle_staff' when journeyId != null && launcherStaffApi(shell.api) != null => StaffPersonScreen(
+      shell: shell,
+      api: launcherStaffApi(shell.api)!,
+      journeyId: journeyId,
+      name: read('name') ?? '',
+      as: read('as') == null ? null : StaffRole.parse(read('as')),
+    ),
     _ => null,
   };
+  if (page == null && destination == 'lifecycle_staff') {
+    unawaited(openStaffOnboarding(context, shell: shell, api: launcherStaffApi(shell.api)));
+    return true;
+  }
   if (page == null) {
     unawaited(openOnboardingHome(context, shell: shell));
     return true;

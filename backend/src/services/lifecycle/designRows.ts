@@ -51,6 +51,20 @@ export async function peopleOf(j: Journey, settings: LifecycleTemplateSettings):
   };
 }
 
+/**
+ * Where a teammate's push about a joiner opens (FINAL-DESIGNS.md §4.4): HR and IT & admin work from
+ * Actions › Onboarding, so theirs open their person page (`lifecycle_staff`, `as`); the manager, the
+ * buddy, someone senior and the head of department open the Teams person page (`lifecycle_joiner`).
+ * [role] is the row's when known; otherwise the role is read from who [userId] is to the joiner.
+ */
+export function teammatePushTarget(people: People, userId: string, role?: TeamRole): { destination: 'lifecycle_staff' | 'lifecycle_joiner'; as?: 'hr' | 'it' } {
+  const team = (['manager', 'buddy', 'senior', 'head_of_department'] as const).some((r) => people[r] === userId);
+  const staff = role === 'hr' || role === 'it' ? role
+    : role || team ? undefined
+      : people.hr === userId ? 'hr' : people.it === userId ? 'it' : undefined;
+  return staff ? { destination: 'lifecycle_staff', as: staff } : { destination: 'lifecycle_joiner' };
+}
+
 export const roleOfRow = (row: TemplateTask): TeamRole | undefined =>
   row.design?.section === 'meeting' ? (row.design.meetWith as MeetWith) as TeamRole
     : row.design?.section === 'team' ? row.design.role : row.design?.section === 'access' ? (row.design.role === 'hr' ? 'hr' : 'it') : undefined;

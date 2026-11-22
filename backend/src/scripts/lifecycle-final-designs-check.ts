@@ -21,6 +21,15 @@ async function refusal(work: () => Promise<unknown>): Promise<number | undefined
   try { await work(); return undefined; } catch (error) { return (error as { statusCode?: number }).statusCode ?? -1; }
 }
 const section = (title: string) => console.log(`\n${title}`);
+/** Where a stored push about [journeyId] opens, per person: `destination` (+ `as`). */
+async function pushTargets(scenario: string, journeyId: string): Promise<Record<string, string>> {
+  const { notifications } = await import('../config/db');
+  const rows = await notifications().find({ scenario, 'data.journeyId': journeyId } as never).toArray();
+  return Object.fromEntries(rows.map((n) => {
+    const data = (n as unknown as { data: Record<string, string> }).data;
+    return [n.userId, [data.destination, data.as].filter(Boolean).join(':')];
+  }));
+}
 const ORG = 'el-fd-check';
 
 async function main() {
@@ -229,6 +238,9 @@ async function main() {
   await team.scheduleMeetings(MGR, J1, { meetings: firstWeek.map((m, i) => ({ rowKey: m.id.slice(5), startsAt: new Date(Date.now() + (i + 1) * 3_600_000).toISOString() })) });
   ok('Schedule: every first-week meeting has a time for the joiner, and the row ticks', (await joiner.joinerOnboarding(PRIYA)).meetings.filter((m) => m.step === 'd1' || m.step === 'w1').every((m) => !!m.startsAt)
     && (await team.teamJoinerPage(MGR, J1)).tasks.find((t) => t.id === 'mgr_schedule')?.done === true);
+  const invites = await pushTargets('lifecycle_meeting_invite', J1);
+  ok('Invites: the joiner → her home; HR / IT & admin → their person page; the buddy → the Teams person page',
+    invites.j1 === 'lifecycle_onboarding' && invites.hr === 'lifecycle_staff:hr' && invites.it === 'lifecycle_staff:it' && invites.rohan === 'lifecycle_joiner', invites);
   // Lane T: the page carries the joiner's step, the manager's schedule list, and my own notes and the time on my meeting rows.
   await team.teamRowNotes(MGR, J1, 'mgr_first_goals', { notes: ['Talk about the first week'] });
   const tPage = await team.teamJoinerPage(MGR, J1);
@@ -301,6 +313,12 @@ async function main() {
   const jobs = await import('../services/lifecycle/jobs');
   const sentNow = await jobs.lateTeamRowReminders(await engine.loadJourney(J1), await engine.tasksOf(J1), today);
   ok('Late rows remind whoever does them, once', sentNow > 0 && (await jobs.lateTeamRowReminders(await engine.loadJourney(J1), await engine.tasksOf(J1), today)) === 0, sentNow);
+  const late = await pushTargets('lifecycle_team_task_late', J1);
+  ok('…HR’s and IT & admin’s open their person page, the manager’s and the buddy’s the Teams person page',
+    late.hr === 'lifecycle_staff:hr' && late.mgr === 'lifecycle_joiner' && late.rohan === 'lifecycle_joiner' && (late.it ?? 'lifecycle_staff:it') === 'lifecycle_staff:it', late);
+  const { teammatePushTarget } = await import('../services/lifecycle/designRows');
+  eq('A teammate push with no row: read from who they are (HR and manager → Teams page)', [teammatePushTarget({ hr: 'a', it: 'b', manager: 'a' }, 'a'), teammatePushTarget({ hr: 'a', it: 'b' }, 'b')],
+    [{ destination: 'lifecycle_joiner' }, { destination: 'lifecycle_staff', as: 'it' }]);
   const curT = await design.templateDesign(ORG, def.id);
   await design.saveTemplateDesign(ORG, def.id, { ...curT, team: { ...curT.team, remindLate: false } } as never);
   ok('Switched off in the template: a running joiner keeps the version they started with (still reminded)', (await jobs.lateTeamRowReminders(await engine.loadJourney(J2), await engine.tasksOf(J2), today)) > 0);

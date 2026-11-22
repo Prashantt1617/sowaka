@@ -4,6 +4,9 @@ import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_models.
 import 'package:mobile_app/features/lifecycle/onboarding/data/staff_api.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/staff/staff_screens.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/staff/staff_task_screens.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/onboarding_launcher.dart';
+
+import 'lifecycle_onboarding_test.dart' show FakeOnboardingApi, shellFor;
 
 /// HR and IT & admin in the app (Onboarding · Final designs, canvas page 4:
 /// HRProto / ITProto, HROnboarding, HRAll, HRPerson, HRProfile, HRPayroll,
@@ -211,6 +214,24 @@ void main() {
   });
 
   group('A person’s page (HRPerson, ITPerson)', () {
+    testWidgets('an HR / IT push (late task, meeting invite) opens their person page for that joiner', (tester) async {
+      final api = _FakeStaff();
+      launcherStaffApi = (_) => api;
+      addTearDown(() => launcherStaffApi = HttpStaffApi.from);
+      OnboardingShell maker() => shellFor(FakeOnboardingApi(), DateTime(2026, 12, 2));
+      registerOnboardingShell(maker);
+      addTearDown(() => unregisterOnboardingShell(maker));
+      late BuildContext context;
+      await _pump(tester, Builder(builder: (c) {
+        context = c;
+        return const Scaffold(body: Text('shell'));
+      }));
+      expect(openOnboardingDestination(context, {'destination': 'lifecycle_staff', 'journeyId': 'j1', 'as': 'hr', 'name': 'Priya Shah'}), isTrue);
+      await tester.pumpAndSettle();
+      expect(find.byType(StaffPersonScreen), findsOneWidget);
+      expect(find.text('Your tasks for Priya'), findsOneWidget);
+    });
+
     testWidgets('hero, my tasks with due pills, then her whole onboarding', (tester) async {
       final api = _FakeStaff();
       await _openPriya(tester, api);

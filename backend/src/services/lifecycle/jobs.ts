@@ -29,7 +29,7 @@ export function registerLifecycleJob(name: string, job: Job): void {
 }
 
 import { designOf } from './design';
-import { place, teamRowTitle } from './designRows';
+import { place, teammatePushTarget, teamRowTitle } from './designRows';
 import { rowDone } from './teamApp';
 
 const DAY_JOB_HOUR = 9;
@@ -98,13 +98,21 @@ async function meetingReminders(org: string, now: Date): Promise<number> {
     const claimed = await lifecycleMeetings().updateOne({ id: m.id, remindedAt: { $exists: false } }, { $set: { remindedAt: now } });
     if (!claimed.modifiedCount) continue;
     const mins = Math.max(1, Math.round((m.startsAt.getTime() - now.getTime()) / 60_000));
-    const joinerId = (await journeys().findOne({ id: m.journeyId }, { projection: { _id: 0, userId: 1 } }))?.userId;
+    const j = await journeys().findOne({ id: m.journeyId }, { projection: { _id: 0 } });
+    const joinerId = j?.userId;
     const push = {
       scenario: 'lifecycle_meeting_soon' as const, title: `${m.title} in ${mins} minutes`,
       body: [m.place, m.link ? 'Online' : undefined].filter(Boolean).join(' · ') || 'Tap for the details', data: { journeyId: m.journeyId, meetingId: m.id },
     };
-    await tell(m.attendeeUserIds.filter((u) => u === joinerId), { ...push, destination: 'lifecycle_meeting' });
-    await tell(m.attendeeUserIds.filter((u) => u !== joinerId), { ...push, destination: 'lifecycle_joiner' });
+    // A design meeting (one with a row key) opens the joiner's home for them; the 20 Nov meeting card otherwise.
+    await tell(m.attendeeUserIds.filter((u) => u === joinerId), { ...push, destination: m.rowKey ? 'lifecycle_onboarding' : 'lifecycle_meeting' });
+    // Teammates: HR / IT & admin their person page, the others the Teams person page.
+    const p = j ? await place(j as Journey, now) : null;
+    const role = p && m.rowKey ? [...p.meetings, ...p.team].find((r) => r.rowKey === m.rowKey)?.role : undefined;
+    for (const u of m.attendeeUserIds.filter((x) => x !== joinerId)) {
+      const target = p ? teammatePushTarget(p.people, u, role) : { destination: 'lifecycle_joiner' as const };
+      await tell([u], { ...push, destination: target.destination, data: { ...push.data, ...(target.as ? { as: target.as } : {}) } });
+    }
     sent += 1;
   }
   return sent;
@@ -151,7 +159,11 @@ export async function lateTeamRowReminders(j: Journey, tasks: JourneyTask[], tod
     if (!r.dueOn || r.dueOn >= today || !r.role || rowDone(r, j, tasks, p.design)) continue;
     const owner = p.people[r.role as keyof typeof p.people];
     if (!owner || !(await claim(j.id, `team-late:${r.rowKey}`))) continue;
-    await tell([owner], { scenario: 'lifecycle_team_task_late', title: 'A task is late', body: teamRowTitle(r, first), data: { journeyId: j.id, rowKey: r.rowKey } });
+    const target = teammatePushTarget(p.people, owner, r.role);
+    await tell([owner], {
+      scenario: 'lifecycle_team_task_late', destination: target.destination, title: 'A task is late', body: teamRowTitle(r, first),
+      data: { journeyId: j.id, rowKey: r.rowKey, name, ...(target.as ? { as: target.as } : {}) },
+    });
     sent += 1;
   }
   return sent;
