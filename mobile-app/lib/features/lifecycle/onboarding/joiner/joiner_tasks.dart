@@ -10,10 +10,11 @@ import '../data/onboarding_api.dart';
 import '../presentation/first_punch.dart' show FirstPunchTour;
 import '../presentation/links.dart' show openExternalLink;
 import '../presentation/onboarding_kit.dart';
+import 'joiner_details.dart';
 import 'joiner_form.dart';
 import 'joiner_lens.dart';
 import 'joiner_models.dart';
-import 'joiner_more.dart' show JoinerTourScreen;
+import 'joiner_more.dart' show JoinerProfileScreen, JoinerTourScreen;
 import 'joiner_parts.dart';
 
 /// Tasks (New joiner canvas, App · tasks): "Tasks for you", the template's
@@ -185,6 +186,15 @@ Future<void> openJoinerTask(BuildContext context, JoinerController c, JoinerTask
   }
   switch (t.type) {
     case 'do':
+      // Payroll details and the profile are the joiner's own forms; they open done too (read-only after).
+      if (t.screen == 'payroll') {
+        await pushJoiner(context, c, JoinerPayrollScreen(c: c));
+        return;
+      }
+      if (t.screen == 'profile') {
+        await pushJoiner(context, c, JoinerProfileScreen(c: c));
+        return;
+      }
       if (t.isDone) return;
       if (t.screen == 'punch') {
         await FirstPunchTour.start(context, shell);

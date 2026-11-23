@@ -10,6 +10,7 @@ import '../../../shared/app_toast.dart';
 import '../data/onboarding_api.dart';
 import '../presentation/onboarding_kit.dart';
 import '../presentation/tour_lessons.dart';
+import 'joiner_details.dart' show JoinerProfileSectionScreen;
 import 'joiner_lens.dart';
 import 'joiner_models.dart';
 import 'joiner_parts.dart';
@@ -558,14 +559,10 @@ class JoinerProfileScreen extends StatelessWidget {
                   for (final s in p.sections)
                     InkWell(
                       key: ValueKey('section-${s.key}'),
-                      // Each section opens the profile over this screen (canvas: every row is a
-                      // link); Back returns here, read again.
-                      onTap: c.shell.openAppScreen == null
-                          ? null
-                          : () async {
-                              await c.shell.openAppScreen!(context, 'profile');
-                              await c.load();
-                            },
+                      // Each section opens over this screen (canvas: every row is a link): one
+                      // left empty before joining is filled here once, the rest read only. Back
+                      // returns here, read again.
+                      onTap: () => pushJoiner(context, c, JoinerProfileSectionScreen(c: c, section: s.key, title: s.title)),
                       child: Container(
                         constraints: const BoxConstraints(minHeight: 56),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
