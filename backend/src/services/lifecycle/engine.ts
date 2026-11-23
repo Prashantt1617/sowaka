@@ -15,7 +15,7 @@ import { randomUUID } from 'node:crypto';
 import { companies, journeys, journeyTasks, letters, lifecycleMeetings, offers, peopleToMeet, users } from '../../config/db';
 import type {
   CandidateDetails, Day1Pass, DueRule, ExitType, Journey, JourneyFlag, JourneyTask, JourneyTaskStatus, LifecyclePhase,
-  OffboardingStatus, OnboardingBoardColumn, OnboardingBoardTab, OnboardingStage, OnboardingStatus, OwnerRole,
+  LifecycleTemplate, OffboardingStatus, OnboardingBoardColumn, OnboardingBoardTab, OnboardingStage, OnboardingStatus, OwnerRole,
   PlantState, SystemTaskKey, TaskKind, TaskSurface, TemplateTask,
 } from '../../models/lifecycle.model';
 import { logger } from '../../utils/logger';
@@ -1057,6 +1057,108 @@ export async function adoptTemplateDesign(journeyId: string, opts: { dry?: boole
     await refreshJourney(journeyId);
   }
   return { added: fresh.map((t) => t.title), cancelled: stale.map((t) => t.title) };
+}
+
+// ─── Moving a joiner to another template ────────────────────────────────────
+
+/** The onboarding statuses in the order a journey passes them (the side states have no place). */
+const ONBOARDING_ORDER: OnboardingStatus[] = ['draft', 'offer_sent', 'accepted', 'finalised', 'active', 'docs_approved', 'joined', 'moved_to_app', 'confirmed'];
+
+/** The system steps a journey at this status is past (as setJourneyStatus and onJoined finish them). */
+function stepsPassed(status: Journey['status']): Map<SystemTaskKey, 'done' | 'skipped'> {
+  const at = ONBOARDING_ORDER.indexOf(status as OnboardingStatus);
+  const out = new Map<SystemTaskKey, 'done' | 'skipped'>();
+  for (const s of ONBOARDING_ORDER.slice(0, at + 1)) for (const key of IMPLIED_DONE[s] ?? []) out.set(key, 'done');
+  if (at >= ONBOARDING_ORDER.indexOf('joined')) { out.set('mark_joined', 'done'); out.set('new_joining_date', 'skipped'); }
+  return out;
+}
+
+const sameWords = (a: string, b: string) => a.toLowerCase().replace(/\s+/g, ' ').trim() === b.toLowerCase().replace(/\s+/g, ' ').trim();
+
+export interface TemplateMove { kept: number; added: string[]; cancelled: string[] }
+
+/**
+ * A running onboarding journey (offer sent or later) moved onto another template (Templates › Edit joiners). Its
+ * copy becomes the new template's (name, settings, rows), and its tasks become what a journey started on that
+ * template has, from where this one is now:
+ *   - a task the new template also has (the same row, else the same system step, else the same title in the same
+ *     phase; month by month) is kept: done and skipped stay done and skipped; an open one keeps its state and takes
+ *     the new row's words, owner and rules (the refresh re-dates it);
+ *   - a row the journey has no task for gets one, dated and opened by the refresh like a new journey's; a system
+ *     step the journey is already past is done by Automatic, and once joined, pre-boarding rows are not added
+ *     (that stage is behind them);
+ *   - an open task the new template does not have is cancelled. Done, skipped and cancelled tasks stay as history.
+ * Probation keeps the journey's months (the offer stated them). A draft is re-made instead (updateJourneyByHr).
+ * `dry` says what would change and writes nothing.
+ */
+export async function moveJourneyToTemplate(journeyId: string, template: LifecycleTemplate, opts: { dry?: boolean } = {}): Promise<TemplateMove> {
+  const j = await loadJourney(journeyId);
+  if (j.kind !== 'onboarding' || j.closedAt) throw new LifecycleError(409, 'Only a running onboarding journey moves to another template');
+  if (j.status === 'draft') throw new LifecycleError(409, 'A draft changes template from its panel');
+  if (template.kind !== 'onboarding') throw new LifecycleError(400, 'That is not an onboarding template');
+  const now = new Date();
+  const snapshot = structuredClone({ name: template.name, settings: template.settings, tasks: template.tasks });
+  const next: Journey = { ...j, templateId: template.id, templateSnapshot: snapshot, updatedAt: now };
+  const tasks = await tasksOf(journeyId);
+  const planned = materialise(next);
+  const rowOf = (rows: TemplateTask[], id: string) => rows.find((r) => r.id === id);
+  const oldTitle = (t: JourneyTask) => rowOf(j.templateSnapshot.tasks, t.templateTaskId)?.title ?? t.title;
+  const newTitle = (p: JourneyTask) => rowOf(snapshot.tasks, p.templateTaskId)?.title ?? p.title;
+  // Best match first across every row (the same row, then the same step, then the same words), so a
+  // looser match never takes a task a closer one wants.
+  const matchers: Array<(p: JourneyTask, e: JourneyTask) => boolean> = [
+    (p, e) => e.templateTaskId === p.templateTaskId,
+    (p, e) => !!p.systemKey && e.systemKey === p.systemKey,
+    (p, e) => !p.systemKey && !e.systemKey && e.phase === p.phase && sameWords(oldTitle(e), newTitle(p)),
+  ];
+  const pairs = new Map<string, JourneyTask>();
+  const claimed = new Set<string>();
+  for (const match of matchers) {
+    for (const p of planned) {
+      if (pairs.has(p.id)) continue;
+      const e = tasks.find((x) => x.status !== 'cancelled' && !claimed.has(x.id) && (x.month ?? 0) === (p.month ?? 0) && match(p, x));
+      if (e) { pairs.set(p.id, e); claimed.add(e.id); }
+    }
+  }
+  const passed = stepsPassed(j.status);
+  const changed = new Map<string, JourneyTask>();
+  const added: JourneyTask[] = [];
+  for (const p of planned) {
+    const e = pairs.get(p.id);
+    if (e && OPEN_STATUSES.includes(e.status)) {
+      // Kept open: its state, its dates (the refresh re-dates them) and its owner when the role is the same; the new row's words and rules.
+      const { helper: _h, dueLabel: _d, ownerUserId: _o, systemKey: _k, ...rest } = e;
+      const owner = ownerFor(p.ownerRole, next) ?? (e.ownerRole === p.ownerRole ? e.ownerUserId : undefined);
+      changed.set(e.id, {
+        ...rest, templateTaskId: p.templateTaskId, phase: p.phase, title: p.title, ownerRole: p.ownerRole, kind: p.kind, surface: p.surface,
+        mustDo: p.mustDo, order: p.order,
+        ...(p.systemKey ? { systemKey: p.systemKey } : {}), ...(p.helper ? { helper: p.helper } : {}), ...(p.dueLabel ? { dueLabel: p.dueLabel } : {}),
+        ...(owner ? { ownerUserId: owner } : {}),
+      });
+    } else if (e) {
+      // Done or skipped: history as it was, now counted as the new row's.
+      if (e.templateTaskId !== p.templateTaskId) changed.set(e.id, { ...e, templateTaskId: p.templateTaskId });
+    } else {
+      if (j.userId && p.phase === 'pre_boarding') continue;
+      const step = p.systemKey ? passed.get(p.systemKey) : undefined;
+      added.push(step ? finish(p, step, { name: 'Automatic' }) : p);
+    }
+  }
+  const stale = tasks.filter((t) => !claimed.has(t.id) && OPEN_STATUSES.includes(t.status));
+  for (const t of stale) changed.set(t.id, { ...t, status: 'cancelled' });
+  const result: TemplateMove = { kept: pairs.size, added: added.map((t) => t.title), cancelled: stale.map((t) => t.title) };
+  if (opts.dry) return result;
+  await journeys().updateOne({ id: journeyId }, { $set: { templateId: template.id, templateSnapshot: snapshot, updatedAt: now } });
+  await writeTasks([...changed.values(), ...added]);
+  const all = [...tasks.map((t) => changed.get(t.id) ?? t), ...added];
+  await refreshJourney(journeyId, now, { journey: next, tasks: all });
+  if (j.userId) await syncDay1Meetings(journeyId);
+  // The automatic Day-1 pass is made from the template's Day-1 meetings: it follows the new one (HR's own pass stays).
+  if (j.day1Pass?.auto) {
+    const { ensureAutoDay1Pass } = await import('./day1PassAuto');
+    await ensureAutoDay1Pass(await loadJourney(journeyId), now);
+  }
+  return result;
 }
 
 /** Probation length changed (extension): adds the new months' tasks, cancels open ones past the end. */

@@ -687,6 +687,63 @@ async function main() {
   await jobs.runLifecycleJobs(at(TODAY), { full: false, orgs: [ORG] });
   eq('Another part’s job runs on the tick', extra, 1);
 
+  // ───────────────────────────────────────────────────────── joiners on a template
+  section('Templates › Joiners and Edit joiners: who is on a template, moving joiners onto it');
+  const stdNow = await templates.getTemplate(ORG, list[0].id);
+  const tD = await engine.createOnboardingJourney(ORG, 'hr', { candidate: cand('Tara Draft'), tj: day(25), managerUserId: 'mgr', designation: 'Intern', department: 'Design' });
+  const tO = await engine.createOnboardingJourney(ORG, 'hr', { candidate: cand('Omar Offer'), tj: day(12), managerUserId: 'mgr' });
+  await engine.setJourneyStatus(tO.id, 'offer_sent');
+  const tK = await joinAt('Mira Shah', 'mira', -2, { location: 'Pune' });
+  const openFirstWeek = (await engine.tasksOf(tK.id)).filter((t) => t.phase === 'first_week' && t.status === 'todo' && t.systemKey !== 'intro_post' && !t.month);
+  const [doneT, renamedT] = openFirstWeek;
+  const offT = (await engine.tasksOf(tK.id)).find((t) => t.systemKey === 'intro_post')!;
+  await board.actOnTaskByHr(ORG, tK.id, doneT.id, { action: 'done' }, HR);
+  const interns = await templates.createTemplate(ORG, { kind: 'onboarding', name: 'Interns', copyFromId: stdNow.id }, 'Hema HR');
+  await templates.updateTemplate(ORG, interns.id, { tasks: [
+    ...interns.tasks.map((t) => (t.id === renamedT.templateTaskId ? { ...t, title: 'Renamed for interns' } : t.id === offT.templateTaskId ? { ...t, enabled: false } : t)),
+    { id: 'intern-cohort', phase: 'first_week', title: 'Meet the intern cohort', ownerRole: 'employee', kind: 'ack', surface: 'app', mustDo: false, enabled: true, order: 99, opensRule: null, dueRule: { anchor: 'tj', offset: 3 } },
+    { id: 'intern-handbook', phase: 'pre_boarding', title: 'Read the intern handbook', ownerRole: 'employee', kind: 'ack', surface: 'portal', mustDo: false, enabled: true, order: 99, opensRule: null, dueRule: { anchor: 'tj', offset: -1 } },
+  ] });
+  const onStd = await templates.templateJourneys(ORG, stdNow.id);
+  const mira = onStd.journeys.find((r) => r.journeyId === tK.id);
+  eq('Joiners on a template: name, stage, joining date, manager, place, the template', [mira?.name, mira?.stage, mira?.tj, mira?.managerName, mira?.location, mira?.templateName], ['Mira Shah', 'welcome_week1', day(-2), 'Neha Rao', 'Pune', 'Standard']);
+  eq('A new template has nobody on it yet', (await templates.templateJourneys(ORG, interns.id)).journeys.length, 0);
+  const everyone = await templates.templateJourneys(ORG, interns.id, 'all');
+  ok('scope=all: every open joiner, each naming the template they are on', [tD.id, tO.id, tK.id].every((id) => everyone.journeys.some((r) => r.journeyId === id && r.templateName === 'Standard')) && everyone.journeys.every((r) => r.kind === 'onboarding'));
+  eq('An unknown scope is refused', (await refusal(async () => templates.templateJourneys(ORG, interns.id, 'nope'))).status, 400);
+
+  const kBefore = (await engine.tasksOf(tK.id)).map((t) => t.id);
+  const moveRes = await board.moveJourneysToTemplate(ORG, interns.id, { journeyIds: [tD.id, tO.id, tK.id, tK.id] });
+  eq('Three joiners moved (a repeated id once)', [moveRes.moved.length, moveRes.alreadyOn, moveRes.template.name], [3, 0, 'Interns']);
+  const dNow = await engine.loadJourney(tD.id);
+  const dTasks = await engine.tasksOf(tD.id);
+  ok('A draft takes it the way its panel does: the new copy, tasks made again', dNow.templateId === interns.id && dNow.templateSnapshot.name === 'Interns' && dTasks.some((t) => t.templateTaskId === 'intern-handbook') && !dTasks.some((t) => t.systemKey === 'intro_post'));
+  const oTasks = await engine.tasksOf(tO.id);
+  eq('Offer sent: sending the offer stays done; the new pre-boarding row is added', [(await engine.loadJourney(tO.id)).templateId === interns.id, byKey(oTasks, 'send_offer').status, oTasks.some((t) => t.templateTaskId === 'intern-handbook' && ['todo', 'locked'].includes(t.status))], [true, 'done', true]);
+  const kNow = await engine.loadJourney(tK.id);
+  const kTasks = await engine.tasksOf(tK.id);
+  const kTask = (id: string) => kTasks.find((t) => t.id === id)!;
+  eq('Joined: on the new template, its copy and probation kept', [kNow.templateId, kNow.templateSnapshot.name, kNow.probation?.months], [interns.id, 'Interns', tK.probation?.months]);
+  eq('Done stays done (the same task); an open one kept takes the new words', [kTask(doneT.id).status, kTask(renamedT.id).status, kTask(renamedT.id).title], ['done', 'todo', 'Renamed for interns']);
+  eq('A step the new template has off is cancelled; joining stays done', [kTask(offT.id).status, byKey(kTasks, 'mark_joined').status], ['cancelled', 'done']);
+  const cohort = kTasks.find((t) => t.templateTaskId === 'intern-cohort');
+  eq('A new first-week row is added and dated from Tj; pre-boarding rows are behind a joiner', [cohort?.status, cohort?.dueAt ? rules.keyOfDay(cohort.dueAt) : null, kTasks.some((t) => t.templateTaskId === 'intern-handbook')], ['todo', day(1), false]);
+  ok('No task is deleted: every one from before is still there', kBefore.every((id) => kTasks.some((t) => t.id === id)) && kTasks.length === kBefore.length + 1);
+  eq('The lists follow: on Interns now, off Standard', [(await templates.templateJourneys(ORG, interns.id)).journeys.map((r) => r.name).sort(), (await templates.templateJourneys(ORG, stdNow.id)).journeys.some((r) => [tD.id, tO.id, tK.id].includes(r.journeyId))], [['Mira Shah', 'Omar Offer', 'Tara Draft'], false]);
+  eq('…and the template list counts them', (await templates.listTemplates(ORG, 'onboarding')).find((t) => t.id === interns.id)?.journeysUsing, 3);
+  eq('Moving them again changes nothing', [(await board.moveJourneysToTemplate(ORG, interns.id, { journeyIds: [tK.id] })).moved.length, (await engine.tasksOf(tK.id)).length], [0, kTasks.length]);
+  const back = await board.moveJourneysToTemplate(ORG, stdNow.id, { journeyIds: [tK.id] });
+  const kBack = await engine.tasksOf(tK.id);
+  eq('Back to Standard: the step comes back as a new task, the intern row cancelled, done still done', [back.moved.length, kBack.filter((t) => t.systemKey === 'intro_post' && t.status !== 'cancelled').length, kBack.find((t) => t.templateTaskId === 'intern-cohort')?.status, kBack.find((t) => t.id === doneT.id)?.status], [1, 1, 'cancelled', 'done']);
+  await engine.closeJourney(tO.id, 'declined');
+  eq('A closed onboarding is not moved', (await refusal(async () => board.moveJourneysToTemplate(ORG, stdNow.id, { journeyIds: [tO.id] }))).status, 409);
+  eq('An unknown joiner, an empty list, an offboarding template are refused',
+    [(await refusal(async () => board.moveJourneysToTemplate(ORG, stdNow.id, { journeyIds: ['nope'] }))).status, (await refusal(async () => board.moveJourneysToTemplate(ORG, stdNow.id, { journeyIds: [] }))).status, (await refusal(async () => board.moveJourneysToTemplate(ORG, list[1].id, { journeyIds: [tK.id] }))).status],
+    [404, 400, 400]);
+  await templates.updateTemplate(ORG, interns.id, { active: false });
+  eq('A switched-off template takes nobody', (await refusal(async () => board.moveJourneysToTemplate(ORG, interns.id, { journeyIds: [tK.id] }))).status, 409);
+  eq('Moving needs the Templates tab; listing reads with onboarding too', [tabs.tabsForRequest('POST', '/admin/lifecycle/templates/x/journeys'), tabs.tabsForRequest('GET', '/admin/lifecycle/templates/x/journeys')], [['lifecycle_templates'], ['lifecycle_templates', 'onboarding', 'offboarding']]);
+
   // ───────────────────────────────────────────────────────── the switch
   section('Switch off: refused');
   eq('Tab rules: the board needs onboarding, templates their tab, /settings is open',
