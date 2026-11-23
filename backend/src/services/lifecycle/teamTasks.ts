@@ -26,7 +26,7 @@ import type { DueRule, Journey, JourneyTask, OwnerRole, ProbationMonth, SystemTa
 import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
 import { addDaysKey, companyTimeZone, daysBetween, keyOfDay, probationMonthOn, todayKey } from './dueRules';
 import {
-  LifecycleError, deriveJourney, isJoined, loadJourney, namesOf, taskLate, tasksOf, tell, totalProbationMonths, visibleTo,
+  LifecycleError, deriveJourney, isJoined, loadJourney, namesOf, taskLate, tasksOf, totalProbationMonths, visibleTo,
 } from './engine';
 import { MANAGER_OWNED, devicesFor, managerMayTick, managerTaskDone, onboardingHome } from './appOnboarding';
 import { updateMonthByManager } from './probation';
@@ -590,16 +590,6 @@ export async function answerApproval(me: Me, journeyId: string, body: Record<str
   await setTick(j, 'hod_approve', { doneAt: at, byUserId: me.userId, byName: me.name, outcome, ...(comment ? { note: comment } : {}) }, {
     set: { 'probation.hodApproval': { outcome, ...(comment ? { comment } : {}), byUserId: me.userId, byName: me.name, at } },
   });
-  // HR records the decision: the joiner's HR contact hears, as when the final month starts.
-  const joiner = j.userId ? await users().findOne({ userId: j.userId }, { projection: { _id: 0, name: 1, hrPrimaryUserId: 1 } }) : null;
-  const name = joiner?.name ?? j.candidate?.name ?? 'the joiner';
-  await tell([joiner?.hrPrimaryUserId], {
-    scenario: 'lifecycle_confirmation_window_hr',
-    title: `Decide on ${name}'s probation`,
-    body: outcome === 'approved'
-      ? `${me.name} approved the manager’s recommendation. Confirm or extend on the Onboarding board.`
-      : `${me.name} asked to discuss the recommendation${comment ? `: ${comment}` : ''}.`,
-    data: { journeyId: j.id },
-  });
+  // HR records the decision on the dashboard's Onboarding board: no app push to HR.
   return approvalView(await loadJourney(j.id));
 }

@@ -2,7 +2,7 @@
  * Onboarding · Final designs (docs/lifecycle/FINAL-DESIGNS.md) against their rules, in-process, on
  * its own scratch database: the seed is the canvas's, the editor's design view saves and validates,
  * stages place rows, and every surface reads the same tick — the joiner, the manager, the buddy,
- * the head of department, HR and IT & admin. Also the migration of an older template and an older
+ * the head of department, and HR's dashboard (HR and IT & admin have no app side). Also the migration of an older template and an older
  * journey still reading, and the kept templates dropped by a save.
  *
  *   npm run lifecycle:final-designs-check   (MONGODB_DB=el_final_designs_check; local mongod only)
@@ -50,11 +50,18 @@ async function main() {
   const meetings = await import('../services/lifecycle/joinerMeetings');
   const team = await import('../services/lifecycle/teamApp');
   const oldTeam = await import('../services/lifecycle/teamTasks');
-  const staff = await import('../services/lifecycle/staffApp');
+  const designRows = await import('../services/lifecycle/designRows');
   const probation = await import('../services/lifecycle/probation');
   const migrate = await import('../services/lifecycle/designMigrate');
   const app = await import('../services/lifecycle/appOnboarding');
   const readCache = await import('../services/lifecycle/readCache');
+  /** A teammate row's tick as every surface reads it (the joiner's, the Teams page's, the dashboard's). */
+  const rowDoneNow = async (journeyId: string, key: string) => {
+    const j = await engine.loadJourney(journeyId);
+    const p = await designRows.place(j);
+    const r = [...p.meetings, ...p.team].find((x) => x.rowKey === key);
+    return r ? team.rowDone(r, j, await engine.tasksOf(journeyId), p.design) : undefined;
+  };
 
   await connectDb();
   await getDb().dropDatabase();
@@ -175,10 +182,9 @@ async function main() {
   await meetings.markMeetingRowMet(PRIYA, await engine.loadJourney(J1), welcome.id, { action: 'met' });
   home = await joiner.joinerOnboarding(PRIYA);
   ok('The joiner sees it met', home.meetings.find((m) => m.id === welcome.id)?.met === true);
-  let hrPage = await staff.staffJoinerPage(HR, J1);
-  ok('…and HR sees the same row done', hrPage.tasks.find((t) => t.id === 'hr_welcome')?.done === true, hrPage.tasks.map((t) => [t.id, t.done]));
+  ok('…and HR’s row reads done (one tick)', (await rowDoneNow(J1, 'hr_welcome')) === true);
   await meetings.markMeetingRowMet(PRIYA, await engine.loadJourney(J1), welcome.id, { action: 'unmet' });
-  ok('Unticked by the joiner: undone for HR too', (await staff.staffJoinerPage(HR, J1)).tasks.find((t) => t.id === 'hr_welcome')?.done === false);
+  ok('Unticked by the joiner: undone for HR too', (await rowDoneNow(J1, 'hr_welcome')) === false);
   const j1Now = await engine.loadJourney(J1);
   eq('A locked meeting cannot be marked met', await refusal(() => meetings.markMeetingRowMet(PRIYA, j1Now, monthly[0].id, { action: 'met' })), 409);
   await meetings.saveMeetingRowNotes(PRIYA, await engine.loadJourney(J1), welcome.id, { notes: ['Bring the PAN card'] });
@@ -261,8 +267,8 @@ async function main() {
   ok('Schedule: every first-week meeting has a time for the joiner, and the row ticks', (await joiner.joinerOnboarding(PRIYA)).meetings.filter((m) => m.step === 'd1' || m.step === 'w1').every((m) => !!m.startsAt)
     && (await team.teamJoinerPage(MGR, J1)).tasks.find((t) => t.id === 'mgr_schedule')?.done === true);
   const invites = await pushTargets('lifecycle_meeting_invite', J1);
-  ok('Invites: the joiner → her home; HR / IT & admin → their person page; the buddy → the Teams person page',
-    invites.j1 === 'lifecycle_onboarding' && invites.hr === 'lifecycle_staff:hr' && invites.it === 'lifecycle_staff:it' && invites.rohan === 'lifecycle_joiner', invites);
+  ok('Invites: the joiner → her home; the buddy → the Teams person page; HR and IT & admin (dashboard only) → no app push',
+    invites.j1 === 'lifecycle_onboarding' && invites.rohan === 'lifecycle_joiner' && !('hr' in invites) && !('it' in invites), invites);
   // Lane T: the page carries the joiner's step, the manager's schedule list, and my own notes and the time on my meeting rows.
   await team.teamRowNotes(MGR, J1, 'mgr_first_goals', { notes: ['Talk about the first week'] });
   const tPage = await team.teamJoinerPage(MGR, J1);
@@ -291,27 +297,12 @@ async function main() {
   const sanaHome = await joiner.joinerOnboarding(SANA);
   eq('The goals card: 2 goals, month 2', [sanaHome.goals?.month, sanaHome.goals?.count], [2, 2]);
 
-  section('HR and IT & admin');
-  const hrBoard = await staff.staffOnboarding(HR);
-  eq('HR: four cards; Priya in Week 1, Sana in Probation', [hrBoard.viewingAs, hrBoard.cards.map((c) => c.count)], ['hr', [0, 1, 0, 1]]);
-  ok('…a late pill on the Week 1 card', hrBoard.cards[1].late === 1 && hrBoard.cards[1].people[0].pill.tone === 'red', hrBoard.cards[1]);
-  const itBoard = await staff.staffOnboarding(IT);
-  eq('IT: only the joiners whose template names them', itBoard.everyone.length, 2);
-  const tile = await staff.staffTile(HR);
-  ok('HR’s Actions tile: tasks, late', !!tile && tile.open > 0 && tile.late > 0 && tile.pill?.endsWith('late'), tile);
-  hrPage = await staff.staffJoinerPage(HR, J1);
-  ok('HR’s page: due pills on every open row', hrPage.tasks.filter((t) => !t.done && !t.locked && t.step <= 2).every((t) => !!t.due), hrPage.tasks);
-  ok('…coming-up meetings locked, other tasks open early', hrPage.tasks.filter((t) => t.step > 2).every((t) => (t.kind === 'meet' ? t.locked : !t.locked)), hrPage.tasks.map((t) => [t.title, t.locked]));
-  eq('…her onboarding: 7 rows, Profile first', [hrPage.onboarding.rows.length, hrPage.onboarding.rows[0].key], [7, 'prof']);
-  const hrProfile = await staff.staffProfile(HR, J1);
-  eq('HR’s profile: nine sections', hrProfile.sections.map((s) => s.key), ['personal', 'contact', 'emergency', 'education', 'ids', 'bank', 'pf', 'salary', 'tax']);
-  eq('…its Profile % is the full profile’s (the same number the profile screen says)', (await staff.staffJoinerPage(HR, J1)).onboarding.rows[0].done, hrProfile.pct);
-  const itProfile = await staff.staffProfile(IT, J1, 'it');
-  eq('IT never sees bank, PF, salary or tax', itProfile.sections.length, 5);
-  const access = await staff.staffTaskScreen(IT, J1, 'it_accesses', 'it') as { accesses: Array<{ id: string; title: string; ready: boolean; details: unknown[] }> };
-  eq('IT: the four accesses', access.accesses.map((a) => a.title), ['Laptop', 'Work email', 'Office Wi-Fi', 'Sowaka Connect']);
+  section('HR and IT & admin: the dashboard only, nothing in the app');
+  const hrMe = await app.lifecycleMe(HR), itMe = await app.lifecycleMe(IT);
+  ok('GET /lifecycle/me has no staff tile for HR or IT & admin', !('staff' in hrMe) && !('staff' in itMe), { hrMe, itMe });
   const hrPanel = await (await import('../services/lifecycle/board')).journeyPanel(ORG, J1);
-  eq('HR’s journey panel marks the same four for Week 1’s Devices and accesses', hrPanel.tasks.filter((t) => t.section === 'access').map((t) => t.title).sort(), ['Laptop', 'Office Wi-Fi', 'Sowaka Connect', 'Work email']);
+  const accessRows = hrPanel.tasks.filter((t) => t.section === 'access');
+  eq('HR’s journey panel marks the four accesses for Week 1’s Devices and accesses', accessRows.map((t) => t.title).sort(), ['Laptop', 'Office Wi-Fi', 'Sowaka Connect', 'Work email']);
   {
     // Joining day's "Logged into the app": from lastLoginAt, the sessions and an app phone; no account is No.
     const board = await import('../services/lifecycle/board');
@@ -326,38 +317,13 @@ async function main() {
     eq('…an app phone alone counts as signed in', await board.appSignInOf('rohan'), { signedIn: true, firstAt: firstAt.toISOString(), lastAt: firstAt.toISOString() });
     await Promise.all([authSessions().deleteOne({ tokenHash: 'fd-check-session' }), deviceTokens().deleteOne({ token: 'fd-check-phone' }), users().updateOne({ userId: 'j1' }, { $unset: { lastLoginAt: 1 } })]);
   }
-  await staff.staffTaskAction(IT, J1, 'it_accesses', { accesses: Object.fromEntries(access.accesses.map((a) => [a.id, true])) }, 'it');
+  const boardTick = (await import('../services/lifecycle/board')).actOnTaskByHr;
+  for (const t of accessRows) await boardTick(ORG, J1, t.id, { action: 'done' }, { userId: 'it', name: 'Imran Khan' });
   home = await joiner.joinerOnboarding(PRIYA);
-  eq('Ready on IT’s side → ready on the joiner’s Devices and accesses', [home.summary.devices.ready, home.summary.devices.total], [4, 4]);
-  ok('…and "Set up Priya’s accesses" is done', (await staff.staffJoinerPage(IT, J1, 'it')).tasks.find((t) => t.id === 'it_accesses')?.done === true);
-  await staff.staffTaskAction(IT, J1, 'it_accesses', { accesses: { [access.accesses[2].id]: false } }, 'it');
+  eq('Ticked ready on the dashboard → ready on the joiner’s Devices and accesses', [home.summary.devices.ready, home.summary.devices.total], [4, 4]);
+  ok('…and "Set up Priya’s accesses" reads done', (await rowDoneNow(J1, 'it_accesses')) === true);
+  await boardTick(ORG, J1, accessRows.find((t) => t.title === 'Office Wi-Fi')!.id, { action: 'reopen' }, { userId: 'it', name: 'Imran Khan' });
   eq('Not yet again: Setting up for the joiner', (await joiner.joinerOnboarding(PRIYA)).devices.find((d) => d.title === 'Office Wi-Fi')?.ready, false);
-  await staff.staffTaskAction(HR, J1, 'hr_check_payroll', { checks: { bank: 'looks_right', pf: 'ask' }, action: 'done' });
-  const payScreen = await staff.staffTaskScreen(HR, J1, 'hr_check_payroll') as { done: boolean; checks?: Record<string, string>; sections: Array<{ key: string }> };
-  eq('Payroll check: bank, PF, tax; the checks kept; done', [payScreen.sections.map((s) => s.key), payScreen.checks, payScreen.done], [['bank', 'pf', 'tax'], { bank: 'looks_right', pf: 'ask' }, true]);
-  // Lane H (the app's HR and IT screens): the facts the task screens draw.
-  const kitScreen = await staff.staffTaskScreen(HR, J1, 'hr_prepare_kit') as { idCard: { company: string; name: string }; possessive: string };
-  ok('Kit: the ID card names the company; a possessive for the copy', !!kitScreen.idCard.company && ['her', 'his', 'their'].includes(kitScreen.possessive), kitScreen);
-  const letterScreen = await staff.staffTaskScreen(HR, J1, 'hr_confirmation_letter') as { preview: { head: string; title: string; paragraphs: string[] } };
-  ok('Letter: a preview from the confirmation template', letterScreen.preview.title === 'Confirmation of employment' && letterScreen.preview.paragraphs.length > 2 && !letterScreen.preview.paragraphs.some((x) => x.includes('<')), letterScreen.preview);
-  await staff.staffTaskNotes(HR, J1, 'hr_welcome', { notes: ['Bring the PAN original', ''] });
-  const meetScreen = await staff.staffTaskScreen(HR, J1, 'hr_welcome') as { meeting: { agenda: string[]; notes: string[] } };
-  eq('HR’s own notes on a meeting come back on its screen', meetScreen.meeting.notes[0], 'Bring the PAN original');
-  eq('…and are HR’s alone (the joiner keeps her own)', (await joiner.joinerOnboarding(PRIYA)).meetings.find((m) => m.id === 'team:hr_welcome')?.notes, ['Bring the PAN card']);
-  // fd-flow lane H: the kit's ticks are kept as they are made, and saving one part keeps the others.
-  await staff.staffTaskAction(HR, J1, 'hr_hand_kit', { ticks: [0, 2] });
-  const handLeft = await staff.staffTaskScreen(HR, J1, 'hr_hand_kit') as { done: boolean; ticks?: number[] };
-  eq('Hand over: the boxes ticked are kept before it is finished', [handLeft.ticks, handLeft.done], [[0, 2], false]);
-  await staff.staffTaskAction(HR, J1, 'hr_hand_kit', { action: 'done', accessCardNo: 'AC-7781', ticks: [0, 2, 3] });
-  await staff.staffTaskAction(HR, J1, 'hr_hand_kit', { ticks: [0, 2, 3, 4] });
-  const handDone = await staff.staffTaskScreen(HR, J1, 'hr_hand_kit') as { done: boolean; ticks?: number[]; accessCardNo?: string };
-  eq('…done with its ticks and the access card number, a later tick keeping the number', [handDone.done, handDone.ticks, handDone.accessCardNo], [true, [0, 2, 3, 4], 'AC-7781']);
-  eq('…a body with nothing to keep and no action is refused', await refusal(() => staff.staffTaskAction(HR, J1, 'hr_hand_kit', {})), 400);
-  const connect = (access.accesses.find((a) => a.title === 'Sowaka Connect')?.details ?? []) as Array<{ label: string; value: string }>;
-  ok('IT: Sowaka Connect’s setup rows say the role', connect.some((d) => d.label === 'Role' && d.value === 'Employee'), connect);
-  ok('HR’s bank section has no cheque row when the documents ask for none', !hrProfile.sections.find((s) => s.key === 'bank')?.rows.some((r) => r.label === 'Cancelled cheque'));
-  eq('A task that is not HR’s: 404', await refusal(() => staff.staffTaskAction(HR, J1, 'mgr_kpis', { action: 'done' })), 404);
-  eq('Someone who is neither HR nor IT for her: 404', await refusal(() => staff.staffJoinerPage(MGR, J1)), 404);
 
   section('App build 90: the Employee profile’s empty sections, filled once in the app');
   const jd = await import('../services/lifecycle/joinerDetails');
@@ -379,8 +345,8 @@ async function main() {
   eq('…a second save is refused', await refusal(() => jd.saveJoinerProfileSection(PRIYA, 'contact', { mobile: '9876500002', current: { line: 'x', city: 'y', state: 'z', pin: '411001' } })), 409);
   eq('Emergency: the joiner’s own number is refused', await refusal(() => jd.saveJoinerProfileSection(PRIYA, 'emergency', { name: 'Asha Shah', relation: 'Parent', phone: '9999999999' })), 400);
   prof = await jd.saveJoinerProfileSection(PRIYA, 'emergency', { name: 'Asha Shah', relation: 'Parent', phone: '9876500003' });
-  const hrEmergency = (await staff.staffProfile(HR, J1)).sections.find((s) => s.key === 'emergency')?.rows.find((r) => r.label === 'Mobile')?.value;
-  ok('Emergency saved where pre-boarding keeps it; HR reads it', !sec('emergency').editable && hrEmergency === '+919876500003', hrEmergency);
+  const hrEmergency = (await engine.loadJourney(J1)).aboutYou?.emergencyContact?.phone;
+  ok('Emergency saved where pre-boarding keeps it (the dashboard reads it there)', !sec('emergency').editable && hrEmergency === '+919876500003', hrEmergency);
   // Bank and PF the portal kept before 24 Nov (still read: it prefills the payroll details below).
   const profileSvc = await import('../services/lifecycle/profile');
   await journeys().updateOne({ id: J1 }, { $set: {
@@ -411,7 +377,7 @@ async function main() {
   const sentReq = (await engine.loadJourney(J1)).bankPfRequest;
   ok('…the week-1 bank/PF change carries it: the account kept from pre-boarding, holder, UAN, nominees',
     sentReq?.source === 'payroll_task' && sentReq.changes.accountLast4 === '9012' && !!sentReq.changes.accountNumberEnc && sentReq.changes.accountHolder === 'Priya Shah' && sentReq.changes.uanLast4 === '0400' && sentReq.nominees?.length === 2, sentReq);
-  eq('…HR is told', Object.keys(await pushTargets('lifecycle_bank_pf_request', J1)), ['hr']);
+  eq('…HR gets no app push (the dashboard shows the request)', Object.keys(await pushTargets('lifecycle_bank_pf_request', J1)), []);
   eq('Sent once while HR has it', await refusal(() => jd.sendJoinerPayroll(PRIYA, payBody())), 409);
   const boardSvc = await import('../services/lifecycle/board');
   await boardSvc.decideBankPfRequest(ORG, J1, { decision: 'decline', note: 'Use your salary account' }, { userId: 'hr', name: 'Ritu Sharma' });
@@ -431,11 +397,12 @@ async function main() {
   const sentNow = await jobs.lateTeamRowReminders(await engine.loadJourney(J1), await engine.tasksOf(J1), today);
   ok('Late rows remind whoever does them, once', sentNow > 0 && (await jobs.lateTeamRowReminders(await engine.loadJourney(J1), await engine.tasksOf(J1), today)) === 0, sentNow);
   const late = await pushTargets('lifecycle_team_task_late', J1);
-  ok('…HR’s and IT & admin’s open their person page, the manager’s and the buddy’s the Teams person page',
-    late.hr === 'lifecycle_staff:hr' && late.mgr === 'lifecycle_joiner' && late.rohan === 'lifecycle_joiner' && (late.it ?? 'lifecycle_staff:it') === 'lifecycle_staff:it', late);
-  const { teammatePushTarget } = await import('../services/lifecycle/designRows');
-  eq('A teammate push with no row: read from who they are (HR and manager → Teams page)', [teammatePushTarget({ hr: 'a', it: 'b', manager: 'a' }, 'a'), teammatePushTarget({ hr: 'a', it: 'b' }, 'b')],
-    [{ destination: 'lifecycle_joiner' }, { destination: 'lifecycle_staff', as: 'it' }]);
+  ok('…the manager’s and the buddy’s open the Teams person page; HR and IT & admin get none (dashboard only)',
+    late.mgr === 'lifecycle_joiner' && late.rohan === 'lifecycle_joiner' && !('hr' in late) && !('it' in late), late);
+  const { teammatePushTarget } = designRows;
+  eq('A teammate push with no row: read from who they are (HR and manager → Teams page; HR or IT only → none); an HR row → none',
+    [teammatePushTarget({ hr: 'a', it: 'b', manager: 'a' }, 'a'), teammatePushTarget({ hr: 'a', it: 'b' }, 'b'), teammatePushTarget({ hr: 'a', manager: 'a' }, 'a', 'hr')],
+    [{ destination: 'lifecycle_joiner' }, null, null]);
   const curT = await design.templateDesign(ORG, def.id);
   await design.saveTemplateDesign(ORG, def.id, { ...curT, team: { ...curT.team, remindLate: false } } as never);
   ok('Switched off in the template: a running joiner keeps the version they started with (still reminded)', (await jobs.lateTeamRowReminders(await engine.loadJourney(J2), await engine.tasksOf(J2), today)) > 0);
@@ -461,14 +428,13 @@ async function main() {
   const approvedExt = (await engine.loadJourney(J2)).probation?.hodApproval;
   eq('Approving a recommendation to extend: extended, by the manager’s month', [approvedExt?.outcome, approvedExt?.extendMonths], ['extended', 1]);
   await journeys().updateOne({ id: J2 }, { $set: { 'probation.recommendation.outcome': 'confirm', 'probation.hodApproval.extendMonths': 2 }, $unset: { 'probation.recommendation.extendMonths': '' } });
-  const letterRow = async () => ((await staff.staffTaskScreen(HR, J2, 'hr_confirmation_letter')) as { done: boolean }).done;
+  const letterRow = async () => (await rowDoneNow(J2, 'hr_confirmation_letter')) === true;
   eq('HR’s letter row: not done before the letter', await letterRow(), false);
   // HR's decision on the board (its own rules are lifecycle:check's): confirm.
   await journeys().updateOne({ id: J2 }, { $set: { 'probation.decision': { outcome: 'confirm', decidedAt: new Date(), decidedByName: 'Ritu Sharma' } } });
   const lettersSvc = await import('../services/lifecycle/letters');
   await lettersSvc.closeLetterTask(HR, { id: 'letter-check', org: ORG, kind: 'confirmation', journeyId: J2 } as never);
-  ok('…done once the confirmation letter is sent from the dashboard, on HR’s page too', await letterRow()
-    && (await staff.staffJoinerPage(HR, J2)).tasks.find((t) => t.id === 'hr_confirmation_letter')?.done === true);
+  ok('…done once the confirmation letter is sent from the dashboard', await letterRow());
 
   section('Kept templates: a save is read at once, and reaches new joiners only');
   readCache.enableLifecycleReadCache(true);
@@ -486,7 +452,7 @@ async function main() {
   ok('The kept copy is dropped by the save', before.get(def.id)?.tasks.some((t) => t.title === 'Salary and tax') && after.get(def.id)?.tasks.some((t) => t.title === 'Salary, tax and PF'));
   ok('A running joiner keeps the version they started with', (await joiner.joinerOnboarding(PRIYA)).meetings.some((m) => m.title === 'Salary and tax')
     && !(await joiner.joinerOnboarding(PRIYA)).meetings.some((m) => m.title === 'Salary, tax and PF'));
-  ok('…and so does their manager’s and HR’s side', (await team.teamJoinerPage(MGR, J1)).tasks.every((t) => t.title !== 'Salary, tax and PF') && (await staff.staffJoinerPage(HR, J1)).tasks.some((t) => t.title === 'Salary and tax'));
+  ok('…and so does their manager’s side', (await team.teamJoinerPage(MGR, J1)).tasks.every((t) => t.title !== 'Salary, tax and PF'));
   await mk('j6', 'Dev Arora', 'mgr', rules.addDaysKey(today, -3));
   ok('A joiner who starts after the save reads the new title', (await joiner.joinerOnboarding(me('j6', 'Dev Arora'))).meetings.some((m) => m.title === 'Salary, tax and PF'));
   const DEV = me('j6', 'Dev Arora');

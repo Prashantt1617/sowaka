@@ -1210,8 +1210,8 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
     await advanceTo(T(addDays(TL, 19), '23:30'));
     eq('the day before Tl + 20: no gratuity push', (await notifications().countDocuments({ scenario: 'lifecycle_gratuity_due', 'data.userId': 'ravi' })), 0);
     await advanceTo(T(addDays(TL, 20), '13:30'));
-    const grat = await notifications().find({ scenario: 'lifecycle_gratuity_due', 'data.userId': 'ravi' }).toArray();
-    ok('on Tl + 20: the gratuity push to the clearance staff, once each', grat.length > 0 && grat.every((p) => istKey(p.createdAt) === addDays(TL, 20)) && new Set(grat.map((p) => p.userId)).size === grat.length, grat.map((p) => [p.userId, istKey(p.createdAt)]));
+    // IT, Admin and Finance work from the dashboard: no app push to the clearance staff, the board shows it.
+    eq('on Tl + 20: no gratuity push to the clearance staff (dashboard only)', (await notifications().countDocuments({ scenario: 'lifecycle_gratuity_due', 'data.userId': 'ravi' })), 0);
     eq('the board’s gratuity step is due the same day', (await offCard('hr', 'ravi'))?.due, addDays(TL, 20));
     current = 'same_truth';
 

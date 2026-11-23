@@ -36,8 +36,8 @@ import { PROFILE_SECTION_TITLE, PROFILE_SECTIONS, sectionStates } from './profil
 import { sectionLocked } from './profileLock';
 import { groupTasks, progressOf } from './board';
 import { designOf } from './design';
+import { place, teammatePushTarget } from './designRows';
 import { joinerOnboarding, joinerTile } from './joinerApp';
-import { staffTile } from './staffApp';
 import { cleanGoals, checkinByJoiner, markRevealSeen, probationForJoiner, probationOf, revealFor, updateMonthByManager } from './probation';
 
 type Me = { userId: string; name: string; org: string };
@@ -100,9 +100,6 @@ export async function lifecycleMe(me: Me, now = new Date()) {
   // Resigning / on notice: the Resignation tab and the Off-boarding page (offboarding.ts).
   const leaving = await offboardingMe(me.userId);
   if (leaving) out.offboarding = leaving;
-  // HR or IT & admin for someone joining: their Actions › Onboarding tile.
-  const staff = await staffTile(me, now);
-  if (staff) out.staff = staff;
   return out;
 }
 
@@ -621,8 +618,7 @@ export async function saveWeek1Step(me: Me, body: Record<string, unknown>, devic
         if (!Object.keys(changes).length && !text(value.note)) throw new LifecycleError(400, 'Say what should change');
         set.bankPfRequest = { status: 'pending', changes, ...(text(value.note) ? { note: text(value.note).slice(0, 500) } : {}), requestedAt: now };
         week1.bankPf = { confirmedAt: now, changeRequested: true };
-        const hr = (await users().findOne({ userId: me.userId }, { projection: { _id: 0, hrPrimaryUserId: 1 } }))?.hrPrimaryUserId;
-        await tell([hr], { scenario: 'lifecycle_bank_pf_request', title: 'Bank or PF change to approve', body: `${me.name} asked to change their bank or PF details.`, data: { journeyId: j.id } });
+        // HR approves it on the dashboard (no app push to HR).
       } else if (value.confirm === true || value.confirmed === true) {
         week1.bankPf = { confirmedAt: now, ...(week1.bankPf?.changeRequested ? { changeRequested: true } : {}) };
       } else {
@@ -866,7 +862,12 @@ export async function actOnMeeting(me: Me, id: string, body: Record<string, unkn
     if (!at || Number.isNaN(at.getTime())) throw new LifecycleError(400, 'newTime is an ISO time');
     // Moved is not met: it is reminded and asked again at the new time.
     await lifecycleMeetings().updateOne({ id }, { $set: { met: 'moved', newTime: at, startsAt: at, endsAt: new Date(at.getTime() + 30 * 60_000) }, $unset: { remindedAt: '' } });
-    await tell(m.attendeeUserIds.filter((u) => u !== me.userId), { scenario: 'lifecycle_meeting_moved', destination: 'lifecycle_joiner', title: `${m.title} moved`, body: `New time: ${humanDay(dateKeyOf(at))}`, data: { journeyId: j.id, meetingId: id } });
+    // The others in it hear, except HR and IT & admin (they work from the dashboard: no app push).
+    const others = m.attendeeUserIds.filter((u) => u !== me.userId);
+    const p = others.length ? await place(j) : null;
+    const role = p && m.rowKey ? [...p.meetings, ...p.team].find((r) => r.rowKey === m.rowKey)?.role : undefined;
+    const told = p ? others.filter((u) => u === j.userId || teammatePushTarget(p.people, u, role)) : others;
+    await tell(told, { scenario: 'lifecycle_meeting_moved', destination: 'lifecycle_joiner', title: `${m.title} moved`, body: `New time: ${humanDay(dateKeyOf(at))}`, data: { journeyId: j.id, meetingId: id } });
   } else throw new LifecycleError(400, 'met is yes or moved');
   return meetingFor(me, id);
 }

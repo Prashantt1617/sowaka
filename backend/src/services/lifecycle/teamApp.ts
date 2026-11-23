@@ -455,12 +455,10 @@ export async function scheduleMeetings(me: Me, journeyId: string, body: Record<s
       { upsert: true },
     );
     const invite = { scenario: 'lifecycle_meeting_invite' as const, title: m.row.title, body: `${me.name} set a time: ${at.toISOString()}` };
-    // The joiner: their home; HR / IT & admin: their person page; the buddy and others: the Teams person page.
+    // The joiner: their home; the buddy and others: the Teams person page; HR / IT & admin (dashboard only): no push.
     if (j.userId && j.userId !== me.userId) await tell([j.userId], { ...invite, destination: 'lifecycle_onboarding', data: { journeyId: j.id, rowKey: m.rowKey } });
-    if (owner && owner !== me.userId && owner !== j.userId) {
-      const target = teammatePushTarget(p.people, owner, m.role);
-      await tell([owner], { ...invite, destination: target.destination, data: { journeyId: j.id, rowKey: m.rowKey, ...(target.as ? { as: target.as } : {}) } });
-    }
+    const target = owner && owner !== me.userId && owner !== j.userId ? teammatePushTarget(p.people, owner, m.role) : null;
+    if (owner && target) await tell([owner], { ...invite, destination: target.destination, data: { journeyId: j.id, rowKey: m.rowKey } });
   }
   const set = await lifecycleMeetings().countDocuments({ journeyId: j.id, rowKey: { $in: firstWeek.map((m) => m.rowKey) } });
   if (set >= firstWeek.length) await setRowTick(j.id, 'mgr_schedule', me);
@@ -658,10 +656,10 @@ export async function answerApprovalV2(me: Me, journeyId: string, body: Record<s
     'probation.hodApproval': { outcome, ...(extendMonths ? { extendMonths } : {}), ...(comment ? { comment } : {}), byUserId: me.userId, byName: me.name, at },
     'teamTasks.hod_approve': { doneAt: at, byUserId: me.userId, byName: me.name, outcome, ...(comment ? { note: comment } : {}) }, updatedAt: at,
   } });
-  const joiner = j.userId ? await users().findOne({ userId: j.userId }, { projection: { _id: 0, name: 1, hrPrimaryUserId: 1 } }) : null;
+  const joiner = j.userId ? await users().findOne({ userId: j.userId }, { projection: { _id: 0, name: 1 } }) : null;
   const name = joiner?.name ?? j.candidate?.name ?? 'the joiner';
-  const notify = [joiner?.hrPrimaryUserId, j.managerUserId].filter((x): x is string => !!x);
-  await tell(notify, {
+  // The manager hears; HR sees it on the dashboard's Onboarding board (no app push to HR).
+  await tell([j.managerUserId], {
     scenario: 'lifecycle_confirmation_window_hr', title: `${name}’s confirmation`,
     body: outcome === 'approved' ? `${me.name} approved the confirmation.` : `${me.name} extended probation by ${extendMonths} month${extendMonths === 1 ? '' : 's'}.`,
     data: { journeyId: j.id },

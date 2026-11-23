@@ -69,7 +69,8 @@ Map<String, dynamic> task(
 class FakeLifecycle {
   bool enabled = true;
 
-  /// `/lifecycle/me` · `staff`: HR's or IT & admin's Actions › Onboarding tile.
+  /// `/lifecycle/me` · `staff`: the HR / IT & admin tile an older server
+  /// sent (the app shows nothing for it now).
   Map<String, dynamic>? staff;
   bool canResign = true;
   bool pageVisible = false;

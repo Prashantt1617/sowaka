@@ -42,7 +42,7 @@ export const TIME_OFFICE_LIST_KINDS: SwrKind[] = ['adm-regs', 'adm-leaves', 'adm
  */
 export const PER_PERSON_KINDS: SwrKind[] = ['pay-home', 'pay-salary', 'pay-earnings'];
 export const KEPT_READ_KINDS: SwrKind[] = ['adm-employees', 'pay-run', 'games-catalog', 'mgr-photos', ...PER_PERSON_KINDS];
-export const LIFECYCLE_READ_KINDS: SwrKind[] = ['lc-board-data', 'lc-staff-tile', 'lc-templates', 'off-board-data', 'suwi-notices', 'suwi-org-data', 'mgr-roster', ...TIME_OFFICE_LIST_KINDS, ...KEPT_READ_KINDS];
+export const LIFECYCLE_READ_KINDS: SwrKind[] = ['lc-board-data', 'lc-templates', 'off-board-data', 'suwi-notices', 'suwi-org-data', 'mgr-roster', ...TIME_OFFICE_LIST_KINDS, ...KEPT_READ_KINDS];
 const SUWI_KINDS: SwrKind[] = ['suwi-notices', 'suwi-org-data'];
 /** What a new, edited or deleted feed post can change: the lifecycle boards (never Suwi's or the payroll copies). */
 const POST_KINDS: SwrKind[] = ['lc-board-data', 'off-board-data', 'mgr-roster', ...TIME_OFFICE_LIST_KINDS];

@@ -723,10 +723,7 @@ export async function createDateRequest(journey: Journey, input: { requestedTj?:
     id: randomUUID(), org: journey.org, journeyId: journey.id, requestedTj, reason, ...(note ? { note } : {}), status: 'pending', createdAt: now,
   };
   await dateChangeRequests().insertOne({ ...request });
-  await notifyUsers([journey.createdByUserId], {
-    scenario: 'lifecycle_date_request', title: `${journey.candidate?.name ?? 'A joiner'} asked for a new joining date`,
-    body: `${formatDay(requestedTj)} instead of ${formatDay(journey.tj)} · ${reason}`, data: { type: 'lifecycle_date_request', journeyId: journey.id }, push: false,
-  });
+  // HR answers it on the dashboard (no app inbox row for HR).
   return request;
 }
 

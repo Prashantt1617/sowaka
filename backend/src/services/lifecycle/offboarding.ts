@@ -181,9 +181,12 @@ function tenureBand(joined: Date | undefined, to: string): SurveyResponse['tenur
 
 // ———————————————————————————————————————————————— notifications
 
-async function tell(userIds: (string | undefined)[], scenario: string, title: string, body: string, data: Record<string, string> = {}, email?: { subject: string; body: string }) {
+/** `emailOnly`: for dashboard staff (IT, Admin, Finance): the email goes, nothing reaches the app. */
+async function tell(userIds: (string | undefined)[], scenario: string, title: string, body: string, data: Record<string, string> = {}, email?: { subject: string; body: string }, emailOnly = false) {
   try {
-    await notifyUsers(userIds.filter((x): x is string => !!x), { scenario, title, body, data: { type: 'lifecycle_offboarding', ...data }, ...(email ? { email } : {}) });
+    await notifyUsers(userIds.filter((x): x is string => !!x), {
+      scenario, title, body, data: { type: 'lifecycle_offboarding', ...data }, ...(email ? { email } : {}), ...(emailOnly ? { push: false, inbox: false } : {}),
+    });
   } catch (error) {
     logger.warn('Offboarding: a notification could not be sent', { scenario, reason: error instanceof Error ? error.message : String(error) });
   }
@@ -197,11 +200,11 @@ async function tell(userIds: (string | undefined)[], scenario: string, title: st
  * - `lifecycle_offboarding` Action › Off-boarding (R3); `lifecycle_handover` R3 with the handover (R3b) open
  * - `lifecycle_exit_interview` the exit interview (R5)
  * - `lifecycle_leaver` the manager's Resignation tab on the leaver's profile (R8b; `userId`)
- * - `lifecycle_clearance` the dashboard's Offboarding board: nothing to open in the app
+ * IT, Admin and Finance (clearance staff) and HR get no offboarding push: they work from the dashboard.
  */
 export type OffboardingDestination =
   | 'lifecycle_resignation_request' | 'lifecycle_resignation' | 'lifecycle_offboarding' | 'lifecycle_handover'
-  | 'lifecycle_exit_interview' | 'lifecycle_leaver' | 'lifecycle_clearance';
+  | 'lifecycle_exit_interview' | 'lifecycle_leaver';
 
 /** Every offboarding push: `{ scenario, title, body, data: { type, destination, …ids } }` (all data values strings). */
 export async function tellOffboarding(
@@ -292,7 +295,7 @@ export async function beginOffboarding(hr: Actor, employee: User, input: BeginIn
   if (input.tellManagerNow && managerId && managerId !== employee.userId) {
     await tellOffboarding([managerId], 'lifecycle_handover_checklist', 'lifecycle_leaver', `Handover for ${first}`, `${first}'s last day is ${shortDay(input.lastWorkingDay)}. Add the handover checklist and a note for ${first}.`, { userId: employee.userId, journeyId: journey.id });
   }
-  await tellOffboarding(await clearanceStaff(org), 'lifecycle_clearance', 'lifecycle_clearance', `Clearance: ${employee.name}`, `Last day ${shortDay(input.lastWorkingDay)}. Your clearance item is on the Offboarding board.`, { userId: employee.userId });
+  // IT, Admin and Finance (clearance staff) see their clearance items on the dashboard's Offboarding board: no app push.
   return { journeyId: journey.id, exit };
 }
 
@@ -773,8 +776,9 @@ export async function sendNudge(actorUserId: string, employeeUserId: string, bod
     } else {
       const staff = await clearanceStaff(actor.org, team);
       if (!staff.length) throw new LifecycleError(409, `No one is set as ${TEAM_LABEL[team]} clearance staff. Set it in People › Accesses.`);
-      send = () => tell(staff, 'lifecycle_clearance_nudge', `Clearance: ${user.name}`, `${c.label} is still open. Last day ${day}.`, { userId: employeeUserId, destination: 'lifecycle_offboarding_board' },
-        { subject: `Clearance reminder: ${user.name}`, body: `Hi {firstName},\n\n${c.label} for ${user.name} is still open. Their last working day is ${longDay(e.lastWorkingDay)}.\n\nTick it on the Offboarding board in the HR dashboard once it is done.` });
+      // They work from the dashboard: the email only, no app push or inbox row.
+      send = () => tell(staff, 'lifecycle_clearance_nudge', `Clearance: ${user.name}`, `${c.label} is still open. Last day ${day}.`, { userId: employeeUserId },
+        { subject: `Clearance reminder: ${user.name}`, body: `Hi {firstName},\n\n${c.label} for ${user.name} is still open. Their last working day is ${longDay(e.lastWorkingDay)}.\n\nTick it on the Offboarding board in the HR dashboard once it is done.` }, true);
     }
   }
   // Once per item per day: the day's key goes on the exit atomically, so two clicks send one reminder.
@@ -1617,8 +1621,7 @@ export async function runOffboardingJobs(now = new Date()) {
       const gratuityTask = await journeyTasks().findOne({ journeyId, systemKey: 'gratuity' }, { projection: { _id: 0, dueAt: 1 } });
       const gratuityDue = keyOfInstant(gratuityTask?.dueAt ?? null) ?? addDays(e.lastWorkingDay, 30);
       if (pushHours && today >= gratuityDue && joined && serviceYears(joined, e.lastWorkingDay).completed >= 5 && !fired.has('gratuity_due') && (await fire('gratuity_due'))) {
-        const days = daysFromTo(e.lastWorkingDay, gratuityDue);
-        await tellOffboarding(await clearanceStaff(u.org), 'lifecycle_gratuity_due', 'lifecycle_clearance', `Gratuity due: ${u.name}`, `Gratuity is due within ${days} ${days === 1 ? 'day' : 'days'} of the last day (${shortDay(e.lastWorkingDay)}).`, { userId: u.userId });
+        // Marked once; the Offboarding board shows it. IT, Admin and Finance work from the dashboard: no app push.
         counts.gratuityDue++;
       }
     } catch (error) {
