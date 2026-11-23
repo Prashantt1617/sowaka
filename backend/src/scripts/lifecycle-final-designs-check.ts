@@ -548,6 +548,99 @@ async function main() {
   eq('…and a design task taps through (Looks good)', (await joiner.joinerTaskAction(me('j3', 'Rahul Verma'), shift.id, { action: 'looks_good' })).tasks.find((t) => t.id === shift.id)?.state, 'done');
   eq('Again: nothing more to add', (await engine.adoptTemplateDesign(oldJ.id, { dry: true })).added.length, 0);
 
+  // ───────────────────────────────────────────── the automatic Day-1 pass
+  section('Day-1 pass: made by the server at Tj − 7 from the template');
+  const autoPass = await import('../services/lifecycle/day1PassAuto');
+  const board = await import('../services/lifecycle/board');
+  const { lifecycleMeetings, letters: lettersCol } = await import('../config/db');
+  const emails = await import('../services/lifecycle/emails');
+  const portalSvc = await import('../services/lifecycle/portal');
+  const nowAt = new Date();
+  const preJoin = async (name: string, tj: string) => {
+    const J = await engine.createOnboardingJourney(ORG, 'hr', { candidate: { name, personalEmail: `${name.split(' ')[0].toLowerCase()}@mail.test` } as never, tj, managerUserId: 'mgr', department: 'Operations' });
+    await journeys().updateOne({ id: J.id }, { $set: { status: 'docs_approved', buddyUserId: 'meera' } });
+    return J.id;
+  };
+  const P1 = await preJoin('Arjun Nair', rules.addDaysKey(today, 12));
+  const P2 = await preJoin('Bela Roy', rules.addDaysKey(today, 5));   // already inside the week, no pass yet
+  eq('More than a week away: no pass yet', [await autoPass.ensureAutoDay1Pass(await engine.loadJourney(P1), nowAt), (await engine.loadJourney(P1)).day1Pass], [null, undefined]);
+  await portalSvc.runPortalJobs(nowAt);
+  const autoMade = (await engine.loadJourney(P2)).day1Pass!;
+  ok('Inside the week with no pass: the next job run makes it, marked automatic', !!autoMade?.auto?.at && autoMade.date === rules.addDaysKey(today, 5), autoMade);
+  eq('…from the template: reporting time, place, map link, who to ask for (HR), manager, buddy',
+    [autoMade.reportingTime, autoMade.place, autoMade.mapLink, autoMade.askFor?.name, autoMade.managerName, autoMade.buddyName],
+    ['09:30', 'Reception, Pune office', 'https://www.google.com/maps/search/?api=1&query=18.52,73.85', 'Ritu Sharma', 'Sunny Kapoor', 'Meera Joshi']);
+  eq('…the agenda: the template’s Day-1 meetings, one after another from the reporting time, with who',
+    autoMade.agenda?.map((a) => `${a.time} ${a.title} · ${a.with}`), ['10:00 Welcome and documents · Ritu Sharma', '10:30 First goals · Sunny Kapoor', '11:00 How the team works · Meera Joshi']);
+  ok('…its lines are the template’s (tpl- ids, no task of their own)', autoMade.agenda!.every((a) => a.id!.startsWith('tpl-') && a.taskKey === null), autoMade.agenda);
+  ok('…and an HR contact', !!autoMade.hrContact?.name, autoMade.hrContact);
+  eq('Still more than a week away after the job: none for the other joiner', (await engine.loadJourney(P1)).day1Pass, undefined);
+  const passRead = await portalSvc.portalPass(await engine.loadJourney(P2), nowAt);
+  eq('The portal’s pass reads it (manager named as now)', [passRead.date, passRead.reportingTime, passRead.place, passRead.managerName, passRead.agenda?.length], [rules.addDaysKey(today, 5), '09:30', 'Reception, Pune office', 'Sunny Kapoor', 3]);
+  eq('Run again: nothing changes (same pass, same day made)', [await autoPass.ensureAutoDay1Pass(await engine.loadJourney(P2), new Date(nowAt.getTime() + 3_600_000)), String((await engine.loadJourney(P2)).day1Pass?.auto?.at)], [null, String(autoMade.auto!.at)]);
+  await board.updateJourneyByHr(ORG, P2, { buddyUserId: 'rohan' });
+  eq('A new buddy: the automatic pass names them at once', (await engine.loadJourney(P2)).day1Pass?.buddyName, 'Rohan Das');
+  await engine.moveTj(P2, rules.addDaysKey(today, 6));
+  const moved = (await engine.loadJourney(P2)).day1Pass;
+  eq('The joining date moves within the week: the pass follows it (still automatic)', [moved?.date, !!moved?.auto], [rules.addDaysKey(today, 6), true]);
+  await engine.moveTj(P2, rules.addDaysKey(today, 20));
+  eq('…moves more than a week away: cleared, to be made again at the new Tj − 7', (await engine.loadJourney(P2)).day1Pass, undefined);
+  await engine.moveTj(P2, rules.addDaysKey(today, 4));
+  await autoPass.makeAutoDay1Passes([ORG], nowAt);
+  ok('…and made again once inside the week', (await engine.loadJourney(P2)).day1Pass?.date === rules.addDaysKey(today, 4) && !!(await engine.loadJourney(P2)).day1Pass?.auto);
+  await board.updateJourneyByHr(ORG, P2, { day1Pass: { ...(await engine.loadJourney(P2)).day1Pass, reportingTime: '08:45' } });
+  const hrPass = (await engine.loadJourney(P2)).day1Pass!;
+  eq('HR edits it: HR’s pass now (no automatic mark), HR’s time kept', [hrPass.auto, hrPass.reportingTime, hrPass.place], [undefined, '08:45', 'Reception, Pune office']);
+  await portalSvc.runPortalJobs(new Date(nowAt.getTime() + 2 * 3_600_000));
+  await engine.moveTj(P2, rules.addDaysKey(today, 3));
+  const afterHr = (await engine.loadJourney(P2)).day1Pass!;
+  eq('…the job and a moved joining date leave HR’s pass alone', [afterHr.auto, afterHr.reportingTime, afterHr.date], [undefined, '08:45', rules.addDaysKey(today, 4)]);
+  // Its agenda lines are the template's Day-1 meetings: they make no meeting rows of their own.
+  await engine.moveTj(P1, rules.addDaysKey(today, 2));
+  await autoPass.makeAutoDay1Passes([ORG], nowAt);
+  await journeys().updateOne({ id: P1 }, { $set: { userId: 'rohan' } });
+  await engine.syncDay1Meetings(P1);
+  eq('The automatic agenda makes no meeting rows (the template’s meetings are already the joiner’s)', [(await engine.loadJourney(P1)).day1Pass?.agenda?.length, await lifecycleMeetings().countDocuments({ journeyId: P1 })], [3, 0]);
+  await journeys().updateOne({ id: P1 }, { $unset: { userId: '' } });
+
+  // ───────────────────────────────────────────── the confirmation letter
+  section('Confirmed: the confirmation letter to the work email');
+  await users().insertOne(person('j7', 'Tara Menon', { managerUserId: 'mgr', department: 'Operations', designation: 'Counsellor', employeeId: 'SWT-077' }) as never);
+  const J7 = await mk('j7', 'Tara Menon', 'mgr', rules.addDaysKey(today, -182));
+  const HR_ACTOR = { org: ORG, userId: 'hr', name: 'Ritu Sharma', seesPay: true };
+  eq('Before the decision: no "Confirmed on" value', (await lettersSvc.mergeValues(ORG, { kind: 'confirmation', journeyId: J7 }, 'Ritu Sharma')).values.confirmedOn, '');
+  const draft = await lettersSvc.createLetter(HR_ACTOR, { kind: 'confirmation', journeyId: J7 });
+  eq('Sending before the decision to confirm is refused', await refusal(() => lettersSvc.sendConfirmationLetter(HR_ACTOR, draft.id)), 409);
+  await journeys().updateOne({ id: J7 }, { $set: { 'probation.decision': { outcome: 'confirm', decidedAt: new Date('2026-11-20T06:00:00Z'), decidedByName: 'Ritu Sharma' } } });
+  const merged7 = await lettersSvc.mergeValues(ORG, { kind: 'confirmation', journeyId: J7 }, 'Ritu Sharma');
+  eq('The letter is stamped with the decision date ("Confirmed on")', merged7.values.confirmedOn, emails.formatDay('2026-11-20'));
+  const confLetter = await lettersSvc.createLetter(HR_ACTOR, { kind: 'confirmation', journeyId: J7 });
+  eq('…kept on the letter it makes', confLetter.values.confirmedOn, emails.formatDay('2026-11-20'));
+  eq('No PDF yet: refused', await refusal(() => lettersSvc.sendConfirmationLetter(HR_ACTOR, confLetter.id)), 409);
+  const { PDFDocument: PdfDoc } = await import('pdf-lib');
+  const pdfDoc = await PdfDoc.create();
+  pdfDoc.addPage();
+  await lettersSvc.uploadLetterPdf(HR_ACTOR, confLetter.id, { originalname: 'Confirmation letter – Tara Menon.pdf', buffer: Buffer.from(await pdfDoc.save()) });
+  await users().updateOne({ userId: 'j7' }, { $unset: { email: '' } });
+  const noEmail = await lettersSvc.sendConfirmationLetter(HR_ACTOR, confLetter.id).then(() => null, (e: { statusCode?: number; message?: string }) => e);
+  ok('No work email on the account: a clear refusal', noEmail?.statusCode === 409 && /no work email/.test(noEmail.message ?? ''), noEmail);
+  await users().updateOne({ userId: 'j7' }, { $set: { email: 'Tara.Menon@check.test' } });
+  eq('Another company’s HR cannot send it', await refusal(() => lettersSvc.sendConfirmationLetter({ ...HR_ACTOR, org: 'someone-else' }, confLetter.id)), 404);
+  emails.clearLifecycleOutbox();
+  const sentConf = await lettersSvc.sendConfirmationLetter(HR_ACTOR, confLetter.id);
+  const confMails = emails.lifecycleOutbox().filter((m) => m.subject === 'Your confirmation letter');
+  eq('Sent to the work email (their account’s), with the PDF', [sentConf.sentTo, confMails.length, confMails[0]?.to, confMails[0]?.attachments?.length], ['tara.menon@check.test', 1, 'tara.menon@check.test', 1]);
+  ok('…the mail says when they were confirmed', (confMails[0]?.html ?? '').includes(`confirmed on ${emails.formatDay('2026-11-20')}`), confMails[0]?.html?.slice(0, 600));
+  eq('Stored on the journey as the confirmation letter', (await engine.loadJourney(J7)).probation?.decision?.letterId, confLetter.id);
+  const panelLetter = (await lettersSvc.journeyLettersView(J7)).find((l) => l.id === confLetter.id);
+  eq('The panel reads it: sent, to whom', [panelLetter?.state, panelLetter?.sentTo, !!panelLetter?.pdfFileId], ['sent', 'tara.menon@check.test', true]);
+  const extensionLetter = await lettersSvc.createLetter(HR_ACTOR, { kind: 'extension', journeyId: J7 });
+  eq('Not a confirmation letter: refused', await refusal(() => lettersSvc.sendConfirmationLetter(HR_ACTOR, extensionLetter.id)), 400);
+  await new Promise((r) => setTimeout(r, 5));
+  const resent = await lettersSvc.sendConfirmationLetter(HR_ACTOR, confLetter.id);
+  ok('Resend: the same letter again, a second mail', resent.sentAt > sentConf.sentAt && emails.lifecycleOutbox().filter((m) => m.subject === 'Your confirmation letter').length === 2
+    && (await lettersCol().countDocuments({ journeyId: J7, kind: 'confirmation', 'email.sentAt': { $exists: true } })) === 1);
+
   await closeDb();
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

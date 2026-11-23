@@ -605,6 +605,11 @@ export async function updateJourneyByHr(org: string, journeyId: string, body: Re
   if (set.buddyUserId) await completeTask(journeyId, 'assign_buddy', { name: 'HR' });
   if (rematerialise) await rematerialiseDraft(journeyId);
   if (set.day1Pass || (set.managerUserId && set.managerUserId !== j.managerUserId)) await syncDay1Meetings(journeyId);
+  // The automatic Day-1 pass names the new manager or buddy at once (HR's own pass is left as typed).
+  if (!set.day1Pass && j.day1Pass?.auto && (set.managerUserId || set.buddyUserId || unset.buddyUserId !== undefined)) {
+    const { ensureAutoDay1Pass } = await import('./day1PassAuto');
+    await ensureAutoDay1Pass(await loadJourney(journeyId));
+  }
   const fresh = await refreshJourney(journeyId);
   return { journey: sanitiseJourney(fresh) };
 }
