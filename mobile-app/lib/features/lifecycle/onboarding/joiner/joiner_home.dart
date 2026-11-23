@@ -244,7 +244,9 @@ class _HeroState extends State<_Hero> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
               child: Row(
                 children: [
-                  for (final (i, s) in d.steps.indexed) ...[
+                  // Day 1 to Month 1 only: the Onboarding tab goes away after
+                  // Month 1 (24 Nov, HR), so later steps are not shown.
+                  for (final (i, s) in d.steps.take(d.steps.indexWhere((x) => x.key == 'm1') + 1 > 0 ? d.steps.indexWhere((x) => x.key == 'm1') + 1 : d.steps.length).indexed) ...[
                     if (i > 0) const SizedBox(width: 6),
                     _StepChip(
                       key: _key(s.key),

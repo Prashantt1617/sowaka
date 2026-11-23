@@ -227,9 +227,9 @@ class JoinerLens {
   // ── Sowaka tour ───────────────────────────────────────────────────────────
 
   /// Day 1 and Week 1 (looked at), and Month 1 while a lesson is left.
-  /// Shown at every step (24 Nov, HR: show it "as done state" rather than
-  /// hide it): the next lesson, or all done.
-  bool get showsTour => d.tour.lessons.isNotEmpty && (at <= 1 || isNow);
+  /// Day 1 and Week 1 (24 Nov, HR: hidden from Month 1): the next lesson, or
+  /// all done (lessons still replay from it).
+  bool get showsTour => d.tour.lessons.isNotEmpty && (isNow ? current <= 1 : at <= 1);
 
   // ── Devices, profile, check-ins ───────────────────────────────────────────
 
