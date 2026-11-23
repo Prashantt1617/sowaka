@@ -379,8 +379,6 @@ export interface Journey {
   teamTasks?: Record<string, TeamTaskTick>;
   /** Final designs: when the joiner watched / read each watch-list item or training (template row id). */
   watched?: Record<string, Date>;
-  /** Final designs: HR's and IT's checks on their task screens (by team key). */
-  staffChecks?: Record<string, { checks?: Record<string, string>; accessCardNo?: string; /** The kit checklist boxes ticked (positions). */ ticks?: number[]; at: Date; byName?: string }>;
   /** Final designs: fill-in form answers saved to the profile (by journey task id). */
   forms?: Record<string, { answers: Array<{ questionId: string; value: string | null }>; sentAt: Date }>;
   /** Timed jobs already fired for this journey (each key once). */

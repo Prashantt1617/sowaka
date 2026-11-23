@@ -19,8 +19,6 @@ import { onRemoteDrop, publishDrop } from './cache-bus';
 export type SwrKind = 'ool'
   // Employee lifecycle and Suwi (lifecycle/readCache.ts): dropped on every write, see there.
   | 'lc-board-data' | 'off-board-data' | 'suwi-notices'
-  // The app's HR / IT & admin Actions tile (lifecycle/staffApp.ts staffTile), per person.
-  | 'lc-staff-tile'
   // Teams › Joiners for teammates (lifecycle/teamNewJoiners.ts): the company's new joiners today, shared by every viewer.
   | 'lc-new-joiners'
   // Suwi's company-wide inputs (suwi/orgData.ts): the waiting requests and today's lists, shared by every viewer.

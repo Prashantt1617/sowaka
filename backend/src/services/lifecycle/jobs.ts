@@ -18,7 +18,7 @@ import type { Journey, JourneyTask, SystemTaskKey } from '../../models/lifecycle
 import { logger } from '../../utils/logger';
 import { addDaysKey, companyTimeZone, localHour, probationMonthEnd, probationMonthStart, todayKey, keyOfDay } from './dueRules';
 import { scopedJourneys, scriptScope } from './scriptScope';
-import { finishTaskById, isJoined, refreshJourney, type Destination, setJourneyStatus, taskLate, tasksOf, tell, totalProbationMonths } from './engine';
+import { finishTaskById, isJoined, isStaffRole, refreshJourney, type Destination, setJourneyStatus, taskLate, tasksOf, tell, totalProbationMonths } from './engine';
 
 type Job = (now: Date) => Promise<unknown>;
 const extraJobs = new Map<string, Job>();
@@ -106,12 +106,12 @@ async function meetingReminders(org: string, now: Date): Promise<number> {
     };
     // A design meeting (one with a row key) opens the joiner's home for them; the 20 Nov meeting card otherwise.
     await tell(m.attendeeUserIds.filter((u) => u === joinerId), { ...push, destination: m.rowKey ? 'lifecycle_onboarding' : 'lifecycle_meeting' });
-    // Teammates: HR / IT & admin their person page, the others the Teams person page.
+    // Teammates: the Teams person page. HR and IT & admin work from the dashboard: no push for them.
     const p = j ? await place(j as Journey, now) : null;
     const role = p && m.rowKey ? [...p.meetings, ...p.team].find((r) => r.rowKey === m.rowKey)?.role : undefined;
     for (const u of m.attendeeUserIds.filter((x) => x !== joinerId)) {
       const target = p ? teammatePushTarget(p.people, u, role) : { destination: 'lifecycle_joiner' as const };
-      await tell([u], { ...push, destination: target.destination, data: { ...push.data, ...(target.as ? { as: target.as } : {}) } });
+      if (target) await tell([u], { ...push, destination: target.destination });
     }
     sent += 1;
   }
@@ -159,10 +159,12 @@ export async function lateTeamRowReminders(j: Journey, tasks: JourneyTask[], tod
     if (!r.dueOn || r.dueOn >= today || !r.role || rowDone(r, j, tasks, p.design)) continue;
     const owner = p.people[r.role as keyof typeof p.people];
     if (!owner || !(await claim(j.id, `team-late:${r.rowKey}`))) continue;
+    // HR's and IT & admin's late rows show on the dashboard only: no push.
     const target = teammatePushTarget(p.people, owner, r.role);
+    if (!target) continue;
     await tell([owner], {
       scenario: 'lifecycle_team_task_late', destination: target.destination, title: 'A task is late', body: teamRowTitle(r, first),
-      data: { journeyId: j.id, rowKey: r.rowKey, name, ...(target.as ? { as: target.as } : {}) },
+      data: { journeyId: j.id, rowKey: r.rowKey, name },
     });
     sent += 1;
   }
@@ -247,9 +249,7 @@ async function journeyDayJobs(j: Journey, tasks: JourneyTask[], today: string, c
     await tell([j.managerUserId], {
       scenario: 'lifecycle_confirmation_window', destination: 'lifecycle_joiner', title: `Final month for ${first}`, body: 'Talk to HR about confirming or extending their probation', data,
     });
-    // HR records the decision: their HR contact is told too (the board also flags Decide).
-    const hr = (await users().findOne({ userId: j.userId }, { projection: { _id: 0, hrPrimaryUserId: 1 } }))?.hrPrimaryUserId;
-    await tell([hr], { scenario: 'lifecycle_confirmation_window_hr', title: `Decide on ${name}'s probation`, body: 'Their final month has started: confirm, extend or not confirm on the Onboarding board.', data });
+    // HR records the decision on the dashboard (the board flags Decide): no app push to HR.
   });
 }
 
@@ -281,7 +281,8 @@ async function revealReady(j: Journey, tasks: JourneyTask[], result: JobsResult)
 async function overdueReminders(j: Journey, tasks: JourneyTask[], today: string, now: Date): Promise<number> {
   let sent = 0;
   for (const task of tasks) {
-    if (!task.ownerUserId || task.remindedAt || !taskLate(task, today)) continue;
+    // HR's, IT's, Admin's and Finance's tasks are worked on the dashboard: no app push for them.
+    if (!task.ownerUserId || task.remindedAt || !taskLate(task, today) || isStaffRole(task.ownerRole)) continue;
     const claimed = await journeyTasks().updateOne({ id: task.id, remindedAt: { $exists: false } }, { $set: { remindedAt: now } });
     if (!claimed.modifiedCount) continue;
     await tell([task.ownerUserId], {

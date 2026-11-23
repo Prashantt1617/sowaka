@@ -253,7 +253,7 @@ class OnboardingTile {
 /// What `/lifecycle/me` says: whether the lifecycle is on for the company at
 /// all, and the person's onboarding and offboarding, when they have them.
 class LifecycleMe {
-  const LifecycleMe({this.enabled = false, this.onboarding, this.offboarding = const {}, this.staff = const {}});
+  const LifecycleMe({this.enabled = false, this.onboarding, this.offboarding = const {}});
 
   factory LifecycleMe.fromJson(Map<String, dynamic> json) {
     final onboarding = _map(json['onboarding']);
@@ -261,7 +261,6 @@ class LifecycleMe {
       enabled: _bool(json['enabled']),
       onboarding: onboarding.isEmpty ? null : OnboardingMe.fromJson(onboarding),
       offboarding: _map(json['offboarding']),
-      staff: _map(json['staff']),
     );
   }
 
@@ -273,10 +272,6 @@ class LifecycleMe {
   /// Kept as sent; the offboarding screens read it.
   final Map<String, dynamic> offboarding;
 
-  /// HR or IT & admin for someone joining: their Actions › Onboarding tile
-  /// (FINAL-DESIGNS.md §4.4 `StaffTile`), kept as sent; staff_api.dart reads it.
-  final Map<String, dynamic> staff;
-
   /// The Action tile and the profile's Onboarding tab.
   bool get showsOnboarding =>
       enabled && onboarding != null && onboarding!.tileVisible && onboarding!.journeyId.isNotEmpty;
@@ -285,7 +280,6 @@ class LifecycleMe {
     enabled: enabled,
     onboarding: onboarding?.withProgress(progress),
     offboarding: offboarding,
-    staff: staff,
   );
 }
 

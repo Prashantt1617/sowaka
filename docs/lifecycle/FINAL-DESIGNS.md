@@ -377,7 +377,12 @@ department or anyone above the manager, the reporting line (`line`; only the hea
 others read-only). Meera (manager of one, buddy of another) gets both in one list. HR and IT & admin never
 see Teams › Joiners.
 
-### 4.4 HR and IT & admin in the app (H) — `/lifecycle/staff/*` (new)
+### 4.4 HR and IT & admin in the app (H) — `/lifecycle/staff/*` (REMOVED 23 Nov 2026)
+
+> **Removed.** HR and IT & admin work onboarding and offboarding from the dashboard only. `/lifecycle/me` no
+> longer sends `staff`, every `/lifecycle/staff/*` route answers 404, `staffApp.ts` and the app's staff screens
+> are gone, and HR / IT & admin (and offboarding clearance staff) get no app push or inbox row about onboarding or
+> offboarding tasks (emails are kept). The rest of this section is history.
 
 Who: the template's `assignees.hrUserId` (else the joiner's `hrPrimaryUserId`, else the offer's creator) is
 HR for that joiner; `assignees.itUserId` is IT & admin. Someone who is both picks with `?as=hr|it`.
@@ -624,7 +629,7 @@ S = `GET /lifecycle/staff/joiners/:id`, O = `GET /lifecycle/staff/onboarding`, D
 ## 8b. Integration (branch fd-all)
 
 - **Push taps.** `data.destination` for a teammate's push comes from the row's role (`designRows.teammatePushTarget`):
-  HR and IT & admin get `lifecycle_staff` with `data.as` (`hr` | `it`) and open their person page; the manager, buddy,
+  HR and IT & admin get no push at all (dashboard only; `lifecycle_staff` was removed 23 Nov 2026); the manager, buddy,
   someone senior and head of department get `lifecycle_joiner` (the Teams person page); the joiner's own get
   `lifecycle_onboarding` (Actions › Onboarding). Used by late-teammate reminders (`lifecycle_team_task_late`, + `name`),
   meeting invites (`lifecycle_meeting_invite`) and meeting reminders (`lifecycle_meeting_soon`).

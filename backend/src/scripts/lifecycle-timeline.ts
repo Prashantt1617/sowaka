@@ -848,7 +848,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   let ravi = await users().findOne({ userId: 'ravi' });
   ok('the live exit is recorded: resigned, Tl, notice from the day sent, the team moves the day after', ravi?.exit?.kind === 'resigned' && ravi.exit.lastWorkingDay === TL && ravi.exit.noticeFrom === '2027-07-05' && ravi.exit.teamMove === 'day_after' && ravi.lifecycleStatus === 'notice', ravi?.exit);
   ok('the offboarding journey is created (accepted, Tl)', (await journey(OR)).status === 'accepted' && (await journey(OR)).tl === TL && ravi?.exit?.offboarding?.journeyId === OR);
-  await expectPushes('HR accepted: Ravi (his page), the manager (handover checklist), IT and Finance (clearance)', ['lifecycle_offboarding_open>ravi', 'lifecycle_handover_checklist>mgr', 'lifecycle_clearance>it', 'lifecycle_clearance>fin']);
+  await expectPushes('HR accepted: Ravi (his page), the manager (handover checklist); IT and Finance work from the dashboard (no push)', ['lifecycle_offboarding_open>ravi', 'lifecycle_handover_checklist>mgr']);
   meR = await app.lifecycleMe({ userId: 'ravi', name: 'Ravi Menon', org: ORG }) as typeof meR;
   eq('/lifecycle/me: accepted, the page shows, Tl', [meR.offboarding?.status, meR.offboarding?.pageVisible, meR.offboarding?.tl], ['accepted', true, TL]);
   let page = await off.myOffboarding('ravi');
@@ -908,7 +908,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   const meT = await app.lifecycleMe({ userId: 'tom', name: 'Tarun', org: ORG }) as typeof meR;
   eq('/lifecycle/me: no page', meT.offboarding?.pageVisible, false);
   eq('the off-boarding page is refused', (await refusal(() => off.myOffboarding('tom'))).status, 404);
-  await expectPushes('Tarun hears nothing in the app; the manager and the clearance staff do', ['lifecycle_handover_checklist>mgr', 'lifecycle_clearance>it', 'lifecycle_clearance>fin']);
+  await expectPushes('Tarun hears nothing in the app; the manager does (the clearance staff work from the dashboard)', ['lifecycle_handover_checklist>mgr']);
   oc = await offCard('tom');
   eq('board: Exit › Settlement due', [oc?.tab, oc?.column], ['exit', 'settlement_due']);
 
@@ -999,7 +999,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   eq('before Tl + 30: no gratuity push', allPushes.filter((p) => p.scenario === 'lifecycle_gratuity_due').length, 0);
   await advanceTo(T('2027-09-05', '13:30'), 'sparse');
   const pG = await newPushes();
-  eq('Sun 5 Sep (Tl + 30): gratuity due, to the clearance staff once', pG.filter((x) => x.startsWith('lifecycle_gratuity_due')), ['lifecycle_gratuity_due>fin', 'lifecycle_gratuity_due>it']);
+  eq('Sun 5 Sep (Tl + 30): gratuity due shows on the board; no push to the clearance staff', pG.filter((x) => x.startsWith('lifecycle_gratuity_due')), []);
   await advanceTo(T('2027-09-06', '11:00'), 'sparse');
   await off.offboardingTaskDone('fin', 'ravi', 'gratuity', {});
   await off.offboardingTaskDone('hr', 'ravi', 'relieving_letter', {});
