@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { cachedLifecycle, refreshLifecycle, setBoardPatch, type BoardWrites } from './readCache';
 import { orgsKeeping, patchSwr } from '../swr-cache';
-import { candidateDocuments, dateChangeRequests, journeys, journeyTasks, offers, surveyResponses, users } from '../../config/db';
+import { authSessions, candidateDocuments, dateChangeRequests, deviceTokens, journeys, journeyTasks, offers, surveyResponses, users } from '../../config/db';
 import type {
   Day1Pass, Journey, JourneyFlag, JourneyTask, OnboardingBoardColumn, OnboardingBoardTab, OwnerRole, SurveyKind,
 } from '../../models/lifecycle.model';
@@ -503,11 +503,36 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
   // The joining and reporting details THIS joiner has (their own copy of the template, as the portal's Day-1 pass and the
   // teammates' pages read it): a template edit after they started must not show here either.
   const design = await import('./design');
-  const reporting = await design.reportingFor(j);
+  const [reporting, appSignIn] = await Promise.all([design.reportingFor(j), appSignInOf(j.userId ?? j.appAccess?.userId)]);
   return {
     journey, tasks: views, documents, letters, offer, dateRequests, probation: probationView, batch, viewer, teamRows: await (await import('./teamTasks')).teamRowsForHr(j),
     ...(reporting ? { reporting } : {}),
+    appSignIn,
   };
+}
+
+/** Whether a joiner's account has signed in (Joining day's "Logged into the app"), and when first and last. */
+export interface AppSignIn { signedIn: boolean; firstAt?: string; lastAt?: string }
+
+/**
+ * Read from what a sign-in leaves behind: the account's lastLoginAt (stamped on every code sign-in), its
+ * sessions (one per sign-in, kept until they expire) and a phone the app registered for push (iOS / Android).
+ * The first sign-in is the earliest of those, so a session that has expired may make it later than it was.
+ * No account (not joined, no app access given): not signed in.
+ */
+export async function appSignInOf(userId: string | undefined): Promise<AppSignIn> {
+  if (!userId) return { signedIn: false };
+  const [user, session, phone] = await Promise.all([
+    users().findOne({ userId }, { projection: { _id: 0, lastLoginAt: 1 } }),
+    authSessions().find({ userId }, { projection: { _id: 0, createdAt: 1 } }).sort({ createdAt: 1 }).limit(1).next(),
+    deviceTokens().find({ userId, platform: { $in: ['ios', 'android'] } }, { projection: { _id: 0, createdAt: 1, updatedAt: 1 } }).sort({ createdAt: 1 }).limit(1).next(),
+  ]);
+  const at = (d: unknown) => (d instanceof Date && !Number.isNaN(d.getTime()) ? d : undefined);
+  const times = [at(user?.lastLoginAt), at(session?.createdAt), at(phone?.createdAt)].filter((d): d is Date => !!d);
+  if (!times.length) return { signedIn: false };
+  const first = new Date(Math.min(...times.map((d) => d.getTime())));
+  const last = at(user?.lastLoginAt) ?? new Date(Math.max(...times.map((d) => d.getTime())));
+  return { signedIn: true, firstAt: first.toISOString(), lastAt: last.toISOString() };
 }
 
 /** A candidate document without its files: what someone outside HR may see. */

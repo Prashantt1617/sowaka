@@ -244,6 +244,8 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
       : journey.tj && PRE_JOIN.has(status) ? (addDays(journey.tj, -7) > todayKey() ? `Made automatically on ${shortDay(addDays(journey.tj, -7))}` : 'Being made from the template')
         : 'Not filled in';
   const pendingDates = dateRequests.filter((r) => r.status === 'pending').length;
+  // Joining day's "Logged into the app": Yes with the first sign-in day, or No (also with no account yet).
+  const appSignIn = data.appSignIn;
 
   // Each step's line under its name.
   const sub = (i: number, state: 'done' | 'current' | 'todo'): { text: string; red?: boolean } => {
@@ -357,7 +359,9 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
               ['Joining date', journey.tj ? longDay(journey.tj) : 'Not set'], ['When', journey.tj ? weekOf(journey.tj) : ''],
               ['Reporting time', pass?.reportingTime ?? reporting?.time ?? 'Not set'], ['Reporting place', pass?.place ?? (pass?.meetingLink ? 'Online' : reporting?.place ?? 'Not set')],
               ['Report to', journey.managerName ?? 'Not picked'], ['Buddy', journey.buddyName ?? 'Not picked'],
-              ['Day-1 pass', passLine], ['Template', template?.name],
+              ['Day-1 pass', passLine],
+              ['Logged into the app', appSignIn ? (appSignIn.signedIn ? `Yes${appSignIn.firstAt ? ` · ${shortDay(appSignIn.firstAt)}` : ''}` : 'No') : ''],
+              ['Template', template?.name],
               ['Joining with', batch.length ? batch.map((b) => b.name).join(', ') : ''],
             ]} />
             {dateRequests.length > 0 && <Sub>Joining date requests{pendingDates ? ` · ${pendingDates} waiting for you` : ''}</Sub>}

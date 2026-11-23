@@ -446,6 +446,8 @@ export interface JourneyDetail {
   teamRows?: Array<{ id: string; title: string; owner: 'manager' | 'buddy' | 'head_of_department'; step: string; done: boolean; doneByName?: string; doneAt?: string }>;
   /** The joining and reporting details this joiner has (their copy of the template; absent when the template has none). */
   reporting?: DesignReporting;
+  /** Whether their account (once joined, or app access given before) has signed in to the app, and when first and last. */
+  appSignIn?: { signedIn: boolean; firstAt?: string; lastAt?: string };
 }
 
 export interface TemplateJourney {
