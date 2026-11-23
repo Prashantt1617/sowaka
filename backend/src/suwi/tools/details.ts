@@ -9,6 +9,7 @@ import type { EmployeeDetailsInput } from '../../services/admin.service';
 import { defineExecutor, propose } from '../proposals';
 import { defineTools, str } from '../tools';
 import { findPerson, isoDay, type Person } from './people';
+import { mayEditEmployees } from '../../middleware/admin.middleware';
 
 const LOCKED = 'Full name and work email can\'t be edited, on the profile or through Suwi.';
 const TYPES = ['full_time', 'contract', 'intern'] as const;
@@ -63,7 +64,7 @@ defineTools({
   async run(ctx, i) {
     if (['name', 'fullName', 'email', 'workEmail'].some((k) => i[k] !== undefined)) throw new Error(LOCKED);
     if (i.manager !== undefined || i.reportingManager !== undefined) throw new Error('Change the reporting manager with prepare_change_manager.');
-    if (ctx.user.canEditEmployeeDetails !== true) throw new Error('You cannot edit employee details. Ask a dashboard admin for that right in People › Accesses.');
+    if (!mayEditEmployees(ctx.user)) throw new Error('You cannot edit employee details. Ask a dashboard admin for that right in People › Accesses.');
     const person = await findPerson(ctx, i.person);
     const input: Record<string, unknown> = {};
     for (const key of Object.keys(FIELDS)) {
