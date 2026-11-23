@@ -2609,3 +2609,6 @@ input.sr-only:focus-visible + .dropzone {
     margin-top: -18px;
   }
 }
+
+/* No pinch or double-tap zoom on the portal (23 Nov): with user-scalable=no in index.html; iOS Safari also needs this and the gesture guard in main.tsx. */
+html { touch-action: pan-x pan-y; }

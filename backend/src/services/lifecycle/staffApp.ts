@@ -19,6 +19,7 @@ import { journeyDocumentsView } from './documents';
 import { companyDisplayName, companyOf } from './emails';
 import { saveMeetingRowNotes } from './joinerMeetings';
 import { DEFAULT_LETTER_TEMPLATES, fillTemplate, mergeValues, valuesWithoutPay } from './letters';
+import { cachedLifecycle } from './readCache';
 
 type Me = { userId: string; name: string; org: string };
 type StaffRole = 'hr' | 'it';
@@ -109,8 +110,17 @@ export async function staffOnboarding(me: Me, as?: unknown, now = new Date()) {
   return { viewingAs, canSwitch: roles.length > 1, cards, everyone: cards.flatMap((c) => c.people) };
 }
 
-/** `/lifecycle/me` · `staff`: the Actions tile for HR or IT & admin (none when nobody is theirs). */
+/**
+ * `/lifecycle/me` · `staff`: the Actions tile for HR or IT & admin (none when nobody is theirs).
+ * Kept per person (it reads each of their joiners whole, 4–8 s for HR with twenty joiners); any
+ * lifecycle write drops it with the board data (readCache LIFECYCLE_READ_KINDS).
+ */
 export async function staffTile(me: Me, now = new Date()) {
+  const kept = await cachedLifecycle(me.org, 'lc-staff-tile', { userId: me.userId, day: now.toISOString().slice(0, 10) }, async () => (await staffTileNow(me, now)) ?? null);
+  return kept ?? undefined;
+}
+
+async function staffTileNow(me: Me, now = new Date()) {
   let mine: Awaited<ReturnType<typeof myJourneys>>;
   try { mine = await myJourneys(me, now); } catch { return undefined; }
   if (!mine.length) return undefined;
