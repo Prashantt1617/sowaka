@@ -42,12 +42,17 @@ class JoinerCheckinsScreen extends StatelessWidget {
                       Opacity(
                         opacity: x.isSent ? 0.7 : 1,
                         child: Semantics(
-                          button: x.isOpen,
+                          button: x.isOpen || x.isSent,
                           label: '${x.title}. ${x.isSent ? 'Done' : '${plural(x.questions)} · about a minute. Start'}',
                           excludeSemantics: true,
                           child: InkWell(
                             key: ValueKey('checkin-${x.id}'),
-                            onTap: x.isOpen ? () => pushJoiner(context, c, JoinerCheckinScreen(c: c, id: x.id, title: x.title)) : null,
+                            // A sent one opens read-only: the answers as given (24 Nov, HR: "I can view anything").
+                            onTap: x.isOpen
+                                ? () => pushJoiner(context, c, JoinerCheckinScreen(c: c, id: x.id, title: x.title))
+                                : x.isSent
+                                ? () => pushJoiner(context, c, JoinerCheckinAnswersScreen(c: c, id: x.id, title: x.title))
+                                : null,
                             child: Container(
                               constraints: const BoxConstraints(minHeight: 64),
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -384,5 +389,67 @@ class _Thanks extends StatelessWidget {
       const SizedBox(height: 32),
       OnbPrimaryButton(key: const ValueKey('back-to-onboarding'), label: 'Back to onboarding', onTap: onHome),
     ],
+  );
+}
+
+
+/// A sent check-in, read-only: each question with the answer given.
+class JoinerCheckinAnswersScreen extends StatelessWidget {
+  const JoinerCheckinAnswersScreen({super.key, required this.c, required this.id, required this.title});
+
+  final JoinerController c;
+  final String id;
+  final String title;
+
+  static String answerText(CheckinQuestion q, Object? v) {
+    if (v == null || (v is String && v.trim().isEmpty)) return 'Skipped';
+    return switch (q.type) {
+      'rating' => '$v of 5',
+      'yes_no' => v == 'yes' || v == true ? 'Yes' : 'No',
+      _ => '$v',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) => JoinerScaffold(
+    c: c,
+    title: title,
+    body: (_) => FutureBuilder<JoinerCheckin>(
+      future: c.api.fetchCheckin(id),
+      builder: (context, snap) {
+        final ci = snap.data;
+        if (ci == null) {
+          return snap.hasError
+              ? Center(child: Text(onboardingErrorText(snap.error!), textAlign: TextAlign.center))
+              : const Center(child: CircularProgressIndicator());
+        }
+        return JPage(
+          children: [
+            Text(
+              ci.row.sentAt == null ? 'Your answers' : 'Sent ${onbDay(ci.row.sentAt!)}',
+              key: const ValueKey('checkin-answers'),
+              style: const TextStyle(fontSize: 13, color: OnbColors.text3),
+            ),
+            const SizedBox(height: 8),
+            JListCard(
+              children: withLines([
+                for (final q in ci.questions)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(q.text, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: OnbColors.text)),
+                        const SizedBox(height: 4),
+                        Text(answerText(q, ci.answers[q.id]), style: const TextStyle(fontSize: 14, color: OnbColors.text3)),
+                      ],
+                    ),
+                  ),
+              ]),
+            ),
+          ],
+        );
+      },
+    ),
   );
 }

@@ -287,13 +287,19 @@ class JoinerForm {
 }
 
 class JoinerCheckin {
-  const JoinerCheckin({required this.row, required this.questions});
+  const JoinerCheckin({required this.row, required this.questions, this.answers = const {}});
 
-  factory JoinerCheckin.fromJson(Map<String, dynamic> j) =>
-      JoinerCheckin(row: JoinerCheckinRow.fromJson(j), questions: [for (final q in _maps(j['questions'])) CheckinQuestion.fromJson(q)]);
+  factory JoinerCheckin.fromJson(Map<String, dynamic> j) => JoinerCheckin(
+    row: JoinerCheckinRow.fromJson(j),
+    questions: [for (final q in _maps(j['questions'])) CheckinQuestion.fromJson(q)],
+    answers: {for (final a in _maps(j['answers'])) _str(a['questionId']) ?? '': a['value']},
+  );
 
   final JoinerCheckinRow row;
   final List<CheckinQuestion> questions;
+
+  /// Once sent: each question's answer (a rating, yes/no, text; null skipped).
+  final Map<String, Object?> answers;
 }
 
 class JoinerWatch {

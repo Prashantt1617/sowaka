@@ -227,8 +227,9 @@ class JoinerLens {
   // ── Sowaka tour ───────────────────────────────────────────────────────────
 
   /// Day 1 and Week 1 (looked at), and Month 1 while a lesson is left.
-  bool get showsTour =>
-      d.tour.lessons.isNotEmpty && (at <= 1 || (isNow && d.tour.today != null && d.step == 'm1'));
+  /// Shown at every step (24 Nov, HR: show it "as done state" rather than
+  /// hide it): the next lesson, or all done.
+  bool get showsTour => d.tour.lessons.isNotEmpty && (at <= 1 || isNow);
 
   // ── Devices, profile, check-ins ───────────────────────────────────────────
 
@@ -236,9 +237,12 @@ class JoinerLens {
   bool get showsDevices => isNow && d.devices.isNotEmpty && d.step == 'd1';
 
   /// Day 1 and Week 1.
-  bool get showsProfile => isNow && d.profile.total > 0 && (d.step == 'd1' || d.step == 'w1');
+  /// At every step: to finish, or done (100%).
+  bool get showsProfile => isNow && d.profile.total > 0;
 
-  bool get showsCheckin => isNow && d.summary.checkinDueTitle != null;
+  /// At every step while the template has check-ins: the one open now, the
+  /// next one and when it opens, or all sent.
+  bool get showsCheckin => isNow && (d.checkins.isNotEmpty || d.summary.checkinDueTitle != null);
 
   /// From Month 1, while on probation: the manager's monthly KPI reviews,
   /// read in Grow.

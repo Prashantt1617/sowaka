@@ -444,7 +444,10 @@ class _Tiles extends StatelessWidget {
   Widget build(BuildContext context) {
     void open(Widget page) => unawaited(pushJoiner(context, c, page));
     final now = lens.isNow;
-    final today = lessonOf(d.tour.today) ?? lessonOf(d.tour.lessons.firstOrNull);
+    final tourDone = d.tour.lessons.isNotEmpty && d.tour.doneCount >= d.tour.lessons.length;
+    final today = lessonOf(d.tour.today) ??
+        lessonOf(d.tour.lessons.where((k) => !d.tour.done.contains(k)).firstOrNull) ??
+        lessonOf(d.tour.lessons.firstOrNull);
     final tourCount = '${d.tour.doneCount} of ${d.tour.lessons.length} done';
     final task = lens.taskTile;
     final half = <Widget>[
@@ -475,9 +478,9 @@ class _Tiles extends StatelessWidget {
           light: true,
           icon: const JIconChip(icon: Icons.explore_outlined, tint: Color(0x38FFFFFF), color: Colors.white, size: 32, iconSize: 18),
           name: 'Sowaka tour',
-          eyebrow: now ? 'UP NEXT' : lens.inLabel,
-          title: now ? (today?.title ?? '') : 'Fix a missed punch, leave and overtime',
-          meta: now ? '${today?.length ?? ''} · $tourCount' : 'A new lesson each day',
+          eyebrow: now ? (tourDone ? 'DONE' : 'UP NEXT') : lens.inLabel,
+          title: now ? (tourDone ? 'All lessons done' : (today?.title ?? '')) : 'Fix a missed punch, leave and overtime',
+          meta: now ? (tourDone ? tourCount : '${today?.length ?? ''} · $tourCount') : 'A new lesson each day',
         ),
       // "Life at …" (the portal's tile): the watch list as stories, opened
       // full screen on the first one not yet watched.
@@ -496,6 +499,10 @@ class _Tiles extends StatelessWidget {
     ];
     final ready = d.devices.where((x) => x.ready).length;
     final p = d.profile;
+    // Check-ins: the open one, else the next and when it opens, else all sent.
+    final dueCheckin = d.summary.checkinDueTitle;
+    final nextCheckin = d.checkins.where((x) => x.state == 'locked').firstOrNull;
+    final checkinsDone = dueCheckin == null && d.checkins.isNotEmpty && d.checkins.every((x) => x.state == 'sent');
     final full = <Widget>[
       if (lens.showsCheckin)
         _WideTile(
@@ -503,8 +510,18 @@ class _Tiles extends StatelessWidget {
           onTap: () => open(JoinerCheckinsScreen(c: c)),
           icon: const JIconChip.chat(tint: OnbColors.violetTint, color: OnbColors.violet, size: 48, radius: 14, iconSize: 24),
           title: 'Check-ins',
-          meta: '${d.summary.checkinDueTitle} · about a minute',
-          end: const JVerbPill('Start', filled: true),
+          meta: dueCheckin != null
+              ? '$dueCheckin · about a minute'
+              : checkinsDone
+              ? 'All ${d.checkins.length} sent'
+              : nextCheckin == null
+              ? '${d.checkins.where((x) => x.state == 'sent').length} of ${d.checkins.length} sent'
+              : '${nextCheckin.title}${nextCheckin.opensOn == null ? '' : ' · opens ${onbDay(nextCheckin.opensOn!)}'}',
+          end: dueCheckin != null
+              ? const JVerbPill('Start', filled: true)
+              : checkinsDone
+              ? const Icon(Icons.check_circle_rounded, color: OnbColors.successDot, size: 24)
+              : null,
         ),
       // Only when the template has trainings, under the company's name for them.
       if (lens.showsTrainings)
