@@ -39,6 +39,7 @@ import {
   listRegularizations,
   listReimbursements,
   removeEmployeeDocumentHandler,
+  listEmployeeDocumentsHandler,
   updateCompanySettingsHandler,
   updateOrganisationProfileHandler,
   updateEmployeeDetails,
@@ -155,7 +156,9 @@ adminRouter.delete('/employees/:userId/calendar/:date', clearCalendarDayHandler)
 adminRouter.put('/employees/:userId/calendar/:date/marks', setMarkRemovedHandler);
 // Every payslip a payroll run has produced for them.
 adminRouter.get('/employees/:userId/payslips', employeePayslipsHandler);
-// Documents filed against an employee — offer letter, ID proof and the like.
+// Documents filed against an employee — offer letter, ID proof and the like. The list (and each
+// change's answer) also carries their onboarding uploads, marked `source: 'onboarding'`.
+adminRouter.get('/employees/:userId/documents', listEmployeeDocumentsHandler);
 adminRouter.post('/employees/:userId/documents', uploadEmployeeDocumentFile, addEmployeeDocumentHandler);
 adminRouter.delete('/employees/:userId/documents/:documentId', removeEmployeeDocumentHandler);
 adminRouter.get('/games', adminListGames);

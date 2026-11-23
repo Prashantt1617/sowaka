@@ -240,7 +240,8 @@ export interface DateRequestView {
 export type ProfileSectionKey = 'personal' | 'contact' | 'emergency' | 'bank' | 'education' | 'ids' | 'photo';
 export interface ProfileAddress { line: string; city: string; state: string; pin: string }
 export interface ProfileView {
-  sections: Array<{ key: ProfileSectionKey; title: string; done: boolean; documentIds: string[] }>;
+  /** `locked`: HR has approved the section; it is read-only here until HR unlocks it. */
+  sections: Array<{ key: ProfileSectionKey; title: string; done: boolean; locked?: boolean; documentIds: string[] }>;
   done: number;
   total: number;
   profile: {

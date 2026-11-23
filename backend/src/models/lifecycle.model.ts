@@ -388,6 +388,11 @@ export interface Journey {
   aboutYou?: AboutYou;
   /** The portal's Employee profile (services/lifecycle/profile.ts), editable until Tj − 1. */
   profile?: CandidateProfile;
+  /**
+   * The profile sections HR has approved on the dashboard (services/lifecycle/profileLock.ts): an
+   * approved section is locked for the candidate (portal and app) until HR unlocks it.
+   */
+  profileApprovals?: Partial<Record<ProfileSectionKey, ProfileApproval>>;
   /** Last time the candidate did anything on the portal (for the Quiet flag). */
   lastActivityAt?: Date;
   closedAt?: Date;
@@ -587,6 +592,11 @@ export interface CandidateProfile {
   photoFileId?: string;
   savedAt?: Date;
 }
+
+/** The Employee profile's sections (services/lifecycle/profile.ts; the photo is no longer a step). */
+export type ProfileSectionKey = 'personal' | 'contact' | 'emergency' | 'bank' | 'education' | 'ids' | 'photo';
+/** Who approved a profile section, and when. */
+export interface ProfileApproval { byUserId: string; byName: string; at: Date }
 
 export interface EmergencyContact { name: string; relation: 'Parent' | 'Partner' | 'Sibling' | 'Friend'; phone: string; altPhone?: string }
 export interface AboutYou {

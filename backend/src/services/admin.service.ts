@@ -59,7 +59,11 @@ const EMPLOYEE_LIST_FIELDS = [
   'employeeType', 'joiningDate', 'birthday', 'gender', 'phone', 'isDirector',
 ];
 
-export async function listAllEmployeesForAdmin(adminUserId: string) {
+/**
+ * `viewer` (the dashboard route passes it): each employee's documents also carry their onboarding
+ * uploads (`source: 'onboarding'`), with files and links only for HR. Without it, filed ones only.
+ */
+export async function listAllEmployeesForAdmin(adminUserId: string, viewer?: { seesDocuments: boolean; org?: string }) {
   // The records are kept per company (keptReads: an inline photo or two and everyone's documents made
   // this ~2 MB a read); the links below are signed afresh every time.
   const employees = await keptForCompanyOf(adminUserId, 'adm-employees', null, () => orgUsers(adminUserId, EMPLOYEE_LIST_FIELDS));
@@ -67,7 +71,9 @@ export async function listAllEmployeesForAdmin(adminUserId: string) {
   // Presigning is local arithmetic, not a round trip, so the whole roster's
   // photos resolve in one pass without slowing the directory down.
   const photos = await Promise.all(employees.map((e) => resolveProfilePhoto(e)));
-  const documents = await Promise.all(employees.map((e) => employeeDocumentViews(e.documents)));
+  const filed = await Promise.all(employees.map((e) => employeeDocumentViews(e.documents)));
+  const onboarding = viewer?.org ? await onboardingDocumentsByUserOf(viewer.org, employees.map((e) => e.userId), viewer.seesDocuments) : undefined;
+  const documents = employees.map((e, i) => [...filed[i], ...(onboarding?.get(e.userId) ?? [])]);
   return employees.map((e, i) => ({
     userId: e.userId,
     name: e.name,
@@ -352,6 +358,8 @@ export interface EmployeeDocumentView {
   url?: string;
   uploadedAt: string | null;
   size: number | null;
+  /** Filed by HR on the employee (this list); `onboarding` ones come from their pre-boarding (lifecycle). */
+  source: 'filed';
 }
 
 /** Resolves stored files to links the browser can open. Presigning is local arithmetic. */
@@ -370,8 +378,39 @@ export async function employeeDocumentViews(
         : document.url,
       uploadedAt: document.uploadedAt ? document.uploadedAt.toISOString() : null,
       size: document.size ?? null,
+      source: 'filed' as const,
     })),
   );
+}
+
+/** Who may open candidates' documents: HR (an admin, someone never limited, or People › Employees), as board.ts `lifecycleViewer` says. */
+export function seesCandidateDocuments(user: { dashboardAdmin?: boolean; dashboardTabs?: string[] } | undefined): boolean {
+  return user?.dashboardAdmin === true || !Array.isArray(user?.dashboardTabs) || user.dashboardTabs.includes('employees');
+}
+
+/**
+ * The employee's onboarding documents (their pre-boarding uploads, `source: 'onboarding'`), when the
+ * company has the employee lifecycle on. Without HR's view: status only, no files or links.
+ */
+async function onboardingDocumentsByUserOf(org: string, userIds: string[], withFiles: boolean) {
+  const { lifecycleEnabled } = await import('./lifecycle/emails');
+  if (!(await lifecycleEnabled(org))) return undefined;
+  const { onboardingDocumentsByUser } = await import('./lifecycle/preboardingProfile');
+  return onboardingDocumentsByUser(org, userIds, withFiles);
+}
+
+async function onboardingDocumentsOf(org: string | undefined, userId: string, withFiles: boolean) {
+  if (!org) return [];
+  const { lifecycleEnabled } = await import('./lifecycle/emails');
+  if (!(await lifecycleEnabled(org))) return [];
+  const { employeeOnboardingDocuments } = await import('./lifecycle/preboardingProfile');
+  return employeeOnboardingDocuments(org, userId, withFiles);
+}
+
+/** GET /admin/employees/:userId/documents — the filed documents, then the onboarding ones. */
+export async function employeeDocumentsForAdmin(adminUserId: string, userId: string, viewer: { seesDocuments: boolean }) {
+  const employee = await employeeInOrg(adminUserId, userId);
+  return [...(await employeeDocumentViews(employee.documents)), ...(await onboardingDocumentsOf(employee.org, userId, viewer.seesDocuments))];
 }
 
 async function employeeInOrg(adminUserId: string, userId: string) {
@@ -386,13 +425,14 @@ export async function addEmployeeDocument(
   userId: string,
   typeInput: unknown,
   file: { originalName: string; contentType: string; size: number; bytes: Buffer } | undefined,
+  viewer: { seesDocuments: boolean } = { seesDocuments: false },
 ) {
   const type = String(typeInput ?? '').trim();
   if (!(EMPLOYEE_DOCUMENT_TYPES as readonly string[]).includes(type)) {
     throw new AdminError(400, `Document type must be one of: ${EMPLOYEE_DOCUMENT_TYPES.join(', ')}`);
   }
   if (!file) throw new AdminError(400, 'Attach the document to upload');
-  await employeeInOrg(adminUserId, userId);
+  const employee = await employeeInOrg(adminUserId, userId);
   const stored = await uploadEmployeeDocument(userId, file);
   const document: EmployeeDocument = {
     id: randomUUID(),
@@ -408,10 +448,10 @@ export async function addEmployeeDocument(
     { $push: { documents: document } } as never,
     { returnDocument: 'after' },
   );
-  return employeeDocumentViews(updated?.documents);
+  return [...(await employeeDocumentViews(updated?.documents)), ...(await onboardingDocumentsOf(employee.org, userId, viewer.seesDocuments))];
 }
 
-export async function removeEmployeeDocument(adminUserId: string, userId: string, documentId: string) {
+export async function removeEmployeeDocument(adminUserId: string, userId: string, documentId: string, viewer: { seesDocuments: boolean } = { seesDocuments: false }) {
   const employee = await employeeInOrg(adminUserId, userId);
   const document = (employee.documents ?? []).find((d) => d.id === documentId);
   if (!document) throw new AdminError(404, 'Document not found');
@@ -423,7 +463,7 @@ export async function removeEmployeeDocument(adminUserId: string, userId: string
   // The record is the source of truth; a stored file that outlives it is
   // only storage, so failing to remove it must not fail the request.
   if (document.objectKey) await deleteEmployeeDocument(document.objectKey).catch(() => undefined);
-  return employeeDocumentViews(updated?.documents);
+  return [...(await employeeDocumentViews(updated?.documents)), ...(await onboardingDocumentsOf(employee.org, userId, viewer.seesDocuments))];
 }
 
 /**

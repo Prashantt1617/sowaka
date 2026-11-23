@@ -147,9 +147,15 @@ r.post('/documents/:id/review', ...guard(OFFER_TABS), handle(async (req) => {
   if (!seesDocuments(req)) throw new LifecycleOfferError(403, 'Only HR reviews candidates’ documents');
   return { document: await reviewDocument(actorOf(req), param(req, 'id'), body(req)) };
 }));
-r.get('/files/:id', ...guard(FILE_TABS), handle(async (req, res) => {
+r.get('/files/:id', ...guard([...FILE_TABS, 'employees']), handle(async (req, res) => {
   const hr = actorOf(req);
   const file = await fileForOrg(hr.org, param(req, 'id'));
+  // People › Employees alone (HR on an employee's profile) opens candidates' documents only, nothing else stored here.
+  const user = userOf(req);
+  if (!hasAllDashboardTabs(user) && !(user.dashboardTabs ?? []).some((t) => FILE_TABS.includes(t))
+    && !(await candidateDocuments().findOne({ org: hr.org, fileIds: file.id }, { projection: { _id: 1 } }))) {
+    throw new LifecycleOfferError(403, "You don't have access to this file");
+  }
   // An offer or appointment letter PDF states the CTC.
   if (!hr.seesPay && (
     await offers().findOne({ org: hr.org, 'versions.pdfFileId': file.id }, { projection: { _id: 1 } })

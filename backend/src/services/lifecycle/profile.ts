@@ -16,6 +16,7 @@ import { journeyDocumentsView, type CandidateDocumentView } from './documents';
 import { addDays, istDate } from './emails';
 import { checkUpload, LifecycleOfferError, removeFile, storeFile } from './files';
 import { CLOSED_STATUSES } from './portalAuth';
+import { assertSectionOpen, sectionLocked, sectionOfDocument } from './profileLock';
 
 const ALL_SECTIONS = ['personal', 'contact', 'emergency', 'bank', 'education', 'ids', 'photo'] as const;
 export type ProfileSection = (typeof ALL_SECTIONS)[number];
@@ -33,15 +34,8 @@ const MARITAL = ['Single', 'Married', 'Divorced', 'Widowed', 'Prefer not to say'
 const QUALIFICATIONS = ['Class 10', 'Class 12', 'Diploma', 'Graduate', 'Postgraduate', 'Doctorate', 'Other'] as const;
 export const PROFILE_OPTIONS = { genders: GENDERS, marital: MARITAL, qualifications: QUALIFICATIONS };
 
-/** Which of the template's documents each section shows (by key, then by words in the label). */
-export function sectionOfDocument(doc: Pick<CandidateDocumentView, 'docKey' | 'label'>): ProfileSection {
-  const k = `${doc.docKey} ${doc.label}`.toLowerCase();
-  if (/photo|picture|selfie/.test(k)) return 'photo';
-  if (/cheque|check|passbook|bank/.test(k)) return 'bank';
-  if (/address/.test(k)) return 'contact';
-  if (/educat|degree|certificate|marksheet|payslip|pay slip|relieving|experience|resume|\bcv\b|previous_offer|offer letter/.test(k)) return 'education';
-  return 'ids';
-}
+/** Which of the template's documents each section shows (profileLock.ts, so documents.ts can use it too). */
+export { sectionOfDocument } from './profileLock';
 
 // As portal.ts has them (kept here so the two modules do not import each other).
 const aboutYouOf = (journey: Journey) => journey.aboutYou ?? {};
@@ -181,7 +175,8 @@ export async function profileView(journey: Journey, docs?: CandidateDocumentView
   const done = sectionStates(journey, list);
   const { bank, ids, ...open } = p;
   return {
-    sections: PROFILE_SECTIONS.map((key) => ({ key, title: PROFILE_SECTION_TITLE[key], done: done[key], documentIds: list.filter((d) => sectionOfDocument(d) === key).map((d) => d.id) })),
+    // `locked`: HR has approved the section; the portal shows it read-only.
+    sections: PROFILE_SECTIONS.map((key) => ({ key, title: PROFILE_SECTION_TITLE[key], done: done[key], locked: sectionLocked(journey, key), documentIds: list.filter((d) => sectionOfDocument(d) === key).map((d) => d.id) })),
     done: PROFILE_SECTIONS.filter((k) => done[k]).length,
     total: PROFILE_SECTIONS.length,
     profile: {
@@ -204,6 +199,7 @@ export async function saveProfileSection(journey: Journey, sectionRaw: unknown, 
   editable(journey, now);
   const section = oneOf(sectionRaw, PROFILE_SECTIONS);
   if (!section) throw new LifecycleOfferError(400, `section is one of ${PROFILE_SECTIONS.join(', ')}`);
+  assertSectionOpen(journey, section);
   const value = sectionValue(section, (input ?? {}) as Record<string, unknown>, journey, now);
   const profile: CandidateProfile = { ...(journey.profile ?? {}), ...value, savedAt: now };
   await journeys().updateOne({ id: journey.id }, { $set: { profile, lastActivityAt: now } });
