@@ -288,7 +288,7 @@ export interface JourneyView {
   bankPfRequest?: BankPfRequest;
   /** The portal's Employee profile (HR only; the account number, Aadhaar and PAN as their last four). */
   profile?: CandidateProfileView;
-  /** The portal's Employee profile sections done (the portal's and the app's "n of 7 sections done"). */
+  /** The portal's Employee profile sections done (the portal's and the app's "n of 6 sections done"). */
   profileSections?: { done: number; total: number };
   /** The portal's About you: the emergency contact and PF (HR only). */
   aboutYou?: {
@@ -600,3 +600,70 @@ export const getSalaryBreakup = (journeyId: string, template?: string) =>
   api<SalaryBreakup>(`${L}/letters/salary-breakup${qs({ journeyId, template })}`);
 export const listLetters = (p: { journeyId?: string; userId?: string; kind?: LetterKind }) =>
   api<{ letters: LetterView[] }>(`${L}/letters${qs(p)}`).then((r) => r.letters);
+
+// —— Pre-boarding profiles ———————————————————————————————————————————————
+// Everyone before joining, and one candidate's Employee profile section by section
+// (People › Employees › Pre-boarding). A section HR approves is locked: the
+// candidate can no longer edit it on the portal or the app.
+
+export type PreboardingSectionKey = 'personal' | 'contact' | 'emergency' | 'bank' | 'education' | 'ids';
+export interface PreboardingRow {
+  journeyId: string;
+  name: string;
+  designation?: string;
+  department?: string;
+  /** Joining day, 'YYYY-MM-DD'. */
+  tj?: string;
+  status: string;
+  profileDone: number;
+  profileTotal: number;
+  approvedSections: number;
+  documentsWaiting: number;
+}
+/** A stored file; `url` opens it (an API path is fetched with the sign-in, a full link as it is). */
+export interface StoredFileLink { id: string; name: string; contentType: string; size: number; url: string }
+export interface PreboardingDocument {
+  id: string;
+  label: string;
+  required: boolean;
+  status: CandidateDocumentStatus;
+  hrNote?: string;
+  files: StoredFileLink[];
+}
+export interface PreboardingSection {
+  key: PreboardingSectionKey;
+  title: string;
+  done: boolean;
+  approved?: { byName: string; at: string };
+  fields: Array<{ label: string; value: string }>;
+  documents: PreboardingDocument[];
+}
+export interface PreboardingProfile {
+  journeyId: string;
+  candidate: { name: string; personalEmail?: string; phone?: string; designation?: string; department?: string; tj?: string; status: string };
+  done: number;
+  total: number;
+  sections: PreboardingSection[];
+}
+
+export const listPreboarding = () => api<PreboardingRow[]>(`${L}/preboarding`);
+export const getPreboardingProfile = (journeyId: string) =>
+  api<PreboardingProfile>(`${L}/journeys/${encodeURIComponent(journeyId)}/profile`);
+/** Approves and locks a section (409 while it is not complete); `false` unlocks it. Both answer the whole profile. */
+export const setPreboardingSectionApproved = (journeyId: string, section: PreboardingSectionKey, approved: boolean) =>
+  api<PreboardingProfile>(`${L}/journeys/${encodeURIComponent(journeyId)}/profile/${section}/approve`, { method: approved ? 'POST' : 'DELETE' });
+
+/**
+ * A file's bytes from the `url` the server gave: an API path (starting with '/') is
+ * fetched with the sign-in; a full link (a short-lived signed one) as it is.
+ */
+export async function fetchFileUrl(url: string): Promise<Blob> {
+  const own = url.startsWith('/');
+  const token = getToken();
+  const res = await fetch(own ? `${BASE_URL}${url}` : url, { headers: own && token ? { Authorization: `Bearer ${token}` } : undefined });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+    throw new ApiError(res.status, data.error || data.message || `Could not open the file (${res.status})`);
+  }
+  return res.blob();
+}

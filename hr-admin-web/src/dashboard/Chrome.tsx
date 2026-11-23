@@ -191,7 +191,7 @@ function SoonBadge() {
 function NavButton({ item, badge, sub }: { item: NavItem; badge?: ReactNode; sub?: boolean }) {
   const { view, setView } = useStore();
   // Setup stays lit on the settings pages it leads to.
-  const active = view === item.key || (item.key === 'setup' && SETUP_VIEWS.includes(view)) || (item.key === 'bulkassign' && BULK_VIEWS.includes(view));
+  const active = view === item.key || (item.key === 'setup' && SETUP_VIEWS.includes(view)) || (item.key === 'bulkassign' && BULK_VIEWS.includes(view)) || (item.key === 'employees' && view === 'preboarding');
   const soon = SOON[item.key];
   return (
     <button

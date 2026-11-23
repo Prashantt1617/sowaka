@@ -284,6 +284,12 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="m3.5 6.5 8.5 6 8.5-6" />
     </svg>
   ),
+  preboarding: (
+    <svg {...base(18, 'currentColor')}>
+      <circle cx="12" cy="8" r="3.2" />
+      <path d="M5.5 20v-1A3.5 3.5 0 0 1 9 15.5h6a3.5 3.5 0 0 1 3.5 3.5v1" />
+    </svg>
+  ),
   exit: (
     <svg {...base(18, 'currentColor')}>
       <path d="M14 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8" />

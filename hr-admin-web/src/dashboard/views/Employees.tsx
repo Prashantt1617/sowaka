@@ -9,6 +9,11 @@ import { AccountLimitModal } from './AccountLimitModal';
 import { getAccountLimit } from '../../services/hrms';
 import { EmployeeProfile, type ProfileTab } from './EmployeeProfile';
 import { Td, Th } from './kpiUi';
+import { canOpen } from '../access';
+import { useLifecycleOn } from '../lifecycleSwitch';
+import { PreboardingList } from './lifecycle/PreboardingList';
+import { PREBOARDING_LIST_KEY } from './lifecycle/preboardingLinks';
+import { readHandoff } from './lifecycle/format';
 import './people.css';
 
 /** Waits for the shared lists this page reads before drawing it. */
@@ -39,8 +44,14 @@ function EmployeesBody() {
   };
   const [selected, setSelected] = useState<Emp | null>(null);
   const [page, setPage] = useState(1);
-  // Who the list shows: everyone working here (on notice included), only those on notice, or those who left.
-  const [who, setWho] = useState<'working' | 'notice' | 'left'>('working');
+  // Who the list shows: everyone working here (on notice included), only those on notice, those who left,
+  // or those still to join (their pre-boarding profiles; where the employee lifecycle is on).
+  const [who, setWho] = useState<'working' | 'notice' | 'left' | 'preboarding'>(() => (readHandoff(PREBOARDING_LIST_KEY) ? 'preboarding' : 'working'));
+  const lifecycle = useLifecycleOn(Boolean(s.user?.dashboardAccess));
+  const preboarding = lifecycle === true && canOpen(s.user, 'preboarding');
+  const showPreboarding = who === 'preboarding' && preboarding;
+  // The departments of those still to join, for the team filter while their list shows.
+  const [preTeams, setPreTeams] = useState<string[]>([]);
   // Opened from elsewhere (Suwi's links): which person, and on which tab.
   const [initialTab, setInitialTab] = useState<ProfileTab | undefined>(undefined);
   const req = s.profileRequest;
@@ -62,7 +73,7 @@ function EmployeesBody() {
 
   // Departments actually present in this org, rather than a fixed list that
   // may name teams the company does not have.
-  const teams = [...new Set(s.emps.map((e) => e.team).filter((t) => t && t !== '—'))].sort();
+  const teams = showPreboarding ? preTeams : [...new Set(s.emps.map((e) => e.team).filter((t) => t && t !== '—'))].sort();
 
   // People who have left (access ended after their last day) are kept out unless asked for;
   // those on notice still work here, so they stay, tagged.
@@ -86,7 +97,7 @@ function EmployeesBody() {
       {limitReached !== false && <AccountLimitModal max={limitReached} onClose={() => setLimitReached(false)} />}
       <div className="pd-head" style={{ justifyContent: 'flex-end', marginTop: -8 }}>
         <div className="pd-actions">
-          <button onClick={() => void exportEmployees(rows)} disabled={rows.length === 0} className="pd-btn"><IconExport /> Export list</button>
+          {!showPreboarding && <button onClick={() => void exportEmployees(rows)} disabled={rows.length === 0} className="pd-btn"><IconExport /> Export list</button>}
           <button onClick={openAdd} disabled={checkingLimit} className="pd-btn primary">
             <IconPlus size={15} /> Add user
           </button>
@@ -102,14 +113,21 @@ function EmployeesBody() {
               <option key={t} value={t}>{t}</option>
             ))}
           </SelectBox>
-          {(leftCount > 0 || working.some((e) => e.exit)) && (
-            <SelectBox value={who} onChange={(v) => { setWho(v as typeof who); setPage(1); }}>
+          {(leftCount > 0 || working.some((e) => e.exit) || preboarding) && (
+            <SelectBox value={showPreboarding ? 'preboarding' : who === 'preboarding' ? 'working' : who} onChange={(v) => {
+              // Teams differ between the two lists: moving to or from Pre-boarding starts on All teams.
+              if ((v === 'preboarding') !== showPreboarding) s.setEmpTeam('all');
+              setWho(v as typeof who); setPage(1);
+            }}>
               <option value="working">Working here</option>
-              <option value="notice">On notice</option>
-              <option value="left">Left · {leftCount}</option>
+              {(leftCount > 0 || working.some((e) => e.exit)) && <option value="notice">On notice</option>}
+              {(leftCount > 0 || working.some((e) => e.exit)) && <option value="left">Left · {leftCount}</option>}
+              {preboarding && <option value="preboarding">Pre-boarding</option>}
             </SelectBox>
           )}
         </div>
+        {showPreboarding ? <PreboardingList search={s.empSearch} team={s.empTeam} onTeams={setPreTeams} /> : (
+        <>
         <div className="pd-countline" style={{ marginBottom: 14 }}><b>{rows.length}</b> of {who === 'left' ? leftCount : working.length} {who === 'left' ? 'who left' : 'people'}</div>
         <div className="pd-tbl-wrap">
         <table className="pd-t">
@@ -180,6 +198,8 @@ function EmployeesBody() {
           </div>
         </div>
       )}
+        </>
+        )}
       </section>
     </div>
   );
