@@ -2,14 +2,13 @@
 // nodes 4967:93675 … 4967:93854): the segments, HR's header with Close and one story.
 // No reply field or Like (removed 20 Nov 2026, not needed). Moved out of A1About so the
 // About page and the story stay apart.
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import type { JoiningDetails, MeetItem } from '../../api/types';
 import { mediaUrl } from '../../api/client';
 import { A1Logo } from '../A1';
 import { firstName, fmtTime, fmtWeekday, initials } from '../../lib/format';
 import type { PortalPolicy } from './G2Policy';
 import { G2Close } from './icons/g2-close';
-import { G2Play } from './icons/g2-play';
 import { G2Directions } from './icons/g2-directions';
 import { G2ChevronRight } from './icons/g2-chevron-right';
 import pin3d from './icons/g2-3d-pin.png';
@@ -53,18 +52,76 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, tj, j,
   const item = at.startsWith('watch:') ? watch.find((w) => w.id === at) : undefined;
   const look = at.startsWith('watch:') ? WATCH_LOOK : LOOK[at as Exclude<StoryKey, `watch:${string}`>];
   const watchBg = item ? (item.mediaType === 'text' ? WATCH_BG[item.bg ?? 'rust'] ?? WATCH_BG.rust : '#0E0E10') : undefined;
-  const [playing, setPlaying] = useState(false);
-  useEffect(() => { setPlaying(false); }, [at]);
+  // Instagram-style flow: a video plays at once and its bar follows the video; a picture or card
+  // moves on after a few seconds; the last one closes. Tap the left third to go back, anywhere else
+  // to go on; press and hold to pause.
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const storyVideo = item?.mediaType === 'video' ? item.videoUrl : at === 'welcome' ? video?.videoUrl : at === 'manager' ? note?.videoUrl : undefined;
+  const readsLonger = at === 'day1' || at === 'policies' || at === 'team' || at === 'role';
+  const duration = readsLonger ? 9000 : 6000;
+  const next = useCallback(() => { if (i < order.length - 1) onMove(order[i + 1]); else onClose(); }, [i, order, onMove, onClose]);
+  const prev = useCallback(() => {
+    if (i > 0) { onMove(order[i - 1]); return; }
+    setProgress(0); elapsed.current = 0;
+    if (videoRef.current) videoRef.current.currentTime = 0;
+  }, [i, order, onMove]);
+  const elapsed = useRef(0);
+  useEffect(() => { setProgress(0); setPaused(false); elapsed.current = 0; }, [at]);
+  // Pictures and cards: a timer (paused while held).
+  useEffect(() => {
+    if (storyVideo || paused) return;
+    let last = performance.now();
+    let frame = 0;
+    const tick = (now: number) => {
+      elapsed.current += now - last; last = now;
+      const v = Math.min(1, elapsed.current / duration);
+      setProgress(v);
+      if (v >= 1) { next(); return; }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [at, storyVideo, paused, duration, next]);
+  // Videos: play at once (with sound when the browser allows it, else muted with a sound button).
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !storyVideo) return;
+    if (paused) { v.pause(); return; }
+    v.muted = muted;
+    v.play().catch(() => { v.muted = true; setMuted(true); v.play().catch(() => undefined); });
+  }, [at, storyVideo, paused, muted]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement | null)?.tagName === 'INPUT') return;
       if (e.key === 'Escape') onClose();
-      if (e.key === 'ArrowRight' && i < order.length - 1) onMove(order[i + 1]);
-      if (e.key === 'ArrowLeft' && i > 0) onMove(order[i - 1]);
+      if (e.key === 'ArrowRight') next();
+      if (e.key === 'ArrowLeft') prev();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [i, order, onMove, onClose]);
+  }, [next, prev, onClose]);
+  const held = useRef<{ at: number } | null>(null);
+  const down = (e: ReactPointerEvent) => {
+    if ((e.target as HTMLElement).closest('a, button, input')) return;
+    held.current = { at: Date.now() };
+    setPaused(true);
+  };
+  const up = (e: ReactPointerEvent) => {
+    const h = held.current; held.current = null;
+    if (!h) return;
+    setPaused(false);
+    if (Date.now() - h.at > 300) return; // a hold pauses, it doesn't move
+    const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    if (e.clientX - box.left < box.width / 3) prev(); else next();
+  };
+  const storyVideoEl = (src: string, style?: CSSProperties) => (
+    <video key={at} ref={videoRef} className="g2-story__video" src={mediaUrl(src)} playsInline autoPlay preload="auto" muted={muted}
+      onTimeUpdate={(e) => { const v = e.currentTarget; if (v.duration > 0) setProgress(v.currentTime / v.duration); }}
+      onEnded={next} style={{ pointerEvents: 'none', ...style }} />
+  );
 
   const time = fmtTime(j?.reportingTime);
   const directions = j?.mapLink ?? (j?.place ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(j.place)}` : undefined);
@@ -80,9 +137,7 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, tj, j,
           <h2 className="g2-story__title g2-story__title--lines"><span>Welcome to</span><span>{company.name}</span><span>{firstName(candidate)}!</span></h2>
           <p className="g2-story__line">{about}</p>
         </div>
-        {video?.videoUrl && (playing
-          ? <video className="g2-story__video" src={mediaUrl(video.videoUrl)} controls autoPlay playsInline />
-          : <button type="button" className="g2-story__cta" style={{ gap: 16.5, paddingRight: 28.375 }} onClick={() => setPlaying(true)}><G2Play />Watch the welcome video</button>)}
+        {video?.videoUrl && storyVideoEl(video.videoUrl)}
       </div>
     );
   } else if (at === 'manager' && managerName) {
@@ -92,7 +147,7 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, tj, j,
         <Face name={managerName} photo={note?.authorPhotoUrl} className="g2-story__face" />
         <h2 className="g2-story__title">Meet {managerName}</h2>
         <span className="g2-story__pill">Your manager</span>
-        {note?.videoUrl ? <video className="g2-story__video" src={mediaUrl(note.videoUrl)} controls playsInline /> : <p className="g2-story__line">{line}</p>}
+        {note?.videoUrl ? storyVideoEl(note.videoUrl) : <p className="g2-story__line">{line}</p>}
       </div>
     );
   } else if (at === 'team') {
@@ -136,7 +191,7 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, tj, j,
   } else if (item) {
     content = (
       <div className="g2-story__stack" style={{ gap: 16, width: '100%' }}>
-        {item.mediaType === 'video' && item.videoUrl && <video key={item.id} className="g2-story__video" src={mediaUrl(item.videoUrl)} controls autoPlay playsInline style={{ maxHeight: '62vh', width: '100%', objectFit: 'contain', background: '#000' }} />}
+        {item.mediaType === 'video' && item.videoUrl && storyVideoEl(item.videoUrl, { maxHeight: '62vh', width: '100%', objectFit: 'contain', background: '#000' })}
         {item.mediaType === 'image' && item.imageUrl && <img src={mediaUrl(item.imageUrl)} alt={item.title} style={{ maxHeight: '64vh', maxWidth: '100%', objectFit: 'contain', borderRadius: 12 }} />}
         {item.mediaType === 'text'
           ? <h2 className="g2-story__title" style={{ color: '#FFFFFF' }}>{item.text}</h2>
@@ -159,7 +214,7 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, tj, j,
       <div className={`g2-story ${look.cls}`} style={watchBg ? { background: watchBg } : undefined}>
         <div className="g2-story__top">
           <div className="g2-story__segs">
-            {order.map((k, n) => <span key={k}><i style={{ width: n <= i ? '100%' : '0%' }} /></span>)}
+            {order.map((k, n) => <span key={k}><i style={{ width: n < i ? '100%' : n === i ? `${Math.round(progress * 1000) / 10}%` : '0%' }} /></span>)}
           </div>
           <div className="g2-story__who">
             <span style={{ color: look.mark, display: 'flex' }}><A1Logo company={company} className="g2-story__mark" /></span>
@@ -167,10 +222,16 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, tj, j,
             <button type="button" className="g2-story__close" aria-label="Close" onClick={onClose}><G2Close color={onBrand ? '#FFFFFF' : '#0571A6'} /></button>
           </div>
         </div>
-        <div className="g2-story__main" style={{ paddingBottom: look.pb }}>
-          {i > 0 && <button type="button" className="a1-story__tap" style={{ left: 0 }} aria-label="Previous story" onClick={() => onMove(order[i - 1])} />}
-          {i < order.length - 1 && <button type="button" className="a1-story__tap" style={{ right: 0 }} aria-label="Next story" onClick={() => onMove(order[i + 1])} />}
+        <div className="g2-story__main" style={{ paddingBottom: look.pb, touchAction: 'manipulation', userSelect: 'none' }}
+          onPointerDown={down} onPointerUp={up} onPointerCancel={() => { held.current = null; setPaused(false); }}>
           <div className="g2-story__content">{content}</div>
+          {storyVideo && muted && (
+            <button type="button" className="g2-story__cta" style={{ position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)', gap: 8, padding: '8px 16px' }}
+              onClick={() => { setMuted(false); if (videoRef.current) { videoRef.current.muted = false; void videoRef.current.play().catch(() => undefined); } }}>Tap for sound</button>
+          )}
+          <span className="sr-only" aria-live="polite">{`Story ${i + 1} of ${order.length}`}</span>
+          <button type="button" className="sr-only" onClick={prev}>Previous story</button>
+          <button type="button" className="sr-only" onClick={next}>Next story</button>
         </div>
       </div>
     </div>
