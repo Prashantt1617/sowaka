@@ -1,6 +1,7 @@
 // Employee profile (Figma "App · 6 Employee profile" and the seven "App · Profile ·" screens):
-// the progress and the seven sections here; each section's form is G2SectionForm. Personal, contact, bank, education and IDs save to
-// /portal/profile; the emergency contact and PF to About you; each section shows the
+// the progress and the five sections here; each section's form is G2SectionForm. Personal, contact, education and IDs save to
+// /portal/profile; the emergency contact to About you. Bank account and PF is not asked here (24 Nov): the
+// joiner declares it in the app, its own task, not counted in this progress. Each section shows the
 // template's documents that belong to it (upload, see HR's note, replace). What is
 // typed is kept on this device until it is saved, so a half-filled form survives.
 import { useEffect, useState } from 'react';
@@ -15,7 +16,7 @@ import { fmtWeekday } from '../lib/format';
 import '../styles/fig-g1.css';
 import { G2_SECTIONS, G2SectionForm } from '../components/fig/G2ProfileSections';
 
-export const ORDER: ProfileSectionKey[] = ['personal', 'contact', 'emergency', 'bank', 'education', 'ids'];
+export const ORDER: ProfileSectionKey[] = ['personal', 'contact', 'emergency', 'education', 'ids'];
 export const TITLE: Record<ProfileSectionKey, string> = {
   personal: 'Personal details', contact: 'Contact and address', emergency: 'Emergency contact', bank: 'Bank account and PF',
   education: 'Education and experience', ids: 'ID documents', photo: 'Photo',
@@ -35,7 +36,7 @@ export const INTRO: Record<ProfileSectionKey, string> = {
 };
 const SECTION_3D: Record<ProfileSectionKey, Fig3DName> = { personal: 'user', contact: 'user', emergency: 'phone', bank: 'bank', education: 'write', ids: 'document-approved', photo: 'id-card' };
 
-/** /profile · how far along, and the seven sections (Figma "App · 6 Employee profile", 4967:92891). */
+/** /profile · how far along, and the five sections (Figma "App · 6 Employee profile", 4967:92891). */
 export function A1Profile() {
   const [view, setView] = useState<ProfileView>();
   const [error, setError] = useState('');
@@ -106,7 +107,7 @@ export function savedValues(k: ProfileSectionKey, v: ProfileView): Values {
   }
 }
 
-/** /profile/:section · one section's form (Figma "App · Profile ·" screens): G2's section shell serves all seven. */
+/** /profile/:section · one section's form (Figma "App · Profile ·" screens): G2's section shell serves all five (/profile/bank goes back to the list). */
 export function A1ProfileSection() {
   const { section = '' } = useParams();
   const key = ORDER.includes(section as ProfileSectionKey) ? (section as ProfileSectionKey) : null;

@@ -5,9 +5,11 @@
 // (nothing to show before joining): Profile, Performance, Salary details (the offer's
 // pay, with payroll access), Org chart, Activity (the joiner panel's Journey) and Exit
 // ("Not joining", the joiner panel's close). The Profile tab splits the portal's answers
-// into the Employee profile's categories (Basic details, Documents, Payment and tax IDs)
+// into the Employee profile's categories (Basic details, Documents, ID documents)
 // and the candidate's own (Personal details, Contact and address, Emergency contact,
-// Education, Work experience). Each category shows where its portal section stands
+// Education, Work experience): five sections. Bank account and PF is not one of them
+// (24 Nov): it is the joiner's own task, declared in the app, on the Salary details tab
+// (BankPfCard: To do / Declared in the app / Approved, and HR's Edit). Each category shows where its portal section stands
 // (To do / Done / Approved by NAME on DATE); HR approves a complete one, which locks it
 // for the candidate (Unlock hands it back), and edits its answers. Every uploaded document
 // can be sent back for a re-upload with a note (the joiner panel's own call), and one
@@ -22,7 +24,7 @@ import { ApiError } from '../../../services/http';
 import { createPreboardingAppAccess, getJourney, getPreboardingProfile, isNotAvailable, reviewDocument, savePreboardingBasic, savePreboardingSection, setPreboardingSectionApproved } from '../../../services/lifecycle';
 import type {
   PreboardingAddress, PreboardingBasic, PreboardingBasicInput, PreboardingDocument, PreboardingJob, PreboardingOptions, PreboardingProfile as Profile, PreboardingSection,
-  PreboardingSectionInput, PreboardingSectionKey, PreboardingSectionValues,
+  PreboardingBankPf, PreboardingSectionInput, PreboardingSectionKey, PreboardingSectionValues,
 } from '../../../services/lifecycle';
 import { Modal, NoteDialog, NotSwitchedOn } from './shared';
 import { dayOf, errText, firstName, longDay, shortDay } from './format';
@@ -49,7 +51,7 @@ type Tab = Exclude<ProfileTab, 'calendar' | 'requests'>;
 const TAB_LABELS: Record<Tab, string> = { profile: 'Profile', performance: 'Performance', salary: 'Salary details', orgchart: 'Org chart', activity: 'Activity', exit: 'Exit' };
 
 /** A card on the Profile tab: its title and icon, the portal sections it shows, and its rows in order. */
-type CardKey = 'personal' | 'contact' | 'emergency' | 'education' | 'experience' | 'payment';
+type CardKey = 'personal' | 'contact' | 'emergency' | 'education' | 'experience' | 'ids';
 interface Category {
   key: CardKey;
   title: string;
@@ -62,17 +64,15 @@ interface Category {
   docsNote?: boolean;
 }
 const EDUCATION_LABELS = new Set(['Highest qualification', 'College or university', 'Year of passing']);
-const PAYMENT_LABELS = new Set(['Bank', 'Account number', 'IFSC', 'Account holder', 'PF', 'PAN', 'Aadhaar']);
+const ID_LABELS = new Set(['PAN', 'Aadhaar']);
 
-/** The portal's six sections, as the Profile tab's categories (the server's rows, split and ordered). */
+/** The portal's five sections, as the Profile tab's categories (the server's rows, split and ordered). */
 function categoriesOf(sections: PreboardingSection[]): Category[] {
   const sec = (k: PreboardingSectionKey) => sections.find((x) => x.key === k);
   const one = (k: PreboardingSectionKey) => { const x = sec(k); return x ? [x] : []; };
   const rows = (k: PreboardingSectionKey, keep: (label: string) => boolean = () => true) => (sec(k)?.fields ?? []).filter((f) => keep(f.label));
-  const bank = rows('bank');
   const ids = rows('ids');
   const val = (list: Array<{ label: string; value: string }>, label: string) => list.find((f) => f.label === label)?.value ?? '';
-  const pf = val(bank, 'PF');
   const out: Category[] = [
     { key: 'personal', title: 'Personal details', icon: <PdUser />, sections: one('personal'), rows: rows('personal'), docsNote: true },
     { key: 'contact', title: 'Contact and address', icon: <PdPin />, sections: one('contact'), rows: rows('contact'), docsNote: true },
@@ -80,14 +80,9 @@ function categoriesOf(sections: PreboardingSection[]): Category[] {
     { key: 'education', title: 'Education', icon: <PdLayers />, sections: one('education'), rows: rows('education', (l) => EDUCATION_LABELS.has(l)), docsNote: true },
     { key: 'experience', title: 'Work experience', icon: <PdLayers />, sections: one('education'), rows: rows('education', (l) => !EDUCATION_LABELS.has(l)) },
     {
-      // The Employee profile's card, its rows in its order; the candidate's Aadhaar beside the PAN.
-      key: 'payment', title: 'Payment and tax IDs', icon: <PdBank />, sections: [...one('bank'), ...one('ids')], fixed: true, docsNote: true,
-      rows: [
-        { label: 'Bank', value: val(bank, 'Bank') }, { label: 'Account number', value: val(bank, 'Account number') }, { label: 'IFSC', value: val(bank, 'IFSC') },
-        { label: 'Account holder', value: val(bank, 'Account holder') }, { label: 'PAN', value: val(ids, 'PAN') }, { label: 'Aadhaar', value: val(ids, 'Aadhaar') },
-        { label: 'UAN', value: pf.startsWith('UAN ') ? pf.slice(4) : pf },
-        ...[...bank, ...ids].filter((f) => !PAYMENT_LABELS.has(f.label)),
-      ],
+      // Its own card (24 Nov; bank and PF went to Salary details): the PAN, then the Aadhaar.
+      key: 'ids', title: 'ID documents (Aadhaar, PAN)', icon: <PdFile />, sections: one('ids'), fixed: true, docsNote: true,
+      rows: [{ label: 'PAN', value: val(ids, 'PAN') }, { label: 'Aadhaar', value: val(ids, 'Aadhaar') }, ...ids.filter((f) => !ID_LABELS.has(f.label))],
     },
   ];
   return out.filter((c) => c.sections.length > 0);
@@ -109,7 +104,7 @@ export function PreboardingProfile() {
   const [error, setError] = useState<{ text: string; off?: boolean } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState('');
-  // What is open for editing: 'basic', or a card and the section it edits ('payment:ids').
+  // What is open for editing: 'basic', 'bankpf', or a card and the section it edits ('ids:ids').
   const [editing, setEditing] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('profile');
   const [journey, setJourney] = useState<JourneyLoad>({ state: 'loading' });
@@ -223,10 +218,7 @@ export function PreboardingProfile() {
     flash(`${section.title} saved`);
   };
 
-  const docGroups = data.sections.map((sec) => ({
-    key: sec.key,
-    title: sec.title,
-    list: sec.documents.map((d): ProfileDocItem => ({
+  const docItems = (documents: PreboardingDocument[]) => documents.map((d): ProfileDocItem => ({
       id: d.id,
       title: d.label,
       sub: `${d.required ? 'Required' : 'Optional'}${d.files.length ? ' · uploaded on the joining portal' : ''}`,
@@ -234,8 +226,8 @@ export function PreboardingProfile() {
       files: seesDocuments ? d.files : null,
       extra: <DocumentReview doc={d} canReview={seesDocuments} busy={busy === `doc:${d.id}`} disabled={Boolean(busy)}
         onApprove={() => void approveDoc(d)} onReupload={() => setReupload(d)} />,
-    })),
   }));
+  const docGroups = data.sections.map((sec) => ({ key: sec.key, title: sec.title, list: docItems(sec.documents) }));
   const documentCount = docGroups.reduce((n, g) => n + g.list.length, 0);
 
   // Basic details: the card the Employee profile opens with, from `basic` and the candidate's own answers.
@@ -320,19 +312,28 @@ export function PreboardingProfile() {
               {first} has not started the Employee profile on the joining portal yet.
             </section>
           )}
-          {categories.filter((c) => c.key !== 'payment').map(card)}
-          {/* Then the Employee profile's own order: Documents, then Payment and tax IDs. */}
+          {categories.filter((c) => c.key !== 'ids').map(card)}
+          {/* Then the Employee profile's own order: Documents, then the ID numbers. */}
           {documentCount > 0 && (
             <Section title="Documents" icon={<PdFile />}>
               {!seesDocuments && <div className="pd-note" style={{ marginBottom: 8 }}>Only HR opens candidates’ documents and ID proofs. You see where each one is.</div>}
               <DocumentList groups={docGroups} />
             </Section>
           )}
-          {categories.filter((c) => c.key === 'payment').map(card)}
+          {categories.filter((c) => c.key === 'ids').map(card)}
         </div>
       )}
       {tab === 'performance' && <PerformanceTab load={journey} />}
-      {tab === 'salary' && seesSalary && <SalaryTab load={journey} journeyId={data.journeyId} seesPay={canSeePay(user)} />}
+      {tab === 'salary' && seesSalary && (
+        <SalaryTab load={journey} journeyId={data.journeyId} seesPay={canSeePay(user)}>
+          {data.bankPf && (
+            <BankPfCard bank={data.bankPf} first={first} canEdit={canEdit} editing={editing === 'bankpf'} disabled={Boolean(busy)}
+              onEdit={() => setEditing('bankpf')} onCancel={() => setEditing(null)}
+              save={async (body) => { setData(await savePreboardingSection(data.journeyId, 'bank', body)); setEditing(null); flash('Bank account and PF saved'); }}
+              documents={data.bankPf.documents.length > 0 ? <DocumentList groups={[{ key: 'bank', title: 'Bank documents', list: docItems(data.bankPf.documents) }]} /> : null} />
+          )}
+        </SalaryTab>
+      )}
       {tab === 'orgchart' && <OrgChartTab profile={data} load={journey} />}
       {tab === 'activity' && <ActivityTab load={journey} onChanged={() => setAttempt((n) => n + 1)} />}
       {tab === 'exit' && seesBoard && <NotJoiningTab profile={data} load={journey} first={first} onChanged={() => setAttempt((n) => n + 1)} />}
@@ -375,7 +376,7 @@ const docsLine = (sec: PreboardingSection) =>
 /**
  * One category as the Employee profile draws it: icon, title and actions, then its rows (or the edit form
  * of the section being edited). A card over one portal section has that section's state and actions in its
- * header; one over several (Payment and tax IDs: bank and IDs) lists each section with its own.
+ * header; one over several lists each section with its own.
  */
 function CategoryCard({ category: c, first, busy, canEdit, editing, onEdit, onApprove, onUnlock, children }: {
   category: Category; first: string; busy: string; canEdit: boolean; editing: PreboardingSectionKey | null;
@@ -426,6 +427,50 @@ function CategoryCard({ category: c, first, busy, canEdit, editing, onEdit, onAp
   );
 }
 
+const BANK_STATE: Record<PreboardingBankPf['state'], Tone> = { todo: STATE.todo.tone, declared: STATE.done.tone, approved: STATE.approved.tone };
+
+/**
+ * Bank account and PF on Salary details: the joiner's own task, not a profile section. Its state (To do,
+ * Declared in the app on DATE, Approved), the details shown (the app's declaration, else HR's or the
+ * portal's), any bank document, and HR's Edit (no joiner needed). Approving a declaration is the
+ * onboarding board's (Activity › Week 1).
+ */
+function BankPfCard({ bank, first, canEdit, editing, disabled, onEdit, onCancel, save, documents }: {
+  bank: PreboardingBankPf; first: string; canEdit: boolean; editing: boolean; disabled: boolean;
+  onEdit: () => void; onCancel: () => void; save: (body: PreboardingSectionInput['bank']) => Promise<void>; documents: ReactNode;
+}) {
+  const label = bank.state === 'approved' ? 'Approved' : bank.state === 'declared' && bank.declaredAt ? `Declared in the app on ${shortDay(bank.declaredAt)}` : 'To do';
+  const note = bank.state === 'approved'
+    ? `Approved by ${bank.approved?.byName ?? 'HR'}${bank.approved ? ` on ${shortDay(bank.approved.at)}` : ''}${bank.declaredAt ? `, declared in the app on ${shortDay(bank.declaredAt)}` : ''}. It is in payroll.`
+    : bank.state === 'declared'
+      ? `${first} declared it in the app. It waits for HR’s approval under Activity › Week 1, which writes it to payroll.`
+      : bank.sentBack
+        ? `Sent back on ${shortDay(bank.sentBack.at)}${bank.sentBack.note ? `: ${bank.sentBack.note}` : ''}. ${first} sends it again from the app.`
+        : `${first} declares it in the app (Complete your payroll details). It is not part of the employee profile’s progress. You can fill it in here too.`;
+  const from = bank.source === 'portal' ? 'Given on the joining portal.' : '';
+  return (
+    <div data-focus="bank">
+      <Section title={bank.title} icon={<PdBank />} labelId="pb-sec-bank" action={(
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <Pill label={label} tone={BANK_STATE[bank.state]} fontSize={11} padding="2px 9px" />
+          {canEdit && !editing && <button type="button" onClick={onEdit} className="pd-sec-act" disabled={disabled}><PdEdit /> Edit</button>}
+        </span>
+      )}>
+        {!editing && <div className="pd-note" style={{ marginBottom: 10 }}><span>{note}</span></div>}
+        {editing ? <BankEditor values={bank.values} options={OPTIONS} save={save} onCancel={onCancel} /> : bank.fields.length > 0 ? (
+          <Grid>
+            {bank.fields.map((f, i) => <Row key={`${f.label}-${i}`} label={f.label} value={f.value || '—'} />)}
+          </Grid>
+        ) : <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '6px 0' }}>Nothing given yet.</div>}
+        {!editing && (bank.editedByHr || from) && (
+          <div className="pd-subnote" style={{ marginTop: 8 }}>{bank.editedByHr ? `Changed by ${bank.editedByHr.byName} on ${shortDay(bank.editedByHr.at)}.` : from}</div>
+        )}
+        {!editing && documents && <div style={{ marginTop: 12 }}>{documents}</div>}
+      </Section>
+    </div>
+  );
+}
+
 /** Under a document: HR's note when it went back, and approve (waiting for HR) or ask for a re-upload (only once a file is in). */
 function DocumentReview({ doc, canReview, busy, disabled, onApprove, onReupload }: {
   doc: PreboardingDocument; canReview: boolean; busy: boolean; disabled: boolean; onApprove: () => void; onReupload: () => void;
@@ -470,7 +515,6 @@ function SectionEditor({ section, options, save, onCancel }: {
     case 'personal': return <PersonalEditor values={values} {...common} />;
     case 'contact': return <ContactEditor values={values} {...common} />;
     case 'emergency': return <EmergencyEditor values={values} {...common} />;
-    case 'bank': return <BankEditor values={values} {...common} />;
     case 'education': return <EducationEditor values={values} {...common} />;
     case 'ids': return <IdsEditor values={values} {...common} />;
     default: return null;
@@ -598,6 +642,7 @@ function BankEditor({ values: v, save, onCancel }: EditorProps<'bank'>) {
   const [firstJob, setFirstJob] = useState(v.pf?.firstJob === true);
   const set = (k: keyof typeof f) => (value: string) => setF((x) => ({ ...x, [k]: value }));
   const last4 = str(v.accountLast4);
+  const uanLast4 = str(v.pf?.uanLast4);
   return (
     <EditorShell onCancel={onCancel} onSave={() => save(clean({
       holderName: f.holderName.trim(), accountNumber: opt(f.accountNumber.replace(/\s+/g, '')), ifsc: f.ifsc.trim().toUpperCase(), bankName: opt(f.bankName),
@@ -616,7 +661,7 @@ function BankEditor({ values: v, save, onCancel }: EditorProps<'bank'>) {
       <Check checked={firstJob} onChange={setFirstJob}>First job: no PF account (UAN) yet.</Check>
       {!firstJob && (
         <div style={grid2}>
-          <Field label="UAN"><Text value={f.uan} onChange={(x) => set('uan')(x.replace(/\D/g, ''))} inputMode="numeric" maxLength={12} placeholder="12 digits" /></Field>
+          <Field label="UAN"><Text value={f.uan} onChange={(x) => set('uan')(x.replace(/\D/g, ''))} inputMode="numeric" maxLength={12} placeholder={uanLast4 ? `•••• ${uanLast4} · leave blank to keep` : '12 digits'} /></Field>
           <div />
         </div>
       )}
