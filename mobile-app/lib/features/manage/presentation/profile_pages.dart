@@ -4482,6 +4482,7 @@ class _ProfileColors {
 /// "Give Feedback" action that opens the rating form.
 class _EmployeeGrowthPage extends StatefulWidget {
   const _EmployeeGrowthPage({
+    super.key,
     required this.name,
     required this.designation,
     required this.history,

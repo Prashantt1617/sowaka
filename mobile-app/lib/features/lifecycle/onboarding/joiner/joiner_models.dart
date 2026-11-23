@@ -387,35 +387,6 @@ class JoinerProfile {
   final int pct;
 }
 
-class NextTalk {
-  const NextTalk({required this.on, required this.inDays, this.withName});
-
-  static NextTalk? maybe(Object? v) {
-    final j = _map(v);
-    final on = parseLifecycleDay(j['on']);
-    if (on == null) return null;
-    return NextTalk(on: on, inDays: _int(j['inDays']), withName: _str(j['withName']));
-  }
-
-  final DateTime on;
-  final int inDays;
-  final String? withName;
-}
-
-class JoinerGoalsCard {
-  const JoinerGoalsCard({required this.month, required this.count, this.nextTalk});
-
-  static JoinerGoalsCard? maybe(Object? v) {
-    final j = _map(v);
-    if (j.isEmpty) return null;
-    return JoinerGoalsCard(month: _int(j['month'], 1), count: _int(j['count']), nextTalk: NextTalk.maybe(j['nextTalk']));
-  }
-
-  final int month;
-  final int count;
-  final NextTalk? nextTalk;
-}
-
 class JoinerSummary {
   const JoinerSummary({
     this.meetingsMet = 0,
@@ -467,12 +438,12 @@ class JoinerOnboarding {
     required this.plant,
     this.firstPunchAt,
     this.faceEnrolled = false,
-    this.goals,
     this.meetings = const [],
     this.tasks = const [],
     this.checkins = const [],
     this.watch = const [],
     this.trainings = const [],
+    this.trainingsLabel = 'Trainings',
     this.devices = const [],
     this.tour = const JoinerTour(),
     this.profile = const JoinerProfile(),
@@ -493,12 +464,12 @@ class JoinerOnboarding {
       plant: PlantState.fromJson(j['plant']),
       firstPunchAt: parseLifecycleDate(punch['at']),
       faceEnrolled: _bool(punch['faceEnrolled']),
-      goals: JoinerGoalsCard.maybe(j['goals']),
       meetings: [for (final m in _maps(j['meetings'])) JoinerMeeting.fromJson(m)],
       tasks: [for (final t in _maps(j['tasks'])) JoinerTask.fromJson(t)],
       checkins: [for (final c in _maps(j['checkins'])) JoinerCheckinRow.fromJson(c)],
       watch: [for (final w in _maps(j['watch'])) JoinerWatch.fromJson(w)],
       trainings: [for (final w in _maps(j['trainings'])) JoinerWatch.fromJson(w)],
+      trainingsLabel: _str(_map(j['labels'])['trainings']) ?? 'Trainings',
       devices: [for (final d in _maps(j['devices'])) JoinerDevice.fromJson(d)],
       tour: JoinerTour.fromJson(_map(j['tour'])),
       profile: JoinerProfile.fromJson(_map(j['profile'])),
@@ -518,12 +489,15 @@ class JoinerOnboarding {
   final PlantState plant;
   final DateTime? firstPunchAt;
   final bool faceEnrolled;
-  final JoinerGoalsCard? goals;
   final List<JoinerMeeting> meetings;
   final List<JoinerTask> tasks;
   final List<JoinerCheckinRow> checkins;
   final List<JoinerWatch> watch;
   final List<JoinerWatch> trainings;
+
+  /// What the company calls its trainings (`labels.trainings`, HR can rename
+  /// it); "Trainings" from a server that does not say.
+  final String trainingsLabel;
   final List<JoinerDevice> devices;
   final JoinerTour tour;
   final JoinerProfile profile;
@@ -547,67 +521,17 @@ class JoinerOnboarding {
     plant: plant,
     firstPunchAt: firstPunchAt,
     faceEnrolled: faceEnrolled,
-    goals: goals,
     meetings: [for (final x in meetings) x.id == m.id ? m : x],
     tasks: tasks,
     checkins: checkins,
     watch: watch,
     trainings: trainings,
+    trainingsLabel: trainingsLabel,
     devices: devices,
     tour: tour,
     profile: profile,
     summary: summary,
   );
-}
-
-// ─── Goals ──────────────────────────────────────────────────────────────────
-
-class GoalView {
-  const GoalView({required this.index, required this.text, this.status, this.note, this.comment, this.commentByName});
-
-  factory GoalView.fromJson(Map<String, dynamic> j) => GoalView(
-    index: _int(j['index']),
-    text: _str(j['text']) ?? '',
-    status: _str(j['status']),
-    note: _str(j['note']),
-    comment: _str(j['comment']),
-    commentByName: _str(j['commentByName']),
-  );
-
-  final int index;
-  final String text;
-
-  /// 'start' | 'progress' | 'well'.
-  final String? status;
-  final String? note;
-  final String? comment;
-  final String? commentByName;
-}
-
-/// "How’s it going?": the server keeps the value, the app the words.
-const goalStatusLabels = {'start': 'Just started', 'progress': 'Making progress', 'well': 'Going well'};
-
-class JoinerGoals {
-  const JoinerGoals({required this.month, this.managerName, this.nextTalk, this.current = const [], this.earlier = const []});
-
-  factory JoinerGoals.fromJson(Map<String, dynamic> j) => JoinerGoals(
-    month: _int(j['month'], 1),
-    managerName: _str(j['managerName']),
-    nextTalk: NextTalk.maybe(j['nextTalk']),
-    current: [for (final g in _maps(j['current'])) GoalView.fromJson(g)],
-    earlier: [
-      for (final m in _maps(j['earlier']))
-        (month: _int(m['month']), goals: [for (final g in _maps(m['goals'])) GoalView.fromJson(g)]),
-    ],
-  );
-
-  final int month;
-  final String? managerName;
-  final NextTalk? nextTalk;
-  final List<GoalView> current;
-
-  /// Most recent first.
-  final List<({int month, List<GoalView> goals})> earlier;
 }
 
 // ─── The Sign task's documents ──────────────────────────────────────────────

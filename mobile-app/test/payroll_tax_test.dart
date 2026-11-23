@@ -527,4 +527,75 @@ void main() {
       });
     }
   });
+
+  group('opened on Tax (an onboarding task)', () {
+    Future<_FakeTaxServer> pumpStart(
+      WidgetTester tester,
+      _FakeTaxServer server,
+    ) async {
+      tester.view.physicalSize = const Size(390 * 2, 844 * 2);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(fontFamily: 'Plus Jakarta Sans'),
+          home: Scaffold(
+            body: PayrollScreen(
+              api: PayrollApiService(
+                session: _session,
+                baseUrl: 'https://example.test',
+                client: MockClient(server.handle),
+              ),
+              onClose: () {},
+              profileAction: const SizedBox(width: 30, height: 30),
+              onNotifications: () {},
+              onQuickCreate: () {},
+              onFixPunchDay: (_) {},
+              onRaiseTicket: () {},
+              startPage: PayrollStartPage.taxDeclaration,
+            ),
+          ),
+        ),
+      );
+      await settle(tester);
+      return server;
+    }
+
+    Future<void> back(WidgetTester tester, String page) async {
+      Navigator.of(tester.element(find.byKey(ValueKey(page)))).pop();
+      await settle(tester);
+    }
+
+    testWidgets('new regime: Tax with the regime open, over the Payroll home', (
+      tester,
+    ) async {
+      await pumpStart(tester, _FakeTaxServer());
+      expect(find.byKey(const ValueKey('payroll-tax')), findsOneWidget);
+      expect(find.byKey(const ValueKey('tax-regime-picker')), findsOneWidget);
+      expect(find.byKey(const ValueKey('payroll-declaration')), findsNothing);
+      await back(tester, 'payroll-tax');
+      expect(find.byKey(const ValueKey('payroll-tax')), findsNothing);
+      expect(find.byKey(const ValueKey('payroll-home')), findsOneWidget);
+    });
+
+    testWidgets('old regime: the investment declaration, then Tax, then home', (
+      tester,
+    ) async {
+      final server = await pumpStart(
+        tester,
+        _FakeTaxServer()
+          ..regime = 'old'
+          ..chosen = true,
+      );
+      expect(find.byKey(const ValueKey('payroll-declaration')), findsOneWidget);
+      expect(server.calls, contains('GET /payroll/tax-declaration'));
+      await back(tester, 'payroll-declaration');
+      expect(find.byKey(const ValueKey('payroll-tax')), findsOneWidget);
+      // Once: coming back to Tax does not open the declaration again.
+      expect(find.byKey(const ValueKey('payroll-declaration')), findsNothing);
+      await back(tester, 'payroll-tax');
+      expect(find.byKey(const ValueKey('payroll-home')), findsOneWidget);
+    });
+  });
 }

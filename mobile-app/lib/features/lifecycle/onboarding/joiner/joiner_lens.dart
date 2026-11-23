@@ -132,7 +132,8 @@ class JoinerLens {
   /// The tile's faces: her stage's people; ahead, that stage's.
   List<JoinerMeeting> get faces => (isNow ? meetingsNow : meetingsThere).take(3).toList();
 
-  bool get showsMeetings => isNow ? meetingRows.isNotEmpty : meetingsThere.isNotEmpty;
+  /// No meetings from the server (the template has none): no Meetings tile.
+  bool get showsMeetings => d.meetings.isNotEmpty && (isNow ? meetingRows.isNotEmpty : meetingsThere.isNotEmpty);
 
   // ── Tasks ─────────────────────────────────────────────────────────────────
 
@@ -201,21 +202,28 @@ class JoinerLens {
 
   // ── Watch list ────────────────────────────────────────────────────────────
 
-  List<JoinerWatch> _of(List<JoinerWatch> list) => [
-    for (final w in list)
+  /// The stage's watch list (videos, pictures, text cards), in the server's
+  /// order: the stories of "Life at …".
+  late final List<JoinerWatch> videos = [
+    for (final w in d.watch)
       if (_idx(w.step) == (isNow ? current : at)) w,
   ];
 
-  late final List<JoinerWatch> videos = _of(d.watch);
-  late final List<JoinerWatch> trainings = _of(d.trainings);
+  bool get showsWatch => videos.isNotEmpty;
 
-  bool get showsWatch => videos.length + trainings.length > 0;
+  /// The stage's trainings (a video or a PDF): shown only when the server
+  /// sends some, under the company's own name for them.
+  late final List<JoinerWatch> trainings = [
+    for (final w in d.trainings)
+      if (_idx(w.step) == (isNow ? current : at)) w,
+  ];
 
-  ({String label, String title, String meta}) get watchTile {
-    final first = videos.firstOrNull ?? trainings.firstOrNull;
-    final n = videos.length + trainings.length;
-    final len = first?.length ?? '';
-    return (label: isNow ? 'UP NEXT' : inLabel, title: first?.title ?? '', meta: [if (len.isNotEmpty) len, _plural(n, 'item', 'items')].join(' · '));
+  bool get showsTrainings => trainings.isNotEmpty;
+
+  /// Where the stories open: the first not yet watched, else the first.
+  int get firstStory {
+    final i = videos.indexWhere((w) => !w.watched);
+    return i < 0 ? 0 : i;
   }
 
   // ── Sowaka tour ───────────────────────────────────────────────────────────
@@ -234,7 +242,9 @@ class JoinerLens {
 
   bool get showsCheckin => isNow && d.summary.checkinDueTitle != null;
 
-  bool get showsGoals => isNow && (d.goals?.count ?? 0) > 0;
+  /// From Month 1, while on probation: the manager's monthly KPI reviews,
+  /// read in Grow.
+  bool get showsPerformance => isNow && !d.isConfirmed && current >= d.indexOf('m1') && d.indexOf('m1') >= 0;
 
   bool get showsPunch => isNow && d.step == 'd1' && d.firstPunchAt == null;
 }

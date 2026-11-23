@@ -8,8 +8,15 @@ part of 'quick_actions_screen.dart';
 /// declaration and its proofs on the old one, and Form 16. A regime is picked
 /// on its card and kept with "Save tax regime"; it is saved through the
 /// declaration, so it follows the declaration's last date and lock.
+///
+/// With [declare] (an onboarding task, "Declare your tax and investments"):
+/// on the old regime, with the declaration still open, the declaration opens
+/// over the page at once; otherwise the regime card opens, since the new
+/// regime has nothing to declare and the regime is where the choice is made.
 class _TaxSummaryPage extends StatefulWidget {
-  const _TaxSummaryPage();
+  const _TaxSummaryPage({this.declare = false});
+
+  final bool declare;
 
   @override
   State<_TaxSummaryPage> createState() => _TaxSummaryPageState();
@@ -58,11 +65,23 @@ class _TaxSummaryPageState extends State<_TaxSummaryPage> {
     unawaited(_load());
   }
 
+  /// [_TaxSummaryPage.declare] is acted on once, on the first read.
+  bool _declareHandled = false;
+
   Future<void> _load() async {
     setState(() => _error = null);
     try {
       final tax = await _PayrollScope.of(context).api.fetchTaxSummary();
-      if (mounted) setState(() => _tax = tax);
+      if (!mounted) return;
+      setState(() => _tax = tax);
+      if (widget.declare && !_declareHandled) {
+        _declareHandled = true;
+        if (tax.regime == 'old' && !tax.locked) {
+          unawaited(_open(const _DeclarationPage()));
+        } else {
+          setState(() => _regimeOpen = true);
+        }
+      }
     } catch (error) {
       if (mounted) setState(() => _error = payrollErrorText(error));
     }

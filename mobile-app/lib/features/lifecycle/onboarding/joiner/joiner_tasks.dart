@@ -152,7 +152,7 @@ class JoinerTaskRow extends StatelessWidget {
 // ─── What a tap opens (FINAL-DESIGNS.md §8a "Task taps") ───────────────────
 
 /// Do in Sowaka → its screen (it ticks itself off from the fact); Review →
-/// the page and "Looks good"; Read and acknowledge → App policies, or the PDF
+/// the page, then "Looks good" on coming back; Read and acknowledge → App policies, or the PDF
 /// and "I’ve read this"; Sign → the documents to sign; More tasks → the link.
 Future<void> openJoinerTask(BuildContext context, JoinerController c, JoinerTask t) async {
   final shell = c.shell;
@@ -214,8 +214,22 @@ Future<void> openJoinerTask(BuildContext context, JoinerController c, JoinerTask
       await open(context, screen);
       await c.load();
     case 'review':
-      if (t.isDone) return;
-      await _confirm(context, c, t, label: 'Looks good', action: 'looks_good', page: t.screen);
+      // The page itself first (the payroll policy, the Grow tab); back from
+      // it, "Looks good" marks the row done where it was read. A done row
+      // still opens its page.
+      final page = t.screen;
+      final open = shell.openAppScreen;
+      if (page != null && open != null) {
+        await open(context, page);
+        if (t.isDone || !context.mounted) {
+          unawaited(c.load());
+          return;
+        }
+      } else if (t.isDone) {
+        return;
+      }
+      if (!context.mounted) return;
+      await _confirm(context, c, t, label: 'Looks good', action: 'looks_good', page: page);
     case 'sign':
       await Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => JoinerSignScreen(c: c, title: t.title)));
       await c.load();
@@ -242,7 +256,7 @@ Future<void> _act(BuildContext context, JoinerController c, JoinerTask t, String
 }
 
 /// The task's title with its one button ("Looks good", "I’ve read this");
-/// a Review row's page opens from it first.
+/// a Review row's page can be opened again from it.
 Future<void> _confirm(BuildContext context, JoinerController c, JoinerTask t, {required String label, required String action, String? page}) =>
     showOnbSheet<void>(
       context,

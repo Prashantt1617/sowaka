@@ -15,8 +15,11 @@ import 'package:flutter/material.dart';
 import '../../manager/data/manager_models.dart' show ManagerTab;
 import 'data/lifecycle_me_store.dart';
 import 'data/confirmation_api.dart';
+import 'joiner/joiner_api.dart' show HttpJoinerApi;
 import 'joiner/joiner_checkins.dart' show joinerHomeRoute;
+import 'joiner/joiner_details.dart' show JoinerPayrollScreen, JoinerProfileSectionScreen;
 import 'joiner/joiner_home.dart';
+import 'joiner/joiner_parts.dart' show JoinerController;
 import 'presentation/manager/confirmation_screens.dart';
 import 'presentation/onboarding_kit.dart';
 import 'presentation/portal_page_screen.dart';
@@ -66,6 +69,35 @@ Future<void> openOnboardingHome(BuildContext context, {OnboardingShell? shell}) 
   return Navigator.of(context).push<void>(
     MaterialPageRoute(settings: const RouteSettings(name: joinerHomeRoute), builder: (_) => JoinerHomeScreen(shell: resolved)),
   );
+}
+
+/// Payroll's "Set up your payroll" rows for someone with an onboarding
+/// journey in the app (a joiner, Day 1 on): `bank` and `uan` open their
+/// payroll details (bank account, PF and nominees), `pan` their profile's ID
+/// documents (Aadhaar and PAN), the same forms the onboarding tasks open.
+/// Completes once the form closes; false (nothing opened) for anyone else,
+/// whose row asks HR instead.
+Future<bool> openJoinerPayrollDetail(BuildContext context, String key) async {
+  if (key != 'bank' && key != 'uan' && key != 'pan') return false;
+  final me = LifecycleMeStore.instance.value;
+  final onboarding = me.onboarding;
+  if (!me.enabled || onboarding == null || onboarding.journeyId.isEmpty || onboarding.portal) return false;
+  final shell = currentOnboardingShell();
+  final api = shell == null ? null : HttpJoinerApi.from(shell.api);
+  if (shell == null || api == null) return false;
+  final c = JoinerController(shell: shell, api: api);
+  try {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => key == 'pan'
+            ? JoinerProfileSectionScreen(c: c, section: 'ids', title: 'ID documents')
+            : JoinerPayrollScreen(c: c),
+      ),
+    );
+  } finally {
+    c.dispose();
+  }
+  return true;
 }
 
 /// A confirmation waiting on the viewer (the Actions card): the manager's

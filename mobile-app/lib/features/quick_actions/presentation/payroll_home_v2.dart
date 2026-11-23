@@ -173,9 +173,22 @@ extension _PayrollHomeV2 on _PayrollHomePageState {
     }
   }
 
+  /// Bank, PAN and UAN: a joiner adds them on their own onboarding forms
+  /// (the bank account and PF, the profile's IDs), opened here; the home
+  /// reads again once the form closes. Anyone else asks HR in a ticket.
+  Future<void> _addOrAsk(String key, String about) async {
+    final opener = _PayrollScope.of(context).onSetUpItem;
+    if (opener != null && await opener(context, key)) {
+      if (mounted) unawaited(_load());
+      return;
+    }
+    if (mounted) _raiseTicket(about: about);
+  }
+
   /// One row of "Set up your payroll", tapping to where it is done. Bank,
-  /// PAN and UAN are kept by HR (the profile's Payment and tax IDs; the app
-  /// has no screen to change them), so those rows ask HR in a ticket.
+  /// PAN and UAN open a joiner's own forms ([_addOrAsk]); for anyone else
+  /// they are kept by HR (the profile's Payment and tax IDs), so those rows
+  /// ask HR in a ticket.
   Widget _setupRow(PayrollSetupItem item, PayrollHome home) {
     final pool = home.cards.fbp?.poolPaise;
     final (
@@ -190,10 +203,9 @@ extension _PayrollHomeV2 on _PayrollHomePageState {
         null,
         'Add bank account',
         'Needed to pay your salary',
-        () => _raiseTicket(
-          about:
-              'Please add my bank account for payroll so my salary can be '
-              'paid.',
+        () => _addOrAsk(
+          'bank',
+          'Please add my bank account for payroll so my salary can be paid.',
         ),
       ),
       'pan' => (
@@ -201,7 +213,7 @@ extension _PayrollHomeV2 on _PayrollHomePageState {
         null,
         'Add PAN',
         'Tax is cut at 20% without it',
-        () => _raiseTicket(about: 'Please add my PAN for payroll.'),
+        () => _addOrAsk('pan', 'Please add my PAN for payroll.'),
       ),
       'regime' => (
         'assets/icons/payroll_setup_regime.png',
@@ -224,8 +236,10 @@ extension _PayrollHomeV2 on _PayrollHomePageState {
         '🔗',
         'Link PF account (UAN)',
         'So your PF reaches your account',
-        () =>
-            _raiseTicket(about: 'Please link my PF account (UAN) for payroll.'),
+        () => _addOrAsk(
+          'uan',
+          'Please link my PF account (UAN) for payroll.',
+        ),
       ),
       _ => (
         'assets/icons/request_reimbursement_money.png',

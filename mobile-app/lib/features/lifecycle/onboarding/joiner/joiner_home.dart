@@ -9,12 +9,12 @@ import '../presentation/onboarding_kit.dart';
 import '../presentation/plant.dart';
 import 'joiner_api.dart';
 import 'joiner_checkins.dart';
-import 'joiner_goals.dart';
 import 'joiner_lens.dart';
 import 'joiner_meetings.dart';
 import 'joiner_models.dart';
 import 'joiner_more.dart';
 import 'joiner_parts.dart';
+import 'joiner_stories.dart';
 import 'joiner_tasks.dart';
 
 /// Actions › Onboarding (New joiner canvas, App · home): the stage hero
@@ -71,17 +71,21 @@ class JoinerHomeBody extends StatelessWidget {
     final now = lens.isNow;
     final today = lessonOf(d.tour.today);
     final tourCard = now && !lens.showsPunch && today != null && (d.step == 'd1' || d.step == 'w1');
-    final goals = d.goals;
+    final openScreen = c.shell.openAppScreen;
     return JPage(
       onRefresh: c.load,
       children: [
         OnbRise(child: _Hero(c: c, d: d, lens: lens)),
-        if (lens.showsGoals && goals != null)
+        // The manager's monthly KPI reviews, read-only in Grow (there are no
+        // goals of the joiner's own to keep).
+        if (lens.showsPerformance && openScreen != null)
           OnbRise(
             delay: 60,
-            child: _GoalsCard(
-              meta: [plural(goals.count, 'goal', 'goals'), if (goals.nextTalk != null) 'next talk ${inDaysText(goals.nextTalk!.inDays)}'].join(' · '),
-              onTap: () => pushJoiner(context, c, JoinerGoalsScreen(c: c)),
+            child: _PerformanceCard(
+              onTap: () async {
+                await openScreen(context, 'kpis');
+                unawaited(c.load());
+              },
             ),
           ),
         if (lens.showsPunch)
@@ -310,41 +314,40 @@ class _StepChip extends StatelessWidget {
 
 // ─── Cards under the hero ───────────────────────────────────────────────────
 
-class _GoalsCard extends StatelessWidget {
-  const _GoalsCard({required this.meta, required this.onTap});
+class _PerformanceCard extends StatelessWidget {
+  const _PerformanceCard({required this.onTap});
 
-  final String meta;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) => Semantics(
     button: true,
-    label: 'This month’s goals. $meta',
+    label: 'Monthly performance. Your KPI reviews from your manager',
     excludeSemantics: true,
     child: Material(
-      key: const ValueKey('goals-card'),
+      key: const ValueKey('performance-card'),
       color: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: OnbColors.text, width: 1.5)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
             children: [
-              const JIconChip(icon: Icons.track_changes_rounded, tint: Color(0xFFFDECE7), color: OnbColors.rust),
-              const SizedBox(width: 12),
+              JIconChip(icon: Icons.track_changes_rounded, tint: Color(0xFFFDECE7), color: OnbColors.rust),
+              SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('This month’s goals', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: OnbColors.text)),
-                    const SizedBox(height: 2),
-                    Text(meta, style: const TextStyle(fontSize: 12, color: OnbColors.text3)),
+                    Text('Monthly performance', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: OnbColors.text)),
+                    SizedBox(height: 2),
+                    Text('Your KPI reviews from your manager', style: TextStyle(fontSize: 12, color: OnbColors.text3)),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: OnbColors.icon),
+              Icon(Icons.chevron_right_rounded, color: OnbColors.icon),
             ],
           ),
         ),
@@ -444,7 +447,6 @@ class _Tiles extends StatelessWidget {
     final today = lessonOf(d.tour.today) ?? lessonOf(d.tour.lessons.firstOrNull);
     final tourCount = '${d.tour.doneCount} of ${d.tour.lessons.length} done';
     final task = lens.taskTile;
-    final watch = lens.watchTile;
     final half = <Widget>[
       if (lens.showsMeetings)
         _Tile(
@@ -477,18 +479,19 @@ class _Tiles extends StatelessWidget {
           title: now ? (today?.title ?? '') : 'Fix a missed punch, leave and overtime',
           meta: now ? '${today?.length ?? ''} · $tourCount' : 'A new lesson each day',
         ),
+      // "Life at …" (the portal's tile): the watch list as stories, opened
+      // full screen on the first one not yet watched.
       if (lens.showsWatch)
         _Tile(
           key: const ValueKey('tile-watch'),
-          onTap: () => open(JoinerWatchScreen(c: c)),
+          onTap: () => unawaited(openJoinerStories(context, c, lens.videos, start: lens.firstStory)),
           color: OnbColors.primary,
           light: true,
           subColor: OnbColors.skyText,
-          icon: const JIconChip(icon: Icons.play_arrow_rounded, tint: Color(0x38FFFFFF), color: Colors.white, size: 32, iconSize: 18),
-          name: 'Watch list',
-          eyebrow: watch.label,
-          title: watch.title,
-          meta: watch.meta,
+          top: const JIconChip(icon: Icons.groups_rounded, tint: Color(0x38FFFFFF), color: Colors.white, size: 40, iconSize: 22),
+          eyebrow: now ? null : lens.inLabel,
+          title: d.companyName.isEmpty ? 'Life at work' : 'Life at ${d.companyName}',
+          meta: plural(lens.videos.length, 'story', 'stories'),
         ),
     ];
     final ready = d.devices.where((x) => x.ready).length;
@@ -502,6 +505,19 @@ class _Tiles extends StatelessWidget {
           title: 'Check-ins',
           meta: '${d.summary.checkinDueTitle} · about a minute',
           end: const JVerbPill('Start', filled: true),
+        ),
+      // Only when the template has trainings, under the company's name for them.
+      if (lens.showsTrainings)
+        _WideTile(
+          key: const ValueKey('tile-trainings'),
+          onTap: () => open(JoinerTrainingsScreen(c: c)),
+          icon: const JIconChip(icon: Icons.school_outlined, tint: Color(0xFFFDECE7), color: OnbColors.rust, size: 48, radius: 14, iconSize: 24),
+          title: d.trainingsLabel,
+          meta: [
+            if (!now) lens.inLabel,
+            plural(lens.trainings.length, 'item', 'items'),
+            if (now && lens.trainings.any((t) => !t.watched)) '${lens.trainings.where((t) => !t.watched).length} to do',
+          ].join(' · '),
         ),
       if (lens.showsDevices)
         _WideTile(
