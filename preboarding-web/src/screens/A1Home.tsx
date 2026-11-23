@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { portal } from '../api/portal';
 import { mediaUrl } from '../api/client';
-import type { PortalHome, PortalOfferView, ProfileView } from '../api/types';
+import type { MeetItem, PortalHome, PortalOfferView, ProfileView } from '../api/types';
 import { firstName, fmtShort, fmtWeekday } from '../lib/format';
 import { useFocusHeading } from '../lib/hooks';
 import { useMe } from '../session';
@@ -38,6 +38,7 @@ export function noticesFor(me: PortalHome): Array<{ title: string; to: string; b
 export function A1Home() {
   const { me, reload } = useMe();
   const [profile, setProfile] = useState<ProfileView>();
+  const [stories, setStories] = useState<number>();
   const [offer, setOffer] = useState<PortalOfferView>();
   const h1 = useFocusHeading<HTMLHeadingElement>('a1-home');
   useEffect(() => { reload(); }, [reload]);
@@ -45,6 +46,7 @@ export function A1Home() {
   useEffect(() => {
     if (closed) return;
     portal.profile().then(setProfile, () => undefined);
+    portal.meet().then((r) => setStories(storyCount(r.items, (me.contacts ?? []).some((c) => c.role === 'manager'))), () => undefined);
     portal.offer({ kind: 'session' }).then(setOffer, () => undefined);
   }, [closed]);
 
@@ -107,9 +109,11 @@ export function A1Home() {
           <Link to="/about?stories=1" className="fig-tile fig-tile--red">
             <span className="fig-tile__row" style={{ gap: 16 }}>
               <FigIcon3D name="team" size={64} />
-              <span className="fig-title">About the company</span>
+              <span className="fig-tile__text">
+                <span className="fig-title">Life at {me.company.name}</span>
+                {stories !== undefined && <span className="fig-body fig-t2">{stories} {stories === 1 ? 'story' : 'stories'}</span>}
+              </span>
             </span>
-            <span className="fig-tile__chip fig-tile__chip--split">View<FigChevronRight size={18} stroke={1.5} /></span>
           </Link>
         </div>
 
@@ -122,6 +126,14 @@ export function A1Home() {
 }
 
 /** "Your point of contact": the manager (green) and HR (blue), each with a WhatsApp button when they have a phone. */
+/** How many stories About the company opens (its order: the watch list, welcome, manager, team, first day, policies, role). */
+function storyCount(items: MeetItem[], hasManager: boolean): number {
+  const has = (id: string) => items.some((i) => i.id === id);
+  const manager = hasManager || Boolean(items.find((i) => i.id === 'manager_note')?.authorName);
+  const policies = (items.find((i) => i.id === 'policies')?.policies?.length ?? 0) > 0;
+  return items.filter((i) => i.kind === 'watch').length + 1 + (manager ? 2 : 0) + 1 + (policies ? 1 : 0) + (has('role') ? 1 : 0);
+}
+
 function PointsOfContact({ contacts }: { contacts: NonNullable<PortalHome['contacts']> }) {
   return (
     <section aria-labelledby="poc-title" style={{ display: 'grid', gap: 12, marginTop: 24, padding: '0 16px' }}>
