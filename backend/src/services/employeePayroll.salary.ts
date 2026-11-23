@@ -26,8 +26,10 @@ import { myLatestReleasedPayslipBefore, myReleasedPayslipFor } from './payrollRu
 import { computeStructureFor } from './salaryStructure.service';
 import { resolveRuleSet } from './statutory.service';
 import { workStateOf } from './statutorySettings.service';
+import { AFTER_LEAVING, BEFORE_JOINING } from './payslipDays';
 
-export type SalaryLineKind = 'earning' | 'deduction' | 'lop';
+/** not_employed: the days before joining / after leaving (not paid, not loss of pay); older app builds list it as a deduction. */
+export type SalaryLineKind = 'earning' | 'deduction' | 'lop' | 'not_employed';
 
 export interface SalaryLine {
   key: string;
@@ -49,6 +51,14 @@ export interface SalaryLop {
   perDayPaise: number | null;
   /** HR typed the loss of pay on the run. */
   enteredByHr: boolean;
+}
+
+/** The days before joining and after leaving: not paid, and not loss of pay (they were not employed). */
+export interface SalaryNotEmployed {
+  days: number;
+  beforeJoiningDays: number;
+  afterLeavingDays: number;
+  amountPaise: number;
 }
 
 // —— words ——
@@ -246,6 +256,31 @@ function lopExplanation(period: string, lop: SalaryLop, grossPaise: number, base
   return `${what} One day's pay is ${inr(lop.perDayPaise)} (${inr(grossPaise)} ÷ ${baseDaysPhrase(period, baseDays, from, to)}).`;
 }
 
+/** The not-employed line: which days, why they are not paid, and that they are not loss of pay. */
+function notEmployedLine(
+  pay: { notEmployedDays: number; beforeJoiningDays: number; afterLeavingDays: number; notEmployedPaise: number; notEmployedWhen: string; joinedLabel: string; leftLabel: string; grossPaise: number },
+  period: string, baseDays: number | null, from: string | null, to: string | null,
+): SalaryLine | null {
+  if (pay.notEmployedDays <= 0) return null;
+  const said: string[] = [];
+  if (pay.beforeJoiningDays > 0) said.push(`${pay.joinedLabel ? `You joined on ${pay.joinedLabel}: the` : 'The'} ${dayCount(pay.beforeJoiningDays)} of the pay period before you joined are not paid.`);
+  if (pay.afterLeavingDays > 0) said.push(`${pay.leftLabel ? `Your last working day was ${pay.leftLabel}: the` : 'The'} ${dayCount(pay.afterLeavingDays)} after it are not paid.`);
+  said.push('This is not loss of pay: you were not employed on those days.');
+  if (baseDays) said.push(`One day's pay is ${inr(Math.round(pay.grossPaise / baseDays))} (${inr(pay.grossPaise)} ÷ ${baseDaysPhrase(period, baseDays, from, to)}).`);
+  return {
+    key: 'not_employed',
+    label: `Not employed · ${dayCount(pay.notEmployedDays)}${pay.notEmployedWhen ? ` (${pay.notEmployedWhen})` : ''}`,
+    amountPaise: pay.notEmployedPaise,
+    kind: 'not_employed',
+    explanation: said.join(' '),
+  };
+}
+
+const notEmployedOfPay = (pay: { notEmployedDays: number; beforeJoiningDays: number; afterLeavingDays: number; notEmployedPaise: number }): SalaryNotEmployed | null =>
+  pay.notEmployedDays > 0
+    ? { days: pay.notEmployedDays, beforeJoiningDays: pay.beforeJoiningDays, afterLeavingDays: pay.afterLeavingDays, amountPaise: pay.notEmployedPaise }
+    : null;
+
 // —— past payslips ——
 
 async function releasedPeriods(userId: string): Promise<string[]> {
@@ -310,6 +345,7 @@ export async function mySalarySummary(userId: string, periodRaw: unknown, now = 
     takeHomePaise: null,
     lines: [] as SalaryLine[],
     lop: null,
+    notEmployed: null,
     notSetUp: { reason, message },
   });
 
@@ -326,22 +362,20 @@ export async function mySalarySummary(userId: string, periodRaw: unknown, now = 
     const rows = inputs?.attendanceDeductions ?? [];
     const sum = (pick: (r: (typeof rows)[number]) => boolean) => rows.filter(pick).reduce((t, r) => t + r.days, 0);
     const count = (pick: (r: (typeof rows)[number]) => boolean) => rows.filter(pick).reduce((t, r) => t + r.count, 0);
-    const beforeJoining = (r: (typeof rows)[number]) => r.label === 'Before joining';
+    // The days before joining and after leaving are their own line (not loss of pay), not absences.
+    const notEmployedRow = (r: (typeof rows)[number]) => r.label === BEFORE_JOINING || r.label === AFTER_LEAVING;
     const lop: SalaryLop = {
       days: pay.lopDays,
-      absentDays: count((r) => r.trigger === 'absent' && !beforeJoining(r)),
+      absentDays: count((r) => r.trigger === 'absent' && !notEmployedRow(r)),
       halfDays: count((r) => r.trigger === 'half_day'),
       missedPunchDays: sum((r) => r.trigger === 'missed_punch'),
       unpaidLeaveDays: sum((r) => r.trigger === 'unpaid_leave'),
       perDayPaise: baseDays ? Math.round(pay.grossPaise / baseDays) : null,
       enteredByHr: inputs?.lopEnteredByHr === true,
     };
-    // The template's own rules (late marks, early leaves…) and the days before joining.
-    const extra = [
-      ...rows.filter((r) => ['late', 'early', 'leave'].includes(r.trigger ?? '') && r.days > 0)
-        .map((r) => `${plural(r.count, r.label.toLowerCase().replace(/s$/, ''), r.label.toLowerCase())} (${dayCount(r.days)})`),
-      ...rows.filter((r) => beforeJoining(r) && r.days > 0).map((r) => `${dayCount(r.days)} before you joined`),
-    ];
+    // The template's own rules (late marks, early leaves…).
+    const extra = rows.filter((r) => ['late', 'early', 'leave'].includes(r.trigger ?? '') && r.days > 0)
+      .map((r) => `${plural(r.count, r.label.toLowerCase().replace(/s$/, ''), r.label.toLowerCase())} (${dayCount(r.days)})`);
     const offset = (inputs?.paidLeaveDaysApplied ?? 0) > 0 ? `less ${dayCount(inputs!.paidLeaveDaysApplied!)} of paid leave` : null;
 
     const visible = released.earnings.filter((e) => !e.hidden).map((e) => ({ name: e.name, paise: e.fullPaise }));
@@ -355,6 +389,8 @@ export async function mySalarySummary(userId: string, periodRaw: unknown, now = 
         explanation: lopExplanation(period, lop, pay.grossPaise, baseDays, from, to, extra, offset),
       });
     }
+    const notEmployedReleased = notEmployedLine(pay, period, baseDays, from, to);
+    if (notEmployedReleased) lines.push(notEmployedReleased);
     if (pay.overtimePaise > 0) {
       lines.push({
         key: 'overtime', label: 'Overtime', amountPaise: pay.overtimePaise, kind: 'earning',
@@ -385,7 +421,7 @@ export async function mySalarySummary(userId: string, periodRaw: unknown, now = 
         explanation: `Paid with your salary, outside gross pay: ${partsOf(parts, pay.reimbursementsPaise)}.`,
       });
     }
-    const daysPaid = inputs?.payableDays ?? (baseDays !== null ? Math.max(0, baseDays - pay.lopDays) : null);
+    const daysPaid = inputs?.payableDays ?? (baseDays !== null ? Math.max(0, baseDays - pay.lopDays - pay.notEmployedDays) : null);
     return {
       ...base,
       released: true,
@@ -399,6 +435,7 @@ export async function mySalarySummary(userId: string, periodRaw: unknown, now = 
       takeHomePaise: pay.takeHomePaise,
       lines,
       lop,
+      notEmployed: notEmployedOfPay(pay),
       notSetUp: null,
     };
   }
@@ -449,6 +486,8 @@ export async function mySalarySummary(userId: string, periodRaw: unknown, now = 
       explanation: lopExplanation(period, lop, s.grossPaise, range.baseDays, range.from, range.to, [], null),
     });
   }
+  const notEmployedEstimate = notEmployedLine(s, period, range.baseDays, range.from, range.to);
+  if (notEmployedEstimate) lines.push(notEmployedEstimate);
   const calcLabel = new Map(computed.deductions.map((d) => [d.code, d.calcLabel]));
   for (const d of [...s.deductions].sort((a, b) => orderOf(a.key) - orderOf(b.key))) {
     lines.push({
@@ -474,13 +513,14 @@ export async function mySalarySummary(userId: string, periodRaw: unknown, now = 
     payslipId: null,
     periodFrom: range.from,
     periodTo: range.to,
-    daysPaid: Math.max(0, range.baseDays - s.lopDays),
+    daysPaid: Math.max(0, range.baseDays - s.lopDays - s.notEmployedDays),
     daysInPeriod: daysBetween(range.from, range.to),
     baseDays: range.baseDays,
     grossPaise: s.grossPaise,
     takeHomePaise: s.takeHomePaise,
     lines,
     lop,
+    notEmployed: notEmployedOfPay(s),
     notSetUp: null,
   };
 }

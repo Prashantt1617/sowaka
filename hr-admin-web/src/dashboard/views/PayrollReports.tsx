@@ -212,6 +212,8 @@ function ReportBody({ kind, data }: { kind: ReportKey; data: unknown }) {
                   {r.lopDays > 0 ? <><strong>{r.lopDays} of {r.baseDays} days</strong>{r.lopAmountPaise ? <> · {money(r.lopAmountPaise)}</> : null}
                     <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>{r.lopBreakdown || r.lopSource}</div></>
                     : <span style={{ color: 'var(--ink-3)' }}>None</span>}
+                  {/* Before joining / after leaving: not paid, not loss of pay. */}
+                  {(r.notEmployedDays ?? 0) > 0 && <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>Not employed: {r.notEmployedNote || `${r.notEmployedDays} days`}{r.notEmployedAmountPaise ? ` · ${money(r.notEmployedAmountPaise)}` : ''}</div>}
                 </td>
                 {c.earnings.map((x) => <td key={x.code} style={num}>{money(r.earnings[x.code] ?? 0)}</td>)}
                 <td style={{ ...num, fontWeight: 500 }}>{money(r.grossPaise)}</td>
@@ -319,11 +321,11 @@ export function exportReport(kind: ReportKey, data: unknown): Promise<void> {
   } else if (kind === 'register') {
     const d = data as SalaryRegisterReport;
     const c = d.columns;
-    const header = ['Employee Number', 'Employee Name', 'Department', 'Designation', 'Work Location', 'Date of Joining', 'Payment Mode', 'Bank Name', 'Account Number', 'IFSC', 'CTC (per annum)', 'Base Days', 'Loss Of Pay', 'Paid Days', 'LOP From', 'LOP Breakdown', 'Paid Leave Covered (days)', 'Gross (full month)', 'LOP Amount',
+    const header = ['Employee Number', 'Employee Name', 'Department', 'Designation', 'Work Location', 'Date of Joining', 'Payment Mode', 'Bank Name', 'Account Number', 'IFSC', 'CTC (per annum)', 'Base Days', 'Loss Of Pay', 'Paid Days', 'LOP From', 'LOP Breakdown', 'Paid Leave Covered (days)', 'Gross (full month)', 'LOP Amount', 'Not Employed Days', 'Not Employed Amount',
       ...c.earnings.map((x) => x.name), 'Gross Pay', ...c.reimbursements.map((x) => x.name), 'Total Reimbursements',
       ...c.deductions.map((x) => x.name), 'Tax on Income', 'Surcharge', 'Cess', 'Total Income Tax', 'Total Deductions',
       ...c.employer.map((x) => `${x.name} (Employer)`), 'Total Employer Contributions', 'Net Pay'];
-    const rows = d.rows.map((r) => [r.employeeId, r.name, r.department, r.designation, r.workLocation, r.joiningDate, r.paymentMode, r.bankName, r.accountNumber, r.ifsc, rupees(r.annualCtcPaise), r.baseDays, r.lopDays, r.paidDays, r.lopSource ?? '', r.lopBreakdown ?? '', r.paidLeaveCoveredDays ?? 0, rupees(r.fullGrossPaise ?? 0), rupees(r.lopAmountPaise ?? 0),
+    const rows = d.rows.map((r) => [r.employeeId, r.name, r.department, r.designation, r.workLocation, r.joiningDate, r.paymentMode, r.bankName, r.accountNumber, r.ifsc, rupees(r.annualCtcPaise), r.baseDays, r.lopDays, r.paidDays, r.lopSource ?? '', r.lopBreakdown ?? '', r.paidLeaveCoveredDays ?? 0, rupees(r.fullGrossPaise ?? 0), rupees(r.lopAmountPaise ?? 0), r.notEmployedDays ?? 0, rupees(r.notEmployedAmountPaise ?? 0),
       ...c.earnings.map((x) => rupees(r.earnings[x.code] ?? 0)), rupees(r.grossPaise), ...c.reimbursements.map((x) => rupees(r.reimbursements[x.code] ?? 0)), rupees(r.reimbursementsPaise),
       ...c.deductions.map((x) => rupees(r.deductions[x.key] ?? 0)), rupees(r.taxOnIncomePaise), rupees(r.surchargePaise), rupees(r.cessPaise), rupees(r.incomeTaxPaise), rupees(r.totalDeductionsPaise),
       ...c.employer.map((x) => rupees(r.employer[x.key] ?? 0)), rupees(r.employerTotalPaise), rupees(r.netPayPaise)]);

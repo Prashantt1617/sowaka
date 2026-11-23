@@ -17,6 +17,7 @@ import { workStateOf } from './statutorySettings.service';
 import { decryptField, fieldKeyConfigured } from './fieldCrypto';
 import { payrollAccessOf } from './payrollAccess.service';
 import { billCategories } from './reimbursementBills.service';
+import { AFTER_LEAVING, BEFORE_JOINING, lossOfPayDaysOf, lossOfPayPaiseOf, notEmployedOf, notEmployedPaiseOf, notEmployedWords } from './payslipDays';
 
 type Opts = { includeDrafts?: boolean };
 type StoredRun = PayrollRun & { _id: ObjectId };
@@ -90,19 +91,28 @@ function lopOf(s: Slip) {
   const nameOf = (l: (typeof lines)[number]) => (l.trigger ? DEDUCTION_TRIGGER_LABELS[l.trigger as DeductionTrigger] ?? l.label : l.label);
   const byHr = !!s.inputs?.lopEnteredByHr;
   const covered = s.inputs?.paidLeaveDaysApplied ?? 0;
+  // The days before joining / after leaving are their own columns: not loss of pay.
+  const notEmployed = notEmployedOf(s.inputs);
+  const notEmployedLine = (l: (typeof lines)[number]) => notEmployed.days > 0 && (l.label === BEFORE_JOINING || l.label === AFTER_LEAVING);
   const breakdown = [
-    ...lines.filter((l) => l.days > 0).map((l) => `${nameOf(l)} ${l.count} → ${l.days}d`),
+    ...lines.filter((l) => l.days > 0 && !notEmployedLine(l)).map((l) => `${nameOf(l)} ${l.count} → ${l.days}d`),
     ...(covered > 0 ? [`Paid leave covered ${covered}d`] : []),
   ].join(' · ');
   const fullGrossPaise = s.earnings.reduce((t, e) => t + (e.fullPaise ?? 0), 0);
-  const paidGrossPaise = s.earnings.reduce((t, e) => t + (e.paidPaise ?? 0), 0);
   return {
     lopSource: byHr ? 'Entered by HR' : 'Attendance',
-    attendanceLopDays: s.inputs?.attendanceLopDays ?? s.inputs?.lopDays ?? 0,
+    // What attendance alone gave, less the days not employed (they were in it).
+    attendanceLopDays: Math.max(0, (s.inputs?.attendanceLopDays ?? s.inputs?.lopDays ?? 0) - notEmployed.days),
     lopBreakdown: byHr ? `HR entered ${s.inputs?.lopDays ?? 0}d (attendance said ${s.inputs?.attendanceLopDays ?? 0}d)` : breakdown,
     paidLeaveCoveredDays: covered,
     fullGrossPaise,
-    lopAmountPaise: Math.max(0, fullGrossPaise - paidGrossPaise),
+    lopAmountPaise: lossOfPayPaiseOf(s),
+    notEmployedDays: notEmployed.days,
+    beforeJoiningDays: notEmployed.beforeJoining,
+    afterLeavingDays: notEmployed.afterLeaving,
+    notEmployedAmountPaise: notEmployedPaiseOf(s),
+    /** "15 days before joining (joined 16 Oct)"; '' when none. */
+    notEmployedNote: notEmployedWords(s.inputs, s.joiningDate, s.inputs?.leftOn),
   };
 }
 
@@ -245,7 +255,8 @@ export async function salaryRegister(viewer: string, periodIn: unknown, opts: Op
         ifsc: pay?.ifsc ?? '',
         annualCtcPaise: s.annualCtcPaise ?? 0,
         baseDays: s.inputs?.workingDays ?? 0,
-        lopDays: s.inputs?.lopDays ?? 0,
+        // Real loss of pay; the days before joining / after leaving are notEmployedDays (lopOf).
+        lopDays: lossOfPayDaysOf(s.inputs),
         paidDays: s.inputs?.payableDays ?? 0,
         ...lopOf(s),
         earnings: byCode(p.earnings),

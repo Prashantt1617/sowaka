@@ -5,7 +5,10 @@
  * are offboarded: sessions and device tokens gone, sign-in refused. A withdrawn
  * exit leaves no trace; "End access now" works at once. Days after the last
  * working day are not graded on the calendar and are not paid in a run; someone
- * who left before the period gets no payslip. On a scratch database only:
+ * who left before the period gets no payslip. The days before joining and
+ * after leaving are not paid, and are not loss of pay either: the payslip, the
+ * app and the salary register call them "not employed", with the same pay;
+ * a loss of pay HR typed stays loss of pay. On a scratch database only:
  *   MONGODB_DB=exits_scratch npm run exits:check
  */
 import {
@@ -16,9 +19,11 @@ import type { AttendanceRecord } from '../models/attendance.model';
 import { attendanceReport, employeeDayStatuses } from '../services/attendance-report.service';
 import { getCurrentAuthUser } from '../services/auth.service';
 import { closeDueExits, endAccessNow, exitSettings, listExits, recordExit, setExitSettings, withdrawExit } from '../services/exit.service';
-import { createRun, listRuns } from '../services/payrollRun.service';
-import { paymentDetails } from '../services/payrollReports.service';
+import { createRun, listRuns, recomputeRun } from '../services/payrollRun.service';
+import { paymentDetails, salaryRegister } from '../services/payrollReports.service';
 import { payslipHtml } from '../services/payslip-html';
+import { lossOfPayDaysOf, lossOfPayPaiseOf, notEmployedDaysOf, notEmployedPaiseOf, unpaidPaiseOf } from '../services/payslipDays';
+import { fromPayslip } from '../services/employeePayroll.home';
 import { createShift, setDefaultShift } from '../services/shift.service';
 import { ZOHO_CATALOG, ZOHO_TEMPLATES } from './payroll-zoho-check';
 import { STATUTORY_SEED } from './payroll-config-seed-data';
@@ -66,6 +71,7 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
     person('stayer', { name: 'Sita Stayer', employeeId: 'E4' }),
     person('runner', { name: 'Ravi Runner', employeeId: 'E5' }),
     person('fresh', { name: 'Farah Fresh', employeeId: 'E6', joiningDate: new Date('2026-09-15T00:00:00Z') }),
+    person('joiner', { name: 'Jaya Joiner', employeeId: 'E7', joiningDate: new Date('2026-09-16T00:00:00Z') }),
   ]);
   const shift = await createShift('hr', { name: 'General', punchFormat: 'In-app punch in' });
   await setDefaultShift('hr', shift.id);
@@ -149,8 +155,8 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
   console.log('calendar');
   const now = new Date();
   const records: AttendanceRecord[] = [];
-  for (const [userId, employeeId, lastDay] of [['leaver', 'E2', 20], ['stayer', 'E4', 30], ['runner', 'E5', 12]] as const) {
-    for (let d = 1; d <= lastDay; d += 1) {
+  for (const [userId, employeeId, lastDay, firstDay] of [['leaver', 'E2', 20, 1], ['stayer', 'E4', 30, 1], ['runner', 'E5', 12, 1], ['joiner', 'E7', 30, 16]] as const) {
+    for (let d = firstDay; d <= lastDay; d += 1) {
       const date = `${MONTH}-${String(d).padStart(2, '0')}`;
       if (new Date(`${date}T00:00:00Z`).getUTCDay() === 0) continue;
       records.push({
@@ -174,7 +180,7 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
   await payHeads().insertMany(ZOHO_CATALOG.map((h) => ({ ...h, org: ORG })));
   await salaryTemplates().insertOne({ ...ZOHO_TEMPLATES.BELOW_TAXABLE, org: ORG });
   await paidDaysTemplates().insertOne({ org: ORG, code: 'DEFAULT', name: 'Calendar', allDaysPaid: false, deductionRules: [], monthlyPaidLeaveDays: 0, isDefault: true, createdAt: now, updatedAt: now });
-  await salaryStructures().insertMany(['leaver', 'gone', 'stayer', 'fresh'].map((userId) => ({
+  await salaryStructures().insertMany(['leaver', 'gone', 'stayer', 'fresh', 'joiner'].map((userId) => ({
     org: ORG, userId, salaryTemplateCode: 'BELOW_TAXABLE', annualCtcPaise: 3_60_000_00, status: 'active' as const, createdAt: now, updatedAt: now,
   })));
   await createRun('hr', { period: MONTH });
@@ -199,6 +205,48 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
   ok('…it is listed apart as held', bank.held.length === 1 && bank.held[0].employeeId === 'E2', bank.held);
   const html = await myPayslipHtmlFor({ ...leaverSlip!, joiningDate: undefined } as never);
   ok('the payslip says it is held', /Held: paid with your final settlement/.test(html));
+
+  console.log('days not employed are not loss of pay');
+  const asHtml = (s: NonNullable<typeof leaverSlip>, joined: string) => myPayslipHtmlFor({ ...s, joiningDate: joined } as never);
+  const inr = (paise: number) => `₹${Math.round(paise / 100).toLocaleString('en-IN')}`;
+  // Joined 16 Sep, worked every day since: 15 days not paid (1–15 Sep), none of them loss of pay.
+  const joinerSlip = (await slip('joiner'))!;
+  ok('the run still does not pay the 15 days before joining', joinerSlip.inputs.lopDays === 15 && joinerSlip.inputs.payableDays === 15 && joinerSlip.inputs.notEmployedDays === 15, joinerSlip.inputs);
+  ok('…its pay is half the month, as before', Math.abs(joinerSlip.grossPaise / stayerSlip!.grossPaise - 15 / 30) < 0.01, [joinerSlip.grossPaise, stayerSlip?.grossPaise]);
+  ok('…loss of pay 0, not employed 15', lossOfPayDaysOf(joinerSlip.inputs) === 0 && notEmployedDaysOf(joinerSlip.inputs) === 15);
+  ok('…all the unpaid amount is "not employed"', unpaidPaiseOf(joinerSlip) > 0 && notEmployedPaiseOf(joinerSlip) === unpaidPaiseOf(joinerSlip) && lossOfPayPaiseOf(joinerSlip) === 0);
+  const joinerHtml = await asHtml(joinerSlip, '2026-09-16');
+  ok('the payslip has no loss-of-pay line, a "Not employed" one instead', !/Loss of pay ·/.test(joinerHtml) && joinerHtml.includes('Not employed · 15 days (joined 16 Sep)'), joinerHtml.match(/<div class="n">[^<]*<\/div>/g));
+  ok('…its days: 15 paid, 0 loss of pay, 15 before joining', joinerHtml.includes('<span>Paid days</span><span>15</span>') && joinerHtml.includes('<span>Loss of pay days</span><span>0</span>') && joinerHtml.includes('<span>Before joining</span><span>15</span>'));
+  ok('…and the same net pay', joinerHtml.includes(`<div class="amt">${inr(joinerSlip.netPayablePaise)}</div>`));
+  const app = fromPayslip(joinerSlip);
+  ok('the app: loss of pay 0, 15 days not employed (joined 16 Sep), the same take-home', app.lopDays === 0 && app.lopPaise === 0 && app.notEmployedDays === 15 && app.notEmployedPaise === unpaidPaiseOf(joinerSlip)
+    && app.notEmployedWhen === 'joined 16 Sep' && app.takeHomePaise === joinerSlip.netPayablePaise, app);
+  const register = await salaryRegister('hr', MONTH, { includeDrafts: true });
+  const regRow = register.rows.find((r) => r.employeeId === 'E7');
+  ok('the salary register: LOP 0, 15 days not employed, paid days and net pay as on the slip', regRow?.lopDays === 0 && regRow.notEmployedDays === 15 && regRow.lopAmountPaise === 0
+    && regRow.notEmployedAmountPaise === unpaidPaiseOf(joinerSlip) && regRow.paidDays === 15 && regRow.netPayPaise === joinerSlip.netPayablePaise && regRow.notEmployedNote === '15 days before joining (joined 16 Sep)', regRow);
+  // Left on the 20th: the 10 days after are "After leaving".
+  ok('the leaver: loss of pay 0, 10 days not employed, left 20 Sep', lossOfPayDaysOf(leaverSlip!.inputs) === 0 && notEmployedDaysOf(leaverSlip!.inputs) === 10 && leaverSlip!.inputs.leftOn === '2026-09-20', leaverSlip?.inputs);
+  const leaverHtml = await asHtml(leaverSlip!, '2025-01-01');
+  ok('…their payslip: "Not employed · 10 days (left 20 Sep)", 10 after leaving, the same net pay', !/Loss of pay ·/.test(leaverHtml) && leaverHtml.includes('Not employed · 10 days (left 20 Sep)')
+    && leaverHtml.includes('<span>After leaving</span><span>10</span>') && leaverHtml.includes(`<div class="amt">${inr(leaverSlip!.netPayablePaise)}</div>`));
+  // Joined the 15th, left the 29th: both, on one line.
+  const freshSlip = (await slip('fresh'))!;
+  ok('joined and left in the month: 14 before + 1 after, not loss of pay', notEmployedDaysOf(freshSlip.inputs) === 15 && lossOfPayDaysOf(freshSlip.inputs) === freshSlip.inputs.lopDays - 15
+    && (await asHtml(freshSlip, '2026-09-15')).includes('Not employed · 15 days (joined 15 Sep, left 29 Sep)'), freshSlip.inputs);
+  ok('…the two amounts add up to what the earnings lost', lossOfPayPaiseOf(freshSlip) + notEmployedPaiseOf(freshSlip) === unpaidPaiseOf(freshSlip));
+  ok('a full month: nothing not employed', notEmployedDaysOf(stayerSlip!.inputs) === 0 && !(await asHtml(stayerSlip!, '2025-01-01')).includes('Not employed'));
+
+  // HR types the same 15 days: that is their loss of pay, as before.
+  await recomputeRun('hr', run.id, { lopDays: { joiner: 15 } });
+  const typed = (await slip('joiner'))!;
+  ok('HR-typed loss of pay stays loss of pay: 15 days, none "not employed"', typed.inputs.lopEnteredByHr === true && lossOfPayDaysOf(typed.inputs) === 15 && notEmployedDaysOf(typed.inputs) === 0 && typed.inputs.notEmployedDays === 0, typed.inputs);
+  const typedHtml = await asHtml(typed, '2026-09-16');
+  ok('…the payslip says "Loss of pay · 15 days", the same net pay', typedHtml.includes('Loss of pay · 15 days') && !typedHtml.includes('Not employed') && typed.netPayablePaise === joinerSlip.netPayablePaise);
+  await recomputeRun('hr', run.id, { lopDays: { joiner: null } });
+  const back = (await slip('joiner'))!;
+  ok('back to attendance: not employed again, the same pay', !back.inputs.lopEnteredByHr && notEmployedDaysOf(back.inputs) === 15 && back.netPayablePaise === joinerSlip.netPayablePaise && back.grossPaise === joinerSlip.grossPaise);
 
   console.log(`\n${failed ? `${failed} check(s) failed` : `all ${passed} exit checks passed`}`);
   process.exit(failed ? 1 : 0);

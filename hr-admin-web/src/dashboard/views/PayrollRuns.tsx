@@ -23,6 +23,7 @@ import type { LoadState } from '../ui';
 import { downloadPayslipPdf } from '../payslip';
 import { downloadTdsSheetPdf } from '../tdsSheet';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
+import { isNotEmployedLine, lossOfPayDaysOf, notEmployedNote, notEmployedOf } from '../payslipDays';
 import { EmployeeCalendar } from './EmployeeProfile';
 import { Form16Section } from './Form16Section';
 import { exportReport } from './PayrollReports';
@@ -364,6 +365,9 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
               const taxPaise = p.deductions.find((d) => d.key === 'income_tax')?.amountPaise ?? 0;
               const tax = e.tax ?? String(taxPaise / 100);
               const fromAttendance = p.inputs.workingDays - (p.inputs.attendanceLopDays ?? p.inputs.lopDays);
+              // Real loss of pay; the days before joining / after leaving are noted under it, not counted as LOP.
+              const lopDays = lossOfPayDaysOf(p.inputs);
+              const notEmployed = notEmployedNote(p);
               const expanded = open === p.userId;
               return (
                 <FragmentRows key={p.userId}>
@@ -374,12 +378,13 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
                     </Td>
                     <Td right mono>{p.inputs.workingDays}</Td>
                     <Td right>
-                      <button type="button" onClick={() => { setLopChanged(false); setLopFor(p); }} title="See the days in the calendar, and change them" style={{ ...lopLink, fontSize: 14, fontWeight: 500, color: p.inputs.lopDays > 0 ? 'var(--bad)' : 'var(--ok)' }}>{p.inputs.lopDays}</button>
+                      <button type="button" onClick={() => { setLopChanged(false); setLopFor(p); }} title="See the days in the calendar, and change them" style={{ ...lopLink, fontSize: 14, fontWeight: 500, color: lopDays > 0 ? 'var(--bad)' : 'var(--ok)' }}>{lopDays}</button>
                       <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 2 }}>
                         {p.inputs.lopEnteredByHr ? (
                           <>Typed earlier · calendar {p.inputs.workingDays - fromAttendance}{isDraft && <button type="button" onClick={() => void recalc({ userId: p.userId, what: 'lop' })} style={linkBtn}>use calendar</button>}</>
                         ) : `of ${p.inputs.workingDays} · ${p.inputs.payableDays} paid`}
                       </div>
+                      {notEmployed && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 2 }}>{notEmployed}</div>}
                     </Td>
                     <Td right mono>{money2(p.grossPaise)}</Td>
                     <Td right>
@@ -462,7 +467,9 @@ function LopCalendar({ slip, period, editable, onMarked, onExplain, onClose }: {
   slip: PayslipDTO; period: string; editable: boolean; onMarked: () => void; onExplain: () => void; onClose: () => void;
 }) {
   const month = new Date(`${period}-01T00:00:00Z`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-  const rules = (slip.inputs.attendanceDeductions ?? []).filter((l) => l.days > 0);
+  const rules = (slip.inputs.attendanceDeductions ?? []).filter((l) => l.days > 0 && !isNotEmployedLine(slip.inputs, l));
+  const lopDays = lossOfPayDaysOf(slip.inputs);
+  const notEmployed = notEmployedNote(slip);
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 16px', overflowY: 'auto' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--surface)', borderRadius: 'var(--r-lg)', width: 'min(1040px, 100%)', boxShadow: 'var(--shadow-lg)' }}>
@@ -470,8 +477,9 @@ function LopCalendar({ slip, period, editable, onMarked, onExplain, onClose }: {
           <div style={{ flex: 1 }}>
             <div style={L.modalTitle}>{slip.employeeName} · loss of pay, {month}</div>
             <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>
-              <strong style={{ color: 'var(--bad)', fontWeight: 500 }}>{slip.inputs.lopDays} LOP {slip.inputs.lopDays === 1 ? 'day' : 'days'}</strong> of {slip.inputs.workingDays}
+              <strong style={{ color: 'var(--bad)', fontWeight: 500 }}>{lopDays} LOP {lopDays === 1 ? 'day' : 'days'}</strong> of {slip.inputs.workingDays}
               {rules.length > 0 && <> · {rules.map((l) => `${l.label} ${l.count} → ${l.days}`).join(' · ')}</>}
+              {notEmployed && <> · not employed: {notEmployed}</>}
               {' · '}<button type="button" onClick={onExplain} style={{ ...linkBtn, marginLeft: 0 }}>how it adds up</button>
             </div>
           </div>
@@ -559,7 +567,7 @@ function SlipNumbers({ p }: { p: PayslipDTO }) {
         {row('Net pay', p.netPayablePaise, { strong: true })}
         {p.held && <div style={{ fontSize: 12, color: 'var(--warn)', marginTop: 4 }}>Held since notice began ({p.held.since}): paid with their final settlement, not with this run.</div>}
         <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 6 }}>
-          {p.inputs.workingDays} days · {p.inputs.payableDays} paid · {p.inputs.lopDays} loss of pay · PF wage {money2(p.pfWagePaise)}
+          {p.inputs.workingDays} days · {p.inputs.payableDays} paid · {lossOfPayDaysOf(p.inputs)} loss of pay{notEmployedOf(p.inputs).days > 0 && ` · ${notEmployedOf(p.inputs).days} not employed`} · PF wage {money2(p.pfWagePaise)}
         </div>
       </div>
       <div>
