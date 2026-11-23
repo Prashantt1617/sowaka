@@ -12,6 +12,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/data/joiner_meetings_api.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_models.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/joiner/joiner_api.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/joiner/joiner_details.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/joiner/joiner_details_models.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/joiner/joiner_form.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/joiner/joiner_parts.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/joiner/joiner_home.dart';
@@ -267,6 +269,58 @@ class FakeJoinerApi implements JoinerApi {
 
   @override
   Future<Uint8List> download(String path) async => Uint8List(0);
+
+  /// `GET /lifecycle/joiner/profile`: personal filled before joining, contact approved by HR, the rest empty.
+  Map<String, dynamic> profile = {
+    'sections': [
+      {'key': 'personal', 'title': 'Personal details', 'state': 'done', 'filled': true, 'editable': false},
+      {'key': 'contact', 'title': 'Contact and address', 'state': 'done', 'filled': true, 'editable': false, 'locked': true},
+      {'key': 'emergency', 'title': 'Emergency contact', 'state': 'todo', 'filled': false, 'editable': true},
+    ],
+    'values': {
+      'personal': {'fullName': 'Priya Shah', 'dob': '1998-04-02', 'gender': 'Female'},
+      'contact': {'mobile': '+919876500001', 'permanentSame': true, 'current': {'line': '12 MG Road', 'city': 'Pune', 'state': 'Maharashtra', 'pin': '411001'}},
+    },
+    'options': {'genders': ['Male', 'Female', 'Other'], 'marital': <String>[], 'qualifications': <String>[], 'relations': ['Parent', 'Partner', 'Sibling', 'Friend']},
+  };
+
+  @override
+  Future<JoinerProfileDetails> fetchProfileDetails() async => JoinerProfileDetails.fromJson(profile);
+
+  @override
+  Future<JoinerProfileDetails> saveProfileSection(String section, Map<String, Object?> values) async {
+    calls.add('profile:$section:${values['name']}:${values['relation']}:${values['phone']}');
+    profile = {
+      ...profile,
+      'sections': [
+        for (final s in profile['sections'] as List)
+          (s as Map)['key'] == section ? {...s, 'state': 'done', 'filled': true, 'editable': false, 'savedInAppAt': '2026-12-01T06:00:00.000Z'} : s,
+      ],
+      'values': {...profile['values'] as Map, 'emergencyContact': values},
+    };
+    return fetchProfileDetails();
+  }
+
+  /// `GET /lifecycle/joiner/payroll`, prefilled from pre-boarding.
+  Map<String, dynamic> payroll = {
+    'bank': {'holderName': 'Priya Shah', 'bankName': 'HDFC Bank', 'ifsc': 'HDFC0001234', 'accountLast4': '9012'},
+    'pf': {'firstJob': false, 'uan': '100200300400'},
+    'nominees': <dynamic>[],
+    'relations': ['Spouse', 'Father', 'Mother', 'Other'],
+    'state': 'todo',
+    'editable': true,
+  };
+  Map<String, Object?>? payrollSent;
+
+  @override
+  Future<JoinerPayroll> fetchPayroll() async => JoinerPayroll.fromJson(payroll);
+
+  @override
+  Future<JoinerPayroll> sendPayroll(Map<String, Object?> body) async {
+    payrollSent = body;
+    payroll = {...payroll, 'nominees': body['nominees'], 'state': 'pending', 'editable': false, 'taskDone': true};
+    return fetchPayroll();
+  }
 
   @override
   ({Uri uri, Map<String, String> headers})? media(String path) => null;
@@ -593,6 +647,114 @@ void main() {
       expect(find.text('Personal details'), findsOneWidget);
       expect(find.text('To do'), findsOneWidget);
       expect(find.text('29%'), findsOneWidget);
+    });
+  });
+
+  group('app build 90: profile once, payroll details, KPIs', () {
+    Future<FakeJoinerApi> pumpWith(WidgetTester tester, Widget Function(JoinerController c) page) async {
+      final api = FakeJoinerApi(_home('w1'));
+      final c = JoinerController(shell: shellFor(FakeOnboardingApi(), DateTime(2026, 12, 1)), api: api);
+      addTearDown(c.dispose);
+      await pumpPage(tester, page(c));
+      return api;
+    }
+
+    testWidgets('a section filled before joining reads only; one HR approved says so', (tester) async {
+      await pumpWith(tester, (c) => JoinerProfileSectionScreen(c: c, section: 'personal', title: 'Personal details'));
+      expect(find.text('Filled in before you joined. To change anything, ask HR.'), findsOneWidget);
+      expect(find.text('Priya Shah'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+    });
+
+    testWidgets('HR approved: Approved by HR, read-only', (tester) async {
+      await pumpWith(tester, (c) => JoinerProfileSectionScreen(c: c, section: 'contact', title: 'Contact and address'));
+      expect(find.text('Approved by HR'), findsOneWidget);
+      expect(find.text('Same as current'), findsOneWidget);
+      expect(find.byKey(const ValueKey('profile-save')), findsNothing);
+    });
+
+    testWidgets('an empty section is filled once, then reads only', (tester) async {
+      final api = await pumpWith(tester, (c) => JoinerProfileSectionScreen(c: c, section: 'emergency', title: 'Emergency contact'));
+      expect(find.byKey(const ValueKey('profile-once')), findsOneWidget);
+      await tester.enterText(find.byKey(const ValueKey('in-ecName')), 'Asha Shah');
+      await tester.tap(find.byKey(const ValueKey('relation-Parent')));
+      await tester.enterText(find.byKey(const ValueKey('in-ecPhone')), '9876500003');
+      await tester.ensureVisible(find.byKey(const ValueKey('profile-save')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('profile-save')));
+      await tester.pumpAndSettle();
+      expect(api.calls, contains('profile:emergency:Asha Shah:Parent:9876500003'));
+      expect(find.text('Saved. To change anything, ask HR.'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+    });
+
+    testWidgets('payroll: prefilled, shares must make 100, Send to HR, then with HR', (tester) async {
+      final api = await pumpWith(tester, (c) => JoinerPayrollScreen(c: c));
+      expect(tester.widget<TextField>(find.byKey(const ValueKey('pay-holder'))).controller!.text, 'Priya Shah');
+      expect(tester.widget<TextField>(find.byKey(const ValueKey('pay-uan'))).controller!.text, '100200300400');
+      expect(find.text('Leave blank to keep the one ending 9012'), findsOneWidget);
+      await tester.enterText(find.byKey(const ValueKey('nominee-0-name')), 'Asha Shah');
+      await tester.ensureVisible(find.byKey(const ValueKey('nominee-0-relation-Mother')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('nominee-0-relation-Mother')));
+      await tester.enterText(find.byKey(const ValueKey('nominee-0-share')), '60');
+      await tester.pump();
+      expect(find.text('Shares: 60% of 100%'), findsOneWidget);
+      expect(tester.widget<FilledButton>(find.descendant(of: find.byKey(const ValueKey('payroll-send')), matching: find.byType(FilledButton))).onPressed, isNull);
+      await tester.ensureVisible(find.byKey(const ValueKey('nominee-add')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('nominee-add')));
+      await tester.pump();
+      await tester.enterText(find.byKey(const ValueKey('nominee-1-name')), 'Ravi Shah');
+      await tester.ensureVisible(find.byKey(const ValueKey('nominee-1-relation-Father')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('nominee-1-relation-Father')));
+      await tester.enterText(find.byKey(const ValueKey('nominee-1-share')), '40');
+      await tester.pump();
+      expect(find.text('Shares: 100% of 100%'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const ValueKey('payroll-send')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('payroll-send')));
+      await tester.pumpAndSettle();
+      expect((api.payrollSent!['nominees'] as List).length, 2);
+      expect((api.payrollSent!['bank'] as Map)['accountNumber'], '');
+      expect(find.byKey(const ValueKey('payroll-pending')), findsOneWidget);
+      await scrollTo(tester, find.text('Ravi Shah · Father · 40%'));
+      expect(find.text('Ravi Shah · Father · 40%'), findsOneWidget);
+    });
+
+    testWidgets('the payroll task opens the payroll details form', (tester) async {
+      final api = FakeJoinerApi(_home('w1', extra: {
+        'tasks': [_task('t-pay', 'Complete your payroll details', 'do', 'Start', 'w1', meta: 'Bank account, PF and nominees', opens: {'screen': 'payroll'})],
+      }));
+      await pumpPage(tester, JoinerHomeScreen(shell: shellFor(FakeOnboardingApi(), DateTime(2026, 12, 1)), api: api));
+      await tester.tap(find.byKey(const ValueKey('tile-tasks')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('task-t-pay')));
+      await tester.pumpAndSettle();
+      expect(find.byType(JoinerPayrollScreen), findsOneWidget);
+    });
+
+    testWidgets('Review your KPIs offers its page (the Grow tab) before Looks good', (tester) async {
+      final opened = <String>[];
+      final api = FakeJoinerApi(_home('w1'));
+      final base = shellFor(FakeOnboardingApi(), DateTime(2026, 12, 1));
+      final shell = OnboardingShell(
+        api: base.api,
+        profileAction: const SizedBox(width: 30, height: 30),
+        onNotifications: () {},
+        openAppScreen: (context, screen) async => opened.add(screen),
+        viewerName: 'Kabir Mehta',
+        now: () => DateTime(2026, 12, 1),
+      );
+      await pumpPage(tester, JoinerHomeScreen(shell: shell, api: api));
+      await tester.tap(find.byKey(const ValueKey('tile-tasks')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('task-t-kpi')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('task-page-t-kpi')));
+      await tester.pumpAndSettle();
+      expect(opened, ['kpis']);
     });
   });
 

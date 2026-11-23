@@ -21,6 +21,8 @@ export interface EmployeePaymentDetails {
   /** Encrypted. */
   uan?: string;
   uanLast4?: string;
+  /** PF nominees (the joiner's payroll details, once HR approves); shares add up to 100. */
+  nominees?: Array<{ name: string; relation: string; share: number }>;
   updatedAt: Date;
   updatedByUserId: string;
 }

@@ -13,7 +13,7 @@ import type {
 } from '../../models/lifecycle.model';
 import { decryptField, fieldKeyConfigured } from '../fieldCrypto';
 import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
-import { setPaymentDetails } from '../employeePayment.service';
+import { savePfNominees, setPaymentDetails } from '../employeePayment.service';
 import { companyTimeZone, isDateKey, keyOfDay, todayKey } from './dueRules';
 import {
   ACTIVE_STATUSES, AGENDA_TASK_KEYS, LifecycleError, deriveJourney, finishTaskById, guessAgendaTask, isCounted, isJoined, loadJourney, namesOf, reassignManager,
@@ -652,11 +652,14 @@ export async function decideBankPfRequest(org: string, journeyId: string, body: 
     const fields: Record<string, unknown> = {};
     if (request.changes.bankName) fields.bankName = request.changes.bankName;
     if (request.changes.ifsc) fields.ifsc = request.changes.ifsc;
+    if (request.changes.accountHolder) fields.accountHolder = request.changes.accountHolder;
     if (fieldKeyConfigured()) {
       if (request.changes.accountNumberEnc) fields.accountNumber = decryptField(request.changes.accountNumberEnc);
       if (request.changes.uanEnc) fields.uan = decryptField(request.changes.uanEnc);
     }
     if (Object.keys(fields).length) await setPaymentDetails(hr.userId, j.userId, fields);
+    // The payroll details task's PF nominees go to payroll with the rest.
+    if (request.nominees?.length) await savePfNominees(org, j.userId, request.nominees, hr.userId);
   }
   const hrNote = typeof body.note === 'string' ? body.note.trim().slice(0, 500) : undefined;
   await journeys().updateOne({ id: journeyId }, { $set: {

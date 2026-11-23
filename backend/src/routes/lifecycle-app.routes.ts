@@ -19,6 +19,7 @@ import {
   joinerCheckin, joinerForm, joinerGoals, joinerLetterPdf, joinerLetters, joinerMedia, joinerOnboarding, joinerOpenLetter, joinerSignLetter, joinerTaskAction,
   markWatched, saveJoinerGoal, sendJoinerCheckin, sendJoinerForm, uploadJoinerFormFile,
 } from '../services/lifecycle/joinerApp';
+import { joinerPayroll, joinerProfileDetails, saveJoinerProfileSection, sendJoinerPayroll } from '../services/lifecycle/joinerDetails';
 import {
   answerApprovalV2, approvalViewV2, assignBuddy, buddyOptions, commentOnGoals, introduceOnFeed, inviteSenior, markCheckinRead, reviewView, scheduleMeetings,
   sendReview, sendWelcomeMessage, teamCheckin, teamGoals, teamJoinerPage, teamRowAction, teamRowNotes,
@@ -167,6 +168,11 @@ lifecycleAppRouter.get('/joiner/letters', lifecycleHandler(async (req) => joiner
 lifecycleAppRouter.post('/joiner/letters/:id/opened', lifecycleHandler(async (req) => joinerOpenLetter(me(req), param(req, 'id'))));
 lifecycleAppRouter.post('/joiner/letters/:id/sign', lifecycleHandler(async (req) => joinerSignLetter(me(req), param(req, 'id'), body(req), { ip: req.ip ?? '', userAgent: String(req.get('user-agent') ?? '') })));
 lifecycleAppRouter.get('/joiner/letters/:id/pdf', bytesRoute((req) => joinerLetterPdf(me(req), param(req, 'id'))));
+// App build 90: the Employee profile's empty sections, filled once in the app; the payroll details task (to HR, then payroll).
+lifecycleAppRouter.get('/joiner/profile', lifecycleHandler(async (req) => joinerProfileDetails(me(req))));
+lifecycleAppRouter.put('/joiner/profile/:section', lifecycleHandler(async (req) => saveJoinerProfileSection(me(req), param(req, 'section'), body(req))));
+lifecycleAppRouter.get('/joiner/payroll', lifecycleHandler(async (req) => joinerPayroll(me(req))));
+lifecycleAppRouter.post('/joiner/payroll', lifecycleHandler(async (req) => sendJoinerPayroll(me(req), body(req))));
 
 // Teams › Joiners (manager, buddy, head of department, someone senior)
 lifecycleAppRouter.get('/team/joiners/:journeyId/page', lifecycleHandler(async (req) => teamJoinerPage(me(req), param(req, 'journeyId'))));

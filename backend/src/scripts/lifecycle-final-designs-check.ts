@@ -343,6 +343,68 @@ async function main() {
   eq('A task that is not HR’s: 404', await refusal(() => staff.staffTaskAction(HR, J1, 'mgr_kpis', { action: 'done' })), 404);
   eq('Someone who is neither HR nor IT for her: 404', await refusal(() => staff.staffJoinerPage(MGR, J1)), 404);
 
+  section('App build 90: the Employee profile’s empty sections, filled once in the app');
+  const jd = await import('../services/lifecycle/joinerDetails');
+  // A key for this section (the account number and UAN are kept encrypted; HR's approval decrypts them).
+  const keyBefore = process.env.PAYROLL_FIELD_KEY;
+  process.env.PAYROLL_FIELD_KEY = Buffer.alloc(32, 7).toString('base64');
+  // Pre-boarding filled Personal details only.
+  await journeys().updateOne({ id: J1 }, { $set: { 'profile.personal': { fullName: 'Priya Shah', dob: '1998-04-02', gender: 'Female', nationality: 'Indian' } } });
+  let prof = await jd.joinerProfileDetails(PRIYA);
+  const sec = (key: string) => prof.sections.find((s) => s.key === key)!;
+  eq('Six sections; the one filled before joining is read-only, the rest can be filled', prof.sections.map((s) => `${s.key}:${s.editable}`),
+    ['personal:false', 'contact:true', 'emergency:true', 'bank:true', 'education:true', 'ids:true']);
+  eq('…with its answers to read', (prof.values as { personal?: { fullName: string } }).personal?.fullName, 'Priya Shah');
+  eq('A section filled before joining cannot be changed here', await refusal(() => jd.saveJoinerProfileSection(PRIYA, 'personal', { fullName: 'P', dob: '1998-04-02', gender: 'Female' })), 409);
+  eq('A section outside the six is refused', await refusal(() => jd.saveJoinerProfileSection(PRIYA, 'photo', {})), 400);
+  eq('A bad answer is refused and saves nothing (still editable)', [await refusal(() => jd.saveJoinerProfileSection(PRIYA, 'contact', { mobile: '12345' })), (await jd.joinerProfileDetails(PRIYA)).sections.find((s) => s.key === 'contact')?.editable], [400, true]);
+  prof = await jd.saveJoinerProfileSection(PRIYA, 'contact', { mobile: '9876500001', current: { line: '12 MG Road', city: 'Pune', state: 'Maharashtra', pin: '411001' } });
+  ok('Saved once: contact is read-only, saved in the app', !sec('contact').editable && sec('contact').filled && !!sec('contact').savedInAppAt, sec('contact'));
+  eq('…a second save is refused', await refusal(() => jd.saveJoinerProfileSection(PRIYA, 'contact', { mobile: '9876500002', current: { line: 'x', city: 'y', state: 'z', pin: '411001' } })), 409);
+  eq('Emergency: the joiner’s own number is refused', await refusal(() => jd.saveJoinerProfileSection(PRIYA, 'emergency', { name: 'Asha Shah', relation: 'Parent', phone: '9999999999' })), 400);
+  prof = await jd.saveJoinerProfileSection(PRIYA, 'emergency', { name: 'Asha Shah', relation: 'Parent', phone: '9876500003' });
+  const hrEmergency = (await staff.staffProfile(HR, J1)).sections.find((s) => s.key === 'emergency')?.rows.find((r) => r.label === 'Mobile')?.value;
+  ok('Emergency saved where pre-boarding keeps it; HR reads it', !sec('emergency').editable && hrEmergency === '+919876500003', hrEmergency);
+  prof = await jd.saveJoinerProfileSection(PRIYA, 'bank', { holderName: 'Priya Shah', accountNumber: '123456789012', accountNumberAgain: '123456789012', ifsc: 'HDFC0001234', bankName: 'HDFC Bank', pf: { firstJob: false, uan: '100200300400' } });
+  const j1Prof = await engine.loadJourney(J1);
+  eq('Bank and PF: the account as its last four (encrypted kept), PF in About you', [j1Prof.profile?.bank?.accountLast4, !!j1Prof.profile?.bank?.accountNumberEnc, j1Prof.aboutYou?.pf?.uan, sec('bank').editable], ['9012', true, '100200300400', false]);
+  eq('The joiner’s home counts the sections filled here; contact still waits for its address proof', (await joiner.joinerOnboarding(PRIYA)).profile.sections.filter((s) => s.state === 'done').map((s) => s.key), ['personal', 'emergency', 'bank']);
+  ok('…which the app’s profile says (saved, the document named)', sec('contact').state === 'saved' && (sec('contact').missingDocuments?.length ?? 0) > 0, sec('contact'));
+
+  section('App build 90: payroll details (bank, PF, nominees) to HR, then payroll');
+  let payroll = await jd.joinerPayroll(PRIYA);
+  eq('Prefilled from pre-boarding (the account as its last four, the UAN in full)', [payroll.state, payroll.editable, payroll.bank.holderName, payroll.bank.ifsc, payroll.bank.accountLast4, payroll.pf.uan, payroll.taskDone],
+    ['todo', true, 'Priya Shah', 'HDFC0001234', '9012', '100200300400', false]);
+  const payBody = (extra: Record<string, unknown> = {}) => ({
+    bank: { holderName: 'Priya Shah', bankName: 'HDFC Bank', ifsc: 'HDFC0001234' }, pf: { firstJob: false, uan: '100200300400' },
+    nominees: [{ name: 'Asha Shah', relation: 'Mother', share: 60 }, { name: 'Ravi Shah', relation: 'Father', share: 40 }], ...extra,
+  });
+  eq('Shares must add up to 100', await refusal(() => jd.sendJoinerPayroll(PRIYA, payBody({ nominees: [{ name: 'Asha Shah', relation: 'Mother', share: 60 }, { name: 'Ravi Shah', relation: 'Father', share: 30 }] }))), 400);
+  eq('At least one nominee', await refusal(() => jd.sendJoinerPayroll(PRIYA, payBody({ nominees: [] }))), 400);
+  eq('A relation outside the list is refused', await refusal(() => jd.sendJoinerPayroll(PRIYA, payBody({ nominees: [{ name: 'Asha Shah', relation: 'Neighbour', share: 100 }] }))), 400);
+  eq('A UAN is 12 digits', await refusal(() => jd.sendJoinerPayroll(PRIYA, payBody({ pf: { uan: '123' } }))), 400);
+  eq('Two account numbers that differ are refused', await refusal(() => jd.sendJoinerPayroll(PRIYA, payBody({ bank: { holderName: 'Priya Shah', bankName: 'HDFC Bank', ifsc: 'HDFC0001234', accountNumber: '111122223333', accountNumberAgain: '111122223334' } }))), 400);
+  payroll = await jd.sendJoinerPayroll(PRIYA, payBody());
+  const payTask = (await joiner.joinerOnboarding(PRIYA)).tasks.find((t) => t.title === 'Complete your payroll details');
+  eq('Sent: waiting for HR, read-only; the task is done', [payroll.state, payroll.editable, payroll.taskDone, payTask?.state], ['pending', false, true, 'done']);
+  const sentReq = (await engine.loadJourney(J1)).bankPfRequest;
+  ok('…the week-1 bank/PF change carries it: the account kept from pre-boarding, holder, UAN, nominees',
+    sentReq?.source === 'payroll_task' && sentReq.changes.accountLast4 === '9012' && !!sentReq.changes.accountNumberEnc && sentReq.changes.accountHolder === 'Priya Shah' && sentReq.changes.uanLast4 === '0400' && sentReq.nominees?.length === 2, sentReq);
+  eq('…HR is told', Object.keys(await pushTargets('lifecycle_bank_pf_request', J1)), ['hr']);
+  eq('Sent once while HR has it', await refusal(() => jd.sendJoinerPayroll(PRIYA, payBody())), 409);
+  const boardSvc = await import('../services/lifecycle/board');
+  await boardSvc.decideBankPfRequest(ORG, J1, { decision: 'decline', note: 'Use your salary account' }, { userId: 'hr', name: 'Ritu Sharma' });
+  payroll = await jd.joinerPayroll(PRIYA);
+  eq('HR declines: editable again, with HR’s note', [payroll.state, payroll.editable, payroll.hrNote], ['declined', true, 'Use your salary account']);
+  await jd.sendJoinerPayroll(PRIYA, payBody({ bank: { holderName: 'Priya Shah', bankName: 'ICICI Bank', ifsc: 'ICIC0004321', accountNumber: '555566667777', accountNumberAgain: '555566667777' }, nominees: [{ name: 'Asha Shah', relation: 'Mother', share: 100 }] }));
+  await boardSvc.decideBankPfRequest(ORG, J1, { decision: 'approve' }, { userId: 'hr', name: 'Ritu Sharma' });
+  const { employeePaymentDetails } = await import('../config/db');
+  const paid = await employeePaymentDetails().findOne({ org: ORG, userId: 'j1' });
+  eq('HR approves: payroll has the account, holder, IFSC, UAN and nominees', [paid?.accountLast4, paid?.accountHolder, paid?.ifsc, paid?.uanLast4, paid?.nominees], ['7777', 'Priya Shah', 'ICIC0004321', '0400', [{ name: 'Asha Shah', relation: 'Mother', share: 100 }]]);
+  payroll = await jd.joinerPayroll(PRIYA);
+  eq('…and the form reads approved, read-only', [payroll.state, payroll.editable, payroll.bank.bankName], ['approved', false, 'ICICI Bank']);
+  if (keyBefore === undefined) delete process.env.PAYROLL_FIELD_KEY; else process.env.PAYROLL_FIELD_KEY = keyBefore;
+
   section('Reminders for late teammate tasks');
   const jobs = await import('../services/lifecycle/jobs');
   const sentNow = await jobs.lateTeamRowReminders(await engine.loadJourney(J1), await engine.tasksOf(J1), today);

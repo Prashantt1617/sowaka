@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../../../../services/api_config.dart';
 import '../data/joiner_meetings_api.dart';
 import '../data/onboarding_api.dart';
+import 'joiner_details_models.dart';
 import 'joiner_models.dart';
 
 /// The joiner's reads and writes (FINAL-DESIGNS.md §4.2). The screens only
@@ -54,6 +55,18 @@ abstract class JoinerApi {
 
   /// A server file (PDF) the joiner may read.
   Future<Uint8List> download(String path);
+
+  /// The Employee profile's sections: their answers, and which can still be filled here.
+  Future<JoinerProfileDetails> fetchProfileDetails();
+
+  /// Fills one section left empty before joining; once (read-only after).
+  Future<JoinerProfileDetails> saveProfileSection(String section, Map<String, Object?> values);
+
+  /// The payroll details task: bank account, PF and nominees.
+  Future<JoinerPayroll> fetchPayroll();
+
+  /// Sends them to HR (who approves them into payroll); the task is done.
+  Future<JoinerPayroll> sendPayroll(Map<String, Object?> body);
 
   /// What a media URL needs: the full address and the sign-in header.
   ({Uri uri, Map<String, String> headers})? media(String path);
@@ -149,6 +162,19 @@ class HttpJoinerApi implements JoinerApi {
 
   @override
   Future<Uint8List> download(String path) => api.download(path);
+
+  @override
+  Future<JoinerProfileDetails> fetchProfileDetails() async => JoinerProfileDetails.fromJson(await api.request('GET', '$_base/profile'));
+
+  @override
+  Future<JoinerProfileDetails> saveProfileSection(String section, Map<String, Object?> values) async =>
+      JoinerProfileDetails.fromJson(await api.request('PUT', '$_base/profile/${_e(section)}', body: values));
+
+  @override
+  Future<JoinerPayroll> fetchPayroll() async => JoinerPayroll.fromJson(await api.request('GET', '$_base/payroll'));
+
+  @override
+  Future<JoinerPayroll> sendPayroll(Map<String, Object?> body) async => JoinerPayroll.fromJson(await api.request('POST', '$_base/payroll', body: body));
 
   @override
   ({Uri uri, Map<String, String> headers})? media(String path) => (
