@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import {
-  attendanceRecords, attendanceRegularizations, companies, connectDb, faceRefusedBursts, faceVerifications, getDb, offices, shiftPolicies, users,
+  attendanceRecords, attendanceRegularizations, companies, connectDb, ensureIndexes, faceRefusedBursts, faceVerifications, getDb, offices, shiftPolicies, users,
 } from '../config/db';
 import { env } from '../config/env';
 import { spoofDetectorReady } from '../services/face-spoof.service';
@@ -339,6 +339,8 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
   const kept = await faceRefusedBursts().find({ userId: 'dev' }).toArray();
   const keptFor = kept[0] ? (kept[0].expiresAt.getTime() - kept[0].at.getTime()) / 86_400_000 : 0;
   check('its crops are kept 7 days to be looked at, the passed burst\'s are not', kept.length === 1 && kept[0].verdict === 'spoof' && kept[0].crops.length === 8 && keptFor === 7 && kept[0].scores.length === 8, kept.map(({ crops, ...k }) => ({ ...k, crops: crops.length })));
+  // The database was dropped after connecting (indexes too): build them as a server start does.
+  await ensureIndexes(getDb());
   const ttl = (await faceRefusedBursts().indexes()).find((i) => i.key?.expiresAt === 1);
   check('and Mongo deletes them itself at expiresAt', ttl?.expireAfterSeconds === 0, ttl);
   const fewCrops = await verifyFace('dev', { photo: await photo(409), evidence: { challengeId: (await issueFaceChallenge('dev')).id, crops: [realCrop] } });

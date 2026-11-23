@@ -514,7 +514,7 @@ export function placements(): Collection<Placement> {
   return getDb().collection<Placement>('placements');
 }
 
-async function ensureIndexes(database: Db): Promise<void> {
+export async function ensureIndexes(database: Db): Promise<void> {
   // Secret Squad: an office's sessions and who plays where, read on every Games home and inbox.
   await database.collection('secret_squad_sessions').createIndex({ id: 1 });
   await database.collection('secret_squad_offices').createIndex({ org: 1, userId: 1 });
