@@ -1,8 +1,9 @@
-// The joiner's journey, as the board design of 18 Nov draws it: nine steps (Offer sent, Offer
-// confirmed, Employee profile, Joining day, Week 1, Month 1, Months 2–5, Final month, Confirmed),
-// each with its circle, its line and, opened, what HR does there: the offer and its PDF, the
-// portal, documents and letters, the Day-1 pass, manager and buddy, the tasks of each phase, the
-// bank/PF change, probation and its decision. Drawn by the joiner panel (one step open at a time)
+// The joiner's journey, as the board design of 18 Nov draws it: eight steps (Offer sent, Offer
+// confirmed, Joining day, Week 1, Month 1, Months 2–5, Final month, Confirmed), each with its
+// circle, its line and, opened, what HR does there: the offer and its PDF, the portal, the
+// employee profile's progress, documents and letters, the Day-1 pass, manager and buddy, the tasks
+// of each phase, the bank/PF change, probation and its decision. The employee profile is not a step
+// of its own (23 Nov): it fills in as pre-boarding goes on, so Joining day carries its progress. Drawn by the joiner panel (one step open at a time)
 // and by the pre-boarding profile's Activity tab (every step open, the joiner's own tasks only).
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -48,13 +49,16 @@ export const OPEN = new Set(['todo', 'in_review', 'sent_back']);
 /** The statuses before joining. */
 export const PRE_JOIN = new Set(['draft', 'offer_sent', 'accepted', 'finalised', 'active', 'docs_approved']);
 
-/** The design's nine steps, and the step each board column is on. */
-const STEPS = ['Offer sent', 'Offer confirmed', 'Employee profile', 'Joining day', 'Week 1 · onboarding tasks', 'Month 1 · settling in', 'Months 2–5 · growing', 'Final month · decision', 'Confirmed'];
+/** The eight steps, and the step each board column is on (pre-boarding's documents and letters are on Joining day). */
+const STEPS = ['Offer sent', 'Offer confirmed', 'Joining day', 'Week 1 · onboarding tasks', 'Month 1 · settling in', 'Months 2–5 · growing', 'Final month · decision', 'Confirmed'];
+/** The steps the panel's own buttons open (Review documents, Generate confirmation letter). */
+export const JOINING_STEP = 2;
+export const CONFIRMED_STEP = 7;
 const STEP_AT: Record<string, number> = {
-  offer_sent: 0, accepted: 1, documents: 2, letters: 2, ready_to_join: 3, day1: 4, week1_tasks: 4, day7_survey: 4, week_done: 4,
-  month1: 5, months_2_5: 6, final_month: 7, confirmed: 8,
+  offer_sent: 0, accepted: 1, documents: 2, letters: 2, ready_to_join: 2, day1: 3, week1_tasks: 3, day7_survey: 3, week_done: 3,
+  month1: 4, months_2_5: 5, final_month: 6, confirmed: 7,
 };
-/** The tasks the joiner owns (alone, or with their manager): the pre-boarding profile shows only these. */
+/** The tasks the joiner owns (alone, or with their manager): the only tasks the journey shows (panel and profile alike). */
 const JOINER_OWNS = new Set<OwnerRole>(['employee', 'manager_employee']);
 
 type StepDialog =
@@ -88,52 +92,28 @@ function Facts({ rows, strong = true }: { rows: [string, ReactNode][]; strong?: 
 const Sub = ({ children }: { children: ReactNode }) => <h4 style={{ ...sectionLabel, margin: '4px 0 0' }}>{children}</h4>;
 const Para = ({ children }: { children: ReactNode }) => <p style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.55, margin: 0 }}>{children}</p>;
 
-const addr = (a?: { line: string; city: string; state: string; pin: string }) => (a ? `${a.line}, ${a.city}, ${a.state} ${a.pin}` : '');
-const month = (m?: string) => (m ? new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'now');
-
-/** What the candidate filled in on the portal's Employee profile (the secrets as their last four). */
-type Contact = { name: string; relation: string; phone: string; altPhone?: string };
-const contactLine = (c?: Contact) => (c ? `${c.name} (${c.relation}) · ${c.phone}${c.altPhone ? ` · ${c.altPhone}` : ''}` : '');
 /**
- * The Employee profile's heading, with the link to the candidate's pre-boarding profile (its own page, in a
- * new tab), where HR sees every section and its documents and approves each section.
+ * The employee profile on Joining day: one row, its progress (the portal's "n of 6 sections done") and the link
+ * to the candidate's pre-boarding profile (its own page, in a new tab), where HR sees every section and its
+ * documents and approves each one. No link on that page itself.
  */
-function ProfileHead({ sections, href }: { sections?: { done: number; total: number }; href?: string }) {
+function ProfileRow({ text, pct, href }: { text: string; pct: number; href?: string }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-      <Sub>Employee profile{sections ? ` · ${sections.done} of ${sections.total} sections done` : ''}</Sub>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 12 }}>
+      <span style={{ flex: 1, minWidth: 0, display: 'grid', gap: 6 }}>
+        <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+          <b style={{ fontSize: 13, fontWeight: 500 }}>Employee profile</b>
+          <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>{text} · <b style={{ color: pctColour(pct), fontWeight: 600 }}>{pct}%</b></span>
+        </span>
+        <span style={{ height: 6, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}><i style={{ display: 'block', height: '100%', width: `${pct}%`, borderRadius: 99, background: pctColour(pct) }} /></span>
+      </span>
       {href && (
-        <a href={href} target="_blank" rel="noopener" className="pd-btn sm" title="Every section and its documents, to review and approve (opens in a new tab)">
-          Employee profile
+        <a href={href} target="_blank" rel="noopener" className="pd-btn sm" style={{ flex: 'none' }} title="Every section and its documents, to review and approve (opens in a new tab)">
+          Open
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
         </a>
       )}
     </div>
-  );
-}
-
-function ProfileFacts({ profile: p, sections, href, emergency, emergency2, pf, onPhoto }: {
-  profile: NonNullable<JourneyDetail['journey']['profile']>; sections?: { done: number; total: number }; href?: string; emergency?: Contact; emergency2?: Contact; pf?: { firstJob: boolean; uan?: string }; onPhoto: (id: string) => void;
-}) {
-  return (
-    <>
-      <ProfileHead sections={sections} href={href} />
-      <Facts strong={false} rows={[
-        ['Full name', p.personal ? `${p.personal.fullName}${p.personal.preferredName ? ` (${p.personal.preferredName})` : ''}` : ''],
-        ['Date of birth', p.personal?.dob ? longDay(p.personal.dob) : ''],
-        ['Gender', p.personal?.gender], ['Marital status', p.personal?.maritalStatus], ['Nationality', p.personal?.nationality],
-        ['Mobile', p.contact?.mobile], ['Current address', addr(p.contact?.current)],
-        ['Permanent address', p.contact ? (p.contact.permanentSame ? 'Same as current' : addr(p.contact.permanent)) : ''],
-        ['Emergency contact', contactLine(emergency)],
-        ['Second contact', contactLine(emergency2)],
-        ['Bank', p.bank ? `${p.bank.holderName} · •••• ${p.bank.accountLast4} · ${p.bank.ifsc}${p.bank.bankName ? ` · ${p.bank.bankName}` : ''}` : ''],
-        ['PF', pf ? (pf.firstJob ? 'First job: no UAN yet' : pf.uan ? `UAN ${pf.uan}` : 'Has a UAN, not given') : ''],
-        ['Education', p.education ? `${p.education.qualification}, ${p.education.institution} (${p.education.year})` : ''],
-        ['Experience', p.experience ? (p.experience.firstJob ? 'First job' : p.experience.jobs.map((j) => `${j.role} at ${j.company} (${month(j.from)} – ${month(j.to)})`).join('; ')) : ''],
-        ['Aadhaar', p.ids?.aadhaarLast4 ? `•••• ${p.ids.aadhaarLast4}` : ''], ['PAN', p.ids?.panLast4 ? `••••••${p.ids.panLast4}` : ''],
-        ['Photo', p.photoFileId ? <button key="ph" type="button" className="pd-btn sm" onClick={() => onPhoto(p.photoFileId!)}>View photo</button> : ''],
-      ]} />
-    </>
   );
 }
 
@@ -145,16 +125,16 @@ const PencilIcon = () => (
 const doneOf = (list: TaskView[]) => list.filter((t) => t.status === 'done' || t.status === 'skipped').length;
 
 /**
- * The Journey: its heading ("Step 4 of 9") and the nine steps. HR's actions inside a step (tasks, documents,
+ * The Journey: its heading ("Step 3 of 8") and the eight steps. HR's actions inside a step (tasks, documents,
  * the Day-1 pass, manager and buddy, date requests, the bank/PF change, the decision) work in place; `busy` and
  * `setBusy` are the caller's, so its own buttons wait too, and `onChanged` reloads the journey after each one.
  *
- * `variant`:
- * Both: every step starts closed and opens with its chevron (several at once); `openStep` opens one from outside.
- *  - 'panel' (the joiner panel): every task and the team's app tasks.
- *  - 'profile' (the pre-boarding profile's Activity tab): only the
- *    joiner's own tasks (no "Team tasks in the app", no manager / buddy / HR / IT tasks); no link to the
- *    profile page it is already on.
+ * The joiner panel and the pre-boarding profile's Activity tab draw the same steps and rows: only the joiner's
+ * own tasks (no manager / buddy / HR / IT / head-of-department tasks, no team tasks from the app, 23 Nov).
+ * Every step starts closed and opens with its chevron (several at once); `openStep` opens one from outside.
+ *
+ * `variant` only decides the Employee profile link on Joining day: 'panel' (the joiner panel) has it,
+ * 'profile' (the pre-boarding profile's Activity tab) does not, being on that page already.
  */
 export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel', openStep = null, onOpenStep, onDialogOpen }: {
   data: JourneyDetail; busy: string; setBusy: (key: string) => void; onChanged: () => void;
@@ -168,7 +148,7 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
   const pay = canSeePay(user);
   const [dialog, setDialog] = useState<StepDialog>(null);
   const [templates, setTemplates] = useState<TemplateListItem[]>([]);
-  const all = variant === 'profile';
+  const onProfilePage = variant === 'profile';
   useEffect(() => { listTemplates('onboarding').then(setTemplates).catch(() => undefined); }, []);
   useEffect(() => { onDialogOpen?.(dialog !== null); }, [dialog, onDialogOpen]);
 
@@ -198,9 +178,9 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
   const revisionWaiting = Boolean(offer && offer.status === 'draft' && offer.version > 1);
   const bankPf = journey.bankPfRequest && (journey.bankPfRequest.status === 'pending' || journey.bankPfRequest.decidedAt) ? journey.bankPfRequest : null;
   // The candidate's pre-boarding profile page: where HR approves each section (opens in a new tab). Not on that page itself.
-  const profileHref = !all && canOpen(user, 'preboarding') ? preboardingHref(journey.id) : undefined;
+  const profileHref = !onProfilePage && canOpen(user, 'preboarding') ? preboardingHref(journey.id) : undefined;
 
-  // Where they are on the nine steps; the Confirmed column has every step done.
+  // Where they are on the eight steps; the Confirmed column has every step done.
   const cur = STEP_AT[journey.column] ?? 0;
   const allDone = journey.column === 'confirmed';
   // Every step starts closed (both screens, 23 Nov); its chevron opens and closes it, several may be open.
@@ -213,8 +193,9 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
     onOpenStep?.(-1); // the panel's buttons can open the same step again later
   };
 
-  // The tasks of each step: pre-boarding under Employee profile, the first week under Week 1, probation by month.
-  const live = tasks.filter((t) => t.status !== 'cancelled');
+  // The tasks of each step (the joiner's own only, lines and lists alike): pre-boarding under Joining day,
+  // the first week under Week 1, probation by month.
+  const live = tasks.filter((t) => t.status !== 'cancelled' && JOINER_OWNS.has(t.ownerRole));
   const probationTotal = (journey.probation?.months ?? 0) + (journey.probation?.extendedBy ?? 0);
   const preTasks = live.filter((t) => t.phase === 'pre_boarding');
   const weekTasks = live.filter((t) => t.phase === 'first_week');
@@ -222,9 +203,10 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
   const monthOneTasks = probTasks.filter((t) => t.month === 1);
   const finalTasks = probTasks.filter((t) => !t.month || (probationTotal > 1 && t.month >= probationTotal));
   const middleTasks = probTasks.filter((t) => !monthOneTasks.includes(t) && !finalTasks.includes(t));
-  const profilePct = preTasks.length ? Math.round((doneOf(preTasks) / preTasks.length) * 100) : 0;
-  // The tasks a step lists: every one on the panel, the joiner's own on the profile (the step lines still count them all).
-  const shownTasks = (list: TaskView[]) => (all ? list.filter((t) => JOINER_OWNS.has(t.ownerRole)) : list);
+  // The employee profile's progress on Joining day: its sections (the portal's "n of 6"), else the pre-boarding tasks.
+  const sections = journey.profileSections;
+  const profilePct = sections?.total ? Math.round((sections.done / sections.total) * 100) : preTasks.length ? Math.round((doneOf(preTasks) / preTasks.length) * 100) : 0;
+  const profileText = sections?.total ? `${sections.done} of ${sections.total} sections done` : `${doneOf(preTasks)} of ${preTasks.length} tasks done`;
 
   const downloadOffer = async () => {
     if (!offer?.pdfFileId) return;
@@ -248,7 +230,7 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
   // Each step's line under its name.
   const sub = (i: number, state: 'done' | 'current' | 'todo'): { text: string; red?: boolean } => {
     // A probation step's line names its own next open task (never an older phase's late one).
-    const own = i === 5 ? monthOneTasks : i === 6 ? middleTasks : finalTasks;
+    const own = i === 4 ? monthOneTasks : i === 5 ? middleTasks : finalTasks;
     const lead = own.filter((t) => OPEN.has(t.status)).sort((a, b) => String(a.dueAt ?? '9999').localeCompare(String(b.dueAt ?? '9999')))[0];
     const leadLine = lead ? { text: lead.dueAt ? `${lead.title} · ${dueText(lead.dueAt, lead.late)}` : lead.title, red: Boolean(lead.late) } : { text: 'Nothing waiting' };
     switch (i) {
@@ -262,17 +244,13 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
         if (state === 'done') return { text: `Accepted ${acceptedAt ? shortDay(acceptedAt) : ''} · portal sent` };
         return { text: `Accepted ${acceptedAt ? shortDay(acceptedAt) : ''} · portal not sent yet` };
       case 2:
-        if (state === 'done') return { text: preTasks.length ? `${doneOf(preTasks)} of ${preTasks.length} done` : 'Done' };
-        if (state === 'current') return { text: `${profilePct}% complete${reviewQueue ? ` · ${reviewQueue} to review` : ''}`, red: journey.flags?.includes('quiet') };
-        return { text: 'Opens once the portal is sent' };
-      case 3:
         if (state === 'done') return { text: `Joined ${shortDay(journey.tj)}` };
-        return { text: journey.tj ? `${shortDay(journey.tj)}${state === 'current' ? ` · ${weekOf(journey.tj)}` : ''}` : 'Not set' };
-      case 4:
+        return { text: `${journey.tj ? `${shortDay(journey.tj)}${state === 'current' ? ` · ${weekOf(journey.tj)}` : ''}` : 'Not set'}${state === 'current' && reviewQueue ? ` · ${reviewQueue} to review` : ''}` };
+      case 3:
         if (state === 'done') return { text: `${doneOf(weekTasks)} of ${weekTasks.length} done` };
         if (state === 'current') return { text: `${doneOf(weekTasks)} of ${weekTasks.length} done`, red: weekTasks.some((t) => t.late && OPEN.has(t.status)) };
         return { text: 'Starts on the joining day' };
-      case 8:
+      case 7:
         return state === 'done' || allDone ? { text: decision ? decisionLine(decision, pay) : 'Confirmed' } : { text: 'After probation' };
       default:
         if (state === 'done') return { text: 'Done' };
@@ -282,14 +260,12 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
   };
 
   const taskList = (list: TaskView[]) => <TasksByPhase tasks={list} busy={busy} onAction={(task, action) => setDialog({ kind: 'task', task, action })} />;
-  // A step's tasks, or `empty` when it has none; on the profile, a line when all of them are someone else's.
-  const stepTasks = (list: TaskView[], empty?: string): ReactNode => {
-    const shown = shownTasks(list);
-    if (shown.length) return taskList(shown);
-    if (list.length) return <Para>Nothing here for {first} to do. The rest of this step is the team’s.</Para>;
+  // A step's tasks; when it has none, `empty` before the step is reached, a plain line once it is.
+  const stepTasks = (i: number, list: TaskView[], empty?: string): ReactNode => {
+    if (list.length) return taskList(list);
+    if (allDone || i <= cur) return <Para>Nothing here for {first} to do.</Para>;
     return empty ? <Para>{empty}</Para> : null;
   };
-  const preShown = shownTasks(preTasks);
 
   // What each step holds when opened.
   const body = (i: number): ReactNode => {
@@ -337,20 +313,14 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
           </>
         );
       case 2:
-        if (cur < 2 && !allDone) return <Para>Opens once the offer is accepted and the joining portal is sent.</Para>;
+        // Joining day: the employee profile's progress first, then pre-boarding (documents to review, letters, the
+        // tasks before joining), then the joining details (date requests, the Day-1 pass, manager and buddy).
         return (
           <>
-            <span style={{ display: 'grid', gap: 5 }}>
-              <span style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5 }}>
-                <span style={{ color: 'var(--ink-3)' }}>{doneOf(preTasks)} of {preTasks.length} done{docsCount ? ` · documents ${docsCount}` : ''}</span>
-                <b style={{ color: pctColour(profilePct), fontWeight: 600 }}>{profilePct}%</b>
-              </span>
-              <span style={{ height: 8, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}><i style={{ display: 'block', height: '100%', width: `${profilePct}%`, borderRadius: 99, background: pctColour(profilePct) }} /></span>
-            </span>
-            {journey.profile
-              ? <ProfileFacts profile={journey.profile} sections={journey.profileSections} href={profileHref} emergency={journey.aboutYou?.emergencyContact} emergency2={journey.aboutYou?.emergencyContact2} pf={journey.aboutYou?.pf} onPhoto={(id) => setDialog({ kind: 'file', id, name: `Photo – ${name}` })} />
-              : profileHref && <ProfileHead sections={journey.profileSections} href={profileHref} />}
-            {documents.length > 0 && <Sub>Documents</Sub>}
+            {cur >= 2 || allDone
+              ? <ProfileRow text={profileText} pct={profilePct} href={profileHref} />
+              : <Para>The employee profile opens once the offer is accepted and the joining portal is sent.</Para>}
+            {documents.length > 0 && <Sub>Documents{docsCount ? ` · ${docsCount}` : ''}{reviewQueue ? ` · ${reviewQueue} to review` : ''}</Sub>}
             {documents.length > 0 && !seesDocuments && <div className="pd-note">Only HR opens candidates’ documents and ID proofs. You see where each one is.</div>}
             {documents.map((d) => <DocumentRow key={d.id} doc={d} busy={busy === `doc:${d.id}`} canReview={seesDocuments}
               onOpen={(f) => setDialog({ kind: 'file', id: f.id, name: f.name })}
@@ -358,13 +328,9 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
               onSendBack={() => setDialog({ kind: 'sendback', doc: d })} />)}
             {letters.length > 0 && <Sub>Letters</Sub>}
             {letters.length > 0 && <div style={{ display: 'grid', gap: 8 }}>{letters.map((l) => <LetterRow key={l.id} letter={l} name={name} onOpen={(id, n) => setDialog({ kind: 'file', id, name: n })} onDocuments={() => openDocuments(s.setView, l.kind, journey.id)} />)}</div>}
-            {preShown.length > 0 && <Sub>Tasks</Sub>}
-            {preShown.length > 0 && taskList(preShown)}
-          </>
-        );
-      case 3:
-        return (
-          <>
+            {preTasks.length > 0 && <Sub>Tasks before joining</Sub>}
+            {preTasks.length > 0 && taskList(preTasks)}
+            <Sub>Joining details</Sub>
             <Facts rows={[
               ['Joining date', journey.tj ? longDay(journey.tj) : 'Not set'], ['When', journey.tj ? weekOf(journey.tj) : ''],
               ['Reporting time', pass?.reportingTime ?? reporting?.time ?? 'Not set'], ['Reporting place', pass?.place ?? (pass?.meetingLink ? 'Online' : reporting?.place ?? 'Not set')],
@@ -397,12 +363,6 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
                 <Sub>Manager and buddy</Sub>
                 <PeoplePicker key={`${journey.managerUserId}-${journey.buddyUserId}`} managerUserId={journey.managerUserId} buddyUserId={journey.buddyUserId} exclude={journey.userId}
                   emps={emps} busy={busy === 'people'} onSave={(patch) => run('people', () => updateJourney(journey.id, patch), 'Saved')} />
-                {!all && data.teamRows && data.teamRows.length > 0 && (
-                  <>
-                    <Sub>Team tasks in the app</Sub>
-                    <TeamRows rows={data.teamRows} />
-                  </>
-                )}
                 {status === 'draft' && templates.length > 1 && (
                   <Field label="Onboarding template" hint="Can change until the offer is sent">
                     <Pick value={journey.templateId} onChange={(v) => void run('template', () => updateJourney(journey.id, { templateId: v }), 'Template changed')}>
@@ -414,20 +374,20 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
             )}
           </>
         );
-      case 4:
+      case 3:
         return (
           <>
             {journey.day1Feeling && <Facts rows={[['How was Day 1', `${DAY1_FEELING[journey.day1Feeling.answer] ?? journey.day1Feeling.answer} · ${shortDay(journey.day1Feeling.at)}`]]} />}
-            {stepTasks(weekTasks, 'The week-1 tasks open on the joining day.')}
+            {stepTasks(3, weekTasks, 'The week-1 tasks open on the joining day.')}
             {bankPf && <><Sub>Bank and PF change</Sub><BankPfCard request={bankPf} pay={pay} busy={Boolean(busy)} onDecide={(d) => setDialog({ kind: 'bankpf', decision: d })} /></>}
           </>
         );
-      case 5: return stepTasks(monthOneTasks, 'Month-1 goals and check-ins open after the first week.');
-      case 6: return stepTasks(middleTasks, 'A check-in each month until the final month.');
-      case 7:
+      case 4: return stepTasks(4, monthOneTasks, 'Month-1 goals and check-ins open after the first week.');
+      case 5: return stepTasks(5, middleTasks, 'A check-in each month until the final month.');
+      case 6:
         return (
           <>
-            {finalTasks.length > 0 && stepTasks(finalTasks)}
+            {finalTasks.length > 0 && taskList(finalTasks)}
             {probation.months.length > 0 && <><Sub>Every month</Sub><ProbationMonths months={probation.months} total={probationTotal} /></>}
             {decision && <div className="pd-note">{decisionLine(decision, pay)}</div>}
             {!decision && <RecommendationNote recommendation={probation.recommendation ?? journey.probation?.recommendation} hodApproval={probation.hodApproval ?? journey.probation?.hodApproval} />}
@@ -463,7 +423,7 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
           const state: 'done' | 'current' | 'todo' = allDone || i < cur ? 'done' : i === cur && !closed ? 'current' : 'todo';
           const line = sub(i, state);
           const open = opened.has(i);
-          const tag = state === 'current' && i === 3 && journey.tj ? weekOf(journey.tj) : '';
+          const tag = state === 'current' && i === JOINING_STEP && journey.tj ? weekOf(journey.tj) : '';
           const last = i === STEPS.length - 1;
           const head = (
             <>
@@ -601,21 +561,6 @@ function LetterRow({ letter, name, onOpen, onDocuments }: { letter: LetterView; 
       </span>
       {file && <button type="button" className="pd-btn sm" onClick={() => onOpen(file, `${KIND_LABEL[letter.kind]} – ${name}${letter.signedPdfFileId ? ' (signed)' : ''}.pdf`)}>View</button>}
       {letter.state === 'draft' && <button type="button" className="pd-btn sm ghost" onClick={onDocuments}>Open in Documents</button>}
-    </div>
-  );
-}
-
-/** The team side's rows, read-only: what the manager, the buddy and the head of department ticked in the app. */
-const TEAM_OWNER: Record<string, string> = { manager: 'Manager', buddy: 'Buddy', head_of_department: 'Head of department' };
-function TeamRows({ rows }: { rows: NonNullable<JourneyDetail['teamRows']> }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      {rows.map((r) => (
-        <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12.5, color: 'var(--ink-2)' }}>
-          <span>{r.title} <span style={{ color: 'var(--ink-3)' }}>· {TEAM_OWNER[r.owner] ?? r.owner} · {r.step}</span></span>
-          <span style={{ color: r.done ? 'var(--green, #15803D)' : 'var(--ink-3)', whiteSpace: 'nowrap' }}>{r.done ? `Done${r.doneByName ? ` · ${r.doneByName}` : ''}` : 'Not yet'}</span>
-        </div>
-      ))}
     </div>
   );
 }
