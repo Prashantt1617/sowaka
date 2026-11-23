@@ -22,12 +22,14 @@ import 'face_camera.dart';
 /// One pre-processing for phone and server (backend
 /// `face-spoof.service.ts`; keep the two in step — the 0–1 against 0–255 bug
 /// of October came from them drifting): the face box scaled [scale] about
-/// its centre and held inside the picture ([spoofCropBox]), read on the
-/// phone as a [cropSide] px square JPEG ([spoofCrop]) and sent to the server
-/// shrunk to [sentSide] px at quality [sentQuality] ([sentSpoofCrop]: a slow
-/// connection carries eight of them in a few seconds); either way the model
-/// reads it at [side] × [side], bilinear, as BGR values 0–255, channels
-/// first; its output index 1 is "real".
+/// its centre and held inside the picture ([spoofCropBox]), a [cropSide] px
+/// square JPEG at quality 90 ([spoofCrop]): the phone reads it and the server
+/// is sent the very same bytes (from 1.4.3 (89); builds before shrank what
+/// they sent to 96 px at quality 80, and the server's own smoother shrink
+/// then scored some real faces far under the phone). The model reads it at
+/// [side] × [side], sampled as `copyResize` linear does, as BGR values 0–255,
+/// channels first (the server's `phoneSample` copies that sampling); its
+/// output index 1 is "real".
 class FaceSpoofCheck {
   FaceSpoofCheck._(this._interpreter);
 
@@ -36,12 +38,6 @@ class FaceSpoofCheck {
   static const scale = 2.7;
   static const side = 80;
   static const cropSide = 160;
-
-  /// What the server is sent of each crop: smaller than [cropSide], still
-  /// above the model's [side] (the backend's `face:spoof-check` scores the
-  /// two alike).
-  static const sentSide = 96;
-  static const sentQuality = 80;
 
   /// The burst, and the lines its median is held to.
   static int samples = 8;
@@ -144,34 +140,10 @@ Uint8List? spoofCrop(img.Image picture, Rect face) {
   return crop == null ? null : Uint8List.fromList(img.encodeJpg(crop, quality: 90));
 }
 
-/// A [FaceSpoofCheck.cropSide] px crop brought down to what the server is
-/// sent: [FaceSpoofCheck.sentSide] px, JPEG quality
-/// [FaceSpoofCheck.sentQuality].
-Uint8List _sent(img.Image crop) => Uint8List.fromList(img.encodeJpg(
-      img.copyResize(crop, width: FaceSpoofCheck.sentSide, height: FaceSpoofCheck.sentSide, interpolation: img.Interpolation.linear),
-      quality: FaceSpoofCheck.sentQuality,
-    ));
-
-/// [spoofCrop]'s JPEG as the server is sent it. Null when it cannot be read.
-Uint8List? sentSpoofCrop(Uint8List crop) {
-  final decoded = img.decodeJpg(crop);
-  return decoded == null ? null : _sent(decoded);
-}
-
 /// Off the UI thread: one frame, upright, as its [spoofCrop].
 Uint8List? spoofCropJob((FaceFrame, Rect) job) {
   final picture = frameToImage(job.$1);
   return picture == null ? null : spoofCrop(picture, job.$2);
-}
-
-/// Off the UI thread: one frame, upright, as the crop the phone reads
-/// ([spoofCrop]) and the smaller one the server is sent ([sentSpoofCrop]),
-/// cut once. Null when there is no face to crop.
-({Uint8List read, Uint8List sent})? spoofCropsJob((FaceFrame, Rect) job) {
-  final picture = frameToImage(job.$1);
-  final crop = picture == null ? null : _spoofCropImage(picture, job.$2);
-  if (crop == null) return null;
-  return (read: Uint8List.fromList(img.encodeJpg(crop, quality: 90)), sent: _sent(crop));
 }
 
 /// Off the UI thread: the 160 px crop read at 80 × 80, bilinear, as BGR

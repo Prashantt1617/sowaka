@@ -3,7 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import sharp from 'sharp';
 import {
   attendanceRecords, attendanceRegularizations, companies, faceChallenges, faceLivenessSessions, faceVerifications, offices, users,
-  facePhoneLogs } from '../config/db';
+  facePhoneLogs, faceRefusedBursts } from '../config/db';
 import { env } from '../config/env';
 import { AttendanceRegularization, FaceCheckNote, PunchFaceCheck, PUNCH_OUT_MIN_GAP_MINUTES } from '../models/attendance.model';
 import {
@@ -827,7 +827,39 @@ export async function judgeLiveness(userId: string, evidence: LivenessEvidence |
     logger.error('Face screen detector unavailable; the check goes on without it', { userId });
     return { challengeId, verdict: 'pass', spoofServer: null, scores, error: 'detector unavailable' };
   }
-  return { challengeId, verdict: spoofVerdict(median), spoofServer: round3(median), scores: scores.map(round3) };
+  const verdict = spoofVerdict(median);
+  const judged: LivenessJudgement = { challengeId, verdict, spoofServer: round3(median), scores: scores.map(round3) };
+  if (verdict !== 'pass') await keepRefusedBurst(claimed.org, userId, judged, crops, numberOf(evidence.spoofPhone));
+  return judged;
+}
+
+/** How long a refused burst's crops are kept to be looked at. */
+export const REFUSED_BURST_KEEP_MS = 7 * 24 * 3600_000;
+
+/**
+ * A refused burst's crops and scores, kept [REFUSED_BURST_KEEP_MS] (Mongo's
+ * TTL deletes them): what a real face the detector refused looked like to it.
+ * Never in the way of the check: a failed write is logged and dropped.
+ */
+async function keepRefusedBurst(org: string, userId: string, judged: LivenessJudgement, crops: Buffer[], spoofPhone: number | undefined) {
+  if (judged.verdict === 'pass') return;
+  try {
+    const at = new Date();
+    await faceRefusedBursts().insertOne({
+      org,
+      userId,
+      at,
+      expiresAt: new Date(at.getTime() + REFUSED_BURST_KEEP_MS),
+      challengeId: judged.challengeId,
+      verdict: judged.verdict,
+      spoofServer: judged.spoofServer,
+      scores: judged.scores,
+      ...(spoofPhone !== undefined ? { spoofPhone } : {}),
+      crops,
+    });
+  } catch (error) {
+    logger.warn('Could not keep a refused face burst', { userId }, error);
+  }
 }
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
