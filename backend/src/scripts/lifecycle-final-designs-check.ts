@@ -181,8 +181,14 @@ async function main() {
   ok('Own notes come back to the joiner only', (await joiner.joinerOnboarding(PRIYA)).meetings.find((m) => m.id === welcome.id)?.notes[0] === 'Bring the PAN card');
 
   section('Tasks');
+  // A journey migrated from before the Final designs: its own copy holds meetings and check-ins but no task rows
+  // (they are read from its template). Tapping a task must still find it (23 Nov: every tap answered 404).
+  const kept = (await journeys().findOne({ id: J1 }))!.templateSnapshot!;
+  await journeys().updateOne({ id: J1 }, { $set: { 'templateSnapshot.tasks': kept.tasks.filter((t) => t.design?.section !== 'task') } });
   const review = home.tasks.find((t) => t.title === 'Review your shift details')!;
   await joiner.joinerTaskAction(PRIYA, review.id, { action: 'looks_good' });
+  eq('A task opens on a journey whose own copy has no task rows', (await joiner.joinerOnboarding(PRIYA)).tasks.find((t) => t.id === review.id)?.state, 'done');
+  await journeys().updateOne({ id: J1 }, { $set: { 'templateSnapshot.tasks': kept.tasks } });
   home = await joiner.joinerOnboarding(PRIYA);
   eq('Review → Looks good: done', home.tasks.find((t) => t.id === review.id)?.state, 'done');
   const policies = home.tasks.find((t) => t.title === 'Acknowledge company policies')!;
@@ -435,6 +441,25 @@ async function main() {
   const oldHome = await joiner.joinerOnboarding(me('j3', 'Rahul Verma'));
   ok('…its new view reads: meetings from the template, its own tasks by kind', oldHome.meetings.length > 0 && oldHome.tasks.length > 0 && oldHome.step === 'w1', { m: oldHome.meetings.length, t: oldHome.tasks.length });
   ok('…and the 20 Nov home still answers for older app builds', !!(await app.onboardingHome(me('j3', 'Rahul Verma'))).journeyId);
+  // 23 Nov: on such a journey every tap on an old task answered 404. A Read and acknowledge one now ticks; the tour
+  // and the face stay with their own screens.
+  const oldAck = (await engine.tasksOf(oldJ.id)).find((t) => t.kind === 'ack' && t.ownerRole === 'employee' && t.status !== 'done' && t.status !== 'locked' && t.status !== 'cancelled');
+  if (oldAck) eq('An old task taps through (Read and acknowledge)', (await joiner.joinerTaskAction(me('j3', 'Rahul Verma'), oldAck.id, { action: 'acknowledged' })).tasks.find((t) => t.id === oldAck.id)?.state, 'done');
+  const oldTour = (await engine.tasksOf(oldJ.id)).find((t) => t.kind === 'tour' && t.ownerRole === 'employee');
+  if (oldTour) eq('…an old tour task is done from its own screen (409, not 404)', await refusal(() => joiner.joinerTaskAction(me('j3', 'Rahul Verma'), oldTour.id, { action: 'opened' })), 409);
+
+  section('Adopting the design on a running journey');
+  const dryAdopt = await engine.adoptTemplateDesign(oldJ.id, { dry: true });
+  ok('Dry run: lists the design tasks it would add and the old open tasks it would cancel, changes nothing',
+    dryAdopt.added.includes('Review your shift details') && dryAdopt.cancelled.includes('Week-1 tasks') && !(await engine.loadJourney(oldJ.id)).templateSnapshot.tasks.some((t) => t.design?.section === 'task'), dryAdopt);
+  const doneBefore = (await engine.tasksOf(oldJ.id)).filter((t) => t.status === 'done').length;
+  await engine.adoptTemplateDesign(oldJ.id);
+  const adopted = await joiner.joinerOnboarding(me('j3', 'Rahul Verma'));
+  ok('Applied: the joiner sees the design tasks (and no old Week-1 tasks)', adopted.tasks.some((t) => t.title === 'Review your shift details') && !adopted.tasks.some((t) => t.title === 'Week-1 tasks'), adopted.tasks.map((t) => t.title));
+  eq('…done tasks stay done', (await engine.tasksOf(oldJ.id)).filter((t) => t.status === 'done').length >= doneBefore, true);
+  const shift = adopted.tasks.find((t) => t.title === 'Review your shift details')!;
+  eq('…and a design task taps through (Looks good)', (await joiner.joinerTaskAction(me('j3', 'Rahul Verma'), shift.id, { action: 'looks_good' })).tasks.find((t) => t.id === shift.id)?.state, 'done');
+  eq('Again: nothing more to add', (await engine.adoptTemplateDesign(oldJ.id, { dry: true })).added.length, 0);
 
   await closeDb();
   console.log(`\n${passed} passed, ${failed} failed`);

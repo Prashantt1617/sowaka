@@ -63,7 +63,8 @@ async function productFacts(me: Me, j: Journey) {
 /** Ticks the rows whose fact holds (once; the engine keeps who and when). */
 async function syncFacts(me: Me, j: Journey, tasks: JourneyTask[], facts: Awaited<ReturnType<typeof productFacts>>): Promise<boolean> {
   let changed = false;
-  for (const { task, row } of joinerDesignTasks(j, tasks)) {
+  const design = await designOf(j);
+  for (const { task, row } of joinerDesignTasks(j, tasks, design)) {
     if (done(task) || task.status === 'locked') continue;
     const d = row.design!;
     const holds = d.taskType === 'do' ? !!(d.screen && facts.screen[d.screen])
@@ -222,12 +223,14 @@ export async function joinerOnboarding(me: Me, now = new Date()) {
 function legacyTaskRows(j: Journey, tasks: JourneyTask[], months: number, step: number) {
   const LISTED = new Set(['ack', 'sign', 'review', 'form', 'upload', 'system', 'post', 'tour', 'face', 'reel', 'assign', 'letter']);
   return tasks.filter((t) => t.ownerRole === 'employee' && t.phase !== 'pre_boarding' && LISTED.has(t.kind) && t.status !== 'cancelled').map((t) => {
-    const type = t.kind === 'ack' ? 'ack' as const : t.kind === 'sign' ? 'sign' as const : t.kind === 'review' ? 'review' as const : 'other' as const;
+    // The face and the tour open their own screens (Do in Sowaka), as the design's rows do.
+    const screen = t.kind === 'face' ? 'punch' : t.kind === 'tour' ? 'tour' : undefined;
+    const type = screen ? 'do' as const : t.kind === 'ack' ? 'ack' as const : t.kind === 'sign' ? 'sign' as const : t.kind === 'review' ? 'review' as const : 'other' as const;
     const s = j.tj && (t.dueAt ?? t.opensAt) ? stepOfDayKey(j.tj, keyOfDay((t.dueAt ?? t.opensAt)!), months) : 2;
     const state = done(t) ? 'done' as const : t.status === 'locked' ? 'locked' as const : 'todo' as const;
     return {
       id: t.id, title: t.title, type, verb: VERB[type], step: stepKey(s, months), state, ...(t.dueAt ? { dueOn: keyOfDay(t.dueAt) } : {}),
-      ...(state !== 'done' && s < step ? { carriedFrom: stepKey(s, months) } : {}), opens: {},
+      ...(state !== 'done' && s < step ? { carriedFrom: stepKey(s, months) } : {}), opens: screen ? { screen } : {},
     };
   });
 }
@@ -297,8 +300,20 @@ export async function joinerTaskAction(me: Me, taskId: string, body: Record<stri
     return joinerOnboarding(me);
   }
   const tasks = await tasksOf(j.id);
-  const found = joinerDesignTasks(j, tasks).find((x) => x.task.id === taskId);
-  if (!found) throw new LifecycleError(404, 'Task not found');
+  // The same rows the home lists (a journey from before the Final designs reads them from its template).
+  const found = joinerDesignTasks(j, tasks, await designOf(j)).find((x) => x.task.id === taskId);
+  if (!found) {
+    // A journey from before the Final designs lists its own tasks by kind (legacyTaskRows): the same taps apply,
+    // and what finishes itself elsewhere (signing, uploads, the face, the tour, forms) stays with its own screen.
+    const old = tasks.find((t) => t.id === taskId && t.ownerRole === 'employee' && t.status !== 'cancelled');
+    if (!old) throw new LifecycleError(404, 'Task not found');
+    const action = String(body.action ?? '');
+    const byKind: Record<string, string[]> = { ack: ['acknowledged'], review: ['looks_good'], reel: ['opened', 'done'], post: ['opened', 'done'], assign: ['opened', 'done'] };
+    if (!(byKind[old.kind] ?? []).includes(action)) throw new LifecycleError(409, 'This one is done from its own screen');
+    if (old.status === 'locked') throw new LifecycleError(409, 'This opens later');
+    if (!done(old)) await finishTaskById(j.id, old.id, 'done', { userId: me.userId, name: me.name });
+    return joinerOnboarding(me);
+  }
   const { task, row } = found;
   const type = row.design!.taskType;
   const action = String(body.action ?? '');
@@ -313,7 +328,7 @@ export async function joinerTaskAction(me: Me, taskId: string, body: Record<stri
 
 async function formTask(me: Me, taskId: string) {
   const j = await joinerJourney(me.userId);
-  const found = joinerDesignTasks(j, await tasksOf(j.id)).find((x) => x.task.id === taskId && x.row.design!.taskType === 'form');
+  const found = joinerDesignTasks(j, await tasksOf(j.id), await designOf(j)).find((x) => x.task.id === taskId && x.row.design!.taskType === 'form');
   if (!found) throw new LifecycleError(404, 'Form not found');
   return { j, ...found };
 }
@@ -498,7 +513,7 @@ export async function joinerMedia(me: Me, fileId: string): Promise<{ name: strin
 // ─── Day-1 signing ──────────────────────────────────────────────────────────
 
 async function signOpts(j: Journey) {
-  const row = joinerDesignTasks(j, await tasksOf(j.id)).find((x) => x.row.design!.taskType === 'sign')?.row;
+  const row = joinerDesignTasks(j, await tasksOf(j.id), await designOf(j)).find((x) => x.row.design!.taskType === 'sign')?.row;
   return { app: true as const, kinds: await signKinds(j.org, row?.design?.signDocs) };
 }
 
