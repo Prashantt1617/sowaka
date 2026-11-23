@@ -493,7 +493,12 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
     profileSections: { done: PROFILE_SECTIONS.filter((k) => sectionsDone[k]).length, total: PROFILE_SECTIONS.length },
   };
   const [, nudged] = await Promise.all([markNudged(journey.waitingOn, now), nudgedToday(tasks.map((t) => t.id), now)]);
-  const views = tasks.map((t) => ({ ...taskView(t, j, names, now), canNudge: !('reason' in nudgeTarget(j, t)), ...(nudged.has(t.id) ? { nudgedToday: true } : {}) }));
+  // Week 1's Devices and accesses (IT's and HR's access rows): marked, so the journey groups them under their own block.
+  const access = new Set((await import('./designRows')).accessTasks(j, tasks).map((t) => t.id));
+  const views = tasks.map((t) => ({
+    ...taskView(t, j, names, now), canNudge: !('reason' in nudgeTarget(j, t)), ...(nudged.has(t.id) ? { nudgedToday: true } : {}),
+    ...(access.has(t.id) ? { section: 'access' as const } : {}),
+  }));
   const probationView = viewer.seesPay ? probation : { ...probation, decision: decisionWithoutPay(probation.decision) };
   // The joining and reporting details THIS joiner has (their own copy of the template, as the portal's Day-1 pass and the
   // teammates' pages read it): a template edit after they started must not show here either.

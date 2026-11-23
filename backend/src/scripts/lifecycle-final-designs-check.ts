@@ -310,6 +310,8 @@ async function main() {
   eq('IT never sees bank, PF, salary or tax', itProfile.sections.length, 5);
   const access = await staff.staffTaskScreen(IT, J1, 'it_accesses', 'it') as { accesses: Array<{ id: string; title: string; ready: boolean; details: unknown[] }> };
   eq('IT: the four accesses', access.accesses.map((a) => a.title), ['Laptop', 'Work email', 'Office Wi-Fi', 'Sowaka Connect']);
+  const hrPanel = await (await import('../services/lifecycle/board')).journeyPanel(ORG, J1);
+  eq('HR’s journey panel marks the same four for Week 1’s Devices and accesses', hrPanel.tasks.filter((t) => t.section === 'access').map((t) => t.title).sort(), ['Laptop', 'Office Wi-Fi', 'Sowaka Connect', 'Work email']);
   await staff.staffTaskAction(IT, J1, 'it_accesses', { accesses: Object.fromEntries(access.accesses.map((a) => [a.id, true])) }, 'it');
   home = await joiner.joinerOnboarding(PRIYA);
   eq('Ready on IT’s side → ready on the joiner’s Devices and accesses', [home.summary.devices.ready, home.summary.devices.total], [4, 4]);

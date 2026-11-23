@@ -217,6 +217,8 @@ export interface TaskView {
   note?: string;
   late: boolean;
   month?: number;
+  /** On the panel: a Devices and accesses row (Laptop, Work email…), made from the template's access rows. */
+  section?: 'access';
   /** On the panel: whether Nudge can remind its owner, and whether someone did today. */
   canNudge?: boolean;
   nudgedToday?: boolean;
