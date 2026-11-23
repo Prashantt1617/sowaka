@@ -316,6 +316,8 @@ export interface BankPfRequest {
   status: 'pending' | 'approved' | 'declined';
   changes: { bankName?: string; ifsc?: string; accountLast4?: string; uanLast4?: string };
   note?: string;
+  /** 'payroll_task': the joiner app's "Complete your payroll details"; else an older week-1 change. */
+  source?: 'week1' | 'payroll_task';
   requestedAt: string;
   decidedAt?: string;
   decidedByName?: string;
@@ -446,8 +448,21 @@ export interface JourneyDetail {
   teamRows?: Array<{ id: string; title: string; owner: 'manager' | 'buddy' | 'head_of_department'; step: string; done: boolean; doneByName?: string; doneAt?: string }>;
   /** The joining and reporting details this joiner has (their copy of the template; absent when the template has none). */
   reporting?: DesignReporting;
+  /** The reviews on the journey: each is done where it lives (its place), never by a tick on the journey. */
+  reviews?: JourneyReview[];
   /** Whether their account (once joined, or app access given before) has signed in to the app, and when first and last. */
   appSignIn?: { signedIn: boolean; firstAt?: string; lastAt?: string };
+}
+
+/** Where a review is done: the profile page's Documents, its joining-form sections, Salary details › Bank account and PF, the decision, the recommendation, the letter. */
+export type ReviewPlace = 'documents' | 'joining_form' | 'bank_pf' | 'decision' | 'recommendation' | 'letter';
+export interface JourneyReview {
+  key: string; title: string; step: 'joining_day' | 'week_1' | 'final_month' | 'confirmed'; place: ReviewPlace; owner: OwnerRole;
+  done: boolean; doneByName?: string; doneAt?: string;
+  /** Not done: what it waits for. */
+  line?: string;
+  /** The joining form: the section to open. */
+  focus?: string;
 }
 
 export interface TemplateJourney {

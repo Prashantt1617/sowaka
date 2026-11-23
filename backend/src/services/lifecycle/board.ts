@@ -681,6 +681,9 @@ export async function moveJourneysToTemplate(org: string, templateId: string, bo
   return { template: { id: template.id, name: template.name }, moved, alreadyOn: ids.length - moved.length };
 }
 
+/** The tasks HR and the teams do from the dashboard: done or skipped whenever, before their opening day too. */
+const STAFF_OWNED = new Set<OwnerRole>(['hr', 'it', 'admin', 'finance']);
+
 /** POST /admin/lifecycle/journeys/:id/tasks/:taskId — done, reopen or skip, by HR. */
 export async function actOnTaskByHr(org: string, journeyId: string, taskId: string, body: Record<string, unknown>, hr: { userId: string; name: string }): Promise<TaskView> {
   const j = await requireOnboarding(org, journeyId);
@@ -696,7 +699,12 @@ export async function actOnTaskByHr(org: string, journeyId: string, taskId: stri
       await journeys().updateOne({ id: journeyId }, { $set: { 'probation.decision.letterId': letterId } });
     }
   }
-  if (body.action === 'done' || body.action === 'skip') task = await finishTaskById(journeyId, taskId, body.action, hr, note);
+  if (body.action === 'done' || body.action === 'skip') {
+    // HR's, IT's, Admin's and Finance's own tasks have no "not open yet" on the dashboard: they finish them whenever
+    // (24 Nov). The joiner's and the manager's keep their opening rules.
+    const owner = (await journeyTasks().findOne({ id: taskId, journeyId }, { projection: { _id: 0, ownerRole: 1 } }))?.ownerRole;
+    task = await finishTaskById(journeyId, taskId, body.action, hr, note, { early: !!owner && STAFF_OWNED.has(owner) });
+  }
   else if (body.action === 'reopen') task = await reopenTaskById(journeyId, taskId, note);
   else throw new LifecycleError(400, 'action is done, reopen or skip');
   const names = await namesOf([task.ownerUserId]);
