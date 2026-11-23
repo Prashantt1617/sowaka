@@ -378,6 +378,13 @@ export async function updateTemplate(org: string, id: string, input: Record<stri
     }
   }
   await lifecycleTemplates().updateOne({ org, id }, { $set: set });
+  // Everyone on an onboarding template follows its rows and settings now, not only new joiners.
+  if (current.kind === 'onboarding' && set.tasks) {
+    const { followTemplate } = await import('./engine');
+    await followTemplate(org, id);
+    const { forgetLifecycleReads } = await import('./readCache');
+    forgetLifecycleReads(org);
+  }
   return getTemplate(org, id);
 }
 

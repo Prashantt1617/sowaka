@@ -286,7 +286,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
     try {
       const next = await saveTemplateDesign(id, forSave(d));
       setSaved(next); setD(structuredClone(next));
-      flash('Saved. New joiners get this from now on.');
+      flash('Saved. Everyone on this template follows it now.');
     } catch (e) { flash(errText(e, 'Could not save the template'), 'error'); } finally { setSaving(false); }
   };
 

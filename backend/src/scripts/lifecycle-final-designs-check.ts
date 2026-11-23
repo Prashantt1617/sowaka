@@ -88,15 +88,15 @@ async function main() {
   section('The Standard template is the canvas’s');
   const rows = designSeed.finalDesignRows('Sowaka Test');
   const count = (s: string) => rows.filter((r) => r.design?.section === s).length;
-  eq('52 items: 10 meetings, 10 tasks, 3 check-ins, 6 watch (2 before joining), 2 trainings, 4 accesses, 17 teammate rows (no manager "Assign a buddy": HR picks the buddy)',
-    [rows.length, count('meeting'), count('task'), count('checkin'), count('watch'), count('training'), count('access'), count('team')], [52, 10, 10, 3, 6, 2, 4, 17]);
+  eq('50 items: 10 meetings, 9 tasks, 3 check-ins, 6 watch (2 before joining), 2 trainings, 4 accesses, 16 teammate rows (no manager "Assign a buddy": HR picks the buddy; no joining form)',
+    [rows.length, count('meeting'), count('task'), count('checkin'), count('watch'), count('training'), count('access'), count('team')], [50, 10, 9, 3, 6, 2, 4, 16]);
   eq('In the canvas’s order', rows.slice(0, 4).map((r) => r.title), ['Sign your joining documents', 'Welcome from HR', 'Meet the team', 'Schedule their first-week meetings']);
   ok('Team keys are unique', new Set(rows.filter((r) => r.team).map((r) => r.team!.key)).size === rows.filter((r) => r.team).length);
   eq('Welcome and documents names the company', rows.find((r) => r.title === 'Welcome and documents')?.agenda?.[0], 'Welcome to Sowaka Test and a quick office round');
   eq('Week 1 check-in: 9 questions, rating / yes-no / long', rows.find((r) => r.title === 'Week 1 check-in')?.design?.questions?.map((q) => q.type[0]).join(''), 'ryyyyyyrl');
   await templates.ensureDefaultTemplates(ORG);
   const def = await templates.defaultTemplate(ORG, 'onboarding');
-  ok('A new company’s Standard onboarding is the Final designs', def.tasks.filter((t) => t.design).length === 52 && def.settings.signLettersOnDay1 === true, def.tasks.length);
+  ok('A new company’s Standard onboarding is the Final designs', def.tasks.filter((t) => t.design).length === 50 && def.settings.signLettersOnDay1 === true, def.tasks.length);
   ok('…with the pre-boarding machinery kept (offer, portal, Mark joined)', ['send_offer', 'finalise_offer', 'mark_joined', 'confirmation_discussion'].every((k) => def.tasks.some((t) => t.systemKey === k)));
   ok('…and none of the rows the designs replace', !def.tasks.some((t) => t.systemKey === 'week1_reels' || t.team?.key === 'buddy_meet'));
 
@@ -104,8 +104,8 @@ async function main() {
   section('The editor: GET / PUT design, validation');
   const view = await design.templateDesign(ORG, def.id);
   eq('Design view: counts per tab', [view.preboarding.videos.length, view.meetings.length, view.tasks.length, view.checkins.length, view.watch.length, view.trainings.length, view.accesses.length, view.team.tasks.length, view.tour.length, view.probation.months, view.team.remindLate],
-    [2, 10, 10, 3, 4, 2, 4, 17, 6, 6, true]);
-  eq('Tasks group by kind (Do in Sowaka, Review, Read and acknowledge, Sign, More tasks)', ['do', 'review', 'ack', 'sign', 'other'].map((k) => view.tasks.filter((t) => t.type === k).length), [4, 3, 1, 1, 1]);
+    [2, 10, 9, 3, 4, 2, 4, 16, 6, 6, true]);
+  eq('Tasks group by kind (Do in Sowaka, Review, Read and acknowledge, Sign, More tasks)', ['do', 'review', 'ack', 'sign', 'other'].map((k) => view.tasks.filter((t) => t.type === k).length), [4, 3, 1, 1, 0]);
   await users().updateOne({ userId: 'it' }, { $set: { org: ORG } });
   const saved = await design.saveTemplateDesign(ORG, def.id, {
     ...view,
@@ -147,7 +147,7 @@ async function main() {
   const jt = await journeyTasks().find({ journeyId: J1 }).toArray();
   const snapshotDesign = new Map(def.tasks.filter((t) => t.design).map((t) => [t.id, t.design!.section]));
   const made = jt.map((t) => snapshotDesign.get(t.templateTaskId)).filter(Boolean);
-  eq('10 tasks + 4 accesses; no meeting, check-in, watch item or teammate row', [made.filter((s) => s === 'task').length, made.filter((s) => s === 'access').length, made.filter((s) => s !== 'task' && s !== 'access').length], [10, 4, 0]);
+  eq('9 tasks + 4 accesses; no meeting, check-in, watch item or teammate row', [made.filter((s) => s === 'task').length, made.filter((s) => s === 'access').length, made.filter((s) => s !== 'task' && s !== 'access').length], [9, 4, 0]);
 
   // ───────────────────────────────────────────── the joiner
   section('The joiner’s onboarding (Week 1)');
@@ -157,8 +157,10 @@ async function main() {
   ok('A Day-1 meeting not met is carried ("From Day 1"), with HR as the person', welcome.carriedFrom === 'd1' && welcome.person?.name === 'Ritu Sharma' && welcome.roleLabel === 'HR', welcome);
   const monthly = home.meetings.filter((m) => m.title === 'Monthly goals');
   ok('Monthly goals: one per month, the first locked "Opens in Month 1"', monthly.length === 6 && monthly[0].locked && monthly[0].everyMonth && !!monthly[0].opensOn, monthly[0]);
-  eq('Tasks end in their verb', home.tasks.map((t) => t.verb).sort().join(','), 'Open,Read,Review,Review,Review,Sign,Start,Start,Start');
+  eq('Tasks end in their verb', home.tasks.map((t) => t.verb).sort().join(','), 'Read,Review,Review,Review,Sign,Start,Start');
   ok('First punch-in is the Day-1 card, not a row in Tasks (editor: "Shown on top on Day 1")', !home.tasks.some((t) => t.title === 'First punch-in'), home.tasks.map((t) => t.title));
+  ok('Complete your profile is the Your profile card, not a row in Tasks', !home.tasks.some((t) => t.title === 'Complete your profile'), home.tasks.map((t) => t.title));
+  ok('No joining form anywhere', !home.tasks.some((t) => /joining form/i.test(t.title)));
   const w1 = home.checkins.find((c) => c.title === 'Week 1 check-in')!;
   eq('Week 1 check-in is open (2 days before the end of Week 1); the others locked', [w1.state, home.checkins.filter((c) => c.state === 'locked').length, home.summary.checkinDue?.title], ['open', 2, 'Week 1 check-in']);
   eq('Watch list: pre-boarding videos show from Day 1, trainings apart', [home.watch.length, home.trainings.length, home.watch[0].step], [6, 2, 'd1']);
@@ -208,9 +210,6 @@ async function main() {
   const firstPunch = (await journeyTasks().findOne({ journeyId: home.journeyId, title: 'First punch-in' }))!;
   eq('First punch-in waits for the punch', firstPunch.status, 'todo');
   eq('Do in Sowaka cannot be ticked by hand', await refusal(() => joiner.joinerTaskAction(PRIYA, firstPunch.id, { action: 'done' })), 409);
-  const other = home.tasks.find((t) => t.title === 'Fill in the joining form')!;
-  await joiner.joinerTaskAction(PRIYA, other.id, { action: 'opened' });
-  eq('More tasks: opened → done', (await joiner.joinerOnboarding(PRIYA)).tasks.find((t) => t.id === other.id)?.state, 'done');
 
   section('Check-ins');
   const ci = await joiner.joinerCheckin(PRIYA, w1.id);
@@ -358,7 +357,7 @@ async function main() {
   {
     const rows = (await boardSvc.journeyPanel(ORG, J1)).reviews;
     eq('Reviews on the panel: each with where it opens', rows.map((r) => `${r.key}:${r.step}:${r.place}`), [
-      'review_documents:joining_day:documents', 'hr_check_form:week_1:joining_form', 'hr_check_payroll:week_1:bank_pf', 'hr_check_tax:week_1:tax',
+      'review_documents:joining_day:documents', 'hr_check_payroll:week_1:bank_pf', 'hr_check_tax:week_1:tax',
       'mgr_confirmation_review:final_month:recommendation', 'hod_approve:final_month:recommendation', 'confirmation_discussion:final_month:decision', 'confirmation_letter:confirmed:letter',
     ]);
   }
@@ -377,8 +376,8 @@ async function main() {
   // Sana past her final month with no review: the manager's late confirmation review is the one row that pushes.
   const sanaTj = (await engine.loadJourney(J2)).tj!;
   await journeys().updateOne({ id: J2 }, { $set: { tj: rules.addDaysKey(today, -400) } });
-  ok('Switched off in the template: a running joiner keeps the version they started with (still reminded)', (await jobs.lateTeamRowReminders(await engine.loadJourney(J2), await engine.tasksOf(J2), today)) === 1);
-  eq('…only the late confirmation review, to Meera, opening the review', await pushTargets('lifecycle_team_task_late', J2), { meera: 'lifecycle_confirmation_review' });
+  ok('Switched off in the template: running joiners follow it too (no reminder)', (await jobs.lateTeamRowReminders(await engine.loadJourney(J2), await engine.tasksOf(J2), today)) === 0);
+  eq('…nobody pushed', await pushTargets('lifecycle_team_task_late', J2), {});
   await journeys().updateOne({ id: J2 }, { $set: { tj: sanaTj } });
   await users().insertMany([person('j5', 'Kavya Iyer', { managerUserId: 'mgr', hrPrimaryUserId: 'hr' }), person('j6', 'Dev Arora', { managerUserId: 'mgr', hrPrimaryUserId: 'hr' })] as never[]);
   const J5 = await mk('j5', 'Kavya Iyer', 'mgr', rules.addDaysKey(today, -400));
@@ -418,7 +417,7 @@ async function main() {
   await lettersSvc.closeLetterTask(HR, { id: 'letter-check', org: ORG, kind: 'confirmation', journeyId: J2 } as never);
   ok('…done once the confirmation letter is sent from the dashboard', await letterRow());
 
-  section('Kept templates: a save is read at once, and reaches new joiners only');
+  section('Kept templates: a save is read at once, and reaches everyone on the template');
   readCache.enableLifecycleReadCache(true);
   const before = await design.onboardingTemplatesOf(ORG);
   const cur = await design.templateDesign(ORG, def.id);
@@ -432,8 +431,8 @@ async function main() {
   } as never);
   const after = await design.onboardingTemplatesOf(ORG);
   ok('The kept copy is dropped by the save', before.get(def.id)?.tasks.some((t) => t.title === 'Salary and tax') && after.get(def.id)?.tasks.some((t) => t.title === 'Salary, tax and PF'));
-  ok('A running joiner keeps the version they started with', (await joiner.joinerOnboarding(PRIYA)).meetings.some((m) => m.title === 'Salary and tax')
-    && !(await joiner.joinerOnboarding(PRIYA)).meetings.some((m) => m.title === 'Salary, tax and PF'));
+  ok('A running joiner follows the template (24 Nov)', (await joiner.joinerOnboarding(PRIYA)).meetings.some((m) => m.title === 'Salary, tax and PF')
+    && !(await joiner.joinerOnboarding(PRIYA)).meetings.some((m) => m.title === 'Salary and tax'));
   await mk('j6', 'Dev Arora', 'mgr', rules.addDaysKey(today, -3));
   ok('A joiner who starts after the save reads the new title', (await joiner.joinerOnboarding(me('j6', 'Dev Arora'))).meetings.some((m) => m.title === 'Salary, tax and PF'));
   const DEV = me('j6', 'Dev Arora');
@@ -463,36 +462,37 @@ async function main() {
   const oldTasksBefore = await journeyTasks().countDocuments({ journeyId: oldJ.id });
   const dry = await migrate.migrateTemplatesToFinalDesigns({ apply: false, org: ORG });
   ok('Dry run: lists the old template only, writes nothing', dry.length === 1 && dry[0].templateId === 'old-tpl' && !(await templates.getTemplate(ORG, 'old-tpl')).tasks.some((t) => t.design), dry);
-  ok('…what it would switch off and add, and the running journey it would give the rows to', dry[0].switchedOff.includes('Week-1 tasks') && dry[0].added.length === 51 && dry[0].signOnDay1 && dry[0].journeys === 1, dry[0]);
+  ok('…what it would switch off and add, and the running journey it would give the rows to', dry[0].switchedOff.includes('Week-1 tasks') && dry[0].added.length === 49 && dry[0].signOnDay1 && dry[0].journeys === 1, dry[0]);
   ok('…the dry run gives no journey anything', !(await engine.loadJourney(oldJ.id)).templateSnapshot.tasks.some((t) => t.design));
   await migrate.migrateTemplatesToFinalDesigns({ apply: true, org: ORG });
   const migrated = await templates.getTemplate(ORG, 'old-tpl');
   ok('Applied: design rows, old rows switched off (never deleted), probation kept at 3',
-    migrated.tasks.filter((t) => t.design).length === 52 && migrated.tasks.some((t) => t.systemKey === 'week1_reels' && !t.enabled && t.replacedBy === 'final_designs') && migrated.settings.probationMonths === 3, migrated.tasks.length);
+    migrated.tasks.filter((t) => t.design).length === 50 && migrated.tasks.some((t) => t.systemKey === 'week1_reels' && !t.enabled && t.replacedBy === 'final_designs') && migrated.settings.probationMonths === 3, migrated.tasks.length);
   eq('Again: nothing to do', (await migrate.migrateTemplatesToFinalDesigns({ apply: true, org: ORG })).length, 0);
-  const standard = (await templates.getTemplate(ORG, def.id)).tasks.filter((t) => ['hr_hand_kit', 'hr_check_form', 'hr_confirmation_letter'].includes(t.team?.key ?? ''));
-  eq('HR’s hand over, joining form and letter rows carry the canvas’s how-to lines', standard.map((t) => t.design?.how),
-    ['ID card, welcome kit, notebook and pen.', 'Answers arrive in the HR inbox. Tick this once they’re in.', 'From Document templates, once the confirmation is approved.']);
+  const standard = (await templates.getTemplate(ORG, def.id)).tasks.filter((t) => ['hr_hand_kit', 'hr_confirmation_letter'].includes(t.team?.key ?? ''));
+  eq('HR’s hand over and letter rows carry the canvas’s how-to lines', standard.map((t) => t.design?.how),
+    ['ID card, welcome kit, notebook and pen.', 'From Document templates, once the confirmation is approved.']);
   // A design template saved before those lines existed: the migration adds them (dry run first).
-  await lifecycleTemplates().updateOne({ org: ORG, id: 'old-tpl' }, { $unset: { 'tasks.$[t].design.how': '' } }, { arrayFilters: [{ 't.team.key': { $in: ['hr_hand_kit', 'hr_check_form', 'hr_confirmation_letter'] } }] });
+  await lifecycleTemplates().updateOne({ org: ORG, id: 'old-tpl' }, { $unset: { 'tasks.$[t].design.how': '' } }, { arrayFilters: [{ 't.team.key': { $in: ['hr_hand_kit', 'hr_confirmation_letter'] } }] });
   const howDry = await migrate.migrateTemplatesToFinalDesigns({ apply: false, org: ORG });
-  ok('Dry run: lists the three how-to lines, writes nothing', howDry.length === 1 && howDry[0].howAdded?.length === 3
-    && !(await templates.getTemplate(ORG, 'old-tpl')).tasks.some((t) => t.team?.key === 'hr_check_form' && t.design?.how), howDry);
+  ok('Dry run: lists the two how-to lines, writes nothing', howDry.length === 1 && howDry[0].howAdded?.length === 2
+    && !(await templates.getTemplate(ORG, 'old-tpl')).tasks.some((t) => t.team?.key === 'hr_hand_kit' && t.design?.how), howDry);
   await migrate.migrateTemplatesToFinalDesigns({ apply: true, org: ORG });
-  ok('Applied: the lines are on the template; again: nothing to do', (await templates.getTemplate(ORG, 'old-tpl')).tasks.find((t) => t.team?.key === 'hr_check_form')?.design?.how === 'Answers arrive in the HR inbox. Tick this once they’re in.'
+  ok('Applied: the lines are on the template; again: nothing to do', (await templates.getTemplate(ORG, 'old-tpl')).tasks.find((t) => t.team?.key === 'hr_hand_kit')?.design?.how === 'ID card, welcome kit, notebook and pen.'
     && (await migrate.migrateTemplatesToFinalDesigns({ apply: true, org: ORG })).length === 0);
   const keys = migrated.tasks.flatMap((t) => (t.team ? [t.team.key] : []));
   ok('No team key twice (the old Approve keeps its own)', new Set(keys).size === keys.length && keys.includes('hod_approve_20nov'), keys);
   const resaved = await templates.updateTemplate(ORG, 'old-tpl', { tasks: migrated.tasks });
   ok('The older editor can still save a migrated template', resaved.tasks.length === migrated.tasks.length);
-  eq('The running journey keeps its tasks', await journeyTasks().countDocuments({ journeyId: oldJ.id }), oldTasksBefore);
+  // The resave reaches the running journey (24 Nov: everyone on a template follows it): its own copy is the template's,
+  // the design's tasks are added, its old tasks stay as history (open ones cancelled).
+  ok('The running journey follows the resaved template: its old tasks kept, the design’s tasks added', await journeyTasks().countDocuments({ journeyId: oldJ.id }) > oldTasksBefore);
   const oldSnap = (await engine.loadJourney(oldJ.id)).templateSnapshot;
-  eq('…and gets the meetings, check-ins, watch list and teammate rows as its own snapshot (no tasks or accesses), its probation and signing place kept',
-    [oldSnap.tasks.filter((t) => t.design).length, oldSnap.tasks.some((t) => t.design?.section === 'task' || t.design?.section === 'access'), oldSnap.settings.probationMonths, oldSnap.settings.signLettersOnDay1 === true, !!oldSnap.settings.preboarding],
-    [38, false, 3, false, true]);
+  eq('…its copy is the template’s (design tasks included), probation kept at 3',
+    [oldSnap.tasks.filter((t) => t.design).length, oldSnap.tasks.some((t) => t.design?.section === 'task'), oldSnap.settings.probationMonths], [50, true, 3]);
   const oldView = await design.templateDesign(ORG, 'old-tpl');
   await design.saveTemplateDesign(ORG, 'old-tpl', { ...oldView, meetings: oldView.meetings.map((m) => (m.title === 'First goals' ? { ...m, title: 'Your first goals' } : m)) } as never);
-  ok('…so a later edit of the migrated template does not reach it', (await joiner.joinerOnboarding(me('j3', 'Rahul Verma'))).meetings.some((m) => m.title === 'First goals'));
+  ok('…and a later edit of the template reaches it', (await joiner.joinerOnboarding(me('j3', 'Rahul Verma'))).meetings.some((m) => m.title === 'Your first goals'));
   const oldHome = await joiner.joinerOnboarding(me('j3', 'Rahul Verma'));
   ok('…its new view reads: meetings from the template, its own tasks by kind', oldHome.meetings.length > 0 && oldHome.tasks.length > 0 && oldHome.step === 'w1', { m: oldHome.meetings.length, t: oldHome.tasks.length });
   ok('…and the 20 Nov home still answers for older app builds', !!(await app.onboardingHome(me('j3', 'Rahul Verma'))).journeyId);
@@ -500,13 +500,12 @@ async function main() {
   // and the face stay with their own screens.
   const oldAck = (await engine.tasksOf(oldJ.id)).find((t) => t.kind === 'ack' && t.ownerRole === 'employee' && t.status !== 'done' && t.status !== 'locked' && t.status !== 'cancelled');
   if (oldAck) eq('An old task taps through (Read and acknowledge)', (await joiner.joinerTaskAction(me('j3', 'Rahul Verma'), oldAck.id, { action: 'acknowledged' })).tasks.find((t) => t.id === oldAck.id)?.state, 'done');
-  const oldTour = (await engine.tasksOf(oldJ.id)).find((t) => t.kind === 'tour' && t.ownerRole === 'employee');
+  const oldTour = (await engine.tasksOf(oldJ.id)).find((t) => t.kind === 'tour' && t.ownerRole === 'employee' && t.status !== 'cancelled');
   if (oldTour) eq('…an old tour task is done from its own screen (409, not 404)', await refusal(() => joiner.joinerTaskAction(me('j3', 'Rahul Verma'), oldTour.id, { action: 'opened' })), 409);
 
   section('Adopting the design on a running journey');
-  const dryAdopt = await engine.adoptTemplateDesign(oldJ.id, { dry: true });
-  ok('Dry run: lists the design tasks it would add and the old open tasks it would cancel, changes nothing',
-    dryAdopt.added.includes('Review your shift details') && dryAdopt.cancelled.includes('Week-1 tasks') && !(await engine.loadJourney(oldJ.id)).templateSnapshot.tasks.some((t) => t.design?.section === 'task'), dryAdopt);
+  // The template save above already moved it on; adopting again finds nothing to add.
+  eq('Already following the template: nothing to add', (await engine.adoptTemplateDesign(oldJ.id, { dry: true })).added.length, 0);
   const doneBefore = (await engine.tasksOf(oldJ.id)).filter((t) => t.status === 'done').length;
   await engine.adoptTemplateDesign(oldJ.id);
   const adopted = await joiner.joinerOnboarding(me('j3', 'Rahul Verma'));
