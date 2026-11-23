@@ -9,6 +9,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../manager/data/manager_models.dart';
+import '../joiner/joiner_checkins.dart' show joinerHomeRoute;
 import '../onboarding_launcher.dart';
 import 'onboarding_kit.dart';
 import 'plant.dart';
@@ -19,8 +20,16 @@ abstract final class FirstPunchTour {
   /// sets it back once it shows it.
   static final requested = ValueNotifier<bool>(false);
 
-  /// "Your first punch-in": back to the Actions tab's home, spotlit.
-  static void start(BuildContext context, OnboardingShell shell) {
+  /// "Your first punch-in": the Actions home, spotlit, opened over the
+  /// onboarding screen it was tapped on, so Later and Back return to it as
+  /// it was. Completes when it closes. Without the shell's door (a test):
+  /// back to the Actions tab's home, which shows the spotlight.
+  static Future<void> start(BuildContext context, OnboardingShell shell) async {
+    final open = shell.openAppScreen;
+    if (open != null) {
+      await open(context, 'punch');
+      return;
+    }
     final select = shell.onSelectTab;
     if (select != null) {
       select(ManagerTab.quick);
@@ -131,10 +140,17 @@ class _YoureInScreenState extends State<YoureInScreen> {
     unawaited(LifecycleMeStore.instance.refresh(widget.shell.api));
   }
 
+  /// Back to the onboarding home the punch was started from, as it was;
+  /// opened fresh when it is not under this screen (the punch was made from
+  /// the Actions tab).
   void _backToOnboarding() {
     final navigator = Navigator.of(context);
-    navigator.pop();
-    unawaited(openOnboardingHome(navigator.context, shell: widget.shell));
+    var found = false;
+    navigator.popUntil((route) {
+      if (route.settings.name == joinerHomeRoute) found = true;
+      return found || route.isFirst;
+    });
+    if (!found) unawaited(openOnboardingHome(navigator.context, shell: widget.shell));
   }
 
   @override

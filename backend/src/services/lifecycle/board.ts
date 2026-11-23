@@ -495,7 +495,14 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
   const [, nudged] = await Promise.all([markNudged(journey.waitingOn, now), nudgedToday(tasks.map((t) => t.id), now)]);
   const views = tasks.map((t) => ({ ...taskView(t, j, names, now), canNudge: !('reason' in nudgeTarget(j, t)), ...(nudged.has(t.id) ? { nudgedToday: true } : {}) }));
   const probationView = viewer.seesPay ? probation : { ...probation, decision: decisionWithoutPay(probation.decision) };
-  return { journey, tasks: views, documents, letters, offer, dateRequests, probation: probationView, batch, viewer, teamRows: await (await import('./teamTasks')).teamRowsForHr(j) };
+  // The joining and reporting details THIS joiner has (their own copy of the template, as the portal's Day-1 pass and the
+  // teammates' pages read it): a template edit after they started must not show here either.
+  const design = await import('./design');
+  const reporting = design.templateReporting((await design.designOf(j)).settings);
+  return {
+    journey, tasks: views, documents, letters, offer, dateRequests, probation: probationView, batch, viewer, teamRows: await (await import('./teamTasks')).teamRowsForHr(j),
+    ...(reporting ? { reporting } : {}),
+  };
 }
 
 /** A candidate document without its files: what someone outside HR may see. */

@@ -954,18 +954,23 @@ class TeamVoice extends ChangeNotifier {
     }
     if (_speech.isListening) await _speech.cancel();
     if (!_ready) {
-      _ready = await _speech.initialize(
-        onStatus: (status) {
-          if (status == 'done' || status == 'notListening') {
+      try {
+        _ready = await _speech.initialize(
+          onStatus: (status) {
+            if (status == 'done' || status == 'notListening') {
+              listening = null;
+              notifyListeners();
+            }
+          },
+          onError: (_) {
             listening = null;
             notifyListeners();
-          }
-        },
-        onError: (_) {
-          listening = null;
-          notifyListeners();
-        },
-      );
+          },
+        );
+      } catch (_) {
+        // No speech engine on this phone: the mic still answers, with the line below.
+        _ready = false;
+      }
     }
     if (!_ready) {
       if (context.mounted) showAppToast(context, 'Voice typing is unavailable or microphone access was denied.');

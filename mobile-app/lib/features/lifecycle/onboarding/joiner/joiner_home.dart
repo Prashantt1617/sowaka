@@ -94,7 +94,10 @@ class JoinerHomeBody extends StatelessWidget {
               iconColor: OnbColors.primary,
               title: 'Your first punch-in',
               lines: const ['Learn to punch in'],
-              onTap: () => FirstPunchTour.start(context, c.shell),
+              onTap: () async {
+                await FirstPunchTour.start(context, c.shell);
+                await c.load();
+              },
             ),
           ),
         if (tourCard)

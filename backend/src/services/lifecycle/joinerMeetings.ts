@@ -63,7 +63,9 @@ export const forJoiner = (text: string) =>
  * once), else the journey's snapshot, else the seed's for its systemKey.
  */
 export async function agendaResolver(j: Pick<Journey, 'org' | 'templateId' | 'templateSnapshot'>): Promise<(t: Pick<JourneyTask, 'templateTaskId' | 'systemKey'>) => string[]> {
-  const template = j.templateId ? await lifecycleTemplates().findOne({ org: j.org, id: j.templateId }, { projection: { _id: 0, tasks: 1 } }) : null;
+  // A Final-designs journey reads its own copy only (a template edit reaches new joiners only; design.ts designOf).
+  const design = (j.templateSnapshot?.tasks ?? []).some((t) => !!t.design);
+  const template = !design && j.templateId ? await lifecycleTemplates().findOne({ org: j.org, id: j.templateId }, { projection: { _id: 0, tasks: 1 } }) : null;
   const rows = new Map<string, TemplateTask>();
   for (const t of j.templateSnapshot?.tasks ?? []) rows.set(t.id, t);
   for (const t of template?.tasks ?? []) rows.set(t.id, t);

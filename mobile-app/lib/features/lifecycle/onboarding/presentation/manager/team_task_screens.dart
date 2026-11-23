@@ -284,18 +284,22 @@ class TeamLabel extends StatelessWidget {
 
 /// A plain text box (white, a darker line).
 class TeamTextBox extends StatelessWidget {
-  const TeamTextBox({super.key, required this.controller, this.hint, this.minLines = 3, this.label});
+  const TeamTextBox({super.key, required this.controller, this.hint, this.minLines = 3, this.label, this.readOnly = false});
 
   final TextEditingController controller;
   final String? hint;
   final int minLines;
   final String? label;
 
+  /// Already sent: the words stay as they went out.
+  final bool readOnly;
+
   @override
   Widget build(BuildContext context) => Semantics(
     label: label,
     child: TextField(
       controller: controller,
+      readOnly: readOnly,
       minLines: minLines,
       maxLines: 10,
       textCapitalization: TextCapitalization.sentences,
@@ -651,7 +655,13 @@ class _TeamApprovalScreenState extends State<TeamApprovalScreen> {
     try {
       await _c.api.answerConfirmation(_c.journeyId, action, extendMonths: action == 'extend' ? months : null, comment: _comment.text);
       unawaited(_c.load());
-      if (mounted) _finish(context, action == 'approve' ? 'Confirmation approved' : 'Probation extended by $_months');
+      // Approving a recommendation to extend extends, by the manager's months.
+      final rec = _view?.recommendation;
+      final recMonths = rec?.extendMonths ?? 3;
+      final done = action == 'approve'
+          ? (rec?.outcome == 'extend' ? 'Probation extended by $recMonths month${recMonths == 1 ? '' : 's'}' : 'Confirmation approved')
+          : 'Probation extended by $_months';
+      if (mounted) _finish(context, done);
     } catch (e) {
       if (mounted) {
         setState(() => _busy = false);
@@ -782,7 +792,7 @@ class _TeamApprovalScreenState extends State<TeamApprovalScreen> {
               Expanded(
                 flex: 14,
                 child: TeamPrimaryButton(
-                  _extend ? 'Extend by $_months' : 'Approve',
+                  _extend ? 'Extend by $_months' : rec?.outcome == 'extend' ? 'Approve extension' : 'Approve',
                   busy: _busy,
                   onTap: () => _answer(_extend ? 'extend' : 'approve'),
                 ),
@@ -1098,6 +1108,9 @@ class _TeamScheduleScreenState extends State<TeamScheduleScreen> {
   final Set<int> _open = {};
   bool _busy = false;
 
+  /// A time picked on this visit: once every invite is out, the button comes back only to send a change.
+  bool _changed = false;
+
   TeamPageController get _c => widget.controller;
 
   @override
@@ -1133,15 +1146,31 @@ class _TeamScheduleScreenState extends State<TeamScheduleScreen> {
     final at = _times[m.rowKey];
     final time = await showTimePicker(context: context, initialTime: at == null ? const TimeOfDay(hour: 11, minute: 0) : TimeOfDay.fromDateTime(at));
     if (time == null || !mounted) return;
-    setState(() => _times[m.rowKey] = DateTime(day.year, day.month, day.day, time.hour, time.minute));
+    setState(() {
+      _times[m.rowKey] = DateTime(day.year, day.month, day.day, time.hour, time.minute);
+      _changed = true;
+    });
   }
 
   Future<void> _send() async {
-    final set = Map.of(_times);
+    // Only the times that are new or changed: nobody is invited again to a meeting that did not move.
+    final before = {
+      for (final m in _c.page?.schedule ?? const <TeamScheduleMeeting>[])
+        if (m.startsAt != null) m.rowKey: m.startsAt!,
+    };
+    final set = {
+      for (final e in _times.entries)
+        if (before[e.key] != e.value) e.key: e.value,
+    };
+    if (set.isEmpty) {
+      // Nothing new to send (the server would refuse an empty list): say what to do instead.
+      showTeamToast(context, 'Pick a time for a meeting');
+      return;
+    }
     setState(() => _busy = true);
     try {
       _c.replace(await _c.api.schedule(_c.journeyId, set));
-      if (mounted) _finish(context, set.isEmpty ? 'Invites sent' : 'Invites sent for ${set.length} meeting${set.length > 1 ? 's' : ''}');
+      if (mounted) _finish(context, 'Invites sent for ${set.length} meeting${set.length > 1 ? 's' : ''}');
     } catch (e) {
       if (mounted) {
         setState(() => _busy = false);
@@ -1219,7 +1248,7 @@ class _TeamScheduleScreenState extends State<TeamScheduleScreen> {
                 ],
               ],
             ),
-          if (!row.done) TeamPrimaryButton('Send invites', busy: _busy, onTap: _send),
+          if (!row.done || _changed) TeamPrimaryButton('Send invites', busy: _busy, onTap: _send),
         ],
       );
     },
@@ -1315,7 +1344,9 @@ class _TeamMessageScreenState extends State<TeamMessageScreen> {
   void initState() {
     super.initState();
     final page = _c.page;
-    _text = TextEditingController(text: page == null ? '' : TeamMessageScreen.draft(page, post: widget.post, viewerFirst: _c.shell.viewerFirstName));
+    // Once sent, the words that went out; until then the canvas's draft.
+    final sent = _fresh(_c, widget.row).sent;
+    _text = TextEditingController(text: sent ?? (page == null ? '' : TeamMessageScreen.draft(page, post: widget.post, viewerFirst: _c.shell.viewerFirstName)));
   }
 
   @override
@@ -1366,7 +1397,7 @@ class _TeamMessageScreenState extends State<TeamMessageScreen> {
                 ),
                 const SizedBox(height: 12),
               ],
-              TeamTextBox(controller: _text, minLines: 5, label: widget.post ? 'Your post' : 'Your message'),
+              TeamTextBox(controller: _text, minLines: 5, label: widget.post ? 'Your post' : 'Your message', readOnly: row.done),
               if (widget.post) ...[
                 const SizedBox(height: 12),
                 Container(
@@ -1506,7 +1537,8 @@ class _TeamGoalsScreenState extends State<TeamGoalsScreen> {
               TeamTextBox(controller: _comments[g.index]!, hint: 'Your comment', minLines: 2, label: 'Your comment on ${g.text}'),
             ],
           ),
-        if (!row.done) TeamPrimaryButton('Send to ${j.first}', busy: _busy, onTap: _send),
+        // Nothing to comment on until the month has goals.
+        if (!row.done && goals.isNotEmpty) TeamPrimaryButton('Send to ${j.first}', busy: _busy, onTap: _send),
       ],
     );
   }

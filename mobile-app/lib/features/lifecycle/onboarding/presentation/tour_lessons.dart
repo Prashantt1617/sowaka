@@ -266,7 +266,12 @@ Future<List<String>?> reportTourLessonDone(OnboardingShell shell, String lesson)
 /// Back and Next / Done; then "You’ve got it" with Back to the tour and
 /// Replay.
 class TourLessonScreen extends StatefulWidget {
-  const TourLessonScreen({super.key, required this.lesson, this.onDone, this.facts});
+  const TourLessonScreen({super.key, required this.lesson, this.onDone, this.facts, this.onBackToTour});
+
+  /// "Back to the tour" after the last step, when the lesson was not opened
+  /// from the tour (the home's card): the tour takes its place. Null closes
+  /// the lesson, which is over the tour.
+  final VoidCallback? onBackToTour;
 
   final TourLesson lesson;
 
@@ -506,7 +511,7 @@ class _TourLessonScreenState extends State<TourLessonScreen> {
                         height: 52,
                         child: FilledButton(
                           key: const ValueKey('lesson-to-tour'),
-                          onPressed: () => Navigator.of(context).maybePop(),
+                          onPressed: widget.onBackToTour ?? () => Navigator.of(context).maybePop(),
                           style: FilledButton.styleFrom(
                             backgroundColor: OnbColors.primary,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

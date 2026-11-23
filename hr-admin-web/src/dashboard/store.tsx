@@ -32,6 +32,7 @@ import { useRequestsLive } from './live';
 import type { LoadState } from './ui';
 import { combineLoad } from './useLoad';
 import { inboxAccess } from './access';
+import { mayLeavePage } from './pageHead';
 
 /** The shared lists the store loads, each with its own loading state. */
 export type StoreList = 'leaves' | 'overtime' | 'claims' | 'corrections' | 'feedback' | 'employees' | 'cycle';
@@ -364,6 +365,8 @@ function useProvideStore() {
   };
 
   const setView = (v: View) => {
+    // A page with unsaved edits asks first (pageHead.ts setLeaveGuard).
+    if (v !== viewRef.current && !mayLeavePage()) return;
     closeAllOverlays();
     setViewRaw(v);
   };

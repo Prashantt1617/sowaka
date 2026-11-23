@@ -58,10 +58,13 @@ const defOf = (t: TemplateTask): TeamTaskDef => ({ id: t.team!.key, owner: t.own
  * the seed (a template with no team rows at all has not been migrated yet).
  */
 export async function teamDefsFor(j: Pick<Journey, 'org' | 'templateId' | 'templateSnapshot'>): Promise<TeamTaskDef[]> {
-  const template = j.templateId ? await lifecycleTemplates().findOne({ org: j.org, id: j.templateId }, { projection: { _id: 0, tasks: 1 } }) : null;
   const pick = (tasks?: TemplateTask[]) => (tasks ?? []).filter((t) => !!t.team);
+  // A Final-designs journey keeps the version it started with (design.ts designOf): its own copy, never the template as
+  // it is now, so a template edit reaches new joiners only here too (the dashboard panel's team rows read this).
+  const own = pick(j.templateSnapshot?.tasks);
+  const template = !own.some((t) => !!t.design) && j.templateId ? await lifecycleTemplates().findOne({ org: j.org, id: j.templateId }, { projection: { _id: 0, tasks: 1 } }) : null;
   let rows = pick(template?.tasks);
-  if (!rows.length) rows = pick(j.templateSnapshot?.tasks);
+  if (!rows.length) rows = own;
   if (!rows.length) rows = teamSeed();
   return rows.filter((t) => t.enabled !== false).sort((a, b) => a.order - b.order).map(defOf);
 }
@@ -421,8 +424,9 @@ export async function teamJoiners(me: Me, now = new Date()) {
       ...listExtras({ name, relation: link.rel, managerName: j.managerUserId ? faces.get(j.managerUserId)?.name : undefined, plant: deriveJourney(j, all, now).plant }),
     };
   }));
-  const rank: Record<TeamRelation, number> = { report: 0, buddy: 1, line: 2 };
-  out.sort((a, b) => rank[a.relation] - rank[b.relation] || (a.tj ?? '').localeCompare(b.tj ?? ''));
+  // The newest joiner first (MgrProtoJoiners / BuddyProto / HodProto: Joins 1 Dec, Day 1, Week 1, Month 1 … Month 6),
+  // whatever I am to them.
+  out.sort((a, b) => a.step - b.step || (b.tj ?? '').localeCompare(a.tj ?? '') || a.name.localeCompare(b.name));
   return { joiners: out };
 }
 

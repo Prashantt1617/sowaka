@@ -4,13 +4,13 @@
 // (closed at first); the Employee preview; forms and acknowledgements. Reads and writes the
 // template's design view only (GET / PUT /admin/lifecycle/templates/:id/design,
 // docs/lifecycle/FINAL-DESIGNS.md §4.1): edits stay here until "Save template".
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../../store';
 import { PageActions, ListPending, SkeletonLines } from '../../ui';
 import { SEG, btn, btnClass, segBtn } from '../../ds';
 import { IconEye } from '../../icons';
-import { usePageHead } from '../../pageHead';
+import { setLeaveGuard, usePageHead } from '../../pageHead';
 import { htmlToPdfBlob } from '../../pdf';
 import { getTemplateDesign, listLetterTemplates, saveTemplateDesign, uploadTemplateMedia } from '../../../services/lifecycle';
 import type {
@@ -55,6 +55,14 @@ const ampm = (t?: string) => {
   if (!hm) return t ?? '';
   const [h, m] = hm.split(':').map(Number);
   return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+};
+/** A pasted link as the server keeps it ("https://…"; "forms.example.com/x" gets the https://); null when it isn't a web address. */
+const webLink = (raw: string): string | null => {
+  const text = raw.trim();
+  try {
+    const url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(text) ? text : `https://${text}`);
+    return url.protocol === 'https:' && /^[^\s.]+(\.[^\s.]+)+$/.test(url.hostname) ? url.toString() : null;
+  } catch { return null; }
 };
 const CHECKIN_TYPES: Array<[CheckinAnswerType, string]> = [['rating', 'Rating 1 to 5'], ['yes_no', 'Yes or no'], ['short', 'Short answer'], ['long', 'Long answer'], ['choice', 'Choice']];
 const FORM_TYPES: Array<[FormAnswerType, string]> = [['short', 'Short answer'], ['long', 'Long answer'], ['choice', 'Choice'], ['date', 'Date'], ['file', 'File']];
@@ -205,7 +213,16 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
   useEffect(() => { if (preview && d) setPv(previewOf(d, pvStage)); }, [preview, pvStage, d]);
 
   const dirty = useMemo(() => Boolean(saved && d && JSON.stringify(saved) !== JSON.stringify(d)), [saved, d]);
-  const leave = (go: () => void) => { if (!dirty || window.confirm('Leave without saving your changes?')) go(); };
+  // Its own back arrow and links ask once; the sidebar (any other page change) and a reload ask through the guard.
+  const leaving = useRef(false);
+  const leave = (go: () => void) => { if (!dirty || window.confirm('Leave without saving your changes?')) { leaving.current = true; go(); leaving.current = false; } };
+  useEffect(() => {
+    if (!dirty) return undefined;
+    setLeaveGuard(() => leaving.current || window.confirm('Leave without saving your changes?'));
+    const onUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', onUnload);
+    return () => { setLeaveGuard(null); window.removeEventListener('beforeunload', onUnload); };
+  }, [dirty]);
   usePageHead({ title: d?.name ?? 'Onboarding template', eyebrow: 'Setup / Employee lifecycle / Onboarding templates', onBack: () => leave(onBack), backLabel: 'All templates', tag: saved?.isDefault ? 'Default' : undefined });
 
   const people = useMemo(() => emps.filter((e) => !e.exit?.left).map((e) => ({ id: e.id, name: e.name, dept: `${e.team} ${e.role}` })).sort((a, b) => a.name.localeCompare(b.name)), [emps]);
@@ -814,7 +831,11 @@ function AddDialog({ add, months, templateId, letters, company, onChange, onClos
     if (isAccess) { onAdd({ title, access: { id: newId(), title, role: add.accessRole } }); return; }
     if (k === 'team') { onAdd({ title, team: { id: newId(), title, role: add.role ?? 'manager', stage: add.stage } }); return; }
     const task: DesignTask = { id: newId(), title, type: k as JoinerTaskType, stage: add.stage };
-    if (k === 'other' && add.link.trim()) task.link = add.link.trim();
+    if (k === 'other' && add.link.trim()) {
+      const link = webLink(add.link);
+      if (!link) { onError('Write the link like https://forms.example.com'); return; }
+      task.link = link;
+    }
     if (k === 'ack' && add.file) { task.fileId = add.file.fileId; if (add.file.letterTemplateId) task.letterTemplateId = add.file.letterTemplateId; }
     if (k === 'form') task.questions = add.fields.filter((f) => f.text.trim()).map(savedQuestion);
     onAdd({ title, task });
@@ -1018,7 +1039,7 @@ function previewOf(view: TemplateDesign, stage: DesignStage): TemplatePreview {
       watch: view.preboarding.rows.watch && v.length ? { first: v[0].title, ready: ready(v), total: v.length } : null,
     };
   }
-  const watchAll = [...view.watch, ...view.trainings].filter((w) => STAGES.indexOf(w.stage) <= order);
+  const watchAll = view.watch.filter((w) => STAGES.indexOf(w.stage) <= order);
   const meetings = view.meetings.filter((m) => m.stage === stage);
   const tasks = view.tasks.filter((x) => x.stage === stage);
   const early = stage === 'd1' || stage === 'w1';

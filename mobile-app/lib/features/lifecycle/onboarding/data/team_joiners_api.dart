@@ -127,6 +127,7 @@ class TeamTask {
     this.agenda = const [],
     this.notes = const [],
     this.startsAt,
+    this.sent,
     this.month,
     this.checkinId,
     this.doneByName,
@@ -150,6 +151,7 @@ class TeamTask {
     agenda: _strings(json['agenda']),
     notes: _strings(json['notes']),
     startsAt: DateTime.tryParse('${json['startsAt'] ?? ''}')?.toLocal(),
+    sent: _str(json['sent']),
     month: _intOrNull(json['month']),
     checkinId: _str(json['checkinId']),
     doneByName: _str(json['doneByName']),
@@ -181,6 +183,9 @@ class TeamTask {
   /// A meeting's own notes (only mine) and the time set for it.
   final List<String> notes;
   final DateTime? startsAt;
+
+  /// The welcome message or the feed post, once sent: the words that went out.
+  final String? sent;
   final int? month;
   final String? checkinId;
   final String? doneByName;
@@ -190,7 +195,7 @@ class TeamTask {
   TeamTask copyWith({bool? done}) => TeamTask(
     id: id, title: title, kind: kind, step: step, stepLabel: stepLabel, early: early, done: done ?? this.done, locked: locked,
     pair: pair, how: how, note: note, pill: pill, opens: opens, canTick: canTick, agenda: agenda, notes: notes,
-    startsAt: startsAt, month: month, checkinId: checkinId, doneByName: doneByName,
+    startsAt: startsAt, sent: sent, month: month, checkinId: checkinId, doneByName: doneByName,
   );
 }
 

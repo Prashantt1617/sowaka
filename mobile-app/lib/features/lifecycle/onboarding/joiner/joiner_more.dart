@@ -38,13 +38,14 @@ TourFacts _facts(JoinerController c, LeaveBalance? b) {
 }
 
 /// Plays a lesson (AppLesson): the drawing filled in from her record, Done
-/// told to the server. From the home's card it opens over the tour, so
-/// closing it lands on the tour, as the canvas's close does.
-Future<void> playJoinerLesson(BuildContext context, JoinerController c, String key, {bool overTour = true}) async {
+/// told to the server. It opens over the screen it was tapped on, and
+/// closing it returns there (the home's card to the home, a tour row to the
+/// tour). [fromTour] false (the home's card): "Back to the tour" after the
+/// last step puts the tour in the lesson's place, and Back from it is the home.
+Future<void> playJoinerLesson(BuildContext context, JoinerController c, String key, {bool fromTour = false}) async {
   final lesson = lessonOf(key);
   if (lesson == null) return;
   final navigator = Navigator.of(context);
-  if (overTour) unawaited(navigator.push<void>(MaterialPageRoute(builder: (_) => JoinerTourScreen(c: c))));
   final balance = key == 'leave' ? await _balance(c) : null;
   await navigator.push<void>(
     MaterialPageRoute(
@@ -52,6 +53,9 @@ Future<void> playJoinerLesson(BuildContext context, JoinerController c, String k
       builder: (_) => TourLessonScreen(
         lesson: lesson,
         facts: _facts(c, balance),
+        onBackToTour: fromTour
+            ? null
+            : () => unawaited(navigator.pushReplacement<void, void>(MaterialPageRoute(builder: (_) => JoinerTourScreen(c: c)))),
         onDone: (k) async {
           try {
             await c.api.lessonDone(k);
@@ -89,7 +93,7 @@ class JoinerTourScreen extends StatelessWidget {
               done: t.done.contains(k),
               today: !manager && t.today == k,
               manager: manager,
-              onTap: () => playJoinerLesson(context, c, k, overTour: false),
+              onTap: () => playJoinerLesson(context, c, k, fromTour: true),
             ),
       ];
       return JPage(
@@ -554,35 +558,39 @@ class JoinerProfileScreen extends StatelessWidget {
                   for (final s in p.sections)
                     InkWell(
                       key: ValueKey('section-${s.key}'),
-                      // Each section opens the profile, where it is filled in (canvas: every row is a link).
-                      onTap: c.shell.openAppScreen == null ? null : () => c.shell.openAppScreen!('profile'),
-                      child: Container(
-                      constraints: const BoxConstraints(minHeight: 56),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      child: Row(
-                        children: [
-                          s.state == 'todo'
-                              ? Container(
-                                  width: 24,
-                                  height: 24,
-                                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: OnbColors.lineDark, width: 2)),
-                                )
-                              : const JDoneDot(size: 24),
-                          const SizedBox(width: 12),
-                          Expanded(child: Text(s.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: OnbColors.text))),
-                          Text(
-                            switch (s.state) {
-                              'done' => 'Done',
-                              'by_hr' => 'By HR',
-                              _ => 'To do',
+                      // Each section opens the profile over this screen (canvas: every row is a
+                      // link); Back returns here, read again.
+                      onTap: c.shell.openAppScreen == null
+                          ? null
+                          : () async {
+                              await c.shell.openAppScreen!(context, 'profile');
+                              await c.load();
                             },
-                            style: TextStyle(fontSize: 12, color: s.state == 'todo' ? OnbColors.text3 : OnbColors.successText),
-                          ),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.chevron_right_rounded, size: 18, color: OnbColors.text3),
-                        ],
+                      child: Container(
+                        constraints: const BoxConstraints(minHeight: 56),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        child: Row(
+                          children: [
+                            s.state == 'todo'
+                                ? Container(
+                                    width: 24,
+                                    height: 24,
+                                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: OnbColors.lineDark, width: 2)),
+                                  )
+                                : const JDoneDot(size: 24),
+                            const SizedBox(width: 12),
+                            Expanded(child: Text(s.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: OnbColors.text))),
+                            Text(
+                              switch (s.state) {
+                                'done' => 'Done',
+                                'by_hr' => 'By HR',
+                                _ => 'To do',
+                              },
+                              style: TextStyle(fontSize: 12, color: s.state == 'todo' ? OnbColors.text3 : OnbColors.successText),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
                     ),
                 ]),
               ),

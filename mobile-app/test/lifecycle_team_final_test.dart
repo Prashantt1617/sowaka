@@ -505,6 +505,23 @@ void main() {
       expect(find.text('Confirmation approved'), findsOneWidget);
     });
 
+    testWidgets('the manager recommends extending: "Approve extension" extends by their months', (tester) async {
+      final c = conf();
+      c['recommendation'] = <String, dynamic>{...(c['recommendation'] as Map), 'outcome': 'extend', 'extendMonths': 2};
+      final api = _FakeTeamApi(_hodDev())..confirmationJson = c;
+      await _pump(tester, _person(api, now: DateTime(2026, 11, 22, 10), name: 'Anita Desai'));
+      await tester.tap(find.text('Approve Dev’s confirmation'));
+      await tester.pumpAndSettle();
+      await _scrollTo(tester, find.text('Haider Ali recommends: Extend by 2 months'));
+      expect(find.text('Haider Ali recommends: Extend by 2 months'), findsOneWidget);
+      await _scrollTo(tester, find.byKey(const ValueKey('team-button-Approve extension')));
+      await tester.tap(find.byKey(const ValueKey('team-button-Approve extension')));
+      await tester.pumpAndSettle();
+      expect(api.calls.single, startsWith('confirm:approve:-'));
+      expect(find.text('Probation extended by 2 months'), findsOneWidget);
+      expect(find.text('Confirmation approved'), findsNothing);
+    });
+
     testWidgets('extend: 1, 2 or 3 months, then "Extend by 2 months"; Cancel goes back', (tester) async {
       final api = _FakeTeamApi(_hodDev())..confirmationJson = conf();
       await _pump(tester, _person(api, now: DateTime(2026, 11, 22, 10), name: 'Anita Desai'));
@@ -596,10 +613,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('First goals'), findsOneWidget);
       expect(find.text('Pick a time'), findsNWidgets(2));
+      // Only new or changed times are sent: with none, nothing goes and it says what to do.
       await tester.tap(find.byKey(const ValueKey('team-button-Send invites')));
-      await tester.pumpAndSettle();
-      expect(api.calls, ['schedule:hr_welcome']);
-      expect(find.text('Invites sent for 1 meeting'), findsOneWidget);
+      await tester.pump();
+      expect(api.calls, isEmpty);
+      expect(find.text('Pick a time for a meeting'), findsOneWidget);
     });
 
     testWidgets('a welcome message, prefilled with the joining date and the manager’s first name', (tester) async {
