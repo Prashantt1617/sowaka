@@ -94,6 +94,8 @@ export function validateOffer(f: OfferFields, needPay: boolean): Partial<Record<
   if (!f.designation.trim()) e.designation = 'Needed for the offer';
   if (needPay && !(f.ctc > 0)) e.ctc = 'Enter the yearly CTC';
   if (!f.tj) e.tj = 'Pick the joining date';
+  // The offer names who they report to: no offer letter without a reporting manager.
+  if (!f.managerUserId) e.managerUserId = 'Choose the reporting manager';
   if (!f.validTill) e.validTill = 'Pick a date';
   else if (f.tj && f.validTill > f.tj) e.validTill = 'The offer should close before the joining day';
   if (f.noticeDays < 0) e.noticeDays = 'Days, 0 or more';
