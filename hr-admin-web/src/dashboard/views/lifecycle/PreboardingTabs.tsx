@@ -209,8 +209,8 @@ export function OrgChartTab({ profile, load }: { profile: PreboardingProfile; lo
 // —— Activity ———————————————————————————————————————————————————————————
 
 /**
- * The joiner panel's Journey, as the panel draws it (the same nine steps, circles, lines and contents),
- * with every step open at once and only the candidate's own tasks.
+ * The joiner panel's Journey, exactly as the panel draws it (the same eight steps, rows and contents: the
+ * candidate's own tasks only), without the link to this profile page.
  */
 export function ActivityTab({ load, onChanged }: { load: JourneyLoad; onChanged: () => void }) {
   const [busy, setBusy] = useState('');
