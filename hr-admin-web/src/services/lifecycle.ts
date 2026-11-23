@@ -295,7 +295,7 @@ export interface JourneyView {
   bankPfRequest?: BankPfRequest;
   /** The portal's Employee profile (HR only; the account number, Aadhaar and PAN as their last four). */
   profile?: CandidateProfileView;
-  /** The portal's Employee profile sections done (the portal's and the app's "n of 6 sections done"). */
+  /** The portal's Employee profile sections done (the portal's and the app's "n of 5 sections done"; bank and PF is its own task since 24 Nov). */
   profileSections?: { done: number; total: number };
   /** The portal's About you: the emergency contact and PF (HR only). */
   aboutYou?: {
@@ -628,7 +628,8 @@ export const listLetters = (p: { journeyId?: string; userId?: string; kind?: Let
 // —— Pre-boarding profiles ———————————————————————————————————————————————
 // Everyone before joining, and one candidate's Employee profile section by section
 // (People › Employees › Pre-boarding). A section HR approves is locked: the
-// candidate can no longer edit it on the portal or the app.
+// candidate can no longer edit it on the portal or the app. Bank account and PF is
+// not a section (24 Nov): `bankPf`, the joiner's own task, shown on Salary details.
 
 export type PreboardingSectionKey = 'personal' | 'contact' | 'emergency' | 'bank' | 'education' | 'ids';
 export interface PreboardingRow {
@@ -675,7 +676,7 @@ export interface PreboardingSectionValues {
   personal: PreboardingSectionInput['personal'];
   contact: PreboardingSectionInput['contact'];
   emergency: PreboardingSectionInput['emergency'];
-  bank: Omit<PreboardingSectionInput['bank'], 'accountNumber'> & { accountLast4?: string };
+  bank: Omit<PreboardingSectionInput['bank'], 'accountNumber' | 'pf'> & { accountLast4?: string; pf?: { firstJob: boolean; uan?: string; uanLast4?: string } };
   education: PreboardingSectionInput['education'];
   ids: { aadhaarLast4?: string; panLast4?: string };
 }
@@ -711,12 +712,32 @@ export interface PreboardingBasic extends PreboardingBasicInput {
 }
 /** The choices the portal offers for its picked fields. */
 export interface PreboardingOptions { genders: string[]; marital: string[]; qualifications: string[]; relations: string[] }
+/**
+ * Bank account and PF, the joiner's own task (not counted in the profile): to do, declared in the app
+ * (the payroll details task, done once sent), or approved by HR (written to payroll). HR edits it with
+ * savePreboardingSection(…, 'bank', …), no joiner needed.
+ */
+export interface PreboardingBankPf {
+  title: string;
+  state: 'todo' | 'declared' | 'approved';
+  declaredAt?: string;
+  approved?: { byName: string; at: string };
+  /** HR sent the declaration back: to do again until the joiner sends it once more. */
+  sentBack?: { at: string; note?: string };
+  editedByHr?: { byName: string; at: string };
+  /** Where the details shown come from: the app's declaration, HR's edit, the portal (before 24 Nov), or nothing yet. */
+  source: 'app' | 'hr' | 'portal' | 'none';
+  fields: Array<{ label: string; value: string }>;
+  values: Partial<PreboardingSectionValues['bank']>;
+  documents: PreboardingDocument[];
+}
 export interface PreboardingProfile {
   journeyId: string;
   candidate: { name: string; personalEmail?: string; phone?: string; designation?: string; department?: string; tj?: string; status: string };
   done: number;
   total: number;
   sections: PreboardingSection[];
+  bankPf?: PreboardingBankPf;
   options?: PreboardingOptions;
   basic?: PreboardingBasic;
 }

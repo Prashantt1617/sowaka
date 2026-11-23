@@ -23,8 +23,9 @@ import { G2Camera } from './icons/g2-camera';
 import { G2Gallery } from './icons/g2-gallery';
 import '../../styles/fig-g2.css';
 
-// All seven sections: personal, contact and emergency (G1's frames 4967:93155, 93226, 93303) were added to G2's shell.
-export const G2_SECTIONS: ProfileSectionKey[] = ['personal', 'contact', 'emergency', 'bank', 'education', 'ids'];
+// The five sections: personal, contact and emergency (G1's frames 4967:93155, 93226, 93303) were added to G2's shell.
+// Bank account and PF is no longer asked here (24 Nov: the joiner declares it in the app); its form below stays unused.
+export const G2_SECTIONS: ProfileSectionKey[] = ['personal', 'contact', 'emergency', 'education', 'ids'];
 const RELATIONS = ['Parent', 'Partner', 'Sibling', 'Friend'];
 const ICON: Partial<Record<ProfileSectionKey, Fig3DName>> = { personal: 'user', emergency: 'phone', bank: 'bank', education: 'write', ids: 'document-approved', photo: 'id-card' };
 /** Which card of the section a template document belongs in (by its name); others go in the last card. */

@@ -368,11 +368,11 @@ async function main() {
   await journeys().updateOne({ id: J1 }, { $set: { 'profile.personal': { fullName: 'Priya Shah', dob: '1998-04-02', gender: 'Female', nationality: 'Indian' } } });
   let prof = await jd.joinerProfileDetails(PRIYA);
   const sec = (key: string) => prof.sections.find((s) => s.key === key)!;
-  eq('Six sections; the one filled before joining is read-only, the rest can be filled', prof.sections.map((s) => `${s.key}:${s.editable}`),
-    ['personal:false', 'contact:true', 'emergency:true', 'bank:true', 'education:true', 'ids:true']);
+  eq('Five sections (bank and PF is its own task since 24 Nov); the one filled before joining is read-only, the rest can be filled', [prof.sections.map((s) => `${s.key}:${s.editable}`), prof.total],
+    [['personal:false', 'contact:true', 'emergency:true', 'education:true', 'ids:true'], 5]);
   eq('…with its answers to read', (prof.values as { personal?: { fullName: string } }).personal?.fullName, 'Priya Shah');
   eq('A section filled before joining cannot be changed here', await refusal(() => jd.saveJoinerProfileSection(PRIYA, 'personal', { fullName: 'P', dob: '1998-04-02', gender: 'Female' })), 409);
-  eq('A section outside the six is refused', await refusal(() => jd.saveJoinerProfileSection(PRIYA, 'photo', {})), 400);
+  eq('A section outside the five is refused (the photo, bank and PF)', [await refusal(() => jd.saveJoinerProfileSection(PRIYA, 'photo', {})), await refusal(() => jd.saveJoinerProfileSection(PRIYA, 'bank', {}))], [400, 400]);
   eq('A bad answer is refused and saves nothing (still editable)', [await refusal(() => jd.saveJoinerProfileSection(PRIYA, 'contact', { mobile: '12345' })), (await jd.joinerProfileDetails(PRIYA)).sections.find((s) => s.key === 'contact')?.editable], [400, true]);
   prof = await jd.saveJoinerProfileSection(PRIYA, 'contact', { mobile: '9876500001', current: { line: '12 MG Road', city: 'Pune', state: 'Maharashtra', pin: '411001' } });
   ok('Saved once: contact is read-only, saved in the app', !sec('contact').editable && sec('contact').filled && !!sec('contact').savedInAppAt, sec('contact'));
@@ -381,10 +381,15 @@ async function main() {
   prof = await jd.saveJoinerProfileSection(PRIYA, 'emergency', { name: 'Asha Shah', relation: 'Parent', phone: '9876500003' });
   const hrEmergency = (await staff.staffProfile(HR, J1)).sections.find((s) => s.key === 'emergency')?.rows.find((r) => r.label === 'Mobile')?.value;
   ok('Emergency saved where pre-boarding keeps it; HR reads it', !sec('emergency').editable && hrEmergency === '+919876500003', hrEmergency);
-  prof = await jd.saveJoinerProfileSection(PRIYA, 'bank', { holderName: 'Priya Shah', accountNumber: '123456789012', accountNumberAgain: '123456789012', ifsc: 'HDFC0001234', bankName: 'HDFC Bank', pf: { firstJob: false, uan: '100200300400' } });
+  // Bank and PF the portal kept before 24 Nov (still read: it prefills the payroll details below).
+  const profileSvc = await import('../services/lifecycle/profile');
+  await journeys().updateOne({ id: J1 }, { $set: {
+    'profile.bank': profileSvc.sectionValue('bank', { holderName: 'Priya Shah', accountNumber: '123456789012', accountNumberAgain: '123456789012', ifsc: 'HDFC0001234', bankName: 'HDFC Bank' }, await engine.loadJourney(J1), new Date()).bank,
+    'aboutYou.pf': { firstJob: false, uan: '100200300400' },
+  } });
   const j1Prof = await engine.loadJourney(J1);
-  eq('Bank and PF: the account as its last four (encrypted kept), PF in About you', [j1Prof.profile?.bank?.accountLast4, !!j1Prof.profile?.bank?.accountNumberEnc, j1Prof.aboutYou?.pf?.uan, sec('bank').editable], ['9012', true, '100200300400', false]);
-  eq('The joiner’s home counts the sections filled here; contact still waits for its address proof', (await joiner.joinerOnboarding(PRIYA)).profile.sections.filter((s) => s.state === 'done').map((s) => s.key), ['personal', 'emergency', 'bank']);
+  eq('Bank and PF kept from before: the account as its last four (encrypted kept), PF in About you; not a profile section', [j1Prof.profile?.bank?.accountLast4, !!j1Prof.profile?.bank?.accountNumberEnc, j1Prof.aboutYou?.pf?.uan, (await jd.joinerProfileDetails(PRIYA)).sections.some((s) => s.key === 'bank')], ['9012', true, '100200300400', false]);
+  eq('The joiner’s home counts the sections filled here (out of five); contact still waits for its address proof', [(await joiner.joinerOnboarding(PRIYA)).profile.sections.filter((s) => s.state === 'done').map((s) => s.key), (await joiner.joinerOnboarding(PRIYA)).profile.total], [['personal', 'emergency'], 5]);
   ok('…which the app’s profile says (saved, the document named)', sec('contact').state === 'saved' && (sec('contact').missingDocuments?.length ?? 0) > 0, sec('contact'));
 
   section('App build 90: payroll details (bank, PF, nominees) to HR, then payroll');

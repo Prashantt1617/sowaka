@@ -7,16 +7,20 @@
  * HR can also change any section's answers (PUT …/profile/:section, the portal's body and checks),
  * approved or not; each section carries its raw `values` to prefill that form.
  *
+ * Bank account and PF is not a section (24 Nov): it is its own task the joiner declares in the app
+ * (`bankPf`, shown on the Salary details tab), which HR can edit too (PUT …/profile/bank, hrSaveBankPf).
+ *
  * Secrets stay as stored: the account number and Aadhaar (and PAN) as their last four only.
  * Document files are linked through the dashboard's authorised file route (`/admin/lifecycle/files/:id`,
  * opened with the dashboard's Bearer token), never a public URL.
  */
 import { candidateDocuments, journeys, lifecycleFiles, offers, users } from '../../config/db';
+import { setPaymentDetails } from '../employeePayment.service';
 import type { AboutYou, CandidateDocument, CandidateProfile, Journey, ProfileApproval } from '../../models/lifecycle.model';
 import { documentListFor, journeyDocumentsView, type CandidateDocumentView } from './documents';
 import { completeTask } from './engine';
 import { LifecycleOfferError } from './files';
-import { aboutYouValue, PROFILE_OPTIONS, PROFILE_SECTION_TITLE, PROFILE_SECTIONS, RELATIONS, sectionStates, sectionValue, type ProfileSection } from './profile';
+import { aboutYouValue, bankPfStatus, PROFILE_OPTIONS, PROFILE_SECTION_TITLE, PROFILE_SECTIONS, RELATIONS, sectionStates, sectionValue, type ProfileSection } from './profile';
 import { sectionOfDocument } from './profileLock';
 
 /** The dashboard's authorised link to a stored lifecycle file (fetched with its Bearer token). */
@@ -169,6 +173,51 @@ async function basicView(journey: Journey) {
   };
 }
 
+const pfLine = (pf: { firstJob?: boolean; uan?: string; uanLast4?: string } | undefined) =>
+  !pf ? undefined : pf.firstJob ? 'First job: no UAN yet' : pf.uan ? `UAN ${pf.uan}` : pf.uanLast4 ? `UAN •••• ${pf.uanLast4}` : 'Has a UAN, not given';
+
+/**
+ * Bank account and PF as the Salary details tab shows it: the task's state (bankPfStatus: to do,
+ * declared in the app, approved), and the newest details: the joiner's declaration from the app
+ * unless HR changed them after it, else what HR (or, before 24 Nov, the portal) saved on the journey.
+ * Secrets as their last four. `values` prefill HR's edit form (PUT …/profile/bank).
+ */
+export function bankPfView(journey: Pick<Journey, 'profile' | 'aboutYou' | 'bankPfRequest' | 'profileEditedByHr'>, docs: CandidateDocumentView[] = []) {
+  const status = bankPfStatus(journey);
+  const req = journey.bankPfRequest?.source === 'payroll_task' && journey.bankPfRequest.status !== 'declined' ? journey.bankPfRequest : undefined;
+  const edited = journey.profileEditedByHr?.bank;
+  const fromApp = Boolean(req && !(edited && new Date(edited.at).getTime() > new Date(req.requestedAt).getTime()));
+  const saved = journey.profile?.bank;
+  const savedPf = journey.aboutYou?.pf;
+  const bank = fromApp && req
+    ? { holderName: req.changes.accountHolder, ifsc: req.changes.ifsc, bankName: req.changes.bankName, accountLast4: req.changes.accountLast4 }
+    : { holderName: saved?.holderName, ifsc: saved?.ifsc, bankName: saved?.bankName, accountLast4: saved?.accountLast4 };
+  const pf = fromApp && req ? { firstJob: req.firstJob === true, ...(req.changes.uanLast4 ? { uanLast4: req.changes.uanLast4 } : {}) } : savedPf;
+  const nominees = req?.nominees ?? [];
+  const rows: Array<[string, string | undefined]> = [
+    ['Account holder', bank.holderName], ['Account number', bank.accountLast4 ? `•••• ${bank.accountLast4}` : undefined], ['IFSC', bank.ifsc], ['Bank', bank.bankName],
+    ['PF', pfLine(pf)],
+    ...nominees.map((n, i): [string, string] => [nominees.length === 1 ? 'PF nominee' : `PF nominee ${i + 1}`, `${n.name} (${n.relation}) · ${n.share}%`]),
+  ];
+  const has = <T extends object>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== ''));
+  const editedByHr = approvalView(edited);
+  const iso = (d?: Date) => (d ? new Date(d).toISOString() : undefined);
+  return {
+    title: PROFILE_SECTION_TITLE.bank,
+    state: status.state,
+    ...(status.declaredAt ? { declaredAt: iso(status.declaredAt) } : {}),
+    ...(status.approvedAt ? { approved: { byName: status.approvedByName ?? 'HR', at: iso(status.approvedAt)! } } : {}),
+    ...(status.sentBackAt ? { sentBack: { at: iso(status.sentBackAt)!, ...(status.hrNote ? { note: status.hrNote } : {}) } } : {}),
+    ...(editedByHr ? { editedByHr } : {}),
+    // Where the details shown come from: the joiner's declaration in the app, or the journey (HR's edit, or the portal before 24 Nov).
+    source: fromApp ? 'app' as const : editedByHr ? 'hr' as const : saved || savedPf ? 'portal' as const : 'none' as const,
+    fields: rows.filter((r): r is [string, string] => typeof r[1] === 'string' && r[1].trim() !== '').map(([label, value]) => ({ label, value })),
+    values: has({ ...bank, pf: pf ? has({ firstJob: pf.firstJob, uan: (pf as { uan?: string }).uan, uanLast4: (pf as { uanLast4?: string }).uanLast4 }) : undefined }),
+    // A cancelled cheque or passbook the template asks for: no longer under a profile section.
+    documents: docs.filter((d) => sectionOfDocument(d) === 'bank').map(documentView),
+  };
+}
+
 /** GET /admin/lifecycle/journeys/:id/profile — the whole pre-boarding profile, as HR reads it. */
 export async function hrProfileView(journey: Journey) {
   const [docs, basic] = await Promise.all([journeyDocumentsView(journey.id), basicView(journey)]);
@@ -198,6 +247,7 @@ export async function hrProfileView(journey: Journey) {
         documents: docs.filter((d) => sectionOfDocument(d) === key).map(documentView),
       };
     }),
+    bankPf: bankPfView(journey, docs),
     // The choices HR's edit form offers (the portal's own lists).
     options: { ...PROFILE_OPTIONS, relations: RELATIONS },
   };
@@ -237,12 +287,12 @@ const NOT_PREBOARDING = ['joined', 'moved_to_app', 'confirmed', 'declined', 'exp
  * PUT …/profile/:section — HR changes a section's answers: the body the portal sends for it, checked
  * the same way and stored the same way (secrets encrypted, last four in the clear; a blank account
  * number, Aadhaar or PAN keeps what is stored). Emergency is `{ emergencyContact, emergencyContact2? }`
- * (null removes the second); bank may carry `pf: { firstJob, uan? }` (left out keeps it), and needs no
- * `accountNumberAgain` (when it is sent it must match). Allowed on an
+ * (null removes the second). Bank (not a section since 24 Nov) goes to hrSaveBankPf. Allowed on an
  * approved section (HR is who locks it) and after the candidate's own Tj − 1 lock, not once the joiner
  * has joined or the offer is closed. Records who changed it in `profileEditedByHr.<section>`.
  */
 export async function hrSaveProfileSection(hr: { userId: string; name: string }, journey: Journey, sectionRaw: unknown, input: unknown, now = new Date()) {
+  if (sectionRaw === 'bank') return hrSaveBankPf(hr, journey, input, now);
   const section = sectionOf(sectionRaw);
   if (NOT_PREBOARDING.includes(String(journey.status))) throw new LifecycleOfferError(409, 'Only someone still in pre-boarding can be changed here');
   const body = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
@@ -253,23 +303,68 @@ export async function hrSaveProfileSection(hr: { userId: string; name: string },
     if (body.emergencyContact === undefined) throw new LifecycleOfferError(400, 'Add the emergency contact');
     aboutYou = aboutYouValue(journey, { emergencyContact: body.emergencyContact, ...(body.emergencyContact2 !== undefined ? { emergencyContact2: body.emergencyContact2 } : {}) });
   } else {
-    // HR types a number once: the portal's "type it again" is the same number (blank keeps what is stored).
-    const input = section === 'bank' && body.accountNumberAgain === undefined ? { ...body, accountNumberAgain: body.accountNumber } : body;
-    const value = sectionValue(section, input, journey, now);
-    if (section === 'bank' && body.pf !== undefined) aboutYou = aboutYouValue(journey, { pf: body.pf });
+    const value = sectionValue(section, body, journey, now);
     profile = { ...(journey.profile ?? {}), ...value, savedAt: now };
   }
   if (aboutYou) aboutYou.savedAt = now;
   await journeys().updateOne({ id: journey.id }, {
     $set: { ...(profile ? { profile } : {}), ...(aboutYou ? { aboutYou } : {}), [`profileEditedByHr.${section}`]: edited, updatedAt: now },
   });
-  // As on the portal: About you is done once both the emergency contact and the PF are in.
-  if (aboutYou?.emergencyContact && aboutYou.pf) await completeTask(journey.id, 'about_you', { userId: hr.userId, name: hr.name });
+  // As on the portal: About you is done once the emergency contact is in (PF is the app's Bank and PF task).
+  if (aboutYou?.emergencyContact) await completeTask(journey.id, 'about_you', { userId: hr.userId, name: hr.name });
   return hrProfileView({
     ...journey,
     ...(profile ? { profile } : {}), ...(aboutYou ? { aboutYou } : {}),
     profileEditedByHr: { ...(journey.profileEditedByHr ?? {}), [section]: edited },
   });
+}
+
+const CLOSED_OFFER = ['declined', 'expired', 'not_joining'];
+const JOINED = ['joined', 'moved_to_app', 'confirmed'];
+
+/**
+ * PUT …/profile/bank — HR changes Bank account and PF without the joiner: `{ holderName, accountNumber?,
+ * ifsc, bankName?, pf?: { firstJob, uan? } }` (HR types the number once; blank keeps the one shown, the
+ * app's declaration or the journey's; a blank UAN keeps the one shown; `pf` left out keeps it). Kept on
+ * the journey (`profile.bank`, `aboutYou.pf`, secrets encrypted) with `profileEditedByHr.bank`; once
+ * they have joined it goes to payroll too (setPaymentDetails: payroll access, payroll's own checks,
+ * written first so a refusal saves nothing). The task's state stays the joiner's (bankPfStatus).
+ */
+export async function hrSaveBankPf(hr: { userId: string; name: string }, journey: Journey, input: unknown, now = new Date()) {
+  if (CLOSED_OFFER.includes(String(journey.status)) || journey.closedAt) throw new LifecycleOfferError(409, 'This offer is closed');
+  const body = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  // What the form showed: the joiner's declaration from the app, else the journey's own.
+  const req = journey.bankPfRequest?.source === 'payroll_task' && journey.bankPfRequest.status !== 'declined' ? journey.bankPfRequest : undefined;
+  const shown = bankPfView(journey);
+  const fromApp = shown.source === 'app' && req;
+  const kept: CandidateProfile['bank'] | undefined = fromApp
+    ? (req.changes.accountLast4 ? { holderName: req.changes.accountHolder ?? '', ifsc: req.changes.ifsc ?? '', accountLast4: req.changes.accountLast4, ...(req.changes.accountNumberEnc ? { accountNumberEnc: req.changes.accountNumberEnc } : {}) } : undefined)
+    : journey.profile?.bank;
+  const typedAccount = typeof body.accountNumber === 'string' ? body.accountNumber.replace(/\s+/g, '') : '';
+  // HR types a number once: the portal's "type it again" is the same number.
+  const value = sectionValue('bank', { ...body, accountNumberAgain: body.accountNumberAgain ?? body.accountNumber }, { ...journey, profile: { ...(journey.profile ?? {}), ...(kept ? { bank: kept } : {}) } }, now);
+  const bank = value.bank!;
+  let pf: AboutYou['pf'] = fromApp ? { firstJob: req.firstJob === true, ...(req.changes.uanLast4 ? { uanLast4: req.changes.uanLast4 } : {}) } : journey.aboutYou?.pf;
+  let typedUan = '';
+  if (body.pf !== undefined) {
+    const next = aboutYouValue(journey, { pf: body.pf }).pf!;
+    typedUan = next.uan ?? '';
+    // A blank UAN keeps the one shown.
+    pf = next.firstJob || next.uan ? next : { firstJob: false, ...(pf && !pf.firstJob && pf.uan ? { uan: pf.uan } : {}), ...(pf && !pf.firstJob && !pf.uan && pf.uanLast4 ? { uanLast4: pf.uanLast4 } : {}) };
+  }
+  if (JOINED.includes(String(journey.status)) && journey.userId) {
+    await setPaymentDetails(hr.userId, journey.userId, {
+      accountHolder: bank.holderName, ifsc: bank.ifsc, ...(bank.bankName ? { bankName: bank.bankName } : {}),
+      ...(typedAccount ? { accountNumber: typedAccount } : {}), ...(typedUan ? { uan: typedUan } : {}),
+    });
+  }
+  const edited: ProfileApproval = { byUserId: hr.userId, byName: hr.name, at: now };
+  const profile: CandidateProfile = { ...(journey.profile ?? {}), bank, savedAt: now };
+  const aboutYou: AboutYou | undefined = pf ? { ...(journey.aboutYou ?? {}), pf, savedAt: now } : journey.aboutYou;
+  await journeys().updateOne({ id: journey.id }, {
+    $set: { profile, ...(pf ? { aboutYou } : {}), 'profileEditedByHr.bank': edited, updatedAt: now },
+  });
+  return hrProfileView({ ...journey, profile, ...(aboutYou ? { aboutYou } : {}), profileEditedByHr: { ...(journey.profileEditedByHr ?? {}), bank: edited } });
 }
 
 export interface PreboardingRow {

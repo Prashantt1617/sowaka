@@ -260,7 +260,8 @@ export async function saveAboutYou(journey: Journey, input: { emergencyContact?:
   if (!same(about.pf, before.pf)) assertSectionOpen(journey, 'bank');
   about.savedAt = now;
   await journeys().updateOne({ id: journey.id }, { $set: { aboutYou: about, lastActivityAt: now } });
-  if (about.emergencyContact && about.pf) await completeTask(journey.id, 'about_you', { name: journey.candidate?.name });
+  // Done with the emergency contact: PF is no longer asked before joining (24 Nov; it is the app's Bank and PF task).
+  if (about.emergencyContact) await completeTask(journey.id, 'about_you', { name: journey.candidate?.name });
   return aboutYouView({ ...journey, aboutYou: about });
 }
 
@@ -439,7 +440,7 @@ export async function portalHome(journey: Journey, now = new Date()): Promise<Po
   // Every required document is in and HR is reviewing: nothing for the candidate to do there now.
   const docsWaiting = !docsDone && !sentBack && required.length > 0 && required.every((d) => d.status === 'in_review' || d.status === 'approved');
   const about = aboutYouOf(journey);
-  const aboutDone = Boolean(about.emergencyContact && about.pf);
+  const aboutDone = Boolean(about.emergencyContact);
   const meet = await (meetRead ?? meetItems(journey));
   const meetDone = meet.length > 0 ? meet.every((i) => i.seen) : true;
   const onDay1 = journey.templateSnapshot.settings.signLettersOnDay1 === true;
@@ -474,7 +475,7 @@ export async function portalHome(journey: Journey, now = new Date()): Promise<Po
   };
   const helpers: Record<PathKey, string> = {
     offer: ((latest?.version ?? 1) > 1 && changesLine(latest?.changedFields)) || 'Reply to HR’s email to accept it',
-    docs: sentBack?.hrNote ?? 'One document at a time · PDF, JPG or PNG', about: 'Emergency contact and PF · 2 quick steps',
+    docs: sentBack?.hrNote ?? 'One document at a time · PDF, JPG or PNG', about: 'Emergency contact · 2 min',
     meet: 'Short videos and cards from the team', letter: 'Open each PDF, then sign', pass: 'Where to go, when, and who to meet',
   };
   let upNext: PortalHome['upNext'];

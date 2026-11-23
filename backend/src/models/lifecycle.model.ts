@@ -615,7 +615,8 @@ export interface AboutYou {
   emergencyContact?: EmergencyContact;
   /** An optional second person to call (the portal's "Add another contact"). */
   emergencyContact2?: EmergencyContact;
-  pf?: { firstJob: boolean; uan?: string };
+  /** `uanLast4`: HR's edit of Bank and PF kept a UAN the joiner sent from the app (known by its last four). */
+  pf?: { firstJob: boolean; uan?: string; uanLast4?: string };
   savedAt?: Date;
 }
 
