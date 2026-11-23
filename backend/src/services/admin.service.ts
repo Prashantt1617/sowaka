@@ -10,6 +10,7 @@ import { deleteEmployeeDocument, presignReceiptDownload, uploadEmployeeDocument 
 import { detailChanges, detailsTitle, logActivity } from './employee-activity.service';
 import { forgetFace } from './face-id.service';
 import { logger } from '../utils/logger';
+import { mayEditEmployees } from '../middleware/admin.middleware';
 
 export class AdminError extends Error {
   constructor(public statusCode: number, message: string) { super(message); }
@@ -247,7 +248,7 @@ async function isSelfOrBelow(editor: User, employee: User): Promise<boolean> {
 export async function updateEmployeeDetailsForAdmin(editorUserId: string, employeeUserId: string, input: EmployeeDetailsInput) {
   const editor = await users().findOne({ userId: editorUserId });
   if (!editor) throw new AdminError(404, 'Admin user not found');
-  if (editor.canEditEmployeeDetails !== true) throw new AdminError(403, 'You cannot edit employee details');
+  if (!mayEditEmployees(editor)) throw new AdminError(403, 'You cannot edit employee details');
   const employee = await users().findOne({ userId: employeeUserId, ...(editor.org ? { org: editor.org } : {}) });
   if (!employee) throw new AdminError(404, 'Employee not found');
   if (editor.dashboardAdmin !== true && !(await isSelfOrBelow(editor, employee))) {
