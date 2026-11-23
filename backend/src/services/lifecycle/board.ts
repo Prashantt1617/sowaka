@@ -504,8 +504,12 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
   // teammates' pages read it): a template edit after they started must not show here either.
   const design = await import('./design');
   const [reporting, appSignIn] = await Promise.all([design.reportingFor(j), appSignInOf(j.userId ?? j.appAccess?.userId)]);
+  const teamTasksSvc = await import('./teamTasks');
+  const [teamRows, teamDefs] = await Promise.all([teamTasksSvc.teamRowsForHr(j), teamTasksSvc.teamDefsFor(j)]);
+  // The reviews (documents, joining form, payroll details, the confirmation): each opens where it is done.
+  const reviews = (await import('./hrReviews')).reviewRowsOf(j, tasks, allDocuments, teamDefs, j.managerUserId ? names.get(j.managerUserId) : undefined);
   return {
-    journey, tasks: views, documents, letters, offer, dateRequests, probation: probationView, batch, viewer, teamRows: await (await import('./teamTasks')).teamRowsForHr(j),
+    journey, tasks: views, documents, letters, offer, dateRequests, probation: probationView, batch, viewer, teamRows, reviews,
     ...(reporting ? { reporting } : {}),
     appSignIn,
   };
@@ -734,6 +738,8 @@ export async function decideBankPfRequest(org: string, journeyId: string, body: 
     'bankPfRequest.status': body.decision === 'approve' ? 'approved' : 'declined',
     'bankPfRequest.decidedAt': new Date(), 'bankPfRequest.decidedByName': hr.name, ...(hrNote ? { 'bankPfRequest.hrNote': hrNote } : {}),
   } });
+  // HR's "Check their payroll details" is this decision: approved is done, declined is to do again.
+  await (await import('./hrReviews')).payrollChecked(journeyId, body.decision, hr);
   await tell([j.userId], {
     scenario: 'lifecycle_bank_pf_decided', destination: 'lifecycle_week1', title: body.decision === 'approve' ? 'Bank and PF details updated' : 'Bank and PF change declined',
     body: body.decision === 'approve' ? 'HR approved the change you asked for.' : `HR did not make the change${hrNote ? `: ${hrNote}` : ''}.`, data: { journeyId },

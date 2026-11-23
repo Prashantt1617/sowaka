@@ -10,7 +10,8 @@ import { randomUUID } from 'node:crypto';
 import { candidateDocuments, journeys, lifecycleFiles } from '../../config/db';
 import type { CandidateDocument, Journey } from '../../models/lifecycle.model';
 import { companyDisplayName, companyOf, mails, sendLifecycleEmail } from './emails';
-import { completeTask, reopenTask, setJourneyStatus, setTaskInReview } from './engine';
+import { completeTask, reopenTask, reopenTaskById, setJourneyStatus, setTaskInReview, tasksOf } from './engine';
+import { syncJoiningFormCheck } from './hrReviews';
 import { checkUpload, fileMeta, LifecycleOfferError, removeFile, storeFile } from './files';
 import { unlockJourneyLetters } from './letters';
 import { assertSectionOpen, sectionOfDocument } from './profileLock';
@@ -137,8 +138,17 @@ export async function reviewDocument(
     await candidateDocuments().updateOne({ id: doc.id }, { $set: { status: 'sent_back', hrNote: note, reviewedAt: now, reviewedByName: hr.name } });
     // Sending back a document of an approved profile section unlocks that section, so the candidate can upload again.
     const section = sectionOfDocument(doc);
-    if (journey.profileApprovals?.[section]) await journeys().updateOne({ id: journey.id }, { $unset: { [`profileApprovals.${section}`]: '' } });
+    if (journey.profileApprovals?.[section]) {
+      await journeys().updateOne({ id: journey.id }, { $unset: { [`profileApprovals.${section}`]: '' } });
+      // A joining-form section open again: "Check the joining form" is to do again.
+      await syncJoiningFormCheck(journey.id, null);
+    }
     await reopenTask(journey.id, 'upload_documents', note, true);
+    // A required document sent back after the review was done: the review is HR's to do again once it is back.
+    if (doc.required) {
+      const done = (await tasksOf(journey.id)).find((t) => t.systemKey === 'review_documents' && t.status === 'done');
+      if (done) await reopenTaskById(journey.id, done.id);
+    }
     if (journey.candidate?.personalEmail) {
       const company = await companyOf(journey.org);
       await sendLifecycleEmail(journey.org, journey.candidate.personalEmail, `Please upload your ${doc.label} again`,

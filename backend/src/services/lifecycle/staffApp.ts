@@ -16,6 +16,7 @@ import { accessTasks, firstOf, initialsOf, place, setRowTick, type Placed, type 
 import { LifecycleError, finishTaskById, loadJourney, reopenTaskById, tasksOf } from './engine';
 import { heroOf, progressOf, rowDone, rowView, rowsFor, type RowView } from './teamApp';
 import { journeyDocumentsView } from './documents';
+import { JOINING_FORM_SECTIONS } from './hrReviews';
 import { companyDisplayName, companyOf } from './emails';
 import { saveMeetingRowNotes } from './joinerMeetings';
 import { DEFAULT_LETTER_TEMPLATES, fillTemplate, mergeValues, valuesWithoutPay } from './letters';
@@ -313,7 +314,7 @@ export async function staffTaskScreen(me: Me, journeyId: string, key: string, as
   }
   if (base === 'hr_check_payroll' || base === 'hr_check_form') {
     const { sections } = await profileSections(j, 'hr');
-    const keys = base === 'hr_check_payroll' ? ['bank', 'pf', 'tax'] : ['personal', 'contact', 'emergency', 'education'];
+    const keys: readonly string[] = base === 'hr_check_payroll' ? ['bank', 'pf', 'tax'] : JOINING_FORM_SECTIONS;
     out.sections = sections.filter((s) => keys.includes(s.key));
     if (base === 'hr_check_payroll') {
       // The cancelled cheque, when the joiner's document list asks for one (HRPayroll's cheque row).

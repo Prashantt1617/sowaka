@@ -20,6 +20,7 @@ import { carriedNow, goalsOfJourney } from './joinerApp';
 import { saveMeetingRowNotes } from './joinerMeetings';
 import { PROFILE_SECTIONS, appSectionTitle, sectionStates } from './profile';
 import { journeyDocumentsView } from './documents';
+import { joiningFormState, payrollCheckState } from './hrReviews';
 import { relationTo, type TeamRelation } from './teamTasks';
 
 type Me = { userId: string; name: string; org: string };
@@ -66,6 +67,9 @@ export function rowDone(r: PlacedRow, j: Journey, tasks: JourneyTask[], design?:
   if (key === 'mgr_confirmation_review') return !!j.probation?.recommendation;
   // HR's letter row: done when the confirmation (or extension) letter is sent from the dashboard (the app draws no button).
   if (key === 'hr_confirmation_letter') return r.done || !!j.probation?.decision?.letterId || tasks.some((t) => t.systemKey === 'confirmation_letter' && t.status === 'done');
+  // HR's checks are done where they are done (hrReviews.ts): the declaration approved, the joining form's sections approved.
+  if (key === 'hr_check_payroll') return payrollCheckState(j).done;
+  if (key === 'hr_check_form') return joiningFormState(j).done;
   if (key === 'hod_approve') return j.probation?.hodApproval?.outcome === 'approved' || j.probation?.hodApproval?.outcome === 'extended';
   if (key === 'it_accesses' || key === 'hr_accesses') {
     const list = accessTasks(j, tasks, design).filter((t) => t.ownerRole === (key === 'it_accesses' ? 'it' : 'hr'));
