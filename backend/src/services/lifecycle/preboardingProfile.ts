@@ -52,7 +52,7 @@ export function sectionFields(journey: Pick<Journey, 'profile' | 'aboutYou' | 'c
   switch (section) {
     case 'personal':
       if (p.personal) {
-        rows.push(['Full name', p.personal.fullName], ['Preferred name', p.personal.preferredName], ['Date of birth', p.personal.dob ? longDay(p.personal.dob) : undefined],
+        rows.push(['Full name', p.personal.fullName], ['Date of birth', p.personal.dob ? longDay(p.personal.dob) : undefined],
           ['Gender', p.personal.gender], ['Marital status', p.personal.maritalStatus], ['Nationality', p.personal.nationality], ['Blood group', p.personal.bloodGroup]);
       }
       break;
