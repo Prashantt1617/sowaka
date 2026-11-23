@@ -1,6 +1,6 @@
 // H1b · the joiner side panel, as the board design of 18 Nov draws it: the plant
 // and who they are, then one journey timeline for every tab (Offer sent, Offer
-// confirmed, Employee profile, Joining day, Week 1, Month 1, Months 2–5, Final
+// confirmed, Joining day (with the employee profile's progress), Week 1, Month 1, Months 2–5, Final
 // month, Confirmed; drawn by JourneySteps, which the pre-boarding profile's
 // Activity tab shares). The step they are on opens by itself; any step opens in
 // place with what HR does there. The footer keeps Open profile, Nudge and the one
@@ -19,7 +19,7 @@ import { FinaliseDialog, MarkJoinedDialog } from './OfferDialogs';
 import { DecisionDialog } from './Probation';
 import { TAB_LABELS, columnLabel } from './boardModel';
 import { preboardingHref } from './preboardingLinks';
-import { JourneySteps, OPEN, PRE_JOIN } from './JourneySteps';
+import { CONFIRMED_STEP, JOINING_STEP, JourneySteps, OPEN, PRE_JOIN } from './JourneySteps';
 
 const STATUS_LABEL: Record<string, string> = {
   draft: 'Offer not sent yet', offer_sent: 'Offer sent', accepted: 'Accepted, portal not sent', finalised: 'Finalised, portal sent', active: 'On the portal',
@@ -127,11 +127,11 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   // The candidate replies to HR's email to accept; HR marks it accepted here, which sends the joining portal.
   else if (status === 'offer_sent' || status === 'accepted') primary = { label: 'Mark offer accepted', go: () => setDialog({ kind: 'finalise' }) };
   else if (canJoin) primary = { label: 'Mark joined', go: () => setDialog({ kind: 'joined' }) };
-  else if (reviewQueue > 0) primary = { label: 'Review documents', go: () => setOpenStep(2) };
+  else if (reviewQueue > 0) primary = { label: 'Review documents', go: () => setOpenStep(JOINING_STEP) };
   else if (status === 'docs_approved' && !letters.some((l) => l.kind === 'appointment')) primary = { label: 'Make the appointment letter', go: () => openDocuments(s.setView, 'appointment', journey.id) };
   else if (journey.column === 'final_month' && !decision) primary = { label: 'Record decision', go: () => setDialog({ kind: 'decision' }) };
   // The confirmation letter is made and sent on the Confirmed step; an extension letter in Documents.
-  else if (decisionLetter === 'confirmation' && !hasDecisionLetter) primary = { label: 'Generate confirmation letter', go: () => setOpenStep(8) };
+  else if (decisionLetter === 'confirmation' && !hasDecisionLetter) primary = { label: 'Generate confirmation letter', go: () => setOpenStep(CONFIRMED_STEP) };
   else if (decisionLetter && !hasDecisionLetter) primary = { label: `Make the ${decisionLetter} letter`, go: () => openDocuments(s.setView, decisionLetter, journey.id) };
 
   // Ending the offer (the design's Revoke offer, on the footer's left): declined while it waits, not joining once accepted.
