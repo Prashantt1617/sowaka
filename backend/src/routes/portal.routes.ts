@@ -176,6 +176,9 @@ r.get('/media/:token', handle(async (req, res) => {
   res.setHeader('Content-Type', file.contentType);
   res.setHeader('Content-Disposition', contentDisposition(file.name, false));
   res.setHeader('Accept-Ranges', 'bytes');
+  // The portal (another origin) shows these in <video>/<img>: helmet's same-origin CORP would block them.
+  // The signed token in the path is the access check, as for /media.
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.header('range') ?? ''));
   if (range && (range[1] || range[2])) {
     const size = bytes.length;

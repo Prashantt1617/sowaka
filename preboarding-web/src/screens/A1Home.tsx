@@ -104,7 +104,7 @@ export function A1Home() {
             <span className="fig-tile__meter"><b>{pct}% done</b><FigProgress value={pct} white label="Employee profile done" /></span>
           </Link>
 
-          <Link to="/about" className="fig-tile fig-tile--red">
+          <Link to="/about?stories=1" className="fig-tile fig-tile--red">
             <span className="fig-tile__row" style={{ gap: 16 }}>
               <FigIcon3D name="team" size={64} />
               <span className="fig-title">About the company</span>
@@ -124,7 +124,7 @@ export function A1Home() {
 /** "Your point of contact": the manager (green) and HR (blue), each with a WhatsApp button when they have a phone. */
 function PointsOfContact({ contacts }: { contacts: NonNullable<PortalHome['contacts']> }) {
   return (
-    <section aria-labelledby="poc-title" style={{ display: 'grid', gap: 12, marginTop: 24 }}>
+    <section aria-labelledby="poc-title" style={{ display: 'grid', gap: 12, marginTop: 24, padding: '0 16px' }}>
       <h2 id="poc-title" className="fig-title" style={{ margin: 0 }}>Your point of contact</h2>
       {contacts.map((c) => {
         const first = firstName(c.name);
@@ -136,7 +136,7 @@ function PointsOfContact({ contacts }: { contacts: NonNullable<PortalHome['conta
                 ? <img src={mediaUrl(c.photoUrl)} alt="" width={72} height={72} style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', flex: 'none' }} />
                 : <span aria-hidden="true" style={{ width: 72, height: 72, borderRadius: '50%', background: '#FFFFFF', color: '#0571A6', fontWeight: 700, fontSize: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>{c.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase()}</span>}
               <span style={{ display: 'grid', gap: 4, minWidth: 0 }}>
-                <span className="fig-subtitle" style={{ fontWeight: 700 }}>{c.name}</span>
+                <span className="fig-title">{c.name}</span>
                 <span className="fig-body fig-t2">{sub}</span>
               </span>
             </div>

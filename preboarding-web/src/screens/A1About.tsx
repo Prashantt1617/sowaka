@@ -1,7 +1,8 @@
 // About the company (Figma "App · 7 About the company", 4967:92990; the stories are G2's): highlights as story rings, the first person they'll meet,
 // their team, policies to read, and culture cards. A story opens full screen; opening
 // one marks its Meet-us item seen (all seen completes the Meet us task).
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { portal } from '../api/portal';
 import { mediaUrl } from '../api/client';
 import type { JoiningDetails, MeetItem } from '../api/types';
@@ -69,6 +70,16 @@ export function A1About() {
     if (item && !item.seen) portal.meetSeen(item.id).then(() => setItems((cur) => cur?.map((i) => (i.id === item.id ? { ...i, seen: true } : i))), () => undefined);
   }, [items]);
   const show = (k: StoryKey) => { setOpen(k); markSeen(k); };
+  // From Home's About the company tile (?stories=1): straight into the stories, first one open.
+  const [params, setParams] = useSearchParams();
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (autoOpened.current || params.get('stories') !== '1' || !items || !stories.length) return;
+    autoOpened.current = true;
+    show(stories[0]);
+    setParams({}, { replace: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, stories, params]);
   /** A policy opens on its own, straight from its row (reading it counts as seeing the policies story). */
   const read = (p: PortalPolicy) => { setReading(p); markSeen('policies'); };
   const seenStory = (k: StoryKey) => { const id = k.startsWith('watch:') ? k : SEEN_ITEM[k as keyof typeof SEEN_ITEM]; return id ? Boolean(byId(id)?.seen) : false; };
