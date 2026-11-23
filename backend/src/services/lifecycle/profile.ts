@@ -10,7 +10,7 @@
  * Editable, like About you, until the day before joining.
  */
 import { journeys } from '../../config/db';
-import type { CandidateProfile, Journey, ProfileAddress } from '../../models/lifecycle.model';
+import type { AboutYou, CandidateProfile, Journey, ProfileAddress } from '../../models/lifecycle.model';
 import { encryptField, fieldKeyConfigured } from '../fieldCrypto';
 import { journeyDocumentsView, type CandidateDocumentView } from './documents';
 import { addDays, istDate } from './emails';
@@ -33,6 +33,8 @@ const GENDERS = ['Male', 'Female', 'Other'] as const;
 const MARITAL = ['Single', 'Married', 'Divorced', 'Widowed', 'Prefer not to say'] as const;
 const QUALIFICATIONS = ['Class 10', 'Class 12', 'Diploma', 'Graduate', 'Postgraduate', 'Doctorate', 'Other'] as const;
 export const PROFILE_OPTIONS = { genders: GENDERS, marital: MARITAL, qualifications: QUALIFICATIONS };
+/** How an emergency contact is related to the candidate (About you, and the portal's Emergency contact). */
+export const RELATIONS = ['Parent', 'Partner', 'Sibling', 'Friend'] as const;
 
 /** Which of the template's documents each section shows (profileLock.ts, so documents.ts can use it too). */
 export { sectionOfDocument } from './profileLock';
@@ -58,10 +60,50 @@ function address(v: unknown, what: string): ProfileAddress {
   return out;
 }
 
+/**
+ * About you with what was sent applied (each part checked as the portal checks it; parts left out
+ * are kept): `emergencyContact`, `emergencyContact2` (null removes it) and `pf`. Saved by portal.ts
+ * (the candidate) and preboardingProfile.ts (HR).
+ */
+export function aboutYouValue(journey: Journey, input: { emergencyContact?: unknown; emergencyContact2?: unknown; pf?: unknown }): AboutYou {
+  const about: AboutYou = { ...aboutYouOf(journey) };
+  // One contact as the portal sends it: name, relation, mobile and an optional second number.
+  const contact = (raw: unknown, which: string): NonNullable<AboutYou['emergencyContact']> => {
+    const ec = (raw ?? {}) as Record<string, unknown>;
+    const name = String(ec.name ?? '').trim();
+    if (!name || name.length > 80) throw new LifecycleOfferError(400, `Add ${which}’s name`);
+    const relation = String(ec.relation ?? '') as (typeof RELATIONS)[number];
+    if (!RELATIONS.includes(relation)) throw new LifecycleOfferError(400, `Pick how ${which} is related to you`);
+    const phone = indianMobile(ec.phone);
+    if (!phone) throw new LifecycleOfferError(400, `The mobile number for ${which} must be +91 and 10 digits`);
+    if (phone === indianMobile(journey.candidate?.phone)) throw new LifecycleOfferError(400, 'Add someone else’s number, not your own');
+    const altRaw = String(ec.altPhone ?? '').replace(/[\s()+-]/g, '');
+    const alt = altRaw && altRaw !== '91' ? indianMobile(ec.altPhone) : null;
+    if (altRaw && altRaw !== '91' && !alt) throw new LifecycleOfferError(400, `The other number for ${which} must be +91 and 10 digits`);
+    return { name, relation, phone, ...(alt && alt !== phone ? { altPhone: alt } : {}) };
+  };
+  if (input.emergencyContact !== undefined) about.emergencyContact = contact(input.emergencyContact, 'your emergency contact');
+  if (input.emergencyContact2 !== undefined) {
+    if (input.emergencyContact2 === null) delete about.emergencyContact2;
+    else about.emergencyContact2 = contact(input.emergencyContact2, 'your second contact');
+  }
+  if (input.pf !== undefined) {
+    const pf = (input.pf ?? {}) as Record<string, unknown>;
+    if (pf.firstJob === true) about.pf = { firstJob: true };
+    else {
+      // The UAN is optional (the portal's "UAN (optional)"): HR can find it from the last employer's records.
+      const uan = String(pf.uan ?? '').replace(/\s/g, '');
+      if (uan && !/^\d{12}$/.test(uan)) throw new LifecycleOfferError(400, 'Your UAN is 12 digits');
+      about.pf = uan ? { firstJob: false, uan } : { firstJob: false };
+    }
+  }
+  return about;
+}
+
 const secret = (plain: string) => (fieldKeyConfigured() ? { enc: encryptField(plain) } : {});
 
-/** Builds one section's stored value from what the portal sent (each section checked on its own). */
-function sectionValue(section: ProfileSection, input: Record<string, unknown>, journey: Journey, now: Date): Partial<CandidateProfile> {
+/** Builds one section's stored value from what the portal (or HR) sent (each section checked on its own). */
+export function sectionValue(section: ProfileSection, input: Record<string, unknown>, journey: Journey, now: Date): Partial<CandidateProfile> {
   switch (section) {
     case 'personal': {
       const fullName = text(input.fullName, 100);

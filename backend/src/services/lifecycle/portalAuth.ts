@@ -315,6 +315,8 @@ export async function journeyForPortalToken(authorization: string | undefined, n
 export async function portalJourneyForAppUser(userId: string, org: string, now = new Date()): Promise<Journey | null> {
   if (!userId || !org) return null;
   let journey = await journeys().find({ userId, org, kind: 'onboarding', closedAt: { $exists: false } }).sort({ createdAt: -1 }).limit(1).next();
+  // App access HR made before joining (the pre-boarding profile's "Generate app access").
+  if (!journey) journey = await journeys().findOne({ 'appAccess.userId': userId, org, kind: 'onboarding', userId: { $exists: false }, closedAt: { $exists: false } } as never);
   if (!journey) {
     const email = String((await users().findOne({ userId, org }, { projection: { _id: 0, email: 1 } }))?.email ?? '').trim().toLowerCase();
     const account = email ? await candidateAccounts().findOne({ email }) : null;

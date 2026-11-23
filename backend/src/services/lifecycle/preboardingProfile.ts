@@ -4,15 +4,19 @@
  * section for the candidate (profileLock.ts), unlocking opens it again. Also the Employees page's
  * "In pre-boarding" list, and a joined employee's onboarding documents.
  *
+ * HR can also change any section's answers (PUT …/profile/:section, the portal's body and checks),
+ * approved or not; each section carries its raw `values` to prefill that form.
+ *
  * Secrets stay as stored: the account number and Aadhaar (and PAN) as their last four only.
  * Document files are linked through the dashboard's authorised file route (`/admin/lifecycle/files/:id`,
  * opened with the dashboard's Bearer token), never a public URL.
  */
-import { candidateDocuments, journeys, lifecycleFiles } from '../../config/db';
-import type { CandidateDocument, Journey, ProfileApproval } from '../../models/lifecycle.model';
+import { candidateDocuments, journeys, lifecycleFiles, offers, users } from '../../config/db';
+import type { AboutYou, CandidateDocument, CandidateProfile, Journey, ProfileApproval } from '../../models/lifecycle.model';
 import { documentListFor, journeyDocumentsView, type CandidateDocumentView } from './documents';
+import { completeTask } from './engine';
 import { LifecycleOfferError } from './files';
-import { PROFILE_SECTION_TITLE, PROFILE_SECTIONS, sectionStates, type ProfileSection } from './profile';
+import { aboutYouValue, PROFILE_OPTIONS, PROFILE_SECTION_TITLE, PROFILE_SECTIONS, RELATIONS, sectionStates, sectionValue, type ProfileSection } from './profile';
 import { sectionOfDocument } from './profileLock';
 
 /** The dashboard's authorised link to a stored lifecycle file (fetched with its Bearer token). */
@@ -86,9 +90,88 @@ const fileView = (f: CandidateDocumentView['files'][number]) => ({ id: f.id, nam
 const documentView = (d: CandidateDocumentView) => ({ id: d.id, label: d.label, required: d.required, status: d.status, ...(d.hrNote ? { hrNote: d.hrNote } : {}), files: d.files.map(fileView) });
 const approvalView = (a?: ProfileApproval) => (a ? { byName: a.byName, at: new Date(a.at).toISOString() } : undefined);
 
+/**
+ * One section's saved answers in the shape HR's PUT takes (to prefill HR's form); `{}` when nothing is
+ * saved. Secrets never leave: `accountLast4`, `aadhaarLast4`, `panLast4` stand for them (leave the
+ * number blank on the PUT to keep it).
+ */
+export function sectionValues(journey: Pick<Journey, 'profile' | 'aboutYou'>, section: ProfileSection): Record<string, unknown> {
+  const p = journey.profile ?? {};
+  const about = journey.aboutYou ?? {};
+  const has = <T extends object>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
+  switch (section) {
+    case 'personal': {
+      const x = p.personal;
+      return x ? has({ fullName: x.fullName, preferredName: x.preferredName, dob: x.dob, gender: x.gender, maritalStatus: x.maritalStatus, nationality: x.nationality }) : {};
+    }
+    case 'contact': {
+      const x = p.contact;
+      return x ? has({ mobile: x.mobile, current: x.current, permanentSame: x.permanentSame, permanent: x.permanentSame ? undefined : x.permanent }) : {};
+    }
+    case 'emergency':
+      return has({ emergencyContact: about.emergencyContact, emergencyContact2: about.emergencyContact2 });
+    case 'bank': {
+      const x = p.bank;
+      return has({
+        ...(x ? { holderName: x.holderName, ifsc: x.ifsc, bankName: x.bankName, accountLast4: x.accountLast4 } : {}),
+        pf: about.pf ? has({ firstJob: about.pf.firstJob, uan: about.pf.uan }) : undefined,
+      });
+    }
+    case 'education':
+      return has({
+        ...(p.education ? { qualification: p.education.qualification, institution: p.education.institution, year: p.education.year } : {}),
+        ...(p.experience ? { firstJob: p.experience.firstJob, jobs: p.experience.jobs } : {}),
+      });
+    case 'ids':
+      return has({ aadhaarLast4: p.ids?.aadhaarLast4, panLast4: p.ids?.panLast4 });
+    default:
+      return {};
+  }
+}
+
+/**
+ * The Basic details card (mirrors the employee profile's): what HR edits with PUT …/profile/basic
+ * (employeeId, workEmail, designation, department, workLocation, employeeType, tj), the candidate's
+ * own name, mobile, gender and date of birth, the reporting manager, and the app account if made.
+ */
+async function basicView(journey: Journey) {
+  const p = journey.profile ?? {};
+  const [offer, manager] = await Promise.all([
+    offers().findOne({ journeyId: journey.id }, { projection: { _id: 0, versions: 1 } }),
+    journey.managerUserId ? users().findOne({ userId: journey.managerUserId, org: journey.org }, { projection: { _id: 0, userId: 1, name: 1 } }) : null,
+  ]);
+  // HR's value on the journey, else the offer's (what the account would get).
+  const versions = offer?.versions ?? [];
+  const f = ([...versions].reverse().find((v) => v.status !== 'draft') ?? versions.at(-1))?.fields;
+  const designation = journey.designation ?? f?.designation;
+  const department = journey.department ?? f?.department;
+  const workLocation = journey.location ?? f?.location;
+  const employeeType = journey.employeeType ?? f?.employeeType;
+  const mobile = p.contact?.mobile ?? journey.candidate?.phone;
+  return {
+    name: p.personal?.fullName ?? journey.candidate?.name ?? '',
+    ...(journey.employeeId ? { employeeId: journey.employeeId } : {}),
+    ...(journey.candidate?.workEmail ? { workEmail: journey.candidate.workEmail } : {}),
+    ...(designation ? { designation } : {}),
+    ...(department ? { department } : {}),
+    ...(workLocation ? { workLocation } : {}),
+    ...(employeeType ? { employeeType } : {}),
+    ...(journey.tj ? { tj: journey.tj } : {}),
+    ...(mobile ? { mobile } : {}),
+    ...(p.personal?.gender ? { gender: p.personal.gender } : {}),
+    ...(p.personal?.dob ? { dob: p.personal.dob } : {}),
+    ...(manager ? { reportingManager: { userId: manager.userId, name: manager.name } } : {}),
+    ...(journey.appAccess ? { appAccess: {
+      userId: journey.appAccess.userId, createdAt: new Date(journey.appAccess.createdAt).toISOString(),
+      ...(journey.appAccess.emailedTo ? { emailedTo: journey.appAccess.emailedTo } : {}),
+      ...(journey.appAccess.emailedAt ? { emailedAt: new Date(journey.appAccess.emailedAt).toISOString() } : {}),
+    } } : {}),
+  };
+}
+
 /** GET /admin/lifecycle/journeys/:id/profile — the whole pre-boarding profile, as HR reads it. */
 export async function hrProfileView(journey: Journey) {
-  const docs = await journeyDocumentsView(journey.id);
+  const [docs, basic] = await Promise.all([journeyDocumentsView(journey.id), basicView(journey)]);
   const done = sectionStates(journey, docs);
   const c = journey.candidate;
   return {
@@ -102,16 +185,21 @@ export async function hrProfileView(journey: Journey) {
       ...(journey.tj ? { tj: journey.tj } : {}),
       status: String(journey.status),
     },
+    basic,
     done: PROFILE_SECTIONS.filter((k) => done[k]).length,
     total: PROFILE_SECTIONS.length,
     sections: PROFILE_SECTIONS.map((key) => {
       const approved = approvalView(journey.profileApprovals?.[key]);
+      const editedByHr = approvalView(journey.profileEditedByHr?.[key]);
       return {
-        key, title: PROFILE_SECTION_TITLE[key], done: done[key], ...(approved ? { approved } : {}),
+        key, title: PROFILE_SECTION_TITLE[key], done: done[key], ...(approved ? { approved } : {}), ...(editedByHr ? { editedByHr } : {}),
         fields: sectionFields(journey, key),
+        values: sectionValues(journey, key),
         documents: docs.filter((d) => sectionOfDocument(d) === key).map(documentView),
       };
     }),
+    // The choices HR's edit form offers (the portal's own lists).
+    options: { ...PROFILE_OPTIONS, relations: RELATIONS },
   };
 }
 
@@ -144,6 +232,45 @@ export async function unlockProfileSection(journey: Journey, sectionRaw: unknown
 
 /** Statuses that are no longer pre-boarding: joined (or later) or closed. */
 const NOT_PREBOARDING = ['joined', 'moved_to_app', 'confirmed', 'declined', 'expired', 'not_joining'];
+
+/**
+ * PUT …/profile/:section — HR changes a section's answers: the body the portal sends for it, checked
+ * the same way and stored the same way (secrets encrypted, last four in the clear; a blank account
+ * number, Aadhaar or PAN keeps what is stored). Emergency is `{ emergencyContact, emergencyContact2? }`
+ * (null removes the second); bank may carry `pf: { firstJob, uan? }` (left out keeps it), and needs no
+ * `accountNumberAgain` (when it is sent it must match). Allowed on an
+ * approved section (HR is who locks it) and after the candidate's own Tj − 1 lock, not once the joiner
+ * has joined or the offer is closed. Records who changed it in `profileEditedByHr.<section>`.
+ */
+export async function hrSaveProfileSection(hr: { userId: string; name: string }, journey: Journey, sectionRaw: unknown, input: unknown, now = new Date()) {
+  const section = sectionOf(sectionRaw);
+  if (NOT_PREBOARDING.includes(String(journey.status))) throw new LifecycleOfferError(409, 'Only someone still in pre-boarding can be changed here');
+  const body = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  const edited: ProfileApproval = { byUserId: hr.userId, byName: hr.name, at: now };
+  let profile: CandidateProfile | undefined;
+  let aboutYou: AboutYou | undefined;
+  if (section === 'emergency') {
+    if (body.emergencyContact === undefined) throw new LifecycleOfferError(400, 'Add the emergency contact');
+    aboutYou = aboutYouValue(journey, { emergencyContact: body.emergencyContact, ...(body.emergencyContact2 !== undefined ? { emergencyContact2: body.emergencyContact2 } : {}) });
+  } else {
+    // HR types a number once: the portal's "type it again" is the same number (blank keeps what is stored).
+    const input = section === 'bank' && body.accountNumberAgain === undefined ? { ...body, accountNumberAgain: body.accountNumber } : body;
+    const value = sectionValue(section, input, journey, now);
+    if (section === 'bank' && body.pf !== undefined) aboutYou = aboutYouValue(journey, { pf: body.pf });
+    profile = { ...(journey.profile ?? {}), ...value, savedAt: now };
+  }
+  if (aboutYou) aboutYou.savedAt = now;
+  await journeys().updateOne({ id: journey.id }, {
+    $set: { ...(profile ? { profile } : {}), ...(aboutYou ? { aboutYou } : {}), [`profileEditedByHr.${section}`]: edited, updatedAt: now },
+  });
+  // As on the portal: About you is done once both the emergency contact and the PF are in.
+  if (aboutYou?.emergencyContact && aboutYou.pf) await completeTask(journey.id, 'about_you', { userId: hr.userId, name: hr.name });
+  return hrProfileView({
+    ...journey,
+    ...(profile ? { profile } : {}), ...(aboutYou ? { aboutYou } : {}),
+    profileEditedByHr: { ...(journey.profileEditedByHr ?? {}), [section]: edited },
+  });
+}
 
 export interface PreboardingRow {
   journeyId: string; name: string; designation?: string; department?: string; tj?: string; status: string;

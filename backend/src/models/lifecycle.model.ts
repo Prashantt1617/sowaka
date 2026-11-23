@@ -334,6 +334,11 @@ export interface Journey {
   designation?: string;
   department?: string;
   location?: string;
+  /** Onboarding, set by HR on the pre-boarding profile's Basic details (joinerBasics.ts): the employee ID and type the account gets. */
+  employeeId?: string;
+  employeeType?: OfferFields['employeeType'];
+  /** Onboarding: the app account HR made before joining ("Generate app access"); Mark joined uses it instead of making one. */
+  appAccess?: { userId: string; createdAt: Date; byUserId: string; byName: string; emailedTo?: string; emailedAt?: Date };
   plant?: PlantState;
   /** Day-1 pass content HR fills (shown at Tj − 7). */
   day1Pass?: Day1Pass;
@@ -393,6 +398,8 @@ export interface Journey {
    * approved section is locked for the candidate (portal and app) until HR unlocks it.
    */
   profileApprovals?: Partial<Record<ProfileSectionKey, ProfileApproval>>;
+  /** The profile sections HR last changed on the dashboard (who and when), shown on HR's pre-boarding profile. */
+  profileEditedByHr?: Partial<Record<ProfileSectionKey, ProfileApproval>>;
   /** Last time the candidate did anything on the portal (for the Quiet flag). */
   lastActivityAt?: Date;
   closedAt?: Date;

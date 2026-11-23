@@ -9,19 +9,20 @@
 // being removed.
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties } from 'react';
 import type { Emp, EmpDocument } from '../seed';
 import { useStore } from '../store';
-import { IconFile } from '../icons';
-import { FileChips } from './lifecycle/preboardingParts';
 import { docStatus } from './lifecycle/preboardingLinks';
 import { ETYPE, STAT, TYPE } from '../theme';
 import type { LeaveType, ReqStatus } from '../theme';
 import { Avatar, ListPending, LoadError, LoadingFigure, Pill, Skeleton, SkeletonForm, SkeletonFrame, SkeletonLines, SkeletonRows, StatusTabs } from '../ui';
+import { BasicDetailsGrid, DocumentList, Fact, Grid, LockedField, ProfileHeader, Row, Section, SkeletonGrid } from './profileParts';
+import { EMP_TYPE_VALUE, nameParts, showDate } from './profileWords';
+import type { ProfileDocItem } from './profileParts';
 import type { LoadState } from '../ui';
 import { useLoad } from '../useLoad';
 import { PersonAvatar } from '../PersonAvatar';
-import { PdBank, PdCalendar, PdChart, PdClock, PdEdit, PdFile, PdLock, PdStar, PdTarget, PdTrash, PdUser } from './pdIcons';
+import { PdBank, PdCalendar, PdChart, PdClock, PdEdit, PdFile, PdStar, PdTarget, PdTrash, PdUser } from './pdIcons';
 import './people.css';
 import { periodLabel, periodShort } from '../period';
 import { EmployeeKpiPanel } from './KpiAssign';
@@ -203,20 +204,7 @@ function ratingWord(score: number): string {
   return RATINGS[3];
 }
 
-/** First word, last word, and whatever sits between. */
-function nameParts(name: string) {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  return { first: words[0] ?? '', middle: words.slice(1, -1).join(' '), last: words.length > 1 ? words[words.length - 1] : '' };
-}
 
-const EMP_TYPE_VALUE: Record<string, 'full_time' | 'contract' | 'intern'> = { 'Full-time': 'full_time', Contract: 'contract', Intern: 'intern' };
-
-/** YYYY-MM-DD as the profile shows dates, e.g. 15 Oct 2026. */
-const showDate = (iso: string) => {
-  if (!iso) return '—';
-  const [y, m, day] = iso.split('-').map(Number);
-  return `${String(day).padStart(2, '0')} ${MONTHS[m - 1]} ${y}`;
-};
 
 // —— Component ——————————————————————————————————————————————————————————
 export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLabel = '← Back to employees' }: {
@@ -305,29 +293,18 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
       {exitRow && <ExitBanner exit={exitRow} />}
 
       {/* Identity header */}
-      <section className="pd-card pd-phead">
-        <div className="ph-id">
-          <Avatar name={emp.name} size={52} font={21} src={emp.photoUrl} />
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="pn">
-              <h1>{emp.name}</h1>
-              <Pill label={emp.empType} tone={ETYPE[emp.empType]} />
-              {emp.isDirector && <Pill label="Director" tone={{ bg: 'var(--t-lilac)', fg: 'var(--t-plum-i)' }} />}
-            </div>
-            <span className="sub">
-              {emp.role} · {emp.team} · {emp.employeeId}
-            </span>
-          </div>
-        </div>
-        <div className="pd-facts">
-          <Fact label="Work email" value={d.workEmail} />
-          <Fact label="Employee ID" value={emp.employeeId} />
-          <Fact label="Work location" value={d.workLocation} />
-          <Fact label="Reporting manager" value={emp.manager} />
-          <Fact label="Date of joining" value={emp.joining} />
-          <Fact label="Shift" value={<LoadingFigure state={currentMonthState} w={140} h={12}>{currentMonth ? `${currentMonth.shift} · ${currentMonth.window}` : '—'}</LoadingFigure>} />
-        </div>
-      </section>
+      <ProfileHeader name={emp.name} photoUrl={emp.photoUrl} sub={`${emp.role} · ${emp.team} · ${emp.employeeId}`}
+        pills={<>
+          <Pill label={emp.empType} tone={ETYPE[emp.empType]} />
+          {emp.isDirector && <Pill label="Director" tone={{ bg: 'var(--t-lilac)', fg: 'var(--t-plum-i)' }} />}
+        </>}>
+        <Fact label="Work email" value={d.workEmail} />
+        <Fact label="Employee ID" value={emp.employeeId} />
+        <Fact label="Work location" value={d.workLocation} />
+        <Fact label="Reporting manager" value={emp.manager} />
+        <Fact label="Date of joining" value={emp.joining} />
+        <Fact label="Shift" value={<LoadingFigure state={currentMonthState} w={140} h={12}>{currentMonth ? `${currentMonth.shift} · ${currentMonth.window}` : '—'}</LoadingFigure>} />
+      </ProfileHeader>
 
       {/* One page, several views of the same person. */}
       <div className="pd-ptabs">
@@ -344,23 +321,11 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
           <div className="pd-psecs">
             <div data-focus="details"><Section title="Basic details" icon={<PdUser />} action={canEditDetails && !editingDetails ? <button type="button" onClick={() => setEditingDetails(true)} className="pd-sec-act"><PdEdit /> Edit</button> : undefined}>
             {editingDetails ? <BasicDetailsEditor emp={emp} onDone={() => setEditingDetails(false)} /> : (
-            <Grid>
-              <Row label="First name" value={d.firstName} />
-              <Row label="Middle name" value={d.middleName || '—'} />
-              <Row label="Last name" value={d.lastName} />
-              <Row label="Employee ID" value={emp.employeeId} />
-              <Row label="Date of joining" value={emp.joining} />
-              <Row label="Work email" value={d.workEmail} />
-              <Row label="Designation" value={emp.role} />
-              <Row label="Department" value={emp.team} />
-              <Row label="Work location" value={d.workLocation} />
-              <Row label="Employee type" value={emp.empType} />
-              <Row label="Mobile number" value={emp.phone || '—'} />
-              <Row label="Gender" value={emp.gender || '—'} />
-              <Row label="Date of birth" value={showDate(emp.birthday)} />
-              <Row label="Reporting manager" value={emp.manager || '—'} />
-              <Row label="Director / substantial interest" value={emp.isDirector ? 'Yes' : 'No'} />
-            </Grid>
+            <BasicDetailsGrid d={{
+              name: emp.name, employeeId: emp.employeeId, joining: emp.joining, workEmail: d.workEmail, designation: emp.role, department: emp.team,
+              workLocation: d.workLocation, employeeType: emp.empType, mobile: emp.phone, gender: emp.gender, dob: showDate(emp.birthday),
+              manager: emp.manager, isDirector: emp.isDirector,
+            }} />
             )}
           </Section></div>
             {canEditDetails && (
@@ -971,16 +936,6 @@ function GhostNode({ name, caption }: { name: string; caption: string }) {
   );
 }
 
-// —— Building blocks ——————————————————————————————————————————————————
-function Fact({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="pd-fact">
-      <span className="pd-eyebrow">{label}</span>
-      <b>{value}</b>
-    </div>
-  );
-}
-
 // Bank account, PAN and UAN. Encrypted on the server; people with payroll
 // access see them in full and can change them, everyone else sees the last
 // four characters only.
@@ -1139,81 +1094,18 @@ function EpfBalance({ userId }: { userId: string }) {
  * stands) and what HR filed. Each file opens or downloads.
  */
 function EmployeeDocuments({ documents }: { documents: EmpDocument[] }) {
-  const groups: Array<{ key: string; title: string; list: EmpDocument[] }> = [
-    { key: 'onboarding', title: 'From onboarding', list: documents.filter((d) => d.source === 'onboarding') },
-    { key: 'filed', title: 'Filed', list: documents.filter((d) => d.source !== 'onboarding') },
-  ].filter((g) => g.list.length > 0);
-  const both = groups.length > 1;
+  const item = (doc: EmpDocument): ProfileDocItem => ({
+    id: doc.id,
+    title: doc.type,
+    sub: `${doc.source === 'onboarding' ? 'Uploaded on the joining portal' : 'Filed by HR'}${doc.uploadedOn ? ` · ${doc.uploadedOn}` : ''}`,
+    status: doc.source === 'onboarding' ? docStatus(doc.status) : null,
+    files: doc.files,
+  });
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
-      {groups.map((g) => (
-        <div key={g.key} style={{ display: 'grid', gap: 4 }}>
-          {both && <span className="pd-eyebrow" style={{ color: 'var(--ink-3)' }}>{g.title}</span>}
-          <div className="pd-list">
-            {g.list.map((doc) => {
-              const st = doc.source === 'onboarding' ? docStatus(doc.status) : null;
-              return (
-                <div key={doc.id} className="pd-li" style={{ alignItems: 'flex-start', flexWrap: 'wrap', rowGap: 8 }}>
-                  <span className="pd-li-i">
-                    <IconFile size={15} stroke="currentColor" />
-                  </span>
-                  <span className="grow" style={{ minWidth: 160 }}>
-                    <b>{doc.type}</b>
-                    <span className="s" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {doc.source === 'onboarding' ? 'Uploaded on the joining portal' : 'Filed by HR'}{doc.uploadedOn ? ` · ${doc.uploadedOn}` : ''}
-                    </span>
-                  </span>
-                  {st && <Pill label={st.label} tone={st.tone} fontSize={11} padding="2px 9px" />}
-                  <span style={{ flexBasis: '100%', paddingLeft: 46 }}>
-                    {doc.files.length > 0 ? <FileChips files={doc.files} /> : <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>No file attached</span>}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Section({ title, icon, action, children }: { title: string; icon?: ReactNode; action?: ReactNode; children: ReactNode }) {
-  return (
-    <section className="pd-card pd-psec">
-      <div className="pd-sec-h">
-        {icon && <span className="pd-ps-i">{icon}</span>}
-        <h3>{title}</h3>
-        {action}
-      </div>
-      <div className="pd-sec-b">{children}</div>
-    </section>
-  );
-}
-
-/** Placeholder pairs shaped like a Grid of Rows. */
-function SkeletonGrid({ rows }: { rows: number }) {
-  return (
-    <SkeletonFrame style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 26px' }}>
-      {Array.from({ length: rows * 2 }, (_, i) => (
-        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-          <Skeleton w={70} h={9} style={{ opacity: 0.7 }} />
-          <Skeleton w={i % 3 ? '58%' : '72%'} h={12} />
-        </div>
-      ))}
-    </SkeletonFrame>
-  );
-}
-
-function Grid({ children }: { children: ReactNode }) {
-  return <div className="pd-pfg">{children}</div>;
-}
-
-function Row({ label, value, strong }: { label: string; value: string; wide?: boolean; strong?: boolean }) {
-  return (
-    <div className="pd-pf">
-      <span className="pl">{label}</span>
-      <span className="pv" style={strong ? { fontWeight: 500 } : undefined}>{value}</span>
-    </div>
+    <DocumentList groups={[
+      { key: 'onboarding', title: 'From onboarding', list: documents.filter((d) => d.source === 'onboarding').map(item) },
+      { key: 'filed', title: 'Filed', list: documents.filter((d) => d.source !== 'onboarding').map(item) },
+    ]} />
   );
 }
 
@@ -1294,19 +1186,6 @@ function detailsOf(emp: Emp): DetailsForm {
     designation: dash(emp.role), department: dash(emp.team),
     empType: emp.empType, birthday: emp.birthday, isDirector: emp.isDirector,
   };
-}
-
-/** A field that stays in view while the rest are edited, greyed and locked. */
-function LockedField({ label, value }: { label: string; value: string }) {
-  return (
-    <Field label={label}>
-      <div title="This field can't be edited" aria-disabled="true"
-        style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface-2, var(--line-2, #f3f3f7))', color: 'var(--ink-4)', cursor: 'not-allowed' }}>
-        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value || '—'}</span>
-        <span style={{ display: 'inline-flex', color: 'var(--ink-4)' }} aria-label="This field can't be edited"><PdLock size={14} /></span>
-      </div>
-    </Field>
-  );
 }
 
 /**
