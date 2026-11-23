@@ -11,6 +11,7 @@
 import { ObjectId } from 'mongodb';
 import { companies, employeePaymentDetails, payrollRuns, payslips, reimbursementClaims, salaryStructures, users } from '../config/db';
 import { Payslip, PayrollRun } from '../models/payrollRun.model';
+import { DEDUCTION_TRIGGER_LABELS, type DeductionTrigger } from '../models/deduction.model';
 import { PayrollRunError, requireAdminOrg } from './payrollRun.service';
 import { workStateOf } from './statutorySettings.service';
 import { decryptField, fieldKeyConfigured } from './fieldCrypto';
@@ -78,6 +79,33 @@ async function slipsOf(org: string, runs: StoredRun[]): Promise<Slip[]> {
 }
 
 /** One payslip in the report's terms. */
+/**
+ * How a payslip's loss of pay came about, as the payslip itself says it:
+ * where the days came from (attendance or HR's figure), each line of the
+ * template's rules ("Absent 2 → 2d · Half day 3 → 1.5d"), the days paid
+ * leave covered, and what the days cost (full-month gross less gross paid).
+ */
+function lopOf(s: Slip) {
+  const lines = s.inputs?.attendanceDeductions ?? [];
+  const nameOf = (l: (typeof lines)[number]) => (l.trigger ? DEDUCTION_TRIGGER_LABELS[l.trigger as DeductionTrigger] ?? l.label : l.label);
+  const byHr = !!s.inputs?.lopEnteredByHr;
+  const covered = s.inputs?.paidLeaveDaysApplied ?? 0;
+  const breakdown = [
+    ...lines.filter((l) => l.days > 0).map((l) => `${nameOf(l)} ${l.count} → ${l.days}d`),
+    ...(covered > 0 ? [`Paid leave covered ${covered}d`] : []),
+  ].join(' · ');
+  const fullGrossPaise = s.earnings.reduce((t, e) => t + (e.fullPaise ?? 0), 0);
+  const paidGrossPaise = s.earnings.reduce((t, e) => t + (e.paidPaise ?? 0), 0);
+  return {
+    lopSource: byHr ? 'Entered by HR' : 'Attendance',
+    attendanceLopDays: s.inputs?.attendanceLopDays ?? s.inputs?.lopDays ?? 0,
+    lopBreakdown: byHr ? `HR entered ${s.inputs?.lopDays ?? 0}d (attendance said ${s.inputs?.attendanceLopDays ?? 0}d)` : breakdown,
+    paidLeaveCoveredDays: covered,
+    fullGrossPaise,
+    lopAmountPaise: Math.max(0, fullGrossPaise - paidGrossPaise),
+  };
+}
+
 function partsOf(s: Slip) {
   const earnings = s.earnings.map((e) => ({ code: e.code, name: e.name, paise: e.paidPaise }));
   const overtime = s.inputs?.overtimePaise ?? 0;
@@ -219,6 +247,7 @@ export async function salaryRegister(viewer: string, periodIn: unknown, opts: Op
         baseDays: s.inputs?.workingDays ?? 0,
         lopDays: s.inputs?.lopDays ?? 0,
         paidDays: s.inputs?.payableDays ?? 0,
+        ...lopOf(s),
         earnings: byCode(p.earnings),
         grossPaise: s.grossPaise,
         reimbursements: byCode(p.reimbursements),
