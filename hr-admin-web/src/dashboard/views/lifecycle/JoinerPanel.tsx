@@ -507,7 +507,10 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
       </div>
 
       <div style={{ padding: 20, display: 'grid', gap: 18, alignContent: 'start', flex: 1 }}>
-        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end' }}>
+        <a href={profileHref} target={profileHref ? '_blank' : undefined} rel={profileHref ? 'noopener' : undefined}
+          title={profileHref ? `Open ${name}'s employee profile (new tab)` : undefined}
+          className={profileHref ? 'pd-headlink' : undefined}
+          style={{ display: 'flex', gap: 14, alignItems: 'flex-end', color: 'inherit', textDecoration: 'none', borderRadius: 16, margin: -8, padding: 8, cursor: profileHref ? 'pointer' : 'default' }}>
           <span style={{ width: 76, height: 84, borderRadius: 20, background: closed ? 'var(--surface-2)' : TINT[journey.tab] ?? 'var(--surface-2)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', flex: 'none', overflow: 'hidden' }}>
             <PlantFace plant={journey.plant} size={66} name={name} userId={journey.userId} />
           </span>
@@ -516,7 +519,8 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
             {role && <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{role}</div>}
             <div style={{ fontSize: 13, fontWeight: 500, color: closed ? 'var(--ink-2)' : 'var(--accent-ink)' }}>{closed ? STATUS_LABEL[status] ?? status : journeyLine(status, journey.tj, journey.dayLabel)}</div>
           </div>
-        </div>
+          {profileHref && <span aria-hidden="true" style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 18, color: 'var(--ink-3)' }}>↗</span>}
+        </a>
 
         {closed && (
           <div className="pd-note">
