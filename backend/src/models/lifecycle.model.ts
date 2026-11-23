@@ -630,6 +630,14 @@ export interface Day1Pass {
   bring?: string[];
   /** `id` is the line's own (meetings follow it, not its words); `taskKey` is the task HR says it is (null: none). */
   agenda?: Array<{ id?: string; time: string; title: string; with?: string; taskKey?: 'meet_manager' | 'meet_team' | 'welcome_induction' | 'vision_culture' | null }>;
+  /** The manager and buddy when the pass was made (readers name the journey's current ones). */
+  managerName?: string;
+  buddyName?: string;
+  /**
+   * Made by the server at Tj − 7 from the template (services/lifecycle/day1PassAuto.ts): it follows the
+   * template and the joining date until HR saves the pass, which drops this mark and makes the pass HR's.
+   */
+  auto?: { at: Date };
 }
 
 export interface DateChangeRequest {

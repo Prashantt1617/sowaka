@@ -130,6 +130,8 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   else if (reviewQueue > 0) primary = { label: 'Review documents', go: () => setOpenStep(2) };
   else if (status === 'docs_approved' && !letters.some((l) => l.kind === 'appointment')) primary = { label: 'Make the appointment letter', go: () => openDocuments(s.setView, 'appointment', journey.id) };
   else if (journey.column === 'final_month' && !decision) primary = { label: 'Record decision', go: () => setDialog({ kind: 'decision' }) };
+  // The confirmation letter is made and sent on the Confirmed step; an extension letter in Documents.
+  else if (decisionLetter === 'confirmation' && !hasDecisionLetter) primary = { label: 'Generate confirmation letter', go: () => setOpenStep(8) };
   else if (decisionLetter && !hasDecisionLetter) primary = { label: `Make the ${decisionLetter} letter`, go: () => openDocuments(s.setView, decisionLetter, journey.id) };
 
   // Ending the offer (the design's Revoke offer, on the footer's left): declined while it waits, not joining once accepted.

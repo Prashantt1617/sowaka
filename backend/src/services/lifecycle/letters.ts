@@ -43,7 +43,7 @@ export const MERGE_FIELDS: Record<string, string> = {
   designation: 'Designation', department: 'Department', location: 'Work location', managerName: 'Reporting manager',
   joiningDate: 'Joining date', ctc: 'Yearly CTC', ctcWords: 'Yearly CTC in words', probationMonths: 'Probation', probationEndsOn: 'Probation ends on',
   noticeDays: 'Notice period', validTill: 'Offer valid till', offerDate: 'Offer date', acceptedOn: 'Offer accepted on', responsibilities: 'Responsibilities',
-  confirmationDate: 'Confirmed from', extensionMonths: 'Extended by', extensionUntil: 'Probation now ends on',
+  confirmationDate: 'Confirmed from', confirmedOn: 'Confirmed on', extensionMonths: 'Extended by', extensionUntil: 'Probation now ends on',
   lastWorkingDay: 'Last working day', hrName: 'Signed by (HR)',
 };
 
@@ -241,6 +241,8 @@ export async function mergeValues(org: string, input: { kind?: unknown; journeyI
     acceptedOn: version?.acceptedAt ? formatDay(istDate(version.acceptedAt)) : '',
     responsibilities: f?.responsibilities ?? '',
     confirmationDate: tj && probationMonths !== undefined ? formatDay(addMonths(tj, probationMonths + (extendedBy ?? 0))) : '',
+    // The day HR recorded the decision to confirm: the confirmation letter's "Confirmed on" stamp.
+    confirmedOn: journey?.probation?.decision?.outcome === 'confirm' && journey.probation.decision.decidedAt ? formatDay(istDate(new Date(journey.probation.decision.decidedAt))) : '',
     extensionMonths: extendedBy ? plural(extendedBy, 'month') : '',
     extensionUntil: endsOn && extendedBy ? formatDay(addMonths(endsOn, extendedBy)) : '',
     lastWorkingDay: formatDay(user?.exit?.lastWorkingDay),
@@ -334,6 +336,8 @@ async function defaultTemplate(org: string, kind: LetterKind): Promise<LetterTem
 export interface LetterView {
   id: string; kind: LetterKind; refNo: string; state: 'draft' | 'sent' | 'ready' | 'opened' | 'signed';
   pdfFileId?: string; signedPdfFileId?: string; sentAt?: Date; signedAt?: Date; templateId: string; missing: string[];
+  /** Where the email went (the confirmation letter: the employee's work email). */
+  sentTo?: string;
 }
 
 function letterState(letter: Letter): LetterView['state'] {
@@ -346,6 +350,7 @@ function letterState(letter: Letter): LetterView['state'] {
 const toView = (l: Letter): LetterView => ({
   id: l.id, kind: l.kind, refNo: l.refNo, state: letterState(l), pdfFileId: l.pdfFileId, signedPdfFileId: l.signedPdfFileId,
   sentAt: l.email?.sentAt, signedAt: l.signature?.signedAt, templateId: l.templateId, missing: missingFields(l.kind, l.values),
+  ...(l.email?.sentAt && l.email.to ? { sentTo: l.email.to } : {}),
 });
 
 /** ENGINE-API read function (the HR side panel). */
@@ -470,6 +475,42 @@ export async function sendLetter(
   } } }, { returnDocument: 'after', projection: { _id: 0 } }))!;
   await closeLetterTask(hr, sent);
   return sent;
+}
+
+/**
+ * The joiner panel's "Generate confirmation letter" (and its Resend): the confirmation letter the
+ * dashboard made from the company's template (createLetter, its PDF uploaded) goes to the employee's
+ * WORK email — their account's — and, being sent, becomes the journey's confirmation letter
+ * (closeLetterTask: `probation.decision.letterId`, the `confirmation_letter` task done, the app's reveal).
+ * Only once the decision is to confirm (or the journey is confirmed).
+ */
+export async function sendConfirmationLetter(hr: { org: string; userId: string; name: string; seesPay: boolean }, letterId: string): Promise<{ letter: LetterView; sentTo: string; sentAt: Date }> {
+  const letter = await letters().findOne({ id: letterId, org: hr.org }, { projection: { _id: 0 } });
+  if (!letter) throw new LifecycleOfferError(404, 'Letter not found');
+  if (letter.kind !== 'confirmation') throw new LifecycleOfferError(400, 'This is not a confirmation letter');
+  const journey = letter.journeyId
+    ? await journeys().findOne({ id: letter.journeyId, org: hr.org })
+    : letter.userId ? await journeys().find({ org: hr.org, kind: 'onboarding', userId: letter.userId, closedAt: { $exists: false } }).sort({ createdAt: -1 }).limit(1).next() : null;
+  if (!journey || journey.kind !== 'onboarding') throw new LifecycleOfferError(404, 'Joiner not found');
+  if (journey.probation?.decision?.outcome !== 'confirm' && journey.status !== 'confirmed') {
+    throw new LifecycleOfferError(409, 'Record the decision to confirm first');
+  }
+  if (!letter.pdfFileId) throw new LifecycleOfferError(409, 'Generate the PDF first');
+  const userId = journey.userId ?? letter.userId;
+  const user = userId ? await users().findOne({ userId, org: hr.org }, { projection: { _id: 0, name: 1, email: 1 } }) : null;
+  const name = user?.name ?? journey.candidate?.name ?? 'This employee';
+  const to = String(user?.email ?? '').trim();
+  if (!/^\S+@\S+\.\S+$/.test(to)) {
+    throw new LifecycleOfferError(409, `${name} has no work email on their account. Add one on their employee profile, then send the letter.`);
+  }
+  const company = companyDisplayName(await companyOf(hr.org), hr.org);
+  const first = name.trim().split(/\s+/)[0] || 'there';
+  const on = letter.values.confirmedOn ? ` You were confirmed on ${letter.values.confirmedOn}.` : '';
+  const sent = await sendLetter(hr, letterId, {
+    to, subject: 'Your confirmation letter',
+    body: `Hi ${first},\n\nCongratulations on completing your probation.${on} Your confirmation letter is attached.\n\nWarm regards,\n${hr.name}\nHR, ${company}`,
+  });
+  return { letter: toView(sent), sentTo: sent.email!.to, sentAt: sent.email!.sentAt! };
 }
 
 /**

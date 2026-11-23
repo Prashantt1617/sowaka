@@ -18,8 +18,9 @@ import type {
 import { FilePreview, NoteDialog, OwnerChip, Pick, Field } from './shared';
 import { IconChevronDown, IconDownload } from '../../icons';
 import {
-  PHASES, areaStyle, changedFieldsText, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, longDay, openDocuments, rupees, sectionLabel, shortDay,
+  PHASES, addDays, areaStyle, changedFieldsText, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, longDay, openDocuments, rupees, sectionLabel, shortDay, todayKey,
 } from './format';
+import { ConfirmationLetter } from './ConfirmationLetter';
 import { DecisionDialog, ProbationMonths, RecommendationNote } from './Probation';
 import { KIND_LABEL } from './letterDoc';
 import { downloadFile } from './DocumentParts';
@@ -229,6 +230,11 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
   const portalSent = !['draft', 'offer_sent', 'accepted'].includes(status) && !closed;
   const pass = journey.day1Pass;
   const passFilled = Boolean(pass && (pass.reportingTime || pass.place || pass.meetingLink));
+  // The Day-1 pass line: made by the server at Tj − 7 from the template unless HR fills it in first.
+  const passLine = pass?.auto ? `Made automatically on ${shortDay(pass.auto.at)}`
+    : passFilled ? 'Filled in'
+      : journey.tj && PRE_JOIN.has(status) ? (addDays(journey.tj, -7) > todayKey() ? `Made automatically on ${shortDay(addDays(journey.tj, -7))}` : 'Being made from the template')
+        : 'Not filled in';
   const pendingDates = dateRequests.filter((r) => r.status === 'pending').length;
 
   // Each step's line under its name.
@@ -355,7 +361,7 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
               ['Joining date', journey.tj ? longDay(journey.tj) : 'Not set'], ['When', journey.tj ? weekOf(journey.tj) : ''],
               ['Reporting time', pass?.reportingTime ?? reporting?.time ?? 'Not set'], ['Reporting place', pass?.place ?? (pass?.meetingLink ? 'Online' : reporting?.place ?? 'Not set')],
               ['Report to', journey.managerName ?? 'Not picked'], ['Buddy', journey.buddyName ?? 'Not picked'],
-              ['Day-1 pass', passFilled ? 'Filled in' : 'Not filled in yet'], ['Template', template?.name],
+              ['Day-1 pass', passLine], ['Template', template?.name],
               ['Joining with', batch.length ? batch.map((b) => b.name).join(', ') : ''],
             ]} />
             {dateRequests.length > 0 && <Sub>Joining date requests{pendingDates ? ` · ${pendingDates} waiting for you` : ''}</Sub>}
@@ -421,13 +427,20 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
             {!finalTasks.length && !probation.months.length && !decision && <Para>The final check-in and the decision to confirm or extend.</Para>}
           </>
         );
-      default:
-        return decision ? (
+      default: {
+        // Confirmed (the decision, or the journey): the confirmation letter is made, sent and resent here.
+        const confirmed = decision?.outcome === 'confirm' || status === 'confirmed';
+        return decision || confirmed ? (
           <>
-            <Para>{decisionLine(decision, pay)}</Para>
-            {letters.filter((l) => l.kind === 'confirmation' || l.kind === 'extension').map((l) => <LetterRow key={l.id} letter={l} name={name} onOpen={(id, n) => setDialog({ kind: 'file', id, name: n })} onDocuments={() => openDocuments(s.setView, l.kind, journey.id)} />)}
+            {decision && <Para>{decisionLine(decision, pay)}</Para>}
+            {confirmed && (
+              <ConfirmationLetter journeyId={journey.id} name={name} letters={letters} decision={decision} busy={busy} setBusy={setBusy} flash={flash} onChanged={onChanged}
+                onView={(id, n) => setDialog({ kind: 'file', id, name: n })} />
+            )}
+            {letters.filter((l) => l.kind === 'extension' || (!confirmed && l.kind === 'confirmation')).map((l) => <LetterRow key={l.id} letter={l} name={name} onOpen={(id, n) => setDialog({ kind: 'file', id, name: n })} onDocuments={() => openDocuments(s.setView, l.kind, journey.id)} />)}
           </>
         ) : <Para>The confirmation letter goes out once the decision is recorded.</Para>;
+      }
     }
   };
 
@@ -694,23 +707,39 @@ function Day1PassEditor({ value, tj, onSave, busy }: { value?: Day1Pass; tj?: st
   const [p, setP] = useState<Day1Pass>(() => value ?? {});
   const [bring, setBring] = useState((value?.bring ?? []).join('\n'));
   const set = (patch: Partial<Day1Pass>) => setP((x) => ({ ...x, ...patch }));
+  // What HR edits: the pass without the server's mark and the names it was made with.
+  const editable = (v?: Day1Pass): Day1Pass => { const rest = { ...v }; delete rest.auto; delete rest.managerName; delete rest.buddyName; return rest; };
+  const startEditing = () => { setP(editable(value)); setBring((value?.bring ?? []).join('\n')); setEditing(true); };
   if (!editing) {
-    const filledIn = Boolean(value && (value.reportingTime || value.place || value.meetingLink));
+    const auto = value?.auto;
+    const filledIn = Boolean(auto || (value && (value.reportingTime || value.place || value.meetingLink)));
+    // The server makes the pass from the template 7 days before joining (or on its next run, inside the week).
+    const makesOn = tj ? addDays(tj, -7) : undefined;
     return (
       <div style={{ display: 'grid', gap: 8 }}>
+        {auto && <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>Made automatically on {longDay(auto.at)} from the template. It follows the template and the joining date until you edit it.</div>}
         {filledIn ? (
           <Facts rows={[
-            ['Date', longDay(value?.date ?? tj)],
+            ['Date', longDay(auto ? tj : value?.date ?? tj)],
             ['Reporting time', value?.reportingTime],
             ['Place', value?.place],
+            ['Map link', value?.mapLink ? <a key="m" href={value.mapLink} target="_blank" rel="noopener noreferrer">Directions</a> : ''],
             ['Meeting link', value?.meetingLink],
             ['Ask for', value?.askFor ? `${value.askFor.name}${value.askFor.phone ? ` · ${value.askFor.phone}` : ''}` : ''],
+            ['Manager', auto ? value?.managerName : ''],
+            ['Buddy', auto ? value?.buddyName : ''],
             ['HR contact', value?.hrContact ? [value.hrContact.name, value.hrContact.email, value.hrContact.phone].filter(Boolean).join(' · ') : ''],
             ['Bring', value?.bring?.length ? value.bring.join(', ') : ''],
             ['Agenda', value?.agenda?.length ? value.agenda.map((a) => `${a.time} ${a.title}${a.with ? ` (${a.with})` : ''}${a.taskKey ? ` · ${AGENDA_TASK_LABEL[a.taskKey]}` : ''}`).join(' · ') : ''],
           ]} />
-        ) : <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>Not filled in yet. The candidate sees it from 7 days before joining: time, place or link, who to ask for, what to bring and the day’s agenda.</div>}
-        <div><button type="button" className="pd-btn sm" onClick={() => { setP(value ?? {}); setBring((value?.bring ?? []).join('\n')); setEditing(true); }}>{filledIn ? 'Edit pass' : 'Fill in the pass'}</button></div>
+        ) : (
+          <div style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.5 }}>
+            {makesOn && makesOn > todayKey()
+              ? `Made automatically on ${longDay(makesOn)} from the template’s joining and reporting details, and shown to the candidate. You can fill it in yourself before then.`
+              : 'Being made from the template’s joining and reporting details: it shows here within the hour. You can fill it in yourself instead.'}
+          </div>
+        )}
+        <div><button type="button" className="pd-btn sm" onClick={startEditing}>{filledIn ? 'Edit pass' : 'Fill in now'}</button></div>
       </div>
     );
   }

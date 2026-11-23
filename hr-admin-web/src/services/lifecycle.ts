@@ -242,6 +242,11 @@ export interface Day1Pass {
   bring?: string[];
   /** `id`: the line's own (its meeting follows it). `taskKey`: the Day-1 task HR says it is; null none; absent on lines saved before (the server guesses once from the title). */
   agenda?: Array<{ id?: string; time: string; title: string; with?: string; taskKey?: AgendaTaskKey | null }>;
+  /** The manager and buddy when the server made the pass. */
+  managerName?: string;
+  buddyName?: string;
+  /** Made by the server at Tj − 7 from the template; gone once HR saves the pass. */
+  auto?: { at: string };
 }
 
 export interface ConfirmationDecision {
@@ -380,6 +385,8 @@ export interface LetterView {
   signedPdfFileId?: string;
   sentAt?: string;
   signedAt?: string;
+  /** Where the email went (the confirmation letter: the employee's work email). */
+  sentTo?: string;
   /** From GET /letters (the list); the panel's letters leave it out. */
   email?: LetterEmail;
   createdAt?: string;
@@ -585,6 +592,9 @@ export const uploadLetterPdf = (id: string, pdf: Blob, filename: string) =>
   apiUpload<{ letter: LetterView }>(`${L}/letters/${id}/pdf`, pdfForm(pdf, filename)).then((r) => r.letter);
 export const sendLetter = (id: string, email: { to: string; cc?: string[]; subject: string; body: string; withPortalLink?: boolean; attachments?: LetterAttachment[] }) =>
   api<{ letter: LetterView }>(`${L}/letters/${id}/send`, json('POST', email)).then((r) => r.letter);
+/** The joiner panel's confirmation letter: sent to the employee's work email (their account's), kept as the journey's confirmation letter. */
+export const sendConfirmationLetter = (id: string) =>
+  api<{ letter: LetterView; sentTo: string; sentAt: string }>(`${L}/letters/${id}/send-confirmation`, json('POST', {}));
 /** Save draft: the email stays on the letter until it is sent. */
 export const saveLetterDraft = (id: string, email: { to?: string; cc?: string[]; subject?: string; body?: string; withPortalLink?: boolean; attachments?: LetterAttachment[] }) =>
   api<{ letter: LetterView }>(`${L}/letters/${id}/draft`, json('PUT', email)).then((r) => r.letter);

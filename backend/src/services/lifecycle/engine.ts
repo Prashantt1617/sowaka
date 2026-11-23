@@ -703,7 +703,15 @@ async function moveAnchorDay(journeyId: string, field: 'tj' | 'tl', day: string)
   if (j[field] === day) return;
   const at = new Date();
   const moved: Journey = { ...j, [field]: day, updatedAt: at };
-  await journeys().updateOne({ id: journeyId }, { $set: { [field]: day, updatedAt: at } });
+  // The automatic Day-1 pass (day1PassAuto.ts) follows the joining date; one more than a week away is made
+  // again at the new Tj − 7. HR's own pass keeps the date HR gave it.
+  const autoPass = field === 'tj' && j.day1Pass?.auto ? (daysBetween(todayKey(), day) > 7 ? 'clear' : 'move') : null;
+  if (autoPass === 'clear') delete moved.day1Pass;
+  if (autoPass === 'move') moved.day1Pass = { ...j.day1Pass, date: day };
+  await journeys().updateOne({ id: journeyId }, {
+    $set: { [field]: day, updatedAt: at, ...(autoPass === 'move' ? { 'day1Pass.date': day } : {}) },
+    ...(autoPass === 'clear' ? { $unset: { day1Pass: '' } } : {}),
+  });
   const tasks = await tasksOf(journeyId);
   // Re-dates the tasks in place (and saves them): the refresh goes on from these, not a second read.
   await recomputeAndSave(moved, tasks, { tellOwners: true });
@@ -1084,6 +1092,12 @@ const MEETING_MATCH: Array<[RegExp, SystemTaskKey]> = [
 ];
 
 export const AGENDA_TASK_KEYS = ['meet_manager', 'meet_team', 'welcome_induction', 'vision_culture'] as const;
+/**
+ * The id prefix of an agenda line the automatic Day-1 pass made from the template's Day-1 meetings
+ * (day1PassAuto.ts): those meetings are already the joiner's, so such a line makes no meeting of its
+ * own — unless HR ties it to a task.
+ */
+export const TEMPLATE_AGENDA_PREFIX = 'tpl-';
 export type AgendaTaskKey = (typeof AGENDA_TASK_KEYS)[number];
 type AgendaLine = NonNullable<Day1Pass['agenda']>[number];
 
@@ -1141,6 +1155,7 @@ export async function syncDay1Meetings(journeyId: string): Promise<void> {
   for (const item of agenda) {
     const startsAt = localInstant(day, item.time);
     if (!startsAt || !item.title) continue;
+    if (item.id?.startsWith(TEMPLATE_AGENDA_PREFIX) && !item.taskKey) continue;
     const key = agendaTaskKey(item);
     const task = key ? tasks.find((t) => t.systemKey === key) : undefined;
     const attendees = [j.userId, ...(key === 'meet_manager' || key === 'meet_team' ? [j.managerUserId] : [])].filter((id): id is string => !!id);
