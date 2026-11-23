@@ -16,12 +16,11 @@ import { docStatus } from './lifecycle/preboardingLinks';
 import { ETYPE, STAT, TYPE } from '../theme';
 import type { LeaveType, ReqStatus } from '../theme';
 import { Avatar, ListPending, LoadError, LoadingFigure, Pill, Skeleton, SkeletonForm, SkeletonFrame, SkeletonLines, SkeletonRows, StatusTabs } from '../ui';
-import { BasicDetailsGrid, DocumentList, Fact, Grid, LockedField, ProfileHeader, Row, Section, SkeletonGrid } from './profileParts';
+import { BasicDetailsGrid, Connector, DocumentList, Fact, GhostNode, Grid, LockedField, OrgNode, ProfileHeader, Row, Section, SkeletonGrid } from './profileParts';
 import { EMP_TYPE_VALUE, nameParts, showDate } from './profileWords';
 import type { ProfileDocItem } from './profileParts';
 import type { LoadState } from '../ui';
 import { useLoad } from '../useLoad';
-import { PersonAvatar } from '../PersonAvatar';
 import { PdBank, PdCalendar, PdChart, PdClock, PdEdit, PdFile, PdStar, PdTarget, PdTrash, PdUser } from './pdIcons';
 import './people.css';
 import { periodLabel, periodShort } from '../period';
@@ -896,43 +895,6 @@ function RequestsForEmployee({ emp }: { emp: Emp }) {
         </div>
       ))}</div>}
     </section>
-  );
-}
-
-// —— Org-chart pieces ————————————————————————————————————————————————————
-function Connector() {
-  return <div className="pd-ovline" />;
-}
-
-function OrgNode({ emp, caption, highlight, onOpen }: { emp: Emp; caption?: string; highlight?: boolean; onOpen?: (e: Emp) => void }) {
-  const clickable = !highlight && !!onOpen;
-  return (
-    <button
-      onClick={clickable ? () => onOpen!(emp) : undefined}
-      className={highlight ? 'pd-onode me' : 'pd-onode'}
-      style={{ cursor: clickable ? 'pointer' : 'default', padding: highlight ? '4px 14px' : undefined }}
-    >
-      <Avatar name={emp.name} size={34} font={14} src={emp.photoUrl} />
-      <span className="txt">
-        <b>{emp.name}</b>
-        <span className="sub">{emp.role}</span>
-      </span>
-      {caption && <span className={highlight ? 'cnt' : 'cap'} style={highlight ? { background: 'none', fontSize: 12, marginLeft: 'auto', paddingLeft: 18 } : undefined}>{caption}</span>}
-    </button>
-  );
-}
-
-// Manager named on the record but not found in the roster.
-function GhostNode({ name, caption }: { name: string; caption: string }) {
-  return (
-    <div className="pd-onode ghost">
-      <PersonAvatar name={name} size={44} font={15} />
-      <span className="txt">
-        <b>{name}</b>
-        <span className="sub">Manager</span>
-      </span>
-      <span className="cap">{caption}</span>
-    </div>
   );
 }
 

@@ -18,10 +18,11 @@ import {
 import type {
   BankPfRequest, CandidateDocumentView, ConfirmationDecision, Day1Pass, DesignReporting, JourneyDetail, LetterKind, LetterView, TaskView, TemplateListItem,
 } from '../../../services/lifecycle';
-import { FilePreview, NoteDialog, OwnerChip, Pick, PlantFace, Field } from './shared';
+import { CloseOfferBox, FilePreview, NoteDialog, OwnerChip, Pick, PlantFace, Field } from './shared';
+import type { CloseOfferAction } from './format';
 import { IconChevronDown, IconDownload } from '../../icons';
 import {
-  DOCS_OPEN_KEY, PHASES, areaStyle, changedFieldsText, nudgeLabel, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, labelStyle, longDay, rupees, sectionLabel, shortDay, todayKey,
+  DOCS_OPEN_KEY, PHASES, areaStyle, changedFieldsText, closeActionOf, nudgeLabel, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, longDay, rupees, sectionLabel, shortDay, todayKey,
 } from './format';
 import { FinaliseDialog, MarkJoinedDialog } from './OfferDialogs';
 import { DecisionDialog, ProbationMonths, RecommendationNote } from './Probation';
@@ -182,8 +183,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   // The step HR opened (null: the step they are on; -1: all closed).
   const [openStep, setOpenStep] = useState<number | null>(null);
   // Closing the offer (declined / not joining) asks in place, as the design's revoke box does.
-  const [closing, setClosing] = useState<null | 'decline' | 'not-joining'>(null);
-  const [closeNote, setCloseNote] = useState('');
+  const [closing, setClosing] = useState<null | CloseOfferAction>(null);
   const [nudgeMenu, setNudgeMenu] = useState(false);
   const nudgeRef = useRef<HTMLDivElement>(null);
 
@@ -197,7 +197,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
       .catch((e) => { if (live) setError(isNotAvailable(e) ? 'Employee lifecycle is not switched on for your company.' : errText(e, 'Could not load this joiner')); });
     return () => { live = false; };
   }, [journeyId, attempt]);
-  useEffect(() => { setOpenStep(null); setNudgeMenu(false); setClosing(null); setCloseNote(''); }, [journeyId]);
+  useEffect(() => { setOpenStep(null); setNudgeMenu(false); setClosing(null); }, [journeyId]);
   useEffect(() => { listTemplates('onboarding').then(setTemplates).catch(() => undefined); }, []);
   // This joiner's joining and reporting details (their copy of the template, from the server): what the portal's Day-1 pass
   // shows where HR has not typed this joiner's own. Never the template as it is now: an edit reaches new joiners only.
@@ -287,7 +287,7 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   else if (decisionLetter && !hasDecisionLetter) primary = { label: `Make the ${decisionLetter} letter`, go: () => openDocuments(s.setView, decisionLetter, journey.id) };
 
   // Ending the offer (the design's Revoke offer, on the footer's left): declined while it waits, not joining once accepted.
-  const closeAction: null | 'decline' | 'not-joining' = status === 'offer_sent' ? 'decline' : ['accepted', 'finalised', 'active', 'docs_approved'].includes(status) ? 'not-joining' : null;
+  const closeAction = closeActionOf(status);
 
   const nudge = (t: TaskView) => {
     setNudgeMenu(false);
@@ -567,21 +567,8 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
         </div>
 
         {closing && (
-          <div style={{ display: 'grid', gap: 12, padding: 14, border: '1px solid color-mix(in srgb, var(--bad) 25%, var(--line))', background: 'color-mix(in srgb, var(--bad-bg) 55%, var(--surface))', borderRadius: 14 }}>
-            <b style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--bad)' }}>{closing === 'decline' ? `Did ${first} decline the offer?` : `Is ${first} not joining?`}</b>
-            <Para>{closing === 'decline' ? 'Their no came by email. The offer closes, the portal link stops working and the card moves to Closed.'
-              : 'Open tasks are cancelled, the device request is recalled, the portal locks and the card moves to Closed. Reopen brings it back.'}</Para>
-            <label style={labelStyle}>What they said (only HR sees this)
-              <textarea value={closeNote} onChange={(e) => setCloseNote(e.target.value)} placeholder="Optional" style={{ ...areaStyle, minHeight: 64 }} />
-            </label>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-              <button type="button" className="pd-btn" onClick={() => { setClosing(null); setCloseNote(''); }}>Keep the offer</button>
-              <button type="button" className="pd-btn primary" disabled={Boolean(busy)} style={{ background: 'var(--bad)', borderColor: 'var(--bad)' }}
-                onClick={() => void run('close', () => offerStatusAction(journey.id, closing, closeNote.trim() || undefined), closing === 'decline' ? `${first}’s offer is closed as declined` : `${first} is marked not joining`).then((ok) => { if (ok) { setClosing(null); setCloseNote(''); } })}>
-                {closing === 'decline' ? 'Mark declined' : 'Mark not joining'}
-              </button>
-            </div>
-          </div>
+          <CloseOfferBox first={first} action={closing} busy={Boolean(busy)} onKeep={() => setClosing(null)}
+            onConfirm={(note) => run('close', () => offerStatusAction(journey.id, closing, note), closing === 'decline' ? `${first}’s offer is closed as declined` : `${first} is marked not joining`).then((ok) => { if (ok) setClosing(null); return ok; })} />
         )}
       </div>
 

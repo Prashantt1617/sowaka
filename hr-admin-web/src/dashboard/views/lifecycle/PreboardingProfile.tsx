@@ -1,21 +1,25 @@
 // People › Employees › Pre-boarding › a candidate (`#preboarding/<journeyId>`): the
 // Employee profile page (same header, tabs, section cards and documents list, from
-// profileParts), filled from what the candidate entered on the joining portal. What
-// means nothing before joining is left out: the calendar, requests and leave balance,
-// performance and KPIs, salary and payslips, org chart, activity and exit, the shift.
-// Each section shows where it stands (To do / Done / Approved by NAME on DATE); HR
-// approves a complete one, which locks it for the candidate (Unlock hands it back),
-// and edits its answers. Every document can be sent back for a re-upload with a note
-// (the joiner panel's own call), and one waiting for HR approved. Its own address, so
-// the onboarding board's panel opens it in a new tab.
+// profileParts), filled from what the candidate entered on the joining portal and what
+// the onboarding board knows. The Employee profile's tabs but Calendar and Requests
+// (nothing to show before joining): Profile, Performance, Salary details (the offer's
+// pay, with payroll access), Org chart, Activity (the journey's own timeline) and Exit
+// ("Not joining", the joiner panel's close). The Profile tab splits the portal's answers
+// into the Employee profile's categories (Basic details, Documents, Payment and tax IDs)
+// and the candidate's own (Personal details, Contact and address, Emergency contact,
+// Education, Work experience). Each category shows where its portal section stands
+// (To do / Done / Approved by NAME on DATE); HR approves a complete one, which locks it
+// for the candidate (Unlock hands it back), and edits its answers. Every document can be
+// sent back for a re-upload with a note (the joiner panel's own call), and one waiting
+// for HR approved. Its own address, so the onboarding board's panel opens it in a new tab.
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useStore } from '../../store';
-import { canOpen } from '../../access';
+import { canOpen, canSeePay, SALARY_DETAILS } from '../../access';
 import { usePageHead } from '../../pageHead';
 import { LoadError, Pill, SkeletonLines, StatusTabs } from '../../ui';
 import { ApiError } from '../../../services/http';
-import { createPreboardingAppAccess, getPreboardingProfile, isNotAvailable, reviewDocument, savePreboardingBasic, savePreboardingSection, setPreboardingSectionApproved } from '../../../services/lifecycle';
+import { createPreboardingAppAccess, getJourney, getPreboardingProfile, isNotAvailable, reviewDocument, savePreboardingBasic, savePreboardingSection, setPreboardingSectionApproved } from '../../../services/lifecycle';
 import type {
   PreboardingAddress, PreboardingBasic, PreboardingBasicInput, PreboardingDocument, PreboardingJob, PreboardingOptions, PreboardingProfile as Profile, PreboardingSection,
   PreboardingSectionInput, PreboardingSectionKey, PreboardingSectionValues,
@@ -28,7 +32,10 @@ import { BasicDetailsGrid, DocumentList, Fact, Grid, LockedField, ProfileHeader,
 import { EMP_TYPE_VALUE, nameParts, showDate } from '../profileWords';
 import type { ProfileDocItem } from '../profileParts';
 import { Field, Select, TypeOrPick, grid2, grid3, inputStyle } from '../AddEmployeeWizard';
-import { PdBank, PdEdit, PdFile, PdLayers, PdLock, PdPin, PdUser } from '../pdIcons';
+import { PdBank, PdEdit, PdFile, PdLayers, PdPin, PdUser } from '../pdIcons';
+import type { ProfileTab } from '../EmployeeProfile';
+import { ActivityTab, NotJoiningTab, OrgChartTab, PerformanceTab, SalaryTab } from './PreboardingTabs';
+import type { JourneyLoad } from './PreboardingTabs';
 import '../people.css';
 
 type Tone = { bg: string; fg: string };
@@ -37,9 +44,55 @@ const STATE: Record<'todo' | 'done' | 'approved', { label: string; tone: Tone }>
   done: { label: 'Done', tone: { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' } },
   approved: { label: 'Approved', tone: { bg: 'var(--ok-bg)', fg: 'var(--ok)' } },
 };
-const ICON: Record<PreboardingSectionKey, ReactNode> = {
-  personal: <PdUser />, contact: <PdPin />, emergency: <PdUser />, bank: <PdBank />, education: <PdLayers />, ids: <PdLock />,
-};
+/** The pre-boarding profile's tabs: the Employee profile's, without Calendar and Requests. */
+type Tab = Exclude<ProfileTab, 'calendar' | 'requests'>;
+const TAB_LABELS: Record<Tab, string> = { profile: 'Profile', performance: 'Performance', salary: 'Salary details', orgchart: 'Org chart', activity: 'Activity', exit: 'Exit' };
+
+/** A card on the Profile tab: its title and icon, the portal sections it shows, and its rows in order. */
+type CardKey = 'personal' | 'contact' | 'emergency' | 'education' | 'experience' | 'payment';
+interface Category {
+  key: CardKey;
+  title: string;
+  icon: ReactNode;
+  sections: PreboardingSection[];
+  rows: Array<{ label: string; value: string }>;
+  /** Always draws its rows ('—' for a blank one), as the Employee profile's Payment and tax IDs does. */
+  fixed?: boolean;
+  /** Names the sections' documents (once, where a section is split over two cards). */
+  docsNote?: boolean;
+}
+const EDUCATION_LABELS = new Set(['Highest qualification', 'College or university', 'Year of passing']);
+const PAYMENT_LABELS = new Set(['Bank', 'Account number', 'IFSC', 'Account holder', 'PF', 'PAN', 'Aadhaar']);
+
+/** The portal's six sections, as the Profile tab's categories (the server's rows, split and ordered). */
+function categoriesOf(sections: PreboardingSection[]): Category[] {
+  const sec = (k: PreboardingSectionKey) => sections.find((x) => x.key === k);
+  const one = (k: PreboardingSectionKey) => { const x = sec(k); return x ? [x] : []; };
+  const rows = (k: PreboardingSectionKey, keep: (label: string) => boolean = () => true) => (sec(k)?.fields ?? []).filter((f) => keep(f.label));
+  const bank = rows('bank');
+  const ids = rows('ids');
+  const val = (list: Array<{ label: string; value: string }>, label: string) => list.find((f) => f.label === label)?.value ?? '';
+  const pf = val(bank, 'PF');
+  const out: Category[] = [
+    { key: 'personal', title: 'Personal details', icon: <PdUser />, sections: one('personal'), rows: rows('personal'), docsNote: true },
+    { key: 'contact', title: 'Contact and address', icon: <PdPin />, sections: one('contact'), rows: rows('contact'), docsNote: true },
+    { key: 'emergency', title: 'Emergency contact', icon: <PdUser />, sections: one('emergency'), rows: rows('emergency'), docsNote: true },
+    { key: 'education', title: 'Education', icon: <PdLayers />, sections: one('education'), rows: rows('education', (l) => EDUCATION_LABELS.has(l)), docsNote: true },
+    { key: 'experience', title: 'Work experience', icon: <PdLayers />, sections: one('education'), rows: rows('education', (l) => !EDUCATION_LABELS.has(l)) },
+    {
+      // The Employee profile's card, its rows in its order; the candidate's Aadhaar beside the PAN.
+      key: 'payment', title: 'Payment and tax IDs', icon: <PdBank />, sections: [...one('bank'), ...one('ids')], fixed: true, docsNote: true,
+      rows: [
+        { label: 'Bank', value: val(bank, 'Bank') }, { label: 'Account number', value: val(bank, 'Account number') }, { label: 'IFSC', value: val(bank, 'IFSC') },
+        { label: 'Account holder', value: val(bank, 'Account holder') }, { label: 'PAN', value: val(ids, 'PAN') }, { label: 'Aadhaar', value: val(ids, 'Aadhaar') },
+        { label: 'UAN', value: pf.startsWith('UAN ') ? pf.slice(4) : pf },
+        ...[...bank, ...ids].filter((f) => !PAYMENT_LABELS.has(f.label)),
+      ],
+    },
+  ];
+  return out.filter((c) => c.sections.length > 0);
+}
+
 /** The portal's choices, until the server sends its own (`options`). */
 const OPTIONS: PreboardingOptions = {
   genders: ['Male', 'Female', 'Other'],
@@ -56,11 +109,17 @@ export function PreboardingProfile() {
   const [error, setError] = useState<{ text: string; off?: boolean } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState('');
-  const [editing, setEditing] = useState<PreboardingSectionKey | 'basic' | null>(null);
+  // What is open for editing: 'basic', or a card and the section it edits ('payment:ids').
+  const [editing, setEditing] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>('profile');
+  const [journey, setJourney] = useState<JourneyLoad>({ state: 'loading' });
   const [reupload, setReupload] = useState<PreboardingDocument | null>(null);
   const [granting, setGranting] = useState(false);
   // Candidates' documents and answers are HR's (People › Employees or full access); the onboarding tab alone sees where each one is.
   const seesDocuments = canOpen(user, 'employees');
+  // As the Employee profile: what someone earns is its own access. The offer, tasks and closing are the onboarding board's.
+  const seesSalary = canOpen(user, SALARY_DETAILS);
+  const seesBoard = canOpen(user, 'onboarding');
 
   const back = useCallback(() => { rememberPreboardingList(); s.setView('employees'); }, [s]);
   // As the Employee profile: the page head says Employees, the page's own link goes back.
@@ -83,8 +142,19 @@ export function PreboardingProfile() {
       });
     return () => { live = false; };
   }, [journeyId, attempt]);
-  // Another candidate: no form left open from the last one.
-  useEffect(() => { setEditing(null); }, [journeyId]);
+  // The onboarding board's detail (the joiner panel's call): the offer, tasks, documents and letters the other tabs show.
+  useEffect(() => {
+    if (!journeyId) return undefined;
+    if (!seesBoard) { setJourney({ state: 'none' }); return undefined; }
+    let live = true;
+    setJourney((j) => (j.state === 'ready' && j.data.journey.id === journeyId ? j : { state: 'loading' }));
+    getJourney(journeyId)
+      .then((d) => { if (live) setJourney({ state: 'ready', data: d }); })
+      .catch((e: unknown) => { if (live) setJourney({ state: 'error', text: errText(e, 'Could not load the onboarding details'), retry: () => setAttempt((n) => n + 1) }); });
+    return () => { live = false; };
+  }, [journeyId, attempt, seesBoard]);
+  // Another candidate: no form left open from the last one, and their profile first.
+  useEffect(() => { setEditing(null); setTab('profile'); }, [journeyId]);
 
   const top = (
     <div className="pd-prof-top">
@@ -182,6 +252,19 @@ export function PreboardingProfile() {
     flash('Basic details saved');
   };
 
+  const tabs: Tab[] = ['profile', 'performance', ...(seesSalary ? ['salary' as const] : []), 'orgchart', 'activity', ...(seesBoard ? ['exit' as const] : [])];
+  const categories = categoriesOf(data.sections);
+  const card = (c: Category) => {
+    const open = editing?.startsWith(`${c.key}:`) ? c.sections.find((x) => editing === `${c.key}:${x.key}`) : undefined;
+    return (
+      <CategoryCard key={c.key} category={c} first={first} busy={busy} canEdit={canEdit} editing={open?.key ?? null}
+        onEdit={(sec) => setEditing(`${c.key}:${sec.key}`)}
+        onApprove={(sec) => void approve(sec, true)} onUnlock={(sec) => void approve(sec, false)}>
+        {open && <SectionEditor section={open} options={options} onCancel={() => setEditing(null)} save={(body) => save(open, body)} />}
+      </CategoryCard>
+    );
+  };
+
   return (
     <div className="pd-prof" style={{ animation: 'fade .3s ease both' }}>
       {top}
@@ -204,52 +287,55 @@ export function PreboardingProfile() {
         <Fact label="Approved" value={`${approvedCount} of ${data.sections.length} sections`} />
       </ProfileHeader>
 
-      {/* The Employee profile's tabs: before joining, only the profile means anything. */}
+      {/* The Employee profile's tabs, but Calendar and Requests: nothing to show before joining. */}
       <div className="pd-ptabs">
-        <StatusTabs<'profile'> options={['profile']} active="profile" onSelect={() => undefined} labels={{ profile: 'Profile' }} />
+        <StatusTabs<Tab> options={tabs} active={tab} onSelect={setTab} labels={TAB_LABELS} />
       </div>
 
-      <div className="pd-psecs">
-        {basic && (
-          <div data-focus="details">
-            <Section title="Basic details" icon={<PdUser />} action={editing === 'basic' ? undefined : (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                {canEditBasic && <button type="button" onClick={() => setEditing('basic')} className="pd-sec-act"><PdEdit /> Edit</button>}
-                {basic.appAccess
-                  ? <span className="pd-subnote" style={{ fontSize: 12.5 }}>App access created on {showDate(dayOf(basic.appAccess.createdAt))}</span>
-                  : canGrant && <button type="button" className="pd-btn sm primary" onClick={() => setGranting(true)}>Generate app access</button>}
-              </span>
-            )}>
-              {editing === 'basic'
-                ? <BasicEditor name={candidate.name} basic={basic} joining={joining} mobile={mobile} personal={personal} onCancel={() => setEditing(null)} save={saveBasic} />
-                : <BasicDetailsGrid d={{
-                  name: candidate.name, employeeId: basic.employeeId ?? '', joining: joining ? showDate(joining) : '', workEmail: basic.workEmail ?? '',
-                  designation: basic.designation ?? candidate.designation ?? '', department: basic.department ?? candidate.department ?? '',
-                  workLocation: basic.workLocation ?? '', employeeType: typeWord(basic.employeeType), mobile,
-                  gender: personal.gender ?? '', dob: personal.dob ? showDate(personal.dob) : '',
-                }} />}
+      {tab === 'profile' && (
+        <div className="pd-psecs">
+          {basic && (
+            <div data-focus="details">
+              <Section title="Basic details" icon={<PdUser />} action={editing === 'basic' ? undefined : (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {canEditBasic && <button type="button" onClick={() => setEditing('basic')} className="pd-sec-act"><PdEdit /> Edit</button>}
+                  {basic.appAccess
+                    ? <span className="pd-subnote" style={{ fontSize: 12.5 }}>App access created on {showDate(dayOf(basic.appAccess.createdAt))}</span>
+                    : canGrant && <button type="button" className="pd-btn sm primary" onClick={() => setGranting(true)}>Generate app access</button>}
+                </span>
+              )}>
+                {editing === 'basic'
+                  ? <BasicEditor name={candidate.name} basic={basic} joining={joining} mobile={mobile} personal={personal} onCancel={() => setEditing(null)} save={saveBasic} />
+                  : <BasicDetailsGrid d={{
+                    name: candidate.name, employeeId: basic.employeeId ?? '', joining: joining ? showDate(joining) : '', workEmail: basic.workEmail ?? '',
+                    designation: basic.designation ?? candidate.designation ?? '', department: basic.department ?? candidate.department ?? '',
+                    workLocation: basic.workLocation ?? '', employeeType: typeWord(basic.employeeType), mobile,
+                    gender: personal.gender ?? '', dob: personal.dob ? showDate(personal.dob) : '', manager: basic.reportingManager?.name ?? '',
+                  }} />}
+              </Section>
+            </div>
+          )}
+          {data.sections.length === 0 && (
+            <section className="pd-card" style={{ padding: 28, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>
+              {first} has not started the Employee profile on the joining portal yet.
+            </section>
+          )}
+          {categories.filter((c) => c.key !== 'payment').map(card)}
+          {/* Then the Employee profile's own order: Documents, then Payment and tax IDs. */}
+          {documentCount > 0 && (
+            <Section title="Documents" icon={<PdFile />}>
+              {!seesDocuments && <div className="pd-note" style={{ marginBottom: 8 }}>Only HR opens candidates’ documents and ID proofs. You see where each one is.</div>}
+              <DocumentList groups={docGroups} />
             </Section>
-          </div>
-        )}
-        {data.sections.length === 0 && (
-          <section className="pd-card" style={{ padding: 28, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>
-            {first} has not started the Employee profile on the joining portal yet.
-          </section>
-        )}
-        {data.sections.map((sec) => (
-          <ProfileSectionCard key={sec.key} section={sec} first={first} busy={busy} canEdit={canEdit} editing={editing === sec.key}
-            onEdit={() => setEditing(sec.key)}
-            onApprove={() => void approve(sec, true)} onUnlock={() => void approve(sec, false)}>
-            <SectionEditor section={sec} options={options} onCancel={() => setEditing(null)} save={(body) => save(sec, body)} />
-          </ProfileSectionCard>
-        ))}
-        {documentCount > 0 && (
-          <Section title="Documents" icon={<PdFile />}>
-            {!seesDocuments && <div className="pd-note" style={{ marginBottom: 8 }}>Only HR opens candidates’ documents and ID proofs. You see where each one is.</div>}
-            <DocumentList groups={docGroups} />
-          </Section>
-        )}
-      </div>
+          )}
+          {categories.filter((c) => c.key === 'payment').map(card)}
+        </div>
+      )}
+      {tab === 'performance' && <PerformanceTab load={journey} />}
+      {tab === 'salary' && seesSalary && <SalaryTab load={journey} journeyId={data.journeyId} seesPay={canSeePay(user)} />}
+      {tab === 'orgchart' && <OrgChartTab profile={data} load={journey} />}
+      {tab === 'activity' && <ActivityTab profile={data} load={journey} />}
+      {tab === 'exit' && seesBoard && <NotJoiningTab profile={data} load={journey} first={first} onChanged={() => setAttempt((n) => n + 1)} />}
 
       {granting && basic && (
         <AppAccessDialog first={first} basic={basic} onClose={() => setGranting(false)}
@@ -265,15 +351,14 @@ export function PreboardingProfile() {
   );
 }
 
-/** One section as the Employee profile draws it: icon, title and actions, then its answers (or its edit form). */
-function ProfileSectionCard({ section: sec, first, busy, canEdit, editing, onEdit, onApprove, onUnlock, children }: {
+/** A section's state and its actions: the pill, Edit, then Approve section (once done) or Unlock. */
+function SectionControls({ section: sec, first, busy, canEdit, editing, onEdit, onApprove, onUnlock }: {
   section: PreboardingSection; first: string; busy: string; canEdit: boolean; editing: boolean;
-  onEdit: () => void; onApprove: () => void; onUnlock: () => void; children: ReactNode;
+  onEdit: () => void; onApprove: () => void; onUnlock: () => void;
 }) {
-  const state = sec.approved ? 'approved' : sec.done ? 'done' : 'todo';
-  const st = STATE[state];
+  const st = STATE[sec.approved ? 'approved' : sec.done ? 'done' : 'todo'];
   const working = busy === `sec:${sec.key}`;
-  const action = (
+  return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
       <Pill label={st.label} tone={st.tone} fontSize={11} padding="2px 9px" />
       {canEdit && !editing && <button type="button" onClick={onEdit} className="pd-sec-act" disabled={Boolean(busy)}><PdEdit /> Edit</button>}
@@ -282,26 +367,60 @@ function ProfileSectionCard({ section: sec, first, busy, canEdit, editing, onEdi
         : <button type="button" className="pd-btn sm primary" disabled={!sec.done || Boolean(busy)} title={sec.done ? undefined : `${first} has not finished this section yet`} onClick={onApprove}>{working ? 'Approving…' : 'Approve section'}</button>)}
     </span>
   );
-  const docs = sec.documents;
+}
+
+const docsLine = (sec: PreboardingSection) =>
+  sec.documents.map((d) => `${d.label} (${(docStatus(d.status) ?? docStatus('todo'))!.label.toLowerCase()})`).join(', ');
+
+/**
+ * One category as the Employee profile draws it: icon, title and actions, then its rows (or the edit form
+ * of the section being edited). A card over one portal section has that section's state and actions in its
+ * header; one over several (Payment and tax IDs: bank and IDs) lists each section with its own.
+ */
+function CategoryCard({ category: c, first, busy, canEdit, editing, onEdit, onApprove, onUnlock, children }: {
+  category: Category; first: string; busy: string; canEdit: boolean; editing: PreboardingSectionKey | null;
+  onEdit: (s: PreboardingSection) => void; onApprove: (s: PreboardingSection) => void; onUnlock: (s: PreboardingSection) => void; children: ReactNode;
+}) {
+  const single = c.sections.length === 1 ? c.sections[0] : null;
+  const controls = (sec: PreboardingSection) => (
+    <SectionControls section={sec} first={first} busy={busy} canEdit={canEdit} editing={editing !== null}
+      onEdit={() => onEdit(sec)} onApprove={() => onApprove(sec)} onUnlock={() => onUnlock(sec)} />
+  );
+  const rows = c.rows.filter((r) => c.fixed || r.value.trim());
   return (
-    <div data-focus={sec.key}>
-      <Section title={sec.title} icon={ICON[sec.key]} action={action} labelId={`pb-sec-${sec.key}`}>
-        {sec.approved && (
+    <div data-focus={c.key}>
+      <Section title={c.title} icon={c.icon} action={single ? controls(single) : undefined} labelId={`pb-sec-${c.key}`}>
+        {single?.approved && (
           <div className="pd-note" style={{ marginBottom: 10 }}>
-            <span>Approved by <b>{sec.approved.byName}</b> on {shortDay(sec.approved.at)}. {first} can no longer edit this section on the portal or the app.</span>
+            <span>Approved by <b>{single.approved.byName}</b> on {shortDay(single.approved.at)}. {first} can no longer edit this section on the portal or the app.</span>
           </div>
         )}
-        {editing ? children : sec.fields.length > 0 ? (
+        {!single && (
+          <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
+            {c.sections.map((sec) => (
+              <div key={sec.key} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 12 }}>
+                <span style={{ flex: 1, minWidth: 160, display: 'grid', gap: 2 }}>
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>{sec.title}</span>
+                  {sec.approved && <span className="pd-subnote">Approved by {sec.approved.byName} on {shortDay(sec.approved.at)}. {first} can no longer edit it.</span>}
+                </span>
+                {controls(sec)}
+              </div>
+            ))}
+          </div>
+        )}
+        {editing ? children : rows.length > 0 ? (
           <Grid>
-            {sec.fields.map((f, i) => <Row key={`${f.label}-${i}`} label={f.label} value={f.value || '—'} />)}
+            {rows.map((f, i) => <Row key={`${f.label}-${i}`} label={f.label} value={f.value || '—'} />)}
           </Grid>
         ) : <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '6px 0' }}>Nothing filled in yet.</div>}
-        {!editing && sec.editedByHr && <div className="pd-subnote" style={{ marginTop: 8 }}>Changed by {sec.editedByHr.byName} on {shortDay(sec.editedByHr.at)}.</div>}
-        {!editing && docs.length > 0 && (
-          <div className="pd-subnote" style={{ marginTop: 8 }}>
-            Its documents, under Documents: {docs.map((d) => `${d.label} (${(docStatus(d.status) ?? docStatus('todo'))!.label.toLowerCase()})`).join(', ')}.
+        {!editing && c.sections.map((sec) => sec.editedByHr && (
+          <div key={`e-${sec.key}`} className="pd-subnote" style={{ marginTop: 8 }}>{single ? 'Changed' : `${sec.title}: changed`} by {sec.editedByHr.byName} on {shortDay(sec.editedByHr.at)}.</div>
+        ))}
+        {!editing && c.docsNote && c.sections.map((sec) => sec.documents.length > 0 && (
+          <div key={`d-${sec.key}`} className="pd-subnote" style={{ marginTop: 8 }}>
+            {single ? 'Its documents' : `${sec.title} documents`}, under Documents: {docsLine(sec)}.
           </div>
-        )}
+        ))}
       </Section>
     </div>
   );

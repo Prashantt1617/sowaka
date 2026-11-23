@@ -15,6 +15,7 @@ import { mediaUrl } from '../../../services/api';
 import { useStore } from '../../store';
 import '../people.css';
 import { areaStyle, errText, FLAG, flagLabel, inputStyle, labelStyle, nudgeLabel, OWNER_LABEL, OWNER_TONE } from './format';
+import type { CloseOfferAction } from './format';
 
 /**
  * Who a task waits on: Employee (Arjun), HR · you, Automatic. `label` replaces the words (the
@@ -293,5 +294,35 @@ export function NudgeButton({ journeyId, taskId, role, name, done, onDone, compa
       style={compact ? { padding: '2px 8px', minHeight: 0, height: 24, fontSize: 11.5 } : undefined}>
       {busy ? 'Sending…' : nudgeLabel(role, name)}
     </button>
+  );
+}
+
+/**
+ * The design's revoke box, asked in place: what closing does, HR's optional note of what they said, then
+ * Keep the offer or Mark declined / Mark not joining. `onConfirm` sends it (offerStatusAction) and
+ * answers whether it went through, which clears the note.
+ */
+export function CloseOfferBox({ first, action, busy, onKeep, onConfirm }: {
+  first: string; action: CloseOfferAction; busy: boolean; onKeep: () => void; onConfirm: (note?: string) => Promise<boolean>;
+}) {
+  const [note, setNote] = useState('');
+  return (
+    <div style={{ display: 'grid', gap: 12, padding: 14, border: '1px solid color-mix(in srgb, var(--bad) 25%, var(--line))', background: 'color-mix(in srgb, var(--bad-bg) 55%, var(--surface))', borderRadius: 14 }}>
+      <b style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--bad)' }}>{action === 'decline' ? `Did ${first} decline the offer?` : `Is ${first} not joining?`}</b>
+      <p style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.55, margin: 0 }}>
+        {action === 'decline' ? 'Their no came by email. The offer closes, the portal link stops working and the card moves to Closed.'
+          : 'Open tasks are cancelled, the device request is recalled, the portal locks and the card moves to Closed. Reopen brings it back.'}
+      </p>
+      <label style={labelStyle}>What they said (only HR sees this)
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" style={{ ...areaStyle, minHeight: 64 }} />
+      </label>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+        <button type="button" className="pd-btn" onClick={() => { setNote(''); onKeep(); }}>Keep the offer</button>
+        <button type="button" className="pd-btn primary" disabled={busy} style={{ background: 'var(--bad)', borderColor: 'var(--bad)' }}
+          onClick={() => void onConfirm(note.trim() || undefined).then((ok) => { if (ok) setNote(''); })}>
+          {action === 'decline' ? 'Mark declined' : 'Mark not joining'}
+        </button>
+      </div>
+    </div>
   );
 }
