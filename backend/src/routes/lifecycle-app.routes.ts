@@ -11,6 +11,7 @@ import { contentDisposition } from '../services/lifecycle/files';
 import { letterPdfForEmployee } from '../services/lifecycle/letters';
 import { portalSessionForAppUser } from '../services/lifecycle/portalAuth';
 import { answerApproval, teamApproval, teamJoiner, teamJoiners, teamTaskAction } from '../services/lifecycle/teamTasks';
+import { newJoinersForTeammate } from '../services/lifecycle/teamNewJoiners';
 import { lifecycleGate, lifecycleHandler } from './lifecycle-admin.routes';
 import multer from 'multer';
 import type { Response, NextFunction } from 'express';
@@ -111,6 +112,9 @@ lifecycleAppRouter.put('/manager/joiners/:journeyId/probation/:month', lifecycle
 // Teams › Joiners for the manager, the buddy and the head of department (services/lifecycle/teamTasks.ts):
 // the joiners I'm connected to, one joiner's page with my tasks for them, ticks, and the confirmation approval.
 lifecycleAppRouter.get('/team/joiners', lifecycleHandler(async (req) => teamJoiners(me(req))));
+// Teams › Joiners for every teammate (peers under the same manager, the same department, the manager and the buddy):
+// the people joining tomorrow or in their first month, each opening their profile (services/lifecycle/teamNewJoiners.ts).
+lifecycleAppRouter.get('/team/new-joiners', lifecycleHandler(async (req) => newJoinersForTeammate(me(req))));
 lifecycleAppRouter.get('/team/joiners/:journeyId', lifecycleHandler(async (req) => teamJoiner(me(req), param(req, 'journeyId'))));
 lifecycleAppRouter.post('/team/joiners/:journeyId/tasks/:taskId', lifecycleHandler(async (req) => teamTaskAction(me(req), param(req, 'journeyId'), param(req, 'taskId'), body(req))));
 lifecycleAppRouter.get('/team/joiners/:journeyId/approval', lifecycleHandler(async (req) => teamApproval(me(req), param(req, 'journeyId'))));

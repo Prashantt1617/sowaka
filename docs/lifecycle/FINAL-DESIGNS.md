@@ -322,6 +322,7 @@ the server holds the value).
 | Method + path | Body | Returns |
 |---|---|---|
 | GET `/lifecycle/team/joiners` | | `{ joiners: TeamJoinerRow[] }` |
+| GET `/lifecycle/team/new-joiners` | | `{ joiners: Array<{ journeyId, userId?, name, initials, photoUrl?, designation?, department?, tj, joiningLine, relation: 'manager' \| 'buddy' \| 'peer' \| 'department', profileNote? }> }`: every teammate's list (same manager, same department, the manager, the buddy; one company), Tj − 1 to Tj + 30, newest first; `userId` opens `/profile/people/:id`, absent (with `profileNote` "Profile opens on their first day") before the joiner has an account |
 | GET `/lifecycle/team/joiners/:journeyId/page` | | `TeamJoinerPage` (new path: the old `/team/joiners/:journeyId` keeps its 20 Nov shape for app builds in use) |
 | POST `/lifecycle/team/joiners/:journeyId/rows/:rowId` | `{ action: 'done' \| 'undo' }` | `TeamJoinerPage` (a tick; meetings tick the shared row the joiner's Mark as met writes) |
 | GET `/lifecycle/team/joiners/:journeyId/buddy-options` · POST `…/buddy` `{ buddyUserId }` | | `{ options: Array<{ userId, name, designation?, photoUrl? }>, current?: string }` / `TeamJoinerPage` (ticks `mgr_assign_buddy`) |
