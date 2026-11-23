@@ -186,7 +186,8 @@ export async function joinerOnboarding(me: Me, now = new Date()) {
   }
 
   // Check-ins, watch list, devices, tour, profile, goals.
-  const checkins = p.checkins.filter((c) => c.state !== 'closed').map((c) => ({
+  // Every check-in, closed (missed) ones too: the app lists them all, upcoming ones locked (24 Nov, HR).
+  const checkins = p.checkins.map((c) => ({
     id: c.row.id, title: c.row.title, step: keyOf(c.step), questions: (c.row.design!.questions ?? []).length, state: c.state,
     ...(c.opensOn ? { opensOn: c.opensOn } : {}), ...(c.answers ? { sentAt: c.answers.sentAt.toISOString() } : {}),
   }));
