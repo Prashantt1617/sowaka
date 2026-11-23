@@ -179,12 +179,14 @@ async function main() {
   eq('Send the offer is open; accepting waits for the offer', [byKey(t1, 'send_offer').status, byKey(t1, 'accept_offer').status], ['todo', 'locked']);
   eq('Rules resolve from Tj at creation (documents Tj − 5)', rules.keyOfDay(byKey(t1, 'upload_documents').dueAt!), day(15));
   eq('Manager tasks are owned by the manager', byKey(t1, 'manager_setup').ownerUserId, 'mgr');
-  // Editing the template now never touches this journey.
+  // Editing the template reaches this journey too (24 Nov: everyone on a template follows it).
   const std = await templates.getTemplate(ORG, list[0].id);
   await templates.updateTemplate(ORG, std.id, { tasks: std.tasks.map((t) => (t.systemKey === 'intro_post' ? { ...t, title: 'Renamed', dueRule: { anchor: 'tj', offset: 2 } } : t)) });
   const snap = (await engine.loadJourney(J1.id)).templateSnapshot.tasks.find((t) => t.systemKey === 'intro_post')!;
-  ok('Template edits leave a running journey’s snapshot alone', snap.title === 'Intro post' && rules.describeRule(snap.dueRule) === 'Tj + 3');
+  ok('Template edits reach a running journey’s copy and its tasks', snap.title === 'Renamed' && rules.describeRule(snap.dueRule) === 'Tj + 2'
+    && (await engine.tasksOf(J1.id)).find((t) => t.systemKey === 'intro_post')?.title === 'Renamed');
   await templates.updateTemplate(ORG, std.id, { tasks: std.tasks });
+  eq('…and back again; still 52 tasks', [(await engine.loadJourney(J1.id)).templateSnapshot.tasks.find((t) => t.systemKey === 'intro_post')!.title, (await engine.tasksOf(J1.id)).filter((t) => t.status !== 'cancelled').length], ['Intro post', 52]);
 
   let j1 = await engine.setJourneyStatus(J1.id, 'offer_sent');
   t1 = await engine.tasksOf(J1.id);
@@ -333,6 +335,8 @@ async function main() {
   const ISHA = me('isha', 'Isha Verma');
   const meNow = await app.lifecycleMe(ISHA);
   eq('GET /lifecycle/me: the tile shows, Week 1', [meNow.enabled, (meNow as { onboarding?: { tileVisible: boolean; dayLabel: string } }).onboarding?.tileVisible, (meNow as { onboarding?: { dayLabel: string } }).onboarding?.dayLabel], [true, true, 'Week 1']);
+  const pastMonth1 = new Date(Date.parse(`${rules.addDaysKey(J2.tj!, 40)}T06:00:00Z`));
+  eq('After Month 1 the tile and the Onboarding tab go', ((await app.lifecycleMe(ISHA, pastMonth1)) as { onboarding?: { tileVisible: boolean } }).onboarding?.tileVisible, false);
   const home = await app.onboardingHome(ISHA);
   ok('Home: Up next is the must-do due soonest (Meet your manager, from Day 1), Day-7 survey is open today', home.upNext?.systemKey === 'meet_manager' && home.today.some((v) => v.systemKey === 'day7_survey' && v.status === 'todo'), home.upNext);
   type Row = TaskView & { readOnly?: boolean; doneBy?: string; meeting?: { startsAt: string; place?: string; with?: string; canConfirm?: boolean } };

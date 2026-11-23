@@ -116,6 +116,8 @@ export interface TemplateDesign {
   tour: TourLesson[];
   watch: DesignWatchItem[];
   trainings: DesignWatchItem[];
+  /** The app's names for the sections HR can rename (older servers send none). */
+  labels?: { trainings: string };
   accesses: DesignAccess[];
   probation: { months: 3 | 6; shiftTemplateId?: string };
   team: { remindLate: boolean; assignees: { hrUserId?: string; itUserId?: string; seniorUserId?: string }; tasks: DesignTeamTask[] };

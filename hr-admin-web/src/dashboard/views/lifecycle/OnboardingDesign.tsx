@@ -286,7 +286,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
     try {
       const next = await saveTemplateDesign(id, forSave(d));
       setSaved(next); setD(structuredClone(next));
-      flash('Saved. New joiners get this from now on.');
+      flash('Saved. Everyone on this template follows it now.');
     } catch (e) { flash(errText(e, 'Could not save the template'), 'error'); } finally { setSaving(false); }
   };
 
@@ -407,7 +407,15 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
         <div style={{ padding: '0 20px 6px' }}>
           <div style={{ paddingTop: 16, fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Watch list</div>
           <TileStrip items={byStage(d.watch.map((w, index) => ({ ...w, index })))} addLabel="Add to watch list" onAdd={() => openStory('watch', null)} onOpen={(i) => openStory('watch', i)} whenOf={sn} onPreview={(i) => setPreviewing(d.watch[i])} />
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Trainings</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{d.labels?.trainings || 'Trainings'}</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--ink-3, #6b7280)' }}>
+              <span>Name in the app</span>
+              <input aria-label="Name of the trainings section in the app" value={d.labels?.trainings ?? 'Trainings'} maxLength={40}
+                onChange={(e) => { const v = e.target.value; up((x) => ({ ...x, labels: { trainings: v } })); }}
+                placeholder="Trainings" style={{ ...inputStyle, width: 180, padding: '4px 8px', fontSize: 12 }} />
+            </label>
+          </div>
           <TileStrip items={byStage(d.trainings.map((w, index) => ({ ...w, index })))} addLabel="Add a training" onAdd={() => openStory('training', null)} onOpen={(i) => openStory('training', i)} whenOf={sn} onPreview={(i) => setPreviewing(d.trainings[i])} />
         </div>
       );

@@ -110,6 +110,9 @@ export function designRowOfTask(j: Pick<Journey, 'templateSnapshot'>, templateTa
 
 // ─── The design view ────────────────────────────────────────────────────────
 
+/** The app's default name for the trainings section. */
+export const TRAININGS_LABEL = 'Trainings';
+
 export interface WatchItemView { id: string; title: string; stage: DesignStage; media: DesignMedia }
 export interface TemplateDesign {
   templateId: string; name: string; isDefault: boolean; updatedAt?: string; updatedByName?: string;
@@ -124,6 +127,8 @@ export interface TemplateDesign {
   tour: TourLessonKey[];
   watch: WatchItemView[];
   trainings: WatchItemView[];
+  /** What the app calls the sections HR can rename. */
+  labels: { trainings: string };
   accesses: Array<{ id: string; title: string; role: 'it' | 'hr' }>;
   probation: { months: 3 | 6; shiftTemplateId?: string };
   team: {
@@ -163,6 +168,7 @@ function viewOf(t: Pick<LifecycleTemplate, 'id' | 'name' | 'isDefault' | 'settin
     tour: s.tourLessons ? [...s.tourLessons] : [...TOUR_LESSON_KEYS],
     watch: of('watch').filter((r) => r.design!.stage !== 'pre').map(watchView),
     trainings: of('training').map(watchView),
+    labels: { trainings: s.trainingsLabel || TRAININGS_LABEL },
     accesses: of('access').map((r) => ({ id: r.id, title: r.title, role: r.design!.role === 'hr' ? 'hr' as const : 'it' as const })),
     probation: { months: s.probationMonths === 3 ? 3 : 6, ...(s.probationShiftTemplateId ? { shiftTemplateId: s.probationShiftTemplateId } : {}) },
     team: {
@@ -305,6 +311,14 @@ export async function saveTemplateDesign(org: string, id: string, input: Record<
     }),
     signLettersOnDay1: rows.some((r) => r.systemKey === 'sign_letters'),
   };
+  {
+    const label = (input.labels as { trainings?: unknown } | undefined)?.trainings;
+    if (label !== undefined) {
+      const v = typeof label === 'string' ? label.trim() : '';
+      if (v.length > 40) throw new LifecycleError(400, 'The trainings section name is at most 40 characters');
+      if (v && v !== TRAININGS_LABEL) settings.trainingsLabel = v; else delete settings.trainingsLabel;
+    }
+  }
   delete settings.probationShiftTemplateId;
   if (typeof prob.shiftTemplateId === 'string' && prob.shiftTemplateId.trim()) settings.probationShiftTemplateId = prob.shiftTemplateId.trim();
 
@@ -314,6 +328,10 @@ export async function saveTemplateDesign(org: string, id: string, input: Record<
   const tasks = [...rows, ...kept.filter((t) => !rows.some((r) => r.id === t.id))];
   const now = new Date();
   await lifecycleTemplates().updateOne({ org, id }, { $set: { tasks, settings, updatedAt: now, ...(byName ? { updatedByName: byName } : {}) } });
+  forgetLifecycleReads(org);
+  // Everyone on this template follows it now, not only new joiners.
+  const { followTemplate } = await import('./engine');
+  await followTemplate(org, id);
   forgetLifecycleReads(org);
   return templateDesign(org, id);
 }
