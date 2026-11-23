@@ -81,7 +81,7 @@ export async function payrollChecked(journeyId: string, decision: 'approve' | 'd
 
 // ─── The journey's review rows ──────────────────────────────────────────────
 
-export type ReviewPlace = 'documents' | 'joining_form' | 'bank_pf' | 'decision' | 'recommendation' | 'letter';
+export type ReviewPlace = 'documents' | 'joining_form' | 'bank_pf' | 'tax' | 'decision' | 'recommendation' | 'letter';
 export type ReviewStep = 'joining_day' | 'week_1' | 'final_month' | 'confirmed';
 export interface ReviewRow {
   key: string;
@@ -110,7 +110,10 @@ const fill = (text: string, first: string) => text.replace(/\{n\}/g, first).repl
  * `teamDefs`: their key, title and owner) and their ticks, the bank/PF declaration and the probation record.
  * `managerName`: for "Waiting for Sunny".
  */
-export function reviewRowsOf(j: Journey, tasks: JourneyTask[], documents: CandidateDocumentView[], teamDefs: Array<{ id: string; title: string; owner: OwnerRole }>, managerName?: string): ReviewRow[] {
+/** The joiner's income tax declaration for this financial year, as the app saved it (null: nothing yet). */
+export interface TaxDeclarationState { status?: 'saved' | 'submitted'; regime?: string; submittedAt?: Date | string; updatedAt?: Date | string }
+
+export function reviewRowsOf(j: Journey, tasks: JourneyTask[], documents: CandidateDocumentView[], teamDefs: Array<{ id: string; title: string; owner: OwnerRole }>, managerName?: string, tax?: TaxDeclarationState | null): ReviewRow[] {
   const first = firstOf(j.candidate?.name ?? '');
   const live = tasks.filter((t) => t.status !== 'cancelled');
   const task = (key: string) => live.filter((t) => t.systemKey === key).sort((a, b) => (b.month ?? 0) - (a.month ?? 0))[0];
@@ -154,6 +157,16 @@ export function reviewRowsOf(j: Journey, tasks: JourneyTask[], documents: Candid
         line: s.waiting === 'declared' ? `Declared ${req ? day(req.requestedAt) : ''}, waiting for you`
           : s.waiting === 'sent_back' ? `Sent back${req?.decidedAt ? ` ${day(req.decidedAt)}` : ''}, waiting for ${first}`
             : `Waiting for ${first} to declare`,
+      }),
+    });
+  }
+  // Week 1: the income tax declaration (new or old regime) the joiner makes in the app; HR checks it on Salary details.
+  {
+    const submitted = tax?.status === 'submitted';
+    rows.push({
+      key: 'hr_check_tax', title: `Check ${first}’s tax declaration`, step: 'week_1', place: 'tax', owner: 'hr', done: submitted,
+      ...(submitted ? doneBy(j.candidate?.name, tax?.submittedAt ?? tax?.updatedAt) : {
+        line: tax?.status === 'saved' ? `Saved as a draft${tax.regime ? ` (${tax.regime} regime)` : ''}, not submitted yet` : `Waiting for ${first} to declare`,
       }),
     });
   }

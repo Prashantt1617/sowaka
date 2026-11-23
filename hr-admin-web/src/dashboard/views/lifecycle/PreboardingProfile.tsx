@@ -161,7 +161,8 @@ export function PreboardingProfile() {
   const loaded = Boolean(data);
   useEffect(() => {
     if (!focusReq || !loaded) return undefined;
-    setTab('profile'); // every card it opens (documents, bank account and PF, a section) is on Profile
+    // The tax declaration is on Salary details; every other card it opens (documents, bank and PF, a section) is on Profile.
+    setTab(focusReq.key === 'tax' && seesSalary ? 'salary' : 'profile');
     let tries = 0;
     const timer = window.setInterval(() => {
       const el = document.querySelector<HTMLElement>(`[data-focus="${focusReq.key}"]`);
@@ -364,8 +365,8 @@ export function PreboardingProfile() {
         <SalaryTab load={journey} journeyId={data.journeyId} seesPay={canSeePay(user)}>
           {/* The tax declaration (new or old regime, investments): the employee's own task in the app, HR can edit it here. */}
           {taxUserId
-            ? <IncomeTaxCard userId={taxUserId} />
-            : <section className="pd-card" style={{ padding: 20, display: 'grid', gap: 6 }}>
+            ? <div data-focus="tax"><IncomeTaxCard userId={taxUserId} /></div>
+            : <section className="pd-card" data-focus="tax" style={{ padding: 20, display: 'grid', gap: 6 }}>
               <b style={{ fontSize: 15 }}>Income tax declaration</b>
               <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>{first} chooses the new or old regime and declares their investments in the app (Declare your tax and investments) once they have app access. It shows here then, and you can edit it.</span>
             </section>}

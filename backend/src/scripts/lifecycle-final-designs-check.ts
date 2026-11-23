@@ -405,7 +405,7 @@ async function main() {
   {
     const rows = (await boardSvc.journeyPanel(ORG, J1)).reviews;
     eq('Reviews on the panel: each with where it opens', rows.map((r) => `${r.key}:${r.step}:${r.place}`), [
-      'review_documents:joining_day:documents', 'hr_check_form:week_1:joining_form', 'hr_check_payroll:week_1:bank_pf',
+      'review_documents:joining_day:documents', 'hr_check_form:week_1:joining_form', 'hr_check_payroll:week_1:bank_pf', 'hr_check_tax:week_1:tax',
       'mgr_confirmation_review:final_month:recommendation', 'hod_approve:final_month:recommendation', 'confirmation_discussion:final_month:decision', 'confirmation_letter:confirmed:letter',
     ]);
   }

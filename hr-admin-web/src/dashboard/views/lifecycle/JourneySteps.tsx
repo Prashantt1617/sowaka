@@ -301,7 +301,7 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
   // The reviews (the server's, each done where it lives) and where Open takes HR.
   const reviews = data.reviews ?? [];
   const canProfile = canOpen(user, 'preboarding');
-  const cardOf = (r: JourneyReview) => (r.place === 'documents' ? 'documents' : r.place === 'bank_pf' ? 'bank' : r.place === 'joining_form' ? r.focus ?? 'personal' : undefined);
+  const cardOf = (r: JourneyReview) => (r.place === 'documents' ? 'documents' : r.place === 'bank_pf' ? 'bank' : r.place === 'tax' ? 'tax' : r.place === 'joining_form' ? r.focus ?? 'personal' : undefined);
   const reviewOpen = (r: JourneyReview): ReviewOpen | null => {
     const card = cardOf(r);
     if (card) {

@@ -7,7 +7,8 @@
 import { randomUUID } from 'node:crypto';
 import { cachedLifecycle, refreshLifecycle, setBoardPatch, type BoardWrites } from './readCache';
 import { orgsKeeping, patchSwr } from '../swr-cache';
-import { authSessions, candidateDocuments, dateChangeRequests, deviceTokens, journeys, journeyTasks, offers, surveyResponses, users, attendanceRecords } from '../../config/db';
+import { authSessions, candidateDocuments, dateChangeRequests, deviceTokens, journeys, journeyTasks, offers, surveyResponses, users, attendanceRecords, taxDeclarations } from '../../config/db';
+import { fyOf } from '../../shared/payroll/tds';
 import type {
   Day1Pass, Journey, JourneyFlag, JourneyTask, OnboardingBoardColumn, OnboardingBoardTab, OwnerRole, SurveyKind,
 } from '../../models/lifecycle.model';
@@ -510,7 +511,10 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
   const teamTasksSvc = await import('./teamTasks');
   const [teamRows, teamDefs] = await Promise.all([teamTasksSvc.teamRowsForHr(j), teamTasksSvc.teamDefsFor(j)]);
   // The reviews (documents, joining form, payroll details, the confirmation): each opens where it is done.
-  const reviews = (await import('./hrReviews')).reviewRowsOf(j, tasks, allDocuments, teamDefs, j.managerUserId ? names.get(j.managerUserId) : undefined);
+  // The joiner's income tax declaration for this financial year (the app saves it; Week 1's tax row reads it).
+  const taxUser = j.userId ?? j.appAccess?.userId;
+  const taxRow = taxUser ? await taxDeclarations().findOne({ org: j.org, userId: taxUser, fy: fyOf(new Date().toISOString().slice(0, 7)).fy }, { projection: { _id: 0, status: 1, regime: 1, submittedAt: 1, updatedAt: 1 } }) : null;
+  const reviews = (await import('./hrReviews')).reviewRowsOf(j, tasks, allDocuments, teamDefs, j.managerUserId ? names.get(j.managerUserId) : undefined, taxRow);
   return {
     journey, tasks: views, documents, letters, offer, dateRequests, probation: probationView, batch, viewer, teamRows, reviews,
     ...(reporting ? { reporting } : {}),
