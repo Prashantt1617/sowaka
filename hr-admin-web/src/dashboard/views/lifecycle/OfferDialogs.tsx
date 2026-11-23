@@ -40,7 +40,7 @@ export function FinaliseDialog({ journey, onClose, onDone }: { journey: JourneyV
     <Modal title={`Mark ${firstName(name)}’s offer accepted`} onClose={onClose} busy={busy} width={480}
       footer={<><button type="button" className="pd-btn" onClick={onClose} disabled={busy}>Cancel</button><button type="button" className="pd-btn primary" onClick={() => void go()} disabled={busy}>{busy ? 'Sending…' : 'Mark accepted and send portal'}</button></>}>
       <p style={{ margin: 0 }}>Did {name} reply to accept the offer? Marking it accepted creates their joining portal and emails the link to <b style={{ color: 'var(--ink)', fontWeight: 500 }}>{journey.candidate?.personalEmail ?? 'their personal email'}</b>. They sign in with a code sent to that email.</p>
-      <p style={{ margin: 0 }}>{journey.managerName ? `${journey.managerName} gets` : 'Their manager gets'} the set-up to-do in the app: people to meet, a welcome note and a buddy.</p>
+      <p style={{ margin: 0 }}>You assign and follow their onboarding tasks here. {journey.managerName ?? 'Their manager'} sees them under Team › New joiners in the app from the day before they join.</p>
       {error && <div role="alert" style={{ color: 'var(--bad)' }}>{error}</div>}
     </Modal>
   );

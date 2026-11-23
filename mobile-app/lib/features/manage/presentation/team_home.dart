@@ -29,9 +29,9 @@ class _TeamHomeState extends State<_TeamHome> {
   void initState() {
     super.initState();
     unawaited(_offboarding.revalidate());
-    // Teams › Joiners' count (Final designs): the pill shows it before the tab is opened. On a cold
-    // start Teams can open before `/lifecycle/me` has answered: the count is read once it says the
-    // lifecycle is on, so the Joiners pill still appears.
+    // Teams › New joiners' count: the pill shows while there are any, before the tab is opened. On a
+    // cold start Teams can open before `/lifecycle/me` has answered: the count is read once it says
+    // the lifecycle is on, so the pill still appears.
     LifecycleMeStore.instance.addListener(_countJoiners);
     _countJoiners();
   }
@@ -41,7 +41,6 @@ class _TeamHomeState extends State<_TeamHome> {
   void _countJoiners() {
     if (_joinersCounted || !LifecycleMeStore.instance.value.enabled) return;
     _joinersCounted = true;
-    unawaited(JoinersTab.refreshCount());
     unawaited(NewJoinersTab.refreshCount());
   }
 
@@ -95,13 +94,13 @@ class _TeamHomeState extends State<_TeamHome> {
                       extraRequests: _offboarding.pendingForManager,
                     ),
                   )
-                // Not a manager, but a buddy or up the reporting line of a
-                // joiner (Final designs, BuddyProto / HodProto): My Team and
-                // Joiners; a teammate of a new joiner: My Team and New joiners.
+                // Not a manager, but someone around a new joiner (their
+                // buddy, head of department, a teammate): My Team and New
+                // joiners.
                 else
                   ListenableBuilder(
-                    listenable: Listenable.merge([LifecycleMeStore.instance, JoinersTab.count, NewJoinersTab.count]),
-                    builder: (context, _) => _showsJoiners(section) || _showsNewJoiners(section)
+                    listenable: Listenable.merge([LifecycleMeStore.instance, NewJoinersTab.count]),
+                    builder: (context, _) => _showsNewJoiners(section)
                         ? _TeamSectionBar(
                             data: data,
                             section: section,
@@ -116,7 +115,6 @@ class _TeamHomeState extends State<_TeamHome> {
           Expanded(
             child: !canManage
                 ? switch (section) {
-                    TeamSection.joiners => const JoinersTab(),
                     TeamSection.newJoiners => const NewJoinersTab(),
                     _ => _myTeam(data, canManage),
                   }
@@ -134,7 +132,6 @@ class _TeamHomeState extends State<_TeamHome> {
                       onOpenComposer: widget.onOpenComposer,
                       fromTeamTab: true,
                     ),
-                    TeamSection.joiners => const JoinersTab(),
                     TeamSection.newJoiners => const NewJoinersTab(),
                   },
           ),
@@ -153,14 +150,8 @@ class _TeamHomeState extends State<_TeamHome> {
   );
 }
 
-/// Whether Teams shows the "Joiners" pill (the joiners the viewer has tasks for).
-bool _showsJoiners(TeamSection section) => JoinersTab.showsPill(
-  lifecycleOn: LifecycleMeStore.instance.value.enabled,
-  joiners: JoinersTab.count.value,
-  open: section == TeamSection.joiners,
-);
-
-/// Whether Teams shows the "New joiners" pill (the teammates' view-only list).
+/// Whether Teams shows the "New joiners" pill: the one joiners list, for the
+/// manager, the buddy, the head of department and every teammate alike.
 bool _showsNewJoiners(TeamSection section) => NewJoinersTab.showsPill(
   lifecycleOn: LifecycleMeStore.instance.value.enabled,
   joiners: NewJoinersTab.count.value,
@@ -194,11 +185,10 @@ bool _reviewedThisMonth(TeamMember member) {
 int _pendingTeamFeedback(ManagerDashboard data) =>
     _reviewableReports(data).where((m) => !_reviewedThisMonth(m)).length;
 
-/// Teams' sections as a row of pills that scrolls sideways (Teams › Joiners,
-/// MgrTeamsProto): My Team, Requests, Feedback and, while the company has
-/// the lifecycle on, Joiners and New joiners last. The open one is black; an orange count
-/// sits in Requests and Feedback while anything there is waiting, a blue one
-/// in Joiners.
+/// Teams' sections as a row of pills that scrolls sideways: My Team,
+/// Requests, Feedback and, while the company has the lifecycle on and someone
+/// is joining, New joiners last. The open one is black; an orange count sits
+/// in Requests and Feedback while anything there is waiting.
 class _TeamSectionBar extends StatelessWidget {
   const _TeamSectionBar({
     required this.data,
@@ -208,7 +198,7 @@ class _TeamSectionBar extends StatelessWidget {
     this.joinersOnly = false,
   });
 
-  /// Not a manager: My Team, Joiners and New joiners only.
+  /// Not a manager: My Team and New joiners only.
   final bool joinersOnly;
 
   final ManagerDashboard data;
@@ -222,9 +212,8 @@ class _TeamSectionBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([LifecycleMeStore.instance, JoinersTab.count, NewJoinersTab.count]),
+      listenable: Listenable.merge([LifecycleMeStore.instance, NewJoinersTab.count]),
       builder: (context, _) {
-        final joiners = _showsJoiners(section);
         final newJoiners = _showsNewJoiners(section);
         return TeamSectionPills(
           selected: section.name,
@@ -243,13 +232,6 @@ class _TeamSectionBar extends StatelessWidget {
                 count: _pendingTeamFeedback(data),
               ),
             ],
-            if (joiners)
-              TeamPillSpec(
-                key: TeamSection.joiners.name,
-                label: 'Joiners',
-                count: JoinersTab.count.value,
-                countColor: TeamColors.joinersCount,
-              ),
             // View only: nothing waits on the viewer there, so no count.
             if (newJoiners)
               TeamPillSpec(key: TeamSection.newJoiners.name, label: 'New joiners'),

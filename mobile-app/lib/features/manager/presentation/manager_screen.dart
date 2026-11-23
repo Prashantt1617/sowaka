@@ -70,7 +70,6 @@ import '../../face_id/face_setup_screen.dart';
 import '../../lifecycle/onboarding/data/onboarding_api.dart';
 import '../../lifecycle/onboarding/data/onboarding_models.dart';
 import '../../lifecycle/onboarding/onboarding_launcher.dart';
-import '../../lifecycle/onboarding/presentation/manager/joiners_tab.dart';
 import '../../lifecycle/onboarding/presentation/manager/new_joiners_tab.dart';
 import '../../lifecycle/onboarding/presentation/manager/team_kit.dart';
 
@@ -231,16 +230,6 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // The lifecycle's onboarding screens open over the shell from anywhere;
     // what `/lifecycle/me` says decides whether they show at all.
     registerOnboardingShell(_onboardingShell);
-    // Teams › Joiners' "Reach out": a game, a post on Connect.
-    TeamReachOutDoors.openComposer = (context) {
-      Navigator.of(context).popUntil((route) => route.isFirst);
-      _openConnectComposer();
-    };
-    TeamReachOutDoors.openGames = (context) {
-      if (!visibleTabs(_session.user.enabledTabs).contains(ManagerTab.games)) return;
-      Navigator.of(context).popUntil((route) => route.isFirst);
-      _bloc.add(const ChangeManagerTab(ManagerTab.games));
-    };
     unawaited(LifecycleMeStore.instance.refresh(HttpOnboardingApi(session: widget.session)));
   }
 
@@ -632,11 +621,25 @@ class _ManagerScreenState extends State<ManagerScreen> {
             ),
           );
         }
+      // Pushes from app builds up to 1.4.3 about a joiner's old team task
+      // page (gone since 24 Nov): Team › New joiners, where the joiner is.
+      case 'lifecycle_joiner':
+      case 'lifecycle_joiner_setup':
+      case 'lifecycle_starter_task_done':
+      case 'lifecycle_probation_review':
+        _bloc
+          ..add(const ChangeManagerTab(ManagerTab.manage))
+          ..add(const ShowTeamSection(TeamSection.newJoiners));
       case 'employee_profile':
         // Over the Team tab, and only for someone in the viewer's own team:
-        // a push about anyone else lands on the Team tab alone.
+        // a push about anyone else lands on the Team tab alone. A push about
+        // a new joiner (it carries their journey: joins today, a meeting
+        // with them) opens the joiner's profile for their buddy or head of
+        // department too, over Team › New joiners.
+        final aboutJoiner = '${data['journeyId'] ?? ''}'.isNotEmpty;
         _bloc.add(const ChangeManagerTab(ManagerTab.manage));
-        if (_teamMember(employeeUserId) != null) {
+        if (aboutJoiner) _bloc.add(const ShowTeamSection(TeamSection.newJoiners));
+        if (_teamMember(employeeUserId) != null || aboutJoiner) {
           _openTeamMember(employeeUserId, ProfileEntry.elsewhere);
         }
       // The requests queue, under either name the server has used.

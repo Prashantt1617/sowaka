@@ -38,7 +38,7 @@ async function main() {
   if (!/^(mongodb:\/\/)(127\.0\.0\.1|localhost)[:/]/.test(process.env.MONGODB_URI!)) throw new Error('lifecycle:final-designs-check runs on a local mongod only');
   if (!/^el_final_designs/.test(process.env.MONGODB_DB!)) throw new Error('lifecycle:final-designs-check needs its own el_final_designs_* database');
 
-  const { connectDb, getDb, closeDb, companies, users, journeys, journeyTasks, lifecycleTemplates, policyDocuments } = await import('../config/db');
+  const { connectDb, getDb, closeDb, companies, users, journeys, journeyTasks, lifecycleTemplates, policyDocuments, probationMonths } = await import('../config/db');
   const designSeed = await import('../services/lifecycle/designSeed');
   const seed = await import('../services/lifecycle/seed');
   const templates = await import('../services/lifecycle/templates');
@@ -81,7 +81,7 @@ async function main() {
     person('j2', 'Sana Khan', { managerUserId: 'meera', department: 'Operations', hrPrimaryUserId: 'hr' }),
   ] as never[]);
   const me = (userId: string, name: string) => ({ userId, name, org: ORG });
-  const HR = me('hr', 'Ritu Sharma'), IT = me('it', 'Imran Khan'), MGR = me('mgr', 'Sunny Kapoor'), MEERA = me('meera', 'Meera Joshi'), HOD = me('hod', 'Anita Desai');
+  const HR = me('hr', 'Ritu Sharma'), IT = me('it', 'Imran Khan'), MEERA = me('meera', 'Meera Joshi'), HOD = me('hod', 'Anita Desai');
   const PRIYA = me('j1', 'Priya Shah'), SANA = me('j2', 'Sana Khan');
 
   // ───────────────────────────────────────────── seed
@@ -220,68 +220,23 @@ async function main() {
   const sent = await joiner.sendJoinerCheckin(PRIYA, w1.id, { answers });
   eq('Sent (a long answer skipped)', [sent.state, sent.answers?.[8]?.value], ['sent', null]);
   eq('Sent once', await refusal(() => joiner.sendJoinerCheckin(PRIYA, w1.id, { answers })), 409);
-  let mgrPage = await team.teamJoinerPage(MGR, J1);
-  const readRow = mgrPage.tasks.find((t) => t.checkinId === w1.id)!;
-  eq('The manager: "Read Priya’s Week 1 check-in", Ready to read', [readRow.title, readRow.pill?.text], ['Read Priya’s Week 1 check-in', 'Ready to read']);
-  const mgrCi = await team.teamCheckin(MGR, J1, w1.id);
-  eq('…sees the answers', [mgrCi.state, mgrCi.answers.length], ['ready', 9]);
-  eq('The buddy cannot read them', await refusal(() => team.teamCheckin(MEERA, J1, w1.id)), 403);
-  await team.markCheckinRead(MGR, J1, w1.id);
-  mgrPage = await team.teamJoinerPage(MGR, J1);
-  eq('Mark as read: Read', mgrPage.tasks.find((t) => t.checkinId === w1.id)?.pill?.text, 'Read');
+  eq('No push to the manager about it (reading check-ins is no longer an app task of theirs)', Object.keys(await pushTargets('lifecycle_checkin_sent', J1)), []);
 
   section('Watch list');
   await joiner.markWatched(PRIYA, home.watch[0].id);
   ok('Watched', (await joiner.joinerOnboarding(PRIYA)).watch[0].watched === true);
   eq('Not on the list: 404', await refusal(() => joiner.markWatched(PRIYA, 'nope')), 404);
 
-  section('Teams › Joiners');
-  const meeraList = await oldTeam.teamJoiners(MEERA);
-  const rel = new Map(meeraList.joiners.map((r) => [r.name, r as unknown as { relation: string; relationLine?: string; initials: string }]));
-  ok('Meera: Sana (reports to her) and Priya (her buddy) in one list', rel.get('Sana Khan')?.relation === 'report' && rel.get('Priya Shah')?.relationLine === 'You’re the buddy' && rel.get('Priya Shah')?.initials === 'PS', meeraList.joiners);
-  const anita = await oldTeam.teamJoiners(HOD);
-  ok('The head of department: everyone in the line, "Reports to X"', anita.joiners.some((r) => (r as unknown as { relationLine?: string }).relationLine === 'Reports to Sunny Kapoor'));
-  const buddyPage = await team.teamJoinerPage(MEERA, J1);
-  eq('Buddy page: "Help Priya with", the buddy rows (custom one included), you’re the buddy', [buddyPage.card.title, buddyPage.joiner.buddy, buddyPage.tasks.some((t) => t.title === 'Take them for lunch on Day 1' && t.how === 'The canteen on floor 2')], ['Help Priya with', 'you', true]);
-  ok('…the meeting with the buddy is a row too', buddyPage.tasks.some((t) => t.title === 'How the team works' && t.opens === 'meeting'));
-  const around = buddyPage.tasks.find((t) => t.id === 'buddy_show_around')!;
-  await team.teamRowAction(MEERA, J1, around.id, { action: 'done' });
-  ok('Show them around: Done', (await team.teamJoinerPage(MEERA, J1)).tasks.find((t) => t.id === 'buddy_show_around')?.done === true);
-  eq('A row of another role: 404', await refusal(() => team.teamRowAction(MEERA, J1, 'mgr_kpis', { action: 'done' })), 404);
-  eq('Manager page: "Your tasks for Priya", reports to you, status', [mgrPage.card.title, mgrPage.joiner.reportsTo, mgrPage.joiner.status.label], ['Your tasks for Priya', 'you', '2 tasks delayed']);
-  ok('Delayed: the earliest late one, waiting on whom', !!mgrPage.joiner.delayed && mgrPage.joiner.delayed.waitingDays >= 1, mgrPage.joiner.delayed);
-  eq('View progress rows: meetings, check-ins, tasks, watch list, tour (devices only once one waits)', mgrPage.progress.rows.map((r) => r.key), ['meet', 'ci', 'tasks', 'watch', 'tour']);
-  eq('Reach out after joining: 4 ways in a company without the Games tab (no dead "Send a game")', mgrPage.reachOut, ['feed', 'announcement', 'team_post', 'chat']);
-  await companies().updateOne({ id: ORG }, { $set: { enabledTabs: ['games'] } });
-  eq('…5 with it', (await team.teamJoinerPage(MGR, J1)).reachOut.length, 5);
-  await companies().updateOne({ id: ORG }, { $unset: { enabledTabs: '' } });
-  const options = await team.buddyOptions(MGR, J1);
-  ok('Buddy options: colleagues, the current buddy', options.options.some((o) => o.userId === 'rohan') && options.current === 'meera');
-  // The buddy is HR's (23 Nov): the manager's app route refuses; HR sets it and the team pages follow.
-  eq('Assign from the app: refused, HR assigns the buddy', await refusal(async () => team.assignBuddy(MGR, J1, { buddyUserId: 'rohan' })), 403);
+  section('No team task pages: Teams › New joiners is the one joiners list (24 Nov)');
+  ok('The old Teams › Joiners services are gone (list, page, ticks, schedule, welcome message, feed post, goals, check-ins)',
+    !('teamJoiners' in oldTeam) && !('teamJoiner' in oldTeam) && !('teamJoinerPage' in team) && !('teamRowAction' in team) && !('scheduleMeetings' in team)
+    && !('sendWelcomeMessage' in team) && !('introduceOnFeed' in team) && !('commentOnGoals' in team) && !('teamCheckin' in team) && !('inviteSenior' in team));
+  // The buddy is HR's (23 Nov): HR sets it on the dashboard.
   await (await import('../services/lifecycle/board')).updateJourneyByHr(ORG, J1, { buddyUserId: 'rohan' });
   eq('Assign by HR: the journey’s buddy (one source)', (await engine.loadJourney(J1)).buddyUserId, 'rohan');
-  ok('…and no "Assign a buddy" task for the manager', !(await team.teamJoinerPage(MGR, J1)).tasks.some((t) => t.id === 'mgr_assign_buddy'));
-  ok('…Meera no longer sees Priya; Rohan does', !(await oldTeam.teamJoiners(MEERA)).joiners.some((r) => r.journeyId === J1) && (await oldTeam.teamJoiners(me('rohan', 'Rohan Das'))).joiners.some((r) => r.journeyId === J1));
-  await team.sendWelcomeMessage(MGR, J1, { text: 'Hi Priya, see you soon!' });
-  eq('Welcome message: the portal’s manager note', (await engine.loadJourney(J1)).meetUs?.managerNote?.text, 'Hi Priya, see you soon!');
-  const firstWeek = (await joiner.joinerOnboarding(PRIYA)).meetings.filter((m) => m.step === 'd1' || m.step === 'w1');
-  await team.scheduleMeetings(MGR, J1, { meetings: firstWeek.map((m, i) => ({ rowKey: m.id.slice(5), startsAt: new Date(Date.now() + (i + 1) * 3_600_000).toISOString() })) });
-  ok('Schedule: every first-week meeting has a time for the joiner, and the row ticks', (await joiner.joinerOnboarding(PRIYA)).meetings.filter((m) => m.step === 'd1' || m.step === 'w1').every((m) => !!m.startsAt)
-    && (await team.teamJoinerPage(MGR, J1)).tasks.find((t) => t.id === 'mgr_schedule')?.done === true);
-  const invites = await pushTargets('lifecycle_meeting_invite', J1);
-  ok('Invites: the joiner → her home; the buddy → the Teams person page; HR and IT & admin (dashboard only) → no app push',
-    invites.j1 === 'lifecycle_onboarding' && invites.rohan === 'lifecycle_joiner' && !('hr' in invites) && !('it' in invites), invites);
-  // Lane T: the page carries the joiner's step, the manager's schedule list, and my own notes and the time on my meeting rows.
-  await team.teamRowNotes(MGR, J1, 'mgr_first_goals', { notes: ['Talk about the first week'] });
-  const tPage = await team.teamJoinerPage(MGR, J1);
-  const firstGoals = tPage.tasks.find((t) => t.id === 'mgr_first_goals');
-  ok('Team page: the step, my notes and the time on my meeting, the first-week schedule with who', typeof tPage.joiner.step === 'number'
-    && firstGoals?.notes?.[0] === 'Talk about the first week' && !!firstGoals?.startsAt
-    && !!tPage.schedule?.length && tPage.schedule.every((m) => (m.step === 1 || m.step === 2) && !!m.startsAt) && tPage.schedule.some((m) => m.rowKey === 'hr_welcome' && !!m.withInitials), tPage.schedule);
-  ok('…the schedule list is the manager’s only (the buddy gets none)', !(await team.teamJoinerPage(me('rohan', 'Rohan Das'), J1)).schedule);
+  eq('No set-up push to the manager or the buddy', [...Object.keys(await pushTargets('lifecycle_joiner_setup', J1)), ...Object.keys(await pushTargets('lifecycle_meeting_invite', J1))], []);
 
-  section('Goals: the joiner’s "How’s it going?", the manager’s comments');
+  section('Goals: the joiner’s "How’s it going?"');
   await probation.updateMonthByManager(J2, { userId: 'meera', name: 'Meera Joshi' }, 1, { goals: ['Close 20 tickets', 'Shadow 3 calls'] });
   await probation.updateMonthByManager(J2, { userId: 'meera', name: 'Meera Joshi' }, 2, { goals: ['Own the queue'] });
   await joiner.saveJoinerGoal(SANA, '2', '0', { status: 'progress', note: 'Getting there' });
@@ -289,12 +244,10 @@ async function main() {
   eq('This month (2) and earlier months (1)', [goals.month, goals.current[0].status, goals.current[0].note, goals.earlier.map((e) => e.month)], [2, 'progress', 'Getting there', [1]]);
   ok('Next talk: the month’s end, with the manager', goals.nextTalk?.withName === 'Meera Joshi' && goals.nextTalk.inDays >= 0, goals.nextTalk);
   eq('A status outside the three is refused', await refusal(() => joiner.saveJoinerGoal(SANA, '2', '0', { status: 'done' })), 400);
-  const g = await team.teamGoals(MEERA, J2, '2');
-  eq('The manager sees status and note', [g.goals[0].status, g.goals[0].note], ['progress', 'Getting there']);
-  await team.commentOnGoals(MEERA, J2, '2', { comments: [{ index: 0, text: 'Nice pace' }] });
+  // A comment written before 24 Nov (the manager's goals screen is gone from the app) still reaches the joiner.
+  await probationMonths().updateOne({ journeyId: J2, monthNo: 2 }, { $set: { 'goals.0.comment': 'Nice pace', 'goals.0.commentAt': new Date(), 'goals.0.commentByName': 'Meera Joshi' } });
   goals = await joiner.joinerGoals(SANA);
-  eq('The comment reaches the joiner, with who wrote it', [goals.current[0].comment, goals.current[0].commentByName], ['Nice pace', 'Meera Joshi']);
-  ok('…and ticks "Comment on Sana’s goals" for month 2', (await team.teamJoinerPage(MEERA, J2)).tasks.find((t) => t.id === 'mgr_goal_comments@2')?.done === true);
+  eq('A comment reaches the joiner, with who wrote it', [goals.current[0].comment, goals.current[0].commentByName], ['Nice pace', 'Meera Joshi']);
   await probation.updateMonthByManager(J2, { userId: 'meera', name: 'Meera Joshi' }, 2, { goals: ['Own the queue', 'Train the next joiner'] });
   eq('Editing the goal list keeps a kept goal’s status and comment', ((await joiner.joinerGoals(SANA)).current[0] as { comment?: string }).comment, 'Nice pace');
   const sanaHome = await joiner.joinerOnboarding(SANA);
@@ -405,7 +358,7 @@ async function main() {
   {
     const rows = (await boardSvc.journeyPanel(ORG, J1)).reviews;
     eq('Reviews on the panel: each with where it opens', rows.map((r) => `${r.key}:${r.step}:${r.place}`), [
-      'review_documents:joining_day:documents', 'hr_check_form:week_1:joining_form', 'hr_check_payroll:week_1:bank_pf',
+      'review_documents:joining_day:documents', 'hr_check_form:week_1:joining_form', 'hr_check_payroll:week_1:bank_pf', 'hr_check_tax:week_1:tax',
       'mgr_confirmation_review:final_month:recommendation', 'hod_approve:final_month:recommendation', 'confirmation_discussion:final_month:decision', 'confirmation_letter:confirmed:letter',
     ]);
   }
@@ -413,34 +366,44 @@ async function main() {
 
   section('Reminders for late teammate tasks');
   const jobs = await import('../services/lifecycle/jobs');
-  const sentNow = await jobs.lateTeamRowReminders(await engine.loadJourney(J1), await engine.tasksOf(J1), today);
-  ok('Late rows remind whoever does them, once', sentNow > 0 && (await jobs.lateTeamRowReminders(await engine.loadJourney(J1), await engine.tasksOf(J1), today)) === 0, sentNow);
-  const late = await pushTargets('lifecycle_team_task_late', J1);
-  ok('…the manager’s and the buddy’s open the Teams person page; HR and IT & admin get none (dashboard only)',
-    late.mgr === 'lifecycle_joiner' && late.rohan === 'lifecycle_joiner' && !('hr' in late) && !('it' in late), late);
+  eq('Late set-up rows (Priya, Week 1) push nobody: HR follows them on the dashboard', await jobs.lateTeamRowReminders(await engine.loadJourney(J1), await engine.tasksOf(J1), today), 0);
+  eq('…none stored', Object.keys(await pushTargets('lifecycle_team_task_late', J1)), []);
   const { teammatePushTarget } = designRows;
-  eq('A teammate push with no row: read from who they are (HR and manager → Teams page; HR or IT only → none); an HR row → none',
+  eq('A teammate push about a joiner (a meeting) opens the joiner’s profile; HR or IT only → none; an HR row → none',
     [teammatePushTarget({ hr: 'a', it: 'b', manager: 'a' }, 'a'), teammatePushTarget({ hr: 'a', it: 'b' }, 'b'), teammatePushTarget({ hr: 'a', manager: 'a' }, 'a', 'hr')],
-    [{ destination: 'lifecycle_joiner' }, null, null]);
+    [{ destination: 'employee_profile' }, null, null]);
   const curT = await design.templateDesign(ORG, def.id);
   await design.saveTemplateDesign(ORG, def.id, { ...curT, team: { ...curT.team, remindLate: false } } as never);
-  ok('Switched off in the template: a running joiner keeps the version they started with (still reminded)', (await jobs.lateTeamRowReminders(await engine.loadJourney(J2), await engine.tasksOf(J2), today)) > 0);
+  // Sana past her final month with no review: the manager's late confirmation review is the one row that pushes.
+  const sanaTj = (await engine.loadJourney(J2)).tj!;
+  await journeys().updateOne({ id: J2 }, { $set: { tj: rules.addDaysKey(today, -400) } });
+  ok('Switched off in the template: a running joiner keeps the version they started with (still reminded)', (await jobs.lateTeamRowReminders(await engine.loadJourney(J2), await engine.tasksOf(J2), today)) === 1);
+  eq('…only the late confirmation review, to Meera, opening the review', await pushTargets('lifecycle_team_task_late', J2), { meera: 'lifecycle_confirmation_review' });
+  await journeys().updateOne({ id: J2 }, { $set: { tj: sanaTj } });
   await users().insertMany([person('j5', 'Kavya Iyer', { managerUserId: 'mgr', hrPrimaryUserId: 'hr' }), person('j6', 'Dev Arora', { managerUserId: 'mgr', hrPrimaryUserId: 'hr' })] as never[]);
-  const J5 = await mk('j5', 'Kavya Iyer', 'mgr', rules.addDaysKey(today, -40));
+  const J5 = await mk('j5', 'Kavya Iyer', 'mgr', rules.addDaysKey(today, -400));
   eq('…a joiner who starts after the save: none', await jobs.lateTeamRowReminders(await engine.loadJourney(J5), await engine.tasksOf(J5), today), 0);
   await design.saveTemplateDesign(ORG, def.id, { ...curT, team: { ...curT.team, remindLate: true } } as never);
 
   section('Confirmation: review → approval');
   await journeys().updateOne({ id: J2 }, { $set: { tj: rules.addDaysKey(today, -170) } });
+  eq('The final month: Meera’s Actions card "Confirmation review for Sana"', (await team.confirmationsFor(MEERA)).map((c) => [c.journeyId, c.kind, c.title]), [[J2, 'review', 'Confirmation review for Sana']]);
+  eq('…on /lifecycle/me too', ((await app.lifecycleMe(MEERA)) as { confirmations?: Array<{ kind: string }> }).confirmations?.map((c) => c.kind), ['review']);
+  eq('…none for Anita yet', (await team.confirmationsFor(HOD)).length, 0);
   const reviewFacts = await team.reviewView(MEERA, J2);
+  eq('The review carries the joiner for its header', [reviewFacts.joiner.name, reviewFacts.joiner.first, reviewFacts.joiner.initials], ['Sana Khan', 'Sana', 'SK']);
   ok('Review facts: goals, check-ins, confirmation discussion', reviewFacts.facts.some((f) => f.label === 'Monthly goals') && reviewFacts.facts.some((f) => f.label === 'Check-ins'), reviewFacts);
   eq('Approval before the review: waiting', (await team.approvalViewV2(HOD, J2)).state, 'waiting');
-  await team.sendReview(MEERA, J2, { outcome: 'confirm', kpis: 'Met most', strengths: 'Calm', next: 'Reports' });
+  const sentReview = await team.sendReview(MEERA, J2, { outcome: 'confirm', kpis: 'Met most', strengths: 'Calm', next: 'Reports' });
+  eq('Sent: the answer is the review as it now is', sentReview.sent?.outcome, 'confirm');
+  eq('…Meera’s card goes; Anita’s comes: "Approve Sana’s confirmation"', [(await team.confirmationsFor(MEERA)).length, (await team.confirmationsFor(HOD)).map((c) => c.title)], [0, ['Approve Sana’s confirmation']]);
+  eq('…and Anita’s push opens the approval', (await pushTargets('lifecycle_confirmation_review', J2)).hod, 'lifecycle_confirmation_approval');
   eq('The head of department: ready, the three answers', [(await team.approvalViewV2(HOD, J2)).state, (await team.approvalViewV2(HOD, J2)).recommendation?.strengths], ['ready', 'Calm']);
   await team.answerApprovalV2(HOD, J2, { action: 'extend', extendMonths: 2, comment: 'Two more months' });
   const sanaJ = await engine.loadJourney(J2);
   eq('Extend: on the confirmation record HR decides from', [sanaJ.probation?.hodApproval?.outcome, sanaJ.probation?.hodApproval?.extendMonths], ['extended', 2]);
   eq('Answered once', await refusal(() => team.answerApprovalV2(HOD, J2, { action: 'approve' })), 409);
+  eq('…Anita’s card goes', (await team.confirmationsFor(HOD)).length, 0);
   // Approve agrees with the manager: approving a recommendation to extend extends, by the manager's months.
   await journeys().updateOne({ id: J2 }, { $set: { 'probation.recommendation.outcome': 'extend', 'probation.recommendation.extendMonths': 1 }, $unset: { 'probation.hodApproval': '', 'teamTasks.hod_approve': '' } });
   await team.answerApprovalV2(HOD, J2, { action: 'approve' });
@@ -471,7 +434,6 @@ async function main() {
   ok('The kept copy is dropped by the save', before.get(def.id)?.tasks.some((t) => t.title === 'Salary and tax') && after.get(def.id)?.tasks.some((t) => t.title === 'Salary, tax and PF'));
   ok('A running joiner keeps the version they started with', (await joiner.joinerOnboarding(PRIYA)).meetings.some((m) => m.title === 'Salary and tax')
     && !(await joiner.joinerOnboarding(PRIYA)).meetings.some((m) => m.title === 'Salary, tax and PF'));
-  ok('…and so does their manager’s side', (await team.teamJoinerPage(MGR, J1)).tasks.every((t) => t.title !== 'Salary, tax and PF'));
   await mk('j6', 'Dev Arora', 'mgr', rules.addDaysKey(today, -3));
   ok('A joiner who starts after the save reads the new title', (await joiner.joinerOnboarding(me('j6', 'Dev Arora'))).meetings.some((m) => m.title === 'Salary, tax and PF'));
   const DEV = me('j6', 'Dev Arora');
@@ -694,6 +656,8 @@ async function main() {
   eq('Newest first: joining tomorrow on top', ids(meeraSees)[0], J8);
   eq('Dev (Design): only Kavya, by department', [ids(await seen('dev', 'Dev Malhotra')), (await seen('dev', 'Dev Malhotra'))[0]?.relation], [[J8], 'department']);
   eq('Sunny (the manager) sees his joiners as their manager', (await seen('mgr', 'Sunny Kapoor')).find((r) => r.journeyId === J1)?.relation, 'manager');
+  eq('The head of department sees them too: Anita (Sunny’s manager) Priya, Neha (Anita’s manager) Kavya',
+    [(await seen('hod', 'Anita Desai')).find((r) => r.journeyId === J1)?.relation, (await seen('ceo', 'Neha Verma')).find((r) => r.journeyId === J8)?.relation], ['head', 'head']);
   ok('Priya does not see herself', !ids(await seen('j1', 'Priya Shah')).includes(J1));
   eq('No department and no manager in common: nothing', (await seen('it', 'Imran Khan')).length, 0);
   eq('Another company’s viewer: nothing of this one', (await newJoiners.newJoinersForTeammate({ userId: 'rohan', name: 'Rohan Das', org: 'other-co' })).joiners.length, 0);
@@ -705,7 +669,7 @@ async function main() {
   await journeys().updateOne({ id: J8 }, { $unset: { appAccess: '' } });
   eq('Joining lines: tomorrow, today (not yet marked joined / joined), a later date', [newJoiners.joiningLine('2026-12-01', '2026-11-30', false), newJoiners.joiningLine('2026-11-30', '2026-11-30', false), newJoiners.joiningLine('2026-11-30', '2026-11-30', true), newJoiners.joiningLine('2026-11-30', '2026-12-05', true)],
     ['Joins tomorrow', 'Joins today', 'Joined today', 'Joined Mon 30 Nov']);
-  ok('Kept per company and dropped by every lifecycle write', readCache.kindsChangedBy('/lifecycle/team/joiners/x/rows/y').includes('lc-new-joiners' as never));
+  ok('Kept per company and dropped by every lifecycle write', readCache.kindsChangedBy('/lifecycle/team/joiners/x/review').includes('lc-new-joiners' as never));
 
   await closeDb();
   console.log(`\n${passed} passed, ${failed} failed`);

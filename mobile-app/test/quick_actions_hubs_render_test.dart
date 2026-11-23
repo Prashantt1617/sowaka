@@ -13,6 +13,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:mobile_app/features/auth/data/auth_models.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/data/confirmation_api.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/data/lifecycle_me_store.dart';
+import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_models.dart';
 import 'package:mobile_app/features/manager/bloc/manager_bloc.dart';
 import 'package:mobile_app/features/manager/data/manager_api_service.dart';
 import 'package:mobile_app/features/quick_actions/presentation/quick_actions_screen.dart';
@@ -300,6 +303,28 @@ void main() {
       matchesGoldenFile(Uri.file('$_screenshots/$name.png')),
     );
   }
+
+  testWidgets('a confirmation waiting on a manager or head of department: a card each, first, until it is done', (tester) async {
+    LifecycleMeStore.instance.value = LifecycleMe(
+      enabled: true,
+      confirmations: [
+        PendingConfirmation.fromJson({'journeyId': 'j2', 'kind': 'review', 'name': 'Sana Khan', 'title': 'Confirmation review for Sana'}),
+        PendingConfirmation.fromJson({'journeyId': 'j3', 'kind': 'approval', 'name': 'Venkatanarasimharajuvaripeta Subrahmanyam', 'title': 'Approve Venkatanarasimharajuvaripeta’s confirmation'}),
+      ],
+    );
+    addTearDown(() => LifecycleMeStore.instance.value = LifecycleMe.off);
+    await pumpActions(tester);
+    expect(tester.takeException(), isNull);
+    expect(find.bySemanticsLabel('Confirmation review for Sana'), findsOneWidget);
+    expect(find.bySemanticsLabel('Approve Venkatanarasimharajuvaripeta’s confirmation'), findsOneWidget);
+    expect(find.text('Review for Sana'), findsOneWidget);
+    // First in the grid, ahead of Leave.
+    expect(tester.getTopLeft(find.byKey(const ValueKey('confirmation-card-j2'))).dy, lessThanOrEqualTo(tester.getTopLeft(find.text('Leave')).dy));
+    await capture(tester, 'home-confirmations');
+    LifecycleMeStore.instance.value = const LifecycleMe(enabled: true);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('confirmation-card-j2')), findsNothing);
+  });
 
   testWidgets('the Actions home, punched in', (tester) async {
     await pumpActions(tester);

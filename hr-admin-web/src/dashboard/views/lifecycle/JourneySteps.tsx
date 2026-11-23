@@ -301,7 +301,7 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
   // The reviews (the server's, each done where it lives) and where Open takes HR.
   const reviews = data.reviews ?? [];
   const canProfile = canOpen(user, 'preboarding');
-  const cardOf = (r: JourneyReview) => (r.place === 'documents' ? 'documents' : r.place === 'bank_pf' ? 'bank' : r.place === 'joining_form' ? r.focus ?? 'personal' : undefined);
+  const cardOf = (r: JourneyReview) => (r.place === 'documents' ? 'documents' : r.place === 'bank_pf' ? 'bank' : r.place === 'tax' ? 'tax' : r.place === 'joining_form' ? r.focus ?? 'personal' : undefined);
   const reviewOpen = (r: JourneyReview): ReviewOpen | null => {
     const card = cardOf(r);
     if (card) {
@@ -744,7 +744,7 @@ function PeoplePicker({ managerUserId, buddyUserId, exclude, emps, busy, onSave 
   const dirty = manager !== (managerUserId ?? '') || buddy !== (buddyUserId ?? '');
   return (
     <div style={{ display: 'grid', gap: 10 }}>
-      <Field label="Reporting manager" hint="Gets the set-up to-do in the app">
+      <Field label="Reporting manager" hint="Their reporting manager; shows on the Day-1 pass">
         <Pick value={manager} onChange={setManager}>
           <option value="">Not picked</option>
           {people.map((p) => <option key={p.id} value={p.id}>{p.name}{p.role ? ` · ${p.role}` : ''}</option>)}

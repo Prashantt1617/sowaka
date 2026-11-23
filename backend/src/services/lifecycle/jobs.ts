@@ -106,12 +106,12 @@ async function meetingReminders(org: string, now: Date): Promise<number> {
     };
     // A design meeting (one with a row key) opens the joiner's home for them; the 20 Nov meeting card otherwise.
     await tell(m.attendeeUserIds.filter((u) => u === joinerId), { ...push, destination: m.rowKey ? 'lifecycle_onboarding' : 'lifecycle_meeting' });
-    // Teammates: the Teams person page. HR and IT & admin work from the dashboard: no push for them.
+    // Teammates in it (the manager on the Day-1 pass): the joiner's profile. HR and IT & admin work from the dashboard: no push.
     const p = j ? await place(j as Journey, now) : null;
     const role = p && m.rowKey ? [...p.meetings, ...p.team].find((r) => r.rowKey === m.rowKey)?.role : undefined;
     for (const u of m.attendeeUserIds.filter((x) => x !== joinerId)) {
-      const target = p ? teammatePushTarget(p.people, u, role) : { destination: 'lifecycle_joiner' as const };
-      if (target) await tell([u], { ...push, destination: target.destination });
+      const target = p ? teammatePushTarget(p.people, u, role) : { destination: 'employee_profile' as const };
+      if (target) await tell([u], { ...push, destination: target.destination, data: { ...push.data, ...(joinerId ? { employeeUserId: joinerId } : {}) } });
     }
     sent += 1;
   }
@@ -145,9 +145,13 @@ async function orgJobs(org: string, companyName: string, now: Date, result: Jobs
 
 /**
  * Final designs, "Remind teammates when a task is late" (template `remindLateTeamTasks`, on unless
- * HR switched it off): once per row, the day after its due day passes undone, a push to whoever does
- * it (the manager, the buddy, HR, IT & admin, someone senior, the head of department).
+ * HR switched it off): once per row, the day after its due day passes undone. HR assigns and follows
+ * every other teammate row on the dashboard (24 Nov), so only the probation decision's two rows push
+ * the app: the manager's confirmation review and the head of department's approval, each opening its
+ * own screen.
  */
+const LATE_IN_APP: Record<string, Destination> = { mgr_confirmation_review: 'lifecycle_confirmation_review', hod_approve: 'lifecycle_confirmation_approval' };
+
 export async function lateTeamRowReminders(j: Journey, tasks: JourneyTask[], today: string): Promise<number> {
   if (!j.tj) return 0;
   const p = await place(j, new Date(), await designOf(j));
@@ -155,15 +159,15 @@ export async function lateTeamRowReminders(j: Journey, tasks: JourneyTask[], tod
   let sent = 0;
   const name = j.candidate?.name ?? 'your new joiner';
   const first = name.split(/\s+/)[0] ?? name;
-  for (const r of [...p.meetings, ...p.team]) {
-    if (!r.dueOn || r.dueOn >= today || !r.role || rowDone(r, j, tasks, p.design)) continue;
+  for (const r of p.team) {
+    const destination = LATE_IN_APP[r.row.team?.key ?? ''];
+    if (!destination || !r.dueOn || r.dueOn >= today || !r.role || rowDone(r, j, tasks, p.design)) continue;
+    // The approval waits on the review: it is late only once there is a recommendation to answer.
+    if (r.row.team?.key === 'hod_approve' && !j.probation?.recommendation) continue;
     const owner = p.people[r.role as keyof typeof p.people];
     if (!owner || !(await claim(j.id, `team-late:${r.rowKey}`))) continue;
-    // HR's and IT & admin's late rows show on the dashboard only: no push.
-    const target = teammatePushTarget(p.people, owner, r.role);
-    if (!target) continue;
     await tell([owner], {
-      scenario: 'lifecycle_team_task_late', destination: target.destination, title: 'A task is late', body: teamRowTitle(r, first),
+      scenario: 'lifecycle_team_task_late', destination, title: 'A task is late', body: teamRowTitle(r, first),
       data: { journeyId: j.id, rowKey: r.rowKey, name },
     });
     sent += 1;
@@ -184,10 +188,10 @@ async function journeyDayJobs(j: Journey, tasks: JourneyTask[], today: string, c
   const first = name.split(/\s+/)[0];
   const data = { journeyId: j.id };
 
-  // Tj: the tile appears, the plant sprouts, the joiner shows on the manager's Team tab.
+  // Tj: the tile appears, the plant sprouts, the joiner shows under Team › New joiners. The manager's push opens their profile.
   await fire('tj_welcome', tj, async () => {
     await tell([j.userId], { scenario: 'lifecycle_welcome', destination: 'lifecycle_onboarding', title: `Welcome to ${companyName}, ${first}`, body: 'Your onboarding is ready', data });
-    await tell([j.managerUserId], { scenario: 'lifecycle_joiner_today', destination: 'lifecycle_joiner', title: `${name} joins today`, body: 'See their first week under Team › New joiners', data });
+    await tell([j.managerUserId], { scenario: 'lifecycle_joiner_today', destination: 'employee_profile', title: `${name} joins today`, body: 'Say hello: they’re under Team › New joiners', data: { ...data, ...(j.userId ? { employeeUserId: j.userId } : {}) } });
   });
   if (!done(tasks, 'intro_post')) {
     await fire('tj3_intro_nudge', addDaysKey(tj, 3), () => tell([j.userId], { scenario: 'lifecycle_intro_nudge', destination: 'lifecycle_intro', title: 'Say hello to your team', body: 'Your intro post takes 2 minutes', data }));
@@ -217,10 +221,10 @@ async function journeyDayJobs(j: Journey, tasks: JourneyTask[], today: string, c
   if (!done(tasks, 'day7_survey')) {
     await fire('tj6_survey_open', addDaysKey(tj, 6), () => tell([j.userId], { scenario: 'lifecycle_survey_open', destination: 'lifecycle_survey', title: 'How was your first week?', body: '4 quick questions', data }));
   }
-  // Tj + 7: goals lock, Week 1 done, stage Settling in (refreshJourney moved the stage and plant).
+  // Tj + 7: goals lock, Week 1 done, stage Settling in (refreshJourney moved the stage and plant). No push to the
+  // manager: their onboarding to-dos are HR's to assign on the dashboard (24 Nov).
   await fire('tj7_week_done', addDaysKey(tj, 7), async () => {
     await journeys().updateOne({ id: j.id, 'probation.goalsLockedAt': { $exists: false } }, { $set: { 'probation.goalsLockedAt': now } });
-    await tell([j.managerUserId], { scenario: 'lifecycle_week_done', destination: 'lifecycle_joiner', title: `${name} finished week 1`, body: 'Their probation goals are locked. Month 1 goals next.', data });
   });
   // The portal closes at Tj + 7 or the end of month 1 (template); open tasks carry into the app.
   const closeOn = j.templateSnapshot.settings.portalOpenUntil === 'month_1' ? addDaysKey(probationMonthEnd(tj, 1), 1) : addDaysKey(tj, 7);
@@ -230,25 +234,24 @@ async function journeyDayJobs(j: Journey, tasks: JourneyTask[], today: string, c
   }
   if (j.status === 'confirmed') return;
   const total = totalProbationMonths(j);
-  const monthDone = (key: SystemTaskKey, m: number) => tasks.some((t) => t.systemKey === key && t.month === m && (t.status === 'done' || t.status === 'skipped'));
   for (let m = 1; m <= total; m += 1) {
-    const start = m === 1 ? addDaysKey(tj, 7) : probationMonthStart(tj, m);
-    // Goals already set for the month (on Day 1, or from last month's review): nothing to remind.
-    if (!monthDone('monthly_goals', m)) await fire(`m${m}_goals`, start, () => tell([j.managerUserId], { scenario: 'lifecycle_goals_reminder', destination: 'lifecycle_probation_review', title: `Set ${first}'s month-${m} goals`, body: 'They check in against them at the end of the month', data: { ...data, month: String(m) } }));
+    // The month's goals and the check-in: the joiner hears; the manager does not (no onboarding to-dos in their app).
     const checkin = addDaysKey(probationMonthEnd(tj, m), -6);
     await fire(`m${m}_checkin`, checkin, async () => {
       const push = { scenario: 'lifecycle_checkin_reminder' as const, title: `Month-${m} check-in is open`, body: 'Due at the end of the month', data: { ...data, month: String(m) } };
       await tell([j.userId], { ...push, destination: 'lifecycle_checkin' });
-      await tell([j.managerUserId], { ...push, destination: 'lifecycle_probation_review' });
     });
     if (m === 3 || m === 6) {
       await fire(`m${m}_pulse`, probationMonthStart(tj, m), () => tell([j.userId], { scenario: 'lifecycle_survey_open', destination: 'lifecycle_survey', title: `Month-${m} pulse survey`, body: '4 quick questions', data }));
     }
   }
   await fire(`final_${total}`, probationMonthStart(tj, total), async () => {
-    await tell([j.managerUserId], {
-      scenario: 'lifecycle_confirmation_window', destination: 'lifecycle_joiner', title: `Final month for ${first}`, body: 'Talk to HR about confirming or extending their probation', data,
-    });
+    // The confirmation review opens in the final month (Actions › "Confirmation review for …"); a template
+    // without the review row: talk to HR, and the push opens the joiner's profile.
+    const review = (await place(j, now)).team.some((r) => r.row.team?.key === 'mgr_confirmation_review');
+    await tell([j.managerUserId], review
+      ? { scenario: 'lifecycle_confirmation_window', destination: 'lifecycle_confirmation_review', title: `Final month for ${first}`, body: 'Write their confirmation review: it is under Actions', data }
+      : { scenario: 'lifecycle_confirmation_window', destination: 'employee_profile', title: `Final month for ${first}`, body: 'Talk to HR about confirming or extending their probation', data: { ...data, ...(j.userId ? { employeeUserId: j.userId } : {}) } });
     // HR records the decision on the dashboard (the board flags Decide): no app push to HR.
   });
 }
@@ -257,14 +260,7 @@ const JOINER_SCREENS: Partial<Record<SystemTaskKey, Destination>> = {
   week1_reels: 'lifecycle_week1', intro_post: 'lifecycle_intro', people_to_meet: 'lifecycle_people', day7_survey: 'lifecycle_survey',
   pulse_survey: 'lifecycle_survey', monthly_checkin: 'lifecycle_checkin',
 };
-const MANAGER_SETUP_KEYS: SystemTaskKey[] = ['manager_setup', 'probation_goals', 'assign_buddy'];
 
-function overdueDestination(task: JourneyTask, toJoiner: boolean): Destination {
-  if (toJoiner) return (task.systemKey && JOINER_SCREENS[task.systemKey]) ?? 'lifecycle_onboarding';
-  if (task.systemKey && MANAGER_SETUP_KEYS.includes(task.systemKey)) return 'lifecycle_joiner_setup';
-  if (task.month && task.systemKey?.startsWith('monthly_')) return 'lifecycle_probation_review';
-  return 'lifecycle_joiner';
-}
 
 /** The reveal is ready (letter sent, not yet seen): the joiner is told once per decision. */
 async function revealReady(j: Journey, tasks: JourneyTask[], result: JobsResult): Promise<void> {
@@ -277,16 +273,19 @@ async function revealReady(j: Journey, tasks: JourneyTask[], result: JobsResult)
   await tell([j.userId], { scenario: 'lifecycle_reveal_ready', destination: 'lifecycle_reveal', title: 'Your probation outcome is here', body: 'Tap to reveal', data: { journeyId: j.id } });
 }
 
-/** An open task past its due date: its owner is told once. */
+/**
+ * One of the joiner's own open tasks past its due date: they are told once. Everyone else's onboarding
+ * tasks are HR's to follow on the dashboard (HR and IT & admin since 23 Nov; the manager, the buddy and
+ * the head of department since 24 Nov): no app push for them.
+ */
 async function overdueReminders(j: Journey, tasks: JourneyTask[], today: string, now: Date): Promise<number> {
   let sent = 0;
   for (const task of tasks) {
-    // HR's, IT's, Admin's and Finance's tasks are worked on the dashboard: no app push for them.
-    if (!task.ownerUserId || task.remindedAt || !taskLate(task, today) || isStaffRole(task.ownerRole)) continue;
+    if (!task.ownerUserId || !j.userId || task.ownerUserId !== j.userId || task.remindedAt || !taskLate(task, today) || isStaffRole(task.ownerRole)) continue;
     const claimed = await journeyTasks().updateOne({ id: task.id, remindedAt: { $exists: false } }, { $set: { remindedAt: now } });
     if (!claimed.modifiedCount) continue;
     await tell([task.ownerUserId], {
-      scenario: 'lifecycle_task_overdue', destination: overdueDestination(task, task.ownerUserId === j.userId), title: `Overdue: ${task.title}`,
+      scenario: 'lifecycle_task_overdue', destination: (task.systemKey && JOINER_SCREENS[task.systemKey]) ?? 'lifecycle_onboarding', title: `Overdue: ${task.title}`,
       body: task.dueAt ? `It was due ${keyOfDay(task.dueAt) === addDaysKey(today, -1) ? 'yesterday' : keyOfDay(task.dueAt)}` : 'It is overdue', data: { journeyId: j.id, taskId: task.id, ...(task.month ? { month: String(task.month) } : {}) },
     });
     sent += 1;

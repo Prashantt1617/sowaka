@@ -37,6 +37,7 @@ import { sectionLocked } from './profileLock';
 import { groupTasks, progressOf } from './board';
 import { designOf } from './design';
 import { place, teammatePushTarget } from './designRows';
+import { confirmationsQuietly } from './teamApp';
 import { joinerOnboarding, joinerTile } from './joinerApp';
 import { cleanGoals, checkinByJoiner, markRevealSeen, probationForJoiner, probationOf, revealFor, updateMonthByManager } from './probation';
 
@@ -100,6 +101,9 @@ export async function lifecycleMe(me: Me, now = new Date()) {
   // Resigning / on notice: the Resignation tab and the Off-boarding page (offboarding.ts).
   const leaving = await offboardingMe(me.userId);
   if (leaving) out.offboarding = leaving;
+  // A confirmation review (the manager) or approval (the head of department) waiting on me: the Actions card (teamApp.ts).
+  const confirmations = await confirmationsQuietly(me, now);
+  if (confirmations.length) out.confirmations = confirmations;
   return out;
 }
 
@@ -717,7 +721,11 @@ export async function postIntro(me: Me, body: Record<string, unknown> = {}) {
   const posted: IntroPost = { ...intro, postedAt: new Date(), ...(postId ? { connectPostId: postId } : {}) };
   await journeys().updateOne({ id: j.id }, { $set: { intro: posted, updatedAt: new Date() } });
   await completeTask(j.id, 'intro_post', { userId: me.userId, name: me.name });
-  await tell([managerId], { scenario: 'lifecycle_intro_post', destination: 'lifecycle_joiner', title: `${name} said hello`, body: `${name} posted their intro on Connect. Say hi 👋`, data: { journeyId: j.id, ...(postId ? { postId } : {}) } });
+  // The manager opens the post itself on Connect (the joiner's profile when there is no post id).
+  await tell([managerId], {
+    scenario: 'lifecycle_intro_post', destination: postId ? 'connect_post' : 'employee_profile', title: `${name} said hello`, body: `${name} posted their intro on Connect. Say hi 👋`,
+    data: { journeyId: j.id, employeeUserId: me.userId, ...(postId ? { postId } : {}) },
+  });
   return { ...(await introView(me)), ...(postId ? { connectPostId: postId } : {}) };
 }
 
@@ -786,7 +794,7 @@ export async function starterDone(me: Me, id: string, body: Record<string, unkno
   if (!row.doneAt) {
     const note = typeof body.note === 'string' ? body.note.trim().slice(0, 1000) : '';
     await starterTasks().updateOne({ id }, { $set: { doneAt: new Date(), ...(note ? { doneNote: note } : {}) } });
-    await tell([row.assignedByUserId], { scenario: 'lifecycle_starter_task_done', destination: 'lifecycle_starter_task_done', title: `${me.name} finished a task`, body: row.title, data: { journeyId: j.id, starterTaskId: id } });
+    // No push to the manager who set it: their onboarding screens are gone from the app (HR follows it on the dashboard).
     const open = await starterTasks().countDocuments({ journeyId: j.id, doneAt: { $exists: false } });
     if (!open) await completeTask(j.id, 'starter_task', { userId: me.userId, name: me.name });
     else await refreshJourney(j.id);
@@ -828,7 +836,7 @@ export async function actOnNote(me: Me, id: string, body: Record<string, unknown
     const text = typeof body.text === 'string' ? body.text.trim() : '';
     if (!text || text.length > 1000) throw new LifecycleError(400, 'A reply of up to 1000 characters');
     await oneOnOneNotes().updateOne({ id }, { $push: { replies: { byUserId: me.userId, text, at: new Date() } }, $set: { seenAt: note.seenAt ?? new Date() } });
-    await tell([note.authorUserId], { scenario: 'lifecycle_note_reply', destination: 'lifecycle_joiner', title: `${me.name} replied`, body: text.slice(0, 120), data: { journeyId: j.id, noteId: id } });
+    await tell([note.authorUserId], { scenario: 'lifecycle_note_reply', destination: 'employee_profile', title: `${me.name} replied`, body: text.slice(0, 120), data: { journeyId: j.id, noteId: id, employeeUserId: me.userId } });
   } else throw new LifecycleError(400, 'action is seen or reply');
   return notesForJoiner(me);
 }
@@ -867,7 +875,8 @@ export async function actOnMeeting(me: Me, id: string, body: Record<string, unkn
     const p = others.length ? await place(j) : null;
     const role = p && m.rowKey ? [...p.meetings, ...p.team].find((r) => r.rowKey === m.rowKey)?.role : undefined;
     const told = p ? others.filter((u) => u === j.userId || teammatePushTarget(p.people, u, role)) : others;
-    await tell(told, { scenario: 'lifecycle_meeting_moved', destination: 'lifecycle_joiner', title: `${m.title} moved`, body: `New time: ${humanDay(dateKeyOf(at))}`, data: { journeyId: j.id, meetingId: id } });
+    // A teammate opens the joiner's profile (no team page in the app any more).
+    await tell(told, { scenario: 'lifecycle_meeting_moved', destination: 'employee_profile', title: `${m.title} moved`, body: `New time: ${humanDay(dateKeyOf(at))}`, data: { journeyId: j.id, meetingId: id, employeeUserId: me.userId } });
   } else throw new LifecycleError(400, 'met is yes or moved');
   return meetingFor(me, id);
 }

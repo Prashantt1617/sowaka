@@ -614,8 +614,13 @@ void main() {
 
     bool leaving(Map<String, dynamic> p) => const {'lifecycle_offboarding', 'lifecycle_resignation'}.contains((p['data'] as Map)['type']);
 
+    // A teammate's push about a joiner opens the shell's own places (24 Nov: no team task page).
+    const teammateDestinations = {'employee_profile', 'connect_post'};
+
     test('every onboarding push names a destination the app opens, with the ids it needs', () {
-      final onboarding = pushes.where((p) => (p['data'] as Map)['destination'] != null && !leaving(p)).toList();
+      final onboarding = pushes
+          .where((p) => (p['data'] as Map)['destination'] != null && !leaving(p) && !teammateDestinations.contains((p['data'] as Map)['destination']))
+          .toList();
       expect(onboarding, isNotEmpty);
       for (final p in onboarding) {
         final data = (p['data'] as Map).cast<String, dynamic>();
@@ -623,13 +628,25 @@ void main() {
         expect(onboardingDestinations, contains(destination), reason: '${p['scenario']}');
         expect(data['journeyId'], isA<String>(), reason: '${p['scenario']} carries its journey');
         if (destination == 'lifecycle_meeting') expect(data['meetingId'], isA<String>());
-        if (destination == 'lifecycle_starter_task_done') expect(data['starterTaskId'], isA<String>());
-        if (destination == 'lifecycle_probation_review') expect(data['month'], isNotNull);
         expect('${p['title']}', isNotEmpty);
         expect('${p['body']}', isNotEmpty);
       }
       final starter = onboarding.firstWhere((p) => p['scenario'] == 'lifecycle_starter_task');
       expect(starter['data']['starterTaskId'], fixture('starter_tasks_get')['tasks'][0]['id']);
+    });
+
+    test('a teammate\'s push about a joiner opens their profile (or the intro post), never an old team page', () {
+      final team = pushes.where((p) => teammateDestinations.contains((p['data'] as Map)['destination'])).toList();
+      expect(team, isNotEmpty);
+      for (final p in team) {
+        final data = (p['data'] as Map).cast<String, dynamic>();
+        expect(onboardingDestinations, isNot(contains(data['destination'])), reason: '${p['scenario']}');
+        expect(data['destination'] == 'connect_post' ? data['postId'] : data['employeeUserId'], isA<String>(), reason: '${p['scenario']}');
+      }
+      for (final gone in ['lifecycle_joiner', 'lifecycle_joiner_setup', 'lifecycle_starter_task_done', 'lifecycle_probation_review']) {
+        expect(pushes.where((p) => (p['data'] as Map)['destination'] == gone), isEmpty, reason: gone);
+        expect(onboardingDestinations, isNot(contains(gone)));
+      }
     });
 
     test('every offboarding push names where it opens, with its ids, and is never an onboarding screen', () {

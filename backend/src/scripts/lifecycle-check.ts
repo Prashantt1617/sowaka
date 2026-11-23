@@ -239,11 +239,11 @@ async function main() {
   ok('Open Tj tasks moved 7 days (meet us, mark joined, set-up, survey)', ['meet_us', 'mark_joined', 'manager_setup', 'day7_survey'].every((k) => shifted(byKey(moved, k as SystemTaskKey)) === 7));
   ok('Done tasks did not move (documents, letters)', ['upload_documents', 'sign_letters'].every((k) => !shifted(byKey(moved, k as SystemTaskKey))));
   ok('Working-day rules moved by working days (finalise stays on its accepted anchor)', !shifted(byKey(moved, 'finalise_offer')));
-  eq('The manager was told once, for all their moved tasks', (await tellCount('mgr', 'lifecycle_due_changed')) - mgrBefore, 1);
+  eq('The manager is not told (HR assigns and follows their onboarding tasks on the dashboard, 24 Nov)', (await tellCount('mgr', 'lifecycle_due_changed')) - mgrBefore, 0);
   await engine.moveTj(J1.id, day(27));
-  eq('Same day again: nobody told', (await tellCount('mgr', 'lifecycle_due_changed')) - mgrBefore, 1);
+  eq('Same day again: nobody told', (await tellCount('mgr', 'lifecycle_due_changed')) - mgrBefore, 0);
   await engine.moveTj(J1.id, day(20));
-  eq('Moved back: told once more', (await tellCount('mgr', 'lifecycle_due_changed')) - mgrBefore, 2);
+  eq('Moved back: still not the manager', (await tellCount('mgr', 'lifecycle_due_changed')) - mgrBefore, 0);
 
   section('Reopening');
   const Jr = await engine.createOnboardingJourney(ORG, 'hr', { candidate: cand('Neha Tandon'), tj: day(25), managerUserId: 'mgr' });
@@ -420,7 +420,7 @@ async function main() {
   eq('Starter task: the joiner is pushed; the step is due when the task is', [await tellCount('isha', 'lifecycle_starter_task'), rules.keyOfDay(byKey(await engine.tasksOf(J2.id), 'starter_task').dueAt!)], [1, day(2)]);
   ok('It shows in the joiner’s list', (await app.onboardingHome(ISHA)).today.some((v) => v.id === st.task.id));
   await app.starterDone(ISHA, st.task.id, { note: 'First version is in the folder' });
-  eq('Done: the manager is told, the step done', [await tellCount('mgr', 'lifecycle_starter_task_done'), byKey(await engine.tasksOf(J2.id), 'starter_task').status], [1, 'done']);
+  eq('Done: the step done, no push to the manager (no onboarding screens in their app)', [await tellCount('mgr', 'lifecycle_starter_task_done'), byKey(await engine.tasksOf(J2.id), 'starter_task').status], [0, 'done']);
   await app.replyToStarterTask(MGR, st.task.id, { text: 'Nice start!' });
   eq('The reply reaches the joiner', await tellCount('isha', 'lifecycle_starter_task_reply'), 1);
 

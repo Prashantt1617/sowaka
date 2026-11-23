@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -10,10 +11,16 @@ import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_api.dar
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/manager/new_joiners_tab.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/presentation/onboarding_kit.dart';
 
-/// Teams › New joiners: every teammate's view-only list of the people joining
-/// their team or department (Tj − 1 to Tj + 30), against
+/// Teams › New joiners: the one joiners list (the manager, the buddy, the head
+/// of department and every teammate), view only, of the people joining their
+/// team or department (Tj − 1 to Tj + 30), against
 /// `GET /lifecycle/team/new-joiners` in the shape
 /// backend/src/services/lifecycle/teamNewJoiners.ts writes.
+///
+/// `flutter test --dart-define=SCREENSHOTS=<dir> test/lifecycle_new_joiners_test.dart`
+/// also writes the list at 360 and 412 wide (and at text scale 1.3) to `<dir>`.
+
+const _screenshots = String.fromEnvironment('SCREENSHOTS');
 
 class _NoOnboardingApi implements OnboardingApi {
   @override
@@ -58,6 +65,14 @@ Future<void> _pump(WidgetTester tester, Widget body) async {
 }
 
 void main() {
+  setUpAll(() async {
+    for (final (family, file) in [
+      ('Sora', 'assets/fonts/sora/Sora-Variable.ttf'),
+      ('Plus Jakarta Sans', 'assets/fonts/plus_jakarta_sans/PlusJakartaSans-Variable.ttf'),
+    ]) {
+      await (FontLoader(family)..addFont(rootBundle.load(file))).load();
+    }
+  });
   setUp(() => NewJoinersTab.count.value = 0);
 
   group('Teams › New joiners', () {
@@ -71,7 +86,8 @@ void main() {
       expect(find.descendant(of: priya, matching: find.text('Priya Shah')), findsOneWidget);
       expect(find.descendant(of: priya, matching: find.text('Operations executive · Operations')), findsOneWidget);
       expect(find.descendant(of: priya, matching: find.text('Joined Mon 23 Nov')), findsOneWidget);
-      expect(find.descendant(of: priya, matching: find.byIcon(Icons.chevron_right_rounded)), findsOneWidget);
+      // The Team tab's card: the whole card is the tap (an ink ripple), as My Team's people are.
+      expect(find.descendant(of: priya, matching: find.byType(InkWell)), findsOneWidget);
       expect(NewJoinersTab.count.value, 2);
 
       await tester.tap(priya);
@@ -85,7 +101,7 @@ void main() {
       final kavya = find.byKey(const ValueKey('new-joiner-j8'));
       expect(find.descendant(of: kavya, matching: find.text('Joins tomorrow')), findsOneWidget);
       expect(find.descendant(of: kavya, matching: find.text('Profile opens on their first day')), findsOneWidget);
-      expect(find.descendant(of: kavya, matching: find.byIcon(Icons.chevron_right_rounded)), findsNothing);
+      expect(find.descendant(of: kavya, matching: find.byType(InkWell)), findsNothing);
       await tester.tap(kavya);
       await tester.pumpAndSettle();
       expect(opened, isEmpty);
@@ -106,6 +122,42 @@ void main() {
       expect(find.text('No new joiners right now.'), findsOneWidget);
       expect(NewJoinersTab.count.value, 0);
     });
+
+    for (final (width, scale) in [(360.0, 1.0), (412.0, 1.0), (360.0, 1.3)]) {
+      testWidgets('lays out at $width wide, text scale $scale: long names and roles end in …, nothing overflows', (tester) async {
+        final long = {
+          ..._priya,
+          'journeyId': 'jl', 'name': 'Venkatanarasimharajuvaripeta Subrahmanyam Lakshminarayanan',
+          'designation': 'Senior principal customer experience operations specialist', 'department': 'Customer success and operations',
+        };
+        tester.view.physicalSize = Size(width * 3, 780 * 3);
+        tester.view.devicePixelRatio = 3;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: ThemeData(fontFamily: 'Plus Jakarta Sans'),
+            home: MediaQuery.withClampedTextScaling(
+              minScaleFactor: scale,
+              maxScaleFactor: scale,
+              child: Scaffold(
+                backgroundColor: const Color(0xFFF7F7F9),
+                body: NewJoinersTab(shell: _shell(), api: _FakeApi([_kavya, _priya, long]), openProfile: (_) {}),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final name = tester.widget<Text>(find.text(long['name']!));
+        expect([name.maxLines, name.overflow], [1, TextOverflow.ellipsis]);
+        // Every card is as wide as the list (16 at each side).
+        expect(tester.getSize(find.byKey(const ValueKey('new-joiner-jl'))).width, width - 32);
+        if (_screenshots.isNotEmpty) {
+          await expectLater(find.byType(NewJoinersTab), matchesGoldenFile(Uri.file('$_screenshots/new-joiners-${width.toInt()}${scale == 1 ? '' : '-text130'}.png')));
+        }
+      });
+    }
 
     test('the New joiners pill: only while the lifecycle is on and the list has someone', () {
       expect(NewJoinersTab.showsPill(lifecycleOn: true, joiners: 1, open: false), isTrue);
