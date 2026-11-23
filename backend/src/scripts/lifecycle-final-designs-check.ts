@@ -588,6 +588,17 @@ async function main() {
   await engine.moveTj(P2, rules.addDaysKey(today, 4));
   await autoPass.makeAutoDay1Passes([ORG], nowAt);
   ok('…and made again once inside the week', (await engine.loadJourney(P2)).day1Pass?.date === rules.addDaysKey(today, 4) && !!(await engine.loadJourney(P2)).day1Pass?.auto);
+  // Templates › Edit joiners: a joiner moved to another template gets that template's Day-1 meetings on the automatic pass.
+  const onTpl = await templates.getTemplate(ORG, (await engine.loadJourney(P2)).templateId);
+  const opsTpl = await templates.createTemplate(ORG, { kind: 'onboarding', name: 'Operations joiners', copyFromId: onTpl.id }, 'HR');
+  const opsDesign = await design.templateDesign(ORG, opsTpl.id);
+  await design.saveTemplateDesign(ORG, opsTpl.id, { ...opsDesign, meetings: opsDesign.meetings.map((m) => (m.title === 'First goals' ? { ...m, title: 'Your first goals' } : m)) } as never, 'HR');
+  const movedOps = await board.moveJourneysToTemplate(ORG, opsTpl.id, { journeyIds: [P2] });
+  const opsPass = (await engine.loadJourney(P2)).day1Pass;
+  eq('Moved to another template (Edit joiners): the automatic pass takes its Day-1 meetings',
+    [movedOps.moved.length, (await engine.loadJourney(P2)).templateId === opsTpl.id, opsPass?.agenda?.map((a) => a.title), !!opsPass?.auto], [1, true, ['Welcome and documents', 'Your first goals', 'How the team works'], true]);
+  await board.moveJourneysToTemplate(ORG, onTpl.id, { journeyIds: [P2] });
+  eq('…and moved back, the template’s own again', (await engine.loadJourney(P2)).day1Pass?.agenda?.map((a) => a.title), ['Welcome and documents', 'First goals', 'How the team works']);
   await board.updateJourneyByHr(ORG, P2, { day1Pass: { ...(await engine.loadJourney(P2)).day1Pass, reportingTime: '08:45' } });
   const hrPass = (await engine.loadJourney(P2)).day1Pass!;
   eq('HR edits it: HR’s pass now (no automatic mark), HR’s time kept', [hrPass.auto, hrPass.reportingTime, hrPass.place], [undefined, '08:45', 'Reception, Pune office']);

@@ -3,6 +3,32 @@ import { useCallback, useEffect, useState } from 'react';
 import { useStore } from '../../store';
 import { useBrand } from '../../brand';
 import { getCompanySettings, getOffices } from '../../../services/hrms';
+import { getTemplateJourneys } from '../../../services/lifecycle';
+import type { TemplateJourney } from '../../../services/lifecycle';
+import { errText } from './format';
+
+/** An onboarding template's tabs: the template, the joiners on it, moving joiners onto it. */
+export type JoinersTab = 'template' | 'joiners' | 'edit';
+export const JOINERS_TAB_LABELS: Record<JoinersTab, string> = { template: 'Template', joiners: 'Joiners', edit: 'Edit joiners' };
+
+/** Every open onboarding journey of the company, each naming its template; this template's are its joiners. */
+export function useTemplateJoiners(id: string) {
+  const [rows, setRows] = useState<TemplateJourney[] | null>(null);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setError('');
+    getTemplateJourneys(id, 'all')
+      .then((r) => { if (live) setRows(r); })
+      .catch((e) => { if (live) setError(errText(e, 'Could not load the joiners')); });
+    return () => { live = false; };
+  }, [id, attempt]);
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
+  const count = rows ? rows.filter((r) => r.templateId === id).length : undefined;
+  return { rows, error, reload, count };
+}
+export type TemplateJoinersData = ReturnType<typeof useTemplateJoiners>;
 
 /** The company's name as letters and emails carry it. */
 export function useCompanyName(): string {

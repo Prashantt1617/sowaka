@@ -134,7 +134,9 @@ async function cleanFields(org: string, input: unknown, base: Partial<OfferField
   // The candidate must be able to accept before they join.
   if (tj < validTill) throw new LifecycleOfferError(400, `The joining date (${formatDay(tj)}) is before the offer’s valid-till date (${formatDay(validTill)}). Move the joining date, or make the offer valid till an earlier day.`);
   const managerUserId = text('managerUserId', 64);
-  if (managerUserId && !(await users().findOne({ userId: managerUserId, org }, { projection: { _id: 1 } }))) {
+  // Every offer names the reporting manager (23 Nov): no offer letter without one.
+  if (!managerUserId) throw new LifecycleOfferError(400, 'Choose the reporting manager');
+  if (!(await users().findOne({ userId: managerUserId, org }, { projection: { _id: 1 } }))) {
     throw new LifecycleOfferError(400, 'The reporting manager is not in this company');
   }
   const employeeType = pick('employeeType');

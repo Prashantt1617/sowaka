@@ -391,30 +391,41 @@ export async function deleteTemplate(org: string, id: string): Promise<Lifecycle
 }
 
 /**
- * S3's Joiners tab: the open journeys following this template (the same
- * count as "Joiners using it"). A running journey keeps the snapshot it
- * started with, so there is no moving one to another template: the tab lists
- * them and opens each one.
+ * A template's Joiners (Leavers) tab: the open journeys following it (the same count as "Joiners using
+ * it"), each with where it is and its joining date. `scope: 'all'` lists every open journey of the
+ * template's kind instead, each naming the template it is on: the Edit joiners list, where a joiner is
+ * moved onto this template (board.ts moveJourneysToTemplate).
  */
-export async function templateJourneys(org: string, id: string) {
+export async function templateJourneys(org: string, id: string, scope?: unknown) {
   const template = await getTemplate(org, id);
+  if (scope !== undefined && scope !== '' && scope !== 'all') throw new LifecycleError(400, 'scope is all, or nothing');
   const rows = await journeys().find(
-    { org, templateId: id, closedAt: { $exists: false } },
-    { projection: { _id: 0, id: 1, kind: 1, userId: 1, candidate: 1, status: 1, tj: 1, tl: 1, designation: 1, department: 1, boardTab: 1, boardColumn: 1, createdAt: 1 } },
-  ).sort({ tj: 1, tl: 1, createdAt: 1 }).limit(500).toArray();
-  const ids = [...new Set(rows.map((r) => r.userId).filter((u): u is string => !!u))];
-  const people = ids.length ? await users().find({ userId: { $in: ids } }, { projection: { _id: 0, userId: 1, name: 1, designation: 1, department: 1 } }).toArray() : [];
+    scope === 'all' ? { org, kind: template.kind, closedAt: { $exists: false } } : { org, templateId: id, closedAt: { $exists: false } },
+    { projection: {
+      _id: 0, id: 1, kind: 1, userId: 1, candidate: 1, status: 1, stage: 1, tj: 1, tl: 1, designation: 1, department: 1, location: 1,
+      managerUserId: 1, templateId: 1, 'templateSnapshot.name': 1, boardTab: 1, boardColumn: 1, createdAt: 1,
+    } },
+  ).sort({ tj: 1, tl: 1, createdAt: 1 }).limit(scope === 'all' ? 2000 : 500).toArray();
+  const ids = [...new Set(rows.flatMap((r) => [r.userId, r.managerUserId]).filter((u): u is string => !!u))];
+  const people = ids.length ? await users().find({ userId: { $in: ids } }, { projection: { _id: 0, userId: 1, name: 1, designation: 1, department: 1, location: 1, employeeId: 1 } }).toArray() : [];
   const byId = new Map(people.map((p) => [p.userId, p]));
+  // The template each one is on by its name today (a renamed template), else the name its copy has.
+  const names = new Map((await lifecycleTemplates().find({ org, kind: template.kind }, { projection: { _id: 0, id: 1, name: 1 } }).toArray()).map((t) => [t.id, t.name]));
   return {
     template: { id: template.id, kind: template.kind, name: template.name },
     journeys: rows.map((r) => {
       const who = r.userId ? byId.get(r.userId) : undefined;
+      const manager = r.managerUserId ? byId.get(r.managerUserId) : undefined;
+      const location = r.location ?? who?.location;
       return {
         journeyId: r.id, kind: r.kind, name: who?.name ?? r.candidate?.name ?? '—',
         ...((r.designation ?? who?.designation) ? { designation: r.designation ?? who?.designation } : {}),
         ...((r.department ?? who?.department) ? { department: r.department ?? who?.department } : {}),
-        ...(r.userId ? { userId: r.userId } : {}), status: r.status, ...(r.tj ? { tj: r.tj } : {}), ...(r.tl ? { tl: r.tl } : {}),
+        ...(location ? { location } : {}), ...(who?.employeeId ? { employeeId: who.employeeId } : {}),
+        ...(r.managerUserId ? { managerUserId: r.managerUserId } : {}), ...(manager?.name ? { managerName: manager.name } : {}),
+        ...(r.userId ? { userId: r.userId } : {}), status: r.status, ...(r.stage ? { stage: r.stage } : {}), ...(r.tj ? { tj: r.tj } : {}), ...(r.tl ? { tl: r.tl } : {}),
         ...(r.boardTab ? { tab: r.boardTab } : {}), ...(r.boardColumn ? { column: r.boardColumn } : {}),
+        templateId: r.templateId, templateName: names.get(r.templateId) ?? r.templateSnapshot?.name ?? '—',
       };
     }),
   };

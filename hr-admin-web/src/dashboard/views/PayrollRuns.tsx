@@ -26,6 +26,7 @@ import { LossOfPayExplainer } from '../LossOfPayExplainer';
 import { employedDaysOf, isNotEmployedLine, lossOfPayDaysOf, notEmployedNote, notEmployedOf } from '../payslipDays';
 import { EmployeeCalendar } from './EmployeeProfile';
 import { Form16Section } from './Form16Section';
+import { MissingSalaryNotice } from './MissingSalaryNotice';
 import { exportReport } from './PayrollReports';
 import { getSalaryRegister } from '../../services/payroll';
 import * as L from './look';
@@ -159,6 +160,7 @@ export function PayrollRuns() {
         </div>
         <button onClick={create} disabled={creating} className="lk-btn-p" style={primaryBtn}>{creating ? 'Creating…' : '+ Create run'}</button>
       </div>
+      <MissingSalaryNotice period={period} refreshKey={runs} note="Once they have a salary, create the run (or recalculate its draft) to include them." />
 
       <Card style={L.cardPad}>
         {state !== 'ready' ? (
@@ -315,6 +317,7 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
       </div>
       {payDates(run) && <p style={{ color: 'var(--ink-3)', fontSize: 13, margin: '0 0 12px' }}>Pays {payDates(run)}</p>}
       {run.note && <p style={{ color: 'var(--bad)', fontSize: 13, margin: '0 0 12px' }}>Note: {run.note}</p>}
+      <MissingSalaryNotice period={run.period} refreshKey={detail} note={isDraft ? 'Once they have a salary, press Recalculate to add them to this run.' : 'This run is not a draft: reopen it and recalculate to add them.'} />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, margin: '16px 0 20px' }}>
         <SummaryCard label="Gross pay" value={inr(t.grossPaise)} />

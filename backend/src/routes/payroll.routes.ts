@@ -60,6 +60,7 @@ import {
   submitRunHandler,
 } from '../controllers/payrollRun.controller';
 import { getOrgSetupHandler, updateOrgSetupHandler } from '../controllers/orgSetup.controller';
+import { assignTemplatePeopleHandler, peopleWithoutSalaryHandler } from '../controllers/salaryTemplatePeople.controller';
 import {
   copyStatutoryConfigHandler,
   copyTdsConfigHandler,
@@ -127,6 +128,10 @@ payrollRouter.post('/salary-templates/preview', previewSalaryTemplateHandler);
 payrollRouter.get('/salary-templates/:code', getSalaryTemplateHandler);
 payrollRouter.put('/salary-templates/:code', updateSalaryTemplateHandler);
 payrollRouter.delete('/salary-templates/:code', deleteSalaryTemplateHandler);
+// Put people on a template (each with an annual CTC and the day it applies from), from its Edit employees.
+payrollRouter.post('/salary-templates/:code/people', assignTemplatePeopleHandler);
+// Who a run for the period leaves out: still here, joined by its end, no live salary.
+payrollRouter.get('/people-without-salary', peopleWithoutSalaryHandler);
 
 // Paid Days Templates — how attendance becomes paid days, per person; one Default per company.
 payrollRouter.get('/paid-days-templates', listPaidDaysTemplatesHandler);
