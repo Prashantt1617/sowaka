@@ -7,7 +7,8 @@
  */
 import { NextFunction, Request, Response, Router } from 'express';
 import multer from 'multer';
-import { journeys } from '../config/db';
+import { journeys, lifecycleFiles } from '../config/db';
+import { journeyMayRead } from '../services/lifecycle/design';
 import type { Journey } from '../models/lifecycle.model';
 import { removeDocumentFile, uploadDocumentFiles } from '../services/lifecycle/documents';
 import { companyDisplayName, companyOf, lifecycleEnabled, orgOfClientToken } from '../services/lifecycle/emails';
@@ -162,7 +163,15 @@ r.get('/media/:token', handle(async (req, res) => {
   if (!claims) throw new LifecycleOfferError(404, 'File not found');
   const journey = await journeys().findOne({ id: claims.journeyId }, { projection: { _id: 0, org: 1, kind: 1 } });
   if (!journey || journey.kind !== 'onboarding' || !(await lifecycleEnabled(journey.org))) throw new LifecycleOfferError(404, 'File not found');
-  const file = await fileForJourney(claims.journeyId, claims.fileId);
+  // The joiner's own file, or a template's (the pre-boarding watch list) that is part of their design.
+  const file = await fileForJourney(claims.journeyId, claims.fileId).catch(async (error) => {
+    const full = await journeys().findOne({ id: claims.journeyId });
+    const shared = full && (await journeyMayRead(full, claims.fileId))
+      ? await lifecycleFiles().findOne({ id: claims.fileId, org: full.org, journeyId: { $exists: false } }, { projection: { _id: 0 } })
+      : null;
+    if (!shared) throw error;
+    return shared;
+  });
   const bytes = await readFileBytes(file);
   res.setHeader('Content-Type', file.contentType);
   res.setHeader('Content-Disposition', contentDisposition(file.name, false));

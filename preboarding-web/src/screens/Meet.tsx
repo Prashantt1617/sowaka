@@ -9,7 +9,7 @@ import { AskHrSheet, BottomBar, ErrorNote, PrimaryButton, Spinner, StoryBar } fr
 import { useAsync, useFocusHeading } from '../lib/hooks';
 import { useMe } from '../session';
 
-const TAGS: Record<MeetItem['kind'], string> = { manager_note: 'From your manager', video: 'How we work', card: 'Meet us' };
+const TAGS: Record<MeetItem['kind'], string> = { manager_note: 'From your manager', video: 'How we work', card: 'Meet us', watch: 'Watch list' };
 
 /** P10 · Meet us reels. Seen = 80% of a video, or 3 s on a card. Mobile layout, centred on desktop. */
 export function Meet() {
