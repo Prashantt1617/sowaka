@@ -627,6 +627,11 @@ enum QuickActionsEntry {
   calendar,
   payroll,
 
+  /// Payroll opened on Tax (an onboarding task, "Declare your tax and
+  /// investments"): the regime, or the declaration on the old regime, over
+  /// the Payroll home.
+  payrollTax,
+
   /// The Actions home with Day 1's "Learn to punch in" spotlight on the
   /// Attendance card.
   punchTour,
@@ -646,6 +651,7 @@ class QuickActionsScreen extends StatefulWidget {
     this.payroll,
     this.pickPayrollFile,
     this.payrollLock,
+    this.onPayrollSetUp,
     this.entry,
     this.onExit,
   });
@@ -683,6 +689,11 @@ class QuickActionsScreen extends StatefulWidget {
   /// The phone's lock Payroll opens behind; tests hand in their own (the app uses the system's).
   final DeviceLock? payrollLock;
 
+  /// Payroll's "Add bank account", "Add PAN", "Link PF account": tests hand
+  /// in their own; the app opens a joiner's onboarding forms
+  /// ([openJoinerPayrollDetail]), and a ticket for anyone else.
+  final PayrollSetUpOpener? onPayrollSetUp;
+
   @override
   State<QuickActionsScreen> createState() => _QuickActionsScreenState();
 }
@@ -692,9 +703,17 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     QuickActionsEntry.leave => _QuickPage.leave,
     QuickActionsEntry.overtime => _QuickPage.overtime,
     QuickActionsEntry.calendar => _QuickPage.calendar,
-    QuickActionsEntry.payroll => _QuickPage.payroll,
+    QuickActionsEntry.payroll ||
+    QuickActionsEntry.payrollTax => _QuickPage.payroll,
     QuickActionsEntry.punchTour || null => _QuickPage.home,
   };
+
+  /// The page Payroll opens on the first time; opened again later (Back to
+  /// the Actions home, then Payroll) it is the home.
+  late PayrollStartPage _payrollStart =
+      widget.entry == QuickActionsEntry.payrollTax
+      ? PayrollStartPage.taxDeclaration
+      : PayrollStartPage.home;
 
   /// Opened on one page over another screen ([QuickActionsScreen.entry]):
   /// there is no Actions home under it, so what would go there leaves.
@@ -1003,6 +1022,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     }
     if (page == _QuickPage.payroll) {
       _payrollKey = GlobalKey<_PayrollScreenState>();
+      _payrollStart = PayrollStartPage.home;
     }
     setState(() => _page = page);
     widget.controller._navigationChanged();
@@ -1191,6 +1211,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             onFixPunchDay: _fixPunchDay,
             onRaiseTicket: _openSupportDesk,
             pickFile: widget.pickPayrollFile,
+            startPage: _payrollStart,
+            onSetUpItem: widget.onPayrollSetUp ?? openJoinerPayrollDetail,
           ),
         ),
         _QuickPage.applyReimbursement => _applyReimbursementForm(),

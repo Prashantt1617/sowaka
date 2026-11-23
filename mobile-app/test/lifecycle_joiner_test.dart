@@ -137,24 +137,6 @@ class FakeJoinerApi implements JoinerApi {
 
   Map<String, dynamic> home;
   final calls = <String>[];
-  Map<String, dynamic> goals = {
-    'month': 3,
-    'managerName': 'Sunny Kapoor',
-    'nextTalk': {'on': '2027-02-01', 'inDays': 9, 'withName': 'Sunny Kapoor'},
-    'current': [
-      {'index': 0, 'text': 'Own the Pune office escalations', 'status': 'well', 'note': 'Handled four this month.'},
-      {'index': 1, 'text': 'Train the next joiner on our tools'},
-    ],
-    'earlier': [
-      {
-        'month': 2,
-        'goals': [
-          {'index': 0, 'text': 'Take over the Pune ticket queue', 'status': 'well', 'comment': 'You made this queue your own.', 'commentByName': 'Sunny Kapoor'},
-        ],
-      },
-    ],
-  };
-
   @override
   Future<JoinerOnboarding> fetch() async => JoinerOnboarding.fromJson(home);
 
@@ -227,20 +209,6 @@ class FakeJoinerApi implements JoinerApi {
 
   @override
   Future<({String fileId, String name})> uploadFormFile(String taskId, String filename, Uint8List bytes) async => (fileId: 'f1', name: filename);
-
-  @override
-  Future<JoinerGoals> fetchGoals() async => JoinerGoals.fromJson(goals);
-
-  @override
-  Future<JoinerGoals> saveGoal(int month, int index, {String? status, String? note}) async {
-    calls.add('goal:$month:$index:${status ?? ''}:${note ?? ''}');
-    final current = [
-      for (final g in goals['current'] as List)
-        (g as Map)['index'] == index ? {...g, 'status': status ?? g['status'], 'note': ?note} : g,
-    ];
-    goals = {...goals, 'current': current};
-    return fetchGoals();
-  }
 
   @override
   Future<void> markWatched(String itemId) async => calls.add('watched:$itemId');
@@ -326,6 +294,16 @@ class FakeJoinerApi implements JoinerApi {
   ({Uri uri, Map<String, String> headers})? media(String path) => null;
 }
 
+/// A shell whose app pages are only recorded (the screen asked for).
+OnboardingShell _shellOpening(List<String> opened) => OnboardingShell(
+  api: FakeOnboardingApi(),
+  profileAction: const SizedBox(width: 30, height: 30),
+  onNotifications: () {},
+  openAppScreen: (context, screen) async => opened.add(screen),
+  viewerName: 'Kabir Mehta',
+  now: () => DateTime(2026, 12, 1),
+);
+
 Future<FakeJoinerApi> _open(WidgetTester tester, Map<String, dynamic> home) async {
   final api = FakeJoinerApi(home);
   await pumpPage(tester, JoinerHomeScreen(shell: shellFor(FakeOnboardingApi(), DateTime(2026, 12, 1)), api: api));
@@ -395,7 +373,8 @@ void main() {
       expect(find.byKey(const ValueKey('first-punch-card')), findsOneWidget);
       expect(find.text('Learn to punch in'), findsOneWidget);
       expect(find.byKey(const ValueKey('tour-card')), findsNothing);
-      expect(find.byKey(const ValueKey('goals-card')), findsNothing);
+      expect(find.byKey(const ValueKey('performance-card')), findsNothing);
+      expect(find.byKey(const ValueKey('tile-meetings')), findsOneWidget);
       expect(find.text('0 of 2 met'), findsOneWidget);
       expect(find.text('UP NEXT'), findsWidgets);
       expect(find.text('Sign your joining documents'), findsOneWidget);
@@ -428,12 +407,21 @@ void main() {
       expect(find.text('YOU ARE HERE'), findsOneWidget);
     });
 
-    testWidgets('from Month 1: "This month’s goals" with the next talk', (tester) async {
-      await _open(tester, _home('m1', punched: true, extra: {
-        'goals': {'month': 1, 'count': 3, 'nextTalk': {'on': '2026-12-31', 'inDays': 6}},
-      }));
-      expect(find.text('This month’s goals'), findsOneWidget);
-      expect(find.text('3 goals · next talk in 6 days'), findsOneWidget);
+    testWidgets('from Month 1: Monthly performance opens the KPI reviews in Grow', (tester) async {
+      final opened = <String>[];
+      await pumpPage(tester, JoinerHomeScreen(shell: _shellOpening(opened), api: FakeJoinerApi(_home('m1', punched: true))));
+      expect(find.text('Monthly performance'), findsOneWidget);
+      expect(find.text('This month’s goals'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('performance-card')));
+      await tester.pumpAndSettle();
+      expect(opened, ['kpis']);
+    });
+
+    testWidgets('no meetings from the server: no Meetings tile', (tester) async {
+      await _open(tester, _home('w1', punched: true, extra: {'meetings': <dynamic>[]}));
+      expect(find.byKey(const ValueKey('tile-tasks')), findsOneWidget);
+      expect(find.byKey(const ValueKey('tile-meetings')), findsNothing);
+      expect(find.text('Meetings'), findsNothing);
     });
 
     testWidgets('confirmed: PROBATION COMPLETE and the letter to read', (tester) async {
@@ -588,47 +576,93 @@ void main() {
     });
   });
 
-  group('goals', () {
-    testWidgets('How’s it going, a note, the next talk, earlier months collapsed', (tester) async {
-      final api = FakeJoinerApi(_home('m3', punched: true, extra: {
-        'goals': {'month': 3, 'count': 2, 'nextTalk': {'on': '2027-02-01', 'inDays': 9}},
-      }));
-      await pumpPage(tester, JoinerHomeScreen(shell: shellFor(FakeOnboardingApi(), DateTime(2027, 1, 23)), api: api));
-      await tester.tap(find.byKey(const ValueKey('goals-card')));
-      await tester.pumpAndSettle();
-      expect(find.text('This month'), findsOneWidget);
-      expect(find.text('2 goals'), findsOneWidget);
-      expect(find.text('How’s it going?'), findsNWidgets(2));
-      expect(find.text('Handled four this month.'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('goal-1-progress')));
-      await tester.pumpAndSettle();
-      expect(api.calls, contains('goal:3:1:progress:'));
-      await tester.tap(find.byKey(const ValueKey('goal-1-note-button')));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const ValueKey('goal-1-note')), 'Two sessions so far');
-      await tester.tap(find.byKey(const ValueKey('goal-1-note-button')));
-      await tester.pumpAndSettle();
-      expect(api.calls, contains('goal:3:1::Two sessions so far'));
-      await scrollTo(tester, find.byKey(const ValueKey('earlier-2')));
-      expect(find.text('Next talk with Sunny'), findsOneWidget);
-      expect(find.text('In 9 days · 1 Feb'), findsOneWidget);
-      expect(find.text('You made this queue your own.'), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('earlier-2')));
-      await tester.pumpAndSettle();
-      expect(find.text('You made this queue your own.'), findsOneWidget);
-    });
-  });
-
   group('watch list, devices, profile', () {
-    testWidgets('About the company with its videos, and Trainings with Read', (tester) async {
+    testWidgets('Life at the company: the tile opens the stories on the first one not watched', (tester) async {
+      final api = await _open(tester, _home('w1', punched: true, extra: {
+        'watch': [
+          {'id': 'v2', 'title': 'How your department works', 'type': 'video', 'minutes': 4, 'step': 'w1', 'watched': true},
+          {'id': 'i1', 'title': 'The Pune office', 'type': 'image', 'step': 'w1', 'watched': false},
+          {'id': 't1', 'title': 'Our values', 'type': 'text', 'text': 'We keep our promises', 'bg': 'green', 'step': 'w1', 'watched': false},
+        ],
+      }));
+      await scrollTo(tester, find.byKey(const ValueKey('tile-watch')));
+      expect(find.text('Life at Sowaka Test'), findsOneWidget);
+      expect(find.text('3 stories'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('tile-watch')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      // Straight into the stories, on the first one not watched, marked as it shows.
+      expect(find.byKey(const ValueKey('joiner-stories')), findsOneWidget);
+      expect(find.byKey(const ValueKey('story-i1')), findsOneWidget);
+      expect(find.text('Sowaka Test HR'), findsOneWidget);
+      expect(find.byKey(const ValueKey('story-bar-2')), findsOneWidget);
+      expect(api.calls, contains('watched:i1'));
+      expect(api.calls, isNot(contains('watched:v2')));
+      final box = tester.getRect(find.byKey(const ValueKey('stories-main')));
+      // The right of the screen goes on; the left third goes back.
+      await tester.tapAt(Offset(box.right - 20, box.center.dy));
+      await tester.pump();
+      expect(find.text('We keep our promises'), findsOneWidget);
+      expect(api.calls, contains('watched:t1'));
+      await tester.tapAt(Offset(box.left + 20, box.center.dy));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('story-i1')), findsOneWidget);
+      // Held, it pauses: well past a card's time it is still there.
+      final hold = await tester.startGesture(box.center);
+      await tester.pump(const Duration(seconds: 8));
+      expect(find.byKey(const ValueKey('story-i1')), findsOneWidget);
+      await hold.up();
+      await tester.pump();
+      expect(find.byKey(const ValueKey('story-i1')), findsOneWidget);
+      // A card moves on by itself, and the last one closes the stories.
+      await tester.pump(const Duration(seconds: 7));
+      expect(find.byKey(const ValueKey('story-t1')), findsOneWidget);
+      await tester.pump(const Duration(seconds: 7));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('joiner-stories')), findsNothing);
+      expect(find.byKey(const ValueKey('tile-watch')), findsOneWidget);
+    });
+
+    testWidgets('Close leaves the stories', (tester) async {
       await _open(tester, _home('w1', punched: true));
       await scrollTo(tester, find.byKey(const ValueKey('tile-watch')));
+      expect(find.text('1 story'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('tile-watch')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byKey(const ValueKey('story-v2')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('stories-close')));
       await tester.pumpAndSettle();
-      expect(find.text('About Sowaka Test'), findsOneWidget);
-      expect(find.text('Trainings'), findsOneWidget);
+      expect(find.byKey(const ValueKey('joiner-stories')), findsNothing);
+    });
+
+    testWidgets('trainings: their own tile under the company’s name for them, with Read', (tester) async {
+      await _open(tester, _home('w1', punched: true, extra: {'labels': {'trainings': 'Learning'}}));
+      await scrollTo(tester, find.byKey(const ValueKey('tile-trainings')));
+      expect(find.text('Learning'), findsOneWidget);
+      expect(find.text('Trainings'), findsNothing);
+      expect(find.text('1 item · 1 to do'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const ValueKey('tile-trainings')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('tile-trainings')));
+      await tester.pumpAndSettle();
+      expect(find.text('Learning'), findsWidgets);
+      expect(find.text('Information security basics'), findsOneWidget);
       expect(find.text('5 min read'), findsOneWidget);
       expect(find.text('Read'), findsOneWidget);
+    });
+
+    testWidgets('trainings: "Trainings" from an older server', (tester) async {
+      await _open(tester, _home('w1', punched: true));
+      await scrollTo(tester, find.byKey(const ValueKey('tile-trainings')));
+      expect(find.text('Trainings'), findsOneWidget);
+    });
+
+    testWidgets('trainings: none sent, no tile', (tester) async {
+      await _open(tester, _home('w1', punched: true, extra: {'trainings': <dynamic>[]}));
+      await scrollTo(tester, find.byKey(const ValueKey('tile-checkins')));
+      expect(find.byKey(const ValueKey('tile-trainings')), findsNothing);
+      expect(find.text('Trainings'), findsNothing);
     });
 
     testWidgets('Devices: Ready or Setting up; Profile: the sections', (tester) async {
@@ -735,26 +769,61 @@ void main() {
       expect(find.byType(JoinerPayrollScreen), findsOneWidget);
     });
 
-    testWidgets('Review your KPIs offers its page (the Grow tab) before Looks good', (tester) async {
+    testWidgets('Review your KPIs opens Grow at once, then Looks good on coming back', (tester) async {
       final opened = <String>[];
       final api = FakeJoinerApi(_home('w1'));
-      final base = shellFor(FakeOnboardingApi(), DateTime(2026, 12, 1));
-      final shell = OnboardingShell(
-        api: base.api,
-        profileAction: const SizedBox(width: 30, height: 30),
-        onNotifications: () {},
-        openAppScreen: (context, screen) async => opened.add(screen),
-        viewerName: 'Kabir Mehta',
-        now: () => DateTime(2026, 12, 1),
-      );
-      await pumpPage(tester, JoinerHomeScreen(shell: shell, api: api));
+      await pumpPage(tester, JoinerHomeScreen(shell: _shellOpening(opened), api: api));
       await tester.tap(find.byKey(const ValueKey('tile-tasks')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('task-t-kpi')));
       await tester.pumpAndSettle();
+      // The page opened straight away (no sheet first); back from it, the sheet.
+      expect(opened, ['kpis']);
+      expect(find.byKey(const ValueKey('task-confirm-t-kpi')), findsOneWidget);
+      // Its page can be opened again from the sheet.
       await tester.tap(find.byKey(const ValueKey('task-page-t-kpi')));
       await tester.pumpAndSettle();
-      expect(opened, ['kpis']);
+      expect(opened, ['kpis', 'kpis']);
+      await tester.tap(find.byKey(const ValueKey('task-confirm-t-kpi')));
+      await tester.pumpAndSettle();
+      expect(api.calls, contains('task:t-kpi:looks_good'));
+    });
+
+    testWidgets('the payroll policy review opens the policy, and the tax task the tax declaration', (tester) async {
+      final opened = <String>[];
+      final api = FakeJoinerApi(_home('w1', extra: {
+        'tasks': [
+          _task('t-pp', 'Review your payroll policy and salary structure', 'review', 'Review', 'w1', opens: {'screen': 'payroll_policy'}),
+          _task('t-tax', 'Declare your tax and investments', 'do', 'Start', 'w1', opens: {'screen': 'tax'}),
+          _task('t-done', 'Review your shift', 'review', 'Review', 'w1', state: 'done', opens: {'screen': 'shift'}),
+        ],
+      }));
+      await pumpPage(tester, JoinerHomeScreen(shell: _shellOpening(opened), api: api));
+      await tester.tap(find.byKey(const ValueKey('tile-tasks')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('task-t-pp')));
+      await tester.pumpAndSettle();
+      expect(opened, ['payroll_policy']);
+      await tester.tap(find.byKey(const ValueKey('task-confirm-t-pp')));
+      await tester.pumpAndSettle();
+      expect(api.calls, contains('task:t-pp:looks_good'));
+      await tester.tap(find.byKey(const ValueKey('task-t-tax')));
+      await tester.pumpAndSettle();
+      expect(opened, ['payroll_policy', 'tax']);
+      // A review already done still opens its page, with no sheet after.
+      await tester.tap(find.byKey(const ValueKey('task-t-done')));
+      await tester.pumpAndSettle();
+      expect(opened, ['payroll_policy', 'tax', 'shift']);
+      expect(find.byKey(const ValueKey('task-confirm-t-done')), findsNothing);
+    });
+
+    testWidgets('Payroll’s set-up rows: nothing opens for someone without an onboarding journey', (tester) async {
+      await pumpPage(tester, const Scaffold(body: Text('payroll')));
+      final context = tester.element(find.text('payroll'));
+      expect(await openJoinerPayrollDetail(context, 'bank'), isFalse);
+      expect(await openJoinerPayrollDetail(context, 'regime'), isFalse);
+      await tester.pumpAndSettle();
+      expect(find.byType(JoinerPayrollScreen), findsNothing);
     });
   });
 

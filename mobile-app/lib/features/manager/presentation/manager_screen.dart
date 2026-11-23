@@ -32,6 +32,8 @@ import '../../games/presentation/games_home.dart';
 import '../../games/presentation/web_game_screen.dart';
 import '../../games/presentation/web_games_home.dart';
 import '../../policies/data/policies_api_service.dart';
+import '../../policies/data/policies_models.dart' show PolicyDocument;
+import '../../policies/presentation/policies_ack_screen.dart';
 import '../../attendance/presentation/punch_screen.dart';
 import '../../attendance/presentation/punch_out_gate.dart';
 import '../../attendance/presentation/slide_to_punch.dart';
@@ -488,8 +490,13 @@ class _ManagerScreenState extends State<ManagerScreen> {
   Future<void> _openAppScreenOver(BuildContext from, String screen) {
     final navigator = Navigator.of(from);
     void toTabs() => navigator.popUntil((route) => route.isFirst);
-    // Your profile: the Work detail tab, or the Grow tab for "Review your KPIs".
-    if (screen == 'profile' || screen == 'kpis') {
+    // "Review your KPIs": Grow alone, the monthly KPI reviews the manager
+    // writes, read-only (one cannot review oneself).
+    if (screen == 'kpis') return _openOwnGrowOver(navigator);
+    // A policy (the payroll policy and salary structure): that policy itself.
+    if (screen == 'payroll_policy') return _openPolicyOver(navigator, 'payroll');
+    // Your profile: the Work detail tab.
+    if (screen == 'profile') {
       return navigator.push<void>(
         MaterialPageRoute(
           builder: (route) => StreamBuilder<ManagerState>(
@@ -504,7 +511,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
                 body: OfflineAware(
                   child: _ProfileScreen(
                 key: const ValueKey('onboarding-profile'),
-                openOn: screen == 'kpis' ? ProfileTab.grow : ProfileTab.workDetail,
+                openOn: ProfileTab.workDetail,
                 session: _session,
                 dashboard: dashboard,
                 bloc: _bloc,
@@ -535,7 +542,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
       'leave' || 'leave_balance' => QuickActionsEntry.leave,
       'overtime' => QuickActionsEntry.overtime,
       'shift' => QuickActionsEntry.calendar,
-      'tax' || 'payroll' || 'payroll_policy' => QuickActionsEntry.payroll,
+      'tax' => QuickActionsEntry.payrollTax,
+      'payroll' => QuickActionsEntry.payroll,
       'punch' => QuickActionsEntry.punchTour,
       _ => null,
     };
@@ -554,6 +562,59 @@ class _ManagerScreenState extends State<ManagerScreen> {
             toTabs();
             _openConnectComposer();
           },
+        ),
+      ),
+    );
+  }
+
+  /// One's own Grow page (the monthly KPI reviews, month by month) over the
+  /// screen it was opened from, as the Grow tab shows it to someone with no
+  /// reports. Completes when it closes.
+  Future<void> _openOwnGrowOver(NavigatorState navigator) {
+    final data = _bloc.state.dashboard;
+    if (data == null) return Future.value();
+    return navigator.push<void>(
+      MaterialPageRoute(
+        builder: (route) => OfflineAware(
+          child: _EmployeeGrowthPage(
+            key: const ValueKey('onboarding-grow'),
+            name: data.managerName,
+            designation: data.managerTeam,
+            history: data.growthHistory,
+            data: data,
+            bloc: _bloc,
+            onNotifications: () => _openNotifications(route),
+            onOpenComposer: () {
+              navigator.popUntil((r) => r.isFirst);
+              _openConnectComposer();
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The company's policy whose title mentions [topic] ("payroll"), opened
+  /// on its own page; with none, the Policies list. Completes when it closes.
+  Future<void> _openPolicyOver(NavigatorState navigator, String topic) async {
+    final api = PoliciesApiService(session: _session);
+    List<PolicyDocument>? list;
+    try {
+      list = await api.policies();
+    } catch (_) {
+      // Offline: the copy kept on the device; with none, the list, which
+      // says so and retries.
+      list = await api.policiesFromCache().catchError((Object _) => null);
+    }
+    final policy = list?.where((p) => p.title.toLowerCase().contains(topic)).firstOrNull;
+    if (!mounted) return;
+    await navigator.push<void>(
+      MaterialPageRoute(
+        builder: (_) => PoliciesAckScreen(
+          key: ValueKey('onboarding-policy-${policy?.key ?? 'list'}'),
+          source: HttpPoliciesSource(api),
+          shell: _onboardingShell(),
+          openKey: policy?.key,
         ),
       ),
     );

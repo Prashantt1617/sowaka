@@ -38,9 +38,6 @@ abstract class JoinerApi {
   /// A file answer, uploaded before Submit: its id is the answer.
   Future<({String fileId, String name})> uploadFormFile(String taskId, String filename, Uint8List bytes);
 
-  Future<JoinerGoals> fetchGoals();
-  Future<JoinerGoals> saveGoal(int month, int index, {String? status, String? note});
-
   Future<void> markWatched(String itemId);
 
   /// The Sowaka tour lesson done.
@@ -128,14 +125,6 @@ class HttpJoinerApi implements JoinerApi {
     final json = await api.upload('$_base/forms/${_e(taskId)}/files', filename: filename, bytes: bytes);
     return (fileId: '${json['fileId'] ?? ''}', name: '${json['name'] ?? filename}');
   }
-
-  @override
-  Future<JoinerGoals> fetchGoals() async => JoinerGoals.fromJson(await api.request('GET', '$_base/goals'));
-
-  @override
-  Future<JoinerGoals> saveGoal(int month, int index, {String? status, String? note}) async => JoinerGoals.fromJson(
-    await api.request('PUT', '$_base/goals/$month/$index', body: {'status': ?status, 'note': ?note}),
-  );
 
   @override
   Future<void> markWatched(String itemId) async {

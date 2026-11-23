@@ -87,6 +87,7 @@ void main() {
     WidgetTester tester, {
     FakePayrollServer? server,
     List<Object?>? fixed,
+    PayrollSetUpOpener? onSetUpItem,
   }) async {
     phone(tester);
     final fake = server ?? FakePayrollServer();
@@ -107,6 +108,7 @@ void main() {
             onQuickCreate: () {},
             onFixPunchDay: (day) => fixed?.add(day),
             onRaiseTicket: () {},
+            onSetUpItem: onSetUpItem,
             pickFile: (_) async => PayrollUpload(
               name: 'lic-receipt.pdf',
               bytes: Uint8List.fromList(utf8.encode('%PDF-1.4 test receipt')),
@@ -1586,6 +1588,44 @@ void main() {
         ]);
         await tap(tester, card('payroll-setup-regime'));
         expect(find.byKey(const ValueKey('payroll-home')), findsNothing);
+      });
+
+      testWidgets('a joiner adds bank and PAN on their own onboarding forms, '
+          'not in a ticket', (tester) async {
+        final forms = <String>[];
+        final server = FakePayrollServer()..setup = newJoiner();
+        await pumpPayroll(
+          tester,
+          server: server,
+          onSetUpItem: (context, key) async {
+            forms.add(key);
+            return true;
+          },
+        );
+        final reads = server.calls.where((c) => c.contains('/payroll/home')).length;
+        await tap(tester, card('payroll-setup-bank'));
+        await tap(tester, card('payroll-setup-pan'));
+        expect(forms, ['bank', 'pan']);
+        expect(opened, isEmpty);
+        // The home reads again once each form closes.
+        expect(
+          server.calls.where((c) => c.contains('/payroll/home')).length,
+          reads + 2,
+        );
+      });
+
+      testWidgets('someone without an onboarding journey still asks HR', (
+        tester,
+      ) async {
+        await pumpPayroll(
+          tester,
+          server: FakePayrollServer()..setup = newJoiner(),
+          onSetUpItem: (context, key) async => false,
+        );
+        await tap(tester, card('payroll-setup-bank'));
+        expect(opened, [
+          'Please add my bank account for payroll so my salary can be paid.',
+        ]);
       });
 
       testWidgets('all done: no checklist, the to-dos as before', (

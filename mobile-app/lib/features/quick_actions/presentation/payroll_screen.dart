@@ -4,6 +4,21 @@ part of 'quick_actions_screen.dart';
 /// picker ([_pickProofFile]).
 typedef PayrollFilePicker = Future<PayrollUpload?> Function(BuildContext);
 
+/// The page Payroll opens on. Anything past [home] opens over the home, so
+/// Back returns to the home and then out of Payroll.
+enum PayrollStartPage {
+  home,
+
+  /// Tax: the regime picker open, or, on the old regime, the investment
+  /// declaration over it.
+  taxDeclaration,
+}
+
+/// Opens a joiner's own form for a "Set up your payroll" row (`bank`, `pan`,
+/// `uan`) and completes once it closes; false when the signed-in person has
+/// no such form (no onboarding journey), and the row asks HR instead.
+typedef PayrollSetUpOpener = Future<bool> Function(BuildContext context, String key);
+
 /// Actions › Payroll: the month's salary, what needs doing before payroll
 /// runs, and the ways into payslips, the flexible split and the tax
 /// declaration. Its pages stack inside the Actions tab, as Placements' do, so
@@ -26,6 +41,8 @@ class PayrollScreen extends StatefulWidget {
     required this.onFixPunchDay,
     this.onRaiseTicket,
     this.pickFile,
+    this.startPage = PayrollStartPage.home,
+    this.onSetUpItem,
   });
 
   final PayrollApiService api;
@@ -44,6 +61,14 @@ class PayrollScreen extends StatefulWidget {
   /// Desk ticket itself ([raiseSupportTicket]): the desk.
   final VoidCallback? onRaiseTicket;
   final PayrollFilePicker? pickFile;
+
+  /// The page it opens on ([PayrollStartPage]); the home is always under it.
+  final PayrollStartPage startPage;
+
+  /// "Add bank account", "Add PAN", "Link PF account" for someone who can
+  /// add them themselves (a joiner's own forms); without it, or when it
+  /// says no, the row raises a Support Desk ticket.
+  final PayrollSetUpOpener? onSetUpItem;
 
   @override
   State<PayrollScreen> createState() => _PayrollScreenState();
@@ -67,6 +92,14 @@ class _PayrollScreenState extends State<PayrollScreen> {
       screen: widget,
       child: Navigator(
         key: _nav,
+        // The page asked for sits over the home: Back returns there.
+        onGenerateInitialRoutes: (_, _) => [
+          MaterialPageRoute<void>(builder: (_) => const _PayrollHomePage()),
+          if (widget.startPage == PayrollStartPage.taxDeclaration)
+            MaterialPageRoute<void>(
+              builder: (_) => const _TaxSummaryPage(declare: true),
+            ),
+        ],
         onGenerateRoute: (_) =>
             MaterialPageRoute<void>(builder: (_) => const _PayrollHomePage()),
       ),
