@@ -50,6 +50,7 @@ import 'package:mobile_app/features/notifications/presentation/notification_inbo
 import 'package:mobile_app/features/payroll/presentation/payroll_lock.dart';
 import 'package:mobile_app/main.dart' show sowakaTheme;
 import 'package:mobile_app/services/api_client.dart';
+import 'package:mobile_app/features/lifecycle/offboarding/resign_screens.dart' show resignInApp;
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _out = String.fromEnvironment('SCREENS_OUT');
@@ -584,6 +585,8 @@ Future<void> _profileTab(WidgetTester tester, String label) async {
 // ───────────────────────────────────────────────────────────────── main
 
 void main() {
+  // Resign is hidden in the app for now (resignInApp); these tests cover the row itself.
+  setUpAll(() => resignInApp = true);
   setUpAll(() async {
     if (_skip != null) return;
     Directory(_out).createSync(recursive: true);

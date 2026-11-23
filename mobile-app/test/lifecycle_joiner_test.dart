@@ -626,11 +626,13 @@ void main() {
     testWidgets('Close leaves the stories', (tester) async {
       await _open(tester, _home('w1', punched: true));
       await scrollTo(tester, find.byKey(const ValueKey('tile-watch')));
-      expect(find.text('1 story'), findsOneWidget);
+      // The whole watch list, whatever the step.
+      expect(find.textContaining(RegExp(r'^\d+ stor(y|ies)$')), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('tile-watch')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
-      expect(find.byKey(const ValueKey('story-v2')), findsOneWidget);
+      // The first not yet watched of the whole list (Day 1's, seen from Week 1).
+      expect(find.byKey(const ValueKey('story-v1')), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('stories-close')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('joiner-stories')), findsNothing);

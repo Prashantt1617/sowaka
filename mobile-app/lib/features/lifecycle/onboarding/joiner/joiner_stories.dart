@@ -723,6 +723,11 @@ class _JoinerStoriesScreenState extends State<JoinerStoriesScreen>
       color: Colors.white,
     );
     final media = _media(w);
+    // A picture or a video HR has not uploaded yet: its title as a card, not
+    // a play button that plays nothing.
+    if ((w.type == 'image' || w.type == 'video') && media == null) {
+      return Text(w.title, key: ValueKey('story-${w.id}'), textAlign: TextAlign.center, style: headline);
+    }
     switch (w.type) {
       case 'text':
         return Text(
