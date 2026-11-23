@@ -16,11 +16,15 @@ import { unlockJourneyLetters } from './letters';
 
 export type CandidateDocumentView = CandidateDocument & { files: Array<{ id: string; name: string; contentType: string; size: number }> };
 
-/** When the template names no list: T1's "ID, address proof, education, last payslip". */
+/** When the template names no list: Aadhaar and PAN apart, address proof, education, and the last job's papers. */
 export const DEFAULT_DOCUMENTS: Array<{ key: string; label: string; required: boolean }> = [
-  { key: 'id_proof', label: 'ID proof (PAN and Aadhaar)', required: true },
+  { key: 'aadhaar', label: 'Aadhaar card', required: true },
+  { key: 'pan', label: 'PAN card', required: true },
   { key: 'address_proof', label: 'Address proof', required: true },
   { key: 'education', label: 'Education (highest degree)', required: true },
+  { key: 'resume', label: 'Resume', required: false },
+  { key: 'relieving_letter', label: 'Relieving letter', required: false },
+  { key: 'previous_offer_letter', label: 'Offer letter (last company)', required: false },
   { key: 'last_payslip', label: 'Last payslip', required: false },
 ];
 const MAX_FILES_PER_DOCUMENT = 4;

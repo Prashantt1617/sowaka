@@ -4,6 +4,7 @@
 // About page and the story stay apart.
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import type { JoiningDetails, MeetItem } from '../../api/types';
+import { mediaUrl } from '../../api/client';
 import { A1Logo } from '../A1';
 import { firstName, fmtTime, fmtWeekday, initials } from '../../lib/format';
 import type { PortalPolicy } from './G2Policy';
@@ -13,10 +14,11 @@ import { G2Directions } from './icons/g2-directions';
 import { G2ChevronRight } from './icons/g2-chevron-right';
 import pin3d from './icons/g2-3d-pin.png';
 
-export type StoryKey = 'welcome' | 'manager' | 'team' | 'day1' | 'policies' | 'role';
+export type StoryKey = 'welcome' | 'manager' | 'team' | 'day1' | 'policies' | 'role' | `watch:${string}`;
 
 /** Per story: background, the HR mark's colour, the line under HR, where the content sits, the reply hint. */
-const LOOK: Record<StoryKey, { cls: string; mark: string; sub: string; pb: number }> = {
+type Look = { cls: string; mark: string; sub: string; pb: number };
+const LOOK: Record<Exclude<StoryKey, `watch:${string}`>, Look> = {
   welcome: { cls: 'g2-story--brand', mark: '#0571A6', sub: 'Pinned by HR', pb: 218.5 },
   manager: { cls: 'g2-story--green', mark: '#15803D', sub: 'Before you join', pb: 204.5 },
   team: { cls: 'g2-story--amber', mark: '#0571A6', sub: 'Before you join', pb: 228.5 },
@@ -24,22 +26,33 @@ const LOOK: Record<StoryKey, { cls: string; mark: string; sub: string; pb: numbe
   policies: { cls: 'g2-story--tint', mark: '#0571A6', sub: 'Before you join', pb: 186.5 },
   role: { cls: 'g2-story--tint', mark: '#0571A6', sub: 'Before you join', pb: 186.5 },
 };
+/** A watch-list story: dark behind a video or picture, its own colour behind text. */
+const WATCH_LOOK: Look = { cls: 'g2-story--tint', mark: '#0571A6', sub: 'Pinned by HR', pb: 96 };
+/** The template's text backgrounds (the dashboard's BACKGROUNDS). */
+const WATCH_BG: Record<string, string> = {
+  rust: 'linear-gradient(160deg, #D2541B 0%, #B23500 55%, #8A2900 100%)', blue: '#0571A6', ink: '#16181D',
+  green: '#15803D', purple: '#5B3FAF', sand: '#9A4A06',
+};
 const TEAM_TONES = [['#FFFFFF', '#0571A6'], ['#F7F7F9', '#15803D'], ['#F7F7F9', '#B45309'], ['#F7F7F9', '#B45309']];
 const dayMonth = (v: string) => new Date(`${v.slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
 function Face({ name, photo, className, style }: { name: string; photo?: string; className: string; style?: CSSProperties }) {
   const [bad, setBad] = useState(false);
-  return <span className={className} style={style} aria-hidden="true">{photo && !bad ? <img src={photo} alt="" onError={() => setBad(true)} /> : initials(name)}</span>;
+  return <span className={className} style={style} aria-hidden="true">{photo && !bad ? <img src={mediaUrl(photo)} alt="" onError={() => setBad(true)} /> : initials(name)}</span>;
 }
 
-export function G2Story({ order, at, onMove, onClose, company, candidate, tj, j, note, managerName, video, role, policies, onOpenPolicy }: {
+export function G2Story({ order, at, onMove, onClose, company, candidate, tj, j, note, managerName, video, role, policies, onOpenPolicy, watch = [] }: {
   order: StoryKey[]; at: StoryKey; onMove: (k: StoryKey) => void; onClose: () => void; company: { name: string; logoUrl?: string }; candidate: string; /** No longer used (the reply bar is gone); still passed by the About page. */ hr?: string; tj: string;
   j?: JoiningDetails; note?: MeetItem; managerName?: string; video?: MeetItem; role?: MeetItem; policies: PortalPolicy[];
   /** A quick read opens that policy (G2Policy). */
   onOpenPolicy?: (p: PortalPolicy) => void;
+  /** The template's pre-boarding watch list (story keys `watch:<id>`). */
+  watch?: MeetItem[];
 }) {
   const i = Math.max(0, order.indexOf(at));
-  const look = LOOK[at];
+  const item = at.startsWith('watch:') ? watch.find((w) => w.id === at) : undefined;
+  const look = at.startsWith('watch:') ? WATCH_LOOK : LOOK[at as Exclude<StoryKey, `watch:${string}`>];
+  const watchBg = item ? (item.mediaType === 'text' ? WATCH_BG[item.bg ?? 'rust'] ?? WATCH_BG.rust : '#0E0E10') : undefined;
   const [playing, setPlaying] = useState(false);
   useEffect(() => { setPlaying(false); }, [at]);
   useEffect(() => {
@@ -68,7 +81,7 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, tj, j,
           <p className="g2-story__line">{about}</p>
         </div>
         {video?.videoUrl && (playing
-          ? <video className="g2-story__video" src={video.videoUrl} controls autoPlay playsInline />
+          ? <video className="g2-story__video" src={mediaUrl(video.videoUrl)} controls autoPlay playsInline />
           : <button type="button" className="g2-story__cta" style={{ gap: 16.5, paddingRight: 28.375 }} onClick={() => setPlaying(true)}><G2Play />Watch the welcome video</button>)}
       </div>
     );
@@ -79,7 +92,7 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, tj, j,
         <Face name={managerName} photo={note?.authorPhotoUrl} className="g2-story__face" />
         <h2 className="g2-story__title">Meet {managerName}</h2>
         <span className="g2-story__pill">Your manager</span>
-        {note?.videoUrl ? <video className="g2-story__video" src={note.videoUrl} controls playsInline /> : <p className="g2-story__line">{line}</p>}
+        {note?.videoUrl ? <video className="g2-story__video" src={mediaUrl(note.videoUrl)} controls playsInline /> : <p className="g2-story__line">{line}</p>}
       </div>
     );
   } else if (at === 'team') {
@@ -120,6 +133,16 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, tj, j,
         </div>
       </div>
     );
+  } else if (item) {
+    content = (
+      <div className="g2-story__stack" style={{ gap: 16, width: '100%' }}>
+        {item.mediaType === 'video' && item.videoUrl && <video key={item.id} className="g2-story__video" src={mediaUrl(item.videoUrl)} controls autoPlay playsInline style={{ maxHeight: '62vh', width: '100%', objectFit: 'contain', background: '#000' }} />}
+        {item.mediaType === 'image' && item.imageUrl && <img src={mediaUrl(item.imageUrl)} alt={item.title} style={{ maxHeight: '64vh', maxWidth: '100%', objectFit: 'contain', borderRadius: 12 }} />}
+        {item.mediaType === 'text'
+          ? <h2 className="g2-story__title" style={{ color: '#FFFFFF' }}>{item.text}</h2>
+          : <p className="g2-story__line" style={{ color: '#FFFFFF' }}>{item.title}</p>}
+      </div>
+    );
   } else if (at === 'role' && role) {
     content = (
       <div className="g2-story__stack" style={{ gap: 16 }}>
@@ -130,17 +153,17 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, tj, j,
     );
   }
 
-  const onBrand = at === 'welcome';
+  const onBrand = at === 'welcome' || !!item;
   return (
     <div className="a1-story" role="dialog" aria-modal="true" aria-label={`Story ${i + 1} of ${order.length}`}>
-      <div className={`g2-story ${look.cls}`}>
+      <div className={`g2-story ${look.cls}`} style={watchBg ? { background: watchBg } : undefined}>
         <div className="g2-story__top">
           <div className="g2-story__segs">
             {order.map((k, n) => <span key={k}><i style={{ width: n <= i ? '100%' : '0%' }} /></span>)}
           </div>
           <div className="g2-story__who">
             <span style={{ color: look.mark, display: 'flex' }}><A1Logo company={company} className="g2-story__mark" /></span>
-            <span className="g2-story__by"><b>{company.name} HR</b><span>{look.sub}</span></span>
+            <span className="g2-story__by" style={item ? { color: '#FFFFFF' } : undefined}><b>{company.name} HR</b><span>{look.sub}</span></span>
             <button type="button" className="g2-story__close" aria-label="Close" onClick={onClose}><G2Close color={onBrand ? '#FFFFFF' : '#0571A6'} /></button>
           </div>
         </div>

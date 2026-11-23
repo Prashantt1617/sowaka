@@ -9,6 +9,8 @@
  * insights (groups under 5 hidden, no quotes). On a scratch database only:
  *   MONGODB_URI=mongodb://127.0.0.1:27133 MONGODB_DB=el_off_check NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=offcheck AWS_S3_BUCKET= npm run offboarding:check
  */
+// These flows start with the candidate accepting online, which the live server no longer allows.
+process.env.OFFER_ONLINE_ACCEPT ??= '1';
 import { ensureDefaultTemplates } from '../services/lifecycle/templates';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';

@@ -66,12 +66,41 @@ export async function designOf(j: Pick<Journey, 'org' | 'templateId' | 'template
 }
 
 /**
+ * The pre-boarding watch list a joiner sees on the portal: the template's as it is NOW (HR adding a video
+ * reaches everyone still pre-boarding), else their own copy when the template is gone. Off when the
+ * template switched the watch list off.
+ */
+export async function preboardingWatchOf(j: Pick<Journey, 'org' | 'templateId' | 'templateSnapshot'>): Promise<TemplateTask[]> {
+  const template = j.templateId ? (await onboardingTemplatesOf(j.org)).get(j.templateId) : undefined;
+  const source = template ?? j.templateSnapshot;
+  if (source?.settings?.preboarding?.watch === false) return [];
+  return (source?.tasks ?? []).filter(isDesignRow).filter(live)
+    .filter((r) => r.design?.section === 'watch' && r.design.stage === 'pre' && !!r.design.media)
+    .sort((a, b) => a.order - b.order);
+}
+
+/**
  * The template's "Joining and reporting details" a joiner reads (portal Day-1 pass and joining details, the
  * teammates' JOINING DETAILS): none when the template removed that pre-boarding row. What HR typed on the
  * joiner (`journey.day1Pass`) wins over it wherever it is read.
  */
 export function templateReporting(settings: LifecycleTemplateSettings): LifecycleTemplateSettings['reporting'] {
   return settings.preboarding?.joiningDetails === false ? undefined : settings.reporting;
+}
+
+/**
+ * The joining and reporting details a joiner sees, everywhere (portal, Day-1 pass, the dashboard panel,
+ * the teammates' pages): before they join, the template's as it is NOW (HR filling them in or changing
+ * them reaches everyone still to join); from the joining day, their own copy. HR's typed day1Pass still wins
+ * where the pass is read.
+ */
+export async function reportingFor(j: Pick<Journey, 'org' | 'templateId' | 'templateSnapshot' | 'userId' | 'status'>): Promise<LifecycleTemplateSettings['reporting']> {
+  const joined = !!j.userId || ['joined', 'confirmed', 'closed'].includes(String(j.status));
+  if (!joined && j.templateId) {
+    const template = (await onboardingTemplatesOf(j.org)).get(j.templateId);
+    if (template?.settings) return templateReporting(template.settings);
+  }
+  return templateReporting((await designOf(j)).settings);
 }
 
 /** The template row behind a journey task (its snapshot first: the task was made from it). */
@@ -373,7 +402,9 @@ export async function templateMediaBytes(org: string, fileId: string): Promise<{
 /** Whether a file is media of one of the journey's design rows (the joiner may read it). */
 export async function journeyMayRead(j: Pick<Journey, 'org' | 'templateId' | 'templateSnapshot'>, fileId: string): Promise<boolean> {
   const { rows } = await designOf(j);
-  return rows.some((r) => r.design?.media?.fileId === fileId || r.design?.fileId === fileId);
+  if (rows.some((r) => r.design?.media?.fileId === fileId || r.design?.media?.posterFileId === fileId || r.design?.fileId === fileId)) return true;
+  // The template's current pre-boarding watch list (preboardingWatchOf) is theirs to watch too.
+  return (await preboardingWatchOf(j)).some((r) => r.design?.media?.fileId === fileId || r.design?.media?.posterFileId === fileId);
 }
 
 // ─── Employee preview ───────────────────────────────────────────────────────

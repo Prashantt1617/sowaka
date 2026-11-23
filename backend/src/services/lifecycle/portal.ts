@@ -7,7 +7,7 @@
  * about, meet, letter, pass). Up next = the first of: a document sent back →
  * the open item due soonest → an item not started.
  */
-import { designOf, templateReporting } from './design';
+import { designOf, preboardingWatchOf, reportingFor } from './design';
 import { peopleOf } from './designRows';
 import { candidateAccounts, companies, dateChangeRequests, journeys, letters, offers, users } from '../../config/db';
 import { policiesFor } from '../policy-document.service';
@@ -44,6 +44,8 @@ export interface PortalHome {
   batch: { count: number; names: string[] };
   workEmail?: string;
   hrContact: { name: string; email: string };
+  /** "Your point of contact": the manager and HR, with a WhatsApp link where they have a phone. */
+  contacts?: Array<{ userId: string; role: 'manager' | 'hr'; name: string; designation?: string; photoUrl?: string; whatsapp?: string }>;
   banner?: { kind: 'offer_updated'; changedFields: Array<keyof OfferFields> };
   /** For the closed screens: which one (declined, expired, not_joining, moved_to_app). */
   closedState?: string;
@@ -99,7 +101,9 @@ function addMonthsDay(day: string, months: number): string {
 // ─── Meet us ────────────────────────────────────────────────────────────────
 
 export interface MeetItem {
-  id: string; kind: 'manager_note' | 'video' | 'card'; title: string; text?: string; videoUrl?: string; seen: boolean;
+  id: string; kind: 'manager_note' | 'video' | 'card' | 'watch'; title: string; text?: string; videoUrl?: string; seen: boolean;
+  /** On `watch` (the template's pre-boarding watch list): what it is, its picture, a text story's background. */
+  mediaType?: 'video' | 'image' | 'text'; imageUrl?: string; bg?: string;
   /** The reel's tag, the line under the title, and the note's author. */
   tag?: string; subtitle?: string; authorName?: string; authorRole?: string;
   /** The note's author's face beside their name; absent for no photo. */
@@ -110,7 +114,7 @@ export interface MeetItem {
 
 export async function meetItems(journey: Journey): Promise<MeetItem[]> {
   const seen = new Set(journey.meetUs?.seen ?? []);
-  const items: Omit<MeetItem, 'seen'>[] = await meetVideoItems(journey);
+  const items: Omit<MeetItem, 'seen'>[] = [...await watchItems(journey), ...await meetVideoItems(journey)];
   const offer = await offers().findOne({ journeyId: journey.id });
   const responsibilities = sentVersion(offer?.versions)?.fields.responsibilities;
   if (responsibilities) items.push({ id: 'role', kind: 'card', tag: 'YOUR ROLE', title: 'Your role, explained', subtitle: journey.designation ? `What you'll do as ${journey.designation}` : 'Your job description', text: responsibilities });
@@ -125,6 +129,50 @@ export async function meetItems(journey: Journey): Promise<MeetItem[]> {
     });
   }
   return items.map((item) => ({ ...item, seen: seen.has(item.id) }));
+}
+
+/**
+ * The template's pre-boarding watch list (Setup › Onboarding template › Pre-boarding › Watch list), as
+ * stories on About the company: each video, picture or text card, in the template's order. Nothing when
+ * the template switched the watch list off. Files go as signed links (an <img>/<video> sends no token).
+ */
+async function watchItems(journey: Journey): Promise<Omit<MeetItem, 'seen'>[]> {
+  return (await preboardingWatchOf(journey))
+    .flatMap((r): Omit<MeetItem, 'seen'>[] => {
+      const m = r.design!.media!;
+      if (m.type === 'text') return m.text ? [{ id: `watch:${r.id}`, kind: 'watch', mediaType: 'text', title: r.title, text: m.text, ...(m.bg ? { bg: m.bg } : {}) }] : [];
+      if (!m.fileId || (m.type !== 'video' && m.type !== 'image')) return [];
+      const url = mediaPath(journey.id, m.fileId);
+      return [{ id: `watch:${r.id}`, kind: 'watch', mediaType: m.type, title: r.title, ...(m.type === 'video' ? { videoUrl: url } : { imageUrl: url }) }];
+    });
+}
+
+/** "+91 98765 43210" as a WhatsApp chat link (wa.me wants the number in full, digits only; 10 digits are Indian). */
+function whatsappOf(phone?: string | null): string | undefined {
+  const digits = String(phone ?? '').replace(/\D/g, '');
+  if (digits.length < 10) return undefined;
+  return `https://wa.me/${digits.length === 10 ? `91${digits}` : digits}`;
+}
+
+/** "Your point of contact" (home): the manager, then HR, each with their face and a WhatsApp link when they have a phone. */
+async function contactsOf(journey: Journey): Promise<NonNullable<PortalHome['contacts']>> {
+  const { settings } = await designOf(journey);
+  const people = await peopleOf(journey, settings);
+  const ids = [journey.managerUserId, people.hr].filter((x): x is string => !!x);
+  if (!ids.length) return [];
+  const found = await users().find({ userId: { $in: ids } }, { projection: { _id: 0, name: 1, designation: 1, phone: 1, ...FACE_PROJECTION } }).toArray();
+  const byId = new Map(found.map((u) => [u.userId, u]));
+  const out: NonNullable<PortalHome['contacts']> = [];
+  const add = (role: 'manager' | 'hr', id?: string) => {
+    const u = id ? byId.get(id) : undefined;
+    if (!u || out.some((c) => c.userId === u.userId)) return;
+    const face = faceUrlOf(u);
+    const wa = whatsappOf(u.phone);
+    out.push({ userId: u.userId, role, name: u.name, ...(u.designation ? { designation: u.designation } : {}), ...(face ? { photoUrl: face } : {}), ...(wa ? { whatsapp: wa } : {}) });
+  };
+  add('manager', journey.managerUserId);
+  add('hr', people.hr);
+  return out;
 }
 
 /** Meet us's first items: the manager's note (text or video) and the company video. */
@@ -265,7 +313,7 @@ export async function portalPassOrLocked(journey: Journey, now = new Date()): Pr
  */
 async function passWithTemplate(journey: Journey, withWho = true): Promise<Day1Pass> {
   const { settings } = await designOf(journey);
-  const reporting = templateReporting(settings);
+  const reporting = await reportingFor(journey);
   let meets: { name: string; phone?: string } | null = null;
   if (withWho && reporting && !journey.day1Pass?.askFor) {
     const meetsId = reporting.meets === 'manager' ? journey.managerUserId : reporting.meets === 'buddy' ? journey.buddyUserId : (await peopleOf(journey, settings)).hr;
@@ -378,6 +426,7 @@ export async function portalHome(journey: Journey, now = new Date()): Promise<Po
     company: { name: companyDisplayName(company, journey.org), ...(company?.lifecyclePortal?.logoUrl ? { logoUrl: company.lifecyclePortal.logoUrl } : {}) },
     tj: journey.tj, daysToGo: journey.tj ? daysBetween(today, journey.tj) : null,
     hrContact: await hrContactFor(journey, company),
+    ...(pre ? { contacts: await contactsOf(journey).catch(() => []) } : {}),
     ...(journey.designation ? { designation: journey.designation } : {}),
     ...(reportingTime ? { reportingTime } : {}),
     ...(journey.tj ? { portalOpenUntil: journey.templateSnapshot.settings.portalOpenUntil === 'month_1' ? addMonthsDay(journey.tj, 1) : addDays(journey.tj, 7) } : {}),
@@ -438,11 +487,11 @@ export async function portalHome(journey: Journey, now = new Date()): Promise<Po
   // Up next: sent back → due soonest → not started. A step waiting on HR is not the candidate's to do.
   const open = steps.filter((s) => !s.done && !s.locked && !s.waiting);
   const titles: Record<PathKey, string> = {
-    offer: (latest?.version ?? 1) > 1 ? 'Review your updated offer' : 'Accept your offer', docs: 'Upload your documents', about: 'Tell us about you',
+    offer: (latest?.version ?? 1) > 1 ? 'Read your updated offer' : 'Read your offer', docs: 'Upload your documents', about: 'Tell us about you',
     meet: 'Meet the team', letter: 'Sign your appointment letter', pass: 'Check your Day-1 pass',
   };
   const helpers: Record<PathKey, string> = {
-    offer: ((latest?.version ?? 1) > 1 && changesLine(latest?.changedFields)) || 'Read it, then accept',
+    offer: ((latest?.version ?? 1) > 1 && changesLine(latest?.changedFields)) || 'Reply to HR’s email to accept it',
     docs: sentBack?.hrNote ?? 'One document at a time · PDF, JPG or PNG', about: 'Emergency contact and PF · 2 quick steps',
     meet: 'Short videos and cards from the team', letter: 'Open each PDF, then sign', pass: 'Where to go, when, and who to meet',
   };
@@ -586,7 +635,11 @@ export async function runPortalJobs(now = new Date()): Promise<{ expired: number
 
 /** Documents rows for the portal: the files' own links are portal paths. */
 const DOC_HINTS: Array<[RegExp, string]> = [
-  [/id|pan|aadhaar/i, 'Both sides, in good light, with no glare.'],
+  [/aadhaar|aadhar/i, 'Front and back, all four corners showing.'],
+  [/\bpan\b/i, 'The front, all four corners showing.'],
+  [/resume|\bcv\b/i, 'Your latest resume, PDF preferred.'],
+  [/previous_offer|offer letter/i, 'The offer letter from your last company.'],
+  [/id proof/i, 'Both sides, in good light, with no glare.'],
   [/address/i, 'A utility bill, rent agreement or passport page.'],
   [/educat|degree/i, 'Degree certificate and final mark sheet.'],
   [/payslip/i, 'From your current or last employer.'],
@@ -599,6 +652,9 @@ const DOC_HINTS: Array<[RegExp, string]> = [
  */
 const DOC_COPY: Array<[RegExp, { title: string; tag: string }]> = [
   [/^id proof \(pan and aadhaar\)$/i, { title: 'Upload your PAN and Aadhaar', tag: 'ID proof' }],
+  [/^aadhaar card$/i, { title: 'Upload your Aadhaar card', tag: 'Aadhaar' }],
+  [/^pan card$/i, { title: 'Upload your PAN card', tag: 'PAN' }],
+  [/^offer letter \(last company\)$/i, { title: 'Upload the offer letter from your last company', tag: 'Experience' }],
   [/^address proof$/i, { title: 'Upload an address proof', tag: 'Address proof' }],
   [/^education( \(highest degree\)| certificates)?$/i, { title: 'Upload your highest degree', tag: 'Education' }],
 ];

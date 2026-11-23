@@ -8,6 +8,11 @@ export function hasAllDashboardTabs(user: { dashboardAdmin?: boolean; dashboardT
   return user?.dashboardAdmin === true || !Array.isArray(user?.dashboardTabs);
 }
 
+/** Whether this person may edit employee details: every dashboard admin, or anyone given the switch in People › Accesses. */
+export function mayEditEmployees(user: { dashboardAdmin?: boolean; canEditEmployeeDetails?: boolean } | null | undefined): boolean {
+  return user?.dashboardAdmin === true || user?.canEditEmployeeDetails === true;
+}
+
 /**
  * After `requireDashboardAccess`: refuses the APIs behind tabs this person
  * was not given in People › Accesses. Admins and anyone never limited pass.

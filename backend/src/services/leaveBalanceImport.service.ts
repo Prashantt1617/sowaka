@@ -26,6 +26,7 @@ import { withActivityVia } from './employee-activity.service';
 import { IMPORT_COLUMNS, emailKey, headerKey, idKey, norm } from './employeeImport.service';
 import { editableBalanceItem, LeaveError, leaveBalancesFor, writeLeaveTotals } from './leave.service';
 import type { LeaveBalance } from './leave.service';
+import { mayEditEmployees } from '../middleware/admin.middleware';
 
 const MAX_ROWS = 2000;
 const MAX_DAYS = 366;
@@ -60,7 +61,7 @@ function editRule(editor: Editor, everyone: Pick<User, 'userId' | 'managerUserId
     return false;
   };
   return (userId: string): string | null => {
-    if (editor.canEditEmployeeDetails !== true) return 'You cannot edit employee details. Ask a dashboard admin for that right in People › Accesses.';
+    if (!mayEditEmployees(editor)) return 'You cannot edit employee details. Ask a dashboard admin for that right in People › Accesses.';
     if (userId === editor.userId) return 'Your own balance is set by someone else';
     if (editor.dashboardAdmin !== true && !below(userId)) return 'You can set the balances of the people who report to you';
     return null;
@@ -100,7 +101,7 @@ export async function listLeaveBalances(adminUserId: string, yearInput?: unknown
   return {
     year,
     types: typesOf(balances.values()),
-    canImport: editor.canEditEmployeeDetails === true,
+    canImport: mayEditEmployees(editor),
     people: people
       .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
       .map((p) => ({
@@ -217,7 +218,7 @@ export async function planLeaveImport(adminUserId: string, input: { rows?: unkno
   if (rows.length === 0) throw new LeaveError(400, 'The file has no rows under its header');
   if (rows.length > MAX_ROWS) throw new LeaveError(400, `At most ${MAX_ROWS} rows per import`);
   const [editor, everyone] = await Promise.all([editorOf(adminUserId), orgUsers(adminUserId, USER_FIELDS)]);
-  if (editor.canEditEmployeeDetails !== true) throw new LeaveError(403, 'You cannot edit employee details. Ask a dashboard admin for that right in People › Accesses.');
+  if (!mayEditEmployees(editor)) throw new LeaveError(403, 'You cannot edit employee details. Ask a dashboard admin for that right in People › Accesses.');
   const mayEdit = editRule(editor, everyone);
 
   // The leave types the company's people have, from their templates as their balances read them.

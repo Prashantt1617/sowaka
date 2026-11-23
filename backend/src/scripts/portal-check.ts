@@ -11,6 +11,8 @@
  *
  *   npm run portal:check        (MONGODB_DB=el_offer_check, mongod on 127.0.0.1:27133)
  */
+// These flows start with the candidate accepting online, which the live server no longer allows.
+process.env.OFFER_ONLINE_ACCEPT ??= '1';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 
 process.env.MONGODB_URI = process.env.EL_OFFER_MONGO_URI ?? 'mongodb://127.0.0.1:27133';
@@ -89,7 +91,8 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   const OTHER = 'el-other';
   const OFF = 'el-off';
   const today = istDate();
-  const tj = addDays(today, 20);
+  // About three weeks out, on a weekday (a Saturday or Sunday is a week-off and the offer is refused).
+  const tj = (() => { let d = addDays(today, 20); while ([0, 6].includes(new Date(`${d}T00:00:00Z`).getUTCDay())) d = addDays(d, 1); return d; })();
 
   await db.companies().insertMany([
     { id: ORG, name: 'Sowaka Test', features: { lifecycle: true }, profile: { displayName: 'Sowaka Test', addressLine1: '4th Floor, Example Towers', city: 'Bengaluru', state: 'Karnataka', pincode: '560001', replyToEmail: 'hr@sowaka.test' }, lifecyclePortal: { videoUrl: 'https://videos.example/life.mp4' } },
@@ -316,7 +319,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   section('Portal home');
   journeyA = (await db.journeys().findOne({ id: A }))!;
   let home = await portalSvc.portalHome(journeyA);
-  ok('view tasks_open, Tj and days to go', home.view === 'tasks_open' && home.tj === tj && home.daysToGo === 20, home);
+  ok('view tasks_open, Tj and days to go', home.view === 'tasks_open' && home.tj === tj && home.daysToGo === Math.round((Date.parse(`${tj}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000), home);
   ok('path: Offer done, Docs current, Sign and Day 1 locked', JSON.stringify(home.path.map((p) => `${p.key}:${p.state}`)) === JSON.stringify(['offer:done', 'docs:current', 'about:todo', 'meet:todo', 'letter:locked', 'pass:locked']), home.path);
   ok('Up next is the item due soonest (documents, Tj − 5)', home.upNext?.key === 'docs' && home.upNext.due === addDays(tj, -5), home.upNext);
   ok('the seed has no water yet', home.plant.stage === 0 && home.plant.water === 0);
@@ -565,7 +568,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   journeyA = (await db.journeys().findOne({ id: A }))!;
   ok('sent: the journey stays where it was (docs approved), no second finalise', journeyA.status === 'docs_approved' && (await db.journeyTasks().findOne({ journeyId: A, systemKey: 'finalise_offer' }))?.status === 'done', journeyA.status);
   home = await portalSvc.portalHome(journeyA);
-  ok('home: offer_updated with the banner naming Tj', home.view === 'offer_updated' && home.banner?.changedFields?.[0] === 'tj' && home.upNext?.title === 'Review your updated offer' && home.upNext.helper === 'Joining date changed', home);
+  ok('home: offer_updated with the banner naming Tj', home.view === 'offer_updated' && home.banner?.changedFields?.[0] === 'tj' && home.upNext?.title === 'Read your updated offer' && home.upNext.helper === 'Joining date changed', home);
   ok('the token still opens the portal while the offer is updated', (await auth.journeyForPortalToken(`Bearer ${portalToken}`)).id === A);
   ok('there is nothing for HR to finalise while v3 waits', (await refusal(() => offersSvc.finaliseOffer(HR, A))).status === 409);
   const meOffer = await offersSvc.portalOfferForJourney(journeyA);
@@ -771,6 +774,32 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
     ok('emails link to the company\'s own portal address', link.startsWith(`https://${ORG}.getsowaka.com/onboarding/sign-in?c=`), link);
     ok('a link with no company falls back to the shared join address', portalLink('/') === 'https://join.getsowaka.com/onboarding/');
     (liveEnv as { portalBaseUrl: string }).portalBaseUrl = saved;
+  }
+
+  // ─── Offer as it runs now: the PDF only, the candidate replies, HR marks it accepted ───
+  section('Offer (live rules): no accept link, no online accept, HR marks it accepted');
+  {
+    process.env.OFFER_ONLINE_ACCEPT = '0';
+    try {
+      const RIYA = 'riya.live@example.com';
+      const B = (await offersSvc.createOffer(HR, { candidate: { name: 'Riya Live', personalEmail: RIYA }, fields: fields() })).journeyId;
+      ok('marking an unsent offer accepted is refused', (await refusal(() => offersSvc.finaliseOffer(HR, B))).status === 409);
+      await offersSvc.uploadOfferPdf(HR, B, { originalname: 'Offer letter.pdf', buffer: PDF('live') });
+      clearLifecycleOutbox();
+      await offersSvc.sendOffer(HR, B, {});
+      const mail = lastMail(RIYA);
+      ok('the email has the PDF and no accept link', !!mail && mail.attachments.length === 1 && !/\/o\//.test(mail.html) && !/accept it online/i.test(mail.html), mail?.html);
+      ok('…and asks the candidate to reply to accept', /reply to this email/i.test(mail?.html ?? ''));
+      const sentJ = (await db.journeys().findOne({ id: B }))!;
+      ok('the candidate cannot accept online', (await refusal(() => offersSvc.acceptOfferForJourney(sentJ, { ip: '1.1.1.1' }))).status === 403);
+      const done = await offersSvc.finaliseOffer(HR, B);
+      const v = (await db.offers().findOne({ journeyId: B }))!.versions[0];
+      ok('HR marks the sent offer accepted: accepted and finalised, by HR', done.status === 'accepted' && !!v.finalisedAt && v.finalisedByUserId === 'hr' && /Confirmed by HR/.test(v.acceptedDevice ?? ''), v);
+      ok('…the portal is ready and its login emailed', (await db.journeys().findOne({ id: B }))?.status === 'finalised' && !!(await db.candidateAccounts().findOne({ journeyId: B })) && mailsTo(RIYA).some((m) => /joining portal is ready/i.test(m.subject)));
+      ok('…and accept_offer and finalise_offer are done', (await db.journeyTasks().find({ journeyId: B, systemKey: { $in: ['accept_offer', 'finalise_offer'] } }).toArray()).every((t) => t.status === 'done'));
+    } finally {
+      process.env.OFFER_ONLINE_ACCEPT = '1';
+    }
   }
 
   // Clean the scratch uploads this run wrote.

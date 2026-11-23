@@ -17,16 +17,17 @@ import { getOffices } from '../../../services/hrms';
 import type { OfficeDTO } from '../../../services/hrms';
 import type {
   CheckinAnswerType, DesignAccess, DesignCheckin, DesignMedia, DesignMeeting, DesignQuestion, DesignStage, DesignTask, DesignTeamTask, DesignWatchItem,
-  FormAnswerType, JoinerTaskType, LetterTemplateDTO, MeetWith, TeamRole, TemplateDesign, TemplatePreview, TourLesson,
+  FormAnswerType, JoinerTaskType, LetterTemplateDTO, MeetWith, TeamRole, TemplateDesign,
 } from '../../../services/lifecycle';
 import { Modal } from './shared';
 import { areaStyle, errText, inputStyle, longDay, todayKey } from './format';
 import { LETTER_CSS, LETTER_TITLE, labelledBody, letterDocument } from './letterDoc';
 import { useCompanyName } from './hooks';
+import { EmployeePreview } from './EmployeePreview';
 import { Block, Glyph, GroupHead, InfoNote, InfoToggle, ItemRow, MediaPlayer, NameDropdown, Overlay, RadioPills, RemoveButton, SidePanel, SOFT_SEG, softSegBtn, TileFace, TileStrip } from './designParts';
 import {
-  BACKGROUNDS, GLYPH, MEETS_LABEL, MEET_LABEL, MEET_WITH, ROLE_LABEL, STAGES, TOUR, addBtn, checkinWhen, chip, clock, pickFile, rowLine, smallBtn, stageName,
-  stageOrBefore, tourName, whoChip,
+  BACKGROUNDS, GLYPH, MEET_LABEL, MEET_WITH, ROLE_LABEL, STAGES, TOUR, addBtn, checkinWhen, chip, pickFile, rowLine, smallBtn, stageName,
+  stageOrBefore, whoChip,
 } from './designWords';
 import '../people.css';
 
@@ -171,6 +172,29 @@ const smallAction = 'pd-btn sm';
 const whoCol: CSSProperties = { width: 136, flex: 'none', display: 'flex' };
 const whenCol: CSSProperties = { width: 120, flex: 'none', display: 'flex' };
 
+/** A still from a video file (about a second in), as a small portrait JPEG: the tile's thumbnail. */
+function stillOf(file: Blob): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const v = document.createElement('video');
+    const done = (fn: () => void) => { URL.revokeObjectURL(url); fn(); };
+    v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+    v.onerror = () => done(() => reject(new Error('Could not read the video')));
+    v.onloadedmetadata = () => { v.currentTime = Math.min(1, (v.duration || 2) / 2); };
+    v.onseeked = () => {
+      const W = 336, H = 560;
+      const c = document.createElement('canvas');
+      c.width = W; c.height = H;
+      const g = c.getContext('2d');
+      if (!g || !v.videoWidth) { done(() => reject(new Error('No frame'))); return; }
+      const scale = Math.max(W / v.videoWidth, H / v.videoHeight);
+      const dw = v.videoWidth * scale, dh = v.videoHeight * scale;
+      g.drawImage(v, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      c.toBlob((b) => done(() => (b ? resolve(b) : reject(new Error('No frame')))), 'image/jpeg', 0.8);
+    };
+  });
+}
+
 /** A Google Maps link to an office's point (Time Office). */
 const officeMap = (o: Pick<OfficeDTO, 'latitude' | 'longitude'>) => `https://www.google.com/maps/search/?api=1&query=${o.latitude},${o.longitude}`;
 
@@ -212,8 +236,6 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
   const [tt, setTt] = useState<TeamEdit | null>(null);
   const [preview, setPreview] = useState(false);
   const [pvStage, setPvStage] = useState<DesignStage>('d1');
-  const [pv, setPv] = useState<TemplatePreview | null>(null);
-  const pvError = '';
 
   useEffect(() => {
     let live = true;
@@ -223,7 +245,6 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
   }, [id, attempt]);
   useEffect(() => { listLetterTemplates().then(setLetters).catch(() => setLetters([])); }, []);
   // The preview follows the editor as it is now, saved or not (canvas: switch to 3 months and the phone shows Month 1–3).
-  useEffect(() => { if (preview && d) setPv(previewOf(d, pvStage)); }, [preview, pvStage, d]);
 
   const dirty = useMemo(() => Boolean(saved && d && JSON.stringify(saved) !== JSON.stringify(d)), [saved, d]);
   // Its own back arrow and links ask once; the sidebar (any other page change) and a reload ask through the guard.
@@ -558,7 +579,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
       {previewing && (
         <Modal title={previewing.title} width={560} onClose={() => setPreviewing(null)}
           footer={<button type="button" className="pd-btn" onClick={() => setPreviewing(null)}>Close</button>}>
-          <MediaPlayer key={previewing.media.fileId} media={previewing.media} w="100%" h="min(70vh, 620px)" autoLoad />
+          <MediaPlayer key={previewing.media.fileId} media={previewing.media} w="100%" h="min(70vh, 620px)" autoPlay />
         </Modal>
       )}
 
@@ -783,7 +804,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
             </div>
             <button type="button" onClick={() => setPreview(false)} aria-label="Close preview" className="ds-icon-btn" style={{ width: 38, height: 38, borderRadius: '50%', border: 0, background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Glyph d="M6 6l12 12M18 6L6 18" size={16} color="var(--ink)" /></button>
           </div>
-          <Phone preview={pv} error={pvError} />
+          <EmployeePreview d={d} stage={pvStage} company={company} />
         </Overlay>
       )}
     </div>
@@ -966,7 +987,10 @@ function StoryDialog({ story, templateId, months, onChange, onClose, onRemove, o
     set({ busy: true });
     try {
       const f = await uploadTemplateMedia(templateId, file, file.name);
-      onChange({ ...story, busy: false, media: { type: m.type, fileId: f.id, name: f.name, ...(f.minutes ? { minutes: f.minutes } : {}) } });
+      // A video gets a still frame as its tile's thumbnail, made here from the file just picked.
+      const still = m.type === 'video' ? await stillOf(file).catch(() => null) : null;
+      const poster = still ? await uploadTemplateMedia(templateId, still, `${file.name.replace(/\.[^.]+$/, '')} thumbnail.jpg`).catch(() => null) : null;
+      onChange({ ...story, busy: false, media: { type: m.type, fileId: f.id, name: f.name, ...(f.minutes ? { minutes: f.minutes } : {}), ...(poster ? { posterFileId: poster.id } : {}) } });
     } catch (e) { onError(errText(e, 'Could not upload the file')); set({ busy: false }); }
   };
   const save = () => {
@@ -983,7 +1007,7 @@ function StoryDialog({ story, templateId, months, onChange, onClose, onRemove, o
       </>}>
       <div style={{ display: 'flex', gap: 22, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {m.fileId && m.type !== 'text'
-          ? <MediaPlayer key={m.fileId} media={m} w={168} h={280} emptyText={emptyText} />
+          ? <MediaPlayer key={m.fileId} media={m} w={168} h={280} />
           : <TileFace media={m} w={168} h={280} emptyText={emptyText} textShown={m.text || 'Your text shows here'} preview />}
         <div style={{ flex: 1, minWidth: 260, display: 'grid', gap: 16 }}>
           <div role="radiogroup" aria-label="Type" style={SOFT_SEG}>
@@ -1023,75 +1047,3 @@ function StoryDialog({ story, templateId, months, onChange, onClose, onRemove, o
   );
 }
 
-// —— Employee preview: the phone ————————————————————————————————————————————————————————
-
-function Phone({ preview, error }: { preview: TemplatePreview | null; error: string }) {
-  type Tile = { t: string; big: string; small: string; tone: 'plain' | 'tour' | 'watch'; wide?: boolean };
-  const tiles: Tile[] = [];
-  if (preview?.stage === 'pre') {
-    if (preview.joining) tiles.push({ t: 'Joining details', big: `Joining day${preview.joining.time ? `, ${clock(preview.joining.time)}` : ''}`, small: preview.joining.place ? `${preview.joining.place} · ${MEETS_LABEL[preview.joining.meets]} meets you` : 'Reporting details: set up by HR', tone: 'plain', wide: true });
-    if (preview.offerLetter) tiles.push({ t: 'Offer letter', big: 'Role from the offer', small: 'Opens as a PDF', tone: 'plain' });
-    if (preview.profile) tiles.push({ t: 'Your profile', big: 'Fill in your details', small: `${preview.profile.sections} sections`, tone: 'plain' });
-    if (preview.watch) tiles.push({ t: 'Watch list', big: preview.watch.first, small: `${preview.watch.ready} of ${preview.watch.total} ready`, tone: 'watch', wide: true });
-  } else if (preview) {
-    if (preview.meetings.count) tiles.push({ t: 'Meetings', big: `${preview.meetings.count} ${preview.meetings.count === 1 ? 'person' : 'people'}`, small: preview.meetings.who.map((w) => MEET_LABEL[w]).join(', '), tone: 'plain' });
-    if (preview.tasks.count) tiles.push({ t: 'Tasks', big: preview.tasks.first ?? '', small: `${preview.tasks.count} to do`, tone: 'plain' });
-    if (preview.tour?.first) tiles.push({ t: 'Sowaka tour', big: tourName(preview.tour.first as TourLesson), small: 'A lesson a day', tone: 'tour' });
-    if (preview.watch) tiles.push({ t: 'Watch list', big: preview.watch.first, small: `${preview.watch.ready} of ${preview.watch.total} ready`, tone: 'watch' });
-    if (preview.devices) tiles.push({ t: 'Devices and accesses', big: `${preview.devices.count} to set up`, small: 'Due by end of Week 1', tone: 'plain', wide: true });
-    tiles.push({ t: 'Profile', big: 'Keep it up to date', small: 'Open all through', tone: 'plain', wide: true });
-  }
-  const toneStyle = (tone: Tile['tone']): CSSProperties => (tone === 'tour' ? { background: 'linear-gradient(135deg, #CC4A12 0%, #B23500 50%, #872800 100%)', color: '#fff', border: 0 }
-    : tone === 'watch' ? { background: '#0571A6', color: '#fff', border: 0 } : { background: '#fff', color: '#16181D', border: '1px solid #E2E3E8' });
-  return (
-    <div style={{ width: 360, height: 700, maxHeight: 'calc(100vh - 120px)', boxSizing: 'border-box', background: '#fff', color: '#16181D', border: '10px solid #16181D', borderRadius: 44, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12, overflow: 'hidden', boxShadow: '0 24px 60px rgba(22,24,29,0.35)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 6px', fontSize: 11, fontWeight: 600 }}><span>9:41</span><span style={{ width: 90, height: 22, borderRadius: 999, background: '#16181D' }} /><span>5G</span></div>
-      {error ? <div style={{ fontSize: 12.5, color: '#B42318', padding: 8 }}>{error}</div> : !preview ? <SkeletonLines lines={6} /> : (
-        <>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px' }}>
-            <span style={{ fontSize: 15, fontWeight: 700 }}>{preview.header}</span>
-            <span style={{ height: 26, padding: '0 10px', borderRadius: 999, background: '#0571A6', color: '#fff', fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center' }}>{preview.stageLabel}</span>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
-            {tiles.map((x) => (
-              <div key={x.t} style={{ ...toneStyle(x.tone), borderRadius: 16, padding: 12, minHeight: 86, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 6, gridColumn: x.wide ? '1 / -1' : 'auto' }}>
-                <span style={{ fontSize: 11, fontWeight: 600 }}>{x.t}</span>
-                <span style={{ display: 'grid', gap: 2 }}><span style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.25 }}>{x.big}</span><span style={{ fontSize: 10, opacity: 0.8 }}>{x.small}</span></span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-/** What the phone shows at a stage (the same rules as GET /admin/lifecycle/templates/:id/preview), from the editor's copy. */
-function previewOf(view: TemplateDesign, stage: DesignStage): TemplatePreview {
-  const months = view.probation.months;
-  const order = STAGES.indexOf(stage);
-  const ready = (list: TemplateDesign['watch']) => list.filter((w) => !!w.media.fileId || w.media.type === 'text').length;
-  if (stage === 'pre') {
-    const v = view.preboarding.videos;
-    return {
-      stage, header: 'Welcome', stageLabel: stageName(stage, months),
-      joining: view.preboarding.rows.joiningDetails ? { ...view.preboarding.reporting } : null,
-      offerLetter: view.preboarding.rows.offerLetter,
-      profile: view.preboarding.rows.profile ? { sections: 7 } : null,
-      watch: view.preboarding.rows.watch && v.length ? { first: v[0].title, ready: ready(v), total: v.length } : null,
-    };
-  }
-  const watchAll = view.watch.filter((w) => STAGES.indexOf(w.stage) <= order);
-  const meetings = view.meetings.filter((m) => m.stage === stage);
-  const tasks = view.tasks.filter((x) => x.stage === stage);
-  const early = stage === 'd1' || stage === 'w1';
-  return {
-    stage, header: 'Onboarding', stageLabel: stageName(stage, months),
-    meetings: { count: meetings.length, who: meetings.map((m) => m.meetWith).slice(0, 3) },
-    tasks: { first: tasks[0]?.title, count: tasks.length },
-    tour: early && view.tour.length ? { first: stage === 'd1' ? 'punch' : view.tour.find((l) => l !== 'punch') ?? null } : null,
-    watch: order <= STAGES.indexOf('m1') && watchAll.length ? { first: watchAll[0].title, ready: ready(watchAll), total: watchAll.length } : null,
-    devices: early && view.accesses.length ? { count: view.accesses.length } : null,
-    profile: true,
-  };
-}

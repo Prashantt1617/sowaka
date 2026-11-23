@@ -377,10 +377,7 @@ export async function uploadOfferPdf(hr: HrActor, journeyId: string, file: { ori
 }
 
 /** Emails the offer (PDF attached, the personal link) and marks the version sent. Re-sending a sent version issues a new link. */
-/**
- * `withPortalLink: false` leaves the "View and accept your offer" button out
- * (H3c's switch, on by default); `attachments` go beside the offer PDF.
- */
+/** `attachments` go beside the offer PDF. `withPortalLink` is no longer used: no accept link is sent. */
 export async function sendOffer(hr: HrActor, journeyId: string, input: { subject?: unknown; body?: unknown; cc?: unknown; withPortalLink?: unknown; attachments?: LifecycleAttachment[] }, now = new Date()): Promise<OfferView> {
   const journey = await journeyOf(hr.org, journeyId);
   if (!PRE_JOIN_OPEN.has(String(journey.status))) throw new LifecycleOfferError(409, 'This offer is closed');
@@ -395,7 +392,9 @@ export async function sendOffer(hr: HrActor, journeyId: string, input: { subject
   const companyName = companyDisplayName(company, journey.org);
   const subject = String(input.subject ?? '').trim() || `Your offer from ${companyName}`;
   const body = String(input.body ?? '').trim()
-    || `Hi ${journey.candidate?.name?.split(' ')[0] ?? ''},\n\nCongratulations! We are delighted to offer you the role of ${v.fields.designation} at ${companyName}. Your offer letter is attached.\n\nYou can read it and accept it online using the button below. Please reply by ${formatDay(v.fields.validTill)}. If you have any questions, just reply to this email.\n\nWarm regards,\n${hr.name}`;
+    || `Hi ${journey.candidate?.name?.split(' ')[0] ?? ''},\n\nCongratulations! We are delighted to offer you the role of ${v.fields.designation} at ${companyName}. Your offer letter is attached.\n\n${onlineAcceptOn()
+      ? `You can read it and accept it online using the button below. Please reply by ${formatDay(v.fields.validTill)}.`
+      : `To accept it, please reply to this email by ${formatDay(v.fields.validTill)}. Once you do, we will send you the link to your joining portal.`} If you have any questions, just reply to this email.\n\nWarm regards,\n${hr.name}`;
   if (subject.length > 200 || body.length > 20_000) throw new LifecycleOfferError(400, 'The email is too long');
   const cc = Array.isArray(input.cc) ? input.cc.map(String).filter((a) => /^\S+@\S+\.\S+$/.test(a.trim())).slice(0, 10) : [];
   const token = newLinkToken();
@@ -409,7 +408,10 @@ export async function sendOffer(hr: HrActor, journeyId: string, input: { subject
   await completeTask(journeyId, 'send_offer', { userId: hr.userId, name: hr.name });
   const bytes = await readFileBytes(file);
   const contact = await hrContactFor(journey, company);
-  await sendLifecycleEmail(journey.org, journey.candidate!.personalEmail, subject, mails.offer(companyName, body, input.withPortalLink === false ? null : portalLink(`/o/${token}`, journey.org)),
+  // The offer goes as its PDF only: the candidate accepts by replying to HR, and HR marks it accepted
+  // (finaliseOffer), which sends the joining portal. No accept link goes out (since 23 Nov 2026).
+  await sendLifecycleEmail(journey.org, journey.candidate!.personalEmail, subject,
+    mails.offer(companyName, body, onlineAcceptOn() && input.withPortalLink !== false ? portalLink(`/o/${token}`, journey.org) : null),
     [{ filename: file.name.endsWith('.pdf') ? file.name : `${file.name}.pdf`, content: bytes, contentType: 'application/pdf' }, ...(input.attachments ?? [])],
     { cc, replyTo: contact.email || undefined });
   return (await offerView(journeyId))!;
@@ -467,8 +469,17 @@ export async function acceptOffer(token: string, meta: { ip: string; userAgent?:
   return acceptVersion(offer, version, journey, meta, `/portal/offer/${token}/pdf`, now);
 }
 
+/**
+ * Accepting online is off: the candidate replies to HR's email and HR marks the offer accepted.
+ * Only the check scripts turn it on (OFFER_ONLINE_ACCEPT=1, never set on a server), to walk flows that start
+ * with the candidate's accept.
+ */
+export const offerRules = { onlineAccept: false };
+const onlineAcceptOn = () => offerRules.onlineAccept || process.env.OFFER_ONLINE_ACCEPT === '1';
+
 /** Latest version only, once; stores time, IP and device; HR is emailed to finalise. */
 async function acceptVersion(offer: Offer, version: OfferVersion, journey: Journey, meta: { ip: string; userAgent?: string }, pdfPath: string, now: Date): Promise<PortalOfferView> {
+  if (!onlineAcceptOn()) throw new LifecycleOfferError(403, 'To accept this offer, reply to HR’s email. HR will confirm it and send you your joining portal.');
   await expireIfDue(offer, version, journey, now);
   const latest = latestSent(offer);
   if (CLOSED_STATUSES.has(String(journey.status)) || ['joined'].includes(String(journey.status))) throw new LifecycleOfferError(409, 'This offer is closed');
@@ -547,13 +558,25 @@ export async function acceptOfferForJourney(journey: Journey, meta: { ip: string
 /** Two-sided acceptance: HR accepts the candidate's accepted version. The first time, the portal account is created and the login emailed. */
 export async function finaliseOffer(hr: HrActor, journeyId: string, now = new Date()): Promise<OfferView> {
   const journey = await journeyOf(hr.org, journeyId);
-  if (String(journey.status) !== 'accepted') throw new LifecycleOfferError(409, 'Only an accepted offer can be finalised');
+  const status = String(journey.status);
+  // HR records the candidate's yes (they replied to the email): from a sent offer, or a revision
+  // sent to someone already finalised.
+  const revision = ['finalised', 'active', 'docs_approved'].includes(status);
+  if (!(onlineAcceptOn() ? status === 'accepted' : ['offer_sent', 'accepted'].includes(status) || revision)) throw new LifecycleOfferError(409, onlineAcceptOn() ? 'Only an accepted offer can be finalised' : 'Only a sent offer can be marked accepted');
   const offer = await offerOf(journeyId);
   // A revision HR is still drafting does not hold this up: the candidate accepted what they were sent.
   const v = latestSent(offer);
-  if (v.status !== 'accepted') throw new LifecycleOfferError(409, 'The candidate has not accepted the latest version yet');
+  if (v.status !== 'accepted' && !(v.status === 'sent' && !onlineAcceptOn())) {
+    throw new LifecycleOfferError(409, v.status === 'sent' ? 'The candidate has not accepted the latest version yet' : 'Send the offer before marking it accepted');
+  }
   if (v.finalisedAt) throw new LifecycleOfferError(409, 'Already finalised');
-  await offers().updateOne({ id: offer.id, 'versions.version': v.version }, { $set: { 'versions.$.finalisedAt': now, 'versions.$.finalisedByUserId': hr.userId, updatedAt: now } });
+  await offers().updateOne({ id: offer.id, 'versions.version': v.version }, { $set: {
+    ...(v.status === 'sent' ? { 'versions.$.status': 'accepted', 'versions.$.acceptedAt': now, 'versions.$.acceptedDevice': `Confirmed by HR (${hr.name})` } : {}),
+    'versions.$.finalisedAt': now, 'versions.$.finalisedByUserId': hr.userId, updatedAt: now,
+  } });
+  if (v.status === 'sent') await completeTask(journeyId, 'accept_offer', { name: journey.candidate?.name });
+  // A revision: letters whose fields changed are out of date and are signed again.
+  if (revision && v.status === 'sent') await outdateChangedLetters(journeyId, now);
   const created = await createCandidateAccount(journey);
   const company = await companyOf(journey.org);
   const companyName = companyDisplayName(company, journey.org);

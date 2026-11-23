@@ -133,7 +133,6 @@ export function A1Offer() {
 
 /** /joining · the first day: date, time and place, who to report to, the Day-1 pass, what to bring. */
 export function A1Joining() {
-  const { me } = useMe();
   const [j, setJ] = useState<JoiningDetails>();
   const [error, setError] = useState('');
   useEffect(() => { portal.joining().then(setJ, (e: Error) => setError(e.message)); }, []);
@@ -196,7 +195,7 @@ export function A1Joining() {
                       <span className="fig-label fig-t3">Day-1 pass</span>
                       {j.passOpen
                         ? <Link to="/pass" className="fig-body-strong fig-brand" style={{ textDecoration: 'none' }}>Open your Day-1 pass</Link>
-                        : <span className="fig-body-strong">{j.passOpensOn ? `Arrives on ${fmtWeekday(j.passOpensOn)}, a week before you join` : 'Arrives a week before you join'}</span>}
+                        : <span className="fig-body-strong">{j.passOpensOn ? `Arrives on ${fmtWeekday(j.passOpensOn)}` : 'Arrives before you join'}</span>}
                     </span>
                   </div>
                 </div>
@@ -210,7 +209,6 @@ export function A1Joining() {
                 {j.pendingDateRequest
                   ? <p className="fig-small-line" role="status">You asked to join on {fmtWeekday(j.pendingDateRequest.requestedTj)}. HR will reply soon.</p>
                   : j.date && <p className="fig-small-line"><span>Can’t make it on {dayMonthYear(j.date).replace(/ \d{4}$/, '')}?</span><Link to="/date-request" className="fig-link">Ask HR for another date</Link></p>}
-                {me.batch.count > 0 && <p className="fig-small-line">{me.batch.count === 1 ? '1 person joins with you' : `${me.batch.count} people join with you`}.</p>}
               </>
             )}
           </div>

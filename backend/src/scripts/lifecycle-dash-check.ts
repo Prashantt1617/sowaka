@@ -18,6 +18,8 @@
  *
  *   npm run lifecycle:dash-check   (MONGODB_DB=el_dash_onb_check; local mongod only)
  */
+// These flows start with the candidate accepting online, which the live server no longer allows.
+process.env.OFFER_ONLINE_ACCEPT ??= '1';
 import { createHash, randomBytes } from 'node:crypto';
 
 process.env.MONGODB_URI = process.env.EL_DASH_MONGO_URI ?? 'mongodb://127.0.0.1:27133';

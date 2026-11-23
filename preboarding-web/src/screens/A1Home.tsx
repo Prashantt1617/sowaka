@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { portal } from '../api/portal';
+import { mediaUrl } from '../api/client';
 import type { PortalHome, PortalOfferView, ProfileView } from '../api/types';
 import { firstName, fmtShort, fmtWeekday } from '../lib/format';
 import { useFocusHeading } from '../lib/hooks';
@@ -17,6 +18,7 @@ import { G3WebBottom, G3WebTop } from '../components/fig/G3WebShell';
 import { G3Install } from '../components/fig/G3Install';
 import { FigProgress } from '../components/fig/FigUi';
 import { FigCheck, FigChevronRight, FigIcon3D, FigWavingHand } from '../components/fig/icons';
+import { FigMessageCircle } from '../components/fig/icons/MessageCircle';
 import '../styles/fig-g1.css';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -102,7 +104,7 @@ export function A1Home() {
             <span className="fig-tile__meter"><b>{pct}% done</b><FigProgress value={pct} white label="Employee profile done" /></span>
           </Link>
 
-          <Link to="/about" className="fig-tile fig-tile--red">
+          <Link to="/about?stories=1" className="fig-tile fig-tile--red">
             <span className="fig-tile__row" style={{ gap: 16 }}>
               <FigIcon3D name="team" size={64} />
               <span className="fig-title">About the company</span>
@@ -110,9 +112,43 @@ export function A1Home() {
             <span className="fig-tile__chip fig-tile__chip--split">View<FigChevronRight size={18} stroke={1.5} /></span>
           </Link>
         </div>
+
+        {me.contacts && me.contacts.length > 0 && <PointsOfContact contacts={me.contacts} />}
       </main>
       <FigPowered />
       <G3WebBottom />
     </FigPage>
+  );
+}
+
+/** "Your point of contact": the manager (green) and HR (blue), each with a WhatsApp button when they have a phone. */
+function PointsOfContact({ contacts }: { contacts: NonNullable<PortalHome['contacts']> }) {
+  return (
+    <section aria-labelledby="poc-title" style={{ display: 'grid', gap: 12, marginTop: 24, padding: '0 16px' }}>
+      <h2 id="poc-title" className="fig-title" style={{ margin: 0 }}>Your point of contact</h2>
+      {contacts.map((c) => {
+        const first = firstName(c.name);
+        const sub = c.role === 'manager' ? [c.designation, 'your manager'].filter(Boolean).join(' · ') : 'HR · your onboarding buddy';
+        return (
+          <div key={c.userId} style={{ background: c.role === 'manager' ? '#E7F5EC' : '#E8F1F8', borderRadius: 16, padding: 16, display: 'grid', gap: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              {c.photoUrl
+                ? <img src={mediaUrl(c.photoUrl)} alt="" width={72} height={72} style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', flex: 'none' }} />
+                : <span aria-hidden="true" style={{ width: 72, height: 72, borderRadius: '50%', background: '#FFFFFF', color: '#0571A6', fontWeight: 700, fontSize: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>{c.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase()}</span>}
+              <span style={{ display: 'grid', gap: 4, minWidth: 0 }}>
+                <span className="fig-title">{c.name}</span>
+                <span className="fig-body fig-t2">{sub}</span>
+              </span>
+            </div>
+            {c.whatsapp && (
+              <a href={c.whatsapp} target="_blank" rel="noopener noreferrer"
+                style={{ height: 48, borderRadius: 999, background: '#FFFFFF', color: '#15803D', fontWeight: 700, fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, textDecoration: 'none' }}>
+                <FigMessageCircle size={20} />WhatsApp {first}
+              </a>
+            )}
+          </div>
+        );
+      })}
+    </section>
   );
 }

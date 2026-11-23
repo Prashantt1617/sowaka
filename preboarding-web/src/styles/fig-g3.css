@@ -17,6 +17,7 @@ html:not([data-host="app"]) .fig .fig-powered { display: none; }
 .g3-head__text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .g3-head__name { font-size: 14px; line-height: 20px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .g3-head__email { font-size: 11px; line-height: 16px; color: var(--color-text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.g3-head__out { flex: none; background: none; border: 0; padding: var(--space-8); font: inherit; font-size: 13px; line-height: 20px; font-weight: 600; color: var(--color-text-brand, #0b6ea8); cursor: pointer; }
 
 /* Breadcrumb (Web · 5–8): 84 px, 12 top; About's white strip 76 px, 4 top */
 .g3-crumb { flex: none; height: 84px; padding: var(--space-12) var(--space-16) 0; display: flex; flex-direction: column; gap: var(--space-4); }

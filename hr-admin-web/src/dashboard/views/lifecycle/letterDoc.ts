@@ -237,7 +237,7 @@ export function emailDraft(kind: LetterKind, values: Record<string, string>, opt
       const by = pick(values, 'valid', 'validTill');
       return {
         subject: `Your offer from ${opts.company}`,
-        body: `Hi ${first},\n\nCongratulations! We are delighted to offer you the role of ${role || 'the role'} at ${opts.company}. Your offer letter is attached.\n\n${opts.withLink ? 'You can read it and accept it online using the button below. ' : ''}Please reply by ${by || 'the date in the letter'}. If you have any questions, just reply to this email.\n\n${sign}`,
+        body: `Hi ${first},\n\nCongratulations! We are delighted to offer you the role of ${role || 'the role'} at ${opts.company}. Your offer letter is attached.\n\nTo accept it, please reply to this email by ${by || 'the date in the letter'}. Once you do, we will send you the link to your joining portal. If you have any questions, just reply to this email.\n\n${sign}`,
       };
     }
     case 'appointment':

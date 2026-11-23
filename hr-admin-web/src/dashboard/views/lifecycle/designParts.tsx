@@ -218,41 +218,67 @@ export function TileFace({ media, w, h, emptyText, textShown, preview }: { media
   );
 }
 
-/**
- * An uploaded video, image or PDF, played where it sits: fetched (with the
- * sign-in) only when asked, or at once with `autoLoad` (the preview window).
- */
-export function MediaPlayer({ media, w, h, autoLoad, emptyText = 'Upload' }: { media: DesignMedia; w: number | string; h: number | string; autoLoad?: boolean; emptyText?: string }) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
-  const load = async () => {
-    if (!media.fileId) return;
-    setState('loading');
-    try { setUrl(URL.createObjectURL(await fetchTemplateMedia(media.fileId))); setState('idle'); } catch { setState('error'); }
-  };
-  useEffect(() => { if (autoLoad) void load(); /* once, for this file */ // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoLoad, media.fileId]);
-  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
-  const box: CSSProperties = { width: w, height: h, borderRadius: 14, overflow: 'hidden', background: '#0E0E10', flex: 'none', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' };
-  if (url) {
+/** Each uploaded file, fetched once (with the sign-in) and kept for the session: tiles, the item window and Preview share it. */
+const mediaUrls = new Map<string, Promise<string>>();
+export function mediaUrl(fileId: string): Promise<string> {
+  let p = mediaUrls.get(fileId);
+  if (!p) {
+    p = fetchTemplateMedia(fileId).then((blob) => URL.createObjectURL(blob));
+    p.catch(() => mediaUrls.delete(fileId));
+    mediaUrls.set(fileId, p);
+  }
+  return p;
+}
+function useMediaUrl(fileId?: string): { url: string | null; failed: boolean } {
+  const [got, setGot] = useState<{ id?: string; url: string | null; failed: boolean }>({ url: null, failed: false });
+  useEffect(() => {
+    if (!fileId) return;
+    let live = true;
+    mediaUrl(fileId).then((url) => { if (live) setGot({ id: fileId, url, failed: false }); }, () => { if (live) setGot({ id: fileId, url: null, failed: true }); });
+    return () => { live = false; };
+  }, [fileId]);
+  return got.id === fileId ? got : { url: null, failed: false };
+}
+
+/** An uploaded video, image or PDF, shown where it sits as soon as it loads (no click); a video starts playing (muted if the browser insists). `autoPlay={false}` holds it. */
+export function MediaPlayer({ media, w, h, autoPlay }: { media: DesignMedia; w: number | string; h: number | string; autoPlay?: boolean }) {
+  const file = useMediaUrl(media.fileId);
+  const poster = useMediaUrl(media.type === 'video' ? media.posterFileId : undefined);
+  const box: CSSProperties = { width: w, height: h, borderRadius: 14, overflow: 'hidden', background: '#0E0E10', flex: 'none', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, fontWeight: 600 };
+  if (!file.url) return <span style={box}>{file.failed ? 'Could not load the file' : 'Loading…'}</span>;
+  return (
+    <span style={box}>
+      {media.type === 'image' ? <img src={file.url} alt={media.name ?? 'Image'} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        : media.type === 'pdf' ? <iframe src={file.url} title={media.name ?? 'Document'} style={{ width: '100%', height: '100%', border: 0, background: '#fff' }} />
+        : <video src={file.url} poster={poster.url ?? undefined} controls playsInline preload="auto" style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            onLoadedData={(e) => { if (autoPlay === false) return; const v = e.currentTarget; v.play().catch(() => { v.muted = true; void v.play().catch(() => undefined); }); }} />}
+    </span>
+  );
+}
+
+/** A tile as the strip shows it: the image itself, a video's thumbnail with a play mark, or the empty face. */
+export function TileThumb({ media, w, h, emptyText }: { media: DesignMedia; w: number; h: number; emptyText: string }) {
+  // A video uploaded before thumbnails were kept: its own first frame stands in (the file is fetched once and shared).
+  const frameOnly = media.type === 'video' && !media.posterFileId && !!media.fileId;
+  const shown = useMediaUrl(media.type === 'image' || frameOnly ? media.fileId : media.type === 'video' ? media.posterFileId : undefined);
+  if (!shown.url) return <TileFace media={media} w={w} h={h} emptyText={emptyText} />;
+  if (frameOnly) {
     return (
-      <span style={box}>
-        {media.type === 'image' ? <img src={url} alt={media.name ?? 'Image'} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-          : media.type === 'pdf' ? <iframe src={url} title={media.name ?? 'Document'} style={{ width: '100%', height: '100%', border: 0, background: '#fff' }} />
-          : <video src={url} controls autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'contain' }} />}
+      <span style={{ width: w, height: h, borderRadius: 14, overflow: 'hidden', position: 'relative', flex: 'none', display: 'block', background: '#0E0E10' }}>
+        <video src={`${shown.url}#t=0.5`} muted playsInline preload="metadata" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Glyph d={GLYPH.video} size={16} color="#fff" /></span>
+        </span>
       </span>
     );
   }
-  const numeric = typeof w === 'number' && typeof h === 'number';
   return (
-    <span style={{ position: 'relative', display: 'inline-flex', flex: 'none' }}>
-      {media.fileId || !numeric ? <span style={{ ...box, background: tileLook(media).bg }} /> : <TileFace media={media} w={w} h={h} emptyText={emptyText} preview />}
-      {media.fileId && (
-        <button type="button" onClick={() => void load()} disabled={state === 'loading'}
-          style={{ position: 'absolute', inset: 0, border: 0, background: 'rgba(0,0,0,.28)', color: '#fff', borderRadius: 14, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-          <Glyph d={GLYPH.video} size={28} color="#fff" />
-          {state === 'loading' ? 'Loading…' : state === 'error' ? 'Could not load. Try again' : media.type === 'video' ? 'Play' : 'View'}
-        </button>
+    <span style={{ width: w, height: h, borderRadius: 14, overflow: 'hidden', position: 'relative', flex: 'none', display: 'block', background: '#0E0E10' }}>
+      <img src={shown.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+      {media.type === 'video' && (
+        <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Glyph d={GLYPH.video} size={16} color="#fff" /></span>
+        </span>
       )}
     </span>
   );
@@ -273,7 +299,7 @@ export function TileStrip({ items, onAdd, addLabel, onOpen, whenOf, onPreview }:
       {items.map((it, i) => (
         <div key={it.id ?? i} style={{ width: 96, flex: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <button type="button" onClick={() => onOpen(it.index ?? i)} aria-label={`Edit ${it.title}`} style={{ width: 96, border: 0, background: 'transparent', padding: 0, fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6, color: 'var(--ink)' }}>
-            <TileFace media={it.media} w={96} h={160} emptyText="Upload" />
+            <TileThumb media={it.media} w={96} h={160} emptyText="Upload" />
             <span style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{it.title}</span>
             {whenOf && <span style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: -3 }}>{whenOf(it.stage)}</span>}
           </button>

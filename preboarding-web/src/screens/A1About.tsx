@@ -1,8 +1,10 @@
 // About the company (Figma "App · 7 About the company", 4967:92990; the stories are G2's): highlights as story rings, the first person they'll meet,
 // their team, policies to read, and culture cards. A story opens full screen; opening
 // one marks its Meet-us item seen (all seen completes the Meet us task).
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { portal } from '../api/portal';
+import { mediaUrl } from '../api/client';
 import type { JoiningDetails, MeetItem } from '../api/types';
 import { FigLoading, FigPage, isAppHost } from '../components/fig/FigShell';
 import { G3SectionHead, G3WebBottom, G3WebTop } from '../components/fig/G3WebShell';
@@ -22,7 +24,7 @@ const FACE_TONES = ['var(--color-text-success)', 'var(--color-text-warning)', 'v
 
 function Face({ name, photo, className, tone = 0 }: { name: string; photo?: string; className?: string; tone?: number }) {
   const [bad, setBad] = useState(false);
-  return <span className={className} style={{ color: FACE_TONES[tone % FACE_TONES.length] }} aria-hidden="true">{photo && !bad ? <img src={photo} alt="" onError={() => setBad(true)} /> : initials(name)}</span>;
+  return <span className={className} style={{ color: FACE_TONES[tone % FACE_TONES.length] }} aria-hidden="true">{photo && !bad ? <img src={mediaUrl(photo)} alt="" onError={() => setBad(true)} /> : initials(name)}</span>;
 }
 
 /**
@@ -49,26 +51,38 @@ export function A1About() {
   const role = byId('role');
   const policies = policiesOf(byId('policies'));
   const managerName = j?.manager?.name ?? note?.authorName;
+  // The template's pre-boarding watch list (videos, pictures, text cards), shown first.
+  const watch = useMemo(() => (items ?? []).filter((x) => x.kind === 'watch'), [items]);
   const stories = useMemo(() => {
-    // The design's order (App · Story · 1 Culture … 5 Policies), then the role.
-    const out: StoryKey[] = ['welcome'];
+    // The watch list, then the design's order (App · Story · 1 Culture … 5 Policies), then the role.
+    const out: StoryKey[] = [...watch.map((w) => w.id as StoryKey), 'welcome'];
     if (managerName) out.push('manager');
     if (managerName || j?.buddy) out.push('team');
     out.push('day1');
     if (policies.length) out.push('policies');
     if (role) out.push('role');
     return out;
-  }, [managerName, j?.buddy, policies.length, role]);
+  }, [watch, managerName, j?.buddy, policies.length, role]);
 
   const markSeen = useCallback((k: StoryKey) => {
-    const id = SEEN_ITEM[k];
+    const id = k.startsWith('watch:') ? k : SEEN_ITEM[k as keyof typeof SEEN_ITEM];
     const item = id ? items?.find((i) => i.id === id) : undefined;
     if (item && !item.seen) portal.meetSeen(item.id).then(() => setItems((cur) => cur?.map((i) => (i.id === item.id ? { ...i, seen: true } : i))), () => undefined);
   }, [items]);
   const show = (k: StoryKey) => { setOpen(k); markSeen(k); };
+  // From Home's About the company tile (?stories=1): straight into the stories, first one open.
+  const [params, setParams] = useSearchParams();
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (autoOpened.current || params.get('stories') !== '1' || !items || !stories.length) return;
+    autoOpened.current = true;
+    show(stories[0]);
+    setParams({}, { replace: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, stories, params]);
   /** A policy opens on its own, straight from its row (reading it counts as seeing the policies story). */
   const read = (p: PortalPolicy) => { setReading(p); markSeen('policies'); };
-  const seenStory = (k: StoryKey) => { const id = SEEN_ITEM[k]; return id ? Boolean(byId(id)?.seen) : false; };
+  const seenStory = (k: StoryKey) => { const id = k.startsWith('watch:') ? k : SEEN_ITEM[k as keyof typeof SEEN_ITEM]; return id ? Boolean(byId(id)?.seen) : false; };
 
   const ring = (k: StoryKey, label: string, face: ReactNode, inner = '') => (
     <button key={k} type="button" className={`g1-hl${seenStory(k) ? ' g1-hl--seen' : ''}`} onClick={() => show(k)}>
@@ -92,6 +106,10 @@ export function A1About() {
           <div className="g1-about">
             <nav aria-label="Highlights" className="g1-hls">
               <div className="g1-hls__row">
+                {watch.map((w) => ring(w.id as StoryKey, w.title.length > 12 ? `${w.title.slice(0, 11)}…` : w.title,
+                  w.mediaType === 'image' && w.imageUrl ? <img src={mediaUrl(w.imageUrl)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                    : w.mediaType === 'video' ? <FigPlay /> : <FigFileText />,
+                  w.mediaType === 'image' ? '' : 'g1-hl__face--brand'))}
                 {RING_ORDER.filter((k) => stories.includes(k)).map((k) => k === 'manager' ? ring(k, firstName(managerName ?? 'Manager'), <Face name={managerName ?? ''} photo={note?.authorPhotoUrl} />, 'g1-hl__face--initials')
                   : k === 'team' ? ring(k, 'Team', <FigIcon3D name="team" size={40} />, 'g1-hl__face--pad')
                     : k === 'day1' ? ring(k, 'Day 1', <FigPin size={26} />, 'g1-hl__face--amber')
@@ -164,7 +182,7 @@ export function A1About() {
       </main>
       <G3WebBottom />
       {open && (
-        <G2Story order={stories} at={open} onMove={show} onClose={() => setOpen(null)}
+        <G2Story order={stories} at={open} onMove={show} onClose={() => setOpen(null)} watch={watch}
           company={me.company} candidate={me.candidateName} hr={me.hrContact.email} tj={me.tj} j={j} note={note} managerName={managerName} video={video} role={role} policies={policies}
           onOpenPolicy={(p) => { if (p.body) { setOpen(null); read(p); } }} />
       )}

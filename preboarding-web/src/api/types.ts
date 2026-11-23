@@ -117,6 +117,8 @@ export interface PortalHome {
   batch: { count: number; names: string[] };
   workEmail?: string;
   hrContact: HrContact;
+  /** "Your point of contact": the manager and HR, with a WhatsApp link where they have a phone. */
+  contacts?: Array<{ userId: string; role: 'manager' | 'hr'; name: string; designation?: string; photoUrl?: string; whatsapp?: string }>;
   banner?: { kind: 'offer_updated'; changedFields: Array<keyof OfferFields> };
   /** not in CONTRACT: "Product designer · joining Mon 1 Dec". */
   designation?: string;
@@ -177,7 +179,11 @@ export type AboutYou = Omit<ModelAboutYou, 'savedAt'> & {
 
 export interface MeetItem {
   id: string;
-  kind: 'manager_note' | 'video' | 'card';
+  kind: 'manager_note' | 'video' | 'card' | 'watch';
+  /** On `watch` (the template's pre-boarding watch list): what it is, its picture, a text story's background. */
+  mediaType?: 'video' | 'image' | 'text';
+  imageUrl?: string;
+  bg?: string;
   title: string;
   text?: string;
   videoUrl?: string;

@@ -498,7 +498,7 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
   // The joining and reporting details THIS joiner has (their own copy of the template, as the portal's Day-1 pass and the
   // teammates' pages read it): a template edit after they started must not show here either.
   const design = await import('./design');
-  const reporting = design.templateReporting((await design.designOf(j)).settings);
+  const reporting = await design.reportingFor(j);
   return {
     journey, tasks: views, documents, letters, offer, dateRequests, probation: probationView, batch, viewer, teamRows: await (await import('./teamTasks')).teamRowsForHr(j),
     ...(reporting ? { reporting } : {}),

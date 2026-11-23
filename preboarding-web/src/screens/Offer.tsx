@@ -12,6 +12,9 @@ import { useFocusHeading, useReducedMotion, useWide } from '../lib/hooks';
 import { offerSubject } from '../lib/links';
 import { ClosedScreen } from './Closed';
 
+/** Whether the candidate can accept here. Off: they reply to HR's email and HR marks it accepted. */
+const ONLINE_ACCEPT = false;
+
 /** /o/:token and /o/:token/letter — the offer link from HR's email (no login). */
 export function OfferLink({ letter }: { letter?: boolean }) {
   const { token = '' } = useParams();
@@ -164,7 +167,7 @@ function Congratulations({ view, next }: { view: PortalOfferView; next: string }
             <Link to={next} className="link-card">
               <span>
                 <span className="body-strong">View your offer letter</span>
-                <span className="label">Read it, then accept when you’re ready</span>
+                <span className="label">Read it, then reply to HR’s email to accept</span>
               </span>
               <span className="round-btn" aria-hidden="true">
                 <Icon name="arrow" />
@@ -279,6 +282,10 @@ function OfferLetter({ view, src, onAccepted, back }: { view: PortalOfferView; s
       {err}
     </p>
   );
+  // Accepting online is off (23 Nov 2026): the candidate replies to HR's email, and HR marks the
+  // offer accepted and sends the joining portal. The page shows the letter and how to reply.
+  const replyNote = <p className="body">To accept, reply to HR’s email. HR will confirm it and send you the link to your joining portal.</p>;
+  const acceptPart = ONLINE_ACCEPT ? <>{agree}{errNote}{acceptBtn}</> : replyNote;
 
   if (wide)
     return (
@@ -292,10 +299,8 @@ function OfferLetter({ view, src, onAccepted, back }: { view: PortalOfferView; s
           <PdfViewer load={load} fileName={fileName} toolbar label="Your offer letter" />
           <aside className="side-panel card">
             <h2 className="h1">Ready to say yes?</h2>
-            <p className="body">Read the full letter first. Accepting tells HR you agree to these terms.</p>
-            {agree}
-            {errNote}
-            {acceptBtn}
+            {ONLINE_ACCEPT && <p className="body">Read the full letter first. Accepting tells HR you agree to these terms.</p>}
+            {acceptPart}
             <AskHrRow email={view.hrContact.email} subject={subject} />
           </aside>
         </div>
@@ -324,9 +329,7 @@ function OfferLetter({ view, src, onAccepted, back }: { view: PortalOfferView; s
       <OfferBanner view={view} />
       <PdfViewer load={load} fileName={fileName} zoom={zoom} onReady={setPdf} className="pdf--inline" label="Your offer letter" />
       <BottomBar className="bottom-bar--panel">
-        {agree}
-        {errNote}
-        {acceptBtn}
+        {acceptPart}
         <AskHrRow email={view.hrContact.email} subject={subject} />
       </BottomBar>
     </Page>
