@@ -100,11 +100,11 @@ async function main() {
   eq('…and no duplicates', (await templates.getTemplate(ORG, 'old-tpl')).tasks.filter((t) => t.team).length, rows.length);
 
   // ───────────────────────────────────────────── one joiners list, no task pages
-  section('Teams › New joiners is the one joiners list: the manager, the buddy and the head of department see the joiner there');
+  section('Teams › New joiners is the one joiners list: the manager and the buddy see the joiner there, the head of department does not');
   const listed = async (who: { userId: string; name: string; org: string }) => (await newJoiners.newJoinersForTeammate(who)).joiners.find((c) => c.journeyId === J.id);
   eq('The manager: listed as their manager', (await listed(MGR))?.relation, 'manager');
   eq('The buddy: listed as their buddy', (await listed(BUDDY))?.relation, 'buddy');
-  eq('The head of department (the manager’s manager): listed', (await listed(HOD))?.relation, 'head');
+  eq('The head of department (the manager’s manager): not listed (their own team only)', await listed(HOD), undefined);
   eq('Further up the line, outside the department: not listed', await listed(CEO), undefined);
   eq('The card opens the joiner’s profile', (await listed(MGR))?.userId, 'j1');
   ok('The old task routes are gone (no teamJoiners / teamJoiner / teamTaskAction / answerApproval)', !('teamJoiners' in team) && !('teamJoiner' in team) && !('teamTaskAction' in team) && !('answerApproval' in team));
@@ -115,7 +115,7 @@ async function main() {
   await companies().updateOne({ id: ORG }, { $set: { departmentHeads: [{ department: 'admissions', userId: 'dh' }] } });
   eq('A department head recorded: they approve', await team.approverOf(await engine.loadJourney(J.id)), 'dh');
   readCache.forgetLifecycleReads(null);
-  eq('…and they see the joiner under New joiners though outside the tree', (await listed(DH))?.relation, 'head');
+  eq('…but they do not see the joiner under New joiners (not their team)', await listed(DH), undefined);
   await companies().updateOne({ id: ORG }, { $set: { departmentHeads: [{ department: 'Admissions', userId: 'mgr' }] } });
   eq('A department head who is the manager: the manager’s manager instead', await team.approverOf(await engine.loadJourney(J.id)), 'hod');
   await companies().updateOne({ id: ORG }, { $unset: { departmentHeads: '' } });
