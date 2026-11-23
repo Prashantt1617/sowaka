@@ -240,7 +240,7 @@ function useMediaUrl(fileId?: string): { url: string | null; failed: boolean } {
   return got.id === fileId ? got : { url: null, failed: false };
 }
 
-/** An uploaded video, image or PDF, shown where it sits as soon as it loads (no click). `autoPlay`: the Preview window. */
+/** An uploaded video, image or PDF, shown where it sits as soon as it loads (no click); a video starts playing (muted if the browser insists). `autoPlay={false}` holds it. */
 export function MediaPlayer({ media, w, h, autoPlay }: { media: DesignMedia; w: number | string; h: number | string; autoPlay?: boolean }) {
   const file = useMediaUrl(media.fileId);
   const poster = useMediaUrl(media.type === 'video' ? media.posterFileId : undefined);
@@ -250,15 +250,28 @@ export function MediaPlayer({ media, w, h, autoPlay }: { media: DesignMedia; w: 
     <span style={box}>
       {media.type === 'image' ? <img src={file.url} alt={media.name ?? 'Image'} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         : media.type === 'pdf' ? <iframe src={file.url} title={media.name ?? 'Document'} style={{ width: '100%', height: '100%', border: 0, background: '#fff' }} />
-        : <video src={file.url} poster={poster.url ?? undefined} controls autoPlay={autoPlay} playsInline preload="metadata" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />}
+        : <video src={file.url} poster={poster.url ?? undefined} controls playsInline preload="auto" style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            onLoadedData={(e) => { if (autoPlay === false) return; const v = e.currentTarget; v.play().catch(() => { v.muted = true; void v.play().catch(() => undefined); }); }} />}
     </span>
   );
 }
 
 /** A tile as the strip shows it: the image itself, a video's thumbnail with a play mark, or the empty face. */
 export function TileThumb({ media, w, h, emptyText }: { media: DesignMedia; w: number; h: number; emptyText: string }) {
-  const shown = useMediaUrl(media.type === 'image' ? media.fileId : media.type === 'video' ? media.posterFileId : undefined);
+  // A video uploaded before thumbnails were kept: its own first frame stands in (the file is fetched once and shared).
+  const frameOnly = media.type === 'video' && !media.posterFileId && !!media.fileId;
+  const shown = useMediaUrl(media.type === 'image' || frameOnly ? media.fileId : media.type === 'video' ? media.posterFileId : undefined);
   if (!shown.url) return <TileFace media={media} w={w} h={h} emptyText={emptyText} />;
+  if (frameOnly) {
+    return (
+      <span style={{ width: w, height: h, borderRadius: 14, overflow: 'hidden', position: 'relative', flex: 'none', display: 'block', background: '#0E0E10' }}>
+        <video src={`${shown.url}#t=0.5`} muted playsInline preload="metadata" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Glyph d={GLYPH.video} size={16} color="#fff" /></span>
+        </span>
+      </span>
+    );
+  }
   return (
     <span style={{ width: w, height: h, borderRadius: 14, overflow: 'hidden', position: 'relative', flex: 'none', display: 'block', background: '#0E0E10' }}>
       <img src={shown.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
