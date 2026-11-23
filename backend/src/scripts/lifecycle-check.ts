@@ -216,6 +216,18 @@ async function main() {
   ok('completeTask again is a no-op that returns the task', again?.status === 'done' && again.doneByName === 'Hema HR');
   await engine.completeTask(J1.id, 'sign_letters');
   eq('Signed: Ready to join', (await engine.loadJourney(J1.id)).boardColumn, 'ready_to_join');
+  {
+    // The dashboard has no "not open yet" for HR's, IT's and Admin's own tasks: done or skipped whenever.
+    const laptop = byKey(await engine.tasksOf(J1.id), 'laptop_setup');
+    const face = byKey(await engine.tasksOf(J1.id), 'register_face');
+    eq('Before joining: IT’s laptop task and the joiner’s face task are not open yet', [laptop.status, face.status], ['locked', 'locked']);
+    const early = await board.actOnTaskByHr(ORG, J1.id, laptop.id, { action: 'done', note: 'Ready early' }, HR);
+    ok('HR marks IT’s laptop task done from the dashboard before its day: done, by HR', early.status === 'done' && early.doneByName === 'Hema HR', early);
+    eq('…stays done when the journey is worked out again', byKey(await engine.tasksOf(J1.id), 'laptop_setup').status, 'done');
+    eq('…the joiner’s own task keeps its opening rule (409)', (await refusal(async () => board.actOnTaskByHr(ORG, J1.id, face.id, { action: 'done' }, HR))).status, 409);
+    await board.actOnTaskByHr(ORG, J1.id, laptop.id, { action: 'reopen' }, HR);
+    eq('…reopened, it waits for its day again', byKey(await engine.tasksOf(J1.id), 'laptop_setup').status, 'locked');
+  }
 
   section('Moving Tj moves only open tasks and tells each owner once');
   t1 = await engine.tasksOf(J1.id);

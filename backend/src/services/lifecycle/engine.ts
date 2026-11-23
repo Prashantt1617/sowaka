@@ -779,14 +779,17 @@ export async function skipTask(journeyId: string, systemKey: SystemTaskKey, by?:
   return skipped;
 }
 
-/** One task by id: done or skipped (skip refused for must-do), with a note. */
-export async function finishTaskById(journeyId: string, taskId: string, action: 'done' | 'skip', by?: { userId?: string; name?: string }, note?: string): Promise<JourneyTask> {
+/**
+ * One task by id: done or skipped (skip refused for must-do), with a note. `early`: a task not open yet
+ * may be done too (HR, IT and Admin finish their own tasks from the dashboard whenever they like).
+ */
+export async function finishTaskById(journeyId: string, taskId: string, action: 'done' | 'skip', by?: { userId?: string; name?: string }, note?: string, opts: { early?: boolean } = {}): Promise<JourneyTask> {
   const task = await journeyTasks().findOne({ id: taskId, journeyId }, { projection: { _id: 0 } });
   if (!task) throw new LifecycleError(404, 'Task not found');
   if (action === 'skip' && task.mustDo) throw new LifecycleError(409, 'A must-do task cannot be skipped');
   if (task.status === 'cancelled') throw new LifecycleError(409, 'This task was cancelled');
   if (task.status === 'done' || task.status === 'skipped') return task;
-  if (task.status === 'locked') throw new LifecycleError(409, 'This task has not opened yet');
+  if (task.status === 'locked' && !opts.early) throw new LifecycleError(409, 'This task has not opened yet');
   await writeTasks([finish(task, action === 'skip' ? 'skipped' : 'done', by, note)]);
   await refreshJourney(journeyId);
   return (await journeyTasks().findOne({ id: taskId }, { projection: { _id: 0 } }))!;

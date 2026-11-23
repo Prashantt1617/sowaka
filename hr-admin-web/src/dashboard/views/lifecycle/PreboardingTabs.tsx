@@ -216,14 +216,15 @@ export function OrgChartTab({ profile, load }: { profile: PreboardingProfile; lo
 /**
  * The joiner panel's Journey, exactly as the panel draws it (the same eight steps, rows and contents: the
  * candidate's own tasks, and Week 1's HR setup and Devices and accesses), without the link to this profile page.
+ * Its reviews that live on this page (Documents, the joining form, Bank and PF) open their card here (`onOpenCard`).
  */
-export function ActivityTab({ load, onChanged }: { load: JourneyLoad; onChanged: () => void }) {
+export function ActivityTab({ load, onChanged, onOpenCard }: { load: JourneyLoad; onChanged: () => void; onOpenCard?: (card: string) => void }) {
   const [busy, setBusy] = useState('');
   return (
     <div className="pd-psecs">
       <section className="pd-card" style={{ padding: 20 }}>
         {load.state === 'ready'
-          ? <JourneySteps data={load.data} busy={busy} setBusy={setBusy} onChanged={onChanged} variant="profile" />
+          ? <JourneySteps data={load.data} busy={busy} setBusy={setBusy} onChanged={onChanged} variant="profile" onOpenCard={onOpenCard} />
           : <JourneyPending load={load} />}
       </section>
     </div>

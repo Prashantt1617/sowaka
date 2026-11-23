@@ -21,15 +21,15 @@ import { canOpen, canSeePay, SALARY_DETAILS } from '../../access';
 import { usePageHead } from '../../pageHead';
 import { LoadError, Pill, SkeletonLines, StatusTabs } from '../../ui';
 import { ApiError } from '../../../services/http';
-import { createPreboardingAppAccess, getJourney, getPreboardingProfile, isNotAvailable, reviewDocument, savePreboardingBasic, savePreboardingSection, setPreboardingSectionApproved } from '../../../services/lifecycle';
+import { createPreboardingAppAccess, decideBankPfRequest, getJourney, getPreboardingProfile, isNotAvailable, reviewDocument, savePreboardingBasic, savePreboardingSection, setPreboardingSectionApproved } from '../../../services/lifecycle';
 import type {
   PreboardingAddress, PreboardingBasic, PreboardingBasicInput, PreboardingDocument, PreboardingJob, PreboardingOptions, PreboardingProfile as Profile, PreboardingSection,
-  PreboardingBankPf, PreboardingSectionInput, PreboardingSectionKey, PreboardingSectionValues,
+  BankPfRequest, PreboardingBankPf, PreboardingSectionInput, PreboardingSectionKey, PreboardingSectionValues,
 } from '../../../services/lifecycle';
 import { Modal, NoteDialog, NotSwitchedOn } from './shared';
 import { dayOf, errText, firstName, longDay, shortDay } from './format';
 import { pctColour, pctOf } from './boardModel';
-import { candidateStatus, docStatus, rememberPreboardingList } from './preboardingLinks';
+import { candidateStatus, docStatus, preboardingParam, rememberPreboardingList } from './preboardingLinks';
 import { BasicDetailsGrid, DocumentList, Fact, Grid, LockedField, ProfileHeader, Row, Section, SkeletonGrid } from '../profileParts';
 import { EMP_TYPE_VALUE, nameParts, showDate } from '../profileWords';
 import type { ProfileDocItem } from '../profileParts';
@@ -37,6 +37,7 @@ import { Field, Select, TypeOrPick, grid2, grid3, inputStyle } from '../AddEmplo
 import { PdBank, PdEdit, PdFile, PdLayers, PdPin, PdUser } from '../pdIcons';
 import type { ProfileTab } from '../EmployeeProfile';
 import { ActivityTab, NotJoiningTab, OrgChartTab, PerformanceTab, SalaryTab } from './PreboardingTabs';
+import { BankPfRequestCard } from './JourneySteps';
 import type { JourneyLoad } from './PreboardingTabs';
 import '../people.css';
 
@@ -99,7 +100,8 @@ const OPTIONS: PreboardingOptions = {
 export function PreboardingProfile() {
   const s = useStore();
   const { flash, user } = s;
-  const journeyId = s.viewParam;
+  // `#preboarding/<journeyId>[/<card>]`: the journey's reviews open the page on their card (Documents, a section, Bank and PF).
+  const { journeyId, focus } = preboardingParam(s.viewParam);
   const [data, setData] = useState<Profile | null>(null);
   const [error, setError] = useState<{ text: string; off?: boolean } | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -110,6 +112,9 @@ export function PreboardingProfile() {
   const [journey, setJourney] = useState<JourneyLoad>({ state: 'loading' });
   const [reupload, setReupload] = useState<PreboardingDocument | null>(null);
   const [granting, setGranting] = useState(false);
+  // The card to bring into view (from the address, or the Activity tab's reviews), and the bank and PF decision asked for.
+  const [focusReq, setFocusReq] = useState<{ key: string; n: number } | null>(null);
+  const [bankDecision, setBankDecision] = useState<'approve' | 'decline' | null>(null);
   // Candidates' documents and answers are HR's (People › Employees or full access); the onboarding tab alone sees where each one is.
   const seesDocuments = canOpen(user, 'employees');
   // As the Employee profile: what someone earns is its own access. The offer, tasks and closing are the onboarding board's.
@@ -150,6 +155,24 @@ export function PreboardingProfile() {
   }, [journeyId, attempt, seesBoard]);
   // Another candidate: no form left open from the last one, and their profile first.
   useEffect(() => { setEditing(null); setTab('profile'); }, [journeyId]);
+  // Opened on a card: its tab, then the card scrolled to and highlighted (once the page has loaded).
+  useEffect(() => { if (focus) setFocusReq((f) => ({ key: focus, n: (f?.n ?? 0) + 1 })); }, [focus, journeyId]);
+  const loaded = Boolean(data);
+  useEffect(() => {
+    if (!focusReq || !loaded) return undefined;
+    if (focusReq.key === 'bank') { if (seesSalary) setTab('salary'); } else setTab('profile');
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      const el = document.querySelector<HTMLElement>(`[data-focus="${focusReq.key}"]`);
+      if (el || ++tries > 30) window.clearInterval(timer);
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.style.transition = 'box-shadow .3s'; el.style.borderRadius = '16px';
+      el.style.boxShadow = '0 0 0 3px var(--accent)';
+      window.setTimeout(() => { el.style.boxShadow = 'none'; }, 2600);
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, [focusReq, loaded, seesSalary]);
 
   const top = (
     <div className="pd-prof-top">
@@ -315,10 +338,12 @@ export function PreboardingProfile() {
           {categories.filter((c) => c.key !== 'ids').map(card)}
           {/* Then the Employee profile's own order: Documents, then the ID numbers. */}
           {documentCount > 0 && (
-            <Section title="Documents" icon={<PdFile />}>
-              {!seesDocuments && <div className="pd-note" style={{ marginBottom: 8 }}>Only HR opens candidates’ documents and ID proofs. You see where each one is.</div>}
-              <DocumentList groups={docGroups} />
-            </Section>
+            <div data-focus="documents">
+              <Section title="Documents" icon={<PdFile />}>
+                {!seesDocuments && <div className="pd-note" style={{ marginBottom: 8 }}>Only HR opens candidates’ documents and ID proofs. You see where each one is.</div>}
+                <DocumentList groups={docGroups} />
+              </Section>
+            </div>
           )}
           {categories.filter((c) => c.key === 'ids').map(card)}
         </div>
@@ -328,6 +353,7 @@ export function PreboardingProfile() {
         <SalaryTab load={journey} journeyId={data.journeyId} seesPay={canSeePay(user)}>
           {data.bankPf && (
             <BankPfCard bank={data.bankPf} first={first} canEdit={canEdit} editing={editing === 'bankpf'} disabled={Boolean(busy)}
+              request={journey.state === 'ready' ? journey.data.journey.bankPfRequest : undefined} canDecide={canSeePay(user)} onDecide={setBankDecision}
               onEdit={() => setEditing('bankpf')} onCancel={() => setEditing(null)}
               save={async (body) => { setData(await savePreboardingSection(data.journeyId, 'bank', body)); setEditing(null); flash('Bank account and PF saved'); }}
               documents={data.bankPf.documents.length > 0 ? <DocumentList groups={[{ key: 'bank', title: 'Bank documents', list: docItems(data.bankPf.documents) }]} /> : null} />
@@ -335,12 +361,26 @@ export function PreboardingProfile() {
         </SalaryTab>
       )}
       {tab === 'orgchart' && <OrgChartTab profile={data} load={journey} />}
-      {tab === 'activity' && <ActivityTab load={journey} onChanged={() => setAttempt((n) => n + 1)} />}
+      {tab === 'activity' && <ActivityTab load={journey} onChanged={() => setAttempt((n) => n + 1)} onOpenCard={(key) => setFocusReq((f) => ({ key, n: (f?.n ?? 0) + 1 }))} />}
       {tab === 'exit' && seesBoard && <NotJoiningTab profile={data} load={journey} first={first} onChanged={() => setAttempt((n) => n + 1)} />}
 
       {granting && basic && (
         <AppAccessDialog first={first} basic={basic} onClose={() => setGranting(false)}
           onCreate={async (body) => { setData(await createPreboardingAppAccess(data.journeyId, body)); setGranting(false); flash(`App access created for ${first}`); }} />
+      )}
+      {bankDecision && (
+        <NoteDialog
+          title={bankDecision === 'approve' ? 'Approve the bank and PF details?' : 'Send the bank and PF details back'}
+          sub={bankDecision === 'approve' ? `They go into payroll from the next run, and ${first} is told in the app. This is “Check their payroll details” done.` : `Payroll keeps the details it has. ${first} sees your note in the app and sends them again.`}
+          placeholder={bankDecision === 'approve' ? 'Note (optional)' : 'What they should do instead (optional)'}
+          confirm={bankDecision === 'approve' ? 'Approve' : 'Send back'} tone={bankDecision === 'approve' ? 'primary' : 'danger'}
+          onClose={() => setBankDecision(null)}
+          onConfirm={async (note) => {
+            await decideBankPfRequest(data.journeyId, bankDecision, note || undefined);
+            flash(bankDecision === 'approve' ? 'Bank and PF approved' : 'Bank and PF sent back');
+            setBankDecision(null);
+            setAttempt((n) => n + 1);
+          }} />
       )}
       {reupload && (
         <NoteDialog title={`Ask ${first} to re-upload ${reupload.label}`} sub={`${first} sees your note first, at the top of Up next.`} label="What to fix" required
@@ -432,18 +472,23 @@ const BANK_STATE: Record<PreboardingBankPf['state'], Tone> = { todo: STATE.todo.
 /**
  * Bank account and PF on Salary details: the joiner's own task, not a profile section. Its state (To do,
  * Declared in the app on DATE, Approved), the details shown (the app's declaration, else HR's or the
- * portal's), any bank document, and HR's Edit (no joiner needed). Approving a declaration is the
- * onboarding board's (Activity › Week 1).
+ * portal's), any bank document, and HR's Edit (no joiner needed). A declaration waiting is approved or sent
+ * back here: that is HR's "Check their payroll details" (the journey's Week 1 opens this card).
  */
-function BankPfCard({ bank, first, canEdit, editing, disabled, onEdit, onCancel, save, documents }: {
+function BankPfCard({ bank, first, canEdit, editing, disabled, onEdit, onCancel, save, documents, request, canDecide, onDecide }: {
   bank: PreboardingBankPf; first: string; canEdit: boolean; editing: boolean; disabled: boolean;
   onEdit: () => void; onCancel: () => void; save: (body: PreboardingSectionInput['bank']) => Promise<void>; documents: ReactNode;
+  /** The joiner's declaration (from the journey): approved or sent back here, which is HR's "Check their payroll details". */
+  request?: BankPfRequest; canDecide: boolean; onDecide: (d: 'approve' | 'decline') => void;
 }) {
+  const pending = request?.status === 'pending';
+  // An older week-1 bank change (not the payroll details task): its own details, as the joiner asked.
+  const legacy = request && request.source !== 'payroll_task' ? request : undefined;
   const label = bank.state === 'approved' ? 'Approved' : bank.state === 'declared' && bank.declaredAt ? `Declared in the app on ${shortDay(bank.declaredAt)}` : 'To do';
   const note = bank.state === 'approved'
     ? `Approved by ${bank.approved?.byName ?? 'HR'}${bank.approved ? ` on ${shortDay(bank.approved.at)}` : ''}${bank.declaredAt ? `, declared in the app on ${shortDay(bank.declaredAt)}` : ''}. It is in payroll.`
     : bank.state === 'declared'
-      ? `${first} declared it in the app. It waits for HR’s approval under Activity › Week 1, which writes it to payroll.`
+      ? `${first} declared it in the app. ${canDecide ? 'Approving it here writes it to payroll' : 'Someone with payroll access approves it here, which writes it to payroll'}.`
       : bank.sentBack
         ? `Sent back on ${shortDay(bank.sentBack.at)}${bank.sentBack.note ? `: ${bank.sentBack.note}` : ''}. ${first} sends it again from the app.`
         : `${first} declares it in the app (Complete your payroll details). It is not part of the employee profile’s progress. You can fill it in here too.`;
@@ -454,6 +499,12 @@ function BankPfCard({ bank, first, canEdit, editing, disabled, onEdit, onCancel,
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <Pill label={label} tone={BANK_STATE[bank.state]} fontSize={11} padding="2px 9px" />
           {canEdit && !editing && <button type="button" onClick={onEdit} className="pd-sec-act" disabled={disabled}><PdEdit /> Edit</button>}
+          {pending && !legacy && canDecide && !editing && (
+            <>
+              <button type="button" className="pd-btn sm primary" disabled={disabled} onClick={() => onDecide('approve')}>Approve</button>
+              <button type="button" className="pd-btn sm" disabled={disabled} onClick={() => onDecide('decline')}>Send back</button>
+            </>
+          )}
         </span>
       )}>
         {!editing && <div className="pd-note" style={{ marginBottom: 10 }}><span>{note}</span></div>}
@@ -466,6 +517,7 @@ function BankPfCard({ bank, first, canEdit, editing, disabled, onEdit, onCancel,
           <div className="pd-subnote" style={{ marginTop: 8 }}>{bank.editedByHr ? `Changed by ${bank.editedByHr.byName} on ${shortDay(bank.editedByHr.at)}.` : from}</div>
         )}
         {!editing && documents && <div style={{ marginTop: 12 }}>{documents}</div>}
+        {!editing && legacy && <div style={{ marginTop: 12 }}><BankPfRequestCard request={legacy} pay={canDecide} busy={disabled} onDecide={onDecide} /></div>}
       </Section>
     </div>
   );

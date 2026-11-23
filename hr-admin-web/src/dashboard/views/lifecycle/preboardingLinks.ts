@@ -5,9 +5,19 @@
 import { viewHash } from '../../viewLink';
 import type { CandidateDocumentStatus } from '../../../services/lifecycle';
 
-/** The pre-boarding profile's address: this dashboard's own path (whatever it is served under), on the profile. */
-export function preboardingHref(journeyId: string): string {
-  return `${window.location.pathname}#${viewHash('preboarding', journeyId)}`;
+/**
+ * The pre-boarding profile's address: this dashboard's own path (whatever it is served under), on the profile.
+ * `focus` opens it on one card (`#preboarding/<journeyId>/<focus>`): 'documents', a profile section
+ * ('personal', 'contact'…) or 'bank' (Salary details › Bank account and PF).
+ */
+export function preboardingHref(journeyId: string, focus?: string): string {
+  return `${window.location.pathname}#${viewHash('preboarding', journeyId)}${focus ? `/${encodeURIComponent(focus)}` : ''}`;
+}
+
+/** The page's own part of the address: the candidate's journey, and the card to open on. */
+export function preboardingParam(param: string): { journeyId: string; focus?: string } {
+  const [journeyId, focus] = param.split('/');
+  return { journeyId: journeyId ?? '', ...(focus ? { focus } : {}) };
 }
 
 /** Employees opens on its Pre-boarding list once (set when a pre-boarding row or the profile's back arrow leaves it). */
