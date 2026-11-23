@@ -151,7 +151,7 @@ function TemplateEditor({ kind, template, fields, company, onBack, onSaved }: { 
         </section>
         <section className="pd-card" style={{ flex: '1 1 420px', minWidth: 0 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 600 }}>Preview · with sample details</h3>
-          <LetterPreview html={letterInner(body, sample, { company, title: LETTER_TITLE[kind], refNo: 'REF/2026/001' }, 'preview')} caption={false} />
+          <LetterPreview html={letterInner(body, sample, { company, title: LETTER_TITLE[kind] }, 'preview')} caption={false} />
         </section>
       </div>
     </div>
