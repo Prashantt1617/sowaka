@@ -11,6 +11,7 @@ import { contentDisposition } from '../services/lifecycle/files';
 import { letterPdfForEmployee } from '../services/lifecycle/letters';
 import { portalSessionForAppUser } from '../services/lifecycle/portalAuth';
 import { answerApproval, teamApproval, teamJoiner, teamJoiners, teamTaskAction } from '../services/lifecycle/teamTasks';
+import { newJoinersForTeammate } from '../services/lifecycle/teamNewJoiners';
 import { lifecycleGate, lifecycleHandler } from './lifecycle-admin.routes';
 import multer from 'multer';
 import type { Response, NextFunction } from 'express';
@@ -24,7 +25,6 @@ import {
   answerApprovalV2, approvalViewV2, assignBuddy, buddyOptions, commentOnGoals, introduceOnFeed, inviteSenior, markCheckinRead, reviewView, scheduleMeetings,
   sendReview, sendWelcomeMessage, teamCheckin, teamGoals, teamJoinerPage, teamRowAction, teamRowNotes,
 } from '../services/lifecycle/teamApp';
-import { staffJoinerPage, staffOnboarding, staffProfile, staffTaskAction, staffTaskNotes, staffTaskScreen } from '../services/lifecycle/staffApp';
 
 /**
  * The app's lifecycle endpoints for the joiner and their manager, mounted at
@@ -111,6 +111,9 @@ lifecycleAppRouter.put('/manager/joiners/:journeyId/probation/:month', lifecycle
 // Teams › Joiners for the manager, the buddy and the head of department (services/lifecycle/teamTasks.ts):
 // the joiners I'm connected to, one joiner's page with my tasks for them, ticks, and the confirmation approval.
 lifecycleAppRouter.get('/team/joiners', lifecycleHandler(async (req) => teamJoiners(me(req))));
+// Teams › Joiners for every teammate (peers under the same manager, the same department, the manager and the buddy):
+// the people joining tomorrow or in their first month, each opening their profile (services/lifecycle/teamNewJoiners.ts).
+lifecycleAppRouter.get('/team/new-joiners', lifecycleHandler(async (req) => newJoinersForTeammate(me(req))));
 lifecycleAppRouter.get('/team/joiners/:journeyId', lifecycleHandler(async (req) => teamJoiner(me(req), param(req, 'journeyId'))));
 lifecycleAppRouter.post('/team/joiners/:journeyId/tasks/:taskId', lifecycleHandler(async (req) => teamTaskAction(me(req), param(req, 'journeyId'), param(req, 'taskId'), body(req))));
 lifecycleAppRouter.get('/team/joiners/:journeyId/approval', lifecycleHandler(async (req) => teamApproval(me(req), param(req, 'journeyId'))));
@@ -193,10 +196,6 @@ lifecycleAppRouter.get('/team/joiners/:journeyId/confirmation', lifecycleHandler
 lifecycleAppRouter.post('/team/joiners/:journeyId/confirmation', lifecycleHandler(async (req) => answerApprovalV2(me(req), param(req, 'journeyId'), body(req))));
 lifecycleAppRouter.post('/team/joiners/:journeyId/senior-meeting', lifecycleHandler(async (req) => inviteSenior(me(req), param(req, 'journeyId'), body(req))));
 
-// HR and IT & admin (Actions › Onboarding)
-lifecycleAppRouter.get('/staff/onboarding', lifecycleHandler(async (req) => staffOnboarding(me(req), req.query.as)));
-lifecycleAppRouter.get('/staff/joiners/:journeyId', lifecycleHandler(async (req) => staffJoinerPage(me(req), param(req, 'journeyId'), req.query.as)));
-lifecycleAppRouter.get('/staff/joiners/:journeyId/profile', lifecycleHandler(async (req) => staffProfile(me(req), param(req, 'journeyId'), req.query.as)));
-lifecycleAppRouter.get('/staff/joiners/:journeyId/tasks/:key', lifecycleHandler(async (req) => staffTaskScreen(me(req), param(req, 'journeyId'), param(req, 'key'), req.query.as)));
-lifecycleAppRouter.post('/staff/joiners/:journeyId/tasks/:key', lifecycleHandler(async (req) => staffTaskAction(me(req), param(req, 'journeyId'), param(req, 'key'), body(req), req.query.as)));
-lifecycleAppRouter.put('/staff/joiners/:journeyId/tasks/:key/notes', lifecycleHandler(async (req) => staffTaskNotes(me(req), param(req, 'journeyId'), param(req, 'key'), body(req), req.query.as)));
+// HR and IT & admin work onboarding from the dashboard only: the app's old Actions › Onboarding
+// screens (`/lifecycle/staff/*`, builds up to 1.4.3) are gone, and answer 404 for everyone.
+lifecycleAppRouter.all(/^\/staff(?:\/.*)?$/, lifecycleHandler(async () => { throw new LifecycleError(404, 'Not available'); }));

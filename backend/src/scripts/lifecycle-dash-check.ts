@@ -218,6 +218,12 @@ type Handler = { handle: (req: unknown, res: unknown, next: (err?: unknown) => v
   ok('GET /lifecycle/onboarding/letters/:id/pdf: their own letter, as a PDF', appLetter.status === 200 && Buffer.isBuffer(appLetter.body) && (appLetter.body as Buffer).subarray(0, 5).toString() === '%PDF-' && appLetter.headers['Content-Type'] === 'application/pdf', appLetter.status);
   eq('…another employee gets 404', (await call(lifecycleAppRouter as never, '/lifecycle', 'GET', `/onboarding/letters/${conf.id}/pdf`, await sessionFor('isha'))).status, 404);
   eq('…no session: 401', (await call(lifecycleAppRouter as never, '/lifecycle', 'GET', `/onboarding/letters/${conf.id}/pdf`, undefined)).status, 401);
+  // HR and IT & admin work onboarding from the dashboard only: the app's old Actions › Onboarding routes are 404 for everyone.
+  const staffRoutes = [['GET', '/staff/onboarding'], ['GET', `/staff/joiners/${C.id}`], ['GET', '/staff/joiners/x/profile'], ['GET', '/staff/joiners/x/tasks/hr_hand_kit'],
+    ['POST', '/staff/joiners/x/tasks/hr_hand_kit'], ['PUT', '/staff/joiners/x/tasks/hr_welcome/notes']] as const;
+  const staffStatuses: number[] = [];
+  for (const who of ['hr', 'onb', 'mgr']) for (const [method, url] of staffRoutes) staffStatuses.push((await call(lifecycleAppRouter as never, '/lifecycle', method, url, await sessionFor(who), { action: 'done' })).status);
+  ok('The app’s /lifecycle/staff/* routes answer 404 for everyone (HR, IT & admin, a manager)', staffStatuses.every((x) => x === 404), staffStatuses);
   const unsent = await lettersSvc.createLetter(HR, { kind: 'confirmation', journeyId: C.id });
   await lettersSvc.uploadLetterPdf(HR, unsent.id, { buffer: PDF('draft') });
   ok('…a letter not sent yet is not served', (await refusal(() => lettersSvc.letterPdfForEmployee(ORG, 'ishita', unsent.id))).status === 404);

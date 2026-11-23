@@ -113,6 +113,9 @@ function templateTaskOf(j: Journey, task: Pick<JourneyTask, 'templateTaskId'>): 
 }
 
 const MANAGER_ROLES: OwnerRole[] = ['manager', 'manager_employee', 'hr_manager'];
+/** HR, IT, Admin and Finance work onboarding and offboarding from the dashboard only: their tasks never push the app. */
+const STAFF_ROLES: OwnerRole[] = ['hr', 'it', 'admin', 'finance'];
+export const isStaffRole = (role: OwnerRole) => STAFF_ROLES.includes(role);
 
 function ownerFor(role: OwnerRole, j: Journey): string | undefined {
   if (role === 'employee') return j.userId;
@@ -251,7 +254,7 @@ function recomputeTasks(j: Journey, tasks: JourneyTask[], calendar: WorkCalendar
         changed.add(task); any = true;
         if (hadDate && t?.dueRule) {
           task.dueChangedAt = now;
-          if (task.ownerUserId && task.ownerRole !== 'automatic') dueMoved.set(task.ownerUserId, (dueMoved.get(task.ownerUserId) ?? 0) + 1);
+          if (task.ownerUserId && task.ownerRole !== 'automatic' && !isStaffRole(task.ownerRole)) dueMoved.set(task.ownerUserId, (dueMoved.get(task.ownerUserId) ?? 0) + 1);
         }
       }
       if (task.status !== 'locked' && task.status !== 'todo') continue;
@@ -314,9 +317,7 @@ async function tellDueMoved(j: Journey, dueMoved: Map<string, number>): Promise<
 export type Destination =
   | 'lifecycle_onboarding' | 'lifecycle_meeting' | 'lifecycle_starter_task' | 'lifecycle_notes' | 'lifecycle_week1'
   | 'lifecycle_intro' | 'lifecycle_people' | 'lifecycle_survey' | 'lifecycle_probation' | 'lifecycle_checkin' | 'lifecycle_reveal'
-  | 'lifecycle_joiner' | 'lifecycle_joiner_setup' | 'lifecycle_starter_task_done' | 'lifecycle_probation_review'
-  /** Final designs: HR's / IT & admin's person page for one joiner (`data.as` = 'hr' | 'it'). */
-  | 'lifecycle_staff';
+  | 'lifecycle_joiner' | 'lifecycle_joiner_setup' | 'lifecycle_starter_task_done' | 'lifecycle_probation_review';
 
 /**
  * Every push of the lifecycle goes through here: a delivery failure never fails the write.

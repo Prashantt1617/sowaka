@@ -128,7 +128,7 @@ async function main() {
   await team.answerApproval(HOD, J.id, { action: 'approve', comment: 'Agreed' });
   j = await engine.loadJourney(J.id);
   eq('Approved: by whom, on the record', [j.probation?.hodApproval?.outcome, j.probation?.hodApproval?.byName], ['approved', 'Rahul Head']);
-  ok('HR is told when the approval lands', (await notifications().countDocuments({ userId: 'hr', scenario: 'lifecycle_confirmation_window_hr' })) === before + 1);
+  ok('HR gets no app push when the approval lands (the dashboard shows it)', (await notifications().countDocuments({ userId: 'hr', scenario: 'lifecycle_confirmation_window_hr' })) === before);
   eq('Approving twice is refused', await refusal(() => team.answerApproval(HOD, J.id, { action: 'approve' })), 409);
   const panel = await board.journeyPanel(ORG, J.id);
   eq('HR’s panel shows the recommendation and the approval', [panel.probation.recommendation?.outcome, panel.probation.recommendation?.byName, panel.probation.hodApproval?.outcome, panel.probation.hodApproval?.byName], ['confirm', 'Sunny Manager', 'approved', 'Rahul Head']);

@@ -13,14 +13,14 @@
  *
  * Kept in its own module so profile.ts and joinerApp.ts only gain what they export.
  */
-import { employeePaymentDetails, journeys, users } from '../../config/db';
+import { employeePaymentDetails, journeys } from '../../config/db';
 import type { BankPfChangeRequest, EmergencyContact, Journey, PfNominee } from '../../models/lifecycle.model';
 import { encryptField, fieldKeyConfigured } from '../fieldCrypto';
 import { joinerJourney } from './appOnboarding';
 import { designOf } from './design';
 import { joinerDesignTasks } from './designRows';
 import { journeyDocumentsView, type CandidateDocumentView } from './documents';
-import { LifecycleError, finishTaskById, tasksOf, tell } from './engine';
+import { LifecycleError, finishTaskById, tasksOf } from './engine';
 import { PROFILE_OPTIONS, PROFILE_SECTIONS, appSectionTitle, profileView, sectionOfDocument, sectionStates, sectionValue, type ProfileSection } from './profile';
 import { indianMobile } from './portal';
 
@@ -247,7 +247,6 @@ export async function sendJoinerPayroll(me: Me, body: Record<string, unknown>, n
   const request: BankPfChangeRequest = { status: 'pending', source: 'payroll_task', changes, firstJob, nominees, requestedAt: now };
   await journeys().updateOne({ id: j.id }, { $set: { bankPfRequest: request, updatedAt: now } });
   if (task && !isDone(task.status)) await finishTaskById(j.id, task.id, 'done', { userId: me.userId, name: me.name });
-  const hr = (await users().findOne({ userId: me.userId }, { projection: { _id: 0, hrPrimaryUserId: 1 } }))?.hrPrimaryUserId;
-  await tell([hr], { scenario: 'lifecycle_bank_pf_request', title: 'Payroll details to approve', body: `${me.name} sent their bank account, PF and nominee details.`, data: { journeyId: j.id } });
+  // HR approves it on the dashboard (no app push to HR).
   return payrollViewOf(me, await joinerJourney(me.userId));
 }

@@ -452,6 +452,8 @@ export interface JourneyDetail {
   reviews?: JourneyReview[];
   /** Whether their account (once joined, or app access given before) has signed in to the app, and when first and last. */
   appSignIn?: { signedIn: boolean; firstAt?: string; lastAt?: string };
+  /** Their first punch-in ever (Joining day's "Punched in"). */
+  firstPunch?: { punched: boolean; at?: string };
 }
 
 /** Where a review is done: the profile page's Documents, its joining-form sections, Salary details › Bank account and PF, the decision, the recommendation, the letter. */

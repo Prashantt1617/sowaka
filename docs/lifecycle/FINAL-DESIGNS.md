@@ -322,6 +322,7 @@ the server holds the value).
 | Method + path | Body | Returns |
 |---|---|---|
 | GET `/lifecycle/team/joiners` | | `{ joiners: TeamJoinerRow[] }` |
+| GET `/lifecycle/team/new-joiners` | | `{ joiners: Array<{ journeyId, userId?, name, initials, photoUrl?, designation?, department?, tj, joiningLine, relation: 'manager' \| 'buddy' \| 'peer' \| 'department', profileNote? }> }`: every teammate's list (same manager, same department, the manager, the buddy; one company), Tj − 1 to Tj + 30, newest first; `userId` opens `/profile/people/:id`, absent (with `profileNote` "Profile opens on their first day") before the joiner has an account |
 | GET `/lifecycle/team/joiners/:journeyId/page` | | `TeamJoinerPage` (new path: the old `/team/joiners/:journeyId` keeps its 20 Nov shape for app builds in use) |
 | POST `/lifecycle/team/joiners/:journeyId/rows/:rowId` | `{ action: 'done' \| 'undo' }` | `TeamJoinerPage` (a tick; meetings tick the shared row the joiner's Mark as met writes) |
 | GET `/lifecycle/team/joiners/:journeyId/buddy-options` · POST `…/buddy` `{ buddyUserId }` | | `{ options: Array<{ userId, name, designation?, photoUrl? }>, current?: string }` / `TeamJoinerPage` (ticks `mgr_assign_buddy`) |
@@ -376,7 +377,12 @@ department or anyone above the manager, the reporting line (`line`; only the hea
 others read-only). Meera (manager of one, buddy of another) gets both in one list. HR and IT & admin never
 see Teams › Joiners.
 
-### 4.4 HR and IT & admin in the app (H) — `/lifecycle/staff/*` (new)
+### 4.4 HR and IT & admin in the app (H) — `/lifecycle/staff/*` (REMOVED 23 Nov 2026)
+
+> **Removed.** HR and IT & admin work onboarding and offboarding from the dashboard only. `/lifecycle/me` no
+> longer sends `staff`, every `/lifecycle/staff/*` route answers 404, `staffApp.ts` and the app's staff screens
+> are gone, and HR / IT & admin (and offboarding clearance staff) get no app push or inbox row about onboarding or
+> offboarding tasks (emails are kept). The rest of this section is history.
 
 Who: the template's `assignees.hrUserId` (else the joiner's `hrPrimaryUserId`, else the offer's creator) is
 HR for that joiner; `assignees.itUserId` is IT & admin. Someone who is both picks with `?as=hr|it`.
@@ -623,7 +629,7 @@ S = `GET /lifecycle/staff/joiners/:id`, O = `GET /lifecycle/staff/onboarding`, D
 ## 8b. Integration (branch fd-all)
 
 - **Push taps.** `data.destination` for a teammate's push comes from the row's role (`designRows.teammatePushTarget`):
-  HR and IT & admin get `lifecycle_staff` with `data.as` (`hr` | `it`) and open their person page; the manager, buddy,
+  HR and IT & admin get no push at all (dashboard only; `lifecycle_staff` was removed 23 Nov 2026); the manager, buddy,
   someone senior and head of department get `lifecycle_joiner` (the Teams person page); the joiner's own get
   `lifecycle_onboarding` (Actions › Onboarding). Used by late-teammate reminders (`lifecycle_team_task_late`, + `name`),
   meeting invites (`lifecycle_meeting_invite`) and meeting reminders (`lifecycle_meeting_soon`).

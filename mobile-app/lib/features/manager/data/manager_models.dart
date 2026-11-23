@@ -35,7 +35,9 @@ enum ManagerView { home, feedbackList }
 /// The sections of a manager's Team tab: their people, the requests waiting
 /// on them, and the month's feedback to give. Held in app state rather than
 /// in the widget, so a notification can land on Requests directly.
-enum TeamSection { myTeam, requests, feedback, joiners }
+/// [newJoiners]: Teams › New joiners, every teammate's view-only list of the
+/// people joining their team or department (profile only).
+enum TeamSection { myTeam, requests, feedback, joiners, newJoiners }
 
 enum FeedbackStatus { pending, saved, sent, missed }
 
