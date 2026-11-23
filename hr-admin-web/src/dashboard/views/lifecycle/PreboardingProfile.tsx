@@ -30,6 +30,7 @@ import { Modal, NoteDialog, NotSwitchedOn } from './shared';
 import { dayOf, errText, firstName, longDay, shortDay } from './format';
 import { pctColour, pctOf } from './boardModel';
 import { candidateStatus, docStatus, preboardingParam, rememberPreboardingList } from './preboardingLinks';
+import { IncomeTaxCard } from '../IncomeTaxCard';
 import { BasicDetailsGrid, DocumentList, Fact, Grid, LockedField, ProfileHeader, Row, Section, SkeletonGrid } from '../profileParts';
 import { EMP_TYPE_VALUE, nameParts, showDate } from '../profileWords';
 import type { ProfileDocItem } from '../profileParts';
@@ -160,7 +161,7 @@ export function PreboardingProfile() {
   const loaded = Boolean(data);
   useEffect(() => {
     if (!focusReq || !loaded) return undefined;
-    if (focusReq.key === 'bank') { if (seesSalary) setTab('salary'); } else setTab('profile');
+    setTab('profile'); // every card it opens (documents, bank account and PF, a section) is on Profile
     let tries = 0;
     const timer = window.setInterval(() => {
       const el = document.querySelector<HTMLElement>(`[data-focus="${focusReq.key}"]`);
@@ -208,6 +209,8 @@ export function PreboardingProfile() {
 
   const { candidate } = data;
   const first = firstName(candidate.name);
+  // The tax declaration needs their account (made at Mark joined or Generate app access).
+  const taxUserId = (journey.state === 'ready' ? journey.data.journey.userId : undefined) ?? data.basic?.appAccess?.userId;
   const status = candidateStatus(String(candidate.status));
   const pct = pctOf(data);
   const approvedCount = data.sections.filter((x) => x.approved).length;
@@ -330,6 +333,14 @@ export function PreboardingProfile() {
               </Section>
             </div>
           )}
+          {/* Bank account and PF: the joiner's own task (declared in the app), shown under Basic details. */}
+          {data.bankPf && (
+            <BankPfCard bank={data.bankPf} first={first} canEdit={canEdit} editing={editing === 'bankpf'} disabled={Boolean(busy)}
+              request={journey.state === 'ready' ? journey.data.journey.bankPfRequest : undefined} canDecide={canSeePay(user)} onDecide={setBankDecision}
+              onEdit={() => setEditing('bankpf')} onCancel={() => setEditing(null)}
+              save={async (body) => { setData(await savePreboardingSection(data.journeyId, 'bank', body)); setEditing(null); flash('Bank account and PF saved'); }}
+              documents={data.bankPf.documents.length > 0 ? <DocumentList groups={[{ key: 'bank', title: 'Bank documents', list: docItems(data.bankPf.documents) }]} /> : null} />
+          )}
           {data.sections.length === 0 && (
             <section className="pd-card" style={{ padding: 28, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>
               {first} has not started the Employee profile on the joining portal yet.
@@ -351,13 +362,13 @@ export function PreboardingProfile() {
       {tab === 'performance' && <PerformanceTab load={journey} />}
       {tab === 'salary' && seesSalary && (
         <SalaryTab load={journey} journeyId={data.journeyId} seesPay={canSeePay(user)}>
-          {data.bankPf && (
-            <BankPfCard bank={data.bankPf} first={first} canEdit={canEdit} editing={editing === 'bankpf'} disabled={Boolean(busy)}
-              request={journey.state === 'ready' ? journey.data.journey.bankPfRequest : undefined} canDecide={canSeePay(user)} onDecide={setBankDecision}
-              onEdit={() => setEditing('bankpf')} onCancel={() => setEditing(null)}
-              save={async (body) => { setData(await savePreboardingSection(data.journeyId, 'bank', body)); setEditing(null); flash('Bank account and PF saved'); }}
-              documents={data.bankPf.documents.length > 0 ? <DocumentList groups={[{ key: 'bank', title: 'Bank documents', list: docItems(data.bankPf.documents) }]} /> : null} />
-          )}
+          {/* The tax declaration (new or old regime, investments): the employee's own task in the app, HR can edit it here. */}
+          {taxUserId
+            ? <IncomeTaxCard userId={taxUserId} />
+            : <section className="pd-card" style={{ padding: 20, display: 'grid', gap: 6 }}>
+              <b style={{ fontSize: 15 }}>Income tax declaration</b>
+              <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>{first} chooses the new or old regime and declares their investments in the app (Declare your tax and investments) once they have app access. It shows here then, and you can edit it.</span>
+            </section>}
         </SalaryTab>
       )}
       {tab === 'orgchart' && <OrgChartTab profile={data} load={journey} />}
@@ -470,7 +481,7 @@ function CategoryCard({ category: c, first, busy, canEdit, editing, onEdit, onAp
 const BANK_STATE: Record<PreboardingBankPf['state'], Tone> = { todo: STATE.todo.tone, declared: STATE.done.tone, approved: STATE.approved.tone };
 
 /**
- * Bank account and PF on Salary details: the joiner's own task, not a profile section. Its state (To do,
+ * Bank account and PF, under Basic details: the joiner's own task, not a profile section. Its state (To do,
  * Declared in the app on DATE, Approved), the details shown (the app's declaration, else HR's or the
  * portal's), any bank document, and HR's Edit (no joiner needed). A declaration waiting is approved or sent
  * back here: that is HR's "Check their payroll details" (the journey's Week 1 opens this card).
