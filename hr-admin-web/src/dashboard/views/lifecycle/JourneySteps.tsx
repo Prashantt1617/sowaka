@@ -16,12 +16,12 @@ import {
   AGENDA_TASK_KEYS, AGENDA_TASK_LABEL, decideBankPfRequest, decideDateRequest, fetchLifecycleFile, journeyTaskAction, listTemplates, reviewDocument, updateJourney,
 } from '../../../services/lifecycle';
 import type {
-  BankPfRequest, CandidateDocumentView, ConfirmationDecision, Day1Pass, DesignReporting, JourneyDetail, LetterView, OwnerRole, TaskView, TemplateListItem,
+  BankPfRequest, CandidateDocumentView, ConfirmationDecision, Day1Pass, JourneyDetail, LetterView, OwnerRole, TaskView, TemplateListItem,
 } from '../../../services/lifecycle';
 import { FilePreview, NoteDialog, OwnerChip, Pick, Field } from './shared';
 import { IconChevronDown, IconDownload } from '../../icons';
 import {
-  PHASES, addDays, areaStyle, changedFieldsText, daysTo, dayTime, decisionLine, dueText, errText, fileSize, firstName, inputStyle, longDay, openDocuments, rupees, sectionLabel, shortDay, todayKey,
+  PHASES, addDays, areaStyle, changedFieldsText, daysTo, dayTime, decisionLine, dueText, errText, firstName, inputStyle, longDay, openDocuments, rupees, sectionLabel, shortDay, todayKey,
 } from './format';
 import { ConfirmationLetter } from './ConfirmationLetter';
 import { DecisionDialog, ProbationMonths, RecommendationNote } from './Probation';
@@ -41,12 +41,6 @@ const TASK_STATUS: Record<string, { label: string; tone: { bg: string; fg: strin
   done: { label: 'Done', tone: { bg: 'var(--ok-bg)', fg: 'var(--ok)' } },
   skipped: { label: 'Skipped', tone: { bg: 'var(--surface-2)', fg: 'var(--ink-2)' } },
   cancelled: { label: 'Cancelled', tone: { bg: 'var(--surface-2)', fg: 'var(--ink-3)' } },
-};
-const DOC_STATUS: Record<string, { label: string; tone: { bg: string; fg: string } }> = {
-  todo: { label: 'Not uploaded', tone: { bg: 'var(--surface-2)', fg: 'var(--ink-2)' } },
-  in_review: { label: 'With HR', tone: { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' } },
-  approved: { label: 'Approved', tone: { bg: 'var(--ok-bg)', fg: 'var(--ok)' } },
-  sent_back: { label: 'Sent back', tone: { bg: 'var(--warn-bg)', fg: 'var(--warn)' } },
 };
 const LETTER_STATE: Record<string, string> = { draft: 'Draft', sent: 'Sent', ready: 'Ready to sign', opened: 'Opened', signed: 'Signed' };
 /** A task still waiting on someone. */
@@ -170,23 +164,15 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
   };
   const closeDialog = () => setDialog(null);
 
-  const { journey, tasks, documents, letters, offer, dateRequests, probation, batch } = data;
+  const { journey, tasks, documents, letters, offer, dateRequests, probation } = data;
   // This joiner's joining and reporting details (their copy of the template, from the server): what the portal's Day-1 pass
   // shows where HR has not typed this joiner's own. Never the template as it is now: an edit reaches new joiners only.
-  const reporting: DesignReporting | null = data.reporting ?? null;
   const name = journey.candidate?.name ?? 'Joiner';
   const first = firstName(name);
   const status = String(journey.status);
   const closed = ['declined', 'expired', 'not_joining'].includes(status);
-  // Optional documents (a last payslip) never hold anyone up, so the count is of the required ones.
-  const requiredDocs = documents.filter((d) => d.required);
-  const approved = requiredDocs.filter((d) => d.status === 'approved').length;
-  const docsCount = requiredDocs.length ? `${approved} of ${requiredDocs.length} required approved` : documents.length ? 'All optional' : '';
   const reviewQueue = documents.filter((d) => d.status === 'in_review').length;
   const decision: ConfirmationDecision | undefined = probation.decision ?? journey.probation?.decision;
-  const template = templates.find((t) => t.id === journey.templateId);
-  // The onboarding tab alone (IT, Admin) sees each document's status, never the files.
-  const seesDocuments = data.viewer?.seesDocuments !== false;
   const revisionWaiting = Boolean(offer && offer.status === 'draft' && offer.version > 1);
   const bankPf = journey.bankPfRequest && (journey.bankPfRequest.status === 'pending' || journey.bankPfRequest.decidedAt) ? journey.bankPfRequest : null;
   // The candidate's pre-boarding profile page: where HR approves each section (opens in a new tab). Not on that page itself.
@@ -236,16 +222,7 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
   const acceptedAt = offer?.acceptedAt ?? [...(offer?.versions ?? [])].reverse().find((v) => v.acceptedAt)?.acceptedAt;
   const replyIn = offer?.validTill ? daysTo(offer.validTill) : null;
   const portalSent = !['draft', 'offer_sent', 'accepted'].includes(status) && !closed;
-  const pass = journey.day1Pass;
-  const passFilled = Boolean(pass && (pass.reportingTime || pass.place || pass.meetingLink));
-  // The Day-1 pass line: made by the server at Tj − 7 from the template unless HR fills it in first.
-  const passLine = pass?.auto ? `Made automatically on ${shortDay(pass.auto.at)}`
-    : passFilled ? 'Filled in'
-      : journey.tj && PRE_JOIN.has(status) ? (addDays(journey.tj, -7) > todayKey() ? `Made automatically on ${shortDay(addDays(journey.tj, -7))}` : 'Being made from the template')
-        : 'Not filled in';
   const pendingDates = dateRequests.filter((r) => r.status === 'pending').length;
-  // Joining day's "Logged into the app": Yes with the first sign-in day, or No (also with no account yet).
-  const appSignIn = data.appSignIn;
 
   // Each step's line under its name.
   const sub = (i: number, state: 'done' | 'current' | 'todo'): { text: string; red?: boolean } => {
@@ -337,33 +314,15 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
           </>
         );
       case 2:
-        // Joining day: the employee profile's progress first, then pre-boarding (documents to review, letters, the
-        // tasks before joining), then the joining details (date requests, the Day-1 pass, manager and buddy).
+        // Joining day: the employee profile's progress first (its documents are reviewed on the profile page),
+        // the letters, then the joining details (date requests, the Day-1 pass, manager and buddy).
         return (
           <>
             {cur >= 2 || allDone
               ? <ProfileRow text={profileText} pct={profilePct} href={profileHref} />
               : <Para>The employee profile opens once the offer is accepted and the joining portal is sent.</Para>}
-            {documents.length > 0 && <Sub>Documents{docsCount ? ` · ${docsCount}` : ''}{reviewQueue ? ` · ${reviewQueue} to review` : ''}</Sub>}
-            {documents.length > 0 && !seesDocuments && <div className="pd-note">Only HR opens candidates’ documents and ID proofs. You see where each one is.</div>}
-            {documents.map((d) => <DocumentRow key={d.id} doc={d} busy={busy === `doc:${d.id}`} canReview={seesDocuments}
-              onOpen={(f) => setDialog({ kind: 'file', id: f.id, name: f.name })}
-              onApprove={() => void run(`doc:${d.id}`, () => reviewDocument(d.id, 'approve'), `${d.label} approved`)}
-              onSendBack={() => setDialog({ kind: 'sendback', doc: d })} />)}
             {letters.length > 0 && <Sub>Letters</Sub>}
             {letters.length > 0 && <div style={{ display: 'grid', gap: 8 }}>{letters.map((l) => <LetterRow key={l.id} letter={l} name={name} onOpen={(id, n) => setDialog({ kind: 'file', id, name: n })} onDocuments={() => openDocuments(s.setView, l.kind, journey.id)} />)}</div>}
-            {preTasks.length > 0 && <Sub>Tasks before joining</Sub>}
-            {preTasks.length > 0 && taskList(preTasks)}
-            <Sub>Joining details</Sub>
-            <Facts rows={[
-              ['Joining date', journey.tj ? longDay(journey.tj) : 'Not set'], ['When', journey.tj ? weekOf(journey.tj) : ''],
-              ['Reporting time', pass?.reportingTime ?? reporting?.time ?? 'Not set'], ['Reporting place', pass?.place ?? (pass?.meetingLink ? 'Online' : reporting?.place ?? 'Not set')],
-              ['Report to', journey.managerName ?? 'Not picked'], ['Buddy', journey.buddyName ?? 'Not picked'],
-              ['Day-1 pass', passLine],
-              ['Logged into the app', appSignIn ? (appSignIn.signedIn ? `Yes${appSignIn.firstAt ? ` · ${shortDay(appSignIn.firstAt)}` : ''}` : 'No') : ''],
-              ['Template', template?.name],
-              ['Joining with', batch.length ? batch.map((b) => b.name).join(', ') : ''],
-            ]} />
             {dateRequests.length > 0 && <Sub>Joining date requests{pendingDates ? ` · ${pendingDates} waiting for you` : ''}</Sub>}
             {dateRequests.slice().sort((a, b) => (a.status === 'pending' ? -1 : 0) - (b.status === 'pending' ? -1 : 0)).map((r) => (
               <div key={r.id} style={{ border: '1px solid var(--line)', borderRadius: 14, padding: '10px 12px', fontSize: 13 }}>
@@ -553,34 +512,6 @@ function BankPfCard({ request, pay, busy, onDecide }: { request: BankPfRequest; 
   );
 }
 
-function DocumentRow({ doc, busy, canReview, onOpen, onApprove, onSendBack }: { doc: CandidateDocumentView; busy: boolean; canReview: boolean; onOpen: (f: { id: string; name: string }) => void; onApprove: () => void; onSendBack: () => void }) {
-  const st = DOC_STATUS[doc.status] ?? DOC_STATUS.todo;
-  return (
-    <div style={{ border: '1px solid var(--line)', borderRadius: 14, padding: '10px 12px', display: 'grid', gap: 6 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <b style={{ fontSize: 13.5, fontWeight: 500, flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{doc.label}{doc.required ? '' : <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}> · optional</span>}</b>
-        <Pill label={st.label} tone={st.tone} fontSize={11} padding="2px 9px" />
-      </div>
-      {doc.files.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {doc.files.map((f) => (
-            <button key={f.id} type="button" className="pd-chip sm" onClick={() => onOpen(f)} title={`Preview ${f.name}`} style={{ maxWidth: '100%' }}>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>{f.name}</span><span className="c">{fileSize(f.size)}</span>
-            </button>
-          ))}
-        </div>
-      )}
-      {doc.hrNote && doc.status === 'sent_back' && <div style={{ fontSize: 12.5, color: 'var(--warn)', overflowWrap: 'anywhere' }}>Your note: {doc.hrNote}</div>}
-      {doc.reviewedAt && doc.status === 'approved' && <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>Approved {shortDay(doc.reviewedAt)}{doc.reviewedByName ? ` by ${doc.reviewedByName}` : ''}</div>}
-      {doc.status === 'in_review' && canReview && (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" className="pd-btn sm primary" onClick={onApprove} disabled={busy}>{busy ? 'Approving…' : 'Approve'}</button>
-          <button type="button" className="pd-btn sm" onClick={onSendBack} disabled={busy}>Send back with a note</button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function LetterRow({ letter, name, onOpen, onDocuments }: { letter: LetterView; name: string; onOpen: (id: string, name: string) => void; onDocuments: () => void }) {
   const file = letter.signedPdfFileId ?? letter.pdfFileId;
