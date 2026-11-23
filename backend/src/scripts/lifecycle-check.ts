@@ -492,9 +492,9 @@ async function main() {
     const profile = await import('../services/lifecycle/profile');
     const portalProfile = await profile.profileView(await engine.loadJourney(J2.id));
     const panel = await board.journeyPanel(ORG, J2.id);
-    eq('Your profile: the portal’s six sections (no photo step since 23 Nov), its count, and the dashboard joiner panel’s',
+    eq('Your profile: the portal’s five sections (no photo step since 23 Nov, bank and PF its own task since 24 Nov), its count, and the dashboard joiner panel’s',
       [withVideo.profile.sections.map((x) => [x.title, x.done]), withVideo.profile.done, withVideo.profile.total, panel.journey.profileSections],
-      [portalProfile.sections.map((x) => [x.title, x.done]), portalProfile.done, 6, { done: portalProfile.done, total: 6 }]);
+      [portalProfile.sections.map((x) => [x.title, x.done]), portalProfile.done, 5, { done: portalProfile.done, total: 5 }]);
     await journeys().updateOne({ id: J2.id }, { $set: { 'profile.personal': { fullName: 'Isha Verma', dob: '1999-01-01', gender: 'Female' } } });
     eq('…a section saved on the portal counts on all three', [(await app.onboardingHome(ISHA)).profile.done, (await board.journeyPanel(ORG, J2.id)).journey.profileSections.done], [portalProfile.done + 1, portalProfile.done + 1]);
 

@@ -4,6 +4,7 @@
 // the joiner panel's own call) and their pre-boarding profile. Drawn with the Employee profile's
 // section cards, rows and org-chart nodes; Activity is the joiner panel's own Journey.
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useStore } from '../../store';
 import { LoadError, Pill, SkeletonLines } from '../../ui';
 import { getSalaryBreakup, offerStatusAction } from '../../../services/lifecycle';
@@ -89,8 +90,11 @@ const TYPE_WORD: Record<string, string> = { full_time: 'Full-time', intern: 'Int
 const OFFER_STATUS: Record<string, string> = { draft: 'Draft', sent: 'Sent', accepted: 'Accepted', replaced: 'Replaced', declined: 'Declined', expired: 'Expired', withdrawn: 'Withdrawn' };
 const GROUP_WORD: Record<string, string> = { earning: 'Earnings', reimbursement: 'Reimbursements', benefit: 'Benefits', employer: 'Employer contributions' };
 
-/** The offer's pay as HR set it, read-only, and its split by a salary template (the offer letter's annexure). */
-export function SalaryTab({ load, journeyId, seesPay }: { load: JourneyLoad; journeyId: string; seesPay: boolean }) {
+/**
+ * The offer's pay as HR set it, read-only, and its split by a salary template (the offer letter's annexure).
+ * `children` follow it (the page's Bank account and PF card), whatever the offer's state.
+ */
+export function SalaryTab({ load, journeyId, seesPay, children }: { load: JourneyLoad; journeyId: string; seesPay: boolean; children?: ReactNode }) {
   const offer = load.state === 'ready' ? load.data.offer : null;
   const ctc = offer?.fields.ctc;
   const [breakup, setBreakup] = useState<SalaryBreakup | 'loading' | 'error' | null>(null);
@@ -103,8 +107,8 @@ export function SalaryTab({ load, journeyId, seesPay }: { load: JourneyLoad; jou
   }, [journeyId, ctc, seesPay]);
 
   const note = <div className="pd-note" style={{ marginBottom: 10 }}>Payroll starts after they join. This is the offer as HR set it; their salary structure is made on joining.</div>;
-  if (load.state !== 'ready') return <div className="pd-psecs"><Section title="Offered pay" icon={<PdWallet />}>{note}<JourneyPending load={load} /></Section></div>;
-  if (!offer) return <div className="pd-psecs"><Section title="Offered pay" icon={<PdWallet />}>{note}<div style={muted}>No offer yet.</div></Section></div>;
+  if (load.state !== 'ready') return <div className="pd-psecs"><Section title="Offered pay" icon={<PdWallet />}>{note}<JourneyPending load={load} /></Section>{children}</div>;
+  if (!offer) return <div className="pd-psecs"><Section title="Offered pay" icon={<PdWallet />}>{note}<div style={muted}>No offer yet.</div></Section>{children}</div>;
   const f = offer.fields;
   const pay = (n: number | undefined) => (!seesPay ? 'Hidden · needs payroll access' : n ? rupees(n) : '—');
   const sentAt = offer.sentAt ?? [...offer.versions].reverse().find((v) => v.sentAt)?.sentAt;
@@ -159,6 +163,7 @@ export function SalaryTab({ load, journeyId, seesPay }: { load: JourneyLoad; jou
             )}
         </Section>
       ) : null}
+      {children}
     </div>
   );
 }

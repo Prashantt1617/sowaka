@@ -142,7 +142,7 @@ function Portal({ d, company }: { d: TemplateDesign; company: string }) {
           </div>
         )}
         {rows.profile && (
-          <PortalTile bg="#FFF4E5" icon="user" title="Employee profile" sub="0 of 6 sections done">
+          <PortalTile bg="#FFF4E5" icon="user" title="Employee profile" sub="0 of 5 sections done">
             <span style={{ display: 'grid', gap: 6 }}><b style={{ fontSize: 13 }}>0% done</b><span style={{ height: 6, borderRadius: 3, background: '#fff' }} /></span>
           </PortalTile>
         )}
@@ -255,7 +255,7 @@ function App({ d, stage }: { d: TemplateDesign; stage: Exclude<DesignStage, 'pre
         {half.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>{half}</div>}
         {checkin && <WideTile chipBg={C.violetTint} chipFg={C.violet} glyph="💬" title="Check-ins" meta={`${checkin.title} · about a minute`} end={<span style={{ height: 32, padding: '0 14px', borderRadius: 999, background: C.primary, color: '#fff', fontSize: 12, fontWeight: 600, display: 'inline-flex', alignItems: 'center' }}>Start</span>} />}
         {stage === 'd1' && d.accesses.length > 0 && <WideTile chipBg={C.blueTint} chipFg={C.blue} glyph="💻" title="Devices and accesses" bar={{ value: 0, color: C.blue, text: `0 of ${d.accesses.length} ready` }} />}
-        <WideTile chipBg={C.amberTint} chipFg={C.amber} glyph="👤" title="Your profile" meta="6 of 6 sections done" bar={{ value: 1, color: '#1F9D45', text: '100%' }} />
+        <WideTile chipBg={C.amberTint} chipFg={C.amber} glyph="👤" title="Your profile" meta="5 of 5 sections done" bar={{ value: 1, color: '#1F9D45', text: '100%' }} />
       </div>
     </Frame>
   );

@@ -2,17 +2,19 @@
  * The joiner app's own details screens (app build 90):
  *
  * - Employee profile, edit once: after joining, the joiner fills in the profile sections they left
- *   empty in pre-boarding (personal, contact, emergency, bank and PF, education, ID numbers). A
+ *   empty in pre-boarding (personal, contact, emergency, education, ID numbers: five). A
  *   section already filled, or saved once here, is read-only in the app; so is one HR approved
  *   (`locked` on the profile's section view, when HR's approval lock is there).
  * - Payroll details ("Complete your payroll details", screen 'payroll'): bank account, PF and
  *   nominees. It reuses the week-1 bank/PF change: the details wait for HR (decideBankPfRequest),
- *   who writes them to payroll. Sending them finishes the task.
+ *   who writes them to payroll. Sending them finishes the task. Since 24 Nov this is the only place
+ *   the joiner gives bank and PF: it is no longer a profile section (profile.ts bankPfStatus: done
+ *   once sent, approved once HR approves; HR can also edit it on the dashboard without the joiner).
  *
  * Kept in its own module so profile.ts and joinerApp.ts only gain what they export.
  */
 import { employeePaymentDetails, journeys, users } from '../../config/db';
-import type { AboutYou, BankPfChangeRequest, EmergencyContact, Journey, PfNominee } from '../../models/lifecycle.model';
+import type { BankPfChangeRequest, EmergencyContact, Journey, PfNominee } from '../../models/lifecycle.model';
 import { encryptField, fieldKeyConfigured } from '../fieldCrypto';
 import { joinerJourney } from './appOnboarding';
 import { designOf } from './design';
@@ -99,15 +101,6 @@ function emergencyContactOf(raw: unknown, ownPhone: unknown): EmergencyContact {
   return { name, relation, phone };
 }
 
-function pfOf(raw: unknown): NonNullable<AboutYou['pf']> {
-  const pf = (raw ?? {}) as Record<string, unknown>;
-  if (pf.firstJob === true) return { firstJob: true };
-  // As the portal has it: the UAN is optional (HR can find it from the last employer's records).
-  const uan = String(pf.uan ?? '').replace(/\s/g, '');
-  if (uan && !/^\d{12}$/.test(uan)) throw new LifecycleError(400, 'Your UAN is 12 digits');
-  return uan ? { firstJob: false, uan } : { firstJob: false };
-}
-
 /** PUT /lifecycle/joiner/profile/:section — fills one section left empty before joining; once. */
 export async function saveJoinerProfileSection(me: Me, sectionRaw: string, body: Record<string, unknown>, now = new Date()) {
   const j = await joinerJourney(me.userId);
@@ -124,11 +117,6 @@ export async function saveJoinerProfileSection(me: Me, sectionRaw: string, body:
     const value = sectionValue(section, body, j, now);
     for (const [k, v] of Object.entries(value)) set[`profile.${k}`] = v;
     set['profile.savedAt'] = now;
-    if (section === 'bank') {
-      // The section holds the account and PF (the portal asked for PF in About you).
-      set['aboutYou.pf'] = pfOf(body.pf);
-      set['aboutYou.savedAt'] = now;
-    }
   }
   // Once: the write only lands while the section is still unsaved here.
   const res = await journeys().updateOne({ id: j.id, [`profileAppSaved.${section}`]: { $exists: false } }, { $set: set });

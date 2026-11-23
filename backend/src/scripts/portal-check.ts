@@ -336,7 +336,8 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   ok('About you GET: the candidate’s own phone and the last day to edit (Tj − 1)', aboutView.phone === '+919876543210' && aboutView.editableUntil === addDays(tj, -1), aboutView);
   await portalSvc.saveAboutYou(journeyA, { emergencyContact: { name: 'Asha Mehta', relation: 'Parent', phone: '+91 91234 56789' } });
   journeyA = (await db.journeys().findOne({ id: A }))!;
-  ok('step 1 saved on its own; the task waits for step 2', journeyA.aboutYou?.emergencyContact?.phone === '+919123456789' && (await db.journeyTasks().findOne({ journeyId: A, systemKey: 'about_you' }))?.status !== 'done');
+  // PF is no longer asked before joining (24 Nov: Bank and PF is the app's own task): the emergency contact alone finishes About you.
+  ok('the emergency contact alone finishes About you (PF is the app’s Bank and PF task since 24 Nov)', journeyA.aboutYou?.emergencyContact?.phone === '+919123456789' && (await db.journeyTasks().findOne({ journeyId: A, systemKey: 'about_you' }))?.status === 'done');
   ok('a bad second number is refused', (await refusal(() => portalSvc.saveAboutYou(journeyA, { emergencyContact: { name: 'Asha Mehta', relation: 'Parent', phone: '+91 91234 56789', altPhone: '123' } }))).status === 400);
   await portalSvc.saveAboutYou(journeyA, {
     emergencyContact: { name: 'Asha Mehta', relation: 'Parent', phone: '+91 91234 56789', altPhone: '+91 99887 76655' },
@@ -351,7 +352,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   journeyA = (await db.journeys().findOne({ id: A }))!;
   ok('a UAN is optional when they have one (HR can find it)', journeyA.aboutYou?.pf?.firstJob === false && !journeyA.aboutYou?.pf?.uan);
   await portalSvc.saveAboutYou(journeyA, { pf: { firstJob: false, uan: '1000 0000 0001' } });
-  ok('both steps saved: task done', (await db.journeyTasks().findOne({ journeyId: A, systemKey: 'about_you' }))?.status === 'done');
+  ok('a PF sent by an older portal is still kept; the task stays done', journeyA.aboutYou?.pf?.firstJob === false && (await db.journeyTasks().findOne({ journeyId: A, systemKey: 'about_you' }))?.status === 'done');
   ok('About you locks on the joining day', (await refusal(() => portalSvc.saveAboutYou(journeyA, { pf: { firstJob: true } }, at10(tj)))).status === 409);
   journeyA = (await db.journeys().findOne({ id: A }))!;
   let items = await portalSvc.meetItems(journeyA);
@@ -818,7 +819,9 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
     type FileRow = { id: string; name: string; contentType: string; size: number; url: string };
     type DocRow = { id: string; label: string; required: boolean; status: string; hrNote?: string; files: FileRow[] };
     type Sec = { key: string; title: string; done: boolean; approved?: { byName: string; at: string }; editedByHr?: { byName: string; at: string }; fields: Field[]; values: Record<string, unknown>; documents: DocRow[] };
-    type HrProfile = { journeyId: string; candidate: Record<string, string>; done: number; total: number; sections: Sec[]; options: Record<string, string[]> };
+    type BankPf = { title: string; state: string; declaredAt?: string; approved?: { byName: string; at: string }; sentBack?: { at: string; note?: string }; editedByHr?: { byName: string; at: string }; source: string; fields: Field[]; values: Record<string, unknown>; documents: DocRow[] };
+    type HrProfile = { journeyId: string; candidate: Record<string, string>; done: number; total: number; sections: Sec[]; bankPf: BankPf; options: Record<string, string[]> };
+    const bankValue = (p: HrProfile, label: string) => p.bankPf?.fields.find((f) => f.label === label)?.value;
     const value = (p: HrProfile, key: string, label: string) => p.sections.find((x) => x.key === key)?.fields.find((f) => f.label === label)?.value;
 
     // A fresh joiner, finalised (HR marks the sent offer accepted, as the live rules do).
@@ -835,22 +838,26 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
     const jp = async () => (await db.journeys().findOne({ id: P }))!;
     await profileSvc.saveProfileSection(await jp(), 'personal', { fullName: 'Nia Profile', dob: '1998-03-12', gender: 'Female', maritalStatus: 'Single' });
     await profileSvc.saveProfileSection(await jp(), 'education', { qualification: 'Graduate', institution: 'Pune University', year: '2019', jobs: [{ company: 'Acme', role: 'Designer', from: '2020-03', to: '2023-06' }] });
-    await profileSvc.saveProfileSection(await jp(), 'bank', { holderName: 'Nia Profile', ifsc: 'HDFC0001234', accountNumber: '123456789012', accountNumberAgain: '123456789012' });
+    ok('the portal no longer takes bank and PF (the app’s own task since 24 Nov): 400', (await refusal(async () => profileSvc.saveProfileSection(await jp(), 'bank', { holderName: 'Nia Profile', ifsc: 'HDFC0001234', accountNumber: '123456789012', accountNumberAgain: '123456789012' }))).status === 400);
+    // What the portal stored before 24 Nov stays readable: the bank account saved then, as it was saved.
+    await db.journeys().updateOne({ id: P }, { $set: { 'profile.bank': profileSvc.sectionValue('bank', { holderName: 'Nia Profile', ifsc: 'HDFC0001234', accountNumber: '123456789012', accountNumberAgain: '123456789012' }, await jp(), new Date()).bank } });
     await profileSvc.saveProfileSection(await jp(), 'ids', { aadhaar: '234567890123', pan: 'ABCDE1234F' });
     await portalSvc.saveAboutYou(await jp(), { emergencyContact: { name: 'Asha Rao', relation: 'Parent', phone: '+91 91234 56789' }, pf: { firstJob: false, uan: '100000000001' } });
 
     const getProfile = () => call(lifecycleAdminRouter as never, 'GET', `/journeys/${P}/profile`, appToken);
     let res = await getProfile();
     let hp = res.body as HrProfile;
-    ok('GET /admin/lifecycle/journeys/:id/profile: the six sections in the portal’s order, done counted', res.status === 200 && hp.journeyId === P && hp.total === 6
-      && JSON.stringify(hp.sections.map((x) => x.key)) === '["personal","contact","emergency","bank","education","ids"]'
-      && JSON.stringify(hp.sections.map((x) => x.done)) === '[true,false,true,true,true,false]' && hp.done === 4, { status: res.status, body: res.body });
+    ok('GET /admin/lifecycle/journeys/:id/profile: the five sections in the portal’s order (no bank and PF), done counted', res.status === 200 && hp.journeyId === P && hp.total === 5
+      && JSON.stringify(hp.sections.map((x) => x.key)) === '["personal","contact","emergency","education","ids"]'
+      && JSON.stringify(hp.sections.map((x) => x.done)) === '[true,false,true,true,false]' && hp.done === 3, { status: res.status, body: res.body });
+    ok('…bank and PF apart (bankPf): to do (nothing declared in the app), the portal’s old answers shown', hp.bankPf?.state === 'todo' && hp.bankPf.source === 'portal' && !hp.bankPf.declaredAt && !hp.bankPf.approved
+      && hp.bankPf.title === 'Bank account and PF' && bankValue(hp, 'Account holder') === 'Nia Profile' && bankValue(hp, 'IFSC') === 'HDFC0001234', hp.bankPf);
     ok('…the candidate: name, personal email, phone, designation, department, Tj and status', hp.candidate?.name === 'Nia Profile' && hp.candidate.personalEmail === 'nia.profile@example.com'
       && hp.candidate.phone === '+91 98111 22334' && hp.candidate.designation === 'Product Designer' && hp.candidate.department === 'Design' && hp.candidate.tj === tj && hp.candidate.status === 'finalised', hp.candidate);
     ok('…readable fields: the date of birth, the last job, the emergency contact, the UAN', value(hp, 'personal', 'Date of birth') === '12 Mar 1998' && value(hp, 'personal', 'Full name') === 'Nia Profile'
       && value(hp, 'education', 'Last job') === 'Designer at Acme (Mar 2020 – Jun 2023)' && value(hp, 'education', 'Year of passing') === '2019'
-      && value(hp, 'emergency', 'Name') === 'Asha Rao' && value(hp, 'emergency', 'Mobile') === '+919123456789' && value(hp, 'bank', 'PF') === 'UAN 100000000001', hp.sections.map((x) => [x.key, x.fields]));
-    ok('…secrets as their last four only (account, Aadhaar, PAN), never the whole number', value(hp, 'bank', 'Account number') === '•••• 9012' && value(hp, 'ids', 'Aadhaar')?.endsWith('0123') === true
+      && value(hp, 'emergency', 'Name') === 'Asha Rao' && value(hp, 'emergency', 'Mobile') === '+919123456789' && bankValue(hp, 'PF') === 'UAN 100000000001', hp.sections.map((x) => [x.key, x.fields]));
+    ok('…secrets as their last four only (account, Aadhaar, PAN), never the whole number', bankValue(hp, 'Account number') === '•••• 9012' && value(hp, 'ids', 'Aadhaar')?.endsWith('0123') === true
       && value(hp, 'ids', 'PAN') === '••••••234F' && !JSON.stringify(hp).includes('123456789012') && !JSON.stringify(hp).includes('234567890123') && !JSON.stringify(hp).includes('ABCDE1234F'), hp.sections.find((x) => x.key === 'ids'));
     ok('…each section carries its template documents (ID proof under IDs, address proof under contact, the photo nowhere)',
       JSON.stringify(hp.sections.find((x) => x.key === 'ids')?.documents.map((d) => [d.label, d.required, d.status])) === '[["ID proof",true,"todo"]]'
@@ -871,7 +878,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
     ok('the candidate can no longer save an approved section: 409 with HR’s words', refusedPersonal.status === 409 && refusedPersonal.message === 'HR has approved this section. Write to HR if something needs to change.', refusedPersonal);
     ok('…the other sections still save', (await profileSvc.saveProfileSection(await jp(), 'education', { qualification: 'Graduate', institution: 'Pune University', year: '2019', firstJob: true })).sections.find((x) => x.key === 'education')?.done === true);
     const pv = await profileSvc.profileView(await jp());
-    ok('the portal’s profile view marks the approved section locked (and only it)', JSON.stringify(pv.sections.map((x) => x.locked)) === '[true,false,false,false,false,false]', pv.sections);
+    ok('the portal’s profile view marks the approved section locked (and only it)', JSON.stringify(pv.sections.map((x) => x.locked)) === '[true,false,false,false,false]', pv.sections);
     const appHome = await appSvc.onboardingHome({ userId: 'nobody', name: 'Nia Profile', org: ORG }, new Date(), await jp());
     ok('…and the app’s Your profile too', (appHome.profile.sections as Array<{ key: string; locked: boolean }>).find((x) => x.key === 'personal')?.locked === true
       && (appHome.profile.sections as Array<{ key: string; locked: boolean }>).filter((x) => x.locked).length === 1, appHome.profile.sections);
@@ -881,10 +888,8 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
     ok('emergency approved: About you refuses a change to the emergency contact (409)', emergencyChange.status === 409 && emergencyChange.message === lock.PROFILE_LOCKED_MESSAGE, emergencyChange);
     ok('…and a second contact', (await refusal(async () => portalSvc.saveAboutYou(await jp(), { emergencyContact2: { name: 'Ravi', relation: 'Sibling', phone: '+91 98989 89898' } }))).status === 409);
     ok('…saving the same contact again is not a change', (await portalSvc.saveAboutYou(await jp(), { emergencyContact: { name: 'Asha Rao', relation: 'Parent', phone: '+91 91234 56789' } })).emergencyContact?.name === 'Asha Rao');
-    ok('…the PF (bank’s) still saves while bank is open', (await portalSvc.saveAboutYou(await jp(), { pf: { firstJob: false, uan: '100000000002' } })).pf?.uan === '100000000002');
-    await approve('bank');
-    ok('bank approved: the PF change is refused (409)', (await refusal(async () => portalSvc.saveAboutYou(await jp(), { pf: { firstJob: true } }))).status === 409);
-    ok('…and the bank details', (await refusal(async () => profileSvc.saveProfileSection(await jp(), 'bank', { holderName: 'Nia', ifsc: 'HDFC0001234' }))).status === 409);
+    ok('…a PF from an older portal still saves', (await portalSvc.saveAboutYou(await jp(), { pf: { firstJob: false, uan: '100000000002' } })).pf?.uan === '100000000002');
+    ok('bank and PF is not a section: approving it is 400', (await approve('bank')).status === 400);
 
     // The ID proof: uploaded (ids is done), opened from the dashboard by its url, approved, then locked.
     const idRow = (await db.candidateDocuments().findOne({ journeyId: P, docKey: 'id_proof' }))!;
@@ -921,7 +926,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
         JSON.stringify(sec(hp, 'personal')?.values) === JSON.stringify({ fullName: 'Nia Profile', dob: '1998-03-13', gender: 'Female', nationality: 'Indian' })
         && JSON.stringify(sec(hp, 'contact')?.values) === '{}'
         && JSON.stringify(sec(hp, 'emergency')?.values) === JSON.stringify({ emergencyContact: { name: 'Asha Rao', relation: 'Parent', phone: '+919123456789' } })
-        && JSON.stringify(sec(hp, 'bank')?.values) === JSON.stringify({ holderName: 'Nia Profile', ifsc: 'HDFC0001234', accountLast4: '9012', pf: { firstJob: false, uan: '100000000002' } })
+        && !sec(hp, 'bank') && JSON.stringify(hp.bankPf.values) === JSON.stringify({ holderName: 'Nia Profile', ifsc: 'HDFC0001234', accountLast4: '9012', pf: { firstJob: false, uan: '100000000002' } })
         && JSON.stringify(sec(hp, 'education')?.values) === JSON.stringify({ qualification: 'Graduate', institution: 'Pune University', year: '2019', firstJob: true, jobs: [] })
         && JSON.stringify(sec(hp, 'ids')?.values) === JSON.stringify({ aadhaarLast4: '0123', panLast4: '234F' })
         && !JSON.stringify(hp).includes('123456789012') && !JSON.stringify(hp).includes('Enc'), hp.sections.map((x) => [x.key, x.values]));
@@ -960,9 +965,11 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
       const bankBefore = (await jp()).profile!.bank!;
       res = await put('bank', { holderName: 'Nia R Profile', ifsc: 'icic0004321', bankName: 'ICICI Bank', accountNumber: '', accountNumberAgain: '', pf: { firstJob: true } });
       const bankAfter = (await jp()).profile!.bank!;
-      ok('PUT bank (approved) with the account number left blank: the stored number kept as it was, the rest and the PF changed', res.status === 200 && !!sec(res.body, 'bank')?.approved
+      const bankPfOf = (b: unknown) => (b as HrProfile).bankPf;
+      ok('PUT bank (HR, no joiner needed) with the account number left blank: the stored number kept as it was, the rest and the PF changed; still to do (the joiner’s task)', res.status === 200
         && bankAfter.accountLast4 === '9012' && bankAfter.accountNumberEnc === bankBefore.accountNumberEnc && bankAfter.ifsc === 'ICIC0004321' && (await jp()).aboutYou?.pf?.firstJob === true
-        && JSON.stringify(sec(res.body, 'bank')?.values) === JSON.stringify({ holderName: 'Nia R Profile', ifsc: 'ICIC0004321', bankName: 'ICICI Bank', accountLast4: '9012', pf: { firstJob: true } }), { bankAfter, values: sec(res.body, 'bank')?.values });
+        && bankPfOf(res.body)?.state === 'todo' && bankPfOf(res.body)?.source === 'hr' && bankPfOf(res.body)?.editedByHr?.byName === 'Hema HR' && (await jp()).profileEditedByHr?.bank?.byName === 'Hema HR'
+        && JSON.stringify(bankPfOf(res.body)?.values) === JSON.stringify({ holderName: 'Nia R Profile', ifsc: 'ICIC0004321', bankName: 'ICICI Bank', accountLast4: '9012', pf: { firstJob: true } }), { bankAfter, bankPf: bankPfOf(res.body) });
       ok('…two different account numbers: 400', (await put('bank', { holderName: 'Nia', ifsc: 'ICIC0004321', accountNumber: '998877665544', accountNumberAgain: '998877665545' })).status === 400);
       ok('…a 13-digit UAN: 400 (nothing saved)', (await put('bank', { holderName: 'Nia', ifsc: 'ICIC0004321', pf: { firstJob: false, uan: '1234567890123' } })).status === 400 && (await jp()).profile?.bank?.holderName === 'Nia R Profile');
       res = await put('bank', { holderName: 'Nia R Profile', ifsc: 'ICIC0004321', accountNumber: '9988 7766 5544' });
@@ -971,6 +978,25 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
       ok('…a new account number typed once (no accountNumberAgain): stored as the portal stores it (last four, encrypted when a key is set), never sent back; the PF kept', res.status === 200 && bankNew.accountLast4 === '5544'
         && (fieldKeyConfigured() ? !!bankNew.accountNumberEnc && bankNew.accountNumberEnc !== bankBefore.accountNumberEnc : !bankNew.accountNumberEnc)
         && !JSON.stringify(res.body).includes('998877665544') && (await jp()).aboutYou?.pf?.firstJob === true, { bankNew, keySet: fieldKeyConfigured() });
+
+      // Declared from the app (the payroll details task's send): done, by date; HR's approval: approved; sent back: to do again.
+      const declaredAt = new Date();
+      await db.journeys().updateOne({ id: P }, { $set: { bankPfRequest: { status: 'pending', source: 'payroll_task', changes: { accountHolder: 'Nia Profile', bankName: 'Axis Bank', ifsc: 'UTIB0000123', accountLast4: '7788', uanLast4: '0003' }, firstJob: false, nominees: [{ name: 'Asha Rao', relation: 'Mother', share: 100 }], requestedAt: declaredAt } } });
+      let bp = ((await getProfile()).body as HrProfile).bankPf;
+      ok('declared in the app: done ("declared", on its date), the app’s details shown (UAN as its last four, the nominee), not counted in the profile', bp.state === 'declared' && bp.declaredAt === declaredAt.toISOString() && bp.source === 'app'
+        && bp.fields.find((f) => f.label === 'Account number')?.value === '•••• 7788' && bp.fields.find((f) => f.label === 'PF')?.value === 'UAN •••• 0003' && bp.fields.find((f) => f.label === 'PF nominee')?.value === 'Asha Rao (Mother) · 100%'
+        && ((await getProfile()).body as HrProfile).total === 5, bp);
+      res = await put('bank', { holderName: 'Nia Profile', ifsc: 'UTIB0000123', bankName: 'Axis Bank', pf: { firstJob: false } });
+      bp = bankPfOf(res.body);
+      ok('…HR edits it after the declaration, the number and UAN left blank: the app’s kept (last four), still declared, HR’s details shown', res.status === 200 && bp.state === 'declared' && bp.source === 'hr'
+        && (await jp()).profile?.bank?.accountLast4 === '7788' && (await jp()).aboutYou?.pf?.uanLast4 === '0003' && bp.fields.find((f) => f.label === 'PF')?.value === 'UAN •••• 0003', { bp, stored: (await jp()).profile?.bank });
+      await db.journeys().updateOne({ id: P }, { $set: { 'bankPfRequest.status': 'approved', 'bankPfRequest.decidedAt': new Date(), 'bankPfRequest.decidedByName': 'Hema HR' } });
+      bp = ((await getProfile()).body as HrProfile).bankPf;
+      ok('…HR approved it: approved, by name', bp.state === 'approved' && bp.approved?.byName === 'Hema HR', bp);
+      await db.journeys().updateOne({ id: P }, { $set: { 'bankPfRequest.status': 'declined', 'bankPfRequest.hrNote': 'Wrong IFSC' } });
+      bp = ((await getProfile()).body as HrProfile).bankPf;
+      ok('…sent back: to do again, with HR’s note', bp.state === 'todo' && bp.sentBack?.note === 'Wrong IFSC' && !bp.declaredAt, bp);
+      await db.journeys().updateOne({ id: P }, { $unset: { bankPfRequest: '' } });
 
       res = await put('ids', { aadhaar: '', pan: 'fghij5678k' });
       ok('PUT ids with Aadhaar blank: Aadhaar kept, PAN replaced (last four only back)', res.status === 200 && JSON.stringify(sec(res.body, 'ids')?.values) === JSON.stringify({ aadhaarLast4: '0123', panLast4: '678K' })
@@ -1044,7 +1070,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
     const nia = people.find((x) => x.journeyId === P);
     const niaDone = (await profileSvc.profileView(await jp())).done;
     ok('GET /admin/lifecycle/preboarding (a bare array): the joiner with their profile count, approvals and documents with HR', res.status === 200 && !!nia && nia.name === 'Nia Profile' && nia.designation === 'Product Designer'
-      && nia.department === 'Design' && nia.tj === tj && nia.status === 'finalised' && nia.profileDone === niaDone && nia.profileTotal === 6 && nia.approvedSections === 2 && nia.documentsWaiting === 2, nia);
+      && nia.department === 'Design' && nia.tj === tj && nia.status === 'finalised' && nia.profileDone === niaDone && nia.profileTotal === 5 && nia.approvedSections === 1 && nia.documentsWaiting === 2, nia);
     ok('…not the joined (Kabir) nor the closed (declined, not joining)', !people.some((x) => x.journeyId === A || x.journeyId === B.journeyId)
       && people.every((x) => !['joined', 'declined', 'expired', 'not_joining', 'moved_to_app', 'confirmed'].includes(x.status)), people.map((x) => [x.name, x.status]));
     ok('…soonest joining first', people.every((x, i) => i === 0 || (people[i - 1].tj ?? '9999') <= (x.tj ?? '9999')), people.map((x) => x.tj));
@@ -1181,6 +1207,20 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
     ok('…and reads the pre-boarding profile route (HR)', (await call(lifecycleAdminRouter as never, 'GET', `/journeys/${P}/profile`, empSess)).status === 200);
     const joinedPut = await call(lifecycleAdminRouter as never, 'PUT', `/journeys/${P}/profile/personal`, empSess, { fullName: 'Nia', dob: '1998-03-12', gender: 'Female' });
     ok('…may edit it too, but not once the joiner has joined (409)', joinedPut.status === 409 && (joinedPut.body as { error?: string }).error === 'Only someone still in pre-boarding can be changed here', joinedPut);
+    // Bank and PF after joining: HR's edit goes to payroll too, so it needs payroll access (written first: a refusal saves nothing).
+    const keyBefore = process.env.PAYROLL_FIELD_KEY;
+    process.env.PAYROLL_FIELD_KEY = Buffer.alloc(32, 7).toString('base64');
+    try {
+      const bankBody = { holderName: 'Nia R Profile', ifsc: 'KKBK0000111', bankName: 'Kotak', accountNumber: '5566 7788 9900', pf: { firstJob: false, uan: '100000000009' } };
+      const noPay = await call(lifecycleAdminRouter as never, 'PUT', `/journeys/${P}/profile/bank`, empSess, bankBody);
+      ok('joined: bank and PF by someone without payroll access is 403, nothing saved', noPay.status === 403 && (await jp()).profile?.bank?.ifsc !== 'KKBK0000111', noPay);
+      const withPay = await call(lifecycleAdminRouter as never, 'PUT', `/journeys/${P}/profile/bank`, appToken, bankBody);
+      const pay = await db.employeePaymentDetails().findOne({ org: ORG, userId: niaUser.userId });
+      ok('…by HR with payroll access: on the journey and in payroll (account and UAN as their last four, encrypted)', withPay.status === 200 && (withPay.body as HrProfile).bankPf?.source === 'hr'
+        && (await jp()).profile?.bank?.ifsc === 'KKBK0000111' && pay?.ifsc === 'KKBK0000111' && pay.accountLast4 === '9900' && pay.uanLast4 === '0009' && pay.accountHolder === 'Nia R Profile' && !String(pay.accountNumber).includes('556677889900'), { status: withPay.status, pay });
+    } finally {
+      if (keyBefore === undefined) delete process.env.PAYROLL_FIELD_KEY; else process.env.PAYROLL_FIELD_KEY = keyBefore;
+    }
   }
 
   // Clean the scratch uploads this run wrote.

@@ -56,7 +56,7 @@ const ONBOARDING_ROWS: Row[] = [
     ],
   },
   { key: 'review_documents', phase: 'pre_boarding', title: 'Review documents', helper: 'Approve, or send back with a note (the joiner sees it first in Up next)', owner: 'hr', kind: 'review', surface: 'dashboard', due: tj(-2), dueLabel: 'Each upload', after: { key: 'upload_documents', when: 'started' } },
-  { key: 'about_you', phase: 'pre_boarding', title: 'Emergency contact and PF', helper: 'Two short steps (About you). UAN of 12 digits or “first job”', owner: 'employee', kind: 'form', surface: 'portal', due: tj(-3), after: { key: 'portal_sign_in' } },
+  { key: 'about_you', phase: 'pre_boarding', title: 'Emergency contact', helper: 'Who to call if something happens at work (Employee profile)', owner: 'employee', kind: 'form', surface: 'portal', due: tj(-3), after: { key: 'portal_sign_in' } },
   { key: 'meet_us', phase: 'pre_boarding', title: 'Meet us videos', helper: 'Manager note (text or video), culture, role and policies', owner: 'employee', kind: 'reel', surface: 'portal', due: tj(-1), after: { key: 'portal_sign_in' } },
   { key: 'device_request', phase: 'pre_boarding', title: 'Laptop and email request', helper: 'Raised with IT and Admin from the joiner card', owner: 'hr', kind: 'assign', surface: 'dashboard', opens: at('finalised'), due: tj(-5) },
   { key: 'sign_letters', phase: 'pre_boarding', title: 'Sign the appointment letter and NDA', helper: 'Generated from the accepted offer. Signing unlocks after the PDF is opened. Draw or type', owner: 'employee', kind: 'sign', surface: 'portal', due: tj(-2), mustDo: true, after: { key: 'review_documents' } },
@@ -191,7 +191,7 @@ export interface AppCopy { employee?: string; manager?: string; managerTitle?: s
 export const APP_COPY: Partial<Record<SystemTaskKey, AppCopy>> = {
   // Pre-boarding steps still open when they join (the portal's, carried into the app).
   upload_documents: { employee: 'On your joining portal' },
-  about_you: { employee: 'Emergency contact and PF · 2 min' },
+  about_you: { employee: 'Emergency contact · 2 min' },
   meet_us: { employee: 'Short videos from the team' },
   sign_letters: { employee: 'Read and sign on your joining portal' },
   manager_setup: { manager: 'People to meet, a buddy and a welcome note', managerTitle: 'Set up {name}' },

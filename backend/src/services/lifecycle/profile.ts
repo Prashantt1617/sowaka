@@ -1,9 +1,13 @@
 /**
- * The portal's Employee profile (the 18 Nov portal design, A2 / C1–C7): seven
+ * The portal's Employee profile (the 18 Nov portal design, A2 / C1–C7): the
  * sections the candidate fills before joining. Personal details, contact and
- * address, bank account, education and experience and ID numbers are kept here
- * (`journey.profile`); the emergency contact and PF stay in About you
- * (portal.ts, which also completes the About-you task); the uploads stay the
+ * address, education and experience and ID numbers are kept here
+ * (`journey.profile`); the emergency contact stays in About you (portal.ts,
+ * which also completes the About-you task). Bank account and PF is no longer a
+ * profile section (24 Nov): it is its own task, declared in the joiner app
+ * (joinerDetails.ts, `journey.bankPfRequest`) and edited by HR on the
+ * pre-boarding profile's Salary details (preboardingProfile.ts); what the
+ * portal stored before (`profile.bank`, `aboutYou.pf`) stays readable. The uploads stay the
  * template's documents, shown inside the section they belong to; the photo is
  * one stored file. The account number, Aadhaar and PAN are kept encrypted with
  * only their last four in the clear; nobody reads them back on the portal.
@@ -20,8 +24,11 @@ import { assertSectionOpen, sectionLocked, sectionOfDocument } from './profileLo
 
 const ALL_SECTIONS = ['personal', 'contact', 'emergency', 'bank', 'education', 'ids', 'photo'] as const;
 export type ProfileSection = (typeof ALL_SECTIONS)[number];
-/** What pre-boarding asks for. The photo is no longer a step (23 Nov): it stays readable, not counted. */
-export const PROFILE_SECTIONS: readonly ProfileSection[] = ALL_SECTIONS.filter((k) => k !== 'photo');
+/**
+ * What pre-boarding asks for: five sections. The photo is no longer a step (23 Nov), and bank account
+ * and PF is its own task (24 Nov, see bankPfStatus): both stay readable, neither is counted.
+ */
+export const PROFILE_SECTIONS: readonly ProfileSection[] = ALL_SECTIONS.filter((k) => k !== 'photo' && k !== 'bank');
 /** The Final designs' wording (App and team pages): "ID documents". The portal keeps its own titles. */
 export const appSectionTitle = (k: ProfileSection) => (k === 'ids' ? 'ID documents' : PROFILE_SECTION_TITLE[k]);
 
@@ -206,6 +213,26 @@ export function sectionStates(journey: Journey, docs: CandidateDocumentView[]): 
     education: Boolean(p.education) && uploads('education'),
     ids: Boolean(p.ids?.aadhaarLast4 && p.ids?.panLast4) && uploads('ids'),
     photo: Boolean(p.photoFileId) || docs.some((d) => sectionOfDocument(d) === 'photo' && docDone(d)),
+  };
+}
+
+export type BankPfState = 'todo' | 'declared' | 'approved';
+/**
+ * Bank account and PF, its own task (24 Nov; not an Employee profile section, not in its progress):
+ * done ('declared') once the joiner sends it from the app (the payroll details task, which the send
+ * finishes), 'approved' once HR approves it (decideBankPfRequest, which writes it to payroll). HR
+ * sending it back makes it to do again: the joiner sends it once more.
+ */
+export function bankPfStatus(journey: Pick<Journey, 'bankPfRequest'>): {
+  state: BankPfState; declaredAt?: Date; approvedAt?: Date; approvedByName?: string; sentBackAt?: Date; hrNote?: string;
+} {
+  const req = journey.bankPfRequest?.source === 'payroll_task' ? journey.bankPfRequest : undefined;
+  if (!req) return { state: 'todo' };
+  if (req.status === 'declined') return { state: 'todo', ...(req.decidedAt ? { sentBackAt: req.decidedAt } : {}), ...(req.hrNote ? { hrNote: req.hrNote } : {}) };
+  return {
+    state: req.status === 'approved' ? 'approved' : 'declared', declaredAt: req.requestedAt,
+    ...(req.status === 'approved' && req.decidedAt ? { approvedAt: req.decidedAt } : {}),
+    ...(req.status === 'approved' && req.decidedByName ? { approvedByName: req.decidedByName } : {}),
   };
 }
 
