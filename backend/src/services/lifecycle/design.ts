@@ -315,6 +315,10 @@ export async function saveTemplateDesign(org: string, id: string, input: Record<
   const now = new Date();
   await lifecycleTemplates().updateOne({ org, id }, { $set: { tasks, settings, updatedAt: now, ...(byName ? { updatedByName: byName } : {}) } });
   forgetLifecycleReads(org);
+  // Everyone on this template follows it now, not only new joiners.
+  const { followTemplate } = await import('./engine');
+  await followTemplate(org, id);
+  forgetLifecycleReads(org);
   return templateDesign(org, id);
 }
 

@@ -70,8 +70,13 @@ async function managedJourney(managerUserId: string, journeyId: string): Promise
   return j;
 }
 
-const tileVisible = (j: Journey) =>
-  !j.closedAt && isJoined(j) && (j.status !== 'confirmed' || !j.probation?.decision?.revealedAt);
+/**
+ * The joiner's Onboarding tile and profile tab: from joining to the end of Month 1 only (24 Nov, HR: "after month
+ * one remove the onboarding tab itself, not needed"; KPIs and monthly performance live in Grow).
+ */
+const tileVisible = (j: Journey, now = new Date()) =>
+  !j.closedAt && isJoined(j) && (j.status !== 'confirmed' || !j.probation?.decision?.revealedAt)
+  && (!j.tj || todayKey(now, companyTimeZone(j.org)) <= probationMonthEnd(j.tj, 1));
 
 // ─── GET /lifecycle/me ──────────────────────────────────────────────────────
 
@@ -85,7 +90,7 @@ export async function lifecycleMe(me: Me, now = new Date()) {
     const derived = deriveJourney(j, tasks, now);
     const progress = ownProgress(tasks, derived.tab);
     out.onboarding = {
-      journeyId: j.id, stage: derived.stage, dayLabel: derived.dayLabel, plant: derived.plant, tileVisible: tileVisible(j),
+      journeyId: j.id, stage: derived.stage, dayLabel: derived.dayLabel, plant: derived.plant, tileVisible: tileVisible(j, now),
       progress, subtitle: tileSubtitle(j, tasks, derived, progress, now),
       // Before Day 1 the Action tab is their joining portal (portalJourneyForAppUser); from Tj on, never.
       portal: (await portalJourneyForAppUser(me.userId, me.org, now))?.id === j.id,

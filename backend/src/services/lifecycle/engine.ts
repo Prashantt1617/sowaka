@@ -27,7 +27,7 @@ import {
   type RuleAnchors, type WorkCalendar,
 } from './dueRules';
 import { LifecycleError } from './errors';
-import { templateForJourney } from './templates';
+import { getTemplate, templateForJourney } from './templates';
 
 export { LifecycleError };
 
@@ -1172,6 +1172,38 @@ export async function moveJourneyToTemplate(journeyId: string, template: Lifecyc
     await ensureAutoDay1Pass(await loadJourney(journeyId), now);
   }
   return result;
+}
+
+/**
+ * A template was saved: everyone on it follows it (24 Nov, HR: "the tasks are not as per the template" — the
+ * template is the source of truth, not the copy a journey took when it started). Each running onboarding journey
+ * on it is moved onto the template as it is now (moveJourneyToTemplate: done and skipped tasks stay as history,
+ * rows the journey has no task for are added, open tasks for rows gone or switched off are cancelled, meetings,
+ * check-ins and the watch list read the new copy); a draft takes the new copy and starts its tasks again.
+ * One journey failing does not stop the others. Returns how many journeys moved.
+ */
+export async function followTemplate(org: string, templateId: string): Promise<number> {
+  const template = await getTemplate(org, templateId);
+  if (template.kind !== 'onboarding') return 0;
+  const running = await journeys().find(
+    { org, kind: 'onboarding', templateId, closedAt: { $exists: false } },
+    { projection: { _id: 0, id: 1, status: 1 } },
+  ).toArray();
+  let moved = 0;
+  for (const j of running) {
+    try {
+      if (j.status === 'draft') {
+        await journeys().updateOne({ id: j.id }, { $set: { templateSnapshot: structuredClone({ name: template.name, settings: template.settings, tasks: template.tasks }), updatedAt: new Date() } });
+        await rematerialiseDraft(j.id);
+      } else {
+        await moveJourneyToTemplate(j.id, template);
+      }
+      moved += 1;
+    } catch (error) {
+      logger.warn('Template edit not applied to a journey', { org, templateId, journeyId: j.id, error: (error as Error).message });
+    }
+  }
+  return moved;
 }
 
 /** Probation length changed (extension): adds the new months' tasks, cancels open ones past the end. */

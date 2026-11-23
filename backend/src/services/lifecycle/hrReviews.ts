@@ -137,16 +137,7 @@ export function reviewRowsOf(j: Journey, tasks: JourneyTask[], documents: Candid
     });
   }
 
-  // Week 1: the joining form, then payroll details.
-  const form = def('hr_check_form');
-  if (form) {
-    const s = joiningFormState(j);
-    const next = JOINING_FORM_SECTIONS.find((k) => !j.profileApprovals?.[k]) ?? JOINING_FORM_SECTIONS[0];
-    rows.push({
-      key: 'hr_check_form', title: fill(form.title, first), step: 'week_1', place: 'joining_form', owner: 'hr', done: s.done, focus: next,
-      ...(s.done ? doneBy(s.byName, s.at) : { line: `${s.approved} of ${s.total} sections approved` }),
-    });
-  }
+  // Week 1: payroll details (the joining form went on 24 Nov: the profile's sections are approved on the profile).
   const payroll = def('hr_check_payroll');
   if (payroll || j.bankPfRequest) {
     const s = payrollCheckState(j);
