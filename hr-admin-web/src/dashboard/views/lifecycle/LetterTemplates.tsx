@@ -2,14 +2,14 @@
 // letter (offer, appointment, NDA, confirmation, extension, relieving), one
 // default per kind. A body is HTML with {{merge.fields}} that Documents fills
 // from the offer, the journey and the employee record.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../../store';
 import { ListPending, StatusTabs } from '../../ui';
 import { createLetterTemplate, isNotAvailable, listLetterTemplates, updateLetterTemplate } from '../../../services/lifecycle';
 import type { LetterKind, LetterTemplateDTO } from '../../../services/lifecycle';
 import { Field, NotSwitchedOn } from './shared';
 import { LETTER_TEMPLATE_OPEN_KEY, areaStyle, errText, inputStyle, readHandoff, shortDay } from './format';
-import { KIND_LABEL, LETTER_KINDS, LETTER_TITLE, fieldLabel, letterInner, placeholders } from './letterDoc';
+import { KIND_LABEL, LETTER_CSS, LETTER_KINDS, LETTER_TITLE, fieldLabel, letterInner, placeholders, sanitizeHtml } from './letterDoc';
 import { LetterPreview } from './OfferDialogs';
 import { useCompanyName } from './hooks';
 import '../people.css';
@@ -100,16 +100,37 @@ function TemplateEditor({ kind, template, fields, company, onBack, onSaved }: { 
   const [isDefault, setIsDefault] = useState(template?.isDefault ?? false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [area, setArea] = useState<HTMLTextAreaElement | null>(null);
+  // The letter is edited as it reads (no HTML): the box is filled once, then
+  // each keystroke is read back from it, so typing never moves the caret.
+  const editor = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (editor.current) editor.current.innerHTML = sanitizeHtml(body);
+    // Filled once when the template opens; edits flow out through onInput.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const readBack = () => { if (editor.current) setBody(sanitizeHtml(editor.current.innerHTML)); };
   const dirty = !template || name !== template.name || body !== template.body || isDefault !== template.isDefault;
   const used = placeholders(body);
+  // A field goes in where the caret is in the letter (at the end when the caret is elsewhere).
   const insert = (key: string) => {
+    const box = editor.current;
+    if (!box) return;
     const tag = `{{${key}}}`;
-    if (!area) { setBody((b) => b + tag); return; }
-    const { selectionStart: a, selectionEnd: b } = area;
-    const next = body.slice(0, a) + tag + body.slice(b);
-    setBody(next);
-    requestAnimationFrame(() => { area.focus(); area.setSelectionRange(a + tag.length, a + tag.length); });
+    const sel = window.getSelection();
+    const inside = !!sel && sel.rangeCount > 0 && box.contains(sel.getRangeAt(0).commonAncestorContainer);
+    box.focus();
+    if (!inside && sel) {
+      const end = document.createRange();
+      end.selectNodeContents(box.lastElementChild ?? box);
+      end.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(end);
+    }
+    if (!document.execCommand('insertText', false, tag)) {
+      const range = window.getSelection()?.getRangeAt(0);
+      if (range) { range.deleteContents(); range.insertNode(document.createTextNode(tag)); range.collapse(false); }
+    }
+    readBack();
   };
   const save = async () => {
     if (!name.trim()) { setError('Give the template a name'); return; }
@@ -144,8 +165,11 @@ function TemplateEditor({ kind, template, fields, company, onBack, onSaved }: { 
               {fields.map((f) => <button key={f} type="button" className={`pd-chip sm${used.includes(f) ? ' on' : ''}`} onClick={() => insert(f)} title={`{{${f}}}`}>{fieldLabel(f)}</button>)}
             </div>
           </div>
-          <Field label="Letter" hint="HTML. A field is written {{name}}; the letterhead, reference and date are added above it.">
-            <textarea ref={setArea} value={body} onChange={(e) => setBody(e.target.value)} spellCheck={false} style={{ ...areaStyle, minHeight: 360, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12.5 }} />
+          <Field label="Letter" hint="Type the letter as it should read. Each field in {{ }} is filled in for the person; the letterhead and date are added above it.">
+            <style>{LETTER_CSS}</style>
+            <div ref={editor} role="textbox" aria-multiline="true" aria-label="Letter" contentEditable suppressContentEditableWarning
+              onInput={readBack} onBlur={readBack} className="lf-body"
+              style={{ ...areaStyle, minHeight: 360, background: '#fff', color: '#141416', colorScheme: 'light', cursor: 'text', overflowWrap: 'anywhere' }} />
           </Field>
           {error && name.trim() && <div role="alert" style={{ color: 'var(--bad)' }}>{error}</div>}
         </section>
