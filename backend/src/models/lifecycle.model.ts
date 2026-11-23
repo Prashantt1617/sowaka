@@ -400,6 +400,11 @@ export interface Journey {
   profileApprovals?: Partial<Record<ProfileSectionKey, ProfileApproval>>;
   /** The profile sections HR last changed on the dashboard (who and when), shown on HR's pre-boarding profile. */
   profileEditedByHr?: Partial<Record<ProfileSectionKey, ProfileApproval>>;
+  /**
+   * The app's Employee profile (services/lifecycle/joinerDetails.ts): when the joiner filled a section
+   * they had left empty before joining. Once each: a section saved here is read-only in the app.
+   */
+  profileAppSaved?: Partial<Record<'personal' | 'contact' | 'emergency' | 'bank' | 'education' | 'ids', Date>>;
   /** Last time the candidate did anything on the portal (for the Quiet flag). */
   lastActivityAt?: Date;
   closedAt?: Date;
@@ -729,12 +734,20 @@ export interface Week1Reels {
   goalsReadAt?: Date;
 }
 
+export interface PfNominee { name: string; relation: string; share: number }
+
 /** A bank or PF edit from the week-1 reel: payroll keeps the old value until HR approves. */
 export interface BankPfChangeRequest {
   status: 'pending' | 'approved' | 'declined';
   /** Account number and UAN are encrypted (fieldCrypto); only the last four are kept in the clear. */
-  changes: { bankName?: string; ifsc?: string; accountNumberEnc?: string; accountLast4?: string; uanEnc?: string; uanLast4?: string };
+  changes: { bankName?: string; ifsc?: string; accountNumberEnc?: string; accountLast4?: string; uanEnc?: string; uanLast4?: string; /** Payroll details task. */ accountHolder?: string };
   note?: string;
+  /** 'payroll_task': sent from the joiner app's "Complete your payroll details" (bank, PF and nominees). */
+  source?: 'week1' | 'payroll_task';
+  /** Payroll details task: no UAN, this is their first job. */
+  firstJob?: boolean;
+  /** Payroll details task: PF nominees, shares adding up to 100. Written to payroll when HR approves. */
+  nominees?: PfNominee[];
   requestedAt: Date;
   decidedAt?: Date;
   decidedByName?: string;

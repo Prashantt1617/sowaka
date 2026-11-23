@@ -127,3 +127,12 @@ export async function setPaymentDetails(viewerUserId: string, userId: string, in
   );
   return getPaymentDetails(viewerUserId, userId);
 }
+
+/** PF nominees, as HR approved them from the joiner's payroll details (shares already checked to add up to 100). */
+export async function savePfNominees(org: string, userId: string, nominees: Array<{ name: string; relation: string; share: number }>, byUserId: string): Promise<void> {
+  await employeePaymentDetails().updateOne(
+    { org, userId },
+    { $set: { nominees: nominees.map((n) => ({ name: n.name, relation: n.relation, share: n.share })), org, userId, updatedAt: new Date(), updatedByUserId: byUserId } },
+    { upsert: true },
+  );
+}

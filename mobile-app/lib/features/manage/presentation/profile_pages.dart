@@ -4818,7 +4818,11 @@ List<Widget> _growthContent({
               initiallyOpen: index == 0,
             ),
           ),
-      ],
+      ]
+      // Your own page with nothing assigned yet (onboarding's "Review
+      // your KPIs" opens here): say so rather than show an empty month.
+      else if (ownPage)
+        const _NoKpisCard(),
     ]
     // A past month nobody reviewed.
     else
@@ -5067,6 +5071,35 @@ class _GrowIntroBanner extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Your own Grow tab with no KPIs assigned for this month yet: the same
+/// words the review form says when HR has assigned none.
+class _NoKpisCard extends StatelessWidget {
+  const _NoKpisCard();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    key: const ValueKey('grow-no-kpis'),
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0xFFEBEBEB)),
+    ),
+    child: const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('No KPIs assigned', style: TextStyle(color: Color(0xFF222222), fontSize: 16, fontWeight: FontWeight.w700)),
+        SizedBox(height: 6),
+        Text(
+          'Your manager or HR sets the KPIs you are reviewed on each month. '
+          'They show here once they are set.',
+          style: TextStyle(color: Color(0xFF717171), fontSize: 14, height: 20 / 14),
+        ),
+      ],
+    ),
+  );
 }
 
 /// A quiet line in a card of its own (node 2412:80204).
