@@ -8,8 +8,8 @@ import '../../../../services/api_config.dart';
 import '../../../auth/data/auth_models.dart';
 import 'onboarding_api.dart';
 
-/// Teams › New joiners for every teammate: the people joining the viewer's
-/// team or department tomorrow or in their first month, profile only (server
+/// Teams › New joiners for every teammate: the people who have joined the
+/// viewer's own team, in their first month, profile only (server
 /// services/lifecycle/teamNewJoiners.ts, `GET /lifecycle/team/new-joiners`).
 /// Who counts as a teammate, the window and every line on a card are the
 /// server's.

@@ -9,10 +9,10 @@ import '../../data/onboarding_api.dart';
 import '../../onboarding_launcher.dart';
 import '../onboarding_kit.dart';
 
-/// Teams › New joiners, the one joiners list in the app: everyone joining the
-/// viewer's team or department, from the day before they join to the end of
-/// their first month, for their manager, buddy and head of department as for
-/// every teammate (HR assigns the onboarding tasks on the dashboard, so there
+/// Teams › New joiners, the one joiners list in the app: the people who have
+/// joined the viewer's own team (same manager), shown to their manager, buddy
+/// and teammates from the day they are marked joined to the end of their first
+/// month (HR assigns the onboarding tasks on the dashboard, so there
 /// is no task page here). View only: each card opens the person's profile. A
 /// joiner without an account yet shows "Profile opens on their first day" and
 /// opens nothing. Cards as the Team tab draws its people (My Team).

@@ -620,7 +620,7 @@ async function main() {
   ok('Resend: the same letter again, a second mail', resent.sentAt > sentConf.sentAt && emails.lifecycleOutbox().filter((m) => m.subject === 'Your confirmation letter').length === 2
     && (await lettersCol().countDocuments({ journeyId: J7, kind: 'confirmation', 'email.sentAt': { $exists: true } })) === 1);
 
-  section('Teams › New joiners: every teammate, Tj − 1 to Tj + 30, profile only');
+  section('Teams › New joiners: the viewer’s own team, joined only, up to Tj + 30, profile only');
   const newJoiners = await import('../services/lifecycle/teamNewJoiners');
   await users().insertMany([
     person('dev', 'Dev Malhotra', { managerUserId: 'ceo', department: 'Design', designation: 'Designer' }),
@@ -642,31 +642,31 @@ async function main() {
   const seen = async (userId: string, name: string) => (await newJoiners.newJoinersForTeammate(me(userId, name))).joiners;
   const ids = (list: Array<{ journeyId: string }>) => list.map((r) => r.journeyId);
   const rohanSees = await seen('rohan', 'Rohan Das');
-  eq('Rohan (Operations, reports to Sunny): Priya as her buddy, Month Joiner (Tj + 30) as a peer',
+  eq('Rohan (Operations, reports to Sunny): Priya as her buddy, Month Joiner (Tj + 30) as a teammate',
     [rohanSees.find((r) => r.journeyId === J1)?.relation, rohanSees.find((r) => r.journeyId === J11)?.relation], ['buddy', 'peer']);
-  ok('…not Tj + 31, Tj − 2, a declined offer, nor the other company’s joiner', ![J10, J9, J12, 'other-co-j'].some((id) => ids(rohanSees).includes(id)));
+  ok('…not Tj + 31, someone joining tomorrow or later, a declined offer, nor the other company’s joiner', ![J10, J8, J9, J12, 'other-co-j'].some((id) => ids(rohanSees).includes(id)));
+  eq('Newest first', ids(rohanSees).indexOf(J1) < ids(rohanSees).indexOf(J11), true);
   const priyaCard = rohanSees.find((r) => r.journeyId === J1)!;
   eq('Priya’s card: her account opens the profile, "Joined <day>", role and department',
     [priyaCard.userId, priyaCard.joiningLine, priyaCard.department, priyaCard.initials, priyaCard.profileNote], ['j1', `Joined ${newJoiners.dayLabel(rules.addDaysKey(today, -5))}`, 'Operations', 'PS', undefined]);
   const meeraSees = await seen('meera', 'Meera Joshi');
-  const kavya = meeraSees.find((r) => r.journeyId === J8);
-  eq('Meera (reports to Anita, like Kavya): Kavya as a peer, "Joins tomorrow", no account yet; Priya by department',
-    [kavya?.relation, kavya?.joiningLine, kavya?.userId, kavya?.profileNote, kavya?.designation, meeraSees.find((r) => r.journeyId === J1)?.relation],
-    ['peer', 'Joins tomorrow', undefined, 'Profile opens on their first day', 'Product designer', 'department']);
-  eq('Newest first: joining tomorrow on top', ids(meeraSees)[0], J8);
-  eq('Dev (Design): only Kavya, by department', [ids(await seen('dev', 'Dev Malhotra')), (await seen('dev', 'Dev Malhotra'))[0]?.relation], [[J8], 'department']);
+  eq('Meera (reports to Anita, like Kavya): Kavya joins tomorrow, so not yet; Priya is only in her department: not listed',
+    [ids(meeraSees).includes(J8), ids(meeraSees).includes(J1)], [false, false]);
+  eq('Dev (Design, another team): nothing', ids(await seen('dev', 'Dev Malhotra')), []);
   eq('Sunny (the manager) sees his joiners as their manager', (await seen('mgr', 'Sunny Kapoor')).find((r) => r.journeyId === J1)?.relation, 'manager');
-  eq('The head of department sees them too: Anita (Sunny’s manager) Priya, Neha (Anita’s manager) Kavya',
-    [(await seen('hod', 'Anita Desai')).find((r) => r.journeyId === J1)?.relation, (await seen('ceo', 'Neha Verma')).find((r) => r.journeyId === J8)?.relation], ['head', 'head']);
+  eq('The head of department does not (their own team only): Anita (Sunny’s manager) not Priya',
+    (await seen('hod', 'Anita Desai')).find((r) => r.journeyId === J1), undefined);
   ok('Priya does not see herself', !ids(await seen('j1', 'Priya Shah')).includes(J1));
-  eq('No department and no manager in common: nothing', (await seen('it', 'Imran Khan')).length, 0);
+  eq('No manager in common: nothing', (await seen('it', 'Imran Khan')).length, 0);
   eq('Another company’s viewer: nothing of this one', (await newJoiners.newJoinersForTeammate({ userId: 'rohan', name: 'Rohan Das', org: 'other-co' })).joiners.length, 0);
-  await journeys().updateOne({ id: J8 }, { $set: { appAccess: { userId: 'dev', createdAt: new Date(), byUserId: 'hr', byName: 'Ritu Sharma' } } });
-  eq('An account made before joining ("Generate app access") opens the profile', (await seen('meera', 'Meera Joshi')).find((r) => r.journeyId === J8)?.userId, 'dev');
-  await users().updateOne({ userId: 'dev' }, { $set: { hiddenFromDirectory: true } });
-  eq('…unless the directory hides it', (await seen('meera', 'Meera Joshi')).find((r) => r.journeyId === J8)?.profileNote, 'Profile opens on their first day');
-  await users().updateOne({ userId: 'dev' }, { $unset: { hiddenFromDirectory: '' } });
-  await journeys().updateOne({ id: J8 }, { $unset: { appAccess: '' } });
+  await journeys().updateOne({ id: J11 }, { $set: { status: 'finalised' } });
+  readCache.forgetLifecycleReads(null);
+  eq('Past their joining date but not marked joined: not listed', ids(await seen('rohan', 'Rohan Das')).includes(J11), false);
+  await users().updateOne({ userId: 'j1' }, { $set: { hiddenFromDirectory: true } });
+  readCache.forgetLifecycleReads(null);
+  eq('An account the directory hides: listed, but the card opens nothing', [(await seen('rohan', 'Rohan Das')).find((r) => r.journeyId === J1)?.userId], [undefined]);
+  await users().updateOne({ userId: 'j1' }, { $unset: { hiddenFromDirectory: '' } });
+  readCache.forgetLifecycleReads(null);
   eq('Joining lines: tomorrow, today (not yet marked joined / joined), a later date', [newJoiners.joiningLine('2026-12-01', '2026-11-30', false), newJoiners.joiningLine('2026-11-30', '2026-11-30', false), newJoiners.joiningLine('2026-11-30', '2026-11-30', true), newJoiners.joiningLine('2026-11-30', '2026-12-05', true)],
     ['Joins tomorrow', 'Joins today', 'Joined today', 'Joined Mon 30 Nov']);
   ok('Kept per company and dropped by every lifecycle write', readCache.kindsChangedBy('/lifecycle/team/joiners/x/review').includes('lc-new-joiners' as never));
