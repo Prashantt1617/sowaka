@@ -68,6 +68,9 @@ export function cleanMedia(v: unknown, types: ReadonlyArray<DesignMedia['type']>
   // The uploaded file's name, shown in the dashboard editor (lane D).
   const name = str(r.name, 120);
   if (name && media.fileId) media.name = name;
+  // A video's thumbnail (made in the dashboard when it is uploaded).
+  const poster = str(r.posterFileId, 64);
+  if (poster && media.fileId && type === 'video') media.posterFileId = poster;
   if (type === 'text') {
     const text = str(r.text, 160);
     if (text) media.text = text;

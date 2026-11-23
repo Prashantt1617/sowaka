@@ -91,7 +91,7 @@ export type FormAnswerType = 'short' | 'long' | 'choice' | 'date' | 'file';
 export type TourLesson = 'punch' | 'missed' | 'leave' | 'overtime' | 'approveLeave' | 'approveOvertime';
 export type MediaBackground = 'rust' | 'blue' | 'ink' | 'green' | 'purple' | 'sand';
 export interface DesignQuestion<T extends string = string> { id?: string; text: string; type: T; options?: string[] }
-export interface DesignMedia { type: 'video' | 'image' | 'text' | 'pdf'; fileId?: string; text?: string; bg?: MediaBackground; minutes?: number; name?: string }
+export interface DesignMedia { type: 'video' | 'image' | 'text' | 'pdf'; fileId?: string; text?: string; bg?: MediaBackground; minutes?: number; name?: string; /** A video's still frame: its tile's thumbnail. */ posterFileId?: string }
 export interface DesignWatchItem { id?: string; title: string; stage: DesignStage; media: DesignMedia }
 export interface DesignReporting { time?: string; place?: string; mapLink?: string; bring?: string; notes?: string; meets: 'hr' | 'manager' | 'buddy' }
 export interface DesignMeeting { id?: string; title: string; meetWith: MeetWith; stage: DesignStage; agenda: string[]; everyMonth?: boolean }
