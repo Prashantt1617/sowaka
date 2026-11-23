@@ -667,6 +667,8 @@ export type SalaryRegisterRow = {
   employeeId: string; name: string; department: string; designation: string; workLocation: string; joiningDate: string;
   paymentMode: string; bankName: string; accountNumber: string; ifsc: string; annualCtcPaise: number;
   baseDays: number; lopDays: number; paidDays: number;
+  /** How the loss of pay came about (older servers leave these out). */
+  lopSource?: string; attendanceLopDays?: number; lopBreakdown?: string; paidLeaveCoveredDays?: number; fullGrossPaise?: number; lopAmountPaise?: number;
   earnings: Record<string, number>; grossPaise: number; reimbursements: Record<string, number>; reimbursementsPaise: number;
   deductions: Record<string, number>; taxOnIncomePaise: number; surchargePaise: number; cessPaise: number; incomeTaxPaise: number;
   totalDeductionsPaise: number; employer: Record<string, number>; employerTotalPaise: number; netPayPaise: number;
