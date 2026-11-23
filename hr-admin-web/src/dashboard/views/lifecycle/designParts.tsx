@@ -165,8 +165,10 @@ export function NameDropdown({ label, value, options, onPick, placeholder = '' }
   useEffect(() => {
     if (!open) return undefined;
     const close = (e: globalThis.MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
     document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', onKey); };
   }, [open]);
   const shown = options.find((o) => o.id === value)?.name ?? placeholder;
   return (

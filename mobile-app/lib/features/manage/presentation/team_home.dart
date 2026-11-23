@@ -29,8 +29,25 @@ class _TeamHomeState extends State<_TeamHome> {
   void initState() {
     super.initState();
     unawaited(_offboarding.revalidate());
-    // Teams › Joiners' count (Final designs): the pill shows it before the tab is opened.
-    if (LifecycleMeStore.instance.value.enabled) unawaited(JoinersTab.refreshCount());
+    // Teams › Joiners' count (Final designs): the pill shows it before the tab is opened. On a cold
+    // start Teams can open before `/lifecycle/me` has answered: the count is read once it says the
+    // lifecycle is on, so the Joiners pill still appears.
+    LifecycleMeStore.instance.addListener(_countJoiners);
+    _countJoiners();
+  }
+
+  bool _joinersCounted = false;
+
+  void _countJoiners() {
+    if (_joinersCounted || !LifecycleMeStore.instance.value.enabled) return;
+    _joinersCounted = true;
+    unawaited(JoinersTab.refreshCount());
+  }
+
+  @override
+  void dispose() {
+    LifecycleMeStore.instance.removeListener(_countJoiners);
+    super.dispose();
   }
 
   @override

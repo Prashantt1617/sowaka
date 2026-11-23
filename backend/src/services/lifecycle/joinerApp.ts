@@ -105,6 +105,18 @@ async function personMap(ids: Array<string | undefined>): Promise<Map<string, Pe
 
 const mediaUrl = (fileId?: string) => (fileId ? `/lifecycle/joiner/media/${fileId}` : undefined);
 
+/**
+ * Whether a row of an earlier step is in the joiner's list now (the canvas's "From Day 1" rows): left open, or done only
+ * since the current step began. Ticked now, it stays in the list, ticked and counted ("1 of 6 met"), until the step ends,
+ * instead of vanishing as it is ticked (and taking the count's total down with it).
+ */
+export function carriedNow(j: Pick<Journey, 'tj' | 'org'>, step: number, months: number, rowStep: number, isDone: boolean, doneAt?: Date | string | null): boolean {
+  if (rowStep >= step || step <= 0 || step >= 3 + months) return false;
+  if (!isDone) return true;
+  if (!doneAt || !j.tj) return false;
+  return stepOfDayKey(j.tj, dateKeyOf(new Date(doneAt), companyTimeZone(j.org)), months) >= step;
+}
+
 function watchRowView(p: PlacedRow, months: number) {
   const m = p.row.design!.media ?? { type: 'video' as const };
   return {
@@ -148,7 +160,7 @@ export async function joinerOnboarding(me: Me, now = new Date()) {
       id, title: m.row.title, withRole, roleLabel, ...(who ? { person: who } : {}),
       step: keyOf(m.step), everyMonth: !!m.row.design!.everyMonth, ...(m.month ? { month: m.month } : {}),
       met: m.done, ...(m.doneAt ? { metAt: new Date(m.doneAt).toISOString() } : {}), locked, ...(m.opensOn ? { opensOn: m.opensOn } : {}),
-      ...(!m.done && m.step < step && step > 0 ? { carriedFrom: keyOf(m.step) } : {}),
+      ...(carriedNow(j, step, months, m.step, m.done, m.doneAt) ? { carriedFrom: keyOf(m.step) } : {}),
       agenda: [...(m.row.agenda ?? m.row.team?.agenda ?? [])], notes: notesOf.get(id) ?? [],
       ...(p.startsAt.get(m.rowKey) ? { startsAt: new Date(p.startsAt.get(m.rowKey)!).toISOString() } : {}),
     };
@@ -194,6 +206,8 @@ export async function joinerOnboarding(me: Me, now = new Date()) {
   const nowRows = <T extends { step: string; carriedFrom?: string }>(list: T[]) => list.filter((r) => r.step === keyOf(step) || (!!r.carriedFrom && !confirmed));
   const nowMeetings = nowRows(meetings);
   const openTasks = nowRows(taskRows).filter((t) => t.state !== 'done');
+  // UP NEXT is the first open row as the Tasks screen lists them: what was carried over comes first.
+  const upNext = openTasks.find((t) => t.carriedFrom) ?? openTasks[0];
   const unwatched = [...watch, ...trainings].filter((w) => !w.watched && p.watch.concat(p.trainings).find((x) => x.row.id === w.id)!.step === Math.max(step, 1));
   const due = checkins.find((c) => c.state === 'open');
   const hero = confirmed ? { eyebrow: 'PROBATION COMPLETE' as const, label: 'Confirmed!' } : { eyebrow: 'YOU ARE HERE' as const, label: labels[Math.max(step, 1)] };
@@ -206,7 +220,7 @@ export async function joinerOnboarding(me: Me, now = new Date()) {
     meetings, tasks: taskRows, checkins, watch, trainings, devices, tour, profile,
     summary: {
       meetings: { met: nowMeetings.filter((m) => m.met).length, total: nowMeetings.length },
-      tasks: { toDo: openTasks.length, ...(openTasks[0] ? { upNext: openTasks[0].title } : {}) },
+      tasks: { toDo: openTasks.length, ...(upNext ? { upNext: upNext.title } : {}) },
       watch: { count: unwatched.length, ...(unwatched[0] ? { first: unwatched[0].title, ...(unwatched[0].minutes ? { minutes: unwatched[0].minutes } : {}) } : {}) },
       devices: { ready: devices.filter((d) => d.ready).length, total: devices.length },
       ...(due ? { checkinDue: { id: due.id, title: due.title } } : {}),
@@ -230,7 +244,7 @@ function legacyTaskRows(j: Journey, tasks: JourneyTask[], months: number, step: 
     const state = done(t) ? 'done' as const : t.status === 'locked' ? 'locked' as const : 'todo' as const;
     return {
       id: t.id, title: t.title, type, verb: VERB[type], step: stepKey(s, months), state, ...(t.dueAt ? { dueOn: keyOfDay(t.dueAt) } : {}),
-      ...(state !== 'done' && s < step ? { carriedFrom: stepKey(s, months) } : {}), opens: screen ? { screen } : {},
+      ...(carriedNow(j, step, months, s, state === 'done', t.doneAt) ? { carriedFrom: stepKey(s, months) } : {}), opens: screen ? { screen } : {},
     };
   });
 }
@@ -249,7 +263,7 @@ async function taskRowView(j: Journey, task: JourneyTask, row: TemplateTask, fac
     id: task.id, title: row.title, type, verb: state === 'in_progress' ? 'Continue' as const : VERB[type],
     ...(meta ? { meta } : {}), step: stepKey(s, months), state,
     ...(task.dueAt ? { dueOn: keyOfDay(task.dueAt) } : {}),
-    ...(state !== 'done' && s < step ? { carriedFrom: stepKey(s, months) } : {}),
+    ...(carriedNow(j, step, months, s, state === 'done', task.doneAt) ? { carriedFrom: stepKey(s, months) } : {}),
     ...(policies ? { progress: { done: facts.policies.acknowledged, total: facts.policies.required } } : {}),
     opens: {
       ...(d.screen ? { screen: d.screen } : {}), ...(policies ? { policies: true as const } : {}), ...(type === 'sign' ? { letters: true as const } : {}),

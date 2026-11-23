@@ -271,7 +271,8 @@ class _StaffOnboardingScreenState extends State<StaffOnboardingScreen> with _Rea
                       foregroundColor: OnbColors.primary,
                       side: const BorderSide(color: OnbColors.lineDark),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      // With the family: a button's own style replaces the theme's, and the words drew in the system font.
+                      textStyle: const TextStyle(fontFamily: 'Plus Jakarta Sans', fontSize: 14, fontWeight: FontWeight.w600),
                     ),
                     child: const Text('View all employees'),
                   ),

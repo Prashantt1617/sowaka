@@ -233,25 +233,32 @@ Future<void> _tickRow(BuildContext context, TeamPageController controller, TeamT
 
 /// A page on the team side: the app's header, a back + title row, the page and the tabs.
 class TeamFrame extends StatelessWidget {
-  const TeamFrame({super.key, required this.shell, required this.title, required this.children, this.onBack});
+  const TeamFrame({super.key, required this.shell, required this.title, required this.children, this.onBack, this.onRefresh});
 
   final OnboardingShell shell;
   final String title;
   final List<Widget> children;
   final VoidCallback? onBack;
 
+  /// Pull down to read the page again (the joiner's page and View all: what the joiner or HR did meanwhile).
+  final Future<void> Function()? onRefresh;
+
   @override
-  Widget build(BuildContext context) => OnbScaffold(
-    shell: shell,
-    title: title,
-    onBack: onBack,
-    body: ListView(
+  Widget build(BuildContext context) {
+    final list = ListView(
+      physics: onRefresh == null ? null : const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
         for (var i = 0; i < children.length; i++) ...[if (i > 0) const SizedBox(height: 14), children[i]],
       ],
-    ),
-  );
+    );
+    return OnbScaffold(
+      shell: shell,
+      title: title,
+      onBack: onBack,
+      body: onRefresh == null ? list : RefreshIndicator(onRefresh: onRefresh!, child: list),
+    );
+  }
 }
 
 /// The page while it loads (or what went wrong).
@@ -323,6 +330,7 @@ class _TeamPersonScreenState extends State<TeamPersonScreen> {
       return TeamFrame(
         shell: widget.shell,
         title: 'Joiners',
+        onRefresh: _c.load,
         children: [
           TeamPersonHero(
             name: j.name,
@@ -402,6 +410,7 @@ class TeamAllTasksScreen extends StatelessWidget {
       return TeamFrame(
         shell: shell,
         title: page.joiner.name,
+        onRefresh: controller.load,
         children: [
           TeamSectionTitle(page.cardTitle, meta: page.toDo > 0 ? '${page.toDo} to do' : 'All done for now'),
           if (rows.isNotEmpty)

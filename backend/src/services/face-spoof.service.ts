@@ -24,10 +24,12 @@ import { logger } from '../utils/logger';
  * two score alike, `npm run face:spoof-check` measures it); the model reads
  * it at 80 × 80, bilinear, as BGR values 0–255, channels first; its output
  * index 1 is "real". Any crop size is read: there is no lower bound here.
+ * From 1.4.3 (89) the app sends the 160 px quality-90 crops it scored itself,
+ * so the two read the same bytes the same way ([spoofInput]).
  */
 
 export const SPOOF_SIDE = 80;
-/** The crop the app sends: [CROP_SIDE] px square, JPEG quality [CROP_QUALITY]. */
+/** The crop builds before 1.4.3 (89) send: [CROP_SIDE] px square, JPEG quality [CROP_QUALITY] (newer ones send the 160 px, quality 90 crop the phone read). */
 export const CROP_SIDE = 96;
 export const CROP_QUALITY = 80;
 
@@ -97,20 +99,55 @@ export async function spoofDetectorReady(): Promise<boolean> {
   return (await loading) !== null;
 }
 
-/** The model's input from one crop: 80 × 80, bilinear, BGR 0–255, channels first. */
+/**
+ * The model's input from one crop: 80 × 80, bilinear, BGR 0–255, channels
+ * first, sampled exactly as the phone's `image` package samples it
+ * (`copyResize(…, interpolation: linear)`): the source point for output
+ * pixel x is x × (source width / 80), no half-pixel shift, the four pixels
+ * about it blended, each channel cut to a whole 0–255. Until 23 Nov this
+ * used sharp's own linear shrink, which smooths over the pixels it drops: on
+ * a real face it took off the fine skin texture the model reads as "real",
+ * and real faces the phone scored 0.7–0.99 came back here at 0.14–0.40.
+ */
 export async function spoofInput(crop: Buffer): Promise<Float32Array> {
-  const raw = await sharp(crop, { failOn: 'none' })
+  const { data, info } = await sharp(crop, { failOn: 'none' })
     .rotate()
-    .resize(SPOOF_SIDE, SPOOF_SIDE, { fit: 'fill', kernel: 'linear' })
     .removeAlpha()
+    .toColourspace('srgb')
     .raw()
-    .toBuffer();
-  const n = SPOOF_SIDE * SPOOF_SIDE;
+    .toBuffer({ resolveWithObject: true });
+  return phoneSample(data, info.width, info.height, info.channels);
+}
+
+/** [spoofInput]'s sampling on decoded RGB(A) pixels: what `copyResize` linear gives on the phone. */
+export function phoneSample(data: Uint8Array, width: number, height: number, channels: number, side = SPOOF_SIDE): Float32Array {
+  const n = side * side;
   const input = new Float32Array(3 * n);
-  for (let i = 0; i < n; i++) {
-    input[i] = raw[i * 3 + 2]; // B
-    input[n + i] = raw[i * 3 + 1]; // G
-    input[2 * n + i] = raw[i * 3]; // R
+  const dx = width / side;
+  const dy = height / side;
+  const at = (x: number, y: number, c: number) => data[(y * width + x) * channels + c];
+  for (let y = 0; y < side; y++) {
+    const fy = y * dy;
+    const y0 = Math.floor(fy);
+    const y1 = y0 + 1 >= height ? y0 : y0 + 1;
+    const ay = fy - y0;
+    for (let x = 0; x < side; x++) {
+      const fx = x * dx;
+      const x0 = Math.floor(fx);
+      const x1 = x0 + 1 >= width ? x0 : x0 + 1;
+      const ax = fx - x0;
+      const i = y * side + x;
+      // Planes B, G, R from channels 2, 1, 0.
+      for (let plane = 0; plane < 3; plane++) {
+        const c = 2 - plane;
+        const icc = at(x0, y0, c);
+        const inc = at(x1, y0, c);
+        const icn = at(x0, y1, c);
+        const inn = at(x1, y1, c);
+        const v = icc + ax * (inc - icc + ay * (icc + inn - icn - inc)) + ay * (icn - icc);
+        input[plane * n + i] = Math.trunc(Math.min(255, Math.max(0, v)));
+      }
+    }
   }
   return input;
 }

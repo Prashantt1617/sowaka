@@ -5,7 +5,7 @@
  * are the journey's `teamTasks` (one tick per row, shared with the joiner for meetings).
  */
 import { randomUUID } from 'node:crypto';
-import { journeys, leaves, lifecycleMeetings, meetingNotes, probationMonths, users } from '../../config/db';
+import { companies, journeys, leaves, lifecycleMeetings, meetingNotes, probationMonths, users } from '../../config/db';
 import type { Journey, JourneyTask, TeamRole } from '../../models/lifecycle.model';
 import { reportDaysOfPerson } from '../attendance-report.service';
 import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
@@ -16,7 +16,7 @@ import { TEAM_APP_COPY, TEAM_EARLY, TEAM_SCREEN } from './designSeed';
 import { accessTasks, fillNames, firstOf, initialsOf, joinerDesignTasks, place, setRowTick, teammatePushTarget, teamRowTitle, type Placed, type PlacedRow } from './designRows';
 import { daysBetween, keyOfDay } from './dueRules';
 import { LifecycleError, deriveJourney, isJoined, loadJourney, tasksOf, tell } from './engine';
-import { goalsOfJourney } from './joinerApp';
+import { carriedNow, goalsOfJourney } from './joinerApp';
 import { saveMeetingRowNotes } from './joinerMeetings';
 import { PROFILE_SECTIONS, appSectionTitle, sectionStates } from './profile';
 import { journeyDocumentsView } from './documents';
@@ -82,6 +82,8 @@ export interface RowView {
   dueOn?: string; due?: { text: string; tone: 'red' | 'amber' | 'grey' }; late?: boolean;
   /** Team page meetings only (lane T): my own agenda notes and the time set for it. */
   notes?: string[]; startsAt?: string;
+  /** Team page, the welcome message and the feed post once sent: the words that went out. */
+  sent?: string;
 }
 
 /** One of my rows, as Teams › Joiners (viewer 'team') or HR / IT (viewer 'hr' | 'it') shows it. */
@@ -91,7 +93,8 @@ export function rowView(r: PlacedRow, p: Placed, tasks: JourneyTask[], first: st
   const key = r.row.team?.key ?? '';
   const meeting = r.row.design?.section === 'meeting';
   const done = rowDone(r, j, tasks, p.design);
-  const early = TEAM_EARLY.has(key) || (viewer !== 'team' && !meeting);
+  // The feed post goes out on Connect, which the joiner is on only once they have joined: before then it waits for Day 1.
+  const early = (TEAM_EARLY.has(key) && !(key === 'mgr_feed_intro' && !isJoined(j))) || (viewer !== 'team' && !meeting);
   const locked = !done && r.step > p.step && !early;
   const copy = TEAM_APP_COPY[key];
   const screen = meeting ? 'meeting' : TEAM_SCREEN[key] ?? (viewer === 'team' ? null : 'plain');
@@ -150,24 +153,60 @@ export async function progressOf(p: Placed, tasks: JourneyTask[], viewer: Viewer
   const people = await users().find({ userId: { $in: Object.values(p.people).filter(Boolean) as string[] } }, { projection: { _id: 0, userId: 1, name: 1 } }).toArray();
   const nameOf = new Map(people.map((u) => [u.userId, u.name]));
   const lists: Record<'meet' | 'tasks' | 'ci' | 'watch' | 'tour' | 'dev' | 'prof', ListRow[]> = { meet: [], tasks: [], ci: [], watch: [], tour: [], dev: [], prof: [] };
+  // Teams › View progress reads the joiner's own lists (MgrTeamsProto "her journey, read-only, from the same
+  // pieces as her own screen"): this stage's rows and what is still open from an earlier one, then the next
+  // stage that has any under COMING UP. HR and IT & admin keep the whole journey.
+  const team = viewer === 'team';
+  const confirmed = p.step >= 3 + p.months;
+  // A row carried from an earlier stage stays (ticked and counted) until this stage ends, as on the joiner's own screen.
+  const mine = (step: number, done: boolean, doneAt?: Date | string | null) =>
+    (team ? step === Math.max(p.step, 1) || (!confirmed && carriedNow(j, Math.max(p.step, 1), p.months, step, done, doneAt)) : at(step));
+  const nextStage = (steps: number[]) => { const later = steps.filter((x) => !at(x)); return later.length ? Math.min(...later) : null; };
+  const monthlyNow = p.meetings.some((m) => !!m.row.design?.everyMonth && mine(m.step, m.done, m.doneAt));
+  // A monthly meeting shows once: now, or else only its next time.
+  let monthlyAhead = monthlyNow;
+  const aheadMeetings = p.meetings.filter((m) => {
+    if (at(m.step)) return false;
+    if (!m.row.design?.everyMonth) return true;
+    if (monthlyAhead) return false;
+    monthlyAhead = true;
+    return true;
+  });
+  const meetNext = nextStage(aheadMeetings.map((m) => m.step));
   for (const m of p.meetings) {
+    const now = mine(m.step, m.done, m.doneAt);
+    if (team && !now && !(aheadMeetings.includes(m) && m.step === meetNext)) continue;
     const who = p.people[m.role as keyof typeof p.people];
-    lists.meet.push({ title: m.row.title, ...(who && nameOf.get(who) ? { meta: nameOf.get(who) } : {}), status: m.done ? 'Met' : at(m.step) ? 'Not yet' : soon(m.step), tone: m.done ? 'ok' : at(m.step) ? 'todo' : 'soon', comingUp: !at(m.step) });
+    lists.meet.push({ title: m.row.title, ...(who && nameOf.get(who) ? { meta: nameOf.get(who) } : {}), status: m.done ? 'Met' : now ? 'Not yet' : soon(m.step), tone: m.done ? 'ok' : now ? 'todo' : 'soon', comingUp: !now });
   }
   const design = joinerDesignTasks(j, tasks, p.design);
+  const taskNext = nextStage(design.map(({ row }) => stepOfStage(row.design!.stage, p.months)));
   for (const { task, row } of design) {
     const s = stepOfStage(row.design!.stage, p.months);
     const isDone = task.status === 'done' || task.status === 'skipped';
-    lists.tasks.push({ title: row.title, status: isDone ? 'Done' : at(s) ? 'To do' : soon(s), tone: isDone ? 'ok' : at(s) ? 'todo' : 'soon', comingUp: !at(s) });
+    const now = mine(s, isDone, task.doneAt);
+    if (team && !now && s !== taskNext) continue;
+    lists.tasks.push({ title: row.title, status: isDone ? 'Done' : now ? 'To do' : soon(s), tone: isDone ? 'ok' : now ? 'todo' : 'soon', comingUp: !now });
   }
   for (const c of p.checkins.filter((x) => x.state !== 'closed')) lists.ci.push({ title: c.row.title, status: c.state === 'sent' ? 'Sent' : c.state === 'open' ? 'Not yet' : soon(c.step), tone: c.state === 'sent' ? 'ok' : c.state === 'open' ? 'todo' : 'soon', comingUp: c.state === 'locked' });
-  for (const w of [...p.watch, ...p.trainings]) {
+  // The watch list keeps everything so far (before Day 1: the pre-joining videos), then the next stage's.
+  const watchNow = (w: PlacedRow) => (team ? (p.step === 0 ? w.row.design?.stage === 'pre' : w.step <= p.step) : at(w.step));
+  const watchAll = [...p.watch, ...p.trainings];
+  const watchLater = watchAll.filter((w) => !watchNow(w)).map((w) => w.step);
+  const watchNext = watchLater.length ? Math.min(...watchLater) : null;
+  for (const w of watchAll) {
+    const now = watchNow(w);
+    if (team && !now && w.step !== watchNext) continue;
     const m = w.row.design!.media;
-    lists.watch.push({ title: w.row.title, ...(m?.type === 'pdf' ? { meta: 'PDF' } : m?.minutes ? { meta: `${m.minutes} min` } : {}), status: w.done ? 'Watched' : at(w.step) ? 'Not yet' : soon(w.step), tone: w.done ? 'ok' : at(w.step) ? 'todo' : 'soon', comingUp: !at(w.step) });
+    lists.watch.push({ title: w.row.title, ...(m?.type === 'pdf' ? { meta: 'PDF' } : m?.minutes ? { meta: `${m.minutes} min` } : {}), status: w.done ? (team ? 'Done' : 'Watched') : now ? 'Not yet' : soon(w.step), tone: w.done ? 'ok' : now ? 'todo' : 'soon', comingUp: !now });
   }
   const tourDone = new Set(j.tour?.done ?? []);
   const lessons = (p.design.settings.tourLessons ?? ['punch', 'missed', 'leave', 'overtime']).filter((k) => !k.startsWith('approve'));
-  for (const k of lessons) lists.tour.push({ title: TOUR_TITLES[k] ?? k, status: tourDone.has(k) ? 'Done' : 'Not yet', tone: tourDone.has(k) ? 'ok' : 'todo', comingUp: false });
+  for (const [i, k] of lessons.entries()) {
+    // Teams (MgrTeamsProto): on Day 1 only the first lesson is on; the rest come in Week 1.
+    const later = team && p.step === 1 && i > 0 && !tourDone.has(k);
+    lists.tour.push({ title: TOUR_TITLES[k] ?? k, status: tourDone.has(k) ? 'Done' : later ? labels[2] : team ? 'To do' : 'Not yet', tone: tourDone.has(k) ? 'ok' : later ? 'soon' : 'todo', comingUp: later });
+  }
   const access = accessTasks(j, tasks, p.design);
   for (const t of access) {
     const ready = t.status === 'done' || t.status === 'skipped';
@@ -185,24 +224,22 @@ export async function progressOf(p: Placed, tasks: JourneyTask[], viewer: Viewer
   };
   const TITLES = { meet: 'Meetings', ci: 'Check-ins', tasks: 'Tasks', watch: 'Watch list', tour: 'Sowaka tour', dev: 'Devices and accesses', prof: 'Profile' } as const;
   const UNITS = { meet: 'met', ci: 'sent', tasks: 'done', watch: 'watched', tour: 'lessons', dev: 'ready', prof: 'filled in' } as const;
-  const OK: Record<keyof typeof lists, string[]> = { meet: ['Met'], ci: ['Sent'], tasks: ['Done'], watch: ['Watched'], tour: ['Done'], dev: ['Ready'], prof: ['Done'] };
+  const OK: Record<keyof typeof lists, string[]> = { meet: ['Met'], ci: ['Sent'], tasks: ['Done'], watch: ['Watched', 'Done'], tour: ['Done'], dev: ['Ready'], prof: ['Done'] };
   const delayedAccess = lists.dev.find((r) => r.status.startsWith('Waiting'));
   const rows: Stat[] = [];
   if (viewer === 'team') {
     const teamFlag: Record<string, (n: number) => string> = { meet: (n) => `${n} to go`, ci: (n) => `${n} not sent`, tasks: (n) => `${n} not done`, watch: (n) => `${n} to watch`, tour: (n) => `${n} to go` };
     if (p.step === 0) {
       // Before Day 1 (MgrTeamsProto, Kavya): the videos to watch before joining, then devices and the profile.
-      const pre = [...p.watch, ...p.trainings].filter((w) => w.row.design?.stage === 'pre');
-      if (pre.length) {
-        const seen = pre.filter((w) => w.done).length;
-        rows.push({ key: 'watch', title: TITLES.watch, done: seen, total: pre.length, unit: UNITS.watch, flag: seen === pre.length ? { text: 'Done', tone: 'ok' } : { text: teamFlag.watch(pre.length - seen), tone: 'todo' } });
-      }
+      const watch = count('watch', OK.watch, true);
+      if (watch.total) rows.push({ key: 'watch', title: TITLES.watch, done: watch.done, total: watch.total, unit: UNITS.watch, flag: watch.done === watch.total ? { text: 'Done', tone: 'ok' } : { text: teamFlag.watch(watch.total - watch.done), tone: 'todo' } });
       const dev = count('dev', OK.dev, true);
       if (dev.total) rows.push({ key: 'dev', title: TITLES.dev, done: dev.done, total: dev.total, unit: UNITS.dev, flag: dev.done === dev.total ? { text: 'Done', tone: 'ok' } : { text: `${dev.total - dev.done} setting up`, tone: 'warn' } });
       rows.push({ key: 'prof', title: TITLES.prof, done: profilePct, total: 100, unit: UNITS.prof, flag: profilePct === 100 ? { text: 'Done', tone: 'ok' } : { text: 'Not complete', tone: 'warn' } });
     } else {
       for (const key of ['meet', 'ci', 'tasks', 'watch', 'tour'] as const) {
-        const c = count(key, OK[key], false);
+        // The watch list counts what it lists, COMING UP too (MgrTeamsProto: "2/6 watched · 4 to watch").
+        const c = count(key, OK[key], key === 'watch' || key === 'tour');
         if (!c.total) continue;
         rows.push({ key, title: TITLES[key], done: c.done, total: c.total, unit: UNITS[key], flag: c.done === c.total ? { text: 'Done', tone: 'ok' } : { text: teamFlag[key](c.total - c.done), tone: 'todo' } });
       }
@@ -290,6 +327,9 @@ export async function teamJoinerPage(me: Me, journeyId: string) {
       const at = p.startsAt.get(r.rowKey);
       if (at) v.startsAt = at.toISOString();
     }
+    // MgrWelcome / MgrFeed, opened again once done: what was sent, not a fresh draft.
+    const sent = r.row.team?.key === 'mgr_welcome' ? j.meetUs?.managerNote?.text : r.row.team?.key === 'mgr_feed_intro' ? j.managerWelcome?.text : undefined;
+    if (sent) v.sent = sent;
     return v;
   });
   const progress = await progressOf(p, tasks, 'team', names);
@@ -305,13 +345,20 @@ export async function teamJoinerPage(me: Me, journeyId: string) {
       return { rowKey: m.rowKey, title: m.row.title, step: m.step, ...(name ? { withName: name, withInitials: initialsOf(name) } : {}), ...(at ? { startsAt: at.toISOString() } : {}) };
     });
   }
+  // Reach out: a block only where its tap has somewhere to go. "Send a game" needs the company's Games tab;
+  // before Day 1 the joiner has no app yet, so the welcome message is the manager's note on the portal.
+  const company = await companies().findOne({ id: j.org }, { projection: { _id: 0, enabledTabs: 1 } });
+  const games = !!company?.enabledTabs?.includes('games');
+  const reachOut = isJoined(j)
+    ? ['feed', ...(games ? ['game'] : []), 'announcement', 'team_post', 'chat']
+    : [...(link.roles.includes('manager') ? ['welcome_message'] : []), 'announcement'];
   return {
     joiner: { ...joiner, step: p.step }, relation: link.rel, readOnly: !link.roles.length,
     card: { title: link.roles.length === 1 && link.roles[0] === 'buddy' ? `Help ${first} with` : `Your tasks for ${first}`, toDo: mine.filter((t) => !t.done && !t.locked && t.step <= p.step).length },
     tasks: mine,
     progress: { rows: progress.rows, ...(p.step === 0 && j.tj ? { joining: { on: j.tj, ...(j.day1Pass?.reportingTime ?? reporting?.time ? { time: j.day1Pass?.reportingTime ?? reporting?.time } : {}), ...(j.day1Pass?.place ?? reporting?.place ? { place: j.day1Pass?.place ?? reporting?.place } : {}) } } : {}) },
     lists: progress.lists,
-    reachOut: isJoined(j) ? ['feed', 'game', 'announcement', 'team_post', 'chat'] : ['welcome_message', 'announcement'],
+    reachOut,
     ...(schedule ? { schedule } : {}),
   };
 }
@@ -582,7 +629,10 @@ export async function approvalViewV2(me: Me, journeyId: string) {
   return {
     state: a?.outcome === 'approved' ? 'approved' : a?.outcome === 'extended' ? 'extended' : rec ? 'ready' : 'waiting',
     ...(rec ? { recommendation: { byName: rec.byName ?? '', outcome: rec.outcome, ...(rec.extendMonths ? { extendMonths: rec.extendMonths } : {}), ...(rec.review ?? {}), ...(rec.note ? { note: rec.note } : {}), at: rec.at } } : {}),
-    facts: await probationFacts(j, p),
+    // HodApprove lists three: the monthly goals, the confirmation discussion (Done / Not yet) and attendance.
+    facts: ((all) => ['Monthly goals', 'Confirmation discussion', 'Attendance']
+      .map((label) => all.find((f) => f.label === label)).filter((f): f is { label: string; value: string } => !!f)
+      .map((f) => (f.label === 'Confirmation discussion' && f.value.startsWith('Done') ? { ...f, value: 'Done' } : f)))(await probationFacts(j, p)),
     ...(a ? { answer: { outcome: a.outcome, ...(a.extendMonths ? { extendMonths: a.extendMonths } : {}), ...(a.comment ? { comment: a.comment } : {}), at: a.at, byName: a.byName } } : {}),
   };
 }
@@ -595,9 +645,12 @@ export async function answerApprovalV2(me: Me, journeyId: string, body: Record<s
   if (j.probation?.decision) throw new LifecycleError(409, 'HR has decided already');
   const before = j.probation?.hodApproval;
   if (before && before.outcome !== 'discuss') throw new LifecycleError(409, 'Answered already');
-  const outcome = body.action === 'approve' ? 'approved' : body.action === 'extend' ? 'extended' : null;
+  // Approve agrees with the manager's recommendation: when that is to extend, approving it extends (by their months).
+  const rec = j.probation.recommendation;
+  const approvesExtension = body.action === 'approve' && rec.outcome === 'extend';
+  const outcome = body.action === 'approve' ? (approvesExtension ? 'extended' : 'approved') : body.action === 'extend' ? 'extended' : null;
   if (!outcome) throw new LifecycleError(400, 'action is approve or extend');
-  const extendMonths = outcome === 'extended' ? Number(body.extendMonths ?? 3) : undefined;
+  const extendMonths = outcome === 'extended' ? Number((approvesExtension ? rec.extendMonths : body.extendMonths) ?? 3) : undefined;
   if (extendMonths !== undefined && ![1, 2, 3].includes(extendMonths)) throw new LifecycleError(400, 'Extend by 1, 2 or 3 months');
   const comment = typeof body.comment === 'string' ? body.comment.trim().slice(0, 2000) : '';
   const at = new Date();
@@ -629,7 +682,8 @@ export async function inviteSenior(me: Me, journeyId: string, body: Record<strin
   for (const id of ids) {
     const other = id === journeyId ? { j, p, link } : await teamJourney(me, id);
     if (!other.link.roles.includes('senior')) throw new LifecycleError(403, 'One of them is not yours to meet');
-    if (other.p.step < 1 || other.p.step > 2) throw new LifecycleError(409, 'Only new joiners in their first week');
+    // The others are this week's new joiners; the row's own joiner can still be met later while the row is open.
+    if (other.p.step < 1 || (id !== journeyId && other.p.step > 2)) throw new LifecycleError(409, 'Only new joiners in their first week');
     await lifecycleMeetings().updateOne(
       { journeyId: id, rowKey: 'senior_meet' },
       { $set: { title, startsAt: at, attendeeUserIds: [other.j.userId, me.userId].filter((x): x is string => !!x), org: j.org }, $setOnInsert: { id: randomUUID(), journeyId: id, rowKey: 'senior_meet' } },

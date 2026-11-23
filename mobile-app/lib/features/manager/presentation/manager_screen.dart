@@ -479,33 +479,92 @@ class _ManagerScreenState extends State<ManagerScreen> {
           (_) => _connectComposerController.openPost(postId),
         );
       },
-      // Final designs: a joiner task's page in the app (Do in Sowaka, Review).
-      openAppScreen: (screen) {
-        if (screen == 'profile') {
-          Navigator.of(context).popUntil((route) => route.isFirst);
-          _openProfile();
-          return;
-        }
-        Navigator.of(context).popUntil((route) => route.isFirst);
-        _bloc.add(const ChangeManagerTab(ManagerTab.quick));
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          switch (screen) {
-            case 'leave' || 'leave_balance':
-              _quickActionsController.openLeave();
-            case 'overtime':
-              _quickActionsController.openOvertime();
-            case 'shift':
-              _quickActionsController.openCalendar();
-            case 'tax' || 'payroll' || 'payroll_policy':
-              _quickActionsController.openPayroll();
-          }
-        });
-      },
+      // Final designs: a joiner task's page in the app (Do in Sowaka, Review,
+      // a profile section, the first punch-in), opened over the onboarding
+      // screen it was tapped on.
+      openAppScreen: _openAppScreenOver,
       viewerName: user.name,
       viewerDesignation: user.designation,
       viewerDepartment: user.department,
       viewerPhotoUrl: user.profilePhotoUrl,
+    );
+  }
+
+  /// A page of the app opened from an onboarding task, OVER the screen it
+  /// was tapped on: no pop back to the tabs and no tab switch, so Back
+  /// returns to that screen exactly as it was (the same list, scroll and
+  /// look-ahead stage). Completes when the page closes, so the task reads
+  /// its state again.
+  Future<void> _openAppScreenOver(BuildContext from, String screen) {
+    final navigator = Navigator.of(from);
+    void toTabs() => navigator.popUntil((route) => route.isFirst);
+    if (screen == 'profile') {
+      return navigator.push<void>(
+        MaterialPageRoute(
+          builder: (route) => StreamBuilder<ManagerState>(
+            stream: _bloc.stream,
+            initialData: _bloc.state,
+            builder: (context, snapshot) {
+              final dashboard = (snapshot.data ?? _bloc.state).dashboard;
+              if (dashboard == null) return const SizedBox.shrink();
+              // The page the shell draws the profile on (it sits over the tabs there).
+              return Scaffold(
+                backgroundColor: const Color(0xFFF7F7F9),
+                body: OfflineAware(
+                  child: _ProfileScreen(
+                key: const ValueKey('onboarding-profile'),
+                openOn: ProfileTab.workDetail,
+                session: _session,
+                dashboard: dashboard,
+                bloc: _bloc,
+                onBack: () => Navigator.of(route).maybePop(),
+                onLogout: _logout,
+                onOpenComposer: () {
+                  toTabs();
+                  _openConnectComposer();
+                },
+                onNotifications: () => _openNotifications(route),
+                onProfilePhotoUpdated: _updateProfilePhoto,
+                onOpenDocuments: () {
+                  toTabs();
+                  _bloc.add(const ChangeManagerTab(ManagerTab.quick));
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _quickActionsController.openPayroll();
+                  });
+                },
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    }
+    final entry = switch (screen) {
+      'leave' || 'leave_balance' => QuickActionsEntry.leave,
+      'overtime' => QuickActionsEntry.overtime,
+      'shift' => QuickActionsEntry.calendar,
+      'tax' || 'payroll' || 'payroll_policy' => QuickActionsEntry.payroll,
+      'punch' => QuickActionsEntry.punchTour,
+      _ => null,
+    };
+    if (entry == null) return Future.value();
+    return navigator.push<void>(
+      MaterialPageRoute(
+        builder: (_) => _ActionsPageOver(
+          bloc: _bloc,
+          entry: entry,
+          onNotifications: (context) => _openNotifications(context),
+          onOpenProfile: () {
+            toTabs();
+            _openProfile();
+          },
+          onOpenComposer: () {
+            toTabs();
+            _openConnectComposer();
+          },
+        ),
+      ),
     );
   }
 
@@ -978,6 +1037,105 @@ class _ManagerScreenState extends State<ManagerScreen> {
                           if (mounted) _quickActionsController.openPayroll();
                         });
                       },
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// One page of the Actions tab (leave, overtime, the attendance calendar,
+/// payroll, or its home with Day 1's punch spotlight) opened over an
+/// onboarding screen: the same screen the tab shows, on its own route with
+/// the app's tabs under it, so Back returns to where it was opened from.
+class _ActionsPageOver extends StatefulWidget {
+  const _ActionsPageOver({
+    required this.bloc,
+    required this.entry,
+    required this.onNotifications,
+    required this.onOpenProfile,
+    required this.onOpenComposer,
+  });
+
+  final ManagerBloc bloc;
+  final QuickActionsEntry entry;
+  final void Function(BuildContext context) onNotifications;
+  final VoidCallback onOpenProfile;
+  final VoidCallback onOpenComposer;
+
+  @override
+  State<_ActionsPageOver> createState() => _ActionsPageOverState();
+}
+
+class _ActionsPageOverState extends State<_ActionsPageOver> {
+  final _controller = QuickActionsController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bloc = widget.bloc;
+    return StreamBuilder<ManagerState>(
+      stream: bloc.stream,
+      initialData: bloc.state,
+      builder: (context, snapshot) {
+        final state = snapshot.data ?? bloc.state;
+        final dashboard = state.dashboard;
+        if (dashboard == null) return const SizedBox.shrink();
+        final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+        return ListenableBuilder(
+          listenable: _controller,
+          builder: (context, child) => PopScope(
+            // Inside the page (a leave form, a payslip) Back is the page's
+            // own; from its first screen it closes this route.
+            canPop: !_controller.canGoBack,
+            onPopInvokedWithResult: (didPop, result) {
+              if (!didPop) _controller.handleBack();
+            },
+            child: child!,
+          ),
+          child: Scaffold(
+            key: ValueKey('actions-page-over-${widget.entry.name}'),
+            backgroundColor: const Color(0xFFF7F7F9),
+            body: OfflineAware(
+              child: Column(
+                children: [
+                  Expanded(
+                    child: Builder(
+                      builder: (context) => MediaQuery.removePadding(
+                        context: context,
+                        removeBottom: true,
+                        child: QuickActionsScreen(
+                          bloc: bloc,
+                          dashboard: dashboard,
+                          controller: _controller,
+                          entry: widget.entry,
+                          onExit: () => Navigator.of(this.context).pop(),
+                          onNotifications: () => widget.onNotifications(this.context),
+                          onOpenComposer: widget.onOpenComposer,
+                          profileAction: _ProfileAvatarAction(
+                            initial: dashboard.managerInitial,
+                            photoUrl: dashboard.managerPhotoUrl,
+                            onTap: widget.onOpenProfile,
+                            size: 30,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (!keyboardOpen)
+                    _BottomTabs(
+                      state: state,
+                      bloc: bloc,
+                      onBeforeChange: () => Navigator.of(this.context).popUntil((route) => route.isFirst),
                     ),
                 ],
               ),

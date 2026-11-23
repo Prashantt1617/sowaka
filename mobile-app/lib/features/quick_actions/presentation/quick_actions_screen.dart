@@ -619,6 +619,20 @@ AttendanceDayView _settledByServer(
 
 const int _maxLeaveApplyDays = 30;
 
+/// A page of the Actions tab opened on its own, over another screen (a new
+/// joiner's onboarding task): the screen starts on it, and Back from it
+/// leaves through [QuickActionsScreen.onExit] to where it was opened from.
+enum QuickActionsEntry {
+  leave,
+  overtime,
+  calendar,
+  payroll,
+
+  /// The Actions home with Day 1's "Learn to punch in" spotlight on the
+  /// Attendance card.
+  punchTour,
+}
+
 class QuickActionsScreen extends StatefulWidget {
   const QuickActionsScreen({
     super.key,
@@ -633,7 +647,16 @@ class QuickActionsScreen extends StatefulWidget {
     this.payroll,
     this.pickPayrollFile,
     this.payrollLock,
+    this.entry,
+    this.onExit,
   });
+
+  /// Opened on its own over another screen: the page it starts on.
+  final QuickActionsEntry? entry;
+
+  /// With [entry]: closes the screen (Back from the entry page, the
+  /// spotlight's Later), back to where it was opened from.
+  final VoidCallback? onExit;
 
   final ManagerBloc bloc;
   final ManagerDashboard dashboard;
@@ -666,7 +689,20 @@ class QuickActionsScreen extends StatefulWidget {
 }
 
 class _QuickActionsScreenState extends State<QuickActionsScreen> {
-  _QuickPage _page = _QuickPage.home;
+  late _QuickPage _page = switch (widget.entry) {
+    QuickActionsEntry.leave => _QuickPage.leave,
+    QuickActionsEntry.overtime => _QuickPage.overtime,
+    QuickActionsEntry.calendar => _QuickPage.calendar,
+    QuickActionsEntry.payroll => _QuickPage.payroll,
+    QuickActionsEntry.punchTour || null => _QuickPage.home,
+  };
+
+  /// Opened on one page over another screen ([QuickActionsScreen.entry]):
+  /// there is no Actions home under it, so what would go there leaves.
+  bool get _leavesInsteadOfHome =>
+      widget.onExit != null &&
+      widget.entry != null &&
+      widget.entry != QuickActionsEntry.punchTour;
 
   /// What the summary screen is showing, and where closing it returns to.
   RequestSummary? _submittedSummary;
@@ -798,7 +834,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   /// Day 1's "Learn to punch in" (the New joiner artifact): the Attendance
   /// card spotlit until Later, Try it now, a tap on the dim, or a punch.
-  bool _punchTour = false;
+  late bool _punchTour = widget.entry == QuickActionsEntry.punchTour;
   final _attendanceCardKey = GlobalKey();
 
   void _onPunchTourRequested() {
@@ -959,6 +995,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   void _openPage(_QuickPage page, {bool refresh = true}) {
+    if (page == _QuickPage.home && _leavesInsteadOfHome) {
+      widget.onExit!();
+      return;
+    }
     if (page == _QuickPage.placements) {
       _placementsKey = GlobalKey<_PlacementsScreenState>();
     }
@@ -1061,6 +1101,21 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         (_attendanceMonth.year != now.year ||
             _attendanceMonth.month != now.month)) {
       unawaited(widget.bloc.add(LoadAttendanceMonth(now)));
+    }
+    // Opened on its own page over another screen: Back from it goes there.
+    final toHome = switch (_page) {
+      _QuickPage.policy => _policyReturnPage == _QuickPage.home,
+      _QuickPage.submitted => _submittedReturnPage == _QuickPage.home,
+      _QuickPage.applyLeave ||
+      _QuickPage.applyOvertime ||
+      _QuickPage.applyReimbursement ||
+      _QuickPage.wizard ||
+      _QuickPage.success => false,
+      _ => true,
+    };
+    if (toHome && _leavesInsteadOfHome) {
+      widget.onExit!();
+      return;
     }
     setState(() {
       if (_page == _QuickPage.policy) {
@@ -1220,6 +1275,12 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     callout: PunchSpotlightCallout(
       onLater: () {
         setState(() => _punchTour = false);
+        // Opened over the onboarding home: Later goes back to it as it was.
+        final exit = widget.onExit;
+        if (exit != null) {
+          exit();
+          return;
+        }
         unawaited(openOnboardingHome(context));
       },
       onTry: () => unawaited(_startPunch('in')),

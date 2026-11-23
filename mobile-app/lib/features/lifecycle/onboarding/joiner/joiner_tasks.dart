@@ -187,7 +187,8 @@ Future<void> openJoinerTask(BuildContext context, JoinerController c, JoinerTask
     case 'do':
       if (t.isDone) return;
       if (t.screen == 'punch') {
-        FirstPunchTour.start(context, shell);
+        await FirstPunchTour.start(context, shell);
+        await c.load();
         return;
       }
       if (t.screen == 'tour') {
@@ -195,8 +196,13 @@ Future<void> openJoinerTask(BuildContext context, JoinerController c, JoinerTask
         await c.load();
         return;
       }
+      // Its screen opens over this one; Back returns here, and the fact it
+      // may now hold ticks the row.
       final screen = t.screen;
-      if (screen != null) shell.openAppScreen?.call(screen);
+      final open = shell.openAppScreen;
+      if (screen == null || open == null) return;
+      await open(context, screen);
+      await c.load();
     case 'review':
       if (t.isDone) return;
       await _confirm(context, c, t, label: 'Looks good', action: 'looks_good', page: t.screen);
@@ -241,11 +247,11 @@ Future<void> _confirm(BuildContext context, JoinerController c, JoinerTask t, {r
             const SizedBox(height: 16),
             if (page != null && c.shell.openAppScreen != null && page != 'kpis') ...[
               OnbSecondaryButton(
+                key: ValueKey('task-page-${t.id}'),
                 label: t.verb,
-                onTap: () {
-                  Navigator.of(sheet).pop();
-                  c.shell.openAppScreen!(page);
-                },
+                // The page opens over this sheet: Back returns to it, with
+                // "Looks good" still to tap.
+                onTap: () => c.shell.openAppScreen!(sheet, page),
               ),
               const SizedBox(height: 10),
             ],

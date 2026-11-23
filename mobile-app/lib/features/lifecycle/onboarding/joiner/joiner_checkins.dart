@@ -171,9 +171,12 @@ class _JoinerCheckinScreenState extends State<JoinerCheckinScreen> {
     }
   }
 
+  /// Back: the question before; from the first one, and from "Thanks", the
+  /// Check-ins list it was opened from (which then shows it Done). "Back to
+  /// onboarding" is the button that goes home.
   void _back() {
     if (_done || _q == 0) {
-      _done ? popToJoinerHome(context) : Navigator.of(context).pop();
+      Navigator.of(context).pop();
       return;
     }
     setState(() => _show(_q - 1));

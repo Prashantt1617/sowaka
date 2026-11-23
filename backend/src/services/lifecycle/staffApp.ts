@@ -115,7 +115,8 @@ export async function staffTile(me: Me, now = new Date()) {
   try { mine = await myJourneys(me, now); } catch { return undefined; }
   if (!mine.length) return undefined;
   const role = pickRole([...new Set(mine.flatMap((m) => m.roles))], undefined);
-  const open = mine.filter((m) => m.roles.includes(role)).flatMap(({ p, tasks }) => counted(p, tasks, role, 'them'));
+  // Someone who is both HR and IT & admin has one tile: it counts both sides' rows (the screen's pill switches between them).
+  const open = mine.flatMap(({ p, tasks, roles }) => roles.flatMap((r) => counted(p, tasks, r, 'them')));
   const late = open.filter((r) => r.late).length;
   const dueToday = open.filter((r) => r.due?.text === 'Due today').length;
   const pill = late ? `${late} late` : dueToday ? `${dueToday} due today` : open.length ? `${open.length} to do` : undefined;
@@ -166,6 +167,12 @@ const addressOf = (a?: { line: string; city: string; state: string; pin: string 
 const dobOf = (key?: string) => (key ? new Date(`${key}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : undefined);
 const masked = (last4?: string) => (last4 ? `XXXX XXXX ${last4}` : undefined);
 
+/** The cancelled cheque on the joiner's document list (none when the list asks for none). */
+async function chequeOf(journeyId: string): Promise<{ uploaded: boolean } | undefined> {
+  const cheque = (await journeyDocumentsView(journeyId)).find((d) => /cheque/i.test(`${d.docKey} ${d.label}`));
+  return cheque ? { uploaded: cheque.files.length > 0 } : undefined;
+}
+
 /** The nine sections; HR only sees bank, PF, salary and tax (never IT). */
 export async function profileSections(j: Journey, role: StaffRole): Promise<{ pct: number; sections: Section[] }> {
   const pr = j.profile ?? {};
@@ -209,11 +216,14 @@ export async function profileSections(j: Journey, role: StaffRole): Promise<{ pc
       taxDeclarations().find({ org: j.org, userId: j.userId }, { projection: { _id: 0 } }).sort({ fy: -1 }).limit(1).next(),
     ]) : [null, null, null];
     const bankName = pay?.bankName ?? pr.bank?.bankName;
+    // The cancelled cheque, when the joiner's document list asks for one (HRProfile / HRPayroll's last bank row).
+    const cheque = await chequeOf(j.id);
     sections.push(section('bank', 'Bank account', [
       { label: 'Account holder', value: pay?.accountHolder ?? pr.bank?.holderName },
       { label: 'Bank', value: bankName },
       { label: 'Account number', value: masked(pay?.accountLast4 ?? pr.bank?.accountLast4) },
       { label: 'IFSC', value: pay?.ifsc ?? pr.bank?.ifsc },
+      ...(cheque ? [{ label: 'Cancelled cheque', value: cheque.uploaded ? 'Uploaded' : undefined }] : []),
     ]));
     let uan = pay?.uanLast4 ? masked(pay.uanLast4) : undefined;
     if (!uan && about.pf?.uan) uan = masked(about.pf.uan.slice(-4));
@@ -287,6 +297,8 @@ export async function staffTaskScreen(me: Me, journeyId: string, key: string, as
     };
     out.idCard = idCard;
     if (checks?.accessCardNo) out.accessCardNo = checks.accessCardNo;
+    // The checklist as it was ticked (absent: never ticked; a done row then shows every box ticked).
+    if (checks?.ticks) out.ticks = checks.ticks;
     return out;
   }
   if (base === 'hr_check_payroll' || base === 'hr_check_form') {
@@ -295,8 +307,8 @@ export async function staffTaskScreen(me: Me, journeyId: string, key: string, as
     out.sections = sections.filter((s) => keys.includes(s.key));
     if (base === 'hr_check_payroll') {
       // The cancelled cheque, when the joiner's document list asks for one (HRPayroll's cheque row).
-      const cheque = (await journeyDocumentsView(j.id)).find((d) => /cheque/i.test(`${d.docKey} ${d.label}`));
-      if (cheque) out.cheque = { uploaded: cheque.files.length > 0 };
+      const cheque = await chequeOf(j.id);
+      if (cheque) out.cheque = cheque;
     }
     return out;
   }
@@ -319,13 +331,14 @@ export async function staffTaskScreen(me: Me, journeyId: string, key: string, as
     return out;
   }
   if (base === 'it_accesses' || base === 'hr_accesses') {
-    const user = j.userId ? await users().findOne({ userId: j.userId }, { projection: { _id: 0, email: 1, phone: 1 } }) : null;
+    const user = j.userId ? await users().findOne({ userId: j.userId }, { projection: { _id: 0, email: 1, phone: 1, role: 1 } }) : null;
     const manager = j.managerUserId ? await users().findOne({ userId: j.managerUserId }, { projection: { _id: 0, name: 1 } }) : null;
     out.accesses = accessTasks(j, tasks, p.design).filter((t) => t.ownerRole === role).map((t) => {
       const details: Array<{ label: string; value: string }> = [];
       if (/email/i.test(t.title) && (j.candidate?.workEmail ?? user?.email)) details.push({ label: 'Address', value: (j.candidate?.workEmail ?? user?.email)! });
       if (/sowaka/i.test(t.title)) {
         if (user?.phone) details.push({ label: 'Sign-in', value: `OTP on ${user.phone.replace(/\d(?=\d{3})/g, 'X')}` });
+        if (user) details.push({ label: 'Role', value: user.role === 'manager' ? 'Manager' : 'Employee' });
         if (manager?.name) details.push({ label: 'Reports to', value: manager.name });
       }
       return { id: t.id, title: t.title, ready: t.status === 'done' || t.status === 'skipped', details };
@@ -383,15 +396,22 @@ export async function staffTaskAction(me: Me, journeyId: string, key: string, bo
     return staffJoinerPage(me, journeyId, role);
   }
   const now = new Date();
-  if (body.checks !== undefined || body.accessCardNo !== undefined) {
+  if (body.checks !== undefined || body.accessCardNo !== undefined || body.ticks !== undefined) {
     const checks = body.checks && typeof body.checks === 'object' ? Object.fromEntries(Object.entries(body.checks as Record<string, unknown>)
       .filter(([, v]) => ['looks_right', 'ask', 'matches', 'mismatch'].includes(String(v))).map(([k, v]) => [k.slice(0, 40), String(v)])) : undefined;
     const card = typeof body.accessCardNo === 'string' ? body.accessCardNo.trim().slice(0, 40) : undefined;
-    await journeys().updateOne({ id: j.id }, { $set: { [`staffChecks.${key}`]: { ...(checks ? { checks } : {}), ...(card ? { accessCardNo: card } : {}), at: now, byName: me.name }, updatedAt: now } });
+    // The kit's checklist: which boxes are ticked (their positions), kept so the screen opens as it was left.
+    const ticks = Array.isArray(body.ticks) ? [...new Set(body.ticks.filter((n): n is number => Number.isInteger(n) && n >= 0 && n < 20))].sort((a, b) => a - b) : undefined;
+    // Each part on its own, so saving the ticks keeps the card number and the answers (and the other way round).
+    await journeys().updateOne({ id: j.id }, { $set: {
+      ...(checks ? { [`staffChecks.${key}.checks`]: checks } : {}), ...(card ? { [`staffChecks.${key}.accessCardNo`]: card } : {}),
+      ...(ticks ? { [`staffChecks.${key}.ticks`]: ticks } : {}),
+      [`staffChecks.${key}.at`]: now, [`staffChecks.${key}.byName`]: me.name, updatedAt: now,
+    } });
   }
   if (body.action === 'done') await setRowTick(j.id, key, by);
   else if (body.action === 'undo') await setRowTick(j.id, key, null);
-  else if (body.checks === undefined && body.accessCardNo === undefined) throw new LifecycleError(400, 'action is done or undo');
+  else if (body.checks === undefined && body.accessCardNo === undefined && body.ticks === undefined) throw new LifecycleError(400, 'action is done or undo');
   return staffJoinerPage(me, journeyId, role);
 }
 

@@ -437,6 +437,7 @@ class StaffTaskScreen {
     this.possessive = 'their',
     this.idCard,
     this.accessCardNo,
+    this.ticks,
     this.sections = const [],
     this.cheque,
     this.facts = const [],
@@ -459,6 +460,7 @@ class StaffTaskScreen {
       possessive: _str(json['possessive']) ?? 'their',
       idCard: json['idCard'] is Map ? StaffIdCard.fromJson(_map(json['idCard'])) : null,
       accessCardNo: _str(json['accessCardNo']),
+      ticks: json['ticks'] is List ? (json['ticks'] as List).whereType<num>().map((n) => n.toInt()).toList() : null,
       sections: _maps(json['sections']).map(StaffSection.fromJson).toList(),
       cheque: cheque.isEmpty ? null : cheque['uploaded'] == true,
       facts: _maps(json['facts']).map((f) => (label: _str(f['label']) ?? '', value: _str(f['value']) ?? '')).toList(),
@@ -482,6 +484,10 @@ class StaffTaskScreen {
   final String possessive;
   final StaffIdCard? idCard;
   final String? accessCardNo;
+
+  /// The kit checklist's ticked boxes (their positions), as they were left;
+  /// null when it was never ticked.
+  final List<int>? ticks;
   final List<StaffSection> sections;
 
   /// Null: the joiner's documents ask for no cancelled cheque; else whether it is uploaded.
@@ -504,13 +510,15 @@ abstract class StaffApi {
   Future<StaffProfile> fetchProfile(String journeyId, {StaffRole? as});
   Future<StaffTaskScreen> fetchTask(String journeyId, String key, {StaffRole? as});
 
-  /// Done / undo, with the screen's answers (checks, access card number, accesses ready).
+  /// Done / undo, with the screen's answers (checks, access card number, the
+  /// checklist's ticks, accesses ready). No [action]: the answers are only kept.
   Future<StaffJoinerPage> taskAction(
     String journeyId,
     String key, {
     String? action,
     Map<String, String>? checks,
     String? accessCardNo,
+    List<int>? ticks,
     Map<String, bool>? accesses,
     StaffRole? as,
   });
@@ -579,6 +587,7 @@ class HttpStaffApi implements StaffApi {
     String? action,
     Map<String, String>? checks,
     String? accessCardNo,
+    List<int>? ticks,
     Map<String, bool>? accesses,
     StaffRole? as,
   }) async => StaffJoinerPage.fromJson(
@@ -586,6 +595,7 @@ class HttpStaffApi implements StaffApi {
       'action': ?action,
       'checks': ?checks,
       'accessCardNo': ?accessCardNo,
+      'ticks': ?ticks,
       'accesses': ?accesses,
     }),
   );

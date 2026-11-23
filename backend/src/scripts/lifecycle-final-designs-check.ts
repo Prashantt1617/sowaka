@@ -241,7 +241,10 @@ async function main() {
   eq('Manager page: "Your tasks for Priya", reports to you, status', [mgrPage.card.title, mgrPage.joiner.reportsTo, mgrPage.joiner.status.label], ['Your tasks for Priya', 'you', '2 tasks delayed']);
   ok('Delayed: the earliest late one, waiting on whom', !!mgrPage.joiner.delayed && mgrPage.joiner.delayed.waitingDays >= 1, mgrPage.joiner.delayed);
   eq('View progress rows: meetings, check-ins, tasks, watch list, tour (devices only once one waits)', mgrPage.progress.rows.map((r) => r.key), ['meet', 'ci', 'tasks', 'watch', 'tour']);
-  eq('Reach out after joining: 5 ways', mgrPage.reachOut.length, 5);
+  eq('Reach out after joining: 4 ways in a company without the Games tab (no dead "Send a game")', mgrPage.reachOut, ['feed', 'announcement', 'team_post', 'chat']);
+  await companies().updateOne({ id: ORG }, { $set: { enabledTabs: ['games'] } });
+  eq('…5 with it', (await team.teamJoinerPage(MGR, J1)).reachOut.length, 5);
+  await companies().updateOne({ id: ORG }, { $unset: { enabledTabs: '' } });
   const options = await team.buddyOptions(MGR, J1);
   ok('Buddy options: colleagues, the current buddy', options.options.some((o) => o.userId === 'rohan') && options.current === 'meera');
   await team.assignBuddy(MGR, J1, { buddyUserId: 'rohan' });
@@ -321,6 +324,18 @@ async function main() {
   const meetScreen = await staff.staffTaskScreen(HR, J1, 'hr_welcome') as { meeting: { agenda: string[]; notes: string[] } };
   eq('HR’s own notes on a meeting come back on its screen', meetScreen.meeting.notes[0], 'Bring the PAN original');
   eq('…and are HR’s alone (the joiner keeps her own)', (await joiner.joinerOnboarding(PRIYA)).meetings.find((m) => m.id === 'team:hr_welcome')?.notes, ['Bring the PAN card']);
+  // fd-flow lane H: the kit's ticks are kept as they are made, and saving one part keeps the others.
+  await staff.staffTaskAction(HR, J1, 'hr_hand_kit', { ticks: [0, 2] });
+  const handLeft = await staff.staffTaskScreen(HR, J1, 'hr_hand_kit') as { done: boolean; ticks?: number[] };
+  eq('Hand over: the boxes ticked are kept before it is finished', [handLeft.ticks, handLeft.done], [[0, 2], false]);
+  await staff.staffTaskAction(HR, J1, 'hr_hand_kit', { action: 'done', accessCardNo: 'AC-7781', ticks: [0, 2, 3] });
+  await staff.staffTaskAction(HR, J1, 'hr_hand_kit', { ticks: [0, 2, 3, 4] });
+  const handDone = await staff.staffTaskScreen(HR, J1, 'hr_hand_kit') as { done: boolean; ticks?: number[]; accessCardNo?: string };
+  eq('…done with its ticks and the access card number, a later tick keeping the number', [handDone.done, handDone.ticks, handDone.accessCardNo], [true, [0, 2, 3, 4], 'AC-7781']);
+  eq('…a body with nothing to keep and no action is refused', await refusal(() => staff.staffTaskAction(HR, J1, 'hr_hand_kit', {})), 400);
+  const connect = (access.accesses.find((a) => a.title === 'Sowaka Connect')?.details ?? []) as Array<{ label: string; value: string }>;
+  ok('IT: Sowaka Connect’s setup rows say the role', connect.some((d) => d.label === 'Role' && d.value === 'Employee'), connect);
+  ok('HR’s bank section has no cheque row when the documents ask for none', !hrProfile.sections.find((s) => s.key === 'bank')?.rows.some((r) => r.label === 'Cancelled cheque'));
   eq('A task that is not HR’s: 404', await refusal(() => staff.staffTaskAction(HR, J1, 'mgr_kpis', { action: 'done' })), 404);
   eq('Someone who is neither HR nor IT for her: 404', await refusal(() => staff.staffJoinerPage(MGR, J1)), 404);
 
@@ -353,6 +368,12 @@ async function main() {
   const sanaJ = await engine.loadJourney(J2);
   eq('Extend: on the confirmation record HR decides from', [sanaJ.probation?.hodApproval?.outcome, sanaJ.probation?.hodApproval?.extendMonths], ['extended', 2]);
   eq('Answered once', await refusal(() => team.answerApprovalV2(HOD, J2, { action: 'approve' })), 409);
+  // Approve agrees with the manager: approving a recommendation to extend extends, by the manager's months.
+  await journeys().updateOne({ id: J2 }, { $set: { 'probation.recommendation.outcome': 'extend', 'probation.recommendation.extendMonths': 1 }, $unset: { 'probation.hodApproval': '', 'teamTasks.hod_approve': '' } });
+  await team.answerApprovalV2(HOD, J2, { action: 'approve' });
+  const approvedExt = (await engine.loadJourney(J2)).probation?.hodApproval;
+  eq('Approving a recommendation to extend: extended, by the manager’s month', [approvedExt?.outcome, approvedExt?.extendMonths], ['extended', 1]);
+  await journeys().updateOne({ id: J2 }, { $set: { 'probation.recommendation.outcome': 'confirm', 'probation.hodApproval.extendMonths': 2 }, $unset: { 'probation.recommendation.extendMonths': '' } });
   const letterRow = async () => ((await staff.staffTaskScreen(HR, J2, 'hr_confirmation_letter')) as { done: boolean }).done;
   eq('HR’s letter row: not done before the letter', await letterRow(), false);
   // HR's decision on the board (its own rules are lifecycle:check's): confirm.

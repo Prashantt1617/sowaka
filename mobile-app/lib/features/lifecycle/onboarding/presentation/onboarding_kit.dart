@@ -145,8 +145,11 @@ class OnboardingShell {
 
   /// Final designs (joiner lane): a joiner task's "Do in Sowaka" / "Review"
   /// page in the app — `profile`, `tax`, `payroll`, `leave`, `overtime`,
-  /// `shift`, `payroll_policy`, `leave_balance` (FINAL-DESIGNS.md §2).
-  final void Function(String screen)? openAppScreen;
+  /// `shift`, `payroll_policy`, `leave_balance`, and `punch` (the Actions
+  /// home with Day 1's spotlight) (FINAL-DESIGNS.md §2). Opened OVER the
+  /// screen [context] is on, so Back returns to it as it was; completes when
+  /// the page closes.
+  final Future<void> Function(BuildContext context, String screen)? openAppScreen;
 
   final String viewerName;
   final String? viewerDesignation;

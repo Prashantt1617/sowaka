@@ -75,8 +75,8 @@ class FaceBurst {
   /// The selfie: the last frame of the burst, upright, framed on the face.
   final Uint8List photo;
 
-  /// The burst's face crops as the server is sent them ([sentSpoofCrop]),
-  /// 96 px JPEGs, in order. The phone read the 160 px ones ([spoofCrop]).
+  /// The burst's face crops, 160 px JPEGs ([spoofCrop]), in order: the same
+  /// bytes the phone read, so the server's detector reads what it read.
   final List<Uint8List> crops;
 
   /// The phone's detector median, real-face probability; null without a detector.
@@ -535,7 +535,7 @@ class FaceCamera extends ChangeNotifier {
       if (spoof != null) {
         for (final crop in crops) {
           if (crop == null) continue;
-          final score = await spoof.realProbabilityOfCrop(crop.read);
+          final score = await spoof.realProbabilityOfCrop(crop);
           if (score != null) scores.add(score);
         }
       }
@@ -581,7 +581,7 @@ class FaceCamera extends ChangeNotifier {
       _endTry(report);
       onBurst?.call(FaceBurst(
         photo: photo,
-        crops: [for (final crop in crops) ?crop?.sent],
+        crops: [for (final crop in crops) ?crop],
         spoofPhone: median,
         motionMean: motion?.mean,
         motionRigid: motion?.nonRigid,
@@ -846,7 +846,7 @@ Uint8List? _cropJob((Uint8List, Rect) job) => cropToFace(job.$1, job.$2);
 
 /// Each burst frame upright and cut to its [spoofCrop]: what the phone's
 /// detector reads and what goes to the server. Null where a frame cannot be read.
-List<({Uint8List read, Uint8List sent})?> _cropsJob(List<(FaceFrame, Rect)> frames) => [for (final f in frames) spoofCropsJob(f)];
+List<Uint8List?> _cropsJob(List<(FaceFrame, Rect)> frames) => [for (final f in frames) spoofCropJob(f)];
 
 /// How blurred the face is: the variance of a 3×3 Laplacian over the grey
 /// face, at 128 px. Sharp faces read in the hundreds, motion blur under 20.

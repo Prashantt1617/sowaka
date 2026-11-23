@@ -435,6 +435,8 @@ export interface JourneyDetail {
   viewer?: { seesPay: boolean; seesDocuments: boolean };
   /** The team side's rows (manager, buddy, head of department) as the app ticks them. */
   teamRows?: Array<{ id: string; title: string; owner: 'manager' | 'buddy' | 'head_of_department'; step: string; done: boolean; doneByName?: string; doneAt?: string }>;
+  /** The joining and reporting details this joiner has (their copy of the template; absent when the template has none). */
+  reporting?: DesignReporting;
 }
 
 export interface TemplateJourney {

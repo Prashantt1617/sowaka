@@ -386,7 +386,8 @@ export async function templatePreview(org: string, id: string, stageRaw: unknown
   const months = view.probation.months;
   const order = DESIGN_STAGES.indexOf(stage);
   const at = (s: DesignStage) => s === stage;
-  const watchAll = stage === 'pre' ? view.preboarding.videos : [...view.watch, ...view.trainings].filter((w) => DESIGN_STAGES.indexOf(w.stage) <= order);
+  // The Watch list tile counts the watch list (the canvas: its videos up to this stage, not the trainings).
+  const watchAll = stage === 'pre' ? view.preboarding.videos : view.watch.filter((w) => DESIGN_STAGES.indexOf(w.stage) <= order);
   if (stage === 'pre') {
     return {
       stage, header: 'Welcome' as const, stageLabel: STAGE_LABEL(stage, months),

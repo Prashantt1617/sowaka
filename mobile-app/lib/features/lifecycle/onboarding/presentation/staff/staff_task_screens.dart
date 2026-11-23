@@ -21,6 +21,9 @@ const _grey = Color(0xFF6B7080);
 const _hair = Color(0xFFEFEFF2);
 const _amber = Color(0xFFB45309);
 
+/// The app's font: a button's own text style replaces the theme's, family and all.
+const _font = 'Plus Jakarta Sans';
+
 // ─── Pieces ─────────────────────────────────────────────────────────────────
 
 /// The screen's head: her photo, the task, "For Priya Shah · Week 1", Done or when it is due.
@@ -289,7 +292,9 @@ class StaffItem extends StatelessWidget {
   final String pill;
   final String pillTone;
   final bool open;
-  final VoidCallback onToggle;
+
+  /// Null: nothing to open (no plus, the row does not tap).
+  final VoidCallback? onToggle;
   final List<Widget> body;
 
   @override
@@ -299,8 +304,8 @@ class StaffItem extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Semantics(
-          expanded: open,
-          button: true,
+          expanded: onToggle == null ? null : open,
+          button: onToggle != null,
           child: InkWell(
             onTap: onToggle,
             child: Container(
@@ -319,14 +324,13 @@ class StaffItem extends StatelessWidget {
                   ),
                   const SizedBox(width: 12),
                   TeamPill(pill, background: bg, foreground: fg),
-                  const SizedBox(width: 12),
-                  StaffToggleIcon(open: open),
+                  if (onToggle != null) ...[const SizedBox(width: 12), StaffToggleIcon(open: open)],
                 ],
               ),
             ),
           ),
         ),
-        if (open)
+        if (open && onToggle != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
             child: Column(
@@ -524,7 +528,7 @@ class _Button extends StatelessWidget {
         backgroundColor: OnbColors.primary,
         foregroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        textStyle: const TextStyle(fontFamily: _font, fontSize: 15, fontWeight: FontWeight.w700),
       ),
       child: busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : Text(label),
     ),
@@ -562,6 +566,7 @@ class _StaffTaskPageState extends State<StaffTaskPage> {
   final _voice = TeamVoice();
   List<TextEditingController> _notes = const [];
   Timer? _saveNotes;
+  Timer? _saveTicks;
   late bool _done = widget.row.done;
 
   StaffJoiner get _j => widget.page.joiner;
@@ -580,6 +585,10 @@ class _StaffTaskPageState extends State<StaffTaskPage> {
       _saveNotes!.cancel();
       unawaited(_writeNotes());
     }
+    if (_saveTicks?.isActive ?? false) {
+      _saveTicks!.cancel();
+      unawaited(_writeTicks());
+    }
     _card.dispose();
     _voice.dispose();
     for (final c in _notes) {
@@ -597,7 +606,9 @@ class _StaffTaskPageState extends State<StaffTaskPage> {
         _done = screen.done;
         _error = null;
         _card.text = screen.accessCardNo ?? '';
-        if (screen.done) _ticked.addAll(List.generate(8, (i) => i));
+        // The checklist as it was left; a done row that was never ticked shows every box ticked.
+        _ticked.clear();
+        _ticked.addAll(screen.ticks ?? (screen.done ? List.generate(8, (i) => i) : const <int>[]));
         _notes = [
           for (final (i, _) in (screen.agenda.isEmpty ? const [''] : screen.agenda).indexed)
             TextEditingController(text: i < screen.notes.length ? screen.notes[i] : '')..addListener(_notesChanged),
@@ -605,6 +616,24 @@ class _StaffTaskPageState extends State<StaffTaskPage> {
       });
     } catch (e) {
       if (mounted) setState(() => _error = onboardingErrorText(e));
+    }
+  }
+
+  /// A box ticked or unticked: shown at once, kept on the server after a pause
+  /// (so the list opens as it was left).
+  void _toggleTick(int i) {
+    setState(() => _ticked.contains(i) ? _ticked.remove(i) : _ticked.add(i));
+    _saveTicks?.cancel();
+    _saveTicks = Timer(const Duration(milliseconds: 600), () => unawaited(_writeTicks()));
+  }
+
+  List<int> get _ticks => _ticked.toList()..sort();
+
+  Future<void> _writeTicks() async {
+    try {
+      await widget.api.taskAction(_j.journeyId, widget.row.id, action: null, ticks: _ticks, as: _as);
+    } catch (_) {
+      // Kept on the screen; the button sends them again.
     }
   }
 
@@ -622,10 +651,11 @@ class _StaffTaskPageState extends State<StaffTaskPage> {
   }
 
   /// Sends the screen's answers and goes back to her page with [said].
-  Future<void> _finish(String said, {String? action = 'done', Map<String, String>? checks, String? accessCardNo, Map<String, bool>? accesses}) async {
+  Future<void> _finish(String said, {String? action = 'done', Map<String, String>? checks, String? accessCardNo, List<int>? ticks, Map<String, bool>? accesses}) async {
+    _saveTicks?.cancel();
     setState(() => _busy = true);
     try {
-      await widget.api.taskAction(_j.journeyId, widget.row.id, action: action, checks: checks, accessCardNo: accessCardNo, accesses: accesses, as: _as);
+      await widget.api.taskAction(_j.journeyId, widget.row.id, action: action, checks: checks, accessCardNo: accessCardNo, ticks: ticks, accesses: accesses, as: _as);
       if (mounted) Navigator.of(context).pop(said);
     } catch (e) {
       if (mounted) showAppToast(context, onboardingErrorText(e));
@@ -729,7 +759,7 @@ class _StaffTaskPageState extends State<StaffTaskPage> {
                   foregroundColor: const Color(0xFF1F9D45),
                   side: const BorderSide(color: Color(0xFFCFE3D6)),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  textStyle: const TextStyle(fontFamily: _font, fontSize: 15, fontWeight: FontWeight.w600),
                 ),
                 child: const Text('Done'),
               )
@@ -739,7 +769,7 @@ class _StaffTaskPageState extends State<StaffTaskPage> {
                 style: FilledButton.styleFrom(
                   backgroundColor: OnbColors.primary,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  textStyle: const TextStyle(fontFamily: _font, fontSize: 15, fontWeight: FontWeight.w600),
                 ),
                 child: const Text('Mark as done'),
               ),
@@ -807,9 +837,9 @@ class _StaffTaskPageState extends State<StaffTaskPage> {
       _Checks(
         items: const [('T-shirt', null), ('Mug and bottle', null), ('Notebook and pen', null), ('Laptop bag', null), ('Access card', null)],
         on: _ticked,
-        onToggle: (i) => setState(() => _ticked.contains(i) ? _ticked.remove(i) : _ticked.add(i)),
+        onToggle: _toggleTick,
       ),
-      if (!_done) _Button(label: 'Kit ready', busy: _busy, onTap: () => _finish('Onboarding kit ready for $_first')),
+      if (!_done) _Button(label: 'Kit ready', busy: _busy, onTap: () => _finish('Onboarding kit ready for $_first', ticks: _ticks)),
     ];
   }
 
@@ -818,7 +848,7 @@ class _StaffTaskPageState extends State<StaffTaskPage> {
     _Checks(
       items: [('ID card', screen.idCard?.employeeId), ('Access card', null), ('T-shirt', null), ('Mug and bottle', null), ('Notebook and pen', null), ('Laptop bag', null)],
       on: _ticked,
-      onToggle: (i) => setState(() => _ticked.contains(i) ? _ticked.remove(i) : _ticked.add(i)),
+      onToggle: _toggleTick,
     ),
     Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -846,7 +876,7 @@ class _StaffTaskPageState extends State<StaffTaskPage> {
       _Button(
         label: 'Handed over',
         busy: _busy,
-        onTap: () => _finish('Kit handed over to $_first', accessCardNo: _card.text.trim().isEmpty ? null : _card.text.trim()),
+        onTap: () => _finish('Kit handed over to $_first', accessCardNo: _card.text.trim().isEmpty ? null : _card.text.trim(), ticks: _ticks),
       ),
   ];
 
@@ -886,16 +916,17 @@ class _StaffTaskPageState extends State<StaffTaskPage> {
                 pill: chequePill,
                 pillTone: chequeTone,
                 open: _open.contains('cheque'),
-                onToggle: () => setState(() => _open.contains('cheque') ? _open.remove('cheque') : _open.add('cheque')),
+                onToggle: screen.cheque! ? () => setState(() => _open.contains('cheque') ? _open.remove('cheque') : _open.add('cheque')) : null,
                 body: [
                   if (screen.cheque!) ...[
                     _Cheque(bank: value(bank, 'Bank'), ifsc: value(bank, 'IFSC'), holder: value(bank, 'Account holder') ?? _j.name, account: value(bank, 'Account number')),
-                    _Choices(
-                      label: 'Cancelled cheque',
-                      options: const [('matches', 'Matches'), ('mismatch', 'Doesn’t match')],
-                      value: chequeChoice,
-                      onPick: _done ? null : (v) => _pick('cheque', v),
-                    ),
+                    if (!_done)
+                      _Choices(
+                        label: 'Cancelled cheque',
+                        options: const [('matches', 'Matches'), ('mismatch', 'Doesn’t match')],
+                        value: chequeChoice,
+                        onPick: (v) => _pick('cheque', v),
+                      ),
                   ],
                 ],
               ),

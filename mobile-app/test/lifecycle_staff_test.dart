@@ -105,6 +105,7 @@ class _FakeStaff implements StaffApi {
   Map<String, String>? lastChecks;
   Map<String, bool>? lastAccesses;
   String? lastCard;
+  List<int>? lastTicks;
   List<String>? lastNotes;
 
   @override
@@ -144,8 +145,9 @@ class _FakeStaff implements StaffApi {
   });
 
   @override
-  Future<StaffJoinerPage> taskAction(String journeyId, String key, {String? action, Map<String, String>? checks, String? accessCardNo, Map<String, bool>? accesses, StaffRole? as}) async {
+  Future<StaffJoinerPage> taskAction(String journeyId, String key, {String? action, Map<String, String>? checks, String? accessCardNo, List<int>? ticks, Map<String, bool>? accesses, StaffRole? as}) async {
     calls.add('${action ?? 'save'}:$key');
+    if (ticks != null) lastTicks = ticks;
     lastChecks = checks;
     lastAccesses = accesses;
     lastCard = accessCardNo;
