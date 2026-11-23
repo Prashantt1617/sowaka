@@ -3,6 +3,7 @@
 // one marks its Meet-us item seen (all seen completes the Meet us task).
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { portal } from '../api/portal';
+import { mediaUrl } from '../api/client';
 import type { JoiningDetails, MeetItem } from '../api/types';
 import { FigLoading, FigPage, isAppHost } from '../components/fig/FigShell';
 import { G3SectionHead, G3WebBottom, G3WebTop } from '../components/fig/G3WebShell';
@@ -22,7 +23,7 @@ const FACE_TONES = ['var(--color-text-success)', 'var(--color-text-warning)', 'v
 
 function Face({ name, photo, className, tone = 0 }: { name: string; photo?: string; className?: string; tone?: number }) {
   const [bad, setBad] = useState(false);
-  return <span className={className} style={{ color: FACE_TONES[tone % FACE_TONES.length] }} aria-hidden="true">{photo && !bad ? <img src={photo} alt="" onError={() => setBad(true)} /> : initials(name)}</span>;
+  return <span className={className} style={{ color: FACE_TONES[tone % FACE_TONES.length] }} aria-hidden="true">{photo && !bad ? <img src={mediaUrl(photo)} alt="" onError={() => setBad(true)} /> : initials(name)}</span>;
 }
 
 /**
@@ -95,7 +96,7 @@ export function A1About() {
             <nav aria-label="Highlights" className="g1-hls">
               <div className="g1-hls__row">
                 {watch.map((w) => ring(w.id as StoryKey, w.title.length > 12 ? `${w.title.slice(0, 11)}…` : w.title,
-                  w.mediaType === 'image' && w.imageUrl ? <img src={w.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                  w.mediaType === 'image' && w.imageUrl ? <img src={mediaUrl(w.imageUrl)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                     : w.mediaType === 'video' ? <FigPlay /> : <FigFileText />,
                   w.mediaType === 'image' ? '' : 'g1-hl__face--brand'))}
                 {RING_ORDER.filter((k) => stories.includes(k)).map((k) => k === 'manager' ? ring(k, firstName(managerName ?? 'Manager'), <Face name={managerName ?? ''} photo={note?.authorPhotoUrl} />, 'g1-hl__face--initials')

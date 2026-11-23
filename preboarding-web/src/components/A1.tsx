@@ -4,7 +4,6 @@
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { Company, HrContact } from '../api/types';
-import { AskHrSheet } from './ui';
 import { initials } from '../lib/format';
 
 const P = { fill: 'none', stroke: 'currentColor', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
@@ -103,18 +102,12 @@ export function StepHeader({ title, step, segs, back = '/profile' }: { title: st
   );
 }
 
-/** The mobile-web footer: Help (Ask HR, sign out), Privacy, Write to HR, and powered by SOWAKA. */
-export function WebFooter({ hr, onSignOut, subject }: { hr?: HrContact; onSignOut?: () => void; subject?: string }) {
-  const [ask, setAsk] = useState(false);
+/** The mobile-web footer: Sign out and powered by SOWAKA (Help · Privacy · Write to HR went, 23 Nov). */
+export function WebFooter({ onSignOut }: { hr?: HrContact; onSignOut?: () => void; subject?: string }) {
   return (
     <footer className="a1-web-foot">
-      <span className="a1-web-foot__links">
-        {hr && <button type="button" onClick={() => setAsk(true)}>Help</button>}
-        <a href="https://www.getsowaka.com/privacy" target="_blank" rel="noreferrer">Privacy</a>
-        {hr && <a href={`mailto:${hr.email}${subject ? `?subject=${encodeURIComponent(subject)}` : ''}`}>Write to HR</a>}
-      </span>
+      {onSignOut && <span className="a1-web-foot__links"><button type="button" onClick={onSignOut}>Sign out</button></span>}
       <span className="a1-powered" style={{ padding: 0 }}>Your company’s pre-boarding is powered by <b>SOWAKA</b></span>
-      {hr && <AskHrSheet open={ask} onClose={() => setAsk(false)} name={hr.name} email={hr.email} subject={subject} onSignOut={onSignOut ? () => { setAsk(false); onSignOut(); } : undefined} />}
     </footer>
   );
 }

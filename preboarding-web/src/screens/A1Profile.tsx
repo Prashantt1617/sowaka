@@ -15,7 +15,7 @@ import { fmtWeekday } from '../lib/format';
 import '../styles/fig-g1.css';
 import { G2_SECTIONS, G2SectionForm } from '../components/fig/G2ProfileSections';
 
-export const ORDER: ProfileSectionKey[] = ['personal', 'contact', 'emergency', 'bank', 'education', 'ids', 'photo'];
+export const ORDER: ProfileSectionKey[] = ['personal', 'contact', 'emergency', 'bank', 'education', 'ids'];
 export const TITLE: Record<ProfileSectionKey, string> = {
   personal: 'Personal details', contact: 'Contact and address', emergency: 'Emergency contact', bank: 'Bank account and PF',
   education: 'Education and experience', ids: 'ID documents', photo: 'Photo',

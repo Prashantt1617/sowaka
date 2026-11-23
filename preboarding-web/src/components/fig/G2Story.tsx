@@ -4,6 +4,7 @@
 // About page and the story stay apart.
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import type { JoiningDetails, MeetItem } from '../../api/types';
+import { mediaUrl } from '../../api/client';
 import { A1Logo } from '../A1';
 import { firstName, fmtTime, fmtWeekday, initials } from '../../lib/format';
 import type { PortalPolicy } from './G2Policy';
@@ -37,7 +38,7 @@ const dayMonth = (v: string) => new Date(`${v.slice(0, 10)}T00:00:00`).toLocaleD
 
 function Face({ name, photo, className, style }: { name: string; photo?: string; className: string; style?: CSSProperties }) {
   const [bad, setBad] = useState(false);
-  return <span className={className} style={style} aria-hidden="true">{photo && !bad ? <img src={photo} alt="" onError={() => setBad(true)} /> : initials(name)}</span>;
+  return <span className={className} style={style} aria-hidden="true">{photo && !bad ? <img src={mediaUrl(photo)} alt="" onError={() => setBad(true)} /> : initials(name)}</span>;
 }
 
 export function G2Story({ order, at, onMove, onClose, company, candidate, tj, j, note, managerName, video, role, policies, onOpenPolicy, watch = [] }: {
@@ -80,7 +81,7 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, tj, j,
           <p className="g2-story__line">{about}</p>
         </div>
         {video?.videoUrl && (playing
-          ? <video className="g2-story__video" src={video.videoUrl} controls autoPlay playsInline />
+          ? <video className="g2-story__video" src={mediaUrl(video.videoUrl)} controls autoPlay playsInline />
           : <button type="button" className="g2-story__cta" style={{ gap: 16.5, paddingRight: 28.375 }} onClick={() => setPlaying(true)}><G2Play />Watch the welcome video</button>)}
       </div>
     );
@@ -91,7 +92,7 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, tj, j,
         <Face name={managerName} photo={note?.authorPhotoUrl} className="g2-story__face" />
         <h2 className="g2-story__title">Meet {managerName}</h2>
         <span className="g2-story__pill">Your manager</span>
-        {note?.videoUrl ? <video className="g2-story__video" src={note.videoUrl} controls playsInline /> : <p className="g2-story__line">{line}</p>}
+        {note?.videoUrl ? <video className="g2-story__video" src={mediaUrl(note.videoUrl)} controls playsInline /> : <p className="g2-story__line">{line}</p>}
       </div>
     );
   } else if (at === 'team') {
@@ -135,8 +136,8 @@ export function G2Story({ order, at, onMove, onClose, company, candidate, tj, j,
   } else if (item) {
     content = (
       <div className="g2-story__stack" style={{ gap: 16, width: '100%' }}>
-        {item.mediaType === 'video' && item.videoUrl && <video key={item.id} className="g2-story__video" src={item.videoUrl} controls autoPlay playsInline style={{ maxHeight: '62vh', width: '100%', objectFit: 'contain', background: '#000' }} />}
-        {item.mediaType === 'image' && item.imageUrl && <img src={item.imageUrl} alt={item.title} style={{ maxHeight: '64vh', maxWidth: '100%', objectFit: 'contain', borderRadius: 12 }} />}
+        {item.mediaType === 'video' && item.videoUrl && <video key={item.id} className="g2-story__video" src={mediaUrl(item.videoUrl)} controls autoPlay playsInline style={{ maxHeight: '62vh', width: '100%', objectFit: 'contain', background: '#000' }} />}
+        {item.mediaType === 'image' && item.imageUrl && <img src={mediaUrl(item.imageUrl)} alt={item.title} style={{ maxHeight: '64vh', maxWidth: '100%', objectFit: 'contain', borderRadius: 12 }} />}
         {item.mediaType === 'text'
           ? <h2 className="g2-story__title" style={{ color: '#FFFFFF' }}>{item.text}</h2>
           : <p className="g2-story__line" style={{ color: '#FFFFFF' }}>{item.title}</p>}

@@ -492,9 +492,9 @@ async function main() {
     const profile = await import('../services/lifecycle/profile');
     const portalProfile = await profile.profileView(await engine.loadJourney(J2.id));
     const panel = await board.journeyPanel(ORG, J2.id);
-    eq('Your profile: the portal’s seven sections, its count, and the dashboard joiner panel’s',
+    eq('Your profile: the portal’s six sections (no photo step since 23 Nov), its count, and the dashboard joiner panel’s',
       [withVideo.profile.sections.map((x) => [x.title, x.done]), withVideo.profile.done, withVideo.profile.total, panel.journey.profileSections],
-      [portalProfile.sections.map((x) => [x.title, x.done]), portalProfile.done, 7, { done: portalProfile.done, total: 7 }]);
+      [portalProfile.sections.map((x) => [x.title, x.done]), portalProfile.done, 6, { done: portalProfile.done, total: 6 }]);
     await journeys().updateOne({ id: J2.id }, { $set: { 'profile.personal': { fullName: 'Isha Verma', dob: '1999-01-01', gender: 'Female' } } });
     eq('…a section saved on the portal counts on all three', [(await app.onboardingHome(ISHA)).profile.done, (await board.journeyPanel(ORG, J2.id)).journey.profileSections.done], [portalProfile.done + 1, portalProfile.done + 1]);
 
@@ -521,7 +521,7 @@ async function main() {
   eq('An unknown filter is refused', (await refusal(async () => board.onboardingBoard(ORG, 'hr', { filter: 'nope' }))).status, 400);
   const J1b = await engine.createOnboardingJourney(ORG, 'hr', { candidate: cand('Arjun Nair'), tj: day(20), managerUserId: 'mgr' });
   const panel = await board.journeyPanel(ORG, J1.id);
-  ok('Side panel: tasks, the offer and its documents (BE-offer), batch on the same Tj', panel.tasks.length === 52 && panel.offer?.version === 1 && Array.isArray(panel.documents) && panel.documents.length === 4 && panel.batch.some((b) => b.journeyId === J1b.id), { tasks: panel.tasks.length, offer: panel.offer, documents: panel.documents, batch: panel.batch.length });
+  ok('Side panel: tasks, the offer and its documents (BE-offer), batch on the same Tj', panel.tasks.length === 52 && panel.offer?.version === 1 && Array.isArray(panel.documents) && panel.documents.length === 8 && panel.batch.some((b) => b.journeyId === J1b.id), { tasks: panel.tasks.length, offer: panel.offer, documents: panel.documents, batch: panel.batch.length });
   ok('The panel hides the snapshot and encrypted fields', !('templateSnapshot' in panel.journey));
   const acted = await board.actOnTaskByHr(ORG, J1.id, byKey(await engine.tasksOf(J1.id), 'device_request').id, { action: 'done', note: 'Raised with IT' }, HR);
   eq('HR ticks a task', [acted.status, acted.doneByName, acted.note], ['done', 'Hema HR', 'Raised with IT']);
