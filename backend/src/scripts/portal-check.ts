@@ -1241,6 +1241,134 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
     }
   }
 
+  // ─── Week 1's setup chosen before joining (pending, applied when the account is made) ───
+  section('Week 1 setup before joining: KPI, salary and shift templates kept on the journey, applied at app access and at Mark joined');
+  {
+    const { lifecycleAdminRouter } = await import('../routes/lifecycle-admin.routes');
+    const { tabsForRequest } = await import('../models/dashboard-tabs');
+    const { STATUTORY_SEED } = await import('./payroll-config-seed-data');
+    const { ZOHO_CATALOG, ZOHO_TEMPLATES } = await import('./payroll-zoho-check');
+    const { cycleInfoFor } = await import('../services/cycle');
+    const { ObjectId } = await import('mongodb');
+    const now = new Date();
+    // The three template pages' fixtures: a KPI template (one parameter), salary templates (one inactive), two shifts.
+    const paramId = new ObjectId();
+    await db.kpiParameters().insertOne({ _id: paramId, org: ORG, title: 'Design quality', description: 'How good the work is', archived: false, createdAt: now, updatedAt: now } as never);
+    const kpiTpl = new ObjectId();
+    const kpiGone = new ObjectId();
+    await db.kpiTemplates().insertMany([
+      { _id: kpiTpl, org: ORG, name: 'Design IC', description: '', parameterIds: [String(paramId)], weights: { [String(paramId)]: 100 }, createdAt: now, updatedAt: now },
+      { _id: kpiGone, org: ORG, name: 'Soon deleted', description: '', parameterIds: [String(paramId)], weights: { [String(paramId)]: 100 }, createdAt: now, updatedAt: now },
+    ] as never[]);
+    await db.statutoryConfigs().insertMany(STATUTORY_SEED.map((c) => ({ ...structuredClone(c), createdAt: now, updatedAt: now, updatedByUserId: null })) as never[]);
+    await db.payHeads().insertMany(ZOHO_CATALOG.map((h) => ({ ...h, org: ORG })) as never[]);
+    await db.salaryTemplates().insertMany([
+      { ...ZOHO_TEMPLATES.BELOW_TAXABLE, org: ORG },
+      { ...ZOHO_TEMPLATES.BELOW_TAXABLE, org: ORG, code: 'OLD_GROUP', name: 'Old group', active: false },
+    ] as never[]);
+    const dayShift = new ObjectId();
+    const lateShift = new ObjectId();
+    await db.shiftTemplates().insertMany([
+      { _id: dayShift, org: ORG, name: 'General 9 to 6', active: true, isDefault: false, policy: {}, assignedUserIds: [], createdAt: now, updatedAt: now },
+      { _id: lateShift, org: ORG, name: 'Late 12 to 9', active: true, isDefault: false, policy: {}, assignedUserIds: [], createdAt: now, updatedAt: now },
+    ] as never[]);
+    // Sessions: HR (admin), someone with Onboarding + KPI templates only, another company's HR.
+    await db.users().insertOne(person('kpihr', ORG, { name: 'Kavya KPI', dashboardAccess: true, dashboardTabs: ['onboarding', 'kpitemplates'] }) as never);
+    const session = async (userId: string) => {
+      const t = randomBytes(32).toString('hex');
+      await db.authSessions().insertOne({ tokenHash: createHash('sha256').update(t).digest('hex'), userId, createdAt: new Date(), expiresAt: new Date(Date.now() + 86_400_000) } as never);
+      return t;
+    };
+    const kpiSess = await session('kpihr');
+    const otherHrSess = await session('hr2');
+    // Two fresh joiners, finalised (HR marks the sent offer accepted, as the live rules do).
+    const finalised = async (name: string, email: string) => {
+      process.env.OFFER_ONLINE_ACCEPT = '0';
+      try {
+        const id = (await offersSvc.createOffer(HR, { candidate: { name, personalEmail: email }, fields: fields() })).journeyId;
+        await offersSvc.uploadOfferPdf(HR, id, { originalname: 'Offer.pdf', buffer: PDF(name) });
+        await offersSvc.sendOffer(HR, id, {});
+        await offersSvc.finaliseOffer(HR, id);
+        return id;
+      } finally {
+        process.env.OFFER_ONLINE_ACCEPT = '1';
+      }
+    };
+    const Q = await finalised('Qasim Setup', 'qasim.setup@example.com');
+    const R = await finalised('Riya Setup', 'riya.setup@example.com');
+    const put = (id: string, payload: unknown, bearer = appToken) => call(lifecycleAdminRouter as never, 'PUT', `/journeys/${id}/pending-setup`, bearer, payload);
+    const errorOf = (r: { body: unknown }) => (r.body as { error?: string }).error;
+    const jq = async (id: string) => (await db.journeys().findOne({ id }))!;
+    const salary = { templateCode: 'below_taxable', annualCtcPaise: 14_00_000_00, effectiveFrom: tj };
+
+    // Permissions: each kind needs its template page's tabs; another company never sees the journey.
+    let res = await put(Q, { kpi: { templateId: String(kpiTpl) } }, kpiSess);
+    ok('PUT …/pending-setup before an account: the KPI templates tab may choose the KPI template (200), kept with its name and who chose it',
+      res.status === 200 && (res.body as { pendingSetup?: { kpi?: { name?: string } } }).pendingSetup?.kpi?.name === 'Design IC'
+      && (await jq(Q)).pendingSetup?.kpi?.templateId === String(kpiTpl) && (await jq(Q)).pendingSetup?.kpi?.by.name === 'Kavya KPI', res.body);
+    ok('…but not the salary (needs Salary templates) nor the shift (needs Shift templates): 403, nothing saved',
+      (await put(Q, { salary }, kpiSess)).status === 403 && (await put(Q, { shift: { templateId: String(dayShift) } }, kpiSess)).status === 403
+      && (await put(Q, { kpi: null, salary }, kpiSess)).status === 403 && !(await jq(Q)).pendingSetup?.salary && !!(await jq(Q)).pendingSetup?.kpi);
+    ok('…another company’s HR: 404; the tab rule is Onboarding or People › Employees',
+      (await put(Q, { kpi: { templateId: String(kpiTpl) } }, otherHrSess)).status === 404
+      && JSON.stringify(tabsForRequest('PUT', `/admin/lifecycle/journeys/${Q}/pending-setup`)) === '["onboarding","employees"]');
+    ok('…refusals: nothing given 400, an unknown KPI template 404, a CTC of 0 400, a bad date 400, an inactive salary template 409, an unknown shift 404',
+      (await put(Q, {})).status === 400 && (await put(Q, { kpi: { templateId: String(new ObjectId()) } })).status === 404
+      && (await put(Q, { salary: { ...salary, annualCtcPaise: 0 } })).status === 400 && (await put(Q, { salary: { ...salary, effectiveFrom: '2026-02-30' } })).status === 400
+      && errorOf(await put(Q, { salary: { ...salary, templateCode: 'OLD_GROUP' } })) === 'Old group is inactive: make it active before putting people on it'
+      && (await put(Q, { shift: { templateId: 'nope' } })).status === 404);
+    await put(Q, { salary, shift: { templateId: String(lateShift) } });
+    res = await put(Q, { shift: { templateId: String(dayShift) } });
+    const qPending = (await jq(Q)).pendingSetup;
+    ok('HR chooses the salary (CTC and the day it applies from) and the shift; a change replaces the choice',
+      res.status === 200 && qPending?.salary?.templateCode === 'BELOW_TAXABLE' && qPending.salary.annualCtcPaise === 14_00_000_00 && qPending.salary.effectiveFrom === tj
+      && qPending.shift?.shiftTemplateId === String(dayShift) && qPending.shift.name === 'General 9 to 6' && qPending.kpi?.name === 'Design IC', qPending);
+    type PanelSalary = { annualCtcPaise?: number; name?: string };
+    const panelSalary = async (bearer: string) => ((await call(lifecycleAdminRouter as never, 'GET', `/journeys/${Q}`, bearer)).body as { journey?: { pendingSetup?: { salary?: PanelSalary } } }).journey?.pendingSetup?.salary;
+    const hrSees = await panelSalary(appToken);
+    const kpiSees = await panelSalary(kpiSess);
+    ok('the joiner panel carries the pending setup; without pay access the salary choice comes without its CTC',
+      hrSees?.annualCtcPaise === 14_00_000_00 && !!kpiSees?.name && !('annualCtcPaise' in kpiSees), { hrSees, kpiSees });
+
+    // Generate app access: the account is made, and each choice applied through the template pages' own assigns.
+    res = await call(lifecycleAdminRouter as never, 'POST', `/journeys/${Q}/app-access`, appToken, { employeeId: 'SWT-301', workEmail: 'qasim.setup@sowaka.test' });
+    const qUser = (await jq(Q)).appAccess?.userId ?? '';
+    const cycle = await cycleInfoFor(ORG);
+    const qKpi = await db.kpiAssignments().findOne({ org: ORG, userId: qUser, period: cycle.period });
+    const qPay = await db.salaryStructures().findOne({ org: ORG, userId: qUser });
+    const qShift = await db.shiftTemplates().findOne({ _id: dayShift });
+    const qAfter = await jq(Q);
+    ok('Generate app access applies them: the KPI template for the cycle in progress, the salary live on the template with its CTC and date, the shift',
+      res.status === 200 && !!qUser && qKpi?.templateId === String(kpiTpl) && qKpi.assignedByUserId === 'kpihr'
+      && qPay?.salaryTemplateCode === 'BELOW_TAXABLE' && qPay.annualCtcPaise === 14_00_000_00 && qPay.status === 'active' && new Date(qPay.effectiveFrom as unknown as string).toISOString().slice(0, 10) === tj
+      && (qShift?.assignedUserIds ?? []).includes(qUser),
+      { status: res.status, body: res.status === 200 ? undefined : res.body, qKpi, qPay: qPay && { code: qPay.salaryTemplateCode, ctc: qPay.annualCtcPaise, status: qPay.status, from: qPay.effectiveFrom }, shift: qShift?.assignedUserIds, pending: qAfter.pendingSetup });
+    ok('…then cleared from the journey and noted as applied (each kind, the template, the account)',
+      !qAfter.pendingSetup?.kpi && !qAfter.pendingSetup?.salary && !qAfter.pendingSetup?.shift
+      && qAfter.setupApplied?.kpi?.name === 'Design IC' && qAfter.setupApplied.salary?.userId === qUser && qAfter.setupApplied.shift?.name === 'General 9 to 6', { pending: qAfter.pendingSetup, applied: qAfter.setupApplied });
+    ok('…once they have an account, choosing here is refused (409: assign directly), clearing still works',
+      errorOf(await put(Q, { kpi: { templateId: String(kpiTpl) } })) === 'They have an account now: assign it directly' && (await put(Q, { kpi: null })).status === 200);
+
+    // Mark joined (no app access before): applied there; one that fails stays pending and never blocks the joining.
+    await put(R, { kpi: { templateId: String(kpiGone) }, shift: { templateId: String(lateShift) }, salary: { ...salary, annualCtcPaise: 9_00_000_00 } });
+    await db.kpiTemplates().deleteOne({ _id: kpiGone });
+    let joinedR: { userId: string } | null = null;
+    try { joinedR = await offersSvc.markJoined(HR, R, { workEmail: 'riya.setup@sowaka.test', employeeId: 'SWT-302' }, at10(tj)); } catch (error) { console.log(error); }
+    const rAfter = await jq(R);
+    const rUser = joinedR?.userId ?? '';
+    ok('Mark joined applies them to the new employee: the shift and the salary',
+      !!rUser && rAfter.userId === rUser && rAfter.status === 'joined'
+      && ((await db.shiftTemplates().findOne({ _id: lateShift }))?.assignedUserIds ?? []).includes(rUser)
+      && (await db.salaryStructures().findOne({ org: ORG, userId: rUser }))?.annualCtcPaise === 9_00_000_00
+      && !rAfter.pendingSetup?.shift && !rAfter.pendingSetup?.salary && rAfter.setupApplied?.shift?.name === 'Late 12 to 9', { status: rAfter.status, pending: rAfter.pendingSetup, applied: rAfter.setupApplied });
+    ok('…a choice that cannot be applied (its KPI template was deleted) does not stop the joining: kept pending, with the reason',
+      rAfter.pendingSetup?.kpi?.error === 'Template not found' && !!rAfter.pendingSetup.kpi.failedAt && !rAfter.setupApplied?.kpi
+      && !(await db.kpiAssignments().findOne({ org: ORG, userId: rUser })), rAfter.pendingSetup);
+    const rPanel = ((await call(lifecycleAdminRouter as never, 'GET', `/journeys/${R}`, appToken)).body as { journey?: { pendingSetup?: { kpi?: { error?: string } } } }).journey;
+    ok('…the joiner panel shows it (for "Couldn’t apply: …"), and HR clears it after assigning directly', rPanel?.pendingSetup?.kpi?.error === 'Template not found'
+      && (await put(R, { kpi: null })).status === 200 && !(await jq(R)).pendingSetup?.kpi);
+  }
+
   // Clean the scratch uploads this run wrote.
   const { rm } = await import('node:fs/promises');
   const path = await import('node:path');

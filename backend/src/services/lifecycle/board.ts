@@ -28,6 +28,7 @@ import { probationOf, sentDecisionLetter } from './probation';
 import { templateForJourney } from './templates';
 import { nudgedToday, nudgeTarget } from './nudges';
 import { leadWithStageStep } from './stageStep';
+import { pendingSetupForViewer } from './pendingSetup';
 
 export const BOARD_COLUMNS: Record<OnboardingBoardTab, Array<{ key: OnboardingBoardColumn; label: string }>> = {
   pre_boarding: [
@@ -89,9 +90,11 @@ export function decisionWithoutPay<T extends { salary?: number } | undefined>(de
 }
 
 /** A journey as someone without pay access (or without HR's view) may see it. */
-export function journeyForViewer<T extends Partial<Pick<Journey, 'probation' | 'aboutYou' | 'bankPfRequest' | 'profile'>>>(journey: T, viewer: PanelViewer): T {
+export function journeyForViewer<T extends Partial<Pick<Journey, 'probation' | 'aboutYou' | 'bankPfRequest' | 'profile' | 'pendingSetup'>>>(journey: T, viewer: PanelViewer): T {
   let out = journey;
   if (!viewer.seesPay && out.probation?.decision) out = { ...out, probation: { ...out.probation, decision: decisionWithoutPay(out.probation.decision) } };
+  // Week 1's salary choice made before joining: its CTC is pay.
+  if (!viewer.seesPay && out.pendingSetup?.salary) out = { ...out, pendingSetup: pendingSetupForViewer(out.pendingSetup, false) };
   if (!viewer.seesDocuments) {
     // Emergency contact, PF, bank details and the profile are HR's, like the documents.
     const { aboutYou: _a, bankPfRequest: _b, profile: _p, ...rest } = out;

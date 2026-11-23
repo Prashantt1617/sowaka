@@ -1,6 +1,9 @@
 // Week 1's HR setup, the data side: what a joiner is on now for each of the three (KPI, salary and
 // shift templates), read from the template pages' own APIs, and who may assign each (the tabs those
 // pages need; the server checks the same). Drawn by Week1Setup.tsx.
+// Before they have an account (no userId, no app access) nothing is "on" yet: HR's choice is kept on the
+// journey (`journey.pendingSetup`) and applied when the account is made; the templates to pick from load
+// when the picker opens (`reload`).
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../store';
 import { canOpen, canSeePay } from '../../access';
@@ -10,6 +13,7 @@ import { getShifts } from '../../../services/hrms';
 import { listSalaryStructures, listSalaryTemplates } from '../../../services/payroll';
 import { dayLabel } from '../../../services/salaryTemplatePeople';
 import type { StructureRowWithFrom } from '../../../services/salaryTemplatePeople';
+import type { PendingSetup } from '../../../services/lifecycle';
 import { periodLabel } from '../../period';
 import { errText, rupees } from './format';
 
@@ -18,7 +22,8 @@ export const SETUP_KINDS: SetupKind[] = ['kpi', 'salary', 'shift'];
 
 export interface SetupOption { id: string; name: string; note?: string }
 export interface SetupState {
-  status: 'loading' | 'ready' | 'error' | 'no_access';
+  /** 'idle': before an account, the templates not loaded yet (the picker loads them). */
+  status: 'idle' | 'loading' | 'ready' | 'error' | 'no_access';
   /** On a template of this kind (the tick). */
   assigned: boolean;
   /** The template they are on now. */
@@ -40,11 +45,12 @@ export type Week1Setup = {
   salary: StructureRowWithFrom | null;
 };
 
-const blank = (canAssign: boolean): SetupState => ({ status: 'loading', assigned: false, options: [], canAssign });
+const blank = (canAssign: boolean, status: SetupState['status'] = 'loading'): SetupState => ({ status, assigned: false, options: [], canAssign });
 
 /**
- * What the joiner is on now for each of the three, loaded once they have a userId (nothing before:
- * the rows say "After they join"). `reload(kind)` reads one again after an assign.
+ * What the joiner is on now for each of the three, loaded once they have an account (`userId`: theirs once
+ * joined, or the one app access made). Before that only the templates to choose from, when the picker asks
+ * (`reload`). `reload(kind)` reads one again after an assign.
  */
 export function useWeek1Setup(userId: string | undefined): Week1Setup {
   const { user } = useStore();
@@ -60,8 +66,24 @@ export function useWeek1Setup(userId: string | undefined): Week1Setup {
   const put = (kind: SetupKind, next: SetupState) => setRows((r) => ({ ...r, [kind]: next }));
 
   const reload = useCallback(async (kind: SetupKind) => {
-    if (!userId) return;
     try {
+      // No account yet: the templates to choose from (the choice itself is on the journey).
+      if (!userId) {
+        if (kind === 'salary' && !may.salarySees) { put('salary', { status: 'no_access', canAssign: false, assigned: false, options: [] }); return; }
+        setRows((r) => ({ ...r, [kind]: { ...r[kind], status: 'loading' } }));
+        if (kind === 'kpi') {
+          const [cyc, templates] = await Promise.all([getKpiCycle(), listKpiTemplates()]);
+          setCycle(cyc);
+          put('kpi', { status: 'ready', canAssign: may.kpi, assigned: false, options: templates.map((t) => ({ id: t.id, name: t.name, note: `${t.parameterIds.length} parameter${t.parameterIds.length === 1 ? '' : 's'}` })) });
+        } else if (kind === 'shift') {
+          const usable = (await getShifts()).filter((t) => t.active || t.isDefault);
+          put('shift', { status: 'ready', canAssign: may.shift, assigned: false, options: usable.map((t) => ({ id: t.id, name: t.name, note: t.isDefault ? 'default' : undefined })) });
+        } else {
+          const templates = await listSalaryTemplates();
+          put('salary', { status: 'ready', canAssign: may.salary, assigned: false, options: templates.filter((t) => t.active).map((t) => ({ id: t.code, name: t.name })) });
+        }
+        return;
+      }
       if (kind === 'kpi') {
         const [cyc, templates] = await Promise.all([getKpiCycle(), listKpiTemplates()]);
         const [live, next] = await Promise.all([getKpiAssignment(userId, cyc.period), getKpiAssignment(userId, cyc.next)]);
@@ -110,11 +132,29 @@ export function useWeek1Setup(userId: string | undefined): Week1Setup {
   }, [userId, may]);
 
   useEffect(() => {
-    setRows({ kpi: blank(may.kpi), salary: blank(may.salary), shift: blank(may.shift) });
+    const first = userId ? 'loading' : 'idle';
+    setRows({ kpi: blank(may.kpi, first), salary: may.salarySees || userId ? blank(may.salary, first) : blank(false, 'no_access'), shift: blank(may.shift, first) });
     setSalary(null);
     if (!userId) return;
     for (const k of SETUP_KINDS) void reload(k);
   }, [userId, may, reload]);
 
   return { rows, reload, cycle, salary };
+}
+
+/** The template a pending choice names (the picker's value: a KPI template id, a salary template code, a shift id). */
+export function pendingIdOf(pending: PendingSetup | undefined, kind: SetupKind): string | undefined {
+  if (kind === 'kpi') return pending?.kpi?.templateId;
+  if (kind === 'salary') return pending?.salary?.templateCode;
+  return pending?.shift?.shiftTemplateId;
+}
+
+/**
+ * Week 1's "n of 3 set up": on a template now (with an account), or chosen for when they join (a choice that could
+ * not be applied is not set up). `known` once what they are on now has loaded (always, before an account).
+ */
+export function setupDoneCount(setup: Week1Setup, hasAccount: boolean, pending: PendingSetup | undefined): { done: number; known: boolean } {
+  const chosen = (k: SetupKind) => Boolean(pending?.[k]) && !pending?.[k]?.error;
+  const done = SETUP_KINDS.filter((k) => chosen(k) || (hasAccount && setup.rows[k].status === 'ready' && setup.rows[k].assigned)).length;
+  return { done, known: !hasAccount || SETUP_KINDS.every((k) => setup.rows[k].status !== 'loading') };
 }

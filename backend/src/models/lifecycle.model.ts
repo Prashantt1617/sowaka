@@ -310,6 +310,22 @@ export interface CandidateDetails {
   workEmail?: string;
 }
 
+export type PendingSetupKind = 'kpi' | 'salary' | 'shift';
+/** One pending choice: who chose it and when, and why applying it failed (kept until it applies or HR changes it). */
+interface PendingChoice {
+  /** The template's name when chosen (the row shows it without loading the templates). */
+  name: string;
+  by: { userId: string; name: string };
+  at: Date;
+  error?: string;
+  failedAt?: Date;
+}
+export interface PendingSetup {
+  kpi?: PendingChoice & { templateId: string };
+  salary?: PendingChoice & { templateCode: string; annualCtcPaise: number; effectiveFrom: string };
+  shift?: PendingChoice & { shiftTemplateId: string };
+}
+
 export interface Journey {
   id: string;
   org: string;
@@ -339,6 +355,14 @@ export interface Journey {
   employeeType?: OfferFields['employeeType'];
   /** Onboarding: the app account HR made before joining ("Generate app access"); Mark joined uses it instead of making one. */
   appAccess?: { userId: string; createdAt: Date; byUserId: string; byName: string; emailedTo?: string; emailedAt?: Date };
+  /**
+   * Onboarding, Week 1's HR setup chosen before the joiner has an account (services/lifecycle/pendingSetup.ts):
+   * the KPI, salary and shift templates to put them on. Applied through the template pages' own assigns when
+   * the account is made (Generate app access, or Mark joined), then cleared; one that fails stays, with `error`.
+   */
+  pendingSetup?: PendingSetup;
+  /** What a pending setup choice became when it was applied (who, when, the template). */
+  setupApplied?: Partial<Record<PendingSetupKind, { name: string; userId: string; at: Date }>>;
   plant?: PlantState;
   /** Day-1 pass content HR fills (shown at Tj − 7). */
   day1Pass?: Day1Pass;

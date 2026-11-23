@@ -38,7 +38,7 @@ import { downloadFile } from './DocumentParts';
 import { pctColour, weekOf } from './boardModel';
 import { preboardingHref } from './preboardingLinks';
 import { AssignSetupDialog, HrSetupRows } from './Week1Setup';
-import { SETUP_KINDS, useWeek1Setup } from './week1SetupData';
+import { SETUP_KINDS, setupDoneCount, useWeek1Setup } from './week1SetupData';
 import type { SetupKind } from './week1SetupData';
 
 const TASK_STATUS: Record<string, { label: string; tone: { bg: string; fg: string } }> = {
@@ -231,13 +231,15 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
   const live = tasks.filter((t) => t.status !== 'cancelled' && JOINER_OWNS.has(t.ownerRole));
   const probationTotal = (journey.probation?.months ?? 0) + (journey.probation?.extendedBy ?? 0);
   const preTasks = live.filter((t) => t.phase === 'pre_boarding');
-  // Week 1: HR's setup for someone who has joined (what they are on now, loaded once they have a userId)
-  // and the IT access rows. The joiner's own week-1 tasks are theirs in the app, not listed here.
-  const joined = Boolean(journey.userId);
-  const setup = useWeek1Setup(journey.userId);
+  // Week 1: HR's setup (what they are on now, loaded once they have an account: joined, or app access given; before
+  // that, what HR chose for when they join, `journey.pendingSetup`) and the IT access rows. The joiner's own week-1
+  // tasks are theirs in the app, not listed here.
+  const accountId = journey.userId ?? journey.appAccess?.userId;
+  const hasAccount = Boolean(accountId);
+  const setup = useWeek1Setup(accountId);
   const devices = tasks.filter((t) => t.status !== 'cancelled' && isDeviceTask(t));
-  const setupDone = SETUP_KINDS.filter((k) => setup.rows[k].status === 'ready' && setup.rows[k].assigned).length;
-  const setupKnown = SETUP_KINDS.every((k) => setup.rows[k].status !== 'loading');
+  const { done: setupDone, known: setupKnown } = setupDoneCount(setup, hasAccount, journey.pendingSetup);
+  const setupLine = setupKnown ? `${setupDone} of ${SETUP_KINDS.length} set up` : '';
   const probTasks = live.filter((t) => t.phase === 'probation');
   const monthOneTasks = probTasks.filter((t) => t.month === 1);
   const finalTasks = probTasks.filter((t) => !t.month || (probationTotal > 1 && t.month >= probationTotal));
@@ -279,9 +281,10 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
         if (state === 'done') return { text: `Joined ${shortDay(journey.tj)}` };
         return { text: `${journey.tj ? `${shortDay(journey.tj)}${state === 'current' ? ` · ${weekOf(journey.tj)}` : ''}` : 'Not set'}${state === 'current' && reviewQueue ? ` · ${reviewQueue} to review` : ''}` };
       case 3: {
-        if (state === 'todo') return { text: 'Starts on the joining day' };
+        // Choices made before joining count as set up.
+        if (state === 'todo') return { text: setupDone ? `Starts on the joining day · ${setupLine}` : 'Starts on the joining day' };
         const parts = [
-          joined && setupKnown ? `${setupDone} of ${SETUP_KINDS.length} set up` : '',
+          setupLine,
           devices.length ? `${doneOf(devices)} of ${devices.length} devices and accesses` : '',
         ].filter(Boolean);
         return { text: parts.join(' · ') || 'Nothing waiting', red: state === 'current' && devices.some(isDelayed) };
@@ -434,7 +437,7 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
       case 3:
         return (
           <>
-            <HrSetupRows setup={setup} joined={joined} busy={Boolean(busy)} onAssign={(what) => setDialog({ kind: 'assign', what })} />
+            <HrSetupRows setup={setup} hasAccount={hasAccount} pending={journey.pendingSetup} busy={Boolean(busy)} onAssign={(what) => setDialog({ kind: 'assign', what })} />
             {devices.length > 0 && <DevicesBlock key={journey.id} tasks={devices} busy={busy} onAction={(task, action) => setDialog({ kind: 'task', task, action })} />}
             {reviewRows(3)}
             {journey.day1Feeling && <Facts rows={[['How was Day 1', `${DAY1_FEELING[journey.day1Feeling.answer] ?? journey.day1Feeling.answer} · ${shortDay(journey.day1Feeling.at)}`]]} />}
@@ -544,9 +547,10 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
           onConfirm={async (note) => { await decideDateRequest(dialog.id, dialog.decision, note || undefined); closeDialog(); flash(dialog.decision === 'approve' ? 'New joining date approved' : 'Request declined'); onChanged(); }} />
       )}
       {dialog?.kind === 'file' && <FilePreview fileId={dialog.id} name={dialog.name} onClose={closeDialog} />}
-      {dialog?.kind === 'assign' && journey.userId && (
-        <AssignSetupDialog kind={dialog.what} setup={setup} userId={journey.userId} name={name} offerCtc={offer?.fields.ctc} tj={journey.tj ?? offer?.fields.tj}
-          onClose={closeDialog} onDone={(message) => { closeDialog(); flash(message); }} />
+      {dialog?.kind === 'assign' && (
+        <AssignSetupDialog kind={dialog.what} setup={setup} journeyId={journey.id} userId={accountId} pending={journey.pendingSetup} name={name}
+          offerCtc={offer?.fields.ctc} tj={journey.tj ?? offer?.fields.tj}
+          onClose={closeDialog} onDone={(message, changed) => { closeDialog(); flash(message); if (changed) onChanged(); }} />
       )}
     </div>
   );

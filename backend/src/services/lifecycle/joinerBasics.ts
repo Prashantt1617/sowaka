@@ -16,6 +16,7 @@ import { isDateKey } from './dueRules';
 import { companyDisplayName, companyOf, mails, sendLifecycleEmail } from './emails';
 import { moveTj } from './engine';
 import { LifecycleOfferError } from './files';
+import { applyPendingSetup } from './pendingSetup';
 
 const EMPLOYEE_TYPES = ['full_time', 'intern', 'contract'] as const;
 type EmployeeType = (typeof EMPLOYEE_TYPES)[number];
@@ -161,6 +162,8 @@ export async function grantAppAccess(hr: { userId: string; name: string }, journ
   const userId = await createJoinerAccount(hr, saved, { workEmail, ...(employeeId ? { employeeId } : {}) });
   let appAccess: NonNullable<Journey['appAccess']> = { userId, createdAt: now, byUserId: hr.userId, byName: hr.name };
   await journeys().updateOne({ id: journey.id }, { $set: { appAccess, updatedAt: now } });
+  // Week 1's setup HR chose before the account existed: applied to it now (a failure stays pending, never blocks).
+  await applyPendingSetup(journey.id, userId, now);
   // Mark joined's welcome mail (download links, sign in with the work email), worded for before Day 1: to the
   // personal address they read, the work address copied (it may not be set up yet). EMAIL_ORGS still applies.
   const to = journey.candidate?.personalEmail || workEmail;
@@ -171,5 +174,6 @@ export async function grantAppAccess(hr: { userId: string; name: string }, journ
     appAccess = { ...appAccess, emailedTo: to.toLowerCase(), emailedAt: new Date() };
     await journeys().updateOne({ id: journey.id }, { $set: { 'appAccess.emailedTo': appAccess.emailedTo, 'appAccess.emailedAt': appAccess.emailedAt } });
   } catch { /* a mail that fails never undoes the account; no emailedAt then */ }
-  return { ...saved, appAccess };
+  const after = await journeys().findOne({ id: journey.id }, { projection: { _id: 0, pendingSetup: 1, setupApplied: 1 } });
+  return { ...saved, appAccess, pendingSetup: after?.pendingSetup, setupApplied: after?.setupApplied };
 }
