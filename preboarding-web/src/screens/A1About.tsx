@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { portal } from '../api/portal';
+import { mediaUrl } from '../api/client';
 import type { JoiningDetails, MeetItem } from '../api/types';
 import { FigLoading, FigPage } from '../components/fig/FigShell';
 import { useMe } from '../session';
@@ -17,7 +18,7 @@ const SEEN_ITEM: Partial<Record<StoryKey, string>> = { welcome: 'company_video',
  * The company's policies as the app reads them (the server sends them with their text);
  * an older server sent only "Title: summary" lines, read as titles without text.
  */
-const policiesOf = (item?: MeetItem): PortalPolicy[] => item?.policies?.length
+export const policiesOf = (item?: MeetItem): PortalPolicy[] => item?.policies?.length
   ? item.policies
   : (item?.text ?? '').split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const at = l.indexOf(': '); return at > 0 ? { key: '', title: l.slice(0, at), summary: l.slice(at + 2), body: '' } : { key: '', title: l, summary: '', body: '' }; });
 
@@ -39,16 +40,25 @@ export function A1About() {
   const managerName = j?.manager?.name ?? note?.authorName;
   // The template's pre-boarding watch list (videos, pictures, text cards), shown first.
   const watch = useMemo(() => (items ?? []).filter((x) => x.kind === 'watch'), [items]);
+  // Warm the watch list as soon as it arrives: pictures into the browser cache, videos' first bytes,
+  // so each story opens without waiting (the links are cacheable and stay the same all day).
+  useEffect(() => {
+    const held: Array<HTMLImageElement | HTMLVideoElement> = [];
+    for (const w of watch) {
+      if (w.mediaType === 'image' && w.imageUrl) { const img = new Image(); img.src = mediaUrl(w.imageUrl); held.push(img); }
+      if (w.mediaType === 'video' && w.videoUrl) { const v = document.createElement('video'); v.preload = 'auto'; v.muted = true; v.src = mediaUrl(w.videoUrl); v.load(); held.push(v); }
+    }
+    return () => { for (const el of held) if (el instanceof HTMLVideoElement) { el.removeAttribute('src'); el.load(); } };
+  }, [watch]);
   const stories = useMemo(() => {
     // The watch list, then the design's order (App · Story · 1 Culture … 5 Policies), then the role.
     const out: StoryKey[] = [...watch.map((w) => w.id as StoryKey), 'welcome'];
     if (managerName) out.push('manager');
     if (managerName || j?.buddy) out.push('team');
     out.push('day1');
-    if (policies.length) out.push('policies');
     if (role) out.push('role');
     return out;
-  }, [watch, managerName, j?.buddy, policies.length, role]);
+  }, [watch, managerName, j?.buddy, role]);
 
   const markSeen = useCallback((k: StoryKey) => {
     const id = k.startsWith('watch:') ? k : SEEN_ITEM[k as keyof typeof SEEN_ITEM];

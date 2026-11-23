@@ -196,3 +196,9 @@ export const OFFER_FIELD_LABEL: Record<keyof OfferFields, string> = {
 /** "Yearly CTC, Offer valid till" for a revision's changed fields (an unknown key shows as it is). */
 export const changedFieldsText = (keys: readonly string[]) =>
   keys.map((k) => OFFER_FIELD_LABEL[k as keyof OfferFields] ?? k).join(', ');
+
+/** Ending an offer before joining: declined while it waits for a reply, not joining once accepted (null: nothing to end). */
+export type CloseOfferAction = 'decline' | 'not-joining';
+export function closeActionOf(status: string): CloseOfferAction | null {
+  return status === 'offer_sent' ? 'decline' : ['accepted', 'finalised', 'active', 'docs_approved'].includes(status) ? 'not-joining' : null;
+}

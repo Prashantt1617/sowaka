@@ -1,9 +1,10 @@
 // The pieces of a person's profile page, shared by the Employee profile and a candidate's
 // pre-boarding profile so the two look the same: the identity header with its facts, the
-// section cards with their label/value rows, and the documents list.
+// section cards with their label/value rows, the documents list and the org chart's nodes.
 import type { ReactNode } from 'react';
 import { IconFile } from '../icons';
 import { Avatar, Pill, Skeleton, SkeletonFrame } from '../ui';
+import { PersonAvatar } from '../PersonAvatar';
 import { FileChips } from './lifecycle/preboardingParts';
 import type { FileLinkItem } from './lifecycle/preboardingParts';
 import { Field, inputStyle } from './AddEmployeeWizard';
@@ -171,5 +172,45 @@ export function LockedField({ label, value, title = 'This field can\'t be edited
         <span style={{ display: 'inline-flex', color: 'var(--ink-4)' }} aria-label={title}><PdLock size={14} /></span>
       </div>
     </Field>
+  );
+}
+
+// —— Org-chart pieces ————————————————————————————————————————————————————
+/** Who a node shows: an employee from the roster, or a candidate not on it yet. */
+export interface OrgPerson { name: string; role?: string; photoUrl?: string }
+
+export function Connector() {
+  return <div className="pd-ovline" />;
+}
+
+export function OrgNode<T extends OrgPerson>({ emp, caption, highlight, onOpen }: { emp: T; caption?: string; highlight?: boolean; onOpen?: (e: T) => void }) {
+  const clickable = !highlight && !!onOpen;
+  return (
+    <button
+      onClick={clickable ? () => onOpen!(emp) : undefined}
+      className={highlight ? 'pd-onode me' : 'pd-onode'}
+      style={{ cursor: clickable ? 'pointer' : 'default', padding: highlight ? '4px 14px' : undefined }}
+    >
+      <Avatar name={emp.name} size={34} font={14} src={emp.photoUrl} />
+      <span className="txt">
+        <b>{emp.name}</b>
+        <span className="sub">{emp.role}</span>
+      </span>
+      {caption && <span className={highlight ? 'cnt' : 'cap'} style={highlight ? { background: 'none', fontSize: 12, marginLeft: 'auto', paddingLeft: 18 } : undefined}>{caption}</span>}
+    </button>
+  );
+}
+
+// Manager named on the record but not found in the roster.
+export function GhostNode({ name, caption }: { name: string; caption: string }) {
+  return (
+    <div className="pd-onode ghost">
+      <PersonAvatar name={name} size={44} font={15} />
+      <span className="txt">
+        <b>{name}</b>
+        <span className="sub">Manager</span>
+      </span>
+      <span className="cap">{caption}</span>
+    </div>
   );
 }

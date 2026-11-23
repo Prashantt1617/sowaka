@@ -84,12 +84,11 @@ export function A1Offer() {
                       {view.acceptedAt && <span className="fig-label fig-t3">{fmtWeekday(view.acceptedAt)}</span>}
                     </div>
                   ) : (
-                    // Web · 5: a canvas chip with a tick, and "You replied yes on …" beside it.
+                    // Web · 5: a canvas chip with a tick (HR confirms acceptance, so no "You replied yes" line).
                     <div className="fig-offer-card__top fig-offer-card__top--web">
                       {accepted
                         ? <span className="fig-chip g1-chip-web"><FigCheckSmall />Accepted</span>
                         : <span className="fig-chip g1-chip-web g1-chip-web--grey">{view.state === 'replaced' ? 'Replaced by a new version' : 'Sent'}</span>}
-                      {view.acceptedAt && <span className="fig-label fig-t3">You replied yes on {fmtWeekday(view.acceptedAt)}</span>}
                     </div>
                   )}
                   <div className="fig-offer-card__file">
