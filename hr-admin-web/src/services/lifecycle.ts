@@ -680,6 +680,8 @@ export interface PreboardingBasicInput {
   tj?: string;
 }
 export interface PreboardingBasic extends PreboardingBasicInput {
+  /** Who they will report to (the journey's manager, from the offer); read-only here. */
+  reportingManager?: { userId: string; name: string };
   /** Their app account, once HR created it from this card. */
   appAccess?: { userId: string; createdAt: string };
 }
