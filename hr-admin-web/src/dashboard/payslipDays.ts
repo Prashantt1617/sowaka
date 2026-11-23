@@ -17,7 +17,9 @@ const linesDays = (inputs: Inputs, label: string) =>
 
 /** The days before joining and after leaving; none when HR typed the loss of pay. */
 export function notEmployedOf(inputs: Inputs): { beforeJoining: number; afterLeaving: number; days: number } {
-  if (!inputs || inputs.lopEnteredByHr) return { beforeJoining: 0, afterLeaving: 0, days: 0 };
+  // HR's typed figure counts too (a company paying joiners by the calendar month types it): of the
+  // days it leaves unpaid, those up to the days before joining / after leaving are not employed, the rest LOP.
+  if (!inputs) return { beforeJoining: 0, afterLeaving: 0, days: 0 };
   const lop = Math.max(0, inputs.lopDays ?? 0);
   const beforeJoining = Math.min(linesDays(inputs, BEFORE_JOINING), lop);
   const afterLeaving = Math.min(linesDays(inputs, AFTER_LEAVING), lop - beforeJoining);
