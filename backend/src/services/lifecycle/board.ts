@@ -16,8 +16,8 @@ import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
 import { savePfNominees, setPaymentDetails } from '../employeePayment.service';
 import { companyTimeZone, isDateKey, keyOfDay, todayKey } from './dueRules';
 import {
-  ACTIVE_STATUSES, AGENDA_TASK_KEYS, LifecycleError, deriveJourney, finishTaskById, guessAgendaTask, isCounted, isJoined, loadJourney, namesOf, reassignManager,
-  refreshJourney, rematerialiseDraft, reopenTaskById, sanitiseJourney, syncDay1Meetings, taskLate, taskView, tasksOf, tell, completeTask,
+  ACTIVE_STATUSES, AGENDA_TASK_KEYS, LifecycleError, deriveJourney, finishTaskById, guessAgendaTask, isCounted, isJoined, loadJourney, moveJourneyToTemplate, namesOf, reassignManager,
+  refreshJourney, rematerialiseDraft, reopenTaskById, type TemplateMove, sanitiseJourney, syncDay1Meetings, taskLate, taskView, tasksOf, tell, completeTask,
   type AgendaTaskKey, type Derived, type TaskView,
 } from './engine';
 import { journeyDocumentsView } from './documents';
@@ -612,6 +612,39 @@ export async function updateJourneyByHr(org: string, journeyId: string, body: Re
   }
   const fresh = await refreshJourney(journeyId);
   return { journey: sanitiseJourney(fresh) };
+}
+
+/**
+ * POST /admin/lifecycle/templates/:id/journeys — Templates › Edit joiners: moves joiners onto this onboarding
+ * template. A joiner is always on exactly one template, so this is also how one comes off another. A draft
+ * takes it the way its panel's switch does (updateJourneyByHr: its tasks made again); a joiner whose offer
+ * has gone keeps what is done and gets the new template's steps from where they are (engine.moveJourneyToTemplate).
+ */
+export async function moveJourneysToTemplate(org: string, templateId: string, body: Record<string, unknown>) {
+  const raw = body.journeyIds;
+  if (!Array.isArray(raw) || !raw.length || raw.some((x) => typeof x !== 'string' || !x)) throw new LifecycleError(400, 'journeyIds is a list of joiners');
+  const ids = [...new Set(raw as string[])];
+  if (ids.length > 200) throw new LifecycleError(400, 'At most 200 joiners at a time');
+  const template = await templateForJourney(org, 'onboarding', templateId);
+  const rows = await journeys().find({ org, id: { $in: ids } }, { projection: { _id: 0, id: 1, kind: 1, status: 1, closedAt: 1, templateId: 1, candidate: 1 } }).toArray();
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  for (const id of ids) {
+    const r = byId.get(id);
+    if (!r || r.kind !== 'onboarding') throw new LifecycleError(404, 'Joiner not found');
+    if (r.closedAt) throw new LifecycleError(409, `${r.candidate?.name ?? 'This joiner'}'s onboarding is closed`);
+  }
+  const moved: Array<{ journeyId: string; fromTemplateId: string } & Partial<TemplateMove>> = [];
+  for (const id of ids) {
+    const r = byId.get(id)!;
+    if (r.templateId === template.id) continue;
+    if (r.status === 'draft') {
+      await updateJourneyByHr(org, id, { templateId: template.id });
+      moved.push({ journeyId: id, fromTemplateId: r.templateId });
+    } else {
+      moved.push({ journeyId: id, fromTemplateId: r.templateId, ...(await moveJourneyToTemplate(id, template)) });
+    }
+  }
+  return { template: { id: template.id, name: template.name }, moved, alreadyOn: ids.length - moved.length };
 }
 
 /** POST /admin/lifecycle/journeys/:id/tasks/:taskId — done, reopen or skip, by HR. */

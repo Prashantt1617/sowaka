@@ -4,7 +4,7 @@ import { requireAuth } from '../middleware/auth.middleware';
 import { LIFECYCLE_TABS } from '../models/dashboard-tabs';
 import {
   actOnTaskByHr, decideBankPfRequest, decisionWithoutPay, journeyForViewer, journeyPanel, lifecycleViewer, onboardingBoard, onboardingCounts, closedJourneys, boardJoiners,
-  surveyAnswers, updateJourneyByHr,
+  moveJourneysToTemplate, surveyAnswers, updateJourneyByHr,
 } from '../services/lifecycle/board';
 import { nudgeTask } from '../services/lifecycle/nudges';
 import { LifecycleError, lifecycleEnabled, loadJourney, requireLifecycle } from '../services/lifecycle/engine';
@@ -122,8 +122,10 @@ lifecycleAdminRouter.post('/templates/:id/media', (req, res, next) => mediaUploa
   if (error) { res.status(400).json({ error: error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE' ? 'A video can be up to 50 MB' : 'The upload did not work' }); return; }
   next();
 }), lifecycleHandler(async (req) => uploadTemplateMedia(caller(req).org, String(req.params.id), req.file as never), 201));
-// S3's Joiners tab: who follows this template (listed and opened, never moved: a journey keeps its snapshot).
-lifecycleAdminRouter.get('/templates/:id/journeys', lifecycleHandler(async (req) => templateJourneys(caller(req).org, String(req.params.id))));
+// A template's Joiners tab: who follows it (?scope=all: every open journey of its kind, for Edit joiners).
+lifecycleAdminRouter.get('/templates/:id/journeys', lifecycleHandler(async (req) => templateJourneys(caller(req).org, String(req.params.id), req.query.scope)));
+// Edit joiners: move joiners onto this onboarding template ({ journeyIds }); off another is onto this one.
+lifecycleAdminRouter.post('/templates/:id/journeys', lifecycleHandler(async (req) => moveJourneysToTemplate(caller(req).org, String(req.params.id), body(req))));
 lifecycleAdminRouter.get('/templates/:id', lifecycleHandler(async (req) => ({ template: await getTemplate(caller(req).org, String(req.params.id)) })));
 lifecycleAdminRouter.put('/templates/:id', lifecycleHandler(async (req) => {
   const me = caller(req);

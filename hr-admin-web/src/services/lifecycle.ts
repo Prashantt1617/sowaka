@@ -449,6 +449,11 @@ export interface JourneyDetail {
 export interface TemplateJourney {
   journeyId: string; kind: LifecycleKind; name: string; designation?: string; department?: string; userId?: string;
   status: string; tj?: string; tl?: string; tab?: BoardTab; column?: BoardColumn;
+  /** The joiner's stage in the app (after joining). */
+  stage?: string;
+  location?: string; employeeId?: string; managerUserId?: string; managerName?: string;
+  /** The template the journey is on (with ?scope=all, not always this one). */
+  templateId: string; templateName: string;
 }
 
 // —— Calls ———————————————————————————————————————————————————————————————
@@ -511,7 +516,12 @@ export const decideBankPfRequest = (id: string, decision: 'approve' | 'decline',
   api<{ journey: JourneyView }>(`${L}/journeys/${id}/bank-pf-request`, json('POST', { decision, ...(note ? { note } : {}) })).then((r) => r.journey);
 /** The sidebar's Onboarding badge: joiners who need HR now or are late. */
 export const getLifecycleCounts = () => api<{ onboarding: { badge: number; needsYou: number; late: number } }>(`${L}/counts`);
-export const getTemplateJourneys = (id: string) => api<{ journeys: TemplateJourney[] }>(`${L}/templates/${id}/journeys`).then((r) => r.journeys);
+/** Who follows a template; `all`: every open journey of its kind, each naming its template (Edit joiners). */
+export const getTemplateJourneys = (id: string, scope?: 'all') => api<{ journeys: TemplateJourney[] }>(`${L}/templates/${id}/journeys${qs({ scope })}`).then((r) => r.journeys);
+/** Edit joiners: moves joiners onto this onboarding template (a joiner is always on exactly one). */
+export const moveJourneysToTemplate = (id: string, journeyIds: string[]) =>
+  api<{ template: { id: string; name: string }; moved: Array<{ journeyId: string; fromTemplateId: string; kept?: number; added?: string[]; cancelled?: string[] }>; alreadyOn: number }>(
+    `${L}/templates/${id}/journeys`, json('POST', { journeyIds }));
 export const getProbation = (id: string) => api<{ months: ProbationMonthDTO[]; decision?: ConfirmationDecision }>(`${L}/journeys/${id}/probation`);
 export const recordDecision = (id: string, body: Omit<ConfirmationDecision, 'decidedAt' | 'decidedByName' | 'letterId' | 'revealedAt'>) =>
   api<{ decision: ConfirmationDecision }>(`${L}/journeys/${id}/decision`, json('POST', body)).then((r) => r.decision);

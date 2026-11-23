@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../../store';
-import { PageActions, ListPending, SkeletonLines } from '../../ui';
+import { PageActions, ListPending, SkeletonLines, StatusTabs } from '../../ui';
 import { SEG, btn, btnClass, segBtn } from '../../ds';
 import { IconEye } from '../../icons';
 import { setLeaveGuard, usePageHead } from '../../pageHead';
@@ -22,8 +22,10 @@ import type {
 import { Modal } from './shared';
 import { areaStyle, errText, inputStyle, longDay, todayKey } from './format';
 import { LETTER_CSS, LETTER_TITLE, labelledBody, letterDocument } from './letterDoc';
-import { useCompanyName } from './hooks';
+import { JOINERS_TAB_LABELS, useCompanyName, useTemplateJoiners } from './hooks';
 import { EmployeePreview } from './EmployeePreview';
+import { TemplateJoiners } from './TemplateJoiners';
+import type { JoinersTab } from './hooks';
 import { Block, Glyph, GroupHead, InfoNote, InfoToggle, ItemRow, MediaPlayer, NameDropdown, Overlay, RadioPills, RemoveButton, SidePanel, SOFT_SEG, softSegBtn, TileFace, TileStrip } from './designParts';
 import {
   BACKGROUNDS, GLYPH, MEET_LABEL, MEET_WITH, ROLE_LABEL, STAGES, TOUR, addBtn, checkinWhen, chip, pickFile, rowLine, smallBtn, stageName,
@@ -236,6 +238,9 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
   const [tt, setTt] = useState<TeamEdit | null>(null);
   const [preview, setPreview] = useState(false);
   const [pvStage, setPvStage] = useState<DesignStage>('d1');
+  // Template, Joiners and Edit joiners (the people on it, as Shift templates have them).
+  const [tab, setTab] = useState<JoinersTab>('template');
+  const joiners = useTemplateJoiners(id);
 
   useEffect(() => {
     let live = true;
@@ -463,12 +468,28 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
     return <><span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink-2)' }}>{label}</span><NameDropdown label={label} value={assignees[key] ?? ''} options={opts} placeholder={ph} onPick={(v) => setAssignee(key, v)} /></>;
   };
 
+  const tabs = (
+    <div style={{ justifySelf: 'start' }}>
+      <StatusTabs<JoinersTab> options={['template', 'joiners', 'edit']} active={tab} onSelect={setTab} labels={JOINERS_TAB_LABELS} counts={{ joiners: joiners.count }} />
+    </div>
+  );
+  // The people on it: unsaved edits to the template wait in the Template tab.
+  if (tab !== 'template') {
+    return (
+      <div style={{ display: 'grid', gap: 14, maxWidth: 1180 }}>
+        {tabs}
+        <TemplateJoiners id={id} name={d.name} tab={tab} data={joiners} />
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'grid', gap: 14, maxWidth: 1180 }}>
       <PageActions>
         <button type="button" className={btnClass()} style={btn()} onClick={() => setPreview(true)}><IconEye size={16} stroke="currentColor" />Employee preview</button>
         <button type="button" className={btnClass()} style={btn()} onClick={() => void save()} disabled={saving}>{saving ? 'Saving…' : 'Save template'}</button>
       </PageActions>
+      {tabs}
 
       {/* Pre-boarding */}
       <section className="pd-card" style={card}>
