@@ -235,13 +235,15 @@ class JoinerCheckinRow {
   final String step;
   final int questions;
 
-  /// 'locked' | 'open' | 'sent'.
+  /// 'locked' | 'open' | 'sent' | 'closed' (its time passed unsent).
   final String state;
   final DateTime? opensOn;
   final DateTime? sentAt;
 
   bool get isOpen => state == 'open';
   bool get isSent => state == 'sent';
+  bool get isClosed => state == 'closed';
+  bool get isLocked => state == 'locked';
 }
 
 class CheckinQuestion {

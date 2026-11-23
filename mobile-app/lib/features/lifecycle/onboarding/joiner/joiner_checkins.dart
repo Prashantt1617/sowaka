@@ -26,7 +26,8 @@ class JoinerCheckinsScreen extends StatelessWidget {
     c: c,
     title: 'Check-ins',
     body: (d) {
-      final list = [...d.checkins.where((x) => x.isOpen), ...d.checkins.where((x) => x.isSent)];
+      // All of them in the template's order: sent and missed ones, the open one, and the ones to come (locked).
+      final list = [...d.checkins];
       return JPage(
         onRefresh: c.load,
         children: [
@@ -40,10 +41,10 @@ class JoinerCheckinsScreen extends StatelessWidget {
                   children: withLines([
                     for (final x in list)
                       Opacity(
-                        opacity: x.isSent ? 0.7 : 1,
+                        opacity: x.isOpen ? 1 : 0.7,
                         child: Semantics(
                           button: x.isOpen || x.isSent,
-                          label: '${x.title}. ${x.isSent ? 'Done' : '${plural(x.questions)} · about a minute. Start'}',
+                          label: '${x.title}. ${line(x)}${x.isOpen ? '. Start' : ''}',
                           excludeSemantics: true,
                           child: InkWell(
                             key: ValueKey('checkin-${x.id}'),
@@ -66,15 +67,17 @@ class JoinerCheckinsScreen extends StatelessWidget {
                                       children: [
                                         Text(x.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: OnbColors.text)),
                                         const SizedBox(height: 2),
-                                        Text(
-                                          x.isSent ? 'Done' : '${plural(x.questions)} · about a minute',
-                                          style: const TextStyle(fontSize: 12, color: OnbColors.text3),
-                                        ),
+                                        Text(line(x), style: const TextStyle(fontSize: 12, color: OnbColors.text3)),
                                       ],
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  if (x.isSent) const JDoneDot() else const JVerbPill('Start', filled: true),
+                                  if (x.isSent)
+                                    const JDoneDot()
+                                  else if (x.isOpen)
+                                    const JVerbPill('Start', filled: true)
+                                  else if (x.isLocked)
+                                    const Icon(Icons.lock_outline_rounded, size: 20, color: OnbColors.icon),
                                 ],
                               ),
                             ),
@@ -91,6 +94,17 @@ class JoinerCheckinsScreen extends StatelessWidget {
   );
 
   static String plural(int n) => '$n ${n == 1 ? 'question' : 'questions'}';
+
+  /// What a row says: done (and when), open, when it opens, or missed.
+  static String line(JoinerCheckinRow x) => x.isSent
+      ? 'Done${x.sentAt == null ? '' : ' · ${onbDay(x.sentAt!)}'}'
+      : x.isOpen
+      ? '${plural(x.questions)} · about a minute'
+      : x.isClosed
+      ? 'Missed'
+      : x.opensOn == null
+      ? 'Opens later'
+      : 'Opens ${onbDay(x.opensOn!)}';
 }
 
 /// One check-in, one question per screen: "k of N" and its bar, the
