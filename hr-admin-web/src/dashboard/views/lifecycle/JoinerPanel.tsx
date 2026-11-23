@@ -19,7 +19,7 @@ import { FinaliseDialog, MarkJoinedDialog } from './OfferDialogs';
 import { DecisionDialog } from './Probation';
 import { TAB_LABELS, columnLabel } from './boardModel';
 import { preboardingHref } from './preboardingLinks';
-import { CONFIRMED_STEP, JOINING_STEP, JourneySteps, OPEN, PRE_JOIN } from './JourneySteps';
+import { CONFIRMED_STEP, JourneySteps, OPEN, PRE_JOIN } from './JourneySteps';
 
 const STATUS_LABEL: Record<string, string> = {
   draft: 'Offer not sent yet', offer_sent: 'Offer sent', accepted: 'Accepted, portal not sent', finalised: 'Finalised, portal sent', active: 'On the portal',
@@ -127,7 +127,8 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   // The candidate replies to HR's email to accept; HR marks it accepted here, which sends the joining portal.
   else if (status === 'offer_sent' || status === 'accepted') primary = { label: 'Mark offer accepted', go: () => setDialog({ kind: 'finalise' }) };
   else if (canJoin) primary = { label: 'Mark joined', go: () => setDialog({ kind: 'joined' }) };
-  else if (reviewQueue > 0) primary = { label: 'Review documents', go: () => setOpenStep(JOINING_STEP) };
+  // Documents are reviewed on the employee profile page (its Documents card), opened in a new tab.
+  else if (reviewQueue > 0) primary = { label: 'Review documents', go: () => { window.open(preboardingHref(journey.id), '_blank', 'noopener'); } };
   else if (status === 'docs_approved' && !letters.some((l) => l.kind === 'appointment')) primary = { label: 'Make the appointment letter', go: () => openDocuments(s.setView, 'appointment', journey.id) };
   else if (journey.column === 'final_month' && !decision) primary = { label: 'Record decision', go: () => setDialog({ kind: 'decision' }) };
   // The confirmation letter is made and sent on the Confirmed step; an extension letter in Documents.
