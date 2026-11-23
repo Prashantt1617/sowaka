@@ -19,6 +19,7 @@ import { setPaymentDetails } from '../employeePayment.service';
 import type { AboutYou, CandidateDocument, CandidateProfile, Journey, ProfileApproval } from '../../models/lifecycle.model';
 import { documentListFor, journeyDocumentsView, type CandidateDocumentView } from './documents';
 import { completeTask } from './engine';
+import { syncJoiningFormCheck } from './hrReviews';
 import { LifecycleOfferError } from './files';
 import { aboutYouValue, bankPfStatus, PROFILE_OPTIONS, PROFILE_SECTION_TITLE, PROFILE_SECTIONS, RELATIONS, sectionStates, sectionValue, type ProfileSection } from './profile';
 import { sectionOfDocument } from './profileLock';
@@ -266,6 +267,8 @@ export async function approveProfileSection(hr: { userId: string; name: string }
   if (!done[section]) throw new LifecycleOfferError(409, 'This section isn\'t complete yet');
   const approval: ProfileApproval = { byUserId: hr.userId, byName: hr.name, at: now };
   await journeys().updateOne({ id: journey.id }, { $set: { [`profileApprovals.${section}`]: approval, updatedAt: now } });
+  // The approval that completes the joining form is HR's "Check the joining form" done.
+  await syncJoiningFormCheck(journey.id, hr);
   return hrProfileView({ ...journey, profileApprovals: { ...(journey.profileApprovals ?? {}), [section]: approval } });
 }
 
@@ -276,6 +279,7 @@ export async function unlockProfileSection(journey: Journey, sectionRaw: unknown
   if (approvals[section]) {
     delete approvals[section];
     await journeys().updateOne({ id: journey.id }, { $unset: { [`profileApprovals.${section}`]: '' }, $set: { updatedAt: now } });
+    await syncJoiningFormCheck(journey.id, null);
   }
   return hrProfileView({ ...journey, profileApprovals: approvals });
 }

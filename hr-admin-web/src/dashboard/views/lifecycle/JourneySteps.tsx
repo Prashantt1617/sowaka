@@ -7,22 +7,30 @@
 // (23 Nov) is HR's setup (KPI, salary and shift templates, assigned in place) and Devices and accesses,
 // not the joiner's own week-1 list (they do that in the app). Drawn by the joiner panel and by the
 // pre-boarding profile's Activity tab, identically.
-import { useEffect, useMemo, useState } from 'react';
+//
+// Reviews (24 Nov): a check or decision whose work lives elsewhere (Review documents, Check the joining
+// form, Check their payroll details, the confirmation review, approval, decision and letter) is a row with
+// Open, never Done / Skip: Open goes to where it is done (the profile page's card, the decision, the
+// letter), the action there marks it done (the server's `reviews`), and Open stays to look again. HR's, IT's
+// and Admin's own tasks (Devices and accesses) have no "not open yet": Done / Skip from the start, and
+// Delayed once their day has passed.
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useStore } from '../../store';
 import { canOpen, canSeePay } from '../../access';
 import { Pill } from '../../ui';
 import {
-  AGENDA_TASK_KEYS, AGENDA_TASK_LABEL, decideBankPfRequest, decideDateRequest, fetchLifecycleFile, journeyTaskAction, listTemplates, reviewDocument, updateJourney,
+  decideDateRequest, fetchLifecycleFile, journeyTaskAction, listTemplates, reviewDocument, updateJourney,
 } from '../../../services/lifecycle';
 import type {
-  BankPfRequest, CandidateDocumentView, ConfirmationDecision, Day1Pass, JourneyDetail, LetterView, OwnerRole, TaskView, TemplateListItem,
+  BankPfRequest, CandidateDocumentView, ConfirmationDecision, JourneyDetail, JourneyReview, LetterView, OwnerRole, TaskView, TemplateListItem,
 } from '../../../services/lifecycle';
 import { FilePreview, NoteDialog, OwnerChip, Pick, Field } from './shared';
 import { IconChevronDown, IconDownload } from '../../icons';
 import {
-  PHASES, addDays, areaStyle, changedFieldsText, daysTo, dayTime, decisionLine, dueText, errText, firstName, inputStyle, longDay, openDocuments, rupees, sectionLabel, shortDay, todayKey,
+  PHASES, changedFieldsText, daysTo, dayTime, decisionLine, dueText, errText, firstName, longDay, openDocuments, rupees, sectionLabel, shortDay, todayKey,
 } from './format';
+import { Day1PassBlock } from './Day1Pass';
 import { ConfirmationLetter } from './ConfirmationLetter';
 import { DecisionDialog, ProbationMonths, RecommendationNote } from './Probation';
 import { KIND_LABEL } from './letterDoc';
@@ -63,6 +71,10 @@ const JOINER_OWNS = new Set<OwnerRole>(['employee', 'manager_employee']);
  * Week 1's Devices and accesses: the template's access rows (Laptop, Work email, Office Wi-Fi, Sowaka Connect;
  * the server marks them), or on an older template the first-week tasks IT or Admin own (Set up laptop and login).
  */
+/** The tasks HR and the teams do from the dashboard: never "not open yet", Done / Skip from the start (the server agrees). */
+const STAFF_OWNS = new Set<OwnerRole>(['hr', 'it', 'admin', 'finance']);
+/** Not done and its day has passed: Delayed (a task HR or a team does, whether or not it has opened). */
+const isDelayed = (t: TaskView) => (OPEN.has(t.status) || (t.status === 'locked' && STAFF_OWNS.has(t.ownerRole))) && Boolean(t.dueAt) && t.dueAt!.slice(0, 10) < todayKey();
 const isDeviceTask = (t: TaskView) => t.section === 'access' || (!t.section && t.phase === 'first_week' && (t.ownerRole === 'it' || t.ownerRole === 'admin') && t.kind !== 'meeting');
 
 type StepDialog =
@@ -71,9 +83,11 @@ type StepDialog =
   | { kind: 'sendback'; doc: CandidateDocumentView }
   | { kind: 'date'; id: string; decision: 'approve' | 'decline'; day: string }
   | { kind: 'file'; id: string; name: string }
-  | { kind: 'bankpf'; decision: 'approve' | 'decline' }
   | { kind: 'assign'; what: SetupKind }
   | null;
+
+/** Each review's step on the journey. */
+const REVIEW_STEP: Record<JourneyReview['step'], number> = { joining_day: 2, week_1: 3, final_month: 6, confirmed: 7 };
 
 /** The joiner's answer to "How was today?" on "Day 1, done!", as the app labels it. */
 const DAY1_FEELING: Record<string, string> = { great: 'Great', okay: 'Okay', tough: 'Tough' };
@@ -140,12 +154,17 @@ const doneOf = (list: TaskView[]) => list.filter((t) => t.status === 'done' || t
  * Every step starts closed and opens with its chevron (several at once); `openStep` opens one from outside.
  *
  * `variant` only decides the Employee profile link on Joining day: 'panel' (the joiner panel) has it,
- * 'profile' (the pre-boarding profile's Activity tab) does not, being on that page already.
+ * 'profile' (the pre-boarding profile's Activity tab) does not, being on that page already; there a review's
+ * Open brings the page's own card into view (`onOpenCard`) instead of a new tab.
+ *
+ * One step is open at a time (opening one closes the other); all start closed.
  */
-export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel', openStep = null, onOpenStep, onDialogOpen }: {
+export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel', openStep = null, onOpenStep, onDialogOpen, onOpenCard }: {
   data: JourneyDetail; busy: string; setBusy: (key: string) => void; onChanged: () => void;
   variant?: 'panel' | 'profile';
   openStep?: number | null; onOpenStep?: (step: number) => void;
+  /** On the pre-boarding profile page: a review done on one of its cards opens that card in place (not a new tab). */
+  onOpenCard?: (card: string) => void;
   /** Told when a dialog opens or closes (the panel then leaves Escape to the dialog). */
   onDialogOpen?: (open: boolean) => void;
 }) {
@@ -174,22 +193,38 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
   const reviewQueue = documents.filter((d) => d.status === 'in_review').length;
   const decision: ConfirmationDecision | undefined = probation.decision ?? journey.probation?.decision;
   const revisionWaiting = Boolean(offer && offer.status === 'draft' && offer.version > 1);
-  const bankPf = journey.bankPfRequest && (journey.bankPfRequest.status === 'pending' || journey.bankPfRequest.decidedAt) ? journey.bankPfRequest : null;
   // The candidate's pre-boarding profile page: where HR approves each section (opens in a new tab). Not on that page itself.
   const profileHref = !onProfilePage && canOpen(user, 'preboarding') ? preboardingHref(journey.id) : undefined;
 
   // Where they are on the eight steps; the Confirmed column has every step done.
   const cur = STEP_AT[journey.column] ?? 0;
   const allDone = journey.column === 'confirmed';
-  // Every step starts closed (both screens, 23 Nov); its chevron opens and closes it, several may be open.
-  // The panel's own buttons (Review documents, Generate confirmation letter) open a step through `openStep`.
-  const [opened, setOpened] = useState<Set<number>>(() => new Set());
-  useEffect(() => { setOpened(new Set()); }, [journey.id]);
-  useEffect(() => { if (openStep !== null && openStep >= 0) setOpened((cur) => new Set(cur).add(openStep)); }, [openStep]);
+  // Every step starts closed (both screens, 23 Nov); its chevron opens it and closes the one open (24 Nov: one at a time).
+  // The panel's own buttons (Generate confirmation letter) open a step through `openStep`.
+  const [opened, setOpened] = useState<number | null>(null);
+  useEffect(() => { setOpened(null); }, [journey.id]);
+  useEffect(() => { if (openStep !== null && openStep >= 0) setOpened(openStep); }, [openStep]);
   const toggle = (i: number) => {
-    setOpened((cur) => { const next = new Set(cur); if (next.has(i)) next.delete(i); else next.add(i); return next; });
+    setOpened((cur) => (cur === i ? null : i));
     onOpenStep?.(-1); // the panel's buttons can open the same step again later
   };
+  // A review whose place is on the journey itself (the decision, the recommendation, the letter): its step opens
+  // and the place is brought into view.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [scrollTo, setScrollTo] = useState<{ place: string; n: number } | null>(null);
+  useEffect(() => {
+    if (!scrollTo) return undefined;
+    const t = window.setTimeout(() => {
+      const el = rootRef.current?.querySelector<HTMLElement>(`[data-place="${scrollTo.place}"]`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.style.transition = 'box-shadow .3s'; el.style.borderRadius = '12px';
+      el.style.boxShadow = '0 0 0 3px var(--accent)';
+      window.setTimeout(() => { el.style.boxShadow = 'none'; }, 2200);
+    }, 60);
+    return () => window.clearTimeout(t);
+  }, [scrollTo]);
+  const showPlace = (step: number, place: string) => { setOpened(step); setScrollTo((c) => ({ place, n: (c?.n ?? 0) + 1 })); };
 
   // The tasks of each step (the joiner's own only, lines and lists alike): pre-boarding under Joining day,
   // the first week under Week 1, probation by month.
@@ -249,7 +284,7 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
           joined && setupKnown ? `${setupDone} of ${SETUP_KINDS.length} set up` : '',
           devices.length ? `${doneOf(devices)} of ${devices.length} devices and accesses` : '',
         ].filter(Boolean);
-        return { text: parts.join(' · ') || 'Nothing waiting', red: state === 'current' && devices.some((t) => t.late && OPEN.has(t.status)) };
+        return { text: parts.join(' · ') || 'Nothing waiting', red: state === 'current' && devices.some(isDelayed) };
       }
       case 7:
         return state === 'done' || allDone ? { text: decision ? decisionLine(decision, pay) : 'Confirmed' } : { text: 'After probation' };
@@ -258,6 +293,36 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
         if (state === 'current') return leadLine;
         return { text: 'Not started' };
     }
+  };
+
+  // The reviews (the server's, each done where it lives) and where Open takes HR.
+  const reviews = data.reviews ?? [];
+  const canProfile = canOpen(user, 'preboarding');
+  const cardOf = (r: JourneyReview) => (r.place === 'documents' ? 'documents' : r.place === 'bank_pf' ? 'bank' : r.place === 'joining_form' ? r.focus ?? 'personal' : undefined);
+  const reviewOpen = (r: JourneyReview): ReviewOpen | null => {
+    const card = cardOf(r);
+    if (card) {
+      if (onProfilePage) return onOpenCard ? { go: () => onOpenCard(card), hint: 'Opens the card on this page' } : null;
+      return canProfile ? { href: preboardingHref(journey.id, card), hint: `Opens ${first}’s profile page on the card (new tab)` } : null;
+    }
+    if (r.place === 'decision') {
+      const canDecide = journey.column === 'final_month' && status !== 'confirmed';
+      return canDecide ? { go: () => setDialog({ kind: 'decision' }), hint: 'The decision: confirm, extend or not confirm' } : { go: () => showPlace(6, 'decision'), hint: 'The decision on Final month' };
+    }
+    // Theirs, in the app: Open shows what they sent once there is something to show.
+    if (r.place === 'recommendation') {
+      const sent = probation.recommendation ?? journey.probation?.recommendation ?? probation.hodApproval ?? journey.probation?.hodApproval;
+      return sent ? { go: () => showPlace(6, 'recommendation'), hint: 'What the manager and the head of department sent from the app' } : null;
+    }
+    if (r.place === 'letter') {
+      if (decision?.outcome === 'extend') return { go: () => openDocuments(s.setView, 'extension', journey.id), hint: 'The extension letter, in Documents' };
+      return { go: () => showPlace(7, 'letter'), hint: 'The confirmation letter on Confirmed' };
+    }
+    return null;
+  };
+  const reviewRows = (i: number) => {
+    const list = reviews.filter((r) => REVIEW_STEP[r.step] === i);
+    return list.length ? <div style={{ display: 'grid', gap: 8 }}>{list.map((r) => <ReviewRow key={r.key} review={r} open={reviewOpen(r)} />)}</div> : null;
   };
 
   const taskList = (list: TaskView[]) => <TasksByPhase tasks={list} busy={busy} onAction={(task, action) => setDialog({ kind: 'task', task, action })} />;
@@ -321,6 +386,7 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
             {cur >= 2 || allDone
               ? <ProfileRow text={profileText} pct={profilePct} href={profileHref} />
               : <Para>The employee profile opens once the offer is accepted and the joining portal is sent.</Para>}
+            {reviewRows(2)}
             {letters.length > 0 && <Sub>Letters</Sub>}
             {letters.length > 0 && <div style={{ display: 'grid', gap: 8 }}>{letters.map((l) => <LetterRow key={l.id} letter={l} name={name} onOpen={(id, n) => setDialog({ kind: 'file', id, name: n })} onDocuments={() => openDocuments(s.setView, l.kind, journey.id)} />)}</div>}
             {dateRequests.length > 0 && <Sub>Joining date requests{pendingDates ? ` · ${pendingDates} waiting for you` : ''}</Sub>}
@@ -339,7 +405,8 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
             {!closed && PRE_JOIN.has(status) && status !== 'draft' && (
               <>
                 <Sub>Day-1 pass</Sub>
-                <Day1PassEditor key={journey.id} value={journey.day1Pass} tj={journey.tj}
+                <Day1PassBlock key={journey.id} value={journey.day1Pass} tj={journey.tj} reporting={data.reporting}
+                  people={{ name, designation: journey.designation ?? offer?.fields.designation, department: journey.department ?? offer?.fields.department, managerName: journey.managerName, buddyName: journey.buddyName }}
                   onSave={(p) => run('pass', () => updateJourney(journey.id, { day1Pass: p }), 'Day-1 pass saved')} busy={busy === 'pass'} />
               </>
             )}
@@ -364,8 +431,8 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
           <>
             <HrSetupRows setup={setup} joined={joined} busy={Boolean(busy)} onAssign={(what) => setDialog({ kind: 'assign', what })} />
             {devices.length > 0 && <DevicesBlock key={journey.id} tasks={devices} busy={busy} onAction={(task, action) => setDialog({ kind: 'task', task, action })} />}
+            {reviewRows(3)}
             {journey.day1Feeling && <Facts rows={[['How was Day 1', `${DAY1_FEELING[journey.day1Feeling.answer] ?? journey.day1Feeling.answer} · ${shortDay(journey.day1Feeling.at)}`]]} />}
-            {bankPf && <><Sub>Bank and PF change</Sub><BankPfCard request={bankPf} pay={pay} busy={Boolean(busy)} onDecide={(d) => setDialog({ kind: 'bankpf', decision: d })} /></>}
           </>
         );
       case 4: return stepTasks(4, monthOneTasks, 'Month-1 goals and check-ins open after the first week.');
@@ -373,12 +440,15 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
       case 6:
         return (
           <>
+            {reviewRows(6)}
             {finalTasks.length > 0 && taskList(finalTasks)}
             {probation.months.length > 0 && <><Sub>Every month</Sub><ProbationMonths months={probation.months} total={probationTotal} /></>}
-            {decision && <div className="pd-note">{decisionLine(decision, pay)}</div>}
-            {!decision && <RecommendationNote recommendation={probation.recommendation ?? journey.probation?.recommendation} hodApproval={probation.hodApproval ?? journey.probation?.hodApproval} />}
-            {journey.column === 'final_month' && <span><button type="button" className="pd-btn sm" onClick={() => setDialog({ kind: 'decision' })}>{decision ? 'Change decision' : 'Record decision'}</button></span>}
-            {!finalTasks.length && !probation.months.length && !decision && <Para>The final check-in and the decision to confirm or extend.</Para>}
+            <div data-place="recommendation"><RecommendationNote recommendation={probation.recommendation ?? journey.probation?.recommendation} hodApproval={probation.hodApproval ?? journey.probation?.hodApproval} /></div>
+            <div data-place="decision" style={{ display: 'grid', gap: 8 }}>
+              {decision && <div className="pd-note">{decisionLine(decision, pay)}</div>}
+              {journey.column === 'final_month' && status !== 'confirmed' && <span><button type="button" className="pd-btn sm" onClick={() => setDialog({ kind: 'decision' })}>{decision ? 'Change decision' : 'Record decision'}</button></span>}
+            </div>
+            {!finalTasks.length && !probation.months.length && !decision && !reviews.some((r) => REVIEW_STEP[r.step] === 6) && <Para>The final check-in and the decision to confirm or extend.</Para>}
           </>
         );
       default: {
@@ -386,20 +456,23 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
         const confirmed = decision?.outcome === 'confirm' || status === 'confirmed';
         return decision || confirmed ? (
           <>
+            {reviewRows(7)}
             {decision && <Para>{decisionLine(decision, pay)}</Para>}
             {confirmed && (
-              <ConfirmationLetter journeyId={journey.id} name={name} letters={letters} decision={decision} busy={busy} setBusy={setBusy} flash={flash} onChanged={onChanged}
-                onView={(id, n) => setDialog({ kind: 'file', id, name: n })} />
+              <div data-place="letter">
+                <ConfirmationLetter journeyId={journey.id} name={name} letters={letters} decision={decision} busy={busy} setBusy={setBusy} flash={flash} onChanged={onChanged}
+                  onView={(id, n) => setDialog({ kind: 'file', id, name: n })} />
+              </div>
             )}
             {letters.filter((l) => l.kind === 'extension' || (!confirmed && l.kind === 'confirmation')).map((l) => <LetterRow key={l.id} letter={l} name={name} onOpen={(id, n) => setDialog({ kind: 'file', id, name: n })} onDocuments={() => openDocuments(s.setView, l.kind, journey.id)} />)}
           </>
-        ) : <Para>The confirmation letter goes out once the decision is recorded.</Para>;
+        ) : <>{reviewRows(7)}<Para>The confirmation letter goes out once the decision is recorded.</Para></>;
       }
     }
   };
 
   return (
-    <div>
+    <div ref={rootRef}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <h3 style={{ ...sectionLabel, margin: 0 }}>Journey</h3>
         <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{allDone ? 'Confirmed' : `Step ${Math.min(cur + 1, STEPS.length)} of ${STEPS.length}`}</span>
@@ -408,7 +481,7 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
         {STEPS.map((title, i) => {
           const state: 'done' | 'current' | 'todo' = allDone || i < cur ? 'done' : i === cur && !closed ? 'current' : 'todo';
           const line = sub(i, state);
-          const open = opened.has(i);
+          const open = opened === i;
           const tag = state === 'current' && i === JOINING_STEP && journey.tj ? weekOf(journey.tj) : '';
           const last = i === STEPS.length - 1;
           const head = (
@@ -465,15 +538,6 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
           onClose={closeDialog}
           onConfirm={async (note) => { await decideDateRequest(dialog.id, dialog.decision, note || undefined); closeDialog(); flash(dialog.decision === 'approve' ? 'New joining date approved' : 'Request declined'); onChanged(); }} />
       )}
-      {dialog?.kind === 'bankpf' && (
-        <NoteDialog
-          title={dialog.decision === 'approve' ? 'Approve the bank and PF change?' : 'Decline the bank and PF change'}
-          sub={dialog.decision === 'approve' ? 'The new details go into payroll from the next run. They are told in the app.' : 'Payroll keeps the details it has. They see your note in the app.'}
-          placeholder={dialog.decision === 'approve' ? 'Note (optional)' : 'What they should do instead (optional)'}
-          confirm={dialog.decision === 'approve' ? 'Approve' : 'Decline'} tone={dialog.decision === 'approve' ? 'primary' : 'danger'}
-          onClose={closeDialog}
-          onConfirm={async (note) => { await decideBankPfRequest(journey.id, dialog.decision, note || undefined); closeDialog(); flash(dialog.decision === 'approve' ? 'Bank and PF details updated' : 'Change declined'); onChanged(); }} />
-      )}
       {dialog?.kind === 'file' && <FilePreview fileId={dialog.id} name={dialog.name} onClose={closeDialog} />}
       {dialog?.kind === 'assign' && journey.userId && (
         <AssignSetupDialog kind={dialog.what} setup={setup} userId={journey.userId} name={name} offerCtc={offer?.fields.ctc} tj={journey.tj ?? offer?.fields.tj}
@@ -483,8 +547,11 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
   );
 }
 
-/** The week-1 bank / PF change the joiner asked for: payroll keeps the old details until someone with payroll access approves. */
-function BankPfCard({ request, pay, busy, onDecide }: { request: BankPfRequest; pay: boolean; busy: boolean; onDecide: (d: 'approve' | 'decline') => void }) {
+/**
+ * An older week-1 bank / PF change the joiner asked for (the profile page's Salary details shows it under Bank
+ * account and PF, where HR decides it): payroll keeps the old details until someone with payroll access approves.
+ */
+export function BankPfRequestCard({ request, pay, busy, onDecide }: { request: BankPfRequest; pay: boolean; busy: boolean; onDecide: (d: 'approve' | 'decline') => void }) {
   const c = request.changes;
   const pending = request.status === 'pending';
   return (
@@ -553,12 +620,53 @@ function TasksByPhase({ tasks, busy, onAction }: { tasks: TaskView[]; busy: stri
 
 type TaskAction = 'done' | 'skip' | 'reopen';
 
-/** One task: its title, owner, status and due day, and Done / Skip / Reopen. */
-function TaskRow({ task: t, busy, onAction }: { task: TaskView; busy: string; onAction: (t: TaskView, a: TaskAction) => void }) {
-  const st = TASK_STATUS[t.status] ?? TASK_STATUS.todo;
-  const open = OPEN.has(t.status);
+/** Where a review's Open goes: a link (the profile page, a new tab) or an action here. */
+type ReviewOpen = { href?: string; go?: () => void; hint: string };
+
+const ExternalIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
+);
+
+/**
+ * A review: what it is, whose (the manager's and the head of department's are theirs, in the app), Done with
+ * who and when or what it waits for, and Open to where it is done. No Done / Skip: the action there does it,
+ * and Open stays once it is done, to look again.
+ */
+function ReviewRow({ review: r, open }: { review: JourneyReview; open: ReviewOpen | null }) {
+  const tone = r.done ? TASK_STATUS.done.tone : TASK_STATUS.todo.tone;
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8, padding: '8px 0', borderTop: '1px solid var(--line)', opacity: t.status === 'locked' ? 0.6 : 1 }}>
+    <div data-review={r.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 12 }}>
+      <span style={{ flex: 1, minWidth: 0, display: 'grid', gap: 4 }}>
+        <b style={{ fontSize: 13, fontWeight: 500, overflowWrap: 'anywhere' }}>{r.title}</b>
+        <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+          {r.owner !== 'hr' && <OwnerChip role={r.owner} />}
+          <Pill label={r.done ? 'Done' : 'To do'} tone={tone} fontSize={11} padding="2px 9px" />
+          <span style={{ fontSize: 12, color: 'var(--ink-3)', overflowWrap: 'anywhere' }}>
+            {r.done ? `${r.doneAt ? shortDay(r.doneAt) : ''}${r.doneByName ? ` by ${r.doneByName}` : ''}`.trim() : r.line}
+          </span>
+        </span>
+      </span>
+      {open && (open.href
+        ? <a href={open.href} target="_blank" rel="noopener" className="pd-btn sm" style={{ flex: 'none' }} title={open.hint}>Open<ExternalIcon /></a>
+        : <button type="button" className="pd-btn sm" style={{ flex: 'none' }} title={open.hint} onClick={open.go}>Open</button>)}
+    </div>
+  );
+}
+
+const DELAYED = { bg: 'var(--bad-bg)', fg: 'var(--bad)' };
+
+/**
+ * One task: its title, owner, status and due day, and Done / Skip / Reopen. HR's, IT's and Admin's own tasks
+ * have no "not open yet" (24 Nov): To do with Done / Skip from the start; Delayed once their day has passed.
+ */
+function TaskRow({ task: t, busy, onAction }: { task: TaskView; busy: string; onAction: (t: TaskView, a: TaskAction) => void }) {
+  const early = t.status === 'locked' && STAFF_OWNS.has(t.ownerRole);
+  const st = TASK_STATUS[early ? 'todo' : t.status] ?? TASK_STATUS.todo;
+  const open = OPEN.has(t.status) || early;
+  const delayed = isDelayed(t);
+  const locked = t.status === 'locked' && !early;
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8, padding: '8px 0', borderTop: '1px solid var(--line)', opacity: locked ? 0.6 : 1 }}>
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 500, overflowWrap: 'anywhere' }}>
           {t.title}{t.month ? ` · month ${t.month}` : ''}
@@ -566,11 +674,12 @@ function TaskRow({ task: t, busy, onAction }: { task: TaskView; busy: string; on
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginTop: 4 }}>
           <OwnerChip role={t.ownerRole} name={t.ownerName} />
-          <Pill label={st.label} tone={st.tone} fontSize={11} padding="2px 9px" />
-          <span style={{ fontSize: 12, color: t.late ? 'var(--bad)' : 'var(--ink-3)' }}>
+          {delayed ? <Pill label="Delayed" tone={DELAYED} fontSize={11} padding="2px 9px" /> : <Pill label={st.label} tone={st.tone} fontSize={11} padding="2px 9px" />}
+          <span style={{ fontSize: 12, color: delayed ? 'var(--bad)' : 'var(--ink-3)' }}>
             {t.status === 'done' ? `Done ${t.doneAt ? shortDay(t.doneAt) : ''}${t.doneByName ? ` by ${t.doneByName}` : ''}`
-              : t.status === 'locked' ? (t.opensAt ? `Opens ${shortDay(t.opensAt)}` : 'Opens later')
-                : t.dueLabel && !t.dueAt ? t.dueLabel : t.dueAt ? `Due ${dueText(t.dueAt, t.late)}` : ''}
+              : delayed ? `Was due ${shortDay(t.dueAt!)}`
+                : locked ? (t.opensAt ? `Opens ${shortDay(t.opensAt)}` : 'Opens later')
+                  : t.dueLabel && !t.dueAt ? t.dueLabel : t.dueAt ? `Due ${dueText(t.dueAt, t.late)}` : ''}
           </span>
         </div>
         {t.note && <div style={{ fontSize: 12, color: 'var(--ink-2)', marginTop: 3, overflowWrap: 'anywhere' }}>{t.note}</div>}
@@ -592,7 +701,7 @@ function DevicesBlock({ tasks, busy, onAction }: { tasks: TaskView[]; busy: stri
   const [open, setOpen] = useState(false);
   const done = doneOf(tasks);
   const pct = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
-  const late = tasks.some((t) => t.late && OPEN.has(t.status));
+  const late = tasks.some(isDelayed);
   return (
     <div data-devices style={{ border: '1px solid var(--line)', borderRadius: 12 }}>
       <button type="button" aria-expanded={open} aria-controls="lf-devices" onClick={() => setOpen((v) => !v)}
@@ -600,7 +709,7 @@ function DevicesBlock({ tasks, busy, onAction }: { tasks: TaskView[]; busy: stri
         <span style={{ flex: 1, minWidth: 0, display: 'grid', gap: 6 }}>
           <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
             <b style={{ fontSize: 13, fontWeight: 500 }}>Devices and accesses</b>
-            <span style={{ fontSize: 11.5, color: late ? 'var(--bad)' : 'var(--ink-3)' }}>{done} of {tasks.length} done{late ? ' · late' : ''}</span>
+            <span style={{ fontSize: 11.5, color: late ? 'var(--bad)' : 'var(--ink-3)' }}>{done} of {tasks.length} done{late ? ' · delayed' : ''}</span>
           </span>
           <span style={{ height: 6, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}><i style={{ display: 'block', height: '100%', width: `${pct}%`, borderRadius: 99, background: pctColour(pct) }} /></span>
         </span>
@@ -643,108 +752,6 @@ function PeoplePicker({ managerUserId, buddyUserId, exclude, emps, busy, onSave 
           <button type="button" className="pd-btn sm primary" disabled={busy} onClick={() => onSave({ ...(manager !== (managerUserId ?? '') ? { managerUserId: manager || undefined } : {}), ...(buddy !== (buddyUserId ?? '') ? { buddyUserId: buddy || undefined } : {}) })}>{busy ? 'Saving…' : 'Save'}</button>
         </div>
       )}
-    </div>
-  );
-}
-
-/** The Day-1 pass HR fills in: shown to the candidate from Tj − 7. */
-function Day1PassEditor({ value, tj, onSave, busy }: { value?: Day1Pass; tj?: string; onSave: (p: Day1Pass) => Promise<boolean>; busy: boolean }) {
-  const [editing, setEditing] = useState(false);
-  const [p, setP] = useState<Day1Pass>(() => value ?? {});
-  const [bring, setBring] = useState((value?.bring ?? []).join('\n'));
-  const set = (patch: Partial<Day1Pass>) => setP((x) => ({ ...x, ...patch }));
-  // What HR edits: the pass without the server's mark and the names it was made with.
-  const editable = (v?: Day1Pass): Day1Pass => { const rest = { ...v }; delete rest.auto; delete rest.managerName; delete rest.buddyName; return rest; };
-  const startEditing = () => { setP(editable(value)); setBring((value?.bring ?? []).join('\n')); setEditing(true); };
-  if (!editing) {
-    const auto = value?.auto;
-    const filledIn = Boolean(auto || (value && (value.reportingTime || value.place || value.meetingLink)));
-    // The server makes the pass from the template 7 days before joining (or on its next run, inside the week).
-    const makesOn = tj ? addDays(tj, -7) : undefined;
-    return (
-      <div style={{ display: 'grid', gap: 8 }}>
-        {auto && <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>Made automatically on {longDay(auto.at)} from the template. It follows the template and the joining date until you edit it.</div>}
-        {filledIn ? (
-          <Facts rows={[
-            ['Date', longDay(auto ? tj : value?.date ?? tj)],
-            ['Reporting time', value?.reportingTime],
-            ['Place', value?.place],
-            ['Map link', value?.mapLink ? <a key="m" href={value.mapLink} target="_blank" rel="noopener noreferrer">Directions</a> : ''],
-            ['Meeting link', value?.meetingLink],
-            ['Ask for', value?.askFor ? `${value.askFor.name}${value.askFor.phone ? ` · ${value.askFor.phone}` : ''}` : ''],
-            ['Manager', auto ? value?.managerName : ''],
-            ['Buddy', auto ? value?.buddyName : ''],
-            ['HR contact', value?.hrContact ? [value.hrContact.name, value.hrContact.email, value.hrContact.phone].filter(Boolean).join(' · ') : ''],
-            ['Bring', value?.bring?.length ? value.bring.join(', ') : ''],
-            ['Agenda', value?.agenda?.length ? value.agenda.map((a) => `${a.time} ${a.title}${a.with ? ` (${a.with})` : ''}${a.taskKey ? ` · ${AGENDA_TASK_LABEL[a.taskKey]}` : ''}`).join(' · ') : ''],
-          ]} />
-        ) : (
-          <div style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.5 }}>
-            {makesOn && makesOn > todayKey()
-              ? `Made automatically on ${longDay(makesOn)} from the template’s joining and reporting details, and shown to the candidate. You can fill it in yourself before then.`
-              : 'Being made from the template’s joining and reporting details: it shows here within the hour. You can fill it in yourself instead.'}
-          </div>
-        )}
-        <div><button type="button" className="pd-btn sm" onClick={startEditing}>{filledIn ? 'Edit pass' : 'Fill in now'}</button></div>
-      </div>
-    );
-  }
-  const agenda = p.agenda ?? [];
-  type AgendaLine = NonNullable<Day1Pass['agenda']>[number];
-  const setAgenda = (i: number, patch: Partial<AgendaLine>) => set({ agenda: agenda.map((a, n) => (n === i ? { ...a, ...patch } : a)) });
-  // One line per task: a task picked on one line is not offered on another.
-  const taken = (i: number) => new Set(agenda.filter((_, n) => n !== i).map((a) => a.taskKey).filter(Boolean));
-  return (
-    <div style={{ display: 'grid', gap: 10 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <Field label="Date"><input type="date" value={p.date ?? tj ?? ''} onChange={(e) => set({ date: e.target.value })} style={inputStyle} /></Field>
-        <Field label="Reporting time"><input type="time" value={p.reportingTime ?? ''} onChange={(e) => set({ reportingTime: e.target.value })} style={inputStyle} /></Field>
-      </div>
-      <Field label="Place"><input value={p.place ?? ''} onChange={(e) => set({ place: e.target.value })} placeholder="e.g. Reception, Block A, Main Campus" style={inputStyle} /></Field>
-      <Field label="Map link"><input value={p.mapLink ?? ''} onChange={(e) => set({ mapLink: e.target.value })} style={inputStyle} /></Field>
-      <Field label="Meeting link" hint="For a remote first day"><input value={p.meetingLink ?? ''} onChange={(e) => set({ meetingLink: e.target.value })} style={inputStyle} /></Field>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <Field label="Ask for"><input value={p.askFor?.name ?? ''} onChange={(e) => set({ askFor: { ...p.askFor, name: e.target.value } })} placeholder="Name" style={inputStyle} /></Field>
-        <Field label="Their phone"><input value={p.askFor?.phone ?? ''} onChange={(e) => set({ askFor: { name: p.askFor?.name ?? '', phone: e.target.value } })} style={inputStyle} /></Field>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <Field label="HR contact"><input value={p.hrContact?.name ?? ''} onChange={(e) => set({ hrContact: { ...p.hrContact, name: e.target.value } })} placeholder="Name" style={inputStyle} /></Field>
-        <Field label="HR email"><input value={p.hrContact?.email ?? ''} onChange={(e) => set({ hrContact: { name: p.hrContact?.name ?? '', ...p.hrContact, email: e.target.value } })} style={inputStyle} /></Field>
-      </div>
-      <Field label="What to bring" hint="One per line"><textarea value={bring} onChange={(e) => setBring(e.target.value)} style={{ ...areaStyle, minHeight: 70 }} placeholder={'Original ID proof\nTwo passport photos'} /></Field>
-      <div>
-        <div style={{ fontSize: 11.5, color: 'var(--ink-2)', marginBottom: 6 }}>Agenda</div>
-        <div style={{ display: 'grid', gap: 6 }}>
-          {agenda.map((a, i) => (
-            <div key={a.id ?? `new-${i}`} data-agenda-line={i} style={{ display: 'grid', gridTemplateColumns: '92px minmax(0, 1fr) minmax(0, 0.8fr) auto', gap: 6, alignItems: 'center' }}>
-              <input type="time" value={a.time} onChange={(e) => setAgenda(i, { time: e.target.value })} aria-label="Time" style={inputStyle} />
-              <input value={a.title} onChange={(e) => setAgenda(i, { title: e.target.value })} placeholder="What" aria-label="What" style={inputStyle} />
-              <input value={a.with ?? ''} onChange={(e) => setAgenda(i, { with: e.target.value })} placeholder="With / where" aria-label="With or where" style={inputStyle} />
-              <button type="button" className="pd-btn sm ghost" aria-label="Remove" onClick={() => set({ agenda: agenda.filter((_, n) => n !== i) })}>×</button>
-              {/* Which Day-1 task this line is: its meeting follows the pick, not the words in the title. */}
-              <label style={{ gridColumn: '2 / 4', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--ink-3)' }}>
-                <span style={{ whiteSpace: 'nowrap' }}>Meeting for</span>
-                <span className="pd-pick" style={{ flex: 1, minWidth: 0 }}>
-                  <select className="pd-inp" aria-label={`Meeting for, line ${i + 1}`} value={a.taskKey === undefined ? 'auto' : a.taskKey ?? ''}
-                    onChange={(e) => setAgenda(i, { taskKey: e.target.value === 'auto' ? undefined : (e.target.value || null) as AgendaLine['taskKey'] })} style={{ width: '100%', height: 32, fontSize: 12.5 }}>
-                    {a.taskKey === undefined && <option value="auto">From the title (decided when saved)</option>}
-                    <option value="">No task, just on the agenda</option>
-                    {AGENDA_TASK_KEYS.map((k) => <option key={k} value={k} disabled={taken(i).has(k)}>{AGENDA_TASK_LABEL[k]}{taken(i).has(k) ? ' (on another line)' : ''}</option>)}
-                  </select>
-                </span>
-              </label>
-            </div>
-          ))}
-          <div><button type="button" className="pd-btn sm" onClick={() => set({ agenda: [...agenda, { time: '10:00', title: '', taskKey: null }] })}>+ Add to the agenda</button></div>
-        </div>
-      </div>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        <button type="button" className="pd-btn sm" onClick={() => { setP(value ?? {}); setBring((value?.bring ?? []).join('\n')); setEditing(false); }} disabled={busy}>Cancel</button>
-        <button type="button" className="pd-btn sm primary" disabled={busy} onClick={async () => {
-          const clean: Day1Pass = { ...p, bring: bring.split('\n').map((x) => x.trim()).filter(Boolean), agenda: agenda.filter((a) => a.title.trim()) };
-          if (await onSave(clean)) setEditing(false);
-        }}>{busy ? 'Saving…' : 'Save pass'}</button>
-      </div>
     </div>
   );
 }

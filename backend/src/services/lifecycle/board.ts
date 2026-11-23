@@ -504,8 +504,12 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
   // teammates' pages read it): a template edit after they started must not show here either.
   const design = await import('./design');
   const [reporting, appSignIn] = await Promise.all([design.reportingFor(j), appSignInOf(j.userId ?? j.appAccess?.userId)]);
+  const teamTasksSvc = await import('./teamTasks');
+  const [teamRows, teamDefs] = await Promise.all([teamTasksSvc.teamRowsForHr(j), teamTasksSvc.teamDefsFor(j)]);
+  // The reviews (documents, joining form, payroll details, the confirmation): each opens where it is done.
+  const reviews = (await import('./hrReviews')).reviewRowsOf(j, tasks, allDocuments, teamDefs, j.managerUserId ? names.get(j.managerUserId) : undefined);
   return {
-    journey, tasks: views, documents, letters, offer, dateRequests, probation: probationView, batch, viewer, teamRows: await (await import('./teamTasks')).teamRowsForHr(j),
+    journey, tasks: views, documents, letters, offer, dateRequests, probation: probationView, batch, viewer, teamRows, reviews,
     ...(reporting ? { reporting } : {}),
     appSignIn,
   };
@@ -677,6 +681,9 @@ export async function moveJourneysToTemplate(org: string, templateId: string, bo
   return { template: { id: template.id, name: template.name }, moved, alreadyOn: ids.length - moved.length };
 }
 
+/** The tasks HR and the teams do from the dashboard: done or skipped whenever, before their opening day too. */
+const STAFF_OWNED = new Set<OwnerRole>(['hr', 'it', 'admin', 'finance']);
+
 /** POST /admin/lifecycle/journeys/:id/tasks/:taskId — done, reopen or skip, by HR. */
 export async function actOnTaskByHr(org: string, journeyId: string, taskId: string, body: Record<string, unknown>, hr: { userId: string; name: string }): Promise<TaskView> {
   const j = await requireOnboarding(org, journeyId);
@@ -692,7 +699,12 @@ export async function actOnTaskByHr(org: string, journeyId: string, taskId: stri
       await journeys().updateOne({ id: journeyId }, { $set: { 'probation.decision.letterId': letterId } });
     }
   }
-  if (body.action === 'done' || body.action === 'skip') task = await finishTaskById(journeyId, taskId, body.action, hr, note);
+  if (body.action === 'done' || body.action === 'skip') {
+    // HR's, IT's, Admin's and Finance's own tasks have no "not open yet" on the dashboard: they finish them whenever
+    // (24 Nov). The joiner's and the manager's keep their opening rules.
+    const owner = (await journeyTasks().findOne({ id: taskId, journeyId }, { projection: { _id: 0, ownerRole: 1 } }))?.ownerRole;
+    task = await finishTaskById(journeyId, taskId, body.action, hr, note, { early: !!owner && STAFF_OWNED.has(owner) });
+  }
   else if (body.action === 'reopen') task = await reopenTaskById(journeyId, taskId, note);
   else throw new LifecycleError(400, 'action is done, reopen or skip');
   const names = await namesOf([task.ownerUserId]);
@@ -734,6 +746,8 @@ export async function decideBankPfRequest(org: string, journeyId: string, body: 
     'bankPfRequest.status': body.decision === 'approve' ? 'approved' : 'declined',
     'bankPfRequest.decidedAt': new Date(), 'bankPfRequest.decidedByName': hr.name, ...(hrNote ? { 'bankPfRequest.hrNote': hrNote } : {}),
   } });
+  // HR's "Check their payroll details" is this decision: approved is done, declined is to do again.
+  await (await import('./hrReviews')).payrollChecked(journeyId, body.decision, hr);
   await tell([j.userId], {
     scenario: 'lifecycle_bank_pf_decided', destination: 'lifecycle_week1', title: body.decision === 'approve' ? 'Bank and PF details updated' : 'Bank and PF change declined',
     body: body.decision === 'approve' ? 'HR approved the change you asked for.' : `HR did not make the change${hrNote ? `: ${hrNote}` : ''}.`, data: { journeyId },

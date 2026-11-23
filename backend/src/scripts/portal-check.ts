@@ -450,6 +450,16 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   journeyA = (await db.journeys().findOne({ id: A }))!;
   ok('…and done again once it is approved', (await portalSvc.portalHome(journeyA)).path.find((p) => p.key === 'docs')?.state === 'done');
   ok('approving the optional one later does not draft the letters twice', (await db.letters().countDocuments({ journeyId: A })) === 2);
+  {
+    const reviewTask = async () => (await db.journeyTasks().findOne({ journeyId: A, systemKey: 'review_documents' }))!;
+    ok('Review documents: done by the last required approval, by HR', (await reviewTask()).status === 'done' && (await reviewTask()).doneByName === 'Hema HR');
+    await docsSvc.reviewDocument(HR, addrDoc.id, { decision: 'send_back', note: 'Please upload the full bill.' });
+    ok('…a required document sent back after it: the review is to do again', (await reviewTask()).status === 'todo', await reviewTask());
+    await docsSvc.uploadDocumentFiles((await db.journeys().findOne({ id: A }))!, addrDoc.id, [{ originalname: 'bill-full.pdf', buffer: PDF('addr-2') }]);
+    await docsSvc.reviewDocument(HR, addrDoc.id, { decision: 'approve' });
+    ok('…and done again by approving it, the status kept (docs_approved), the letters not drafted again',
+      (await reviewTask()).status === 'done' && (await db.journeys().findOne({ id: A }))?.status === 'docs_approved' && (await db.letters().countDocuments({ journeyId: A })) === 2);
+  }
 
   // ─── Letters ──────────────────────────────────────────────────────────────
   section('Letters: templates, merge, PDF, open, sign');
@@ -1033,6 +1043,14 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
       await review(addr.id, { decision: 'approve' });
       res = await approve('contact');
       ok('…re-uploaded and approved: contact is done and approved', res.status === 200 && !!sec(res.body, 'contact')?.approved, res.body);
+      ok('Check the joining form: not done while a section is still open', !(await jp()).teamTasks?.hr_check_form);
+      await approve('personal');
+      await approve('education');
+      ok('…the approval that completes the joining form (personal, contact, emergency, education) is "Check the joining form" done, by HR',
+        (await jp()).teamTasks?.hr_check_form?.byName === 'Hema HR', (await jp()).teamTasks);
+      await unlock('education');
+      ok('…unlocking one of its sections makes it to do again', !(await jp()).teamTasks?.hr_check_form, (await jp()).teamTasks);
+      await unlock('personal');
       res = await review(addr.id, { decision: 'send_back', note: 'Please upload the full page.' });
       const back = (await db.candidateDocuments().findOne({ id: addr.id }))!;
       ok('send back an APPROVED document: sent_back, the note kept, its approved section (contact) unlocked', res.status === 200 && back.status === 'sent_back' && back.hrNote === 'Please upload the full page.'

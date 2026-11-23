@@ -420,6 +420,11 @@ async function main() {
   await boardSvc.decideBankPfRequest(ORG, J1, { decision: 'decline', note: 'Use your salary account' }, { userId: 'hr', name: 'Ritu Sharma' });
   payroll = await jd.joinerPayroll(PRIYA);
   eq('HR declines: editable again, with HR’s note', [payroll.state, payroll.editable, payroll.hrNote], ['declined', true, 'Use your salary account']);
+  const payReview = async () => (await boardSvc.journeyPanel(ORG, J1)).reviews.find((r) => r.key === 'hr_check_payroll');
+  let pr = await payReview();
+  ok('Reviews: declined, "Check their payroll details" is to do again (the app’s tick gone), and it opens Bank account and PF',
+    !(await engine.loadJourney(J1)).teamTasks?.hr_check_payroll && pr?.done === false && pr.place === 'bank_pf' && pr.step === 'week_1' && /Sent back/.test(pr.line ?? '')
+    && (await staff.staffTaskScreen(HR, J1, 'hr_check_payroll') as { done: boolean }).done === false, pr);
   await jd.sendJoinerPayroll(PRIYA, payBody({ bank: { holderName: 'Priya Shah', bankName: 'ICICI Bank', ifsc: 'ICIC0004321', accountNumber: '555566667777', accountNumberAgain: '555566667777' }, nominees: [{ name: 'Asha Shah', relation: 'Mother', share: 100 }] }));
   await boardSvc.decideBankPfRequest(ORG, J1, { decision: 'approve' }, { userId: 'hr', name: 'Ritu Sharma' });
   const { employeePaymentDetails } = await import('../config/db');
@@ -427,6 +432,17 @@ async function main() {
   eq('HR approves: payroll has the account, holder, IFSC, UAN and nominees', [paid?.accountLast4, paid?.accountHolder, paid?.ifsc, paid?.uanLast4, paid?.nominees], ['7777', 'Priya Shah', 'ICIC0004321', '0400', [{ name: 'Asha Shah', relation: 'Mother', share: 100 }]]);
   payroll = await jd.joinerPayroll(PRIYA);
   eq('…and the form reads approved, read-only', [payroll.state, payroll.editable, payroll.bank.bankName], ['approved', false, 'ICICI Bank']);
+  pr = await payReview();
+  ok('Reviews: approving at its place is "Check their payroll details" done, by HR, with when (the app’s HR screen too)',
+    pr?.done === true && pr.doneByName === 'Ritu Sharma' && !!pr.doneAt && (await engine.loadJourney(J1)).teamTasks?.hr_check_payroll?.byName === 'Ritu Sharma'
+    && (await staff.staffTaskScreen(HR, J1, 'hr_check_payroll') as { done: boolean }).done === true, pr);
+  {
+    const rows = (await boardSvc.journeyPanel(ORG, J1)).reviews;
+    eq('Reviews on the panel: each with where it opens', rows.map((r) => `${r.key}:${r.step}:${r.place}`), [
+      'review_documents:joining_day:documents', 'hr_check_form:week_1:joining_form', 'hr_check_payroll:week_1:bank_pf',
+      'mgr_confirmation_review:final_month:recommendation', 'hod_approve:final_month:recommendation', 'confirmation_discussion:final_month:decision', 'confirmation_letter:confirmed:letter',
+    ]);
+  }
   if (keyBefore === undefined) delete process.env.PAYROLL_FIELD_KEY; else process.env.PAYROLL_FIELD_KEY = keyBefore;
 
   section('Reminders for late teammate tasks');
