@@ -169,8 +169,8 @@ export function EmailCard({ kind, first, to: toStart, toFixed, values, company, 
   manager?: { name: string; email: string }; draft?: LetterEmail; missing: number; busy: string;
   onSend: (mail: MailOut) => Promise<boolean>; onOpen: () => void;
 }) {
-  const isOffer = kind === 'offer';
-  const portalLink = isOffer || kind === 'appointment' || kind === 'nda';
+  // The offer goes as its PDF only (the candidate replies to HR); appointment / NDA carry their portal link.
+  const portalLink = kind === 'appointment' || kind === 'nda';
   const withLink = draft?.withPortalLink ?? true;
   const start = emailDraft(kind, values, { company, hrName, withLink });
   // Untouched, they follow the details as they load and change; typed, they are HR's own.
@@ -233,8 +233,9 @@ export function MailPanel({ kind, values, name, to: toStart, manager, company, h
 }) {
   const { flash } = useStore();
   const isOffer = kind === 'offer';
-  // The offer's link is how they accept: on by default, with a switch (6Zs H3c). Appointment / NDA: their portal, where they sign.
-  const portalSwitch = isOffer || kind === 'appointment' || kind === 'nda';
+  // Appointment / NDA: their portal link, where they sign, with a switch. The offer has none: it goes
+  // as its PDF only and the candidate replies to HR to accept (23 Nov 2026).
+  const portalSwitch = kind === 'appointment' || kind === 'nda';
   const [withLink, setWithLink] = useState(draft?.withPortalLink ?? true);
   const start = emailDraft(kind, values, { company, hrName, withLink });
   const [to, setTo] = useState(draft?.to || toStart);
@@ -298,7 +299,7 @@ export function MailPanel({ kind, values, name, to: toStart, manager, company, h
             <span><b style={{ display: 'block', fontWeight: 500 }}>Add the portal link</b><span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{isOffer ? 'A “View and accept your offer” button in the email' : 'A button to open their joining portal, where they sign it'}</span></span>
           </label>
         )}
-        {isOffer && !withLink && <div className="pd-note" style={{ color: 'var(--warn)' }}>Without the link they can’t read and accept the offer online. Send it again with the link if they ask.</div>}
+        {isOffer && <div className="pd-note">The offer goes as its PDF only. They reply to this email to accept; then mark it accepted on their card to send the joining portal.</div>}
         <div>
           <div style={{ fontSize: 11.5, color: 'var(--ink-2)', marginBottom: 6 }}>Attachments</div>
           <div style={{ display: 'grid', gap: 6 }}>

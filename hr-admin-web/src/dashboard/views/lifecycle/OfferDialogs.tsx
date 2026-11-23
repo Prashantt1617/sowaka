@@ -22,7 +22,7 @@ export function LetterPreview({ html, caption = true }: { html: string; caption?
   );
 }
 
-/** Finalise: HR accepts from their end; the portal login is made and emailed. */
+/** Mark offer accepted: the candidate replied to accept; the portal account is made and its link emailed. */
 export function FinaliseDialog({ journey, onClose, onDone }: { journey: JourneyView; onClose: () => void; onDone: () => void }) {
   const { flash } = useStore();
   const [busy, setBusy] = useState(false);
@@ -32,14 +32,14 @@ export function FinaliseDialog({ journey, onClose, onDone }: { journey: JourneyV
     setBusy(true); setError('');
     try {
       await finaliseOffer(journey.id);
-      flash(`Finalised. ${firstName(name)}’s login is on its way`);
+      flash(`Marked accepted. ${firstName(name)}’s joining portal is on its way`);
       onDone();
-    } catch (e) { setError(errText(e, 'Could not finalise')); setBusy(false); }
+    } catch (e) { setError(errText(e, 'Could not mark it accepted')); setBusy(false); }
   };
   return (
-    <Modal title={`Finalise ${firstName(name)}’s offer`} onClose={onClose} busy={busy} width={480}
-      footer={<><button type="button" className="pd-btn" onClick={onClose} disabled={busy}>Cancel</button><button type="button" className="pd-btn primary" onClick={() => void go()} disabled={busy}>{busy ? 'Finalising…' : 'Finalise and send login'}</button></>}>
-      <p style={{ margin: 0 }}>{name} accepted the offer. Finalising creates their portal account and emails the login and a password to <b style={{ color: 'var(--ink)', fontWeight: 500 }}>{journey.candidate?.personalEmail ?? 'their personal email'}</b>.</p>
+    <Modal title={`Mark ${firstName(name)}’s offer accepted`} onClose={onClose} busy={busy} width={480}
+      footer={<><button type="button" className="pd-btn" onClick={onClose} disabled={busy}>Cancel</button><button type="button" className="pd-btn primary" onClick={() => void go()} disabled={busy}>{busy ? 'Sending…' : 'Mark accepted and send portal'}</button></>}>
+      <p style={{ margin: 0 }}>Did {name} reply to accept the offer? Marking it accepted creates their joining portal and emails the link to <b style={{ color: 'var(--ink)', fontWeight: 500 }}>{journey.candidate?.personalEmail ?? 'their personal email'}</b>. They sign in with a code sent to that email.</p>
       <p style={{ margin: 0 }}>{journey.managerName ? `${journey.managerName} gets` : 'Their manager gets'} the set-up to-do in the app: people to meet, a welcome note and a buddy.</p>
       {error && <div role="alert" style={{ color: 'var(--bad)' }}>{error}</div>}
     </Modal>

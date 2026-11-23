@@ -9,6 +9,8 @@
  *
  *   npm run lifecycle:demo-seed-check     (MONGODB_DB=el_demo_scratch on 127.0.0.1:27133 only)
  */
+// These flows start with the candidate accepting online, which the live server no longer allows.
+process.env.OFFER_ONLINE_ACCEPT ??= '1';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 

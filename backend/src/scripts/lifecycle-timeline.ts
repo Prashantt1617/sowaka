@@ -14,6 +14,8 @@
  * The clock: the global Date is replaced, so every `new Date()` in the product
  * reads the simulated instant. Times are IST (+05:30).
  */
+// These flows start with the candidate accepting online, which the live server no longer allows.
+process.env.OFFER_ONLINE_ACCEPT ??= '1';
 import { createHash, randomBytes } from 'node:crypto';
 
 // ─── Environment: the local mongod and a scratch database only, no mail, no S3 ──
@@ -476,7 +478,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   eq('open Tj tasks moved a week (documents, mark joined)', [bOpenAfter.get('upload_documents'), bOpenAfter.get('mark_joined')], [rules.addDaysKey(bOpenBefore.get('upload_documents')!, 7), TJ_B]);
   eq('the laptop request (done) kept its date', dayOf((await task(B, 'device_request')).dueAt), '2027-03-17');
   home = await portalHome(B);
-  eq('Bina’s portal: offer updated, the banner names salary and joining date', [home.view, home.banner?.changedFields, home.upNext?.title], ['offer_updated', ['ctc', 'tj', 'validTill'], 'Review your updated offer']);
+  eq('Bina’s portal: offer updated, the banner names salary and joining date', [home.view, home.banner?.changedFields, home.upNext?.title], ['offer_updated', ['ctc', 'tj', 'validTill'], 'Read your updated offer']);
   ok('the new link opens v2; the old one cannot accept', (await offersSvc.openOfferLink(tokenB2, '1.1.1.1')).version === 2 && (await refusal(() => offersSvc.acceptOffer(tokenB1, { ip: '1.1.1.1' }))).status === 409);
   await advanceTo(T('2027-03-11', '15:00'));
   eq('accepting v2: already finalised (the login exists)', (await offersSvc.acceptOfferForJourney(await journey(B), { ip: '203.0.113.10' })).state, 'finalised');

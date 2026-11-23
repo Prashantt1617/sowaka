@@ -438,11 +438,11 @@ export async function portalHome(journey: Journey, now = new Date()): Promise<Po
   // Up next: sent back → due soonest → not started. A step waiting on HR is not the candidate's to do.
   const open = steps.filter((s) => !s.done && !s.locked && !s.waiting);
   const titles: Record<PathKey, string> = {
-    offer: (latest?.version ?? 1) > 1 ? 'Review your updated offer' : 'Accept your offer', docs: 'Upload your documents', about: 'Tell us about you',
+    offer: (latest?.version ?? 1) > 1 ? 'Read your updated offer' : 'Read your offer', docs: 'Upload your documents', about: 'Tell us about you',
     meet: 'Meet the team', letter: 'Sign your appointment letter', pass: 'Check your Day-1 pass',
   };
   const helpers: Record<PathKey, string> = {
-    offer: ((latest?.version ?? 1) > 1 && changesLine(latest?.changedFields)) || 'Read it, then accept',
+    offer: ((latest?.version ?? 1) > 1 && changesLine(latest?.changedFields)) || 'Reply to HR’s email to accept it',
     docs: sentBack?.hrNote ?? 'One document at a time · PDF, JPG or PNG', about: 'Emergency contact and PF · 2 quick steps',
     meet: 'Short videos and cards from the team', letter: 'Open each PDF, then sign', pass: 'Where to go, when, and who to meet',
   };
