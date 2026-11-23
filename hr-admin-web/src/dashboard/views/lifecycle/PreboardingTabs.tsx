@@ -210,7 +210,7 @@ export function OrgChartTab({ profile, load }: { profile: PreboardingProfile; lo
 
 /**
  * The joiner panel's Journey, exactly as the panel draws it (the same eight steps, rows and contents: the
- * candidate's own tasks only), without the link to this profile page.
+ * candidate's own tasks, and Week 1's HR setup and Devices and accesses), without the link to this profile page.
  */
 export function ActivityTab({ load, onChanged }: { load: JourneyLoad; onChanged: () => void }) {
   const [busy, setBusy] = useState('');

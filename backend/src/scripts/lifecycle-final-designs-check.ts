@@ -310,6 +310,22 @@ async function main() {
   eq('IT never sees bank, PF, salary or tax', itProfile.sections.length, 5);
   const access = await staff.staffTaskScreen(IT, J1, 'it_accesses', 'it') as { accesses: Array<{ id: string; title: string; ready: boolean; details: unknown[] }> };
   eq('IT: the four accesses', access.accesses.map((a) => a.title), ['Laptop', 'Work email', 'Office Wi-Fi', 'Sowaka Connect']);
+  const hrPanel = await (await import('../services/lifecycle/board')).journeyPanel(ORG, J1);
+  eq('HR’s journey panel marks the same four for Week 1’s Devices and accesses', hrPanel.tasks.filter((t) => t.section === 'access').map((t) => t.title).sort(), ['Laptop', 'Office Wi-Fi', 'Sowaka Connect', 'Work email']);
+  {
+    // Joining day's "Logged into the app": from lastLoginAt, the sessions and an app phone; no account is No.
+    const board = await import('../services/lifecycle/board');
+    const { authSessions, deviceTokens } = await import('../config/db');
+    eq('Logged into the app: No before any sign-in', hrPanel.appSignIn, { signedIn: false });
+    eq('…No with no account', await board.appSignInOf(undefined), { signedIn: false });
+    const firstAt = new Date('2026-11-02T04:30:00.000Z'), lastAt = new Date('2026-11-20T05:00:00.000Z');
+    await authSessions().insertOne({ tokenHash: 'fd-check-session', userId: 'j1', createdAt: firstAt, expiresAt: new Date(Date.now() + 86_400_000) });
+    await users().updateOne({ userId: 'j1' }, { $set: { lastLoginAt: lastAt } });
+    eq('…Yes once signed in: first from the session, last from lastLoginAt', (await board.journeyPanel(ORG, J1)).appSignIn, { signedIn: true, firstAt: firstAt.toISOString(), lastAt: lastAt.toISOString() });
+    await deviceTokens().insertOne({ userId: 'rohan', token: 'fd-check-phone', platform: 'android', createdAt: firstAt, updatedAt: firstAt });
+    eq('…an app phone alone counts as signed in', await board.appSignInOf('rohan'), { signedIn: true, firstAt: firstAt.toISOString(), lastAt: firstAt.toISOString() });
+    await Promise.all([authSessions().deleteOne({ tokenHash: 'fd-check-session' }), deviceTokens().deleteOne({ token: 'fd-check-phone' }), users().updateOne({ userId: 'j1' }, { $unset: { lastLoginAt: 1 } })]);
+  }
   await staff.staffTaskAction(IT, J1, 'it_accesses', { accesses: Object.fromEntries(access.accesses.map((a) => [a.id, true])) }, 'it');
   home = await joiner.joinerOnboarding(PRIYA);
   eq('Ready on IT’s side → ready on the joiner’s Devices and accesses', [home.summary.devices.ready, home.summary.devices.total], [4, 4]);

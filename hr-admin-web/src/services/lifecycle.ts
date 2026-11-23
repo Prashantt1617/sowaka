@@ -217,6 +217,8 @@ export interface TaskView {
   note?: string;
   late: boolean;
   month?: number;
+  /** On the panel: a Devices and accesses row (Laptop, Work email…), made from the template's access rows. */
+  section?: 'access';
   /** On the panel: whether Nudge can remind its owner, and whether someone did today. */
   canNudge?: boolean;
   nudgedToday?: boolean;
@@ -444,6 +446,8 @@ export interface JourneyDetail {
   teamRows?: Array<{ id: string; title: string; owner: 'manager' | 'buddy' | 'head_of_department'; step: string; done: boolean; doneByName?: string; doneAt?: string }>;
   /** The joining and reporting details this joiner has (their copy of the template; absent when the template has none). */
   reporting?: DesignReporting;
+  /** Whether their account (once joined, or app access given before) has signed in to the app, and when first and last. */
+  appSignIn?: { signedIn: boolean; firstAt?: string; lastAt?: string };
 }
 
 export interface TemplateJourney {

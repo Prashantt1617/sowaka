@@ -3,8 +3,10 @@
 // circle, its line and, opened, what HR does there: the offer and its PDF, the portal, the
 // employee profile's progress, documents and letters, the Day-1 pass, manager and buddy, the tasks
 // of each phase, the bank/PF change, probation and its decision. The employee profile is not a step
-// of its own (23 Nov): it fills in as pre-boarding goes on, so Joining day carries its progress. Drawn by the joiner panel (one step open at a time)
-// and by the pre-boarding profile's Activity tab (every step open, the joiner's own tasks only).
+// of its own (23 Nov): it fills in as pre-boarding goes on, so Joining day carries its progress. Week 1
+// (23 Nov) is HR's setup (KPI, salary and shift templates, assigned in place) and Devices and accesses,
+// not the joiner's own week-1 list (they do that in the app). Drawn by the joiner panel and by the
+// pre-boarding profile's Activity tab, identically.
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useStore } from '../../store';
@@ -27,6 +29,9 @@ import { KIND_LABEL } from './letterDoc';
 import { downloadFile } from './DocumentParts';
 import { pctColour, weekOf } from './boardModel';
 import { preboardingHref } from './preboardingLinks';
+import { AssignSetupDialog, HrSetupRows } from './Week1Setup';
+import { SETUP_KINDS, useWeek1Setup } from './week1SetupData';
+import type { SetupKind } from './week1SetupData';
 
 const TASK_STATUS: Record<string, { label: string; tone: { bg: string; fg: string } }> = {
   locked: { label: 'Not open yet', tone: { bg: 'var(--surface-2)', fg: 'var(--ink-3)' } },
@@ -58,8 +63,13 @@ const STEP_AT: Record<string, number> = {
   offer_sent: 0, accepted: 1, documents: 2, letters: 2, ready_to_join: 2, day1: 3, week1_tasks: 3, day7_survey: 3, week_done: 3,
   month1: 4, months_2_5: 5, final_month: 6, confirmed: 7,
 };
-/** The tasks the joiner owns (alone, or with their manager): the only tasks the journey shows (panel and profile alike). */
+/** The tasks the joiner owns (alone, or with their manager): the tasks the journey lists (panel and profile alike), outside Week 1. */
 const JOINER_OWNS = new Set<OwnerRole>(['employee', 'manager_employee']);
+/**
+ * Week 1's Devices and accesses: the template's access rows (Laptop, Work email, Office Wi-Fi, Sowaka Connect;
+ * the server marks them), or on an older template the first-week tasks IT or Admin own (Set up laptop and login).
+ */
+const isDeviceTask = (t: TaskView) => t.section === 'access' || (!t.section && t.phase === 'first_week' && (t.ownerRole === 'it' || t.ownerRole === 'admin') && t.kind !== 'meeting');
 
 type StepDialog =
   | { kind: 'decision' }
@@ -68,6 +78,7 @@ type StepDialog =
   | { kind: 'date'; id: string; decision: 'approve' | 'decline'; day: string }
   | { kind: 'file'; id: string; name: string }
   | { kind: 'bankpf'; decision: 'approve' | 'decline' }
+  | { kind: 'assign'; what: SetupKind }
   | null;
 
 /** The joiner's answer to "How was today?" on "Day 1, done!", as the app labels it. */
@@ -129,8 +140,9 @@ const doneOf = (list: TaskView[]) => list.filter((t) => t.status === 'done' || t
  * the Day-1 pass, manager and buddy, date requests, the bank/PF change, the decision) work in place; `busy` and
  * `setBusy` are the caller's, so its own buttons wait too, and `onChanged` reloads the journey after each one.
  *
- * The joiner panel and the pre-boarding profile's Activity tab draw the same steps and rows: only the joiner's
- * own tasks (no manager / buddy / HR / IT / head-of-department tasks, no team tasks from the app, 23 Nov).
+ * The joiner panel and the pre-boarding profile's Activity tab draw the same steps and rows: the joiner's own
+ * tasks (no manager / buddy / HR / head-of-department tasks, no team tasks from the app, 23 Nov), except Week 1,
+ * which is HR's setup (KPI, salary and shift templates) and the IT access rows under Devices and accesses.
  * Every step starts closed and opens with its chevron (several at once); `openStep` opens one from outside.
  *
  * `variant` only decides the Employee profile link on Joining day: 'panel' (the joiner panel) has it,
@@ -198,7 +210,13 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
   const live = tasks.filter((t) => t.status !== 'cancelled' && JOINER_OWNS.has(t.ownerRole));
   const probationTotal = (journey.probation?.months ?? 0) + (journey.probation?.extendedBy ?? 0);
   const preTasks = live.filter((t) => t.phase === 'pre_boarding');
-  const weekTasks = live.filter((t) => t.phase === 'first_week');
+  // Week 1: HR's setup for someone who has joined (what they are on now, loaded once they have a userId)
+  // and the IT access rows. The joiner's own week-1 tasks are theirs in the app, not listed here.
+  const joined = Boolean(journey.userId);
+  const setup = useWeek1Setup(journey.userId);
+  const devices = tasks.filter((t) => t.status !== 'cancelled' && isDeviceTask(t));
+  const setupDone = SETUP_KINDS.filter((k) => setup.rows[k].status === 'ready' && setup.rows[k].assigned).length;
+  const setupKnown = SETUP_KINDS.every((k) => setup.rows[k].status !== 'loading');
   const probTasks = live.filter((t) => t.phase === 'probation');
   const monthOneTasks = probTasks.filter((t) => t.month === 1);
   const finalTasks = probTasks.filter((t) => !t.month || (probationTotal > 1 && t.month >= probationTotal));
@@ -226,6 +244,8 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
       : journey.tj && PRE_JOIN.has(status) ? (addDays(journey.tj, -7) > todayKey() ? `Made automatically on ${shortDay(addDays(journey.tj, -7))}` : 'Being made from the template')
         : 'Not filled in';
   const pendingDates = dateRequests.filter((r) => r.status === 'pending').length;
+  // Joining day's "Logged into the app": Yes with the first sign-in day, or No (also with no account yet).
+  const appSignIn = data.appSignIn;
 
   // Each step's line under its name.
   const sub = (i: number, state: 'done' | 'current' | 'todo'): { text: string; red?: boolean } => {
@@ -246,10 +266,14 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
       case 2:
         if (state === 'done') return { text: `Joined ${shortDay(journey.tj)}` };
         return { text: `${journey.tj ? `${shortDay(journey.tj)}${state === 'current' ? ` · ${weekOf(journey.tj)}` : ''}` : 'Not set'}${state === 'current' && reviewQueue ? ` · ${reviewQueue} to review` : ''}` };
-      case 3:
-        if (state === 'done') return { text: `${doneOf(weekTasks)} of ${weekTasks.length} done` };
-        if (state === 'current') return { text: `${doneOf(weekTasks)} of ${weekTasks.length} done`, red: weekTasks.some((t) => t.late && OPEN.has(t.status)) };
-        return { text: 'Starts on the joining day' };
+      case 3: {
+        if (state === 'todo') return { text: 'Starts on the joining day' };
+        const parts = [
+          joined && setupKnown ? `${setupDone} of ${SETUP_KINDS.length} set up` : '',
+          devices.length ? `${doneOf(devices)} of ${devices.length} devices and accesses` : '',
+        ].filter(Boolean);
+        return { text: parts.join(' · ') || 'Nothing waiting', red: state === 'current' && devices.some((t) => t.late && OPEN.has(t.status)) };
+      }
       case 7:
         return state === 'done' || allDone ? { text: decision ? decisionLine(decision, pay) : 'Confirmed' } : { text: 'After probation' };
       default:
@@ -335,7 +359,9 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
               ['Joining date', journey.tj ? longDay(journey.tj) : 'Not set'], ['When', journey.tj ? weekOf(journey.tj) : ''],
               ['Reporting time', pass?.reportingTime ?? reporting?.time ?? 'Not set'], ['Reporting place', pass?.place ?? (pass?.meetingLink ? 'Online' : reporting?.place ?? 'Not set')],
               ['Report to', journey.managerName ?? 'Not picked'], ['Buddy', journey.buddyName ?? 'Not picked'],
-              ['Day-1 pass', passLine], ['Template', template?.name],
+              ['Day-1 pass', passLine],
+              ['Logged into the app', appSignIn ? (appSignIn.signedIn ? `Yes${appSignIn.firstAt ? ` · ${shortDay(appSignIn.firstAt)}` : ''}` : 'No') : ''],
+              ['Template', template?.name],
               ['Joining with', batch.length ? batch.map((b) => b.name).join(', ') : ''],
             ]} />
             {dateRequests.length > 0 && <Sub>Joining date requests{pendingDates ? ` · ${pendingDates} waiting for you` : ''}</Sub>}
@@ -377,8 +403,9 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
       case 3:
         return (
           <>
+            <HrSetupRows setup={setup} joined={joined} busy={Boolean(busy)} onAssign={(what) => setDialog({ kind: 'assign', what })} />
+            {devices.length > 0 && <DevicesBlock key={journey.id} tasks={devices} busy={busy} onAction={(task, action) => setDialog({ kind: 'task', task, action })} />}
             {journey.day1Feeling && <Facts rows={[['How was Day 1', `${DAY1_FEELING[journey.day1Feeling.answer] ?? journey.day1Feeling.answer} · ${shortDay(journey.day1Feeling.at)}`]]} />}
-            {stepTasks(3, weekTasks, 'The week-1 tasks open on the joining day.')}
             {bankPf && <><Sub>Bank and PF change</Sub><BankPfCard request={bankPf} pay={pay} busy={Boolean(busy)} onDecide={(d) => setDialog({ kind: 'bankpf', decision: d })} /></>}
           </>
         );
@@ -489,6 +516,10 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
           onConfirm={async (note) => { await decideBankPfRequest(journey.id, dialog.decision, note || undefined); closeDialog(); flash(dialog.decision === 'approve' ? 'Bank and PF details updated' : 'Change declined'); onChanged(); }} />
       )}
       {dialog?.kind === 'file' && <FilePreview fileId={dialog.id} name={dialog.name} onClose={closeDialog} />}
+      {dialog?.kind === 'assign' && journey.userId && (
+        <AssignSetupDialog kind={dialog.what} setup={setup} userId={journey.userId} name={name} offerCtc={offer?.fields.ctc} tj={journey.tj ?? offer?.fields.tj}
+          onClose={closeDialog} onDone={(message) => { closeDialog(); flash(message); }} />
+      )}
     </div>
   );
 }
@@ -565,7 +596,7 @@ function LetterRow({ letter, name, onOpen, onDocuments }: { letter: LetterView; 
   );
 }
 
-function TasksByPhase({ tasks, busy, onAction }: { tasks: TaskView[]; busy: string; onAction: (t: TaskView, a: 'done' | 'skip' | 'reopen') => void }) {
+function TasksByPhase({ tasks, busy, onAction }: { tasks: TaskView[]; busy: string; onAction: (t: TaskView, a: TaskAction) => void }) {
   const phases = PHASES.onboarding.filter((p) => tasks.some((t) => t.phase === p.key));
   if (!tasks.length) return <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>No tasks yet. They come from the template once the offer is made.</div>;
   return (
@@ -580,39 +611,75 @@ function TasksByPhase({ tasks, busy, onAction }: { tasks: TaskView[]; busy: stri
               <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{done} of {list.length} done</span>
             </div>
             <div style={{ display: 'grid', gap: 2 }}>
-              {list.map((t) => {
-                const st = TASK_STATUS[t.status] ?? TASK_STATUS.todo;
-                const open = OPEN.has(t.status);
-                return (
-                  <div key={t.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8, padding: '8px 0', borderTop: '1px solid var(--line)', opacity: t.status === 'locked' ? 0.6 : 1 }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, overflowWrap: 'anywhere' }}>
-                        {t.title}{t.month ? ` · month ${t.month}` : ''}
-                        {t.mustDo && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 600, color: 'var(--p-orange)' }}>Must-do</span>}
-                      </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginTop: 4 }}>
-                        <OwnerChip role={t.ownerRole} name={t.ownerName} />
-                        <Pill label={st.label} tone={st.tone} fontSize={11} padding="2px 9px" />
-                        <span style={{ fontSize: 12, color: t.late ? 'var(--bad)' : 'var(--ink-3)' }}>
-                          {t.status === 'done' ? `Done ${t.doneAt ? shortDay(t.doneAt) : ''}${t.doneByName ? ` by ${t.doneByName}` : ''}`
-                            : t.status === 'locked' ? (t.opensAt ? `Opens ${shortDay(t.opensAt)}` : 'Opens later')
-                              : t.dueLabel && !t.dueAt ? t.dueLabel : t.dueAt ? `Due ${dueText(t.dueAt, t.late)}` : ''}
-                        </span>
-                      </div>
-                      {t.note && <div style={{ fontSize: 12, color: 'var(--ink-2)', marginTop: 3, overflowWrap: 'anywhere' }}>{t.note}</div>}
-                    </div>
-                    <div style={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
-                      {open && <button type="button" className="pd-btn sm" disabled={Boolean(busy)} onClick={() => onAction(t, 'done')}>Done</button>}
-                      {open && !t.mustDo && <button type="button" className="pd-btn sm ghost" disabled={Boolean(busy)} onClick={() => onAction(t, 'skip')}>Skip</button>}
-                      {(t.status === 'done' || t.status === 'skipped') && <button type="button" className="pd-btn sm ghost" disabled={Boolean(busy)} onClick={() => onAction(t, 'reopen')}>Reopen</button>}
-                    </div>
-                  </div>
-                );
-              })}
+              {list.map((t) => <TaskRow key={t.id} task={t} busy={busy} onAction={onAction} />)}
             </div>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+type TaskAction = 'done' | 'skip' | 'reopen';
+
+/** One task: its title, owner, status and due day, and Done / Skip / Reopen. */
+function TaskRow({ task: t, busy, onAction }: { task: TaskView; busy: string; onAction: (t: TaskView, a: TaskAction) => void }) {
+  const st = TASK_STATUS[t.status] ?? TASK_STATUS.todo;
+  const open = OPEN.has(t.status);
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8, padding: '8px 0', borderTop: '1px solid var(--line)', opacity: t.status === 'locked' ? 0.6 : 1 }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, overflowWrap: 'anywhere' }}>
+          {t.title}{t.month ? ` · month ${t.month}` : ''}
+          {t.mustDo && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 600, color: 'var(--p-orange)' }}>Must-do</span>}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginTop: 4 }}>
+          <OwnerChip role={t.ownerRole} name={t.ownerName} />
+          <Pill label={st.label} tone={st.tone} fontSize={11} padding="2px 9px" />
+          <span style={{ fontSize: 12, color: t.late ? 'var(--bad)' : 'var(--ink-3)' }}>
+            {t.status === 'done' ? `Done ${t.doneAt ? shortDay(t.doneAt) : ''}${t.doneByName ? ` by ${t.doneByName}` : ''}`
+              : t.status === 'locked' ? (t.opensAt ? `Opens ${shortDay(t.opensAt)}` : 'Opens later')
+                : t.dueLabel && !t.dueAt ? t.dueLabel : t.dueAt ? `Due ${dueText(t.dueAt, t.late)}` : ''}
+          </span>
+        </div>
+        {t.note && <div style={{ fontSize: 12, color: 'var(--ink-2)', marginTop: 3, overflowWrap: 'anywhere' }}>{t.note}</div>}
+      </div>
+      <div style={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
+        {open && <button type="button" className="pd-btn sm" disabled={Boolean(busy)} onClick={() => onAction(t, 'done')}>Done</button>}
+        {open && !t.mustDo && <button type="button" className="pd-btn sm ghost" disabled={Boolean(busy)} onClick={() => onAction(t, 'skip')}>Skip</button>}
+        {(t.status === 'done' || t.status === 'skipped') && <button type="button" className="pd-btn sm ghost" disabled={Boolean(busy)} onClick={() => onAction(t, 'reopen')}>Reopen</button>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Week 1's Devices and accesses: IT's (and HR's) access rows behind one line with its progress bar
+ * ("x of N done") and a chevron. Closed until HR opens it; the rows keep their Done / Skip / Reopen.
+ */
+function DevicesBlock({ tasks, busy, onAction }: { tasks: TaskView[]; busy: string; onAction: (t: TaskView, a: TaskAction) => void }) {
+  const [open, setOpen] = useState(false);
+  const done = doneOf(tasks);
+  const pct = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+  const late = tasks.some((t) => t.late && OPEN.has(t.status));
+  return (
+    <div data-devices style={{ border: '1px solid var(--line)', borderRadius: 12 }}>
+      <button type="button" aria-expanded={open} aria-controls="lf-devices" onClick={() => setOpen((v) => !v)}
+        style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', border: 0, background: 'transparent', padding: '10px 12px', textAlign: 'left', font: 'inherit', color: 'var(--ink)', cursor: 'pointer' }}>
+        <span style={{ flex: 1, minWidth: 0, display: 'grid', gap: 6 }}>
+          <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+            <b style={{ fontSize: 13, fontWeight: 500 }}>Devices and accesses</b>
+            <span style={{ fontSize: 11.5, color: late ? 'var(--bad)' : 'var(--ink-3)' }}>{done} of {tasks.length} done{late ? ' · late' : ''}</span>
+          </span>
+          <span style={{ height: 6, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}><i style={{ display: 'block', height: '100%', width: `${pct}%`, borderRadius: 99, background: pctColour(pct) }} /></span>
+        </span>
+        <IconChevronDown size={16} stroke="var(--ink-3)" style={{ flex: 'none', transform: open ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }} />
+      </button>
+      {open && (
+        <div id="lf-devices" style={{ display: 'grid', gap: 2, padding: '0 12px 4px' }}>
+          {tasks.map((t) => <TaskRow key={t.id} task={t} busy={busy} onAction={onAction} />)}
+        </div>
+      )}
     </div>
   );
 }

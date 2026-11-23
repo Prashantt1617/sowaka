@@ -64,6 +64,8 @@ export interface TaskView {
   ownerRole: OwnerRole; ownerName?: string; kind: TaskKind; surface: TaskSurface; mustDo: boolean;
   status: JourneyTaskStatus; opensAt?: string | null; dueAt?: string | null; dueLabel?: string;
   doneAt?: string; doneByName?: string; note?: string; late: boolean; month?: number;
+  /** The joiner panel only: a Devices and accesses row (Laptop, Work email…), made from the template's access rows. */
+  section?: 'access';
 }
 
 export type Viewer = 'hr' | 'manager' | 'employee' | `team:${'it' | 'admin' | 'finance'}`;
