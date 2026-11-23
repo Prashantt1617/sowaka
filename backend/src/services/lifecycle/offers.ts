@@ -36,6 +36,7 @@ import { checkUpload, LifecycleOfferError, pdfPageCount, readFileBytes, storeFil
 import { regenerateAppointmentLetters, outdateChangedLetters } from './letters';
 import { noticeDaysFor } from './templates';
 import { createJoinerAccount, existingAppAccount } from './joinerBasics';
+import { applyPendingSetup } from './pendingSetup';
 import { CLOSED_STATUSES, createCandidateAccount, LIMITS, newLinkToken, rateLimit, sha256 } from './portalAuth';
 
 /** The dashboard user acting, as the routes resolve them. `seesPay`: may see and set CTC. */
@@ -690,6 +691,8 @@ export async function markJoined(hr: HrActor, journeyId: string, input: { workEm
   await journeys().updateOne({ id: journeyId }, { $set: { 'candidate.workEmail': workEmail, updatedAt: now } });
   await completeTask(journeyId, 'mark_joined', { userId: hr.userId, name: hr.name });
   await onJoined(journeyId, userId);
+  // Week 1's setup HR chose before the account existed (or that failed at app access): applied now, never blocking.
+  await applyPendingSetup(journeyId, userId, now);
   // The joiner hears where to go next: the app, signed in with the new work email. To the personal
   // address they have been reading all along, the work address copied (it may not be set up yet).
   const personal = journey.candidate?.personalEmail;

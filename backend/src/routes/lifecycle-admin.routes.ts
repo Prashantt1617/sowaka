@@ -15,6 +15,7 @@ import { MAX_VIDEO_BYTES, saveTemplateDesign, templateDesign, templateMediaBytes
 import { UTF8_FILE_NAMES, contentDisposition } from '../services/lifecycle/files';
 import { approveProfileSection, hrProfileView, hrSaveProfileSection, preboardingPeople, unlockProfileSection } from '../services/lifecycle/preboardingProfile';
 import { grantAppAccess, saveBasicDetails } from '../services/lifecycle/joinerBasics';
+import { pendingSetupForViewer, savePendingSetup } from '../services/lifecycle/pendingSetup';
 
 /**
  * The dashboard's onboarding side of the employee lifecycle, mounted at
@@ -173,6 +174,14 @@ lifecycleAdminRouter.put('/journeys/:id/profile/:section', lifecycleHandler(asyn
 lifecycleAdminRouter.post('/journeys/:id/app-access', lifecycleHandler(async (req) => {
   const { me, j } = await hrJourney(req);
   return hrProfileView(await grantAppAccess(me, j, req.body));
+}));
+// Week 1's setup (KPI, salary, shift templates) chosen before the joiner has an account: kept on the journey
+// and applied when the account is made (services/lifecycle/pendingSetup.ts). Each kind needs its template page's tabs.
+lifecycleAdminRouter.put('/journeys/:id/pending-setup', lifecycleHandler(async (req) => {
+  const { me, j } = await ownJourney(req);
+  const user = req.auth?.user as { dashboardAdmin?: boolean; dashboardTabs?: string[] } | undefined;
+  const pendingSetup = await savePendingSetup({ userId: me.userId, name: me.name, dashboardAdmin: user?.dashboardAdmin, dashboardTabs: user?.dashboardTabs }, j, req.body);
+  return { pendingSetup: pendingSetupForViewer(pendingSetup, viewerOf(req).seesPay) };
 }));
 lifecycleAdminRouter.post('/journeys/:id/profile/:section/approve', lifecycleHandler(async (req) => {
   const { me, j } = await hrJourney(req);

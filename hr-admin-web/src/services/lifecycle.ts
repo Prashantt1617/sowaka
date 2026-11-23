@@ -264,10 +264,23 @@ export interface ConfirmationDecision {
   revealedAt?: string;
 }
 
+/** One Week 1 setup choice made before the joiner had an account; `error` once applying it failed. */
+interface PendingChoice { name: string; by: { userId: string; name: string }; at: string; error?: string; failedAt?: string }
+export interface PendingSetup {
+  kpi?: PendingChoice & { templateId: string };
+  /** The CTC only for someone with pay access. */
+  salary?: PendingChoice & { templateCode: string; annualCtcPaise?: number; effectiveFrom: string };
+  shift?: PendingChoice & { shiftTemplateId: string };
+}
+
 export interface JourneyView {
   id: string;
   kind: LifecycleKind;
   userId?: string;
+  /** The app account HR made before joining (Generate app access). */
+  appAccess?: { userId: string; createdAt: string };
+  /** Week 1's setup chosen before they had an account, applied when it is made (a failed one stays, with `error`). */
+  pendingSetup?: PendingSetup;
   candidate?: CandidateDetails;
   managerUserId?: string;
   buddyUserId?: string;
@@ -531,6 +544,15 @@ export const journeyTaskAction = (id: string, taskId: string, action: 'done' | '
   api<{ task: TaskView }>(`${L}/journeys/${id}/tasks/${taskId}`, json('POST', { action, ...(note ? { note } : {}) })).then((r) => r.task);
 export const updateJourney = (id: string, patch: { managerUserId?: string; buddyUserId?: string; day1Pass?: Day1Pass; templateId?: string }) =>
   api<{ journey: JourneyView }>(`${L}/journeys/${id}`, json('PUT', patch)).then((r) => r.journey);
+/**
+ * Week 1's setup chosen before the joiner has an account (KPI, salary, shift templates): kept on the journey and
+ * applied when the account is made. Each kind given is set, `null` clears it. Answers the pending setup.
+ */
+export const savePendingSetup = (id: string, patch: {
+  kpi?: { templateId: string } | null;
+  salary?: { templateCode: string; annualCtcPaise: number; effectiveFrom: string } | null;
+  shift?: { templateId: string } | null;
+}) => api<{ pendingSetup: PendingSetup }>(`${L}/journeys/${encodeURIComponent(id)}/pending-setup`, json('PUT', patch)).then((r) => r.pendingSetup);
 export const nudgeTask = (id: string, taskId: string) =>
   api<{ nudged: { taskId: string; channel: 'email' | 'push'; who: 'candidate' | 'joiner' | 'manager'; to: string; at: string } }>(`${L}/journeys/${id}/tasks/${taskId}/nudge`, json('POST')).then((r) => r.nudged);
 export const decideBankPfRequest = (id: string, decision: 'approve' | 'decline', note?: string) =>
