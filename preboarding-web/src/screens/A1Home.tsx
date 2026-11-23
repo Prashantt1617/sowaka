@@ -128,7 +128,7 @@ function PointsOfContact({ contacts }: { contacts: NonNullable<PortalHome['conta
       <h2 id="poc-title" className="fig-title" style={{ margin: 0 }}>Your point of contact</h2>
       {contacts.map((c) => {
         const first = firstName(c.name);
-        const sub = c.role === 'manager' ? [c.designation, 'your manager'].filter(Boolean).join(' · ') : 'HR · your onboarding buddy';
+        const sub = c.role === 'manager' ? [c.designation, 'your manager'].filter(Boolean).join(' · ') : 'HR';
         return (
           <div key={c.userId} style={{ background: c.role === 'manager' ? '#E7F5EC' : '#E8F1F8', borderRadius: 16, padding: 16, display: 'grid', gap: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
