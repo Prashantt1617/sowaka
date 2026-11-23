@@ -53,8 +53,9 @@ class DashboardCache {
       final file = await _file(userId);
       if (file == null) return;
       // Written beside, then moved in: a launch mid-write reads a whole file
-      // or none, never half of one.
-      final draft = File('${file.path}.tmp');
+      // or none, never half of one. Each write has its own draft, so two
+      // loads finishing together don't move the same draft twice.
+      final draft = File('${file.path}.${DateTime.now().microsecondsSinceEpoch}.tmp');
       await draft.writeAsString(jsonEncode(replies), flush: true);
       await draft.rename(file.path);
     } catch (error) {
