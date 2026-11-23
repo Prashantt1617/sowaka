@@ -24,15 +24,18 @@ import { G2Gallery } from './icons/g2-gallery';
 import '../../styles/fig-g2.css';
 
 // All seven sections: personal, contact and emergency (G1's frames 4967:93155, 93226, 93303) were added to G2's shell.
-export const G2_SECTIONS: ProfileSectionKey[] = ['personal', 'contact', 'emergency', 'bank', 'education', 'ids', 'photo'];
+export const G2_SECTIONS: ProfileSectionKey[] = ['personal', 'contact', 'emergency', 'bank', 'education', 'ids'];
 const RELATIONS = ['Parent', 'Partner', 'Sibling', 'Friend'];
 const ICON: Partial<Record<ProfileSectionKey, Fig3DName>> = { personal: 'user', emergency: 'phone', bank: 'bank', education: 'write', ids: 'document-approved', photo: 'id-card' };
 /** Which card of the section a template document belongs in (by its name); others go in the last card. */
 const DOC_CARD: Partial<Record<ProfileSectionKey, Array<[string, RegExp]>>> = {
   bank: [['bank', /.*/]],
+  contact: [['contact', /.*/]],
   education: [['education', /degree|certificate|education|marksheet|diploma/i], ['work', /.*/]],
   ids: [['aadhaar', /aadhaar|aadhar|id proof/i], ['pan', /.*/]],
 };
+/** The last job's papers: asked only of someone who has worked before. */
+const JOB_PAPERS = /reliev|offer letter|payslip|experience/i;
 
 type Values = Record<string, unknown>;
 
@@ -60,6 +63,7 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
   const docsIn = (card: string) => {
     const rules = DOC_CARD[k] ?? [];
     return myDocs.filter((d) => rules.find(([, re]) => re.test(`${d.label} ${d.title ?? ''}`))?.[0] === card)
+      .filter((d) => !(card === 'work' && v.worked === 'No' && JOB_PAPERS.test(`${d.docKey} ${d.label}`)))
       .map((d) => <G2DocUpload key={d.id} doc={d} onChange={setDocs} />);
   };
 
@@ -119,7 +123,6 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
       body = (
         <Card>
           {T('fullName', 'Full name', { help: 'As on your Aadhaar or PAN card' })}
-          {T('preferredName', 'Preferred name (optional)')}
           <DateField label="Date of birth" value={String(v.dob ?? '')} onChange={(s) => set({ dob: s })} />
           <div className="fig-field" role="radiogroup" aria-label="Gender">
             <span className="fig-field__label">Gender</span>
@@ -145,6 +148,7 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
             </button>
           </Card>
           {v.permanentSame === false && addr('permanent', 'Permanent address, if different')}
+          {docsIn('contact').length > 0 && <Card title="Address proof">{docsIn('contact')}</Card>}
         </>
       );
     } else if (k === 'emergency') {
@@ -238,7 +242,7 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
       <div className="g2-foot">
         {k === 'photo'
           ? <button type="button" className="fig-btn" onClick={() => navigate('/profile')}>Finish profile</button>
-          : <button type="button" className="fig-btn" disabled={busy || !view} onClick={() => void save()}>{busy ? 'Saving…' : 'Save and continue'}</button>}
+          : <button type="button" className="fig-btn" disabled={busy || !view} onClick={() => void save()}>{busy ? 'Saving…' : last ? 'Save and finish' : 'Save and continue'}</button>}
         <button type="button" className="fig-link g2-foot__later" onClick={() => navigate('/profile')}>Save and finish later</button>
       </div>
     </FigPage>
@@ -317,35 +321,46 @@ function PhotoBlock({ view, onSaved }: { view: ProfileView; onSaved: (v: Profile
 
 const NATIONALITIES = ['Indian', 'Other'];
 const STATES = ['Andaman and Nicobar Islands', 'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chandigarh', 'Chhattisgarh', 'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jammu and Kashmir', 'Jharkhand', 'Karnataka', 'Kerala', 'Ladakh', 'Lakshadweep', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Puducherry', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'];
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /**
- * Date of birth: shows "14 Mar 1998" (the design), kept as YYYY-MM-DD.
- *
- * The native date input sits over the shown text, invisible, so the first tap
- * opens the phone's date picker and a click opens the browser's calendar.
- * (It used to be a text box that turned into a date input on focus: on phones
- * the keyboard was already up, no picker came, and nothing could be entered.)
+ * Date of birth: typed as DD/MM/YYYY (the slashes come in as you type), or picked from the calendar
+ * button; kept as YYYY-MM-DD. A visible text box, so it can be typed on a laptop and a phone alike
+ * (the earlier invisible date input could only be picked, never typed).
  */
 function DateField({ label, value, onChange }: { label: string; value: string; onChange: (s: string) => void }) {
   const id = useId();
-  const input = useRef<HTMLInputElement>(null);
-  const [focus, setFocus] = useState(false);
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  const shown = m ? `${Number(m[3])} ${MON[Number(m[2]) - 1]} ${m[1]}` : '';
+  const picker = useRef<HTMLInputElement>(null);
+  const toText = (v: string) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v); return m ? `${m[3]}/${m[2]}/${m[1]}` : ''; };
+  const [text, setText] = useState(() => toText(value));
+  const [bad, setBad] = useState(false);
+  // A date set from outside (a saved profile loading) shows in the box.
+  useEffect(() => { const t = toText(value); if (t) setText(t); }, [value]);
   const today = new Date().toISOString().slice(0, 10);
-  const open = () => {
-    try { input.current?.showPicker?.(); } catch { /* not allowed here (e.g. not from a click): the field still takes typing */ }
+  const type = (raw: string) => {
+    const d = raw.replace(/\D/g, '').slice(0, 8);
+    const shown = [d.slice(0, 2), d.slice(2, 4), d.slice(4, 8)].filter(Boolean).join('/');
+    setText(shown);
+    if (!d) { setBad(false); onChange(''); return; }
+    if (d.length < 8) { setBad(false); return; }
+    const iso = `${d.slice(4, 8)}-${d.slice(2, 4)}-${d.slice(0, 2)}`;
+    const ok = !Number.isNaN(Date.parse(`${iso}T00:00:00Z`)) && new Date(`${iso}T00:00:00Z`).toISOString().slice(0, 10) === iso && iso >= '1930-01-01' && iso <= today;
+    setBad(!ok);
+    if (ok) onChange(iso);
   };
   return (
     <FigField label={label} id={id}>
-      <div className="fig-date">
-        <div className="fig-input fig-date__shown" data-focus={focus || undefined} aria-hidden="true">
-          {shown || <span className="fig-date__ph">DD Mon YYYY</span>}
-        </div>
-        <input ref={input} id={id} className="fig-date__native" type="date" value={value} min="1930-01-01" max={today}
-          onClick={open} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} onChange={(e) => onChange(e.target.value)} />
+      <div className="fig-date" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input id={id} className="fig-input" style={{ flex: 1 }} type="text" inputMode="numeric" autoComplete="bday" placeholder="DD/MM/YYYY"
+          value={text} onChange={(e) => type(e.target.value)} aria-invalid={bad || undefined} />
+        <button type="button" className="fig-btn fig-btn--outline fig-btn--inline" aria-label="Pick from a calendar" style={{ flex: 'none', position: 'relative' }}
+          onClick={() => { try { picker.current?.showPicker?.(); } catch { picker.current?.focus(); } }}>
+          📅
+          <input ref={picker} type="date" tabIndex={-1} aria-hidden="true" min="1930-01-01" max={today} value={value}
+            onChange={(e) => { onChange(e.target.value); setText(toText(e.target.value)); setBad(false); }}
+            style={{ position: 'absolute', inset: 0, opacity: 0, pointerEvents: 'none', width: '100%', height: '100%' }} />
+        </button>
       </div>
+      {bad && <p className="fig-field__error" role="alert">Enter a real date as DD/MM/YYYY</p>}
     </FigField>
   );
 }

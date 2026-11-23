@@ -88,6 +88,21 @@ export function templateReporting(settings: LifecycleTemplateSettings): Lifecycl
   return settings.preboarding?.joiningDetails === false ? undefined : settings.reporting;
 }
 
+/**
+ * The joining and reporting details a joiner sees, everywhere (portal, Day-1 pass, the dashboard panel,
+ * the teammates' pages): before they join, the template's as it is NOW (HR filling them in or changing
+ * them reaches everyone still to join); from the joining day, their own copy. HR's typed day1Pass still wins
+ * where the pass is read.
+ */
+export async function reportingFor(j: Pick<Journey, 'org' | 'templateId' | 'templateSnapshot' | 'userId' | 'status'>): Promise<LifecycleTemplateSettings['reporting']> {
+  const joined = !!j.userId || ['joined', 'confirmed', 'closed'].includes(String(j.status));
+  if (!joined && j.templateId) {
+    const template = (await onboardingTemplatesOf(j.org)).get(j.templateId);
+    if (template?.settings) return templateReporting(template.settings);
+  }
+  return templateReporting((await designOf(j)).settings);
+}
+
 /** The template row behind a journey task (its snapshot first: the task was made from it). */
 export function designRowOfTask(j: Pick<Journey, 'templateSnapshot'>, templateTaskId: string, design?: JourneyDesign): TemplateTask | undefined {
   return j.templateSnapshot?.tasks?.find((t) => t.id === templateTaskId && !!t.design) ?? design?.rows.find((t) => t.id === templateTaskId);

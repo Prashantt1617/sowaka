@@ -17,8 +17,10 @@ import { addDays, istDate } from './emails';
 import { checkUpload, LifecycleOfferError, removeFile, storeFile } from './files';
 import { CLOSED_STATUSES } from './portalAuth';
 
-export const PROFILE_SECTIONS = ['personal', 'contact', 'emergency', 'bank', 'education', 'ids', 'photo'] as const;
-export type ProfileSection = (typeof PROFILE_SECTIONS)[number];
+const ALL_SECTIONS = ['personal', 'contact', 'emergency', 'bank', 'education', 'ids', 'photo'] as const;
+export type ProfileSection = (typeof ALL_SECTIONS)[number];
+/** What pre-boarding asks for. The photo is no longer a step (23 Nov): it stays readable, not counted. */
+export const PROFILE_SECTIONS: readonly ProfileSection[] = ALL_SECTIONS.filter((k) => k !== 'photo');
 /** The Final designs' wording (App and team pages): "ID documents". The portal keeps its own titles. */
 export const appSectionTitle = (k: ProfileSection) => (k === 'ids' ? 'ID documents' : PROFILE_SECTION_TITLE[k]);
 
@@ -26,7 +28,7 @@ export const PROFILE_SECTION_TITLE: Record<ProfileSection, string> = {
   personal: 'Personal details', contact: 'Contact and address', emergency: 'Emergency contact', bank: 'Bank account and PF',
   education: 'Education and experience', ids: 'ID documents (Aadhaar, PAN)', photo: 'Photo',
 };
-const GENDERS = ['Female', 'Male', 'Other', 'Prefer not to say'] as const;
+const GENDERS = ['Male', 'Female', 'Other'] as const;
 const MARITAL = ['Single', 'Married', 'Divorced', 'Widowed', 'Prefer not to say'] as const;
 const QUALIFICATIONS = ['Class 10', 'Class 12', 'Diploma', 'Graduate', 'Postgraduate', 'Doctorate', 'Other'] as const;
 export const PROFILE_OPTIONS = { genders: GENDERS, marital: MARITAL, qualifications: QUALIFICATIONS };
@@ -37,7 +39,7 @@ export function sectionOfDocument(doc: Pick<CandidateDocumentView, 'docKey' | 'l
   if (/photo|picture|selfie/.test(k)) return 'photo';
   if (/cheque|check|passbook|bank/.test(k)) return 'bank';
   if (/address/.test(k)) return 'contact';
-  if (/educat|degree|certificate|marksheet|payslip|pay slip|relieving|experience|offer letter from/.test(k)) return 'education';
+  if (/educat|degree|certificate|marksheet|payslip|pay slip|relieving|experience|resume|\bcv\b|previous_offer|offer letter/.test(k)) return 'education';
   return 'ids';
 }
 

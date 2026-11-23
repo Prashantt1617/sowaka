@@ -7,7 +7,7 @@
  * about, meet, letter, pass). Up next = the first of: a document sent back →
  * the open item due soonest → an item not started.
  */
-import { designOf, preboardingWatchOf, templateReporting } from './design';
+import { designOf, preboardingWatchOf, reportingFor } from './design';
 import { peopleOf } from './designRows';
 import { candidateAccounts, companies, dateChangeRequests, journeys, letters, offers, users } from '../../config/db';
 import { policiesFor } from '../policy-document.service';
@@ -313,7 +313,7 @@ export async function portalPassOrLocked(journey: Journey, now = new Date()): Pr
  */
 async function passWithTemplate(journey: Journey, withWho = true): Promise<Day1Pass> {
   const { settings } = await designOf(journey);
-  const reporting = templateReporting(settings);
+  const reporting = await reportingFor(journey);
   let meets: { name: string; phone?: string } | null = null;
   if (withWho && reporting && !journey.day1Pass?.askFor) {
     const meetsId = reporting.meets === 'manager' ? journey.managerUserId : reporting.meets === 'buddy' ? journey.buddyUserId : (await peopleOf(journey, settings)).hr;
@@ -635,7 +635,11 @@ export async function runPortalJobs(now = new Date()): Promise<{ expired: number
 
 /** Documents rows for the portal: the files' own links are portal paths. */
 const DOC_HINTS: Array<[RegExp, string]> = [
-  [/id|pan|aadhaar/i, 'Both sides, in good light, with no glare.'],
+  [/aadhaar|aadhar/i, 'Front and back, all four corners showing.'],
+  [/\bpan\b/i, 'The front, all four corners showing.'],
+  [/resume|\bcv\b/i, 'Your latest resume, PDF preferred.'],
+  [/previous_offer|offer letter/i, 'The offer letter from your last company.'],
+  [/id proof/i, 'Both sides, in good light, with no glare.'],
   [/address/i, 'A utility bill, rent agreement or passport page.'],
   [/educat|degree/i, 'Degree certificate and final mark sheet.'],
   [/payslip/i, 'From your current or last employer.'],
@@ -648,6 +652,9 @@ const DOC_HINTS: Array<[RegExp, string]> = [
  */
 const DOC_COPY: Array<[RegExp, { title: string; tag: string }]> = [
   [/^id proof \(pan and aadhaar\)$/i, { title: 'Upload your PAN and Aadhaar', tag: 'ID proof' }],
+  [/^aadhaar card$/i, { title: 'Upload your Aadhaar card', tag: 'Aadhaar' }],
+  [/^pan card$/i, { title: 'Upload your PAN card', tag: 'PAN' }],
+  [/^offer letter \(last company\)$/i, { title: 'Upload the offer letter from your last company', tag: 'Experience' }],
   [/^address proof$/i, { title: 'Upload an address proof', tag: 'Address proof' }],
   [/^education( \(highest degree\)| certificates)?$/i, { title: 'Upload your highest degree', tag: 'Education' }],
 ];

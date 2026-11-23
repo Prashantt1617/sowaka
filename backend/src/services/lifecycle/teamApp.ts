@@ -10,7 +10,7 @@ import type { Journey, JourneyTask, TeamRole } from '../../models/lifecycle.mode
 import { reportDaysOfPerson } from '../attendance-report.service';
 import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
 import { postWelcome } from './appOnboarding';
-import { templateReporting } from './design';
+import { reportingFor } from './design';
 import { dueText, shortDay, stepLabels, stepOfStage } from './designRules';
 import { TEAM_APP_COPY, TEAM_EARLY, TEAM_SCREEN } from './designSeed';
 import { accessTasks, fillNames, firstOf, initialsOf, joinerDesignTasks, place, setRowTick, teammatePushTarget, teamRowTitle, type Placed, type PlacedRow } from './designRows';
@@ -333,7 +333,7 @@ export async function teamJoinerPage(me: Me, journeyId: string) {
     return v;
   });
   const progress = await progressOf(p, tasks, 'team', names);
-  const reporting = templateReporting(p.design.settings);
+  const reporting = await reportingFor(j);
   let schedule: Array<{ rowKey: string; title: string; step: number; withName?: string; withInitials?: string; startsAt?: string }> | undefined;
   if (link.roles.includes('manager')) {
     const firstWeek = p.meetings.filter((m) => m.step === 1 || m.step === 2);

@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { portal } from '../api/portal';
+import { mediaUrl } from '../api/client';
 import type { PortalHome, PortalOfferView, ProfileView } from '../api/types';
 import { firstName, fmtShort, fmtWeekday } from '../lib/format';
 import { useFocusHeading } from '../lib/hooks';
@@ -132,7 +133,7 @@ function PointsOfContact({ contacts }: { contacts: NonNullable<PortalHome['conta
           <div key={c.userId} style={{ background: c.role === 'manager' ? '#E7F5EC' : '#E8F1F8', borderRadius: 16, padding: 16, display: 'grid', gap: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
               {c.photoUrl
-                ? <img src={c.photoUrl} alt="" width={72} height={72} style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', flex: 'none' }} />
+                ? <img src={mediaUrl(c.photoUrl)} alt="" width={72} height={72} style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', flex: 'none' }} />
                 : <span aria-hidden="true" style={{ width: 72, height: 72, borderRadius: '50%', background: '#FFFFFF', color: '#0571A6', fontWeight: 700, fontSize: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>{c.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase()}</span>}
               <span style={{ display: 'grid', gap: 4, minWidth: 0 }}>
                 <span className="fig-subtitle" style={{ fontWeight: 700 }}>{c.name}</span>
