@@ -115,7 +115,7 @@ export async function removeDocumentFile(journey: Journey, docId: string, fileId
   return journeyDocumentsView(journey.id);
 }
 
-/** HR approves, or sends back with a note (the candidate is emailed and it leads their Up next). */
+/** HR approves, or sends back with a note (the candidate is emailed and it leads their Up next); any document not already sent back can be sent back. */
 export async function reviewDocument(
   hr: { org: string; userId: string; name: string },
   docId: string,
@@ -129,7 +129,8 @@ export async function reviewDocument(
   const decision = String(input.decision ?? '');
   const note = String(input.note ?? '').trim();
   if (decision !== 'approve' && decision !== 'send_back') throw new LifecycleOfferError(400, 'Decision must be approve or send_back');
-  if (doc.status !== 'in_review' && !(decision === 'send_back' && doc.status === 'approved')) throw new LifecycleOfferError(409, 'Only an uploaded document can be reviewed');
+  // Approve: an uploaded document. Send back ("ask to re-upload"): one to do, in review or approved (not one already sent back).
+  if (decision === 'approve' ? doc.status !== 'in_review' : doc.status === 'sent_back') throw new LifecycleOfferError(409, 'Only an uploaded document can be reviewed');
   if (decision === 'send_back') {
     if (!note) throw new LifecycleOfferError(400, 'Say what needs fixing');
     if (note.length > 1000) throw new LifecycleOfferError(400, 'The note is too long');

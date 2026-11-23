@@ -11,7 +11,7 @@
  * Document files are linked through the dashboard's authorised file route (`/admin/lifecycle/files/:id`,
  * opened with the dashboard's Bearer token), never a public URL.
  */
-import { candidateDocuments, journeys, lifecycleFiles } from '../../config/db';
+import { candidateDocuments, journeys, lifecycleFiles, offers, users } from '../../config/db';
 import type { AboutYou, CandidateDocument, CandidateProfile, Journey, ProfileApproval } from '../../models/lifecycle.model';
 import { documentListFor, journeyDocumentsView, type CandidateDocumentView } from './documents';
 import { completeTask } from './engine';
@@ -129,9 +129,45 @@ export function sectionValues(journey: Pick<Journey, 'profile' | 'aboutYou'>, se
   }
 }
 
+/**
+ * The Basic details card (mirrors the employee profile's): what HR edits with PUT …/profile/basic
+ * (employeeId, workEmail, designation, department, workLocation, employeeType, tj), the candidate's
+ * own name, mobile, gender and date of birth, the reporting manager, and the app account if made.
+ */
+async function basicView(journey: Journey) {
+  const p = journey.profile ?? {};
+  const [offer, manager] = await Promise.all([
+    offers().findOne({ journeyId: journey.id }, { projection: { _id: 0, versions: 1 } }),
+    journey.managerUserId ? users().findOne({ userId: journey.managerUserId, org: journey.org }, { projection: { _id: 0, userId: 1, name: 1 } }) : null,
+  ]);
+  // HR's value on the journey, else the offer's (what the account would get).
+  const versions = offer?.versions ?? [];
+  const f = ([...versions].reverse().find((v) => v.status !== 'draft') ?? versions.at(-1))?.fields;
+  const designation = journey.designation ?? f?.designation;
+  const department = journey.department ?? f?.department;
+  const workLocation = journey.location ?? f?.location;
+  const employeeType = journey.employeeType ?? f?.employeeType;
+  const mobile = p.contact?.mobile ?? journey.candidate?.phone;
+  return {
+    name: p.personal?.fullName ?? journey.candidate?.name ?? '',
+    ...(journey.employeeId ? { employeeId: journey.employeeId } : {}),
+    ...(journey.candidate?.workEmail ? { workEmail: journey.candidate.workEmail } : {}),
+    ...(designation ? { designation } : {}),
+    ...(department ? { department } : {}),
+    ...(workLocation ? { workLocation } : {}),
+    ...(employeeType ? { employeeType } : {}),
+    ...(journey.tj ? { tj: journey.tj } : {}),
+    ...(mobile ? { mobile } : {}),
+    ...(p.personal?.gender ? { gender: p.personal.gender } : {}),
+    ...(p.personal?.dob ? { dob: p.personal.dob } : {}),
+    ...(manager ? { reportingManager: { userId: manager.userId, name: manager.name } } : {}),
+    ...(journey.appAccess ? { appAccess: { userId: journey.appAccess.userId, createdAt: new Date(journey.appAccess.createdAt).toISOString() } } : {}),
+  };
+}
+
 /** GET /admin/lifecycle/journeys/:id/profile — the whole pre-boarding profile, as HR reads it. */
 export async function hrProfileView(journey: Journey) {
-  const docs = await journeyDocumentsView(journey.id);
+  const [docs, basic] = await Promise.all([journeyDocumentsView(journey.id), basicView(journey)]);
   const done = sectionStates(journey, docs);
   const c = journey.candidate;
   return {
@@ -145,6 +181,7 @@ export async function hrProfileView(journey: Journey) {
       ...(journey.tj ? { tj: journey.tj } : {}),
       status: String(journey.status),
     },
+    basic,
     done: PROFILE_SECTIONS.filter((k) => done[k]).length,
     total: PROFILE_SECTIONS.length,
     sections: PROFILE_SECTIONS.map((key) => {
@@ -196,7 +233,8 @@ const NOT_PREBOARDING = ['joined', 'moved_to_app', 'confirmed', 'declined', 'exp
  * PUT …/profile/:section — HR changes a section's answers: the body the portal sends for it, checked
  * the same way and stored the same way (secrets encrypted, last four in the clear; a blank account
  * number, Aadhaar or PAN keeps what is stored). Emergency is `{ emergencyContact, emergencyContact2? }`
- * (null removes the second); bank may carry `pf: { firstJob, uan? }` (left out keeps it). Allowed on an
+ * (null removes the second); bank may carry `pf: { firstJob, uan? }` (left out keeps it), and needs no
+ * `accountNumberAgain` (when it is sent it must match). Allowed on an
  * approved section (HR is who locks it) and after the candidate's own Tj − 1 lock, not once the joiner
  * has joined or the offer is closed. Records who changed it in `profileEditedByHr.<section>`.
  */
@@ -211,7 +249,9 @@ export async function hrSaveProfileSection(hr: { userId: string; name: string },
     if (body.emergencyContact === undefined) throw new LifecycleOfferError(400, 'Add the emergency contact');
     aboutYou = aboutYouValue(journey, { emergencyContact: body.emergencyContact, ...(body.emergencyContact2 !== undefined ? { emergencyContact2: body.emergencyContact2 } : {}) });
   } else {
-    const value = sectionValue(section, body, journey, now);
+    // HR types a number once: the portal's "type it again" is the same number (blank keeps what is stored).
+    const input = section === 'bank' && body.accountNumberAgain === undefined ? { ...body, accountNumberAgain: body.accountNumber } : body;
+    const value = sectionValue(section, input, journey, now);
     if (section === 'bank' && body.pf !== undefined) aboutYou = aboutYouValue(journey, { pf: body.pf });
     profile = { ...(journey.profile ?? {}), ...value, savedAt: now };
   }

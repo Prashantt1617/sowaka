@@ -15,14 +15,15 @@
  * - The link token is random; only its sha256 is stored, per version.
  * - Valid-till expires an unaccepted offer; it stops counting once accepted.
  * - Candidates are not users until Mark joined, which creates the employee
- *   with `createEmployeeForAdmin` and hands over to the engine's `onJoined`.
+ *   (joinerBasics.ts `createJoinerAccount`, i.e. `createEmployeeForAdmin`) and hands
+ *   over to the engine's `onJoined`; HR's "Generate app access" may have made
+ *   that account earlier, and Mark joined then uses it.
  */
 import { randomUUID } from 'node:crypto';
 import { candidateAccounts, dateChangeRequests, getDb, journeys, lifecycleFiles, offers, users } from '../../config/db';
 import type {
   DateChangeRequest, Journey, JourneyTask, Offer, OfferFields, OfferVersion,
 } from '../../models/lifecycle.model';
-import { AdminError, createEmployeeForAdmin } from '../admin.service';
 import { notifyUsers } from '../notification.service';
 import { allRequiredApproved } from './documents';
 import {
@@ -34,6 +35,7 @@ import { closeJourney, completeTask, createOnboardingJourney, moveTj, onJoined, 
 import { checkUpload, LifecycleOfferError, pdfPageCount, readFileBytes, storeFile } from './files';
 import { regenerateAppointmentLetters, outdateChangedLetters } from './letters';
 import { noticeDaysFor } from './templates';
+import { createJoinerAccount, existingAppAccount } from './joinerBasics';
 import { CLOSED_STATUSES, createCandidateAccount, LIMITS, newLinkToken, rateLimit, sha256 } from './portalAuth';
 
 /** The dashboard user acting, as the routes resolve them. `seesPay`: may see and set CTC. */
@@ -73,6 +75,7 @@ const FIELD_KEYS: Array<keyof OfferFields> = [
 ];
 const PRE_JOIN = ['draft', 'offer_sent', 'accepted', 'finalised', 'active', 'docs_approved'] as const;
 const PRE_JOIN_OPEN = new Set<string>(PRE_JOIN);
+const pickDefined = <T extends Record<string, unknown>>(o: T) => Object.fromEntries(Object.entries(o).filter(([, x]) => x !== undefined)) as Partial<T>;
 
 const current = (offer: Offer) => offer.versions[offer.versions.length - 1];
 /** The newest version HR has sent: what the candidate sees and accepts (a draft revision is still HR's). */
@@ -663,22 +666,25 @@ export async function markJoined(hr: HrActor, journeyId: string, input: { workEm
   // The journey's Tj: an approved date change moves it before HR has sent (or the candidate accepted) the revised offer.
   const tj = journey.tj ?? v.fields.tj;
   if (istDate(now) < tj) throw new LifecycleOfferError(409, `Mark joined opens on the joining day (${formatDay(tj)})`);
-  const workEmail = String(input.workEmail ?? '').trim().toLowerCase();
+  // App access made before joining (the pre-boarding profile): that account is the employee record.
+  const account = await existingAppAccount(journey);
+  // The work email and employee ID: as given, else Basic details' (the app account's when there is one).
+  const workEmail = (String(input.workEmail ?? '').trim() || account?.email || journey.candidate?.workEmail || '').toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(workEmail)) throw new LifecycleOfferError(400, 'A valid work email is required');
-  const employeeId = String(input.employeeId ?? '').trim() || undefined;
+  const employeeId = String(input.employeeId ?? '').trim() || account?.employeeId || journey.employeeId || undefined;
   let userId: string;
-  try {
-    const employee = await createEmployeeForAdmin(hr.userId, {
-      name: journey.candidate?.name, email: workEmail, designation: v.fields.designation, department: v.fields.department,
-      location: v.fields.location, employeeType: v.fields.employeeType, managerUserId: v.fields.managerUserId,
-      joiningDate: tj, employeeId, mobile: journey.candidate?.phone,
-    });
-    userId = employee.userId;
-  } catch (error) {
-    if (error instanceof AdminError) throw new LifecycleOfferError(error.statusCode, error.message);
-    throw error;
+  if (account) {
+    if (account.email && workEmail !== account.email.toLowerCase()) throw new LifecycleOfferError(400, `Their app account signs in with ${account.email}; mark joined with that work email`);
+    userId = account.userId;
+    // The account takes the journey's latest role, team, place, type, manager and joining day.
+    const latest = { ...v.fields, ...pickDefined({ designation: journey.designation, department: journey.department, location: journey.location, employeeType: journey.employeeType, managerUserId: journey.managerUserId }) };
+    await users().updateOne({ userId }, { $set: pickDefined({
+      designation: latest.designation, department: latest.department, location: latest.location, employeeType: latest.employeeType,
+      managerUserId: latest.managerUserId, joiningDate: new Date(`${tj}T00:00:00.000Z`), updatedAt: now,
+    }) });
+  } else {
+    userId = await createJoinerAccount(hr, { ...journey, tj }, { workEmail, ...(employeeId ? { employeeId } : {}) }, v.fields);
   }
-  if (journey.candidate?.personalEmail) await users().updateOne({ userId }, { $set: { personalEmail: journey.candidate.personalEmail } });
   await journeys().updateOne({ id: journeyId }, { $set: { 'candidate.workEmail': workEmail, updatedAt: now } });
   await completeTask(journeyId, 'mark_joined', { userId: hr.userId, name: hr.name });
   await onJoined(journeyId, userId);

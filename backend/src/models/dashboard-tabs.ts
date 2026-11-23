@@ -130,8 +130,8 @@ const RULES: Rule[] = [
   { path: /^\/admin\/lifecycle\/(letter-templates|letters)/, read: ['lifecycle_documents', 'onboarding', 'offboarding'], write: ['lifecycle_documents', 'onboarding', 'offboarding'] },
   // People › Employees (HR) opens a joined employee's onboarding documents too (the route allows it only those files).
   { path: /^\/admin\/lifecycle\/files/, read: ['onboarding', 'offboarding', 'lifecycle_documents', 'employees'] },
-  // The pre-boarding profile and the Employees page's "In pre-boarding" list: Onboarding or People › Employees.
-  { path: /^\/admin\/lifecycle\/journeys\/[^/]+\/profile/, read: ['onboarding', 'employees'], write: ['onboarding', 'employees'] },
+  // The pre-boarding profile (its app access too) and the Employees page's "In pre-boarding" list: Onboarding or People › Employees.
+  { path: /^\/admin\/lifecycle\/journeys\/[^/]+\/(profile|app-access)/, read: ['onboarding', 'employees'], write: ['onboarding', 'employees'] },
   { path: /^\/admin\/lifecycle\/preboarding/, read: ['onboarding', 'employees'] },
   // The Documents page's joiner picker (light: no cards, tasks or pay).
   { path: /^\/admin\/lifecycle\/joiners/, read: ['lifecycle_documents', 'onboarding'] },

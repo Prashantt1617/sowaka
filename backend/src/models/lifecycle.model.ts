@@ -334,6 +334,11 @@ export interface Journey {
   designation?: string;
   department?: string;
   location?: string;
+  /** Onboarding, set by HR on the pre-boarding profile's Basic details (joinerBasics.ts): the employee ID and type the account gets. */
+  employeeId?: string;
+  employeeType?: OfferFields['employeeType'];
+  /** Onboarding: the app account HR made before joining ("Generate app access"); Mark joined uses it instead of making one. */
+  appAccess?: { userId: string; createdAt: Date; byUserId: string; byName: string };
   plant?: PlantState;
   /** Day-1 pass content HR fills (shown at Tj − 7). */
   day1Pass?: Day1Pass;

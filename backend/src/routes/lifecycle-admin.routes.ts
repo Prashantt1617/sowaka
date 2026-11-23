@@ -14,6 +14,7 @@ import multer from 'multer';
 import { MAX_VIDEO_BYTES, saveTemplateDesign, templateDesign, templateMediaBytes, templatePreview, uploadTemplateMedia } from '../services/lifecycle/design';
 import { UTF8_FILE_NAMES, contentDisposition } from '../services/lifecycle/files';
 import { approveProfileSection, hrProfileView, hrSaveProfileSection, preboardingPeople, unlockProfileSection } from '../services/lifecycle/preboardingProfile';
+import { grantAppAccess, saveBasicDetails } from '../services/lifecycle/joinerBasics';
 
 /**
  * The dashboard's onboarding side of the employee lifecycle, mounted at
@@ -41,7 +42,9 @@ export function lifecycleHandler(fn: (req: Request) => Promise<unknown>, status 
     } catch (error) {
       const code = (error as { statusCode?: unknown }).statusCode;
       if (typeof code === 'number' && code >= 400 && code < 500) {
-        res.status(code).json({ error: (error as Error).message });
+        // `details`: extra fields beside `error` (e.g. the existing app account on a second "Generate app access").
+        const details = (error as { details?: Record<string, unknown> }).details;
+        res.status(code).json({ ...(details ?? {}), error: (error as Error).message });
         return;
       }
       next(error);
@@ -160,7 +163,14 @@ async function hrJourney(req: Request) {
 lifecycleAdminRouter.get('/journeys/:id/profile', lifecycleHandler(async (req) => hrProfileView((await hrJourney(req)).j)));
 lifecycleAdminRouter.put('/journeys/:id/profile/:section', lifecycleHandler(async (req) => {
   const { me, j } = await hrJourney(req);
+  // Basic details (employee ID, work email, role, team, location, type, Tj) live on the journey itself.
+  if (req.params.section === 'basic') return hrProfileView(await saveBasicDetails(j, req.body));
   return hrSaveProfileSection(me, j, req.params.section, req.body);
+}));
+// "Generate app access": the joiner's app account before joining (409 with `appAccess` when it exists).
+lifecycleAdminRouter.post('/journeys/:id/app-access', lifecycleHandler(async (req) => {
+  const { me, j } = await hrJourney(req);
+  return hrProfileView(await grantAppAccess(me, j, req.body));
 }));
 lifecycleAdminRouter.post('/journeys/:id/profile/:section/approve', lifecycleHandler(async (req) => {
   const { me, j } = await hrJourney(req);

@@ -964,10 +964,10 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
         && JSON.stringify(sec(res.body, 'bank')?.values) === JSON.stringify({ holderName: 'Nia R Profile', ifsc: 'ICIC0004321', bankName: 'ICICI Bank', accountLast4: '9012', pf: { firstJob: true } }), { bankAfter, values: sec(res.body, 'bank')?.values });
       ok('…two different account numbers: 400', (await put('bank', { holderName: 'Nia', ifsc: 'ICIC0004321', accountNumber: '998877665544', accountNumberAgain: '998877665545' })).status === 400);
       ok('…a 13-digit UAN: 400 (nothing saved)', (await put('bank', { holderName: 'Nia', ifsc: 'ICIC0004321', pf: { firstJob: false, uan: '1234567890123' } })).status === 400 && (await jp()).profile?.bank?.holderName === 'Nia R Profile');
-      res = await put('bank', { holderName: 'Nia R Profile', ifsc: 'ICIC0004321', accountNumber: '9988 7766 5544', accountNumberAgain: '998877665544' });
+      res = await put('bank', { holderName: 'Nia R Profile', ifsc: 'ICIC0004321', accountNumber: '9988 7766 5544' });
       const bankNew = (await jp()).profile!.bank!;
       const { fieldKeyConfigured } = await import('../services/fieldCrypto');
-      ok('…a new account number: stored as the portal stores it (last four, encrypted when a key is set), never sent back; the PF kept', res.status === 200 && bankNew.accountLast4 === '5544'
+      ok('…a new account number typed once (no accountNumberAgain): stored as the portal stores it (last four, encrypted when a key is set), never sent back; the PF kept', res.status === 200 && bankNew.accountLast4 === '5544'
         && (fieldKeyConfigured() ? !!bankNew.accountNumberEnc && bankNew.accountNumberEnc !== bankBefore.accountNumberEnc : !bankNew.accountNumberEnc)
         && !JSON.stringify(res.body).includes('998877665544') && (await jp()).aboutYou?.pf?.firstJob === true, { bankNew, keySet: fieldKeyConfigured() });
 
@@ -1013,6 +1013,12 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
       const portalDocs = await docsSvc.journeyDocumentsView(P);
       ok('…the candidate sees it first on the portal, with the note', portalDocs[0]?.id === addr.id && portalDocs[0].hrNote === 'Please upload the full page.', portalDocs.map((d) => [d.label, d.status]));
       ok('…one already sent back (nothing new uploaded) is not reviewed again (409)', (await review(addr.id, { decision: 'send_back', note: 'again' })).status === 409);
+      const photoRow = (await db.candidateDocuments().findOne({ journeyId: P, docKey: 'photo' }))!;
+      ok('…approving a document with nothing uploaded is still refused (409)', photoRow.status === 'todo' && (await review(photoRow.id, { decision: 'approve' })).status === 409);
+      res = await review(photoRow.id, { decision: 'send_back', note: 'Please add a passport photo.' });
+      ok('send back a document still TO DO (ask for it): sent_back with the note, still needs a note', res.status === 200 && (res.body as { document?: DocRow }).document?.status === 'sent_back'
+        && (res.body as { document?: DocRow }).document?.hrNote === 'Please add a passport photo.', res.body);
+      await db.candidateDocuments().updateOne({ id: photoRow.id }, { $set: { status: 'todo' }, $unset: { hrNote: '', reviewedAt: '', reviewedByName: '' } });
       await docsSvc.uploadDocumentFiles(await jp(), addr.id, [{ originalname: 'bill-full.pdf', buffer: PDF('nia-addr-3') }]);
       ok('…and the re-upload goes in (in review)', (await db.candidateDocuments().findOne({ id: addr.id }))?.status === 'in_review');
     }
@@ -1043,8 +1049,79 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
     ok('…soonest joining first', people.every((x, i) => i === 0 || (people[i - 1].tj ?? '9999') <= (x.tj ?? '9999')), people.map((x) => x.tj));
     ok('…another company sees its own only', ((await call(lifecycleAdminRouter as never, 'GET', '/preboarding', otherSess)).body as Row[]).every((x) => x.journeyId !== P));
 
+    // Basic details (PUT …/profile/basic) and "Generate app access" (POST …/app-access); Mark joined then uses that account.
+    let appUserId = '';
+    {
+      type Basic = Record<string, unknown> & { appAccess?: { userId: string; createdAt: string } };
+      const basicOf = (b: unknown) => (b as { basic?: Basic }).basic;
+      const putBasic = (payload: unknown, bearer = appToken) => call(lifecycleAdminRouter as never, 'PUT', `/journeys/${P}/profile/basic`, bearer, payload);
+      const access = (payload: unknown, id = P, bearer = appToken) => call(lifecycleAdminRouter as never, 'POST', `/journeys/${id}/app-access`, bearer, payload);
+      const errorOf = (r: { body: unknown }) => (r.body as { error?: string }).error;
+      let b = basicOf((await getProfile()).body);
+      ok('GET profile carries `basic`: name, role, team, work location, Tj, mobile, gender, DOB, reporting manager; no app access yet',
+        b?.name === 'Nia R Profile' && b.designation === 'Product Designer' && b.department === 'Design' && b.workLocation === 'Bengaluru · Hybrid' && b.tj === tj
+        && b.mobile === '+919811122334' && b.gender === 'Female' && b.dob === '1998-03-12' && JSON.stringify(b.reportingManager) === JSON.stringify({ userId: 'mgr', name: 'Neha Rao' })
+        && !b.employeeId && !b.workEmail && !b.appAccess, b);
+      res = await putBasic({ employeeId: ' SWT-201 ', workEmail: 'Nia.Profile@sowaka.test', designation: 'Senior Product Designer', department: 'Design', workLocation: 'Pune', employeeType: 'intern' });
+      b = basicOf(res.body);
+      ok('PUT …/profile/basic: saved on the journey (email lower-cased), the GET’s body back', res.status === 200 && b?.employeeId === 'SWT-201' && b.workEmail === 'nia.profile@sowaka.test'
+        && b.designation === 'Senior Product Designer' && b.workLocation === 'Pune' && b.employeeType === 'intern' && Array.isArray((res.body as HrProfile).sections)
+        && (await jp()).employeeId === 'SWT-201' && (await jp()).candidate?.workEmail === 'nia.profile@sowaka.test' && (await jp()).location === 'Pune', res.body);
+      ok('…an employee ID someone has (an employee): 400', errorOf(await putBasic({ employeeId: 'H1' })) === 'Employee ID H1 is already in use');
+      await db.journeys().updateOne({ id: A }, { $set: { employeeId: 'SWT-777' } });
+      ok('…or another joiner: 400', (await putBasic({ employeeId: 'SWT-777' })).status === 400);
+      await db.journeys().updateOne({ id: A }, { $unset: { employeeId: '' } });
+      ok('…a work email an account has, or a bad one: 400', errorOf(await putBasic({ workEmail: 'HR@sowaka.test' })) === 'hr@sowaka.test is already someone’s work email'
+        && errorOf(await putBasic({ workEmail: 'nia@' })) === 'A valid work email is required');
+      ok('…an unknown employee type, a bad Tj: 400', (await putBasic({ employeeType: 'temp' })).status === 400 && (await putBasic({ tj: '2026-02-30' })).status === 400 && (await jp()).employeeId === 'SWT-201');
+      res = await putBasic({ workLocation: '', employeeType: '', tj: '' });
+      b = basicOf(res.body);
+      ok('…"" clears: the work location and type fall back to the offer’s, Tj stays', res.status === 200 && !(await jp()).location && !(await jp()).employeeType
+        && b?.workLocation === 'Bengaluru · Hybrid' && b.employeeType === 'full_time' && b.tj === tj && b.employeeId === 'SWT-201', b);
+      await putBasic({ workLocation: 'Pune' });
+      const taskDue = async () => (await db.journeyTasks().findOne({ journeyId: P, systemKey: 'mark_joined' }))?.dueAt;
+      const dueBefore = await taskDue();
+      res = await putBasic({ tj: addDays(tj, 2) });
+      ok('…a new Tj moves the journey and its open due dates', res.status === 200 && basicOf(res.body)?.tj === addDays(tj, 2) && (await jp()).tj === addDays(tj, 2)
+        && String(await taskDue()) !== String(dueBefore), { before: dueBefore, after: await taskDue() });
+      await putBasic({ tj, designation: 'Product Designer', employeeType: 'full_time' });
+
+      const draftJ = (await offersSvc.createOffer(HR, { candidate: { name: 'Dev Draft', personalEmail: 'dev.draft@example.com' }, fields: fields() })).journeyId;
+      ok('POST …/app-access: not before the offer is accepted (409)', errorOf(await access({ workEmail: 'dev@sowaka.test' }, draftJ)) === 'App access opens once the offer is accepted');
+      ok('…a work email an account has, or none: 400 (nothing made)', (await access({ employeeId: 'SWT-201', workEmail: 'mgr@sowaka.test' })).status === 400
+        && (await access({ employeeId: 'SWT-201' })).status === 400 && !(await jp()).appAccess);
+      await db.users().insertOne(person('empview', ORG, { name: 'Esha Viewer', dashboardAccess: true, dashboardTabs: ['employees'] }) as never);
+      const viewSess = randomBytes(32).toString('hex');
+      await db.authSessions().insertOne({ tokenHash: createHash('sha256').update(viewSess).digest('hex'), userId: 'empview', createdAt: new Date(), expiresAt: new Date(Date.now() + 86_400_000) } as never);
+      const viewAccess = await access({ employeeId: 'SWT-201', workEmail: 'nia.profile@sowaka.test' }, P, viewSess);
+      ok('People › Employees without “Edit employee details”: edits Basic details (200) but cannot make the account (403)',
+        (await putBasic({ department: 'Design' }, viewSess)).status === 200 && viewAccess.status === 403 && !(await jp()).appAccess, viewAccess);
+      ok('…the onboarding tab alone (IT) 403, another company 404; tab rule Onboarding or People › Employees',
+        (await access({ workEmail: 'nia.profile@sowaka.test' }, P, itSess)).status === 403 && (await access({ workEmail: 'nia.profile@sowaka.test' }, P, otherSess)).status === 404
+        && JSON.stringify(tabsForRequest('POST', `/admin/lifecycle/journeys/${P}/app-access`)) === '["onboarding","employees"]');
+      res = await access({ employeeId: 'SWT-201', workEmail: 'nia.profile@sowaka.test' });
+      b = basicOf(res.body);
+      appUserId = b?.appAccess?.userId ?? '';
+      const appUser = await db.users().findOne({ userId: appUserId });
+      ok('app access: the account made as Mark joined makes it (work email, employee ID, role, team, place, manager, Tj, personal email); `basic.appAccess` back',
+        res.status === 200 && !!appUser && appUser.org === ORG && appUser.email === 'nia.profile@sowaka.test' && appUser.employeeId === 'SWT-201' && appUser.designation === 'Product Designer'
+        && appUser.location === 'Pune' && appUser.managerUserId === 'mgr' && appUser.employeeType === 'full_time' && new Date(appUser.joiningDate as Date).toISOString().slice(0, 10) === tj
+        && (appUser as { personalEmail?: string }).personalEmail === 'nia.profile@example.com' && !Number.isNaN(Date.parse(b?.appAccess?.createdAt ?? '')), { body: res.body, appUser });
+      const jNow = await jp();
+      ok('…kept as journey.appAccess (by HR); the journey is not joined (no userId, status unchanged)', jNow.appAccess?.byName === 'Hema HR' && jNow.appAccess.userId === appUserId && !jNow.userId && jNow.status === 'finalised', jNow.appAccess);
+      res = await access({ employeeId: 'SWT-201', workEmail: 'nia.profile@sowaka.test' });
+      ok('…a second time: 409 with the existing account', res.status === 409 && errorOf(res) === 'They already have app access' && (res.body as Basic).appAccess?.userId === appUserId, res.body);
+      ok('…the app finds their joining portal through it before Day 1', (await auth.portalJourneyForAppUser(appUserId, ORG))?.id === P);
+      ok('…Basic details then keep the account’s work email and employee ID (409 on a change), other fields still edit',
+        (await putBasic({ workEmail: 'nia2@sowaka.test' })).status === 409 && (await putBasic({ employeeId: 'SWT-999' })).status === 409
+        && (await putBasic({ workEmail: 'nia.profile@sowaka.test', employeeId: 'SWT-201', department: 'Design' })).status === 200);
+      ok('Mark joined with another work email than the account’s: 400', (await refusal(() => offersSvc.markJoined(HR, P, { workEmail: 'someone.else@sowaka.test' }, at10(tj)))).status === 400);
+    }
+
     // Joined: the employee profile's Documents carry the onboarding uploads beside the filed ones.
     const niaUser = await offersSvc.markJoined(HR, P, { workEmail: 'nia.profile@sowaka.test', employeeId: 'SWT-201' }, at10(tj));
+    ok('Mark joined after app access: that account is the employee (no second one), the journey bound to it',
+      niaUser.userId === appUserId && (await db.users().countDocuments({ email: 'nia.profile@sowaka.test' })) === 1 && (await jp()).userId === appUserId && (await jp()).status === 'joined');
     ok('once joined, they leave the pre-boarding list', !((await call(lifecycleAdminRouter as never, 'GET', '/preboarding', appToken)).body as Row[]).some((x) => x.journeyId === P));
     const joinerHome = await joinerSvc.joinerOnboarding({ userId: niaUser.userId, name: 'Nia Profile', org: ORG }).catch((e: Error) => ({ error: e.message }));
     ok('the joiner app’s profile view carries `locked` per section', 'profile' in joinerHome && joinerHome.profile.sections.find((x) => x.key === 'emergency')?.locked === true
