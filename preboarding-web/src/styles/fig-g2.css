@@ -139,3 +139,8 @@
 .g2-policy__card ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; }
 .g2-policy__card .g2-policy__plain { list-style: none; margin-left: -18px; }
 .g2-story__read { cursor: pointer; border: 0; font: inherit; text-align: left; width: 100%; }
+
+/* The profile step bars are buttons (tap one to open that section): a 24 px tall hit area around the 4 px bar. */
+.g2-steps__seg--tap { border: 0; padding: 0; cursor: pointer; position: relative; font: inherit; }
+.g2-steps__seg--tap::after { content: ""; position: absolute; left: 0; right: 0; top: -10px; bottom: -10px; }
+.g2-steps__seg--tap:focus-visible { outline: 2px solid var(--color-border-focus, #0571a6); outline-offset: 3px; }

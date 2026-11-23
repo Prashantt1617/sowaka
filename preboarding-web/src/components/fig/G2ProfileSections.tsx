@@ -1,7 +1,7 @@
 // Figma "App · Profile ·" Bank account and PF (4967:93357), Education and experience (4967:93433),
 // ID documents (4967:93530) and Photo (4967:93612): the step header with segments, the intro with its
 // 3D icon, the section's cards (the template's documents sit in the card they belong to) and the
-// Save and continue / Save and finish later footer. Saving, drafts and uploads are A1Profile's, unchanged.
+// One Save button (checks each field first) footer. Saving, drafts and uploads are A1Profile's, unchanged.
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { portal } from '../../api/portal';
@@ -39,6 +39,61 @@ const JOB_PAPERS = /reliev|offer letter|payslip|experience/i;
 
 type Values = Record<string, unknown>;
 
+/**
+ * The section's own checks before it is sent (the server checks again): every required field filled
+ * and well formed, one message per field. Secrets already saved (account, Aadhaar, PAN) may stay blank.
+ */
+function checkSection(k: ProfileSectionKey, v: Values, view?: ProfileView): Record<string, string> {
+  const e: Record<string, string> = {};
+  const str = (x: unknown) => String(x ?? '').trim();
+  const need = (name: string, message: string) => { if (!str(v[name])) e[name] = message; };
+  const digits = (x: unknown) => str(x).replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+  const address = (name: 'current' | 'permanent') => {
+    const a = (v[name] ?? {}) as Record<string, string>;
+    if (!str(a.line)) e[`${name}.line`] = 'Enter the house, building and street';
+    if (!str(a.city)) e[`${name}.city`] = 'Enter the city';
+    if (!str(a.state)) e[`${name}.state`] = 'Choose the state';
+    if (!/^\d{6}$/.test(str(a.pin))) e[`${name}.pin`] = 'Enter the 6-digit PIN code';
+  };
+  if (k === 'personal') {
+    need('fullName', 'Enter your full name');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(str(v.dob))) e.dob = 'Enter your date of birth as DD/MM/YYYY';
+    need('gender', 'Choose your gender');
+  } else if (k === 'contact') {
+    if (!/^[6-9]\d{9}$/.test(digits(v.mobile))) e.mobile = 'Enter a 10-digit mobile number';
+    address('current');
+    if (v.permanentSame === false) address('permanent');
+  } else if (k === 'emergency') {
+    need('name', 'Enter their name');
+    need('relation', 'Choose how they are related to you');
+    if (!/^[6-9]\d{9}$/.test(digits(v.phone))) e.phone = 'Enter a 10-digit mobile number';
+  } else if (k === 'bank') {
+    need('holderName', 'Enter the account holder name');
+    const kept = view?.profile.bank?.accountLast4;
+    const acct = str(v.accountNumber).replace(/\s/g, '');
+    if (!acct && !kept) e.accountNumber = 'Enter your account number';
+    else if (acct && !/^\d{9,18}$/.test(acct)) e.accountNumber = 'Account numbers have 9 to 18 digits';
+    if (acct && str(v.accountNumberAgain).replace(/\s/g, '') !== acct) e.accountNumberAgain = 'The two account numbers don’t match';
+    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(str(v.ifsc).toUpperCase())) e.ifsc = 'Enter the 11-character IFSC, e.g. HDFC0001234';
+    if (!v.hasUan) e.hasUan = 'Choose whether you have a UAN from a previous job';
+    else if (v.hasUan !== 'No' && str(v.uan) && !/^\d{12}$/.test(str(v.uan))) e.uan = 'A UAN has 12 digits';
+  } else if (k === 'education') {
+    need('qualification', 'Choose your highest qualification');
+    need('institution', 'Enter your college or university');
+    if (!/^(19|20)\d{2}$/.test(str(v.year))) e.year = 'Enter the year as 4 digits, e.g. 2020';
+    if (!v.worked) e.worked = 'Choose whether you have worked before';
+  } else if (k === 'ids') {
+    const ids = view?.profile.ids;
+    const aadhaar = str(v.aadhaar).replace(/\s/g, '');
+    if (!aadhaar && !ids?.aadhaarLast4) e.aadhaar = 'Enter your 12-digit Aadhaar number';
+    else if (aadhaar && !/^\d{12}$/.test(aadhaar)) e.aadhaar = 'Aadhaar numbers have 12 digits';
+    const pan = str(v.pan).toUpperCase();
+    if (!pan && !ids?.panLast4) e.pan = 'Enter your PAN';
+    else if (pan && !/^[A-Z]{5}\d{4}[A-Z]$/.test(pan)) e.pan = 'A PAN looks like ABCDE1234F';
+  }
+  return e;
+}
+
 export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
   const { reload } = useMe();
   const navigate = useNavigate();
@@ -46,6 +101,7 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
   const [docs, setDocs] = useState<CandidateDocumentView[]>([]);
   const [v, setV] = useState<Values>({});
   const [error, setError] = useState('');
+  const [errs, setErrs] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const typed = useRef(false);
   useEffect(() => {
@@ -54,7 +110,12 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
     portal.documents().then((r) => setDocs(r.documents), () => undefined);
   }, [k]);
   useEffect(() => { if (typed.current) writeDraft(k, v); }, [k, v]);
-  const set = (patch: Values) => { typed.current = true; setV((cur) => ({ ...cur, ...patch })); };
+  const set = (patch: Values) => {
+    typed.current = true;
+    setV((cur) => ({ ...cur, ...patch }));
+    // A field changed: its message goes (an address card clears its own fields' messages).
+    setErrs((cur) => { const out = { ...cur }; for (const key of Object.keys(patch)) for (const e of Object.keys(out)) if (e === key || e.startsWith(`${key}.`)) delete out[e]; return out; });
+  };
 
   const i = ORDER.indexOf(k);
   const sec = view?.sections.find((s) => s.key === k);
@@ -71,8 +132,11 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
   };
 
   const save = async () => {
-    setBusy(true);
     setError('');
+    const found = checkSection(k, v, view);
+    setErrs(found);
+    if (Object.keys(found).length) { setError('Please fix the fields marked below.'); return; }
+    setBusy(true);
     try {
       if (k === 'emergency') await portal.saveAbout({ emergencyContact: { name: String(v.name ?? ''), relation: v.relation as never, phone: String(v.phone ?? '') } });
       else if (k === 'personal' || k === 'contact') await portal.saveProfile(k, v);
@@ -93,8 +157,9 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
     }
   };
 
+  const E = (name: string) => (errs[name] ? <span className="fig-field__error" role="alert">{errs[name]}</span> : null);
   const T = (name: string, label: string, o: { ph?: string; help?: string; inputMode?: 'numeric' | 'text' | 'tel'; max?: number; value?: string; onChange?: (s: string) => void; readOnly?: boolean } = {}) => (
-    <FigField key={name} label={label} help={o.help} placeholder={o.ph} inputMode={o.inputMode} maxLength={o.max} readOnly={o.readOnly}
+    <FigField key={name} label={label} help={o.help} error={errs[name]} placeholder={o.ph} inputMode={o.inputMode} maxLength={o.max} readOnly={o.readOnly}
       value={o.value ?? String(v[name] ?? '')} onChange={(e) => (o.onChange ? o.onChange(e.target.value) : set({ [name]: e.target.value }))} />
   );
   const G = (name: string, label: string, options: Array<[string, string]>, wide?: boolean) => (
@@ -103,6 +168,7 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
       <div className="g2-seg">{options.map(([val, text], n) => (
         <button key={val} type="button" role="radio" aria-checked={v[name] === val} className={wide && n === options.length - 1 ? 'g2-seg__wide' : undefined} onClick={() => set({ [name]: val })}>{text}</button>
       ))}</div>
+      {E(name)}
     </div>
   );
 
@@ -114,6 +180,7 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
         {T(`${name}.line`, 'House, building and street', { value: a.line, onChange: (s) => put({ line: s }) })}
         {T(`${name}.city`, 'City', { value: a.city, onChange: (s) => put({ city: s }) })}
         <SelectField label="State" value={a.state ?? ''} options={STATES} onChange={(s) => put({ state: s })} />
+        {E(`${name}.state`)}
         {T(`${name}.pin`, 'PIN code', { ph: '6 digits', inputMode: 'numeric', max: 6, value: a.pin, onChange: (s) => put({ pin: s.replace(/\D/g, '') }) })}
       </Card>
     );
@@ -127,12 +194,14 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
         <Card>
           {T('fullName', 'Full name', { help: 'As on your Aadhaar or PAN card' })}
           <DateField label="Date of birth" value={String(v.dob ?? '')} onChange={(s) => set({ dob: s })} />
+          {E('dob')}
           <div className="fig-field" role="radiogroup" aria-label="Gender">
             <span className="fig-field__label">Gender</span>
             <div className="g2-seg g1-seg--wrap">{view.options.genders.map((o) => (
               <button key={o} type="button" role="radio" aria-checked={v.gender === o} onClick={() => set({ gender: o })}>{o}</button>
             ))}</div>
           </div>
+          {E('gender')}
           <SelectField label="Marital status" value={String(v.maritalStatus ?? '')} options={view.options.marital} onChange={(s) => set({ maritalStatus: s })} />
           <SelectField label="Nationality" value={nat} options={NATIONALITIES.includes(nat) || !nat ? NATIONALITIES : [nat, ...NATIONALITIES]} onChange={(s) => set({ nationality: s })} />
         </Card>
@@ -159,6 +228,7 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
         <Card title="Contact 1">
           {T('name', 'Full name', { ph: 'e.g. Anil Menon' })}
           <SelectField label="Relationship" value={String(v.relation ?? '')} options={RELATIONS} onChange={(s) => set({ relation: s })} />
+          {E('relation')}
           {T('phone', 'Mobile number', { ph: '+91', inputMode: 'tel' })}
         </Card>
       );
@@ -187,6 +257,7 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
         <>
           <Card title="Education">
             <SelectField label="Highest qualification" value={String(v.qualification ?? '')} options={view.options.qualifications} onChange={(s) => set({ qualification: s })} />
+            {E('qualification')}
             {T('institution', 'College or university', { ph: 'e.g. Savitribai Phule Pune University' })}
             {T('year', 'Year of passing', { ph: 'e.g. 2020', inputMode: 'numeric', max: 4 })}
             {docsIn('education')}
@@ -231,7 +302,7 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
   return (
     <FigPage>
       <G3WebTop />
-      <FigBackHeader title={TITLE[k]} back="/profile" backLabel="Back to employee profile" side={i === 0 || !isAppHost() ? <span className="fig-brand">Step {i + 1} of {ORDER.length}</span> : undefined} below={<G2Steps segs={segs} />} />
+      <FigBackHeader title={TITLE[k]} back="/profile" backLabel="Back to employee profile" side={i === 0 || !isAppHost() ? <span className="fig-brand">Step {i + 1} of {ORDER.length}</span> : undefined} below={<G2Steps segs={segs} titles={ORDER.map((key) => TITLE[key])} onPick={(n) => { if (ORDER[n] !== k) navigate(`/profile/${ORDER[n]}`); }} />} />
       <main id="main" className="g2-sec">
         {!view && !error ? <FigLoading /> : (
           <>
@@ -251,8 +322,7 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
           ? <button type="button" className="fig-btn" onClick={() => navigate(last ? '/profile' : `/profile/${ORDER[i + 1]}`)}>{last ? 'Back to employee profile' : 'Next section'}</button>
           : k === 'photo'
             ? <button type="button" className="fig-btn" onClick={() => navigate('/profile')}>Finish profile</button>
-            : <button type="button" className="fig-btn" disabled={busy || !view} onClick={() => void save()}>{busy ? 'Saving…' : last ? 'Save and finish' : 'Save and continue'}</button>}
-        {!locked && <button type="button" className="fig-link g2-foot__later" onClick={() => navigate('/profile')}>Save and finish later</button>}
+            : <button type="button" className="fig-btn" disabled={busy || !view} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</button>}
       </div>
     </FigPage>
   );
