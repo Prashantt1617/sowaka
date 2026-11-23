@@ -134,7 +134,8 @@ export function rowView(r: PlacedRow, p: Placed, tasks: JourneyTask[], first: st
 
 /** My rows for a joiner (roles' teammate rows and meetings), in step order. */
 export function rowsFor(p: Placed, roles: TeamRole[]): PlacedRow[] {
-  const mine = (r: PlacedRow) => !!r.role && roles.includes(r.role);
+  // The buddy is HR's to pick (23 Nov): the manager's "Assign a buddy" row is no longer anyone's task in the app.
+  const mine = (r: PlacedRow) => !!r.role && roles.includes(r.role) && r.rowKey !== 'mgr_assign_buddy';
   // IT's access rows are one row ("Set up {p} accesses"), seeded as a teammate row of IT.
   return [...p.meetings.filter(mine), ...p.team.filter(mine)]
     .map((r, i) => ({ r, i })).sort((a, b) => a.r.step - b.r.step || a.r.row.order - b.r.row.order || a.i - b.i).map((x) => x.r);
@@ -424,17 +425,11 @@ export async function buddyOptions(me: Me, journeyId: string) {
 }
 
 /** POST /lifecycle/team/joiners/:journeyId/buddy `{ buddyUserId }` */
-export async function assignBuddy(me: Me, journeyId: string, body: Record<string, unknown>) {
-  const { j, link } = await teamJourney(me, journeyId);
-  requireRole(link, 'manager');
-  const buddy = typeof body.buddyUserId === 'string' ? body.buddyUserId : '';
-  if (!buddy || buddy === j.userId || buddy === j.managerUserId) throw new LifecycleError(400, 'Pick someone first');
-  const found = await users().findOne({ org: j.org, userId: buddy, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } } as never, { projection: { _id: 0, name: 1 } });
-  if (!found) throw new LifecycleError(400, 'Pick someone who works here');
-  await journeys().updateOne({ id: j.id }, { $set: { buddyUserId: buddy, updatedAt: new Date() } });
-  await setRowTick(j.id, 'mgr_assign_buddy', me);
-  return teamJoinerPage(me, journeyId);
+export async function assignBuddy(_me: Me, _journeyId: string, _body: Record<string, unknown>): Promise<never> {
+  // The buddy is HR's to pick, on the dashboard (23 Nov): managers no longer assign one from the app.
+  throw new LifecycleError(403, 'HR assigns the buddy');
 }
+
 
 /** POST /lifecycle/team/joiners/:journeyId/schedule `{ meetings: [{ rowKey, startsAt }] }` — Day 1 and Week 1 meetings. */
 export async function scheduleMeetings(me: Me, journeyId: string, body: Record<string, unknown>) {

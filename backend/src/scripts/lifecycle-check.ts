@@ -390,7 +390,10 @@ async function main() {
   const introNow = await app.introView(ISHA) as { likes?: number; commentCount?: number };
   eq('Posted: the intro shows its likes and comments', [introNow.likes, introNow.commentCount], [0, 0]);
 
-  await app.saveSetup(MGR, J2.id, { people: [{ userId: 'p1', why: 'Your buddy' }, { userId: 'p2' }], buddyUserId: 'p1', welcomeNote: { kind: 'text', text: 'Welcome!' }, goals: ['Ship the leave redesign'] });
+  // The buddy is HR's (23 Nov): the manager's set-up no longer takes one; HR sets it on the dashboard.
+  eq('The manager cannot set the buddy from the app', (await refusal(async () => app.saveSetup(MGR, J2.id, { buddyUserId: 'p1' }))).status, 403);
+  await board.updateJourneyByHr(ORG, J2.id, { buddyUserId: 'p1' });
+  await app.saveSetup(MGR, J2.id, { people: [{ userId: 'p1', why: 'Your buddy' }, { userId: 'p2' }], welcomeNote: { kind: 'text', text: 'Welcome!' }, goals: ['Ship the leave redesign'] });
   eq('Set-up: people, buddy, note and goals saved; set-up and goals tasks done', [(await app.peopleView(ISHA)).people.length, byKey(await engine.tasksOf(J2.id), 'manager_setup').status, byKey(await engine.tasksOf(J2.id), 'probation_goals').status], [2, 'done', 'done']);
   const ppl = (await app.peopleView(ISHA)).people;
   await app.actOnPerson(ISHA, ppl[0].id, { action: 'met' });

@@ -1270,6 +1270,8 @@ export async function saveSetup(me: Me, journeyId: string, body: Record<string, 
     }
     setupSaved = setupSaved || picks.length > 0;
   }
+  // The buddy is HR's to pick, on the dashboard (23 Nov): the manager's app no longer sets it.
+  if (body.buddyUserId !== undefined) throw new LifecycleError(403, 'HR assigns the buddy');
   if (body.buddyUserId !== undefined) {
     if (body.buddyUserId === null || body.buddyUserId === '') {
       await journeys().updateOne({ id: j.id }, { $unset: { buddyUserId: '' } });

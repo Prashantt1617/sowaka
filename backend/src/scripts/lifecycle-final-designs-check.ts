@@ -81,15 +81,15 @@ async function main() {
   section('The Standard template is the canvas’s');
   const rows = designSeed.finalDesignRows('Sowaka Test');
   const count = (s: string) => rows.filter((r) => r.design?.section === s).length;
-  eq('53 items: 10 meetings, 10 tasks, 3 check-ins, 6 watch (2 before joining), 2 trainings, 4 accesses, 18 teammate rows',
-    [rows.length, count('meeting'), count('task'), count('checkin'), count('watch'), count('training'), count('access'), count('team')], [53, 10, 10, 3, 6, 2, 4, 18]);
-  eq('In the canvas’s order', rows.slice(0, 4).map((r) => r.title), ['Sign your joining documents', 'Welcome from HR', 'Meet the team', 'Assign a buddy']);
+  eq('52 items: 10 meetings, 10 tasks, 3 check-ins, 6 watch (2 before joining), 2 trainings, 4 accesses, 17 teammate rows (no manager "Assign a buddy": HR picks the buddy)',
+    [rows.length, count('meeting'), count('task'), count('checkin'), count('watch'), count('training'), count('access'), count('team')], [52, 10, 10, 3, 6, 2, 4, 17]);
+  eq('In the canvas’s order', rows.slice(0, 4).map((r) => r.title), ['Sign your joining documents', 'Welcome from HR', 'Meet the team', 'Schedule their first-week meetings']);
   ok('Team keys are unique', new Set(rows.filter((r) => r.team).map((r) => r.team!.key)).size === rows.filter((r) => r.team).length);
   eq('Welcome and documents names the company', rows.find((r) => r.title === 'Welcome and documents')?.agenda?.[0], 'Welcome to Sowaka Test and a quick office round');
   eq('Week 1 check-in: 9 questions, rating / yes-no / long', rows.find((r) => r.title === 'Week 1 check-in')?.design?.questions?.map((q) => q.type[0]).join(''), 'ryyyyyyrl');
   await templates.ensureDefaultTemplates(ORG);
   const def = await templates.defaultTemplate(ORG, 'onboarding');
-  ok('A new company’s Standard onboarding is the Final designs', def.tasks.filter((t) => t.design).length === 53 && def.settings.signLettersOnDay1 === true, def.tasks.length);
+  ok('A new company’s Standard onboarding is the Final designs', def.tasks.filter((t) => t.design).length === 52 && def.settings.signLettersOnDay1 === true, def.tasks.length);
   ok('…with the pre-boarding machinery kept (offer, portal, Mark joined)', ['send_offer', 'finalise_offer', 'mark_joined', 'confirmation_discussion'].every((k) => def.tasks.some((t) => t.systemKey === k)));
   ok('…and none of the rows the designs replace', !def.tasks.some((t) => t.systemKey === 'week1_reels' || t.team?.key === 'buddy_meet'));
 
@@ -97,7 +97,7 @@ async function main() {
   section('The editor: GET / PUT design, validation');
   const view = await design.templateDesign(ORG, def.id);
   eq('Design view: counts per tab', [view.preboarding.videos.length, view.meetings.length, view.tasks.length, view.checkins.length, view.watch.length, view.trainings.length, view.accesses.length, view.team.tasks.length, view.tour.length, view.probation.months, view.team.remindLate],
-    [2, 10, 10, 3, 4, 2, 4, 18, 6, 6, true]);
+    [2, 10, 10, 3, 4, 2, 4, 17, 6, 6, true]);
   eq('Tasks group by kind (Do in Sowaka, Review, Read and acknowledge, Sign, More tasks)', ['do', 'review', 'ack', 'sign', 'other'].map((k) => view.tasks.filter((t) => t.type === k).length), [4, 3, 1, 1, 1]);
   await users().updateOne({ userId: 'it' }, { $set: { org: ORG } });
   const saved = await design.saveTemplateDesign(ORG, def.id, {
@@ -251,8 +251,11 @@ async function main() {
   await companies().updateOne({ id: ORG }, { $unset: { enabledTabs: '' } });
   const options = await team.buddyOptions(MGR, J1);
   ok('Buddy options: colleagues, the current buddy', options.options.some((o) => o.userId === 'rohan') && options.current === 'meera');
-  await team.assignBuddy(MGR, J1, { buddyUserId: 'rohan' });
-  eq('Assign: the journey’s buddy (one source)', (await engine.loadJourney(J1)).buddyUserId, 'rohan');
+  // The buddy is HR's (23 Nov): the manager's app route refuses; HR sets it and the team pages follow.
+  eq('Assign from the app: refused, HR assigns the buddy', await refusal(async () => team.assignBuddy(MGR, J1, { buddyUserId: 'rohan' })), 403);
+  await (await import('../services/lifecycle/board')).updateJourneyByHr(ORG, J1, { buddyUserId: 'rohan' });
+  eq('Assign by HR: the journey’s buddy (one source)', (await engine.loadJourney(J1)).buddyUserId, 'rohan');
+  ok('…and no "Assign a buddy" task for the manager', !(await team.teamJoinerPage(MGR, J1)).tasks.some((t) => t.id === 'mgr_assign_buddy'));
   ok('…Meera no longer sees Priya; Rohan does', !(await oldTeam.teamJoiners(MEERA)).joiners.some((r) => r.journeyId === J1) && (await oldTeam.teamJoiners(me('rohan', 'Rohan Das'))).joiners.some((r) => r.journeyId === J1));
   await team.sendWelcomeMessage(MGR, J1, { text: 'Hi Priya, see you soon!' });
   eq('Welcome message: the portal’s manager note', (await engine.loadJourney(J1)).meetUs?.managerNote?.text, 'Hi Priya, see you soon!');
@@ -516,12 +519,12 @@ async function main() {
   const oldTasksBefore = await journeyTasks().countDocuments({ journeyId: oldJ.id });
   const dry = await migrate.migrateTemplatesToFinalDesigns({ apply: false, org: ORG });
   ok('Dry run: lists the old template only, writes nothing', dry.length === 1 && dry[0].templateId === 'old-tpl' && !(await templates.getTemplate(ORG, 'old-tpl')).tasks.some((t) => t.design), dry);
-  ok('…what it would switch off and add, and the running journey it would give the rows to', dry[0].switchedOff.includes('Week-1 tasks') && dry[0].added.length === 52 && dry[0].signOnDay1 && dry[0].journeys === 1, dry[0]);
+  ok('…what it would switch off and add, and the running journey it would give the rows to', dry[0].switchedOff.includes('Week-1 tasks') && dry[0].added.length === 51 && dry[0].signOnDay1 && dry[0].journeys === 1, dry[0]);
   ok('…the dry run gives no journey anything', !(await engine.loadJourney(oldJ.id)).templateSnapshot.tasks.some((t) => t.design));
   await migrate.migrateTemplatesToFinalDesigns({ apply: true, org: ORG });
   const migrated = await templates.getTemplate(ORG, 'old-tpl');
   ok('Applied: design rows, old rows switched off (never deleted), probation kept at 3',
-    migrated.tasks.filter((t) => t.design).length === 53 && migrated.tasks.some((t) => t.systemKey === 'week1_reels' && !t.enabled && t.replacedBy === 'final_designs') && migrated.settings.probationMonths === 3, migrated.tasks.length);
+    migrated.tasks.filter((t) => t.design).length === 52 && migrated.tasks.some((t) => t.systemKey === 'week1_reels' && !t.enabled && t.replacedBy === 'final_designs') && migrated.settings.probationMonths === 3, migrated.tasks.length);
   eq('Again: nothing to do', (await migrate.migrateTemplatesToFinalDesigns({ apply: true, org: ORG })).length, 0);
   const standard = (await templates.getTemplate(ORG, def.id)).tasks.filter((t) => ['hr_hand_kit', 'hr_check_form', 'hr_confirmation_letter'].includes(t.team?.key ?? ''));
   eq('HR’s hand over, joining form and letter rows carry the canvas’s how-to lines', standard.map((t) => t.design?.how),
@@ -542,7 +545,7 @@ async function main() {
   const oldSnap = (await engine.loadJourney(oldJ.id)).templateSnapshot;
   eq('…and gets the meetings, check-ins, watch list and teammate rows as its own snapshot (no tasks or accesses), its probation and signing place kept',
     [oldSnap.tasks.filter((t) => t.design).length, oldSnap.tasks.some((t) => t.design?.section === 'task' || t.design?.section === 'access'), oldSnap.settings.probationMonths, oldSnap.settings.signLettersOnDay1 === true, !!oldSnap.settings.preboarding],
-    [39, false, 3, false, true]);
+    [38, false, 3, false, true]);
   const oldView = await design.templateDesign(ORG, 'old-tpl');
   await design.saveTemplateDesign(ORG, 'old-tpl', { ...oldView, meetings: oldView.meetings.map((m) => (m.title === 'First goals' ? { ...m, title: 'Your first goals' } : m)) } as never);
   ok('…so a later edit of the migrated template does not reach it', (await joiner.joinerOnboarding(me('j3', 'Rahul Verma'))).meetings.some((m) => m.title === 'First goals'));
