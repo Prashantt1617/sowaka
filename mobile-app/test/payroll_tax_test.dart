@@ -10,6 +10,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -529,10 +530,12 @@ void main() {
   });
 
   group('opened on Tax (an onboarding task)', () {
+    var closed = 0;
     Future<_FakeTaxServer> pumpStart(
       WidgetTester tester,
       _FakeTaxServer server,
     ) async {
+      closed = 0;
       tester.view.physicalSize = const Size(390 * 2, 844 * 2);
       tester.view.devicePixelRatio = 2;
       addTearDown(tester.view.reset);
@@ -547,7 +550,7 @@ void main() {
                 baseUrl: 'https://example.test',
                 client: MockClient(server.handle),
               ),
-              onClose: () {},
+              onClose: () => closed++,
               profileAction: const SizedBox(width: 30, height: 30),
               onNotifications: () {},
               onQuickCreate: () {},
@@ -567,19 +570,29 @@ void main() {
       await settle(tester);
     }
 
-    testWidgets('new regime: Tax with the regime open, over the Payroll home', (
+    // The page's own back button (the hub header's first button).
+    Future<void> headerBack(WidgetTester tester, String page) async {
+      final back = find.ancestor(
+        of: find.descendant(of: find.byKey(ValueKey(page)), matching: find.byWidgetPredicate((w) => w is SvgPicture && '${w.bytesLoader}'.contains('chevron_left_small'))),
+        matching: find.byType(InkWell),
+      );
+      tester.widget<InkWell>(back.first).onTap!();
+      await settle(tester);
+    }
+
+    testWidgets('new regime: Tax alone with the regime open; Back leaves Payroll', (
       tester,
     ) async {
       await pumpStart(tester, _FakeTaxServer());
       expect(find.byKey(const ValueKey('payroll-tax')), findsOneWidget);
       expect(find.byKey(const ValueKey('tax-regime-picker')), findsOneWidget);
       expect(find.byKey(const ValueKey('payroll-declaration')), findsNothing);
-      await back(tester, 'payroll-tax');
-      expect(find.byKey(const ValueKey('payroll-tax')), findsNothing);
-      expect(find.byKey(const ValueKey('payroll-home')), findsOneWidget);
+      expect(find.byKey(const ValueKey('payroll-home')), findsNothing);
+      await headerBack(tester, 'payroll-tax');
+      expect(closed, 1);
     });
 
-    testWidgets('old regime: the investment declaration, then Tax, then home', (
+    testWidgets('old regime: the investment declaration, then Tax, then out of Payroll', (
       tester,
     ) async {
       final server = await pumpStart(
@@ -594,8 +607,9 @@ void main() {
       expect(find.byKey(const ValueKey('payroll-tax')), findsOneWidget);
       // Once: coming back to Tax does not open the declaration again.
       expect(find.byKey(const ValueKey('payroll-declaration')), findsNothing);
-      await back(tester, 'payroll-tax');
-      expect(find.byKey(const ValueKey('payroll-home')), findsOneWidget);
+      await headerBack(tester, 'payroll-tax');
+      expect(closed, 1);
+      expect(find.byKey(const ValueKey('payroll-home')), findsNothing);
     });
   });
 }
