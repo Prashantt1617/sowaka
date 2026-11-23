@@ -692,6 +692,55 @@ async function main() {
   ok('Resend: the same letter again, a second mail', resent.sentAt > sentConf.sentAt && emails.lifecycleOutbox().filter((m) => m.subject === 'Your confirmation letter').length === 2
     && (await lettersCol().countDocuments({ journeyId: J7, kind: 'confirmation', 'email.sentAt': { $exists: true } })) === 1);
 
+  section('Teams › New joiners: every teammate, Tj − 1 to Tj + 30, profile only');
+  const newJoiners = await import('../services/lifecycle/teamNewJoiners');
+  await users().insertMany([
+    person('dev', 'Dev Malhotra', { managerUserId: 'ceo', department: 'Design', designation: 'Designer' }),
+    person('j10', 'Old Joiner', { managerUserId: 'mgr', department: 'Operations' }),
+    person('j11', 'Month Joiner', { managerUserId: 'mgr', department: 'Operations' }),
+  ] as never[]);
+  const plain = async (name: string, managerUserId: string, tj: string, department: string, status: 'finalised' | 'declined') => {
+    const J = await engine.createOnboardingJourney(ORG, 'hr', { candidate: { name, personalEmail: `${name.split(' ')[0].toLowerCase()}@mail.test`, phone: '9999999999' } as never, tj, managerUserId, department, designation: 'Product designer' });
+    await journeys().updateOne({ id: J.id }, { $set: { status } });
+    return J.id;
+  };
+  const tomorrow = rules.addDaysKey(today, 1);
+  const J8 = await plain('Kavya Rao', 'hod', tomorrow, 'Design', 'finalised');          // tomorrow, no account yet
+  const J9 = await plain('Too Early', 'mgr', rules.addDaysKey(today, 2), 'Operations', 'finalised');
+  const J12 = await plain('Not Coming', 'mgr', tomorrow, 'Operations', 'declined');
+  const J10 = await mk('j10', 'Old Joiner', 'mgr', rules.addDaysKey(today, -31));
+  const J11 = await mk('j11', 'Month Joiner', 'mgr', rules.addDaysKey(today, -30));
+  await journeys().insertOne({ id: 'other-co-j', org: 'other-co', kind: 'onboarding', status: 'finalised', tj: today, managerUserId: 'mgr', department: 'Operations', candidate: { name: 'Elsewhere Person', personalEmail: 'x@mail.test' }, anchors: {} } as never);
+  const seen = async (userId: string, name: string) => (await newJoiners.newJoinersForTeammate(me(userId, name))).joiners;
+  const ids = (list: Array<{ journeyId: string }>) => list.map((r) => r.journeyId);
+  const rohanSees = await seen('rohan', 'Rohan Das');
+  eq('Rohan (Operations, reports to Sunny): Priya as her buddy, Month Joiner (Tj + 30) as a peer',
+    [rohanSees.find((r) => r.journeyId === J1)?.relation, rohanSees.find((r) => r.journeyId === J11)?.relation], ['buddy', 'peer']);
+  ok('…not Tj + 31, Tj − 2, a declined offer, nor the other company’s joiner', ![J10, J9, J12, 'other-co-j'].some((id) => ids(rohanSees).includes(id)));
+  const priyaCard = rohanSees.find((r) => r.journeyId === J1)!;
+  eq('Priya’s card: her account opens the profile, "Joined <day>", role and department',
+    [priyaCard.userId, priyaCard.joiningLine, priyaCard.department, priyaCard.initials, priyaCard.profileNote], ['j1', `Joined ${newJoiners.dayLabel(rules.addDaysKey(today, -5))}`, 'Operations', 'PS', undefined]);
+  const meeraSees = await seen('meera', 'Meera Joshi');
+  const kavya = meeraSees.find((r) => r.journeyId === J8);
+  eq('Meera (reports to Anita, like Kavya): Kavya as a peer, "Joins tomorrow", no account yet; Priya by department',
+    [kavya?.relation, kavya?.joiningLine, kavya?.userId, kavya?.profileNote, kavya?.designation, meeraSees.find((r) => r.journeyId === J1)?.relation],
+    ['peer', 'Joins tomorrow', undefined, 'Profile opens on their first day', 'Product designer', 'department']);
+  eq('Newest first: joining tomorrow on top', ids(meeraSees)[0], J8);
+  eq('Dev (Design): only Kavya, by department', [ids(await seen('dev', 'Dev Malhotra')), (await seen('dev', 'Dev Malhotra'))[0]?.relation], [[J8], 'department']);
+  eq('Sunny (the manager) sees his joiners as their manager', (await seen('mgr', 'Sunny Kapoor')).find((r) => r.journeyId === J1)?.relation, 'manager');
+  ok('Priya does not see herself', !ids(await seen('j1', 'Priya Shah')).includes(J1));
+  eq('No department and no manager in common: nothing', (await seen('it', 'Imran Khan')).length, 0);
+  eq('Another company’s viewer: nothing of this one', (await newJoiners.newJoinersForTeammate({ userId: 'rohan', name: 'Rohan Das', org: 'other-co' })).joiners.length, 0);
+  await journeys().updateOne({ id: J8 }, { $set: { appAccess: { userId: 'dev', createdAt: new Date(), byUserId: 'hr', byName: 'Ritu Sharma' } } });
+  eq('An account made before joining ("Generate app access") opens the profile', (await seen('meera', 'Meera Joshi')).find((r) => r.journeyId === J8)?.userId, 'dev');
+  await users().updateOne({ userId: 'dev' }, { $set: { hiddenFromDirectory: true } });
+  eq('…unless the directory hides it', (await seen('meera', 'Meera Joshi')).find((r) => r.journeyId === J8)?.profileNote, 'Profile opens on their first day');
+  await users().updateOne({ userId: 'dev' }, { $unset: { hiddenFromDirectory: '' } });
+  await journeys().updateOne({ id: J8 }, { $unset: { appAccess: '' } });
+  eq('Joining lines: tomorrow, today (not yet marked joined / joined), a later date', [newJoiners.joiningLine('2026-12-01', '2026-11-30', false), newJoiners.joiningLine('2026-11-30', '2026-11-30', false), newJoiners.joiningLine('2026-11-30', '2026-11-30', true), newJoiners.joiningLine('2026-11-30', '2026-12-05', true)],
+    ['Joins tomorrow', 'Joins today', 'Joined today', 'Joined Mon 30 Nov']);
+  ok('Kept per company and dropped by every lifecycle write', readCache.kindsChangedBy('/lifecycle/team/joiners/x/rows/y').includes('lc-new-joiners' as never));
+
   await closeDb();
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

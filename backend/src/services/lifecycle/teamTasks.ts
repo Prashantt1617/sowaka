@@ -119,7 +119,7 @@ export function currentStep(j: Journey, today: string): number {
 
 // ─── Who is connected to whom ───────────────────────────────────────────────
 
-const OPEN_ONBOARDING = { kind: 'onboarding', closedAt: { $exists: false }, status: { $nin: ['draft', 'offer_sent', 'accepted', 'declined', 'expired', 'not_joining'] } } as const;
+export const OPEN_ONBOARDING = { kind: 'onboarding', closedAt: { $exists: false }, status: { $nin: ['draft', 'offer_sent', 'accepted', 'declined', 'expired', 'not_joining'] } } as const;
 
 /** Everyone under me (my reports, theirs, and so on, up to 8 levels), by user id. */
 async function myLine(org: string, userId: string): Promise<Set<string>> {
