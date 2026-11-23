@@ -235,6 +235,8 @@ export interface LifecycleTemplateSettings {
   tourLessons?: TourLessonKey[];
   /** Final designs: "Remind teammates when a task is late" (absent: on). */
   remindLateTeamTasks?: boolean;
+  /** The joiner app's name for the trainings section ("Trainings" when unset); HR renames it in the editor. */
+  trainingsLabel?: string;
   /** Final designs: who does the HR tasks, the IT & admin tasks, and counts as someone senior. */
   assignees?: { hrUserId?: string; itUserId?: string; seniorUserId?: string };
   /** Final designs: the probation template, a shift template (Setup › Shift templates). */
