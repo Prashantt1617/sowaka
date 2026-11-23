@@ -37,7 +37,7 @@ const LABELS: Record<string, string> = {
   notice: 'Notice period', noticeDays: 'Notice period', noticePeriod: 'Notice period',
   valid: 'Offer valid till', validTill: 'Offer valid till',
   offerDate: 'Offer accepted on', acceptedOn: 'Offer accepted on', offerAcceptedOn: 'Offer accepted on',
-  confirm: 'Confirmed from', confirmedFrom: 'Confirmed from', confirmationDate: 'Confirmed from',
+  confirm: 'Confirmed from', confirmedFrom: 'Confirmed from', confirmationDate: 'Confirmed from', confirmedOn: 'Confirmed on',
   lastDay: 'Last working day', lastWorkingDay: 'Last working day', tl: 'Last working day',
   extendMonths: 'Extended by', extendedBy: 'Extended by', probationEndsOn: 'Probation now ends',
   responsibilities: 'Responsibilities', employeeType: 'Employment type',
@@ -113,6 +113,14 @@ export function labelledBody(body: string, values: Record<string, string> = {}):
 export function missingFields(body: string, values: Record<string, string>, serverMissing: string[] = []): string[] {
   const need = [...placeholders(body), ...serverMissing.map(norm)];
   return [...new Set(need)].filter((k) => !filled(values, k));
+}
+
+/**
+ * The confirmation letter as the joiner panel makes it: the company's template with the decision date
+ * stamped on top ("Confirmed on Fri 20 Nov 2026"), unless the template already places {{confirmedOn}}.
+ */
+export function withConfirmedStamp(body: string): string {
+  return placeholders(body).includes('confirmedOn') ? body : `<p><strong>Confirmed on {{confirmedOn}}</strong></p>\n${body}`;
 }
 
 /** `logo`: the company's mark (an absolute URL, so the PDF can draw it); without one, its initials on a tile. */

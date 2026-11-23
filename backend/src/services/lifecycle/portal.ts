@@ -26,6 +26,7 @@ import { CLOSED_STATUSES, mediaPath } from './portalAuth';
 import { addWorkingDaysKey, workCalendar } from './dueRules';
 import { scopedJourneys, scriptScope } from './scriptScope';
 import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
+import { makeAutoDay1Passes } from './day1PassAuto';
 
 type PathKey = 'offer' | 'docs' | 'about' | 'meet' | 'letter' | 'pass';
 /** `waiting`: the candidate's part is done and HR has it (every required document uploaded, in review). */
@@ -289,6 +290,10 @@ export async function portalPassOrLocked(journey: Journey, now = new Date()): Pr
  * pass, the joining details tile and the home's reporting time. `withWho` false skips "who meets them".
  */
 async function passWithTemplate(journey: Journey, withWho = true): Promise<Day1Pass> {
+  // The names it was made with stay off (readers name the journey's manager and buddy as they are now), and its mark.
+  const { managerName: _m, buddyName: _b, auto, ...stored } = journey.day1Pass ?? {};
+  // The automatic pass (day1PassAuto.ts) is the template's already, and always on the joining day.
+  if (auto) return { ...stored, ...(journey.tj ? { date: journey.tj } : {}) };
   const { settings } = await designOf(journey);
   const reporting = await reportingFor(journey);
   let meets: { name: string; phone?: string } | null = null;
@@ -300,7 +305,7 @@ async function passWithTemplate(journey: Journey, withWho = true): Promise<Day1P
     ...(reporting?.time ? { reportingTime: reporting.time } : {}), ...(reporting?.place ? { place: reporting.place } : {}),
     ...(reporting?.mapLink ? { mapLink: reporting.mapLink } : {}),
     ...(reporting?.bring ? { bring: [reporting.bring] } : {}), ...(meets ? { askFor: { name: meets.name, ...(meets.phone ? { phone: meets.phone } : {}) } } : {}),
-    ...(journey.day1Pass ?? {}),
+    ...stored,
   };
 }
 
@@ -317,7 +322,7 @@ export async function portalPass(journey: Journey, now = new Date(), opts: { any
     ...pass,
     // The manager meeting names the current manager (the line HR typed goes stale when the manager changes).
     ...(pass.agenda ? { agenda: pass.agenda.map((a) => { const w = meetingWithName(isManagerMeeting(a), a.with, manager?.name); return w ? { ...a, with: w } : a; }) } : {}),
-    date: journey.day1Pass?.date ?? journey.tj,
+    date: pass.date ?? journey.tj,
     candidateName: journey.candidate?.name ?? '', designation: journey.designation, department: journey.department,
     ...(manager ? { managerName: manager.name } : {}), ...(buddy ? { buddyName: buddy.name } : {}),
     companyName: companyDisplayName(company, journey.org),
@@ -533,6 +538,9 @@ export async function runPortalJobs(now = new Date()): Promise<{ expired: number
     const journey = await journeys().findOne({ id: offer.journeyId, status: 'offer_sent' });
     if (journey) await closeJourney(journey.id, 'expired', `Not accepted by ${formatDay(offer.versions[offer.versions.length - 1].fields.validTill)}`);
   }
+
+  // The Day-1 pass is made from the template at Tj − 7 (any hour: HR sees it on the panel), before its mail below.
+  await makeAutoDay1Passes(orgs, now);
 
   const hour = istHour(now);
   if (hour < 9 || hour >= 20) return { expired, mails: 0 };

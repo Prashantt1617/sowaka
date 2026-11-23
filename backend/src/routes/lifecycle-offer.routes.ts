@@ -19,7 +19,7 @@ import { lifecycleEnabled } from '../services/lifecycle/emails';
 import { contentDisposition, fileForOrg, LifecycleOfferError, readFileBytes, UTF8_FILE_NAMES, MULTER_FILE_LIMIT } from '../services/lifecycle/files';
 import {
   createLetter, createLetterTemplate, letterWithoutPay, listLetters, listLetterTemplates, mergeValues, resolveAttachments, salaryBreakup, saveLetterDraft,
-  sendLetter, updateLetterTemplate, uploadLetterAttachment, uploadLetterPdf, valuesWithoutPay,
+  sendConfirmationLetter, sendLetter, updateLetterTemplate, uploadLetterAttachment, uploadLetterPdf, valuesWithoutPay,
 } from '../services/lifecycle/letters';
 import { documentStatusOnly, lifecycleViewer } from '../services/lifecycle/board';
 import {
@@ -226,6 +226,8 @@ r.post('/letters/:id/send', ...guard(LETTER_TABS), handle(async (req) => {
   const letter = await sendLetter(hr, param(req, 'id'), body(req));
   return { letter: hr.seesPay ? letter : letterWithoutPay(letter) };
 }));
+/** The joiner panel's Generate confirmation letter / Resend: the letter to the employee's work email (their account's). */
+r.post('/letters/:id/send-confirmation', ...guard(LETTER_TABS), handle(async (req) => sendConfirmationLetter(actorOf(req), param(req, 'id'))));
 /** H3c's Save draft: the email kept on the letter until it is sent. */
 r.put('/letters/:id/draft', ...guard(LETTER_TABS), handle(async (req) => {
   const hr = actorOf(req);
