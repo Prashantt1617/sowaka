@@ -238,12 +238,17 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
   ok('…the two amounts add up to what the earnings lost', lossOfPayPaiseOf(freshSlip) + notEmployedPaiseOf(freshSlip) === unpaidPaiseOf(freshSlip));
   ok('a full month: nothing not employed', notEmployedDaysOf(stayerSlip!.inputs) === 0 && !(await asHtml(stayerSlip!, '2025-01-01')).includes('Not employed'));
 
-  // HR types the same 15 days: that is their loss of pay, as before.
+  // HR types the same 15 days (a company paying joiners by the calendar month): those are the days
+  // before joining, so not employed, not loss of pay; the pay is the same.
   await recomputeRun('hr', run.id, { lopDays: { joiner: 15 } });
   const typed = (await slip('joiner'))!;
-  ok('HR-typed loss of pay stays loss of pay: 15 days, none "not employed"', typed.inputs.lopEnteredByHr === true && lossOfPayDaysOf(typed.inputs) === 15 && notEmployedDaysOf(typed.inputs) === 0 && typed.inputs.notEmployedDays === 0, typed.inputs);
+  ok('HR-typed days up to the days before joining are not employed: LOP 0, not employed 15', typed.inputs.lopEnteredByHr === true && lossOfPayDaysOf(typed.inputs) === 0 && notEmployedDaysOf(typed.inputs) === 15 && typed.inputs.notEmployedDays === 15, typed.inputs);
   const typedHtml = await asHtml(typed, '2026-09-16');
-  ok('…the payslip says "Loss of pay · 15 days", the same net pay', typedHtml.includes('Loss of pay · 15 days') && !typedHtml.includes('Not employed') && typed.netPayablePaise === joinerSlip.netPayablePaise);
+  ok('…the payslip says "Not employed · 15 days", no loss of pay, the same net pay', typedHtml.includes('Not employed · 15 days') && !typedHtml.includes('Loss of pay ·') && typed.netPayablePaise === joinerSlip.netPayablePaise);
+  // HR types more than the days before joining: the rest is real loss of pay.
+  await recomputeRun('hr', run.id, { lopDays: { joiner: 17 } });
+  const more = (await slip('joiner'))!;
+  ok('…HR types 17: not employed 15, loss of pay 2', lossOfPayDaysOf(more.inputs) === 2 && notEmployedDaysOf(more.inputs) === 15, more.inputs);
   await recomputeRun('hr', run.id, { lopDays: { joiner: null } });
   const back = (await slip('joiner'))!;
   ok('back to attendance: not employed again, the same pay', !back.inputs.lopEnteredByHr && notEmployedDaysOf(back.inputs) === 15 && back.netPayablePaise === joinerSlip.netPayablePaise && back.grossPaise === joinerSlip.grossPaise);

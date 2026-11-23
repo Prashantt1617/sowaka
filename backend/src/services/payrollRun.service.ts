@@ -472,7 +472,7 @@ async function buildRunPayslips(
         attendanceLopDays,
         lopEnteredByHr,
         // Of lopDays, the days before joining and after leaving: not loss of pay (they were not employed), paid the same way.
-        notEmployedDays: lopEnteredByHr ? 0 : Math.min(notYetEmployedDays + leftDays, lopDays),
+        notEmployedDays: Math.min(notYetEmployedDays + leftDays, lopDays),
         ...(leftDays > 0 && left ? { leftOn: left } : {}),
         incomeTaxPaise,
         incomeTaxEnteredByHr,
