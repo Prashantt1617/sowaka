@@ -8,6 +8,8 @@
  *
  *   npm run lifecycle:team-check      (MONGODB_DB=el_journey_team_check; local mongod only)
  */
+// These flows start with the candidate accepting online, which the live server no longer allows.
+process.env.OFFER_ONLINE_ACCEPT ??= '1';
 process.env.MONGODB_URI = process.env.LIFECYCLE_CHECK_MONGODB_URI ?? 'mongodb://127.0.0.1:27133';
 process.env.MONGODB_DB = process.env.MONGODB_DB ?? 'el_journey_team_check';
 

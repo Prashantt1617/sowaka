@@ -9,6 +9,8 @@
  *
  *   npm run portal-app:check     (mongod on 127.0.0.1:27133, database el_portal_app_check)
  */
+// These flows start with the candidate accepting online, which the live server no longer allows.
+process.env.OFFER_ONLINE_ACCEPT ??= '1';
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 

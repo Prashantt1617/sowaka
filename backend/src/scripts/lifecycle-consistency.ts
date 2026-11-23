@@ -20,6 +20,8 @@
  * The differences that are allowed are listed in ALLOWED below; any other
  * difference between surfaces fails.
  */
+// These flows start with the candidate accepting online, which the live server no longer allows.
+process.env.OFFER_ONLINE_ACCEPT ??= '1';
 import { randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 

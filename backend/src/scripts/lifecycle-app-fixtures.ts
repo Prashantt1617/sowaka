@@ -12,6 +12,8 @@
  * In-process, no HTTP server, on its own scratch database:
  *   MONGODB_URI=mongodb://127.0.0.1:27133 npm run lifecycle:fixtures
  */
+// These flows start with the candidate accepting online, which the live server no longer allows.
+process.env.OFFER_ONLINE_ACCEPT ??= '1';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { NextFunction, Request, Response } from 'express';

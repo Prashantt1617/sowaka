@@ -9,6 +9,8 @@
  *
  *   npm run lifecycle:check      (MONGODB_DB=el_journey_check; local mongod only)
  */
+// These flows start with the candidate accepting online, which the live server no longer allows.
+process.env.OFFER_ONLINE_ACCEPT ??= '1';
 import type { Request, Response } from 'express';
 import type { Journey, JourneyTask, Meeting, SystemTaskKey, TemplateTask } from '../models/lifecycle.model';
 import type { TaskView } from '../services/lifecycle/engine';

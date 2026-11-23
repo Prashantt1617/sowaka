@@ -33,6 +33,8 @@
  *
  * Stages are relative to the day it runs: run it on the day of the demo.
  */
+// These flows start with the candidate accepting online, which the live server no longer allows.
+process.env.OFFER_ONLINE_ACCEPT ??= '1';
 import { randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 

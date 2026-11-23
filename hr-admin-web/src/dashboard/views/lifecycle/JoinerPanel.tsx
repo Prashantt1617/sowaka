@@ -30,7 +30,7 @@ import { downloadFile } from './DocumentParts';
 import { TAB_LABELS, columnLabel, pctColour, weekOf } from './boardModel';
 
 const STATUS_LABEL: Record<string, string> = {
-  draft: 'Offer not sent yet', offer_sent: 'Offer sent', accepted: 'Accepted, waiting for HR', finalised: 'Finalised, portal sent', active: 'On the portal',
+  draft: 'Offer not sent yet', offer_sent: 'Offer sent', accepted: 'Accepted, portal not sent', finalised: 'Finalised, portal sent', active: 'On the portal',
   docs_approved: 'Documents approved', joined: 'Joined', moved_to_app: 'On the app', confirmed: 'Confirmed', declined: 'Declined', expired: 'Offer expired', not_joining: 'Not joining',
 };
 const TASK_STATUS: Record<string, { label: string; tone: { bg: string; fg: string } }> = {
@@ -257,8 +257,8 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   if (closed) primary = { label: 'Reopen', go: () => setDialog({ kind: 'status', action: 'reopen' }) };
   else if (revisionWaiting && pay) primary = { label: 'Send revised offer', go: () => openDocuments(s.setView, 'offer', journey.id) };
   else if (status === 'draft') primary = { label: 'Send offer', go: () => openDocuments(s.setView, 'offer', journey.id, Boolean(offer?.pdfFileId)) };
-  else if (status === 'offer_sent') primary = { label: 'Resend offer email', go: () => openDocuments(s.setView, 'offer', journey.id, Boolean(offer?.pdfFileId)) };
-  else if (status === 'accepted') primary = { label: 'Finalise and send the portal', go: () => setDialog({ kind: 'finalise' }) };
+  // The candidate replies to HR's email to accept; HR marks it accepted here, which sends the joining portal.
+  else if (status === 'offer_sent' || status === 'accepted') primary = { label: 'Mark offer accepted', go: () => setDialog({ kind: 'finalise' }) };
   else if (canJoin) primary = { label: 'Mark joined', go: () => setDialog({ kind: 'joined' }) };
   else if (reviewQueue > 0) primary = { label: 'Review documents', go: () => setOpenStep(2) };
   else if (status === 'docs_approved' && !letters.some((l) => l.kind === 'appointment')) primary = { label: 'Make the appointment letter', go: () => openDocuments(s.setView, 'appointment', journey.id) };
@@ -362,10 +362,10 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
         </>
       ) : <Para>No offer yet. New offer letter starts one.</Para>;
       case 1:
-        if (cur < 1 && !allDone) return <Para>{first} gets the offer PDF by email with a link to accept it. Once they accept, Finalise sends the joining portal link, where they sign in with a code to their email.</Para>;
+        if (cur < 1 && !allDone) return <Para>{first} gets the offer PDF by email and replies to you to accept it. Then Mark offer accepted sends the joining portal link, where they sign in with a code to their email.</Para>;
         return (
           <>
-            <Para>{first} accepted the offer{acceptedAt ? ` on ${dayTime(acceptedAt)}` : ''}.{status === 'accepted' ? ' Finalise sends the joining portal link to their personal email.' : ''}</Para>
+            <Para>{first} accepted the offer{acceptedAt ? ` on ${dayTime(acceptedAt)}` : ''}.{status === 'accepted' ? ' Mark offer accepted sends the joining portal link to their personal email.' : ''}</Para>
             <Facts rows={[['Joining portal', <span key="p" style={{ color: portalSent || cur > 1 ? 'var(--ok)' : 'var(--warn)' }}>{portalSent || cur > 1 ? 'Link sent' : 'Not sent yet'}</span>], ['Personal email', journey.candidate?.personalEmail], ['Work email', journey.candidate?.workEmail]]} />
           </>
         );
