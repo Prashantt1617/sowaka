@@ -1,7 +1,7 @@
 // The employee lifecycle's helpers: dates as the boards word them, owner and
 // flag labels, phase names, due rules in words, and the shared field styles.
 import type { CSSProperties } from 'react';
-import type { ConfirmationDecision, DueRule, JourneyFlag, LifecycleKind, LifecyclePhase, OfferFields, OwnerRole } from '../../../services/lifecycle';
+import type { ConfirmationDecision, DueRule, JourneyFlag, LetterKind, LifecycleKind, LifecyclePhase, OfferFields, OwnerRole } from '../../../services/lifecycle';
 
 // —— Dates ———————————————————————————————————————————————————————————————
 
@@ -170,6 +170,12 @@ export function decisionLine(d: ConfirmationDecision, pay: boolean): string {
 
 /** Documents opens on this letter kind and person once (set by the board's panel: { kind, journeyId | userId }). */
 export const DOCS_OPEN_KEY = 'sowaka.lifecycle.docs.open';
+
+/** Opens Documents on a letter kind for this joiner (the offer letter is where an offer is edited and sent; `mail` opens its email). */
+export function openDocuments(setView: (v: 'lifecycle_documents') => void, kind: LetterKind, journeyId: string, mail?: boolean) {
+  try { sessionStorage.setItem(DOCS_OPEN_KEY, JSON.stringify({ kind, journeyId, ...(mail ? { mail: true } : {}) })); } catch { /* Documents opens on its own first choice */ }
+  setView('lifecycle_documents');
+}
 
 /** Document templates opens this letter template once (Documents' Edit template link). */
 export const LETTER_TEMPLATE_OPEN_KEY = 'sowaka.lifecycle.lettertemplate.open';

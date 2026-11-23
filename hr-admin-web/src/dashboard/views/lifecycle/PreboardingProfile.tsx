@@ -3,15 +3,15 @@
 // profileParts), filled from what the candidate entered on the joining portal and what
 // the onboarding board knows. The Employee profile's tabs but Calendar and Requests
 // (nothing to show before joining): Profile, Performance, Salary details (the offer's
-// pay, with payroll access), Org chart, Activity (the journey's own timeline) and Exit
+// pay, with payroll access), Org chart, Activity (the joiner panel's Journey) and Exit
 // ("Not joining", the joiner panel's close). The Profile tab splits the portal's answers
 // into the Employee profile's categories (Basic details, Documents, Payment and tax IDs)
 // and the candidate's own (Personal details, Contact and address, Emergency contact,
 // Education, Work experience). Each category shows where its portal section stands
 // (To do / Done / Approved by NAME on DATE); HR approves a complete one, which locks it
-// for the candidate (Unlock hands it back), and edits its answers. Every document can be
-// sent back for a re-upload with a note (the joiner panel's own call), and one waiting
-// for HR approved. Its own address, so the onboarding board's panel opens it in a new tab.
+// for the candidate (Unlock hands it back), and edits its answers. Every uploaded document
+// can be sent back for a re-upload with a note (the joiner panel's own call), and one
+// waiting for HR approved. Its own address, so the onboarding board's panel opens it in a new tab.
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useStore } from '../../store';
@@ -334,7 +334,7 @@ export function PreboardingProfile() {
       {tab === 'performance' && <PerformanceTab load={journey} />}
       {tab === 'salary' && seesSalary && <SalaryTab load={journey} journeyId={data.journeyId} seesPay={canSeePay(user)} />}
       {tab === 'orgchart' && <OrgChartTab profile={data} load={journey} />}
-      {tab === 'activity' && <ActivityTab profile={data} load={journey} />}
+      {tab === 'activity' && <ActivityTab load={journey} onChanged={() => setAttempt((n) => n + 1)} />}
       {tab === 'exit' && seesBoard && <NotJoiningTab profile={data} load={journey} first={first} onChanged={() => setAttempt((n) => n + 1)} />}
 
       {granting && basic && (
@@ -426,14 +426,15 @@ function CategoryCard({ category: c, first, busy, canEdit, editing, onEdit, onAp
   );
 }
 
-/** Under a document: HR's note when it went back, and approve (waiting for HR) or ask for a re-upload. */
+/** Under a document: HR's note when it went back, and approve (waiting for HR) or ask for a re-upload (only once a file is in). */
 function DocumentReview({ doc, canReview, busy, disabled, onApprove, onReupload }: {
   doc: PreboardingDocument; canReview: boolean; busy: boolean; disabled: boolean; onApprove: () => void; onReupload: () => void;
 }) {
   const note = doc.hrNote && doc.status === 'sent_back'
     ? <div style={{ fontSize: 12.5, color: 'var(--warn)', overflowWrap: 'anywhere' }}>Your note: {doc.hrNote}</div>
     : null;
-  const asks = canReview && doc.status !== 'sent_back';
+  // Nothing to re-upload until they have uploaded something: only a document with HR or approved.
+  const asks = canReview && (doc.status === 'in_review' || doc.status === 'approved') && doc.files.length > 0;
   if (!note && !asks) return null;
   return (
     <>
