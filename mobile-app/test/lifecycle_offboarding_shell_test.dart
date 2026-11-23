@@ -21,6 +21,7 @@ import 'package:mobile_app/features/manager/presentation/manager_screen.dart';
 import 'package:mobile_app/services/notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:mobile_app/features/lifecycle/offboarding/resign_screens.dart' show resignInApp;
 import 'lifecycle_offboarding_fake.dart';
 
 Map<String, dynamic> member({
@@ -80,6 +81,8 @@ http.Client workspace(List<Map<String, dynamic>> team) =>
     });
 
 void main() {
+  // Resign is hidden in the app for now (resignInApp); these tests cover the row itself.
+  setUpAll(() => resignInApp = true);
   setUp(() => SharedPreferences.setMockInitialValues({}));
   tearDown(FakeLifecycle.uninstall);
 

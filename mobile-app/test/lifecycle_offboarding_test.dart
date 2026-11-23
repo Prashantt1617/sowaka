@@ -23,6 +23,7 @@ import 'package:mobile_app/features/shared/attachment_picker.dart';
 import 'package:mobile_app/main.dart' show sowakaTheme;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:mobile_app/features/lifecycle/offboarding/resign_screens.dart' show resignInApp;
 import 'lifecycle_offboarding_fake.dart';
 
 void phone(WidgetTester tester) {
@@ -91,6 +92,8 @@ class _ProfileHost extends StatelessWidget {
 }
 
 void main() {
+  // Resign is hidden in the app for now (resignInApp); these tests cover the row itself.
+  setUpAll(() => resignInApp = true);
   setUpAll(() async {
     // The app's own font (the screens take it from the theme), so the
     // pages lay out as on a phone.

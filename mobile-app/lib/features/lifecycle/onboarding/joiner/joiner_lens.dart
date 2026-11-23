@@ -202,12 +202,10 @@ class JoinerLens {
 
   // ── Watch list ────────────────────────────────────────────────────────────
 
-  /// The stage's watch list (videos, pictures, text cards), in the server's
-  /// order: the stories of "Life at …".
-  late final List<JoinerWatch> videos = [
-    for (final w in d.watch)
-      if (_idx(w.step) == (isNow ? current : at)) w,
-  ];
+  /// The whole watch list (videos, pictures, text cards) in the template's
+  /// order, whatever the step: the stories of "Life at …", as the portal
+  /// shows them (24 Nov, HR: "it still shows only one story").
+  late final List<JoinerWatch> videos = [...d.watch];
 
   bool get showsWatch => videos.isNotEmpty;
 

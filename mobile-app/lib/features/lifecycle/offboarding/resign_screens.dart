@@ -10,6 +10,11 @@ import 'offboarding_models.dart';
 import 'offboarding_store.dart';
 import 'offboarding_ui.dart';
 
+/// Resigning from the app: hidden in 1.4.3 (HR, 24 Nov: "hide this resign
+/// button, will work on it in the next release"). The server still takes a
+/// resignation; set it true to show the profile's Resign row again (tests do).
+bool resignInApp = false;
+
 /// The reasons the form offers when the server sends none (it sends its
 /// `reasons` with `GET /lifecycle/resignation`, and those win). The canvas
 /// draws only "Better opportunity"; the rest follow the exit interview's
@@ -43,7 +48,7 @@ class ResignEntryRow extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: store,
     builder: (context, _) {
-      if (!store.canResign) return const SizedBox.shrink();
+      if (!resignInApp || !store.canResign) return const SizedBox.shrink();
       return Column(
         key: const ValueKey('resign-entry'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
