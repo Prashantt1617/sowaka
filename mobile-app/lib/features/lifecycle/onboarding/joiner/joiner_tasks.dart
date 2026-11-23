@@ -13,6 +13,7 @@ import '../presentation/onboarding_kit.dart';
 import 'joiner_form.dart';
 import 'joiner_lens.dart';
 import 'joiner_models.dart';
+import 'joiner_more.dart' show JoinerTourScreen;
 import 'joiner_parts.dart';
 
 /// Tasks (New joiner canvas, App · tasks): "Tasks for you", the template's
@@ -187,6 +188,11 @@ Future<void> openJoinerTask(BuildContext context, JoinerController c, JoinerTask
       if (t.isDone) return;
       if (t.screen == 'punch') {
         FirstPunchTour.start(context, shell);
+        return;
+      }
+      if (t.screen == 'tour') {
+        await Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => JoinerTourScreen(c: c)));
+        await c.load();
         return;
       }
       final screen = t.screen;

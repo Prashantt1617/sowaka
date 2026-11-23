@@ -552,8 +552,11 @@ class JoinerProfileScreen extends StatelessWidget {
               JListCard(
                 children: withLines([
                   for (final s in p.sections)
-                    Container(
+                    InkWell(
                       key: ValueKey('section-${s.key}'),
+                      // Each section opens the profile, where it is filled in (canvas: every row is a link).
+                      onTap: c.shell.openAppScreen == null ? null : () => c.shell.openAppScreen!('profile'),
+                      child: Container(
                       constraints: const BoxConstraints(minHeight: 56),
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       child: Row(
@@ -575,8 +578,11 @@ class JoinerProfileScreen extends StatelessWidget {
                             },
                             style: TextStyle(fontSize: 12, color: s.state == 'todo' ? OnbColors.text3 : OnbColors.successText),
                           ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.chevron_right_rounded, size: 18, color: OnbColors.text3),
                         ],
                       ),
+                    ),
                     ),
                 ]),
               ),

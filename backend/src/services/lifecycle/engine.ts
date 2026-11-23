@@ -1022,6 +1022,35 @@ export async function rematerialiseDraft(journeyId: string): Promise<void> {
   await writeTasks(tasks);
 }
 
+/**
+ * Moves a running onboarding journey made before the Final designs onto its template's design (FINAL-DESIGNS.md §7):
+ * its own copy takes the template's rows (keeping the teammates it names), the design's joiner tasks and accesses
+ * are added (dated by the next refresh from its joining date), and its open tasks the template has switched off are
+ * cancelled. Done and skipped tasks stay as history. Returns what changed; `dry` changes nothing.
+ */
+export async function adoptTemplateDesign(journeyId: string, opts: { dry?: boolean } = {}): Promise<{ added: string[]; cancelled: string[] }> {
+  const j = await loadJourney(journeyId);
+  if (j.kind !== 'onboarding' || j.closedAt) throw new LifecycleError(409, 'Only a running onboarding journey');
+  const template = await templateForJourney(j.org, 'onboarding', j.templateId);
+  const settings = { ...template.settings, ...(j.templateSnapshot?.settings?.assignees ? { assignees: j.templateSnapshot.settings.assignees } : {}) };
+  const snapshot = structuredClone({ name: template.name, settings, tasks: template.tasks });
+  const next: Journey = { ...j, templateSnapshot: snapshot };
+  const tasks = await tasksOf(journeyId);
+  const have = new Set(tasks.map((t) => `${t.templateTaskId}#${t.month ?? ''}`));
+  const fresh = materialise(next).filter((t) => {
+    const row = snapshot.tasks.find((r) => r.id === t.templateTaskId);
+    return !!row?.design && !have.has(`${t.templateTaskId}#${t.month ?? ''}`);
+  });
+  const live = new Set(snapshot.tasks.filter(runs).map((r) => r.id));
+  const stale = tasks.filter((t) => !live.has(t.templateTaskId) && !['done', 'skipped', 'cancelled'].includes(t.status));
+  if (!opts.dry) {
+    await journeys().updateOne({ id: journeyId }, { $set: { templateSnapshot: snapshot, updatedAt: new Date() } });
+    await writeTasks([...fresh, ...stale.map((t) => ({ ...t, status: 'cancelled' as const }))]);
+    await refreshJourney(journeyId);
+  }
+  return { added: fresh.map((t) => t.title), cancelled: stale.map((t) => t.title) };
+}
+
 /** Probation length changed (extension): adds the new months' tasks, cancels open ones past the end. */
 export async function syncProbationTasks(journeyId: string): Promise<void> {
   const j = await loadJourney(journeyId);
