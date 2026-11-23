@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { View, ReqStatus, FeedbackStatus } from './theme';
+import { viewHash } from './viewLink';
 import { TITLES } from './theme';
 import { emptyForm } from './seed';
 import type { Correction, Emp, FbEmp, Feedback, FbMgr, Leave, OtChoice, Overtime, Reimb, UserForm } from './seed';
@@ -81,20 +82,29 @@ function useProvideStore() {
       return 'overview';
     }
   });
+  // What the page is about, after its name in the address (`#preboarding/<journeyId>`); '' for none.
+  const [viewParam, setViewParam] = useState<string>(() => (viewFromHash() === view ? paramFromHash() : ''));
   const viewRef = useRef(view);
   viewRef.current = view;
+  const paramRef = useRef(viewParam);
+  paramRef.current = viewParam;
   // Each page change is a step in the browser's history, so Back goes to the page you came from.
-  const setViewRaw = useCallback((v: View) => {
-    if (v !== viewRef.current) {
-      try { window.history.pushState({ sowakaView: v }, '', `${window.location.pathname}${window.location.search}#${v}`); } catch { /* history unavailable: the page still changes */ }
+  const setViewRaw = useCallback((v: View, param = '') => {
+    if (v !== viewRef.current || param !== paramRef.current) {
+      try { window.history.pushState({ sowakaView: v, sowakaParam: param }, '', `${window.location.pathname}${window.location.search}#${viewHash(v, param)}`); } catch { /* history unavailable: the page still changes */ }
     }
     setViewState(v);
+    setViewParam(param);
   }, []);
   useEffect(() => {
-    try { window.history.replaceState({ sowakaView: viewRef.current }, '', `${window.location.pathname}${window.location.search}#${viewRef.current}`); } catch { /* ignore */ }
+    try { window.history.replaceState({ sowakaView: viewRef.current, sowakaParam: paramRef.current }, '', `${window.location.pathname}${window.location.search}#${viewHash(viewRef.current, paramRef.current)}`); } catch { /* ignore */ }
     const onPop = (e: PopStateEvent) => {
-      const v = (e.state && typeof e.state.sowakaView === 'string' && e.state.sowakaView in TITLES ? e.state.sowakaView : viewFromHash()) as View | null;
-      if (v) setViewState(v);
+      const fromState = e.state && typeof e.state.sowakaView === 'string' && e.state.sowakaView in TITLES;
+      const v = (fromState ? e.state.sowakaView : viewFromHash()) as View | null;
+      if (v) {
+        setViewState(v);
+        setViewParam(fromState ? (typeof e.state.sowakaParam === 'string' ? e.state.sowakaParam : '') : paramFromHash());
+      }
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -364,11 +374,12 @@ function useProvideStore() {
     setAddOpen(false);
   };
 
-  const setView = (v: View) => {
+  /** Opens a page; `param` names what it is about (the pre-boarding profile's journey). */
+  const setView = (v: View, param = '') => {
     // A page with unsaved edits asks first (pageHead.ts setLeaveGuard).
     if (v !== viewRef.current && !mayLeavePage()) return;
     closeAllOverlays();
-    setViewRaw(v);
+    setViewRaw(v, param);
   };
 
   // ---- leave ----
@@ -678,7 +689,7 @@ function useProvideStore() {
   };
 
   return {
-    view, setView,
+    view, setView, viewParam,
     toast, toastTone, flash, loading, loaded, reload, listState,
     user, signOut, currentUserId,
     // leave
@@ -723,13 +734,25 @@ function useProvideStore() {
 
 const Ctx = createContext<Store | null>(null);
 
-/** The page named in the address's #fragment, when it is one of the dashboard's pages. */
+/** The page named in the address's #fragment, when it is one of the dashboard's pages (`#employees`, `#preboarding/<id>`). */
 function viewFromHash(): View | null {
   try {
-    const h = decodeURIComponent(window.location.hash.replace(/^#/, ''));
-    return h && h in TITLES ? (h as View) : null;
+    const h = window.location.hash.replace(/^#/, '').split('/')[0];
+    const name = decodeURIComponent(h);
+    return name && name in TITLES ? (name as View) : null;
   } catch {
     return null;
+  }
+}
+
+/** What follows the page's name in the #fragment (`#preboarding/<journeyId>` gives the journey), or ''. */
+function paramFromHash(): string {
+  try {
+    const h = window.location.hash.replace(/^#/, '');
+    const at = h.indexOf('/');
+    return at < 0 ? '' : decodeURIComponent(h.slice(at + 1));
+  } catch {
+    return '';
   }
 }
 

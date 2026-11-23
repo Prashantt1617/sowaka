@@ -257,6 +257,11 @@ export type EmpDocument = {
   url?: string;
   /** "10 Sep", or '' when the record predates uploads. */
   uploadedOn: string;
+  /** Uploaded on the joining portal (with its review status) or filed against the employee. */
+  source: 'onboarding' | 'filed';
+  status?: string;
+  /** Every file the document has; a filed record without its own list has the one at `url`. */
+  files: Array<{ id: string; name: string; contentType?: string; size?: number | null; url?: string }>;
 };
 
 export const emptyForm = (): UserForm => ({

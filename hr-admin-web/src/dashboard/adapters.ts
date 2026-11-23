@@ -345,9 +345,12 @@ export function adaptEmployees(dtos: EmployeeDTO[]): Emp[] {
     documents: (e.documents ?? []).map((doc) => ({
       id: doc.id,
       name: doc.name,
-      type: doc.type ?? 'Document',
+      type: doc.label || doc.type || 'Document',
       url: doc.url,
       uploadedOn: doc.uploadedAt ? fmtDay(doc.uploadedAt) : '',
+      source: doc.source === 'onboarding' ? 'onboarding' as const : 'filed' as const,
+      status: doc.status,
+      files: doc.files?.length ? doc.files : doc.url ? [{ id: doc.id, name: doc.name, size: doc.size, url: doc.url }] : [],
     })),
   }));
 }

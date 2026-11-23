@@ -10,7 +10,7 @@ import { usePhotoFor } from '../../photos';
 import { iconBtn } from '../../ds';
 import { IconClose } from '../../icons';
 import type { JourneyFlag, OwnerRole, PlantState } from '../../../services/lifecycle';
-import { fetchLifecycleFile, nudgeTask } from '../../../services/lifecycle';
+import { fetchFileUrl, fetchLifecycleFile, nudgeTask } from '../../../services/lifecycle';
 import { mediaUrl } from '../../../services/api';
 import { useStore } from '../../store';
 import '../people.css';
@@ -195,19 +195,22 @@ export function NoteDialog({ title, sub, label = 'Note', placeholder, required, 
 
 // —— Files ———————————————————————————————————————————————————————————————
 
-/** A stored file opened in a dialog: the PDF or picture itself, fetched with the session. */
-export function FilePreview({ fileId, name, onClose }: { fileId: string; name: string; onClose: () => void }) {
+/**
+ * A stored file opened in a dialog: the PDF or picture itself, fetched with the session.
+ * `link` (an API path the server gave for the file) is fetched instead of the lifecycle file route.
+ */
+export function FilePreview({ fileId, name, link, onClose }: { fileId: string; name: string; link?: string; onClose: () => void }) {
   const [url, setUrl] = useState('');
   const [type, setType] = useState('');
   const [error, setError] = useState('');
   useEffect(() => {
     let live = true;
     let made = '';
-    fetchLifecycleFile(fileId)
+    (link ? fetchFileUrl(link) : fetchLifecycleFile(fileId))
       .then((blob) => { if (!live) return; made = URL.createObjectURL(blob); setType(blob.type); setUrl(made); })
       .catch((e) => { if (live) setError(errText(e, 'Could not open the file')); });
     return () => { live = false; if (made) URL.revokeObjectURL(made); };
-  }, [fileId]);
+  }, [fileId, link]);
   return (
     <Modal title={name} onClose={onClose} width={860}
       footer={url ? <a href={url} download={name} className="pd-btn">Download</a> : undefined}>

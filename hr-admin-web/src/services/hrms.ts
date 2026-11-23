@@ -433,6 +433,14 @@ export type EmployeeDocumentDTO = {
   url?: string;
   uploadedAt: string | null;
   size: number | null;
+  /** Uploaded by the candidate on the joining portal, or filed by HR (older records have none: filed). */
+  source?: 'onboarding' | 'filed';
+  /** What the document is ("PAN card"). */
+  label?: string;
+  /** An onboarding upload's review state (todo, in_review, approved, sent_back). */
+  status?: string;
+  /** Its files; `url` is a full link or an API path. Older records have only the `url` above. */
+  files?: Array<{ id: string; name: string; contentType: string; size: number; url: string }>;
 };
 
 /** Uploads one document and returns the employee's whole list, as the server now has it. */

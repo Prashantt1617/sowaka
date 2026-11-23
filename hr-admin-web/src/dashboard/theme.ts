@@ -29,6 +29,8 @@ export type View =
   | 'lifecycle_documents'
   | 'lifecycle_templates'
   | 'lifecycle_letter_templates'
+  // A candidate's Employee profile before joining (`#preboarding/<journeyId>`), from People › Employees › Pre-boarding.
+  | 'preboarding'
   | 'exit'
   | 'payroll'
   | 'payschedule'
@@ -189,6 +191,7 @@ export const TITLES: Record<View, [string, string]> = {
   lifecycle_documents: ['Documents', 'Employee lifecycle'],
   lifecycle_templates: ['Templates', 'Employee lifecycle · the tasks every joiner and leaver gets'],
   lifecycle_letter_templates: ['Document templates', 'Employee lifecycle · the wording of every letter'],
+  preboarding: ['Pre-boarding profile', 'People · Employees · before joining'],
   exit: ['Exit', 'People'],
   payroll: ['Payroll', 'People'],
   payschedule: ['Pay Schedule', 'Payroll · how often and when payroll runs'],

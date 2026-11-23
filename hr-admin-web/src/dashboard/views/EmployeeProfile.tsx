@@ -10,9 +10,11 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CSSProperties, ReactNode } from 'react';
-import type { Emp } from '../seed';
+import type { Emp, EmpDocument } from '../seed';
 import { useStore } from '../store';
 import { IconFile } from '../icons';
+import { FileChips } from './lifecycle/preboardingParts';
+import { docStatus } from './lifecycle/preboardingLinks';
 import { ETYPE, STAT, TYPE } from '../theme';
 import type { LeaveType, ReqStatus } from '../theme';
 import { Avatar, ListPending, LoadError, LoadingFigure, Pill, Skeleton, SkeletonForm, SkeletonFrame, SkeletonLines, SkeletonRows, StatusTabs } from '../ui';
@@ -366,31 +368,11 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
                 <ShiftPicker emp={emp} onChanged={() => getEmployeeCalendar(emp.id, thisMonth()).then(setCurrentMonth).catch(() => undefined)} />
               </Section></div>
             )}
-            {/* Only when something is filed; an empty box said nothing useful. */}
+            {/* Only when something is filed or uploaded; an empty box said nothing useful. */}
             {emp.documents.length > 0 && (
             <Section title="Documents" icon={<PdFile />}>
-              <div className="pd-list">
-                {emp.documents.map((doc) => (
-                  <a
-                    key={doc.id}
-                    href={doc.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="pd-li"
-                    style={{ textDecoration: 'none', color: 'inherit', pointerEvents: doc.url ? 'auto' : 'none' }}
-                  >
-                    <span className="pd-li-i">
-                      <IconFile size={15} stroke="currentColor" />
-                    </span>
-                    <span className="grow">
-                      <b>{doc.type}</b>
-                      <span className="s" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}{doc.uploadedOn ? ` · ${doc.uploadedOn}` : ''}</span>
-                    </span>
-                    <span className="pd-sec-act">Open</span>
-                  </a>
-                ))}
-              </div>
-          </Section>
+              <EmployeeDocuments documents={emp.documents} />
+            </Section>
             )}
             <div data-focus="bank"><PaymentDetails userId={emp.id} /></div>
             <EpfBalance userId={emp.id} />
@@ -1149,6 +1131,49 @@ function EpfBalance({ userId }: { userId: string }) {
       )}
       <div className="pd-subnote" style={{ marginTop: 8 }}>From the EPFO passbook. The app adds the PF paid through payroll after this date.</div>
     </Section>
+  );
+}
+
+/**
+ * Everything filed against the person: what they uploaded on the joining portal (with where its review
+ * stands) and what HR filed. Each file opens or downloads.
+ */
+function EmployeeDocuments({ documents }: { documents: EmpDocument[] }) {
+  const groups: Array<{ key: string; title: string; list: EmpDocument[] }> = [
+    { key: 'onboarding', title: 'From onboarding', list: documents.filter((d) => d.source === 'onboarding') },
+    { key: 'filed', title: 'Filed', list: documents.filter((d) => d.source !== 'onboarding') },
+  ].filter((g) => g.list.length > 0);
+  const both = groups.length > 1;
+  return (
+    <div style={{ display: 'grid', gap: 16 }}>
+      {groups.map((g) => (
+        <div key={g.key} style={{ display: 'grid', gap: 4 }}>
+          {both && <span className="pd-eyebrow" style={{ color: 'var(--ink-3)' }}>{g.title}</span>}
+          <div className="pd-list">
+            {g.list.map((doc) => {
+              const st = doc.source === 'onboarding' ? docStatus(doc.status) : null;
+              return (
+                <div key={doc.id} className="pd-li" style={{ alignItems: 'flex-start', flexWrap: 'wrap', rowGap: 8 }}>
+                  <span className="pd-li-i">
+                    <IconFile size={15} stroke="currentColor" />
+                  </span>
+                  <span className="grow" style={{ minWidth: 160 }}>
+                    <b>{doc.type}</b>
+                    <span className="s" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {doc.source === 'onboarding' ? 'Uploaded on the joining portal' : 'Filed by HR'}{doc.uploadedOn ? ` · ${doc.uploadedOn}` : ''}
+                    </span>
+                  </span>
+                  {st && <Pill label={st.label} tone={st.tone} fontSize={11} padding="2px 9px" />}
+                  <span style={{ flexBasis: '100%', paddingLeft: 46 }}>
+                    {doc.files.length > 0 ? <FileChips files={doc.files} /> : <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>No file attached</span>}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 

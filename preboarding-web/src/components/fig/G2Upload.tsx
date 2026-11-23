@@ -39,7 +39,8 @@ export function G2FileRow({ name, status, done = true, action }: { name: ReactNo
 const DOC_STATE: Record<string, string> = { in_review: 'Uploaded · HR will check it', approved: 'Approved by HR', sent_back: 'Sent back by HR', todo: '' };
 
 /** A template document as a field: its label, HR's note, the files (Replace), and the tile while it can change. */
-export function G2DocUpload({ doc, onChange, title }: { doc: CandidateDocumentView; onChange: (d: CandidateDocumentView[]) => void; title?: string }) {
+/** `readOnly`: the section is approved by HR, so its documents can no longer be replaced or added to. */
+export function G2DocUpload({ doc, onChange, title, readOnly }: { doc: CandidateDocumentView; onChange: (d: CandidateDocumentView[]) => void; title?: string; readOnly?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const send = async (files: File[]) => {
@@ -47,7 +48,7 @@ export function G2DocUpload({ doc, onChange, title }: { doc: CandidateDocumentVi
     setError('');
     try { onChange((await portal.uploadDocument(doc.id, files)).documents); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
-  const locked = doc.status === 'approved';
+  const locked = doc.status === 'approved' || readOnly === true;
   const label = `${doc.label}${doc.required ? '' : ' (optional)'}`;
   const replace = (
     <label className="g2-file__action">
