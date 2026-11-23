@@ -171,6 +171,29 @@ const smallAction = 'pd-btn sm';
 const whoCol: CSSProperties = { width: 136, flex: 'none', display: 'flex' };
 const whenCol: CSSProperties = { width: 120, flex: 'none', display: 'flex' };
 
+/** A still from a video file (about a second in), as a small portrait JPEG: the tile's thumbnail. */
+function stillOf(file: Blob): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const v = document.createElement('video');
+    const done = (fn: () => void) => { URL.revokeObjectURL(url); fn(); };
+    v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+    v.onerror = () => done(() => reject(new Error('Could not read the video')));
+    v.onloadedmetadata = () => { v.currentTime = Math.min(1, (v.duration || 2) / 2); };
+    v.onseeked = () => {
+      const W = 336, H = 560;
+      const c = document.createElement('canvas');
+      c.width = W; c.height = H;
+      const g = c.getContext('2d');
+      if (!g || !v.videoWidth) { done(() => reject(new Error('No frame'))); return; }
+      const scale = Math.max(W / v.videoWidth, H / v.videoHeight);
+      const dw = v.videoWidth * scale, dh = v.videoHeight * scale;
+      g.drawImage(v, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      c.toBlob((b) => done(() => (b ? resolve(b) : reject(new Error('No frame')))), 'image/jpeg', 0.8);
+    };
+  });
+}
+
 /** A Google Maps link to an office's point (Time Office). */
 const officeMap = (o: Pick<OfficeDTO, 'latitude' | 'longitude'>) => `https://www.google.com/maps/search/?api=1&query=${o.latitude},${o.longitude}`;
 
@@ -558,7 +581,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
       {previewing && (
         <Modal title={previewing.title} width={560} onClose={() => setPreviewing(null)}
           footer={<button type="button" className="pd-btn" onClick={() => setPreviewing(null)}>Close</button>}>
-          <MediaPlayer key={previewing.media.fileId} media={previewing.media} w="100%" h="min(70vh, 620px)" autoLoad />
+          <MediaPlayer key={previewing.media.fileId} media={previewing.media} w="100%" h="min(70vh, 620px)" autoPlay />
         </Modal>
       )}
 
@@ -966,7 +989,10 @@ function StoryDialog({ story, templateId, months, onChange, onClose, onRemove, o
     set({ busy: true });
     try {
       const f = await uploadTemplateMedia(templateId, file, file.name);
-      onChange({ ...story, busy: false, media: { type: m.type, fileId: f.id, name: f.name, ...(f.minutes ? { minutes: f.minutes } : {}) } });
+      // A video gets a still frame as its tile's thumbnail, made here from the file just picked.
+      const still = m.type === 'video' ? await stillOf(file).catch(() => null) : null;
+      const poster = still ? await uploadTemplateMedia(templateId, still, `${file.name.replace(/\.[^.]+$/, '')} thumbnail.jpg`).catch(() => null) : null;
+      onChange({ ...story, busy: false, media: { type: m.type, fileId: f.id, name: f.name, ...(f.minutes ? { minutes: f.minutes } : {}), ...(poster ? { posterFileId: poster.id } : {}) } });
     } catch (e) { onError(errText(e, 'Could not upload the file')); set({ busy: false }); }
   };
   const save = () => {
@@ -983,7 +1009,7 @@ function StoryDialog({ story, templateId, months, onChange, onClose, onRemove, o
       </>}>
       <div style={{ display: 'flex', gap: 22, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {m.fileId && m.type !== 'text'
-          ? <MediaPlayer key={m.fileId} media={m} w={168} h={280} emptyText={emptyText} />
+          ? <MediaPlayer key={m.fileId} media={m} w={168} h={280} />
           : <TileFace media={m} w={168} h={280} emptyText={emptyText} textShown={m.text || 'Your text shows here'} preview />}
         <div style={{ flex: 1, minWidth: 260, display: 'grid', gap: 16 }}>
           <div role="radiogroup" aria-label="Type" style={SOFT_SEG}>

@@ -373,7 +373,7 @@ export async function templateMediaBytes(org: string, fileId: string): Promise<{
 /** Whether a file is media of one of the journey's design rows (the joiner may read it). */
 export async function journeyMayRead(j: Pick<Journey, 'org' | 'templateId' | 'templateSnapshot'>, fileId: string): Promise<boolean> {
   const { rows } = await designOf(j);
-  return rows.some((r) => r.design?.media?.fileId === fileId || r.design?.fileId === fileId);
+  return rows.some((r) => r.design?.media?.fileId === fileId || r.design?.media?.posterFileId === fileId || r.design?.fileId === fileId);
 }
 
 // ─── Employee preview ───────────────────────────────────────────────────────
