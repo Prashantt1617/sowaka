@@ -77,6 +77,14 @@ export interface PayslipInputs {
   attendanceLopDays?: number;
   /** HR typed the loss-of-pay days on the run (kept across recomputes). */
   lopEnteredByHr?: boolean;
+  /**
+   * Of lopDays, the days before joining and after leaving (0 when HR typed the
+   * loss of pay): not loss of pay, the person was not employed. Runs before
+   * 23 Nov 2026 leave it out; payslipDays reads it from attendanceDeductions.
+   */
+  notEmployedDays?: number;
+  /** Left during the period: the last working day, for the payslip's "Not employed" line. */
+  leftOn?: string;
   /** Income tax withheld this month, and whether HR typed it (else the TDS engine, or none). */
   incomeTaxPaise?: number;
   incomeTaxEnteredByHr?: boolean;

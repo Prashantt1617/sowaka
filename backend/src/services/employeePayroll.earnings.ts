@@ -25,6 +25,7 @@ import { homePayPeriod } from './employeePayroll.home';
 import { splitAmountsFor } from './employeePayroll.split';
 import { PayrollConfigError } from './payrollConfig.service';
 import { SalaryStructureError, computeStructureFor } from './salaryStructure.service';
+import { lossOfPayDaysOf, notEmployedDaysOf } from './payslipDays';
 
 /** The runs whose payslips the person sees (as the Payslips list reads them). */
 const RELEASED: PayrollRunStatus[] = ['approved', 'paid'];
@@ -51,8 +52,10 @@ export interface EarningsMonth {
   grossPaise: number;
   /** What reached the bank: gross less every deduction, plus reimbursements. */
   netPaise: number;
-  /** Loss-of-pay days (halves count). */
+  /** Loss-of-pay days (halves count); the days before joining / after leaving are not in it. */
   unpaidDays: number;
+  /** Days before joining / after leaving: not paid, not loss of pay. */
+  notEmployedDays: number;
   status: 'released' | 'estimate';
   /** The released payslip, to open it; null for the estimate. */
   payslipId: string | null;
@@ -68,7 +71,7 @@ type StoredSlip = Payslip & { _id: ObjectId };
 /** The person's released payslips in this company, one per month (the newest run's). */
 /** What Earnings reads off a payslip: its money, its days and its lines' names (not the inputs' detail, the TDS working, the employer side). */
 const EARNINGS_SLIP_FIELDS = {
-  _id: 1, runId: 1, period: 1, createdAt: 1, grossPaise: 1, reimbursementsPaise: 1, netPayablePaise: 1, 'inputs.lopDays': 1,
+  _id: 1, runId: 1, period: 1, createdAt: 1, grossPaise: 1, reimbursementsPaise: 1, netPayablePaise: 1, 'inputs.lopDays': 1, 'inputs.lopEnteredByHr': 1, 'inputs.attendanceDeductions.label': 1, 'inputs.attendanceDeductions.days': 1,
   'deductions.key': 1, 'deductions.amountPaise': 1, 'earnings.code': 1, 'earnings.name': 1, 'earnings.fullPaise': 1,
   'reimbursementLines.code': 1, 'reimbursementLines.name': 1, 'reimbursementLines.amountPaise': 1,
 } as const;
@@ -196,10 +199,11 @@ export async function myEarnings(userId: string, fyRaw: unknown, now = new Date(
   const fy = asked ?? fys[0] ?? currentFy;
 
   const yearSlips = slips.filter((s) => fyOf(s.period).fy === fy);
-  const rows: { period: string; money: MonthMoney; unpaidDays: number; status: EarningsMonth['status']; payslipId: string | null }[] = yearSlips.map((s) => ({
+  const rows: { period: string; money: MonthMoney; unpaidDays: number; notEmployedDays: number; status: EarningsMonth['status']; payslipId: string | null }[] = yearSlips.map((s) => ({
     period: s.period,
     money: slipMoney(s),
-    unpaidDays: s.inputs?.lopDays ?? 0,
+    unpaidDays: lossOfPayDaysOf(s.inputs),
+    notEmployedDays: notEmployedDaysOf(s.inputs),
     status: 'released',
     payslipId: s._id.toHexString(),
   }));
@@ -242,6 +246,7 @@ export async function myEarnings(userId: string, fyRaw: unknown, now = new Date(
       grossPaise: r.money.grossPaise,
       netPaise: r.money.netPaise,
       unpaidDays: r.unpaidDays,
+      notEmployedDays: r.notEmployedDays,
       status: r.status,
       payslipId: r.payslipId,
     })),

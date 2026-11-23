@@ -7,6 +7,7 @@
 import { type PayslipDTO } from '../services/payroll';
 import { brandOf } from './brand';
 import { downloadHtmlAsPdf } from './pdf';
+import { lossOfPayDaysOf, notEmployedOf, shortDay } from './payslipDays';
 
 const esc = (value: string) => value.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] ?? ch));
 
@@ -79,6 +80,8 @@ export function payslipHtml(slip: PayslipDTO, company: PayslipCompany, dates?: P
   const structureReimb = reimbLines.reduce((t, r) => t + r.amount, 0);
   if (slip.reimbursementsPaise - structureReimb > 0) reimbLines.push({ name: 'Business Expense Reimbursements', amount: slip.reimbursementsPaise - structureReimb });
   const net = slip.netPayablePaise;
+  // Days before joining / after leaving are not loss of pay: Paid Days (the days employed less real LOP) and LOP Days, then when they joined / left.
+  const notEmployed = notEmployedOf(slip.inputs);
   const rows = Math.max(earnings.length, deductions.length);
   const cell = (x?: { name: string; amount: number; ytd?: number }) =>
     x ? `<td class="nm">${esc(x.name)}</td><td class="r b">${money(x.amount)}</td><td class="r y">${x.ytd !== undefined ? money(x.ytd) : ''}</td>` : '<td></td><td></td><td></td>';
@@ -100,7 +103,7 @@ export function payslipHtml(slip: PayslipDTO, company: PayslipCompany, dates?: P
   .netbox .top { background: #F2FBF4; padding: 16px 18px 12px; border-left: 4px solid #3BA55C; margin: 10px 0 0 10px; }
   .netbox .amt { font-size: 22px; font-weight: 700; } .netbox .cap { color: #555; margin-top: 2px; }
   .netbox .days { padding: 10px 18px 14px; border-top: 1px dashed #E3E3E3; margin-top: 8px; }
-  .netbox .kv { grid-template-columns: 90px 14px 1fr; }
+  .netbox .kv { grid-template-columns: 104px 14px 1fr; }
   .bank { padding: 14px 4px; display: grid; grid-template-columns: 150px 14px 1fr; }
   table { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid #E3E3E3; border-radius: 8px; }
   th { text-align: left; font-size: 11.5px; font-weight: 700; color: #444; padding: 10px 12px 8px; border-bottom: 1px dashed #D9D9D9; }
@@ -134,7 +137,9 @@ export function payslipHtml(slip: PayslipDTO, company: PayslipCompany, dates?: P
       <div class="top"><div class="amt">${money(net)}</div><div class="cap">Total Net Pay</div></div>
       <div class="days">
         <div class="kv"><span>Paid Days</span><span>:</span><span>${slip.inputs.payableDays}</span></div>
-        <div class="kv"><span>LOP Days</span><span>:</span><span>${slip.inputs.lopDays}</span></div>
+        <div class="kv"><span>LOP Days</span><span>:</span><span>${lossOfPayDaysOf(slip.inputs)}</span></div>
+        ${notEmployed.beforeJoining > 0 ? `<div class="kv"><span>${slip.joiningDate ? 'Joined' : 'Before Joining'}</span><span>:</span><span>${slip.joiningDate ? esc(shortDay(slip.joiningDate)) : `${notEmployed.beforeJoining} days`}</span></div>` : ''}
+        ${notEmployed.afterLeaving > 0 ? `<div class="kv"><span>${slip.inputs.leftOn ? 'Left' : 'After Leaving'}</span><span>:</span><span>${slip.inputs.leftOn ? esc(shortDay(slip.inputs.leftOn)) : `${notEmployed.afterLeaving} days`}</span></div>` : ''}
       </div>
     </div>
   </div>

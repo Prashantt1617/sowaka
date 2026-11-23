@@ -25,6 +25,7 @@ import { payrollSetupFor } from './employeePayroll.setup';
 import { PayrollConfigError, tdsMissing } from './payrollConfig.service';
 import { PayrollInputsError, PeriodRange, payrollPeriodHolding, payrollPeriodRange } from './payroll-inputs.service';
 import { estimatePayslip, myLatestReleasedPayslipBefore, myReleasedPayslipFor } from './payrollRun.service';
+import { lossOfPayDaysOf, lossOfPayPaiseOf, notEmployedOf, notEmployedPaiseOf, notEmployedWhen, shortDayLabel } from './payslipDays';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -137,7 +138,7 @@ export async function myMissingPunches(userId: string, periodRaw: unknown, now =
 
 export function fromPayslip(slip: Payslip & { _id?: { toHexString(): string } }) {
   const full = slip.earnings.reduce((sum, e) => sum + e.fullPaise, 0);
-  const paid = slip.earnings.reduce((sum, e) => sum + e.paidPaise, 0);
+  const notEmployed = notEmployedOf(slip.inputs);
   return {
     period: slip.period,
     status: 'final' as const,
@@ -147,9 +148,20 @@ export function fromPayslip(slip: Payslip & { _id?: { toHexString(): string } })
     periodTo: null,
     baseDays: slip.inputs?.workingDays ?? null,
     grossPaise: full,
-    lopDays: slip.inputs?.lopDays ?? 0,
-    // From the earnings alone: the slip's gross has overtime in it, which would hide loss of pay.
-    lopPaise: Math.max(0, full - paid),
+    // Real loss of pay: the days before joining and after leaving are apart (notEmployed…), not loss of pay.
+    lopDays: lossOfPayDaysOf(slip.inputs),
+    // From the earnings alone (the slip's gross has overtime in it, which would hide loss of pay),
+    // what the not-paid days cost, split between the two in proportion to the days.
+    lopPaise: lossOfPayPaiseOf(slip),
+    notEmployedDays: notEmployed.days,
+    beforeJoiningDays: notEmployed.beforeJoining,
+    afterLeavingDays: notEmployed.afterLeaving,
+    notEmployedPaise: notEmployedPaiseOf(slip),
+    /** "joined 16 Oct" / "left 25 Oct", when there are such days and the date is known; else ''. */
+    notEmployedWhen: notEmployedWhen(slip.inputs, slip.joiningDate, slip.inputs?.leftOn),
+    /** The joining day / last working day as "16 Oct", when there are days before / after it ('' otherwise). */
+    joinedLabel: notEmployed.beforeJoining > 0 ? shortDayLabel(slip.joiningDate) : '',
+    leftLabel: notEmployed.afterLeaving > 0 ? shortDayLabel(slip.inputs?.leftOn) : '',
     overtimePaise: slip.inputs?.overtimePaise ?? 0,
     deductions: slip.deductions.filter((d) => !d.hidden && d.amountPaise > 0).map((d) => ({ key: d.key, label: DEDUCTION_LABELS[d.key] ?? d.name, amountPaise: d.amountPaise })),
     netPaise: slip.netPaise,
@@ -303,6 +315,9 @@ export type HomeSalaryCard = { period: string; label: string } & (SalaryNotSetUp
   deductionsPaise: number;
   lopPaise: number;
   lopDays: number;
+  /** Days before joining / after leaving: not paid, not loss of pay (paid days leave them out). */
+  notEmployedDays: number;
+  notEmployedPaise: number;
   overtimePaise: number;
   reimbursementsPaise: number;
 });
@@ -330,14 +345,15 @@ async function salaryCard(org: string, userId: string, joined: string | undefine
   if ('notSetUp' in pay && pay.notSetUp) return { period: prev, label, ...pay.notSetUp };
   if (!('salary' in pay) || !pay.salary) return null;
   const s = pay.salary;
-  const daysInPeriod = s.baseDays;
+  // The days they were employed in it (16 for someone who joined on 16 Oct), never the whole month.
+  const daysInPeriod = s.baseDays === null ? null : Math.max(0, s.baseDays - s.notEmployedDays);
   return {
     period: prev,
     label,
     notConfigured: false,
     released: s.status === 'final',
     payslipId: s.payslipId,
-    // Paid days = the period's base days less the days lost; unknown when the payslip has no base days.
+    // Paid days = the days employed less the real loss of pay; unknown when the payslip has no base days.
     daysPaid: daysInPeriod === null ? null : Math.max(0, daysInPeriod - s.lopDays),
     daysInPeriod,
     grossPaise: s.grossPaise,
@@ -345,6 +361,8 @@ async function salaryCard(org: string, userId: string, joined: string | undefine
     deductionsPaise: s.deductions.reduce((sum, d) => sum + d.amountPaise, 0),
     lopPaise: s.lopPaise,
     lopDays: s.lopDays,
+    notEmployedDays: s.notEmployedDays,
+    notEmployedPaise: s.notEmployedPaise,
     // Paid on top of the gross (and inside the take-home): overtime, flexible and other reimbursements.
     overtimePaise: s.overtimePaise,
     reimbursementsPaise: s.reimbursementsPaise,

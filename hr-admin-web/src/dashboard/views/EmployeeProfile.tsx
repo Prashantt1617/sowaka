@@ -39,6 +39,7 @@ import { EmployeeActivity } from './EmployeeActivity';
 import { isSelfOrBelow } from './selfOrBelow';
 import { IncomeTaxCard } from './IncomeTaxCard';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
+import { employedDaysOf, lossOfPayDaysOf, notEmployedNote } from '../payslipDays';
 import { downloadPayslipPdf } from '../payslip';
 import { downloadTdsSheetPdf } from '../tdsSheet';
 import type { CalendarDayDTO, CalendarDayStatus, EmployeeCalendarDTO, HrDayStatus, LeaveBalanceItemDTO } from '../../services/hrms';
@@ -619,19 +620,23 @@ function SalarySlips({ userId }: { userId: string }) {
             const full = payslip.earnings.reduce((t, e) => t + e.fullPaise, 0) + payslip.inputs.overtimePaise + payslip.reimbursementsPaise;
             const lopPaise = payslip.earnings.reduce((t, e) => t + (e.fullPaise - e.paidPaise), 0);
             const lines = (payslip.inputs.attendanceDeductions ?? []).filter((l) => l.days > 0);
+            // Paid days out of the days employed, and real loss of pay; "Joined 16 Oct" / "Left …" as a note, not loss of pay.
+            const lopDays = lossOfPayDaysOf(payslip.inputs);
+            const notEmployed = notEmployedNote(payslip);
             return (
               <tr key={run.id}>
                 <td style={slipTd}><b>{periodTitle(run.period)}</b></td>
                 <td style={slipTd}><Pill label={tone.label} tone={{ bg: tone.bg, fg: tone.fg }} /></td>
-                <td style={{ ...slipTd, textAlign: 'right' }}>{payslip.inputs.payableDays} / {payslip.inputs.workingDays}</td>
+                <td style={{ ...slipTd, textAlign: 'right' }}>{payslip.inputs.payableDays} / {employedDaysOf(payslip.inputs)}</td>
                 <td style={{ ...slipTd, textAlign: 'right' }}>
-                  {payslip.inputs.lopDays > 0 && lines.length > 0 ? (
-                    <button type="button" onClick={() => setExplain(payslip)} title="Why is there a loss of pay?" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--bad)', fontWeight: 500, fontSize: 14, fontFamily: 'inherit', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3 }}>
-                      {payslip.inputs.lopDays} {payslip.inputs.lopDays === 1 ? 'day' : 'days'}
+                  {(lopDays > 0 || notEmployed) && lines.length > 0 ? (
+                    <button type="button" onClick={() => setExplain(payslip)} title={lopDays > 0 ? 'Why is there a loss of pay?' : 'The days not paid'} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: lopDays ? 'var(--bad)' : 'var(--ink-4)', fontWeight: 500, fontSize: 14, fontFamily: 'inherit', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3 }}>
+                      {lopDays} {lopDays === 1 ? 'day' : 'days'}
                     </button>
                   ) : (
-                    <span style={{ color: payslip.inputs.lopDays ? 'var(--bad)' : 'var(--ink-4)', fontWeight: 500 }}>{payslip.inputs.lopDays} {payslip.inputs.lopDays === 1 ? 'day' : 'days'}</span>
+                    <span style={{ color: lopDays ? 'var(--bad)' : 'var(--ink-4)', fontWeight: 500 }}>{lopDays} {lopDays === 1 ? 'day' : 'days'}</span>
                   )}
+                  {notEmployed && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2, whiteSpace: 'nowrap' }}>{notEmployed}</div>}
                 </td>
                 <td style={{ ...slipTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{inrPaise(full)}</td>
                 <td style={{ ...slipTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--bad)' }}>−{inrPaise(lopPaise + payslip.employeeDeductionsPaise)}</td>

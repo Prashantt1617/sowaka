@@ -12,6 +12,7 @@ import { notFbpBillFilter } from '../../services/reimbursementBills.service';
 import { defineTools, rupees, str, SuwiContext } from '../tools';
 import { allRuns, bestByPeriod, daysInMonth, delta, lastDayOf, monthLabel, pct, showLines, slipLines, slipsOfRun, STATUS_LABEL, StoredRun, StoredSlip, taxSource } from './payroll-common';
 import { payslips } from '../../config/db';
+import { employedDaysOf, lossOfPayDaysOf, lossOfPayPaiseOf, notEmployedDaysOf, notEmployedPaiseOf, notEmployedWords } from '../../services/payslipDays';
 
 const ACTIVE = { lifecycleStatus: { $nin: ['offboarded', 'terminated'] } } as const;
 
@@ -55,13 +56,17 @@ function monthView(s: StoredSlip, run: StoredRun) {
     runStatus: STATUS_LABEL[run.status] ?? run.status,
     payslipId: s._id.toHexString(),
     days: {
-      daysInMonth: i?.workingDays ?? 0, lopDays: i?.lopDays ?? 0, paidDays: i?.payableDays ?? 0,
+      // Real loss of pay; the days before joining / after leaving are notEmployedDays (not paid, not loss of pay).
+      daysInMonth: i?.workingDays ?? 0, lopDays: lossOfPayDaysOf(i), paidDays: i?.payableDays ?? 0,
+      // Paid days are out of the days employed (16 for a 16 Oct joiner), not the whole month.
+      ...(notEmployedDaysOf(i) > 0 ? { daysEmployed: employedDaysOf(i), notEmployedDays: notEmployedDaysOf(i), notEmployed: notEmployedWords(i, s.joiningDate, i?.leftOn) } : {}),
       lopFromAttendance: i?.attendanceLopDays, lopTypedByHr: i?.lopEnteredByHr === true,
       attendanceRules: (i?.attendanceDeductions ?? []).filter((r) => r.days > 0).map((r) => `${r.label}: ${r.count} → ${r.days} day${r.days === 1 ? '' : 's'}`),
       paidLeaveApplied: i?.paidLeaveDaysApplied ?? 0,
     },
     monthlyCtc: rupees(s.monthlyCtcPaise), annualCtc: rupees(s.annualCtcPaise),
-    earnings: showLines(L.earnings), gross: rupees(L.grossPaise), grossIfNoLop: rupees(L.fullGrossPaise), lostToLop: rupees(L.lopLossPaise),
+    earnings: showLines(L.earnings), gross: rupees(L.grossPaise), grossIfNoLop: rupees(L.fullGrossPaise), lostToLop: rupees(lossOfPayPaiseOf(s)),
+    ...(notEmployedPaiseOf(s) > 0 ? { notPaidNotEmployed: rupees(notEmployedPaiseOf(s)) } : {}),
     deductions: showLines(L.deductions), totalDeductions: rupees(L.deductionsPaise),
     reimbursements: showLines(L.reimbursements), totalReimbursements: rupees(L.reimbursementsPaise),
     netPay: rupees(L.netPayablePaise),
@@ -72,6 +77,8 @@ function monthView(s: StoredSlip, run: StoredRun) {
     overtime: i?.overtimePaise ? { hours: i.approvedOtHours, amount: rupees(i.overtimePaise), typedByHr: i.overtimeEnteredByHr === true } : undefined,
     claimsPaid: (i?.reimbursementClaimIds ?? []).length,
     _L: L,
+    /** What the real loss of pay cost (the days not employed apart). */
+    _lopPaise: lossOfPayPaiseOf(s),
   };
 }
 
@@ -118,11 +125,11 @@ defineTools(
         if (m?.days.lopTypedByHr && m.days.lopFromAttendance !== undefined && m.days.lopFromAttendance !== m.days.lopDays) reasons.push(`${m.month}: HR typed ${m.days.lopDays} loss-of-pay days on the run; attendance alone would have given ${m.days.lopFromAttendance}.`);
       }
       if (before && now.days.lopDays !== before.days.lopDays) {
-        const lopDiff = now._L.lopLossPaise - before._L.lopLossPaise;
+        const lopDiff = now._lopPaise - before._lopPaise;
         const dNow = daysInMonth(cur.period), dBefore = daysInMonth(prev!.period);
-        reasons.push(`Loss of pay ${before.days.lopDays} → ${now.days.lopDays} days (${now.days.lopTypedByHr ? 'typed by HR on the run' : 'from attendance'}): ${rupees(now._L.lopLossPaise)} of earnings not paid this month vs ${rupees(before._L.lopLossPaise)} before, so ${rupees(Math.abs(lopDiff))} ${lopDiff > 0 ? 'more' : 'less'} lost to loss of pay this month.${dNow !== dBefore ? ` A loss-of-pay day is worth the month's pay divided by its days (${dBefore} in ${monthLabel(prev!.period)}, ${dNow} in ${monthLabel(cur.period)}), so part of the gross change comes from the different number of days.` : ''}`);
+        reasons.push(`Loss of pay ${before.days.lopDays} → ${now.days.lopDays} days (${now.days.lopTypedByHr ? 'typed by HR on the run' : 'from attendance'}): ${rupees(now._lopPaise)} of earnings not paid this month vs ${rupees(before._lopPaise)} before, so ${rupees(Math.abs(lopDiff))} ${lopDiff > 0 ? 'more' : 'less'} lost to loss of pay this month.${dNow !== dBefore ? ` A loss-of-pay day is worth the month's pay divided by its days (${dBefore} in ${monthLabel(prev!.period)}, ${dNow} in ${monthLabel(cur.period)}), so part of the gross change comes from the different number of days.` : ''}`);
       }
-      else if (now.days.lopDays > 0) reasons.push(`${now.days.lopDays} loss-of-pay day${now.days.lopDays === 1 ? '' : 's'} (${now.days.lopTypedByHr ? 'typed by HR on the run' : 'from attendance'}): ${rupees(now._L.lopLossPaise)} of earnings not paid.`);
+      else if (now.days.lopDays > 0) reasons.push(`${now.days.lopDays} loss-of-pay day${now.days.lopDays === 1 ? '' : 's'} (${now.days.lopTypedByHr ? 'typed by HR on the run' : 'from attendance'}): ${rupees(now._lopPaise)} of earnings not paid.`);
       const joined = person.joiningDate ? new Date(person.joiningDate).toISOString().slice(0, 10) : undefined;
       if (joined && joined.slice(0, 7) === cur.period && joined > `${cur.period}-01`) reasons.push(`Joined on ${joined}: paid from that day.`);
       if (before && joined && joined.slice(0, 7) === prev!.period && joined > `${prev!.period}-01`) reasons.push(`Joined on ${joined}, so ${monthLabel(prev!.period)} was a part month.`);

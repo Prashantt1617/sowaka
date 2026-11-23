@@ -471,13 +471,16 @@ async function buildRunPayslips(
         lopDays,
         attendanceLopDays,
         lopEnteredByHr,
+        // Of lopDays, the days before joining and after leaving: not loss of pay (they were not employed), paid the same way.
+        notEmployedDays: lopEnteredByHr ? 0 : Math.min(notYetEmployedDays + leftDays, lopDays),
+        ...(leftDays > 0 && left ? { leftOn: left } : {}),
         incomeTaxPaise,
         incomeTaxEnteredByHr,
         overtimeEnteredByHr,
         ...(Object.keys(amounts).length ? { componentAmounts: amounts } : {}),
         ...(tds ? { tds } : {}),
         ...(reimbTax && reimbTax.paidPaise > 0 ? { reimbursementTax: { paidPaise: reimbTax.paidPaise, exemptPaise: reimbTax.exemptPaise, taxablePaise: reimbTax.taxablePaise } } : {}),
-        // The days before joining as a line of their own, so the lines add up to the loss of pay.
+        // The days before joining and after leaving as lines of their own, so the lines add up to lopDays (payslipDays tells them apart).
         attendanceDeductions: [...docked.lines, ...unpaidLeave.lines, ...(notYetEmployedDays > 0 ? [{ label: 'Before joining', count: notYetEmployedDays, days: notYetEmployedDays, trigger: 'absent' as const, every: 1, deductDays: 1 }] : []), ...(leftDays > 0 ? [{ label: 'After leaving', count: leftDays, days: leftDays, trigger: 'absent' as const, every: 1, deductDays: 1 }] : [])],
         paidLeaveDaysApplied: Math.min(allowance, docked.days),
         payableDays: slip.payableDays,
