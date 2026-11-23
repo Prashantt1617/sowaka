@@ -127,7 +127,10 @@ export function cleanDesignSettings(s: Record<string, unknown>): Partial<Lifecyc
   }
   if (s.reporting !== undefined) {
     const r = (s.reporting ?? {}) as Record<string, unknown>;
+    const mapLink = str(r.mapLink, 500);
+    if (mapLink && !/^https:\/\/\S+$/i.test(mapLink)) throw new LifecycleError(400, 'The maps link is a web address starting with https://');
     out.reporting = {
+      ...(mapLink ? { mapLink } : {}),
       ...(hhmm(str(r.time, 20)) ? { time: hhmm(str(r.time, 20))! } : {}), ...(str(r.place, 200) ? { place: str(r.place, 200) } : {}),
       ...(str(r.bring, 300) ? { bring: str(r.bring, 300) } : {}), ...(str(r.notes, 300) ? { notes: str(r.notes, 300) } : {}),
       meets: r.meets === 'manager' || r.meets === 'buddy' ? r.meets : 'hr',
