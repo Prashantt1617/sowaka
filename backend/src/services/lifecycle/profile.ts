@@ -67,7 +67,7 @@ function address(v: unknown, what: string): ProfileAddress {
 const secret = (plain: string) => (fieldKeyConfigured() ? { enc: encryptField(plain) } : {});
 
 /** Builds one section's stored value from what the portal sent (each section checked on its own). */
-function sectionValue(section: ProfileSection, input: Record<string, unknown>, journey: Journey, now: Date): Partial<CandidateProfile> {
+export function sectionValue(section: ProfileSection, input: Record<string, unknown>, journey: Journey, now: Date): Partial<CandidateProfile> {
   switch (section) {
     case 'personal': {
       const fullName = text(input.fullName, 100);
