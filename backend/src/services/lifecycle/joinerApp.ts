@@ -221,6 +221,8 @@ export async function joinerOnboarding(me: Me, now = new Date()) {
     hero, plant: deriveJourney(j, tasks, now).plant, firstPunch: facts.firstPunch,
     ...(goals ? { goals } : {}),
     meetings, tasks: taskRows, checkins, watch, trainings, devices, tour, profile,
+    // HR's names for the sections it can rename (the template editor); the app falls back to its own words.
+    labels: { trainings: design.settings.trainingsLabel || 'Trainings' },
     summary: {
       meetings: { met: nowMeetings.filter((m) => m.met).length, total: nowMeetings.length },
       tasks: { toDo: openTasks.length, ...(upNext ? { upNext: upNext.title } : {}) },

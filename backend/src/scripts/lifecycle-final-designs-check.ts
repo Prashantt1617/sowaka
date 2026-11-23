@@ -164,6 +164,15 @@ async function main() {
   const w1 = home.checkins.find((c) => c.title === 'Week 1 check-in')!;
   eq('Week 1 check-in is open (2 days before the end of Week 1); the others locked', [w1.state, home.checkins.filter((c) => c.state === 'locked').length, home.summary.checkinDue?.title], ['open', 2, 'Week 1 check-in']);
   eq('Watch list: pre-boarding videos show from Day 1, trainings apart', [home.watch.length, home.trainings.length, home.watch[0].step], [6, 2, 'd1']);
+  eq('The trainings section is called "Trainings" until HR renames it', (home as { labels?: { trainings: string } }).labels?.trainings, 'Trainings');
+  {
+    const v = await design.templateDesign(ORG, def.id);
+    await design.saveTemplateDesign(ORG, def.id, { ...v, labels: { trainings: 'Learning' } } as never);
+    eq('…renamed in the editor: the editor and the app read the new name', [(await design.templateDesign(ORG, def.id)).labels.trainings, ((await joiner.joinerOnboarding(PRIYA)) as { labels?: { trainings: string } }).labels?.trainings], ['Learning', 'Learning']);
+    eq('…a name over 40 characters is refused', await refusal(() => design.saveTemplateDesign(ORG, def.id, { ...v, labels: { trainings: 'x'.repeat(41) } } as never)), 400);
+    await design.saveTemplateDesign(ORG, def.id, { ...v, labels: { trainings: '' } } as never);
+    eq('…cleared: back to "Trainings"', (await design.templateDesign(ORG, def.id)).labels.trainings, 'Trainings');
+  }
   eq('Devices and accesses: 4, none ready', [home.devices.length, home.summary.devices.ready], [4, 0]);
   eq('Tour: 4 lessons (no reports), today is Punch in and out', [home.tour.lessons.length, home.tour.today], [4, 'punch']);
 
