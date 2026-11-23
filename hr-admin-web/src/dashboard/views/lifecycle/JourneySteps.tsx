@@ -104,7 +104,7 @@ const Sub = ({ children }: { children: ReactNode }) => <h4 style={{ ...sectionLa
 const Para = ({ children }: { children: ReactNode }) => <p style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.55, margin: 0 }}>{children}</p>;
 
 /**
- * The employee profile on Joining day: one row, its progress (the portal's "n of 6 sections done") and the link
+ * The employee profile on Joining day: one row, its progress (the portal's "n of 5 sections done") and the link
  * to the candidate's pre-boarding profile (its own page, in a new tab), where HR sees every section and its
  * documents and approves each one. No link on that page itself.
  */
@@ -221,7 +221,7 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
   const monthOneTasks = probTasks.filter((t) => t.month === 1);
   const finalTasks = probTasks.filter((t) => !t.month || (probationTotal > 1 && t.month >= probationTotal));
   const middleTasks = probTasks.filter((t) => !monthOneTasks.includes(t) && !finalTasks.includes(t));
-  // The employee profile's progress on Joining day: its sections (the portal's "n of 6"), else the pre-boarding tasks.
+  // The employee profile's progress on Joining day: its sections (the portal's "n of 5"), else the pre-boarding tasks.
   const sections = journey.profileSections;
   const profilePct = sections?.total ? Math.round((sections.done / sections.total) * 100) : preTasks.length ? Math.round((doneOf(preTasks) / preTasks.length) * 100) : 0;
   const profileText = sections?.total ? `${sections.done} of ${sections.total} sections done` : `${doneOf(preTasks)} of ${preTasks.length} tasks done`;
