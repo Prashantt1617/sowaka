@@ -630,20 +630,69 @@ export interface PreboardingDocument {
   hrNote?: string;
   files: StoredFileLink[];
 }
+export interface PreboardingAddress { line: string; city: string; state: string; pin: string }
+export interface PreboardingJob { company: string; role: string; /** 'YYYY-MM'. */ from: string; to?: string }
+/**
+ * What each section holds, as HR's edit form sends it (PUT …/profile/:section). The secrets travel
+ * one way only: the GET answers their last four (`PreboardingSectionValues`), a PUT sends a new number
+ * or leaves it out to keep the stored one.
+ */
+export interface PreboardingSectionInput {
+  personal: { fullName: string; /** 'YYYY-MM-DD'. */ dob: string; gender: string; maritalStatus?: string; nationality?: string };
+  contact: { mobile: string; current: PreboardingAddress; permanentSame: boolean; permanent?: PreboardingAddress };
+  emergency: { emergencyContact: { name: string; relation: string; phone: string; altPhone?: string } };
+  bank: { holderName: string; /** Blank or missing keeps the stored number. */ accountNumber?: string; ifsc: string; bankName?: string; pf: { firstJob: boolean; uan?: string } };
+  education: { qualification: string; institution: string; year: string; firstJob: boolean; jobs: PreboardingJob[] };
+  /** Blank or missing keeps the stored number. */
+  ids: { aadhaar?: string; pan?: string };
+}
+/** The section's answers as the GET gives them: the input's shape, with secrets as their last four. */
+export interface PreboardingSectionValues {
+  personal: PreboardingSectionInput['personal'];
+  contact: PreboardingSectionInput['contact'];
+  emergency: PreboardingSectionInput['emergency'];
+  bank: Omit<PreboardingSectionInput['bank'], 'accountNumber'> & { accountLast4?: string };
+  education: PreboardingSectionInput['education'];
+  ids: { aadhaarLast4?: string; panLast4?: string };
+}
 export interface PreboardingSection {
   key: PreboardingSectionKey;
   title: string;
   done: boolean;
   approved?: { byName: string; at: string };
+  /** HR's last change to the candidate's answers here. */
+  editedByHr?: { byName: string; at: string };
   fields: Array<{ label: string; value: string }>;
+  /** The answers in the edit form's shape; missing or null while the candidate has not filled the section. */
+  values?: Partial<PreboardingSectionValues[PreboardingSectionKey]> | null;
   documents: PreboardingDocument[];
 }
+/** The Employee profile's Basic details for a candidate: what they will have once they join. */
+export interface PreboardingBasicInput {
+  employeeId?: string;
+  workEmail?: string;
+  designation?: string;
+  department?: string;
+  workLocation?: string;
+  /** As the employee record keeps it: 'full_time', 'contract' or 'intern'. */
+  employeeType?: string;
+  /** Joining day, 'YYYY-MM-DD'. */
+  tj?: string;
+}
+export interface PreboardingBasic extends PreboardingBasicInput {
+  /** Their app account, once HR created it from this card. */
+  appAccess?: { userId: string; createdAt: string };
+}
+/** The choices the portal offers for its picked fields. */
+export interface PreboardingOptions { genders: string[]; marital: string[]; qualifications: string[]; relations: string[] }
 export interface PreboardingProfile {
   journeyId: string;
   candidate: { name: string; personalEmail?: string; phone?: string; designation?: string; department?: string; tj?: string; status: string };
   done: number;
   total: number;
   sections: PreboardingSection[];
+  options?: PreboardingOptions;
+  basic?: PreboardingBasic;
 }
 
 export const listPreboarding = () => api<PreboardingRow[]>(`${L}/preboarding`);
@@ -652,6 +701,15 @@ export const getPreboardingProfile = (journeyId: string) =>
 /** Approves and locks a section (409 while it is not complete); `false` unlocks it. Both answer the whole profile. */
 export const setPreboardingSectionApproved = (journeyId: string, section: PreboardingSectionKey, approved: boolean) =>
   api<PreboardingProfile>(`${L}/journeys/${encodeURIComponent(journeyId)}/profile/${section}/approve`, { method: approved ? 'POST' : 'DELETE' });
+/** HR changes a candidate's answers in one section (400 with a message when something is not valid); answers the whole profile. */
+export const savePreboardingSection = <K extends PreboardingSectionKey>(journeyId: string, section: K, body: PreboardingSectionInput[K]) =>
+  api<PreboardingProfile>(`${L}/journeys/${encodeURIComponent(journeyId)}/profile/${section}`, json('PUT', body));
+/** HR changes the candidate's Basic details (employee ID, work email, role, joining day); answers the whole profile. */
+export const savePreboardingBasic = (journeyId: string, body: PreboardingBasicInput) =>
+  api<PreboardingProfile>(`${L}/journeys/${encodeURIComponent(journeyId)}/profile/basic`, json('PUT', body));
+/** Creates the candidate's app account with this employee ID and work email (409 when they have one, 400 for a taken ID or email). */
+export const createPreboardingAppAccess = (journeyId: string, body: { employeeId: string; workEmail: string }) =>
+  api<PreboardingProfile>(`${L}/journeys/${encodeURIComponent(journeyId)}/app-access`, json('POST', body));
 
 /**
  * A file's bytes from the `url` the server gave: an API path (starting with '/') is
