@@ -382,7 +382,8 @@ void main() {
       await scrollTo(tester, find.byKey(const ValueKey('tile-profile')));
       expect(find.text('1 of 2 ready'), findsOneWidget);
       expect(find.text('2 of 7 sections done'), findsOneWidget);
-      expect(find.byKey(const ValueKey('tile-checkins')), findsNothing);
+      // Check-ins show at every step: here the next one and when it opens.
+      expect(find.byKey(const ValueKey('tile-checkins')), findsOneWidget);
     });
 
     testWidgets('Day 1 after it: tomorrow’s lesson on the tour card', (tester) async {
@@ -670,6 +671,8 @@ void main() {
     testWidgets('Devices: Ready or Setting up; Profile: the sections', (tester) async {
       await _open(tester, _home('d1'));
       await scrollTo(tester, find.byKey(const ValueKey('tile-devices')));
+      await tester.ensureVisible(find.byKey(const ValueKey('tile-devices')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('tile-devices')));
       await tester.pumpAndSettle();
       expect(find.text('Your devices and accesses'), findsOneWidget);
@@ -678,6 +681,8 @@ void main() {
       Navigator.of(tester.element(find.text('Your devices and accesses'))).pop();
       await tester.pumpAndSettle();
       await scrollTo(tester, find.byKey(const ValueKey('tile-profile')));
+      await tester.ensureVisible(find.byKey(const ValueKey('tile-profile')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('tile-profile')));
       await tester.pumpAndSettle();
       expect(find.text('Personal details'), findsOneWidget);
