@@ -319,6 +319,20 @@ the server holds the value).
 
 ### 4.3 Teammates (T) — `/lifecycle/team/*` (manager, buddy, head of department; extended)
 
+> **24 Nov: no team task pages in the app.** HR assigns and follows every onboarding task on the
+> dashboard. The app keeps one joiners list, Teams › New joiners (`GET /lifecycle/team/new-joiners`, view
+> only, each card opens the joiner's profile; the manager, the buddy, the head of department and every
+> teammate see it) and the probation decision: `GET/POST …/review` (the manager's confirmation review, which
+> now answers the review itself, with `joiner`) and `GET/POST …/confirmation` (the head of department's
+> approval, with `joiner`), reached from the Actions card `GET /lifecycle/me` `confirmations:
+> Array<{ journeyId, kind: 'review' | 'approval', name, title }>` (also `GET /lifecycle/team/confirmations`)
+> and from the pushes `lifecycle_confirmation_review` / `lifecycle_confirmation_approval`. Every other
+> `/lifecycle/team/joiners*` route in the table below answers 404, and no set-up push (set-up to-do, late
+> team row other than the review and the approval, overdue or moved task, goals and check-in reminders,
+> check-in sent, starter task done) goes to the manager, the buddy or the head of department. Their other
+> pushes about a joiner (joins today, a meeting with them, HR's nudge, the decision) open the joiner's
+> profile (`employee_profile` + `employeeUserId`).
+
 | Method + path | Body | Returns |
 |---|---|---|
 | GET `/lifecycle/team/joiners` | | `{ joiners: TeamJoinerRow[] }` |

@@ -41,7 +41,7 @@ export interface TemplateTask {
   order: number;
   recommended?: { why: string; added: boolean };
   documents?: Array<{ key: string; label: string; required: boolean }>;
-  /** A team-side task (the app's Teams › Joiners for the manager, buddy or head of department); kept as it is on save. */
+  /** A team-side task (the manager's, buddy's or head of department's, assigned and followed by HR on the dashboard); kept as it is on save. */
   team?: { key: string; kind: string; early?: boolean; pair?: string; agenda?: string[] };
   /** A meeting's agenda: the points the joiner's and the manager's meeting screens list. Empty: the standard one. */
   agenda?: string[];

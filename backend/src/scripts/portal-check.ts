@@ -212,7 +212,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   const codeFor = async (email: string, ip: string, at?: Date) => { await auth.requestSignInCode(email, ip, at); return /^(\d{6}) is your/.exec(lastMail(email.trim().toLowerCase())?.subject ?? '')?.[1] ?? ''; };
   ok('the journey is finalised', (await db.journeys().findOne({ id: A }))?.status === 'finalised');
   const setupPush = await db.notifications().findOne({ userId: 'mgr', scenario: 'lifecycle_joiner_setup' });
-  ok('the manager’s set-up push opens the set-up screen (destination + journeyId)', setupPush?.data?.destination === 'lifecycle_joiner_setup' && setupPush?.data?.journeyId === A, setupPush?.data);
+  ok('no set-up push to the manager (HR assigns every onboarding task on the dashboard, 24 Nov)', !setupPush, setupPush?.data);
   ok('finalising twice is refused', (await refusal(() => offersSvc.finaliseOffer(HR, A))).status === 409);
   link = await offersSvc.openOfferLink(token2, '1.1.1.1');
   ok('the login email’s sign-in link carries their email and the client (logo and HR on a fresh device)', /\/sign-in\?email=[^"&]+&(amp;)?c=/.test(loginMail.html) && loginMail.html.includes(`c=${emails.clientToken(ORG)}`), loginMail.html);

@@ -744,7 +744,7 @@ function PeoplePicker({ managerUserId, buddyUserId, exclude, emps, busy, onSave 
   const dirty = manager !== (managerUserId ?? '') || buddy !== (buddyUserId ?? '');
   return (
     <div style={{ display: 'grid', gap: 10 }}>
-      <Field label="Reporting manager" hint="Gets the set-up to-do in the app">
+      <Field label="Reporting manager" hint="Their reporting manager; shows on the Day-1 pass">
         <Pick value={manager} onChange={setManager}>
           <option value="">Not picked</option>
           {people.map((p) => <option key={p.id} value={p.id}>{p.name}{p.role ? ` · ${p.role}` : ''}</option>)}

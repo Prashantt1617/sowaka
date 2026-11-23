@@ -10,6 +10,8 @@
 /// used where the server has not said.
 library;
 
+import 'confirmation_api.dart' show PendingConfirmation;
+
 // ─── Readers ────────────────────────────────────────────────────────────────
 
 String? _str(Object? value) {
@@ -253,7 +255,7 @@ class OnboardingTile {
 /// What `/lifecycle/me` says: whether the lifecycle is on for the company at
 /// all, and the person's onboarding and offboarding, when they have them.
 class LifecycleMe {
-  const LifecycleMe({this.enabled = false, this.onboarding, this.offboarding = const {}});
+  const LifecycleMe({this.enabled = false, this.onboarding, this.offboarding = const {}, this.confirmations = const []});
 
   factory LifecycleMe.fromJson(Map<String, dynamic> json) {
     final onboarding = _map(json['onboarding']);
@@ -261,6 +263,7 @@ class LifecycleMe {
       enabled: _bool(json['enabled']),
       onboarding: onboarding.isEmpty ? null : OnboardingMe.fromJson(onboarding),
       offboarding: _map(json['offboarding']),
+      confirmations: PendingConfirmation.listOf(json['confirmations']),
     );
   }
 
@@ -272,6 +275,10 @@ class LifecycleMe {
   /// Kept as sent; the offboarding screens read it.
   final Map<String, dynamic> offboarding;
 
+  /// The confirmations waiting on this person (a manager's review to write, a
+  /// head of department's approval): each an Actions card while it waits.
+  final List<PendingConfirmation> confirmations;
+
   /// The Action tile and the profile's Onboarding tab.
   bool get showsOnboarding =>
       enabled && onboarding != null && onboarding!.tileVisible && onboarding!.journeyId.isNotEmpty;
@@ -280,6 +287,7 @@ class LifecycleMe {
     enabled: enabled,
     onboarding: onboarding?.withProgress(progress),
     offboarding: offboarding,
+    confirmations: confirmations,
   );
 }
 

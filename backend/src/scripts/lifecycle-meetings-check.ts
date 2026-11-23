@@ -60,7 +60,7 @@ async function main() {
     person('j1', 'Priya Joiner', { managerUserId: 'mgr', department: 'Admissions', hrPrimaryUserId: 'hr' }),
   ] as never[]);
   const me = (userId: string, name: string) => ({ userId, name, org: ORG });
-  const J1 = me('j1', 'Priya Joiner'), MGR = me('mgr', 'Sunny Manager'), BUDDY = me('buddy', 'Meera Buddy');
+  const J1 = me('j1', 'Priya Joiner'), MGR = me('mgr', 'Sunny Manager');
 
   await templates.ensureDefaultTemplates(ORG);
   const def = await templates.defaultTemplate(ORG, 'onboarding');
@@ -95,8 +95,6 @@ async function main() {
   await templates.updateTemplate(ORG, def.id, { tasks: edited }, 'Hema HR');
   rows = await rowsOf();
   eq('HR’s edit shows to the joiner at once (blanks dropped, trimmed)', rows.find((r) => r.id === meetManager.id)?.agenda, ['Your role', 'Your first goals']);
-  const mgrPage = await team.teamJoiner(MGR, J.id);
-  eq('…and to the manager on the same meeting', (mgrPage.tasks.find((t) => t.id === meetManager.id) as { agenda?: string[] } | undefined)?.agenda, ['Your role', 'Your first goals']);
   const legacy = (await app.joinerForManager(MGR, J.id)) as unknown as { tasks: Array<{ id: string; meeting?: { expect: string[] } }> };
   const legacyMeet = legacy.tasks.find((t) => t.id === meetManager.id);
   ok('…and on the meeting record the manager’s meeting screen reads (when there is one)', !legacyMeet?.meeting || JSON.stringify(legacyMeet.meeting.expect) === JSON.stringify(['Your role', 'Your first goals']), legacyMeet?.meeting);
@@ -105,10 +103,9 @@ async function main() {
   section('Mark as met lands on the record the other side reads');
   await app.meetingRowMet(J1, meetManager.id, { action: 'met' });
   eq('The manager meeting’s journey task is done', (await journeyTasks().findOne({ id: meetManager.id }))?.status, 'done');
-  ok('…the manager’s team side shows it done', (await team.teamJoiner(MGR, J.id)).tasks.find((t) => t.id === meetManager.id)?.done === true);
   await app.meetingRowMet(J1, 'team:buddy_meet', { action: 'met' });
   ok('Your buddy: journey.teamTasks.buddy_meet, the buddy’s own tick', !!(await journeys().findOne({ id: J.id }))?.teamTasks?.buddy_meet);
-  ok('…the buddy’s Teams › Joiners shows it done', (await team.teamJoiner(BUDDY, J.id)).tasks.find((t) => t.id === 'buddy_meet')?.done === true);
+  ok('…HR’s panel shows the buddy’s row done (the buddy has no task page in the app any more)', (await team.teamRowsForHr((await journeys().findOne({ id: J.id }))!)).find((t) => t.id === 'buddy_meet')?.done === true);
   rows = await rowsOf();
   eq('…and the joiner’s rows read done, no longer tickable', [rows.find((r) => r.id === 'team:buddy_meet')?.status, rows.find((r) => r.id === 'team:buddy_meet')?.canTick], ['done', false]);
   await app.meetingRowMet(J1, 'person:p-it', { action: 'met' });
@@ -122,7 +119,7 @@ async function main() {
   await app.meetingRowNotes(J1, meetManager.id, { notes: ['Ask about the CRM', ''] });
   rows = await rowsOf();
   eq('Kept and read back on the row', rows.find((r) => r.id === meetManager.id)?.myNotes, ['Ask about the CRM', '']);
-  ok('Not in the manager’s team page', !JSON.stringify(await team.teamJoiner(MGR, J.id)).includes('Ask about the CRM'));
+  ok('Not in HR’s team rows', !JSON.stringify(await team.teamRowsForHr((await journeys().findOne({ id: J.id }))!)).includes('Ask about the CRM'));
   ok('Not in the manager’s joiner view', !JSON.stringify(await app.joinerForManager(MGR, J.id)).includes('Ask about the CRM'));
   ok('Not on the journey HR reads', !JSON.stringify(await journeys().findOne({ id: J.id })).includes('Ask about the CRM'));
   await app.meetingRowNotes(J1, meetManager.id, { notes: ['', ''] });

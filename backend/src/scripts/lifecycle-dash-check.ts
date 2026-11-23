@@ -292,7 +292,7 @@ type Handler = { handle: (req: unknown, res: unknown, next: (err?: unknown) => v
   if (mgrTask) {
     const n4 = await admin('POST', `/journeys/${W.id}/tasks/${mgrTask.id}/nudge`, 'hr');
     const mPush = await db.notifications().findOne({ userId: 'mgr', scenario: 'lifecycle_nudge' });
-    ok('The manager gets a push naming the joiner', n4.status === 200 && (n4.body as { nudged: { who: string } }).nudged.who === 'manager' && String(mPush?.title).startsWith('Isha Verma') && /^lifecycle_/.test(String(mPush?.data?.destination)), { body: n4.body, mPush });
+    ok('The manager gets a push naming the joiner, opening the joiner’s profile (no team task page in the app)', n4.status === 200 && (n4.body as { nudged: { who: string } }).nudged.who === 'manager' && String(mPush?.title).startsWith('Isha Verma') && mPush?.data?.destination === 'employee_profile', { body: n4.body, mPush });
   } else ok('A manager task exists to nudge', false);
   const locked = (await engine.tasksOf(W.id)).find((t) => t.status === 'locked');
   if (locked) eq('A task not open yet cannot be nudged', (await refusal(() => nudges.nudgeTask(ORG, W.id, locked.id, { userId: 'hr', name: 'Hema HR' }))).status, 409);

@@ -1,6 +1,6 @@
 /// Opening the onboarding screens from anywhere in the app: the Action tile,
-/// the profile's Onboarding tab, the Team tab's New joiners, a tapped
-/// notification.
+/// the profile's Onboarding tab, the Actions card of a confirmation waiting on
+/// a manager or head of department, a tapped notification.
 ///
 /// The signed-in shell (`ManagerScreen`) knows the session, the header and
 /// the tabs. It registers a maker of [OnboardingShell] here while it is
@@ -14,10 +14,10 @@ import 'package:flutter/material.dart';
 
 import '../../manager/data/manager_models.dart' show ManagerTab;
 import 'data/lifecycle_me_store.dart';
-import 'data/team_joiners_api.dart';
+import 'data/confirmation_api.dart';
 import 'joiner/joiner_checkins.dart' show joinerHomeRoute;
 import 'joiner/joiner_home.dart';
-import 'presentation/manager/team_joiner_screens.dart';
+import 'presentation/manager/confirmation_screens.dart';
 import 'presentation/onboarding_kit.dart';
 import 'presentation/portal_page_screen.dart';
 
@@ -68,12 +68,12 @@ Future<void> openOnboardingHome(BuildContext context, {OnboardingShell? shell}) 
   );
 }
 
-/// Teams › Joiners, a joiner's page (Final designs; manager, buddy, head of department).
-Future<void> openJoiner(BuildContext context, String journeyId, {OnboardingShell? shell}) {
+/// A confirmation waiting on the viewer (the Actions card): the manager's
+/// review or the head of department's approval, on its own screen.
+Future<void> openPendingConfirmation(BuildContext context, PendingConfirmation pending, {OnboardingShell? shell}) {
   final resolved = shell ?? currentOnboardingShell();
-  final api = resolved == null ? null : HttpTeamJoinersApi.from(resolved.api);
-  if (resolved == null || api == null) return Future.value();
-  return openTeamJoiner(context, shell: resolved, api: api, journeyId: journeyId);
+  if (resolved == null) return Future.value();
+  return openConfirmation(context, shell: resolved, journeyId: pending.journeyId, kind: pending.kind);
 }
 
 /// The notification destinations these screens answer (the server sets
@@ -92,10 +92,8 @@ const onboardingDestinations = {
   'lifecycle_checkin',
   'lifecycle_reveal',
   'lifecycle_week_done',
-  'lifecycle_joiner',
-  'lifecycle_joiner_setup',
-  'lifecycle_starter_task_done',
-  'lifecycle_probation_review',
+  'lifecycle_confirmation_review',
+  'lifecycle_confirmation_approval',
 };
 
 /// Takes a tapped lifecycle notification to its screen. False when [data]
@@ -111,21 +109,20 @@ bool openOnboardingDestination(BuildContext context, Map<String, dynamic> data) 
   }
 
   final journeyId = read('journeyId');
-  // The joiner's own pushes (Final designs, lane J) all open Actions › Onboarding (JoinerHomeScreen);
-  // every manager / buddy / head-of-department push (lane T) lands on the joiner's team page.
-  final teamApi = HttpTeamJoinersApi.from(shell.api);
-  final Widget? page = switch (destination) {
-    'lifecycle_joiner' ||
-    'lifecycle_joiner_setup' ||
-    'lifecycle_starter_task_done' ||
-    'lifecycle_probation_review' when journeyId != null && teamApi != null =>
-      TeamPersonScreen(shell: shell, api: teamApi, journeyId: journeyId),
+  // The manager's confirmation review and the head of department's approval: their own screens.
+  // There is no other team-side onboarding screen (HR assigns those tasks on the dashboard); a
+  // teammate's other pushes about a joiner open the joiner's profile (`employee_profile`, the shell's).
+  final kind = switch (destination) {
+    'lifecycle_confirmation_review' => ConfirmationKind.review,
+    'lifecycle_confirmation_approval' => ConfirmationKind.approval,
     _ => null,
   };
-  if (page == null) {
-    unawaited(openOnboardingHome(context, shell: shell));
+  if (kind != null) {
+    if (journeyId == null) return false;
+    unawaited(openConfirmation(context, shell: shell, journeyId: journeyId, kind: kind));
     return true;
   }
-  unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => page)));
+  // The joiner's own pushes (Final designs, lane J) all open Actions › Onboarding (JoinerHomeScreen).
+  unawaited(openOnboardingHome(context, shell: shell));
   return true;
 }
