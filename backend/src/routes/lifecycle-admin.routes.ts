@@ -13,7 +13,7 @@ import { createTemplate, deleteTemplate, getTemplate, isKind, listTemplates, tem
 import multer from 'multer';
 import { MAX_VIDEO_BYTES, saveTemplateDesign, templateDesign, templateMediaBytes, templatePreview, uploadTemplateMedia } from '../services/lifecycle/design';
 import { UTF8_FILE_NAMES, contentDisposition } from '../services/lifecycle/files';
-import { approveProfileSection, hrProfileView, preboardingPeople, unlockProfileSection } from '../services/lifecycle/preboardingProfile';
+import { approveProfileSection, hrProfileView, hrSaveProfileSection, preboardingPeople, unlockProfileSection } from '../services/lifecycle/preboardingProfile';
 
 /**
  * The dashboard's onboarding side of the employee lifecycle, mounted at
@@ -149,7 +149,8 @@ lifecycleAdminRouter.put('/journeys/:id', lifecycleHandler(async (req) => {
   return { journey: journeyForViewer(out.journey, viewerOf(req)) };
 }));
 // The pre-boarding profile (HR only: the answers, the documents' files): each section's answers and
-// documents; approving a done section locks it for the candidate, unlocking (DELETE) opens it again.
+// documents; approving a done section locks it for the candidate, unlocking (DELETE) opens it again;
+// PUT changes a section's answers (the portal's body and checks), approved or not.
 async function hrJourney(req: Request) {
   if (!viewerOf(req).seesDocuments) throw new LifecycleError(403, 'Only HR can see the employee profile');
   const { me, j } = await ownJourney(req);
@@ -157,6 +158,10 @@ async function hrJourney(req: Request) {
   return { me, j };
 }
 lifecycleAdminRouter.get('/journeys/:id/profile', lifecycleHandler(async (req) => hrProfileView((await hrJourney(req)).j)));
+lifecycleAdminRouter.put('/journeys/:id/profile/:section', lifecycleHandler(async (req) => {
+  const { me, j } = await hrJourney(req);
+  return hrSaveProfileSection(me, j, req.params.section, req.body);
+}));
 lifecycleAdminRouter.post('/journeys/:id/profile/:section/approve', lifecycleHandler(async (req) => {
   const { me, j } = await hrJourney(req);
   return approveProfileSection(me, j, req.params.section);

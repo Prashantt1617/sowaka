@@ -816,8 +816,8 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
     type Field = { label: string; value: string };
     type FileRow = { id: string; name: string; contentType: string; size: number; url: string };
     type DocRow = { id: string; label: string; required: boolean; status: string; hrNote?: string; files: FileRow[] };
-    type Sec = { key: string; title: string; done: boolean; approved?: { byName: string; at: string }; fields: Field[]; documents: DocRow[] };
-    type HrProfile = { journeyId: string; candidate: Record<string, string>; done: number; total: number; sections: Sec[] };
+    type Sec = { key: string; title: string; done: boolean; approved?: { byName: string; at: string }; editedByHr?: { byName: string; at: string }; fields: Field[]; values: Record<string, unknown>; documents: DocRow[] };
+    type HrProfile = { journeyId: string; candidate: Record<string, string>; done: number; total: number; sections: Sec[]; options: Record<string, string[]> };
     const value = (p: HrProfile, key: string, label: string) => p.sections.find((x) => x.key === key)?.fields.find((f) => f.label === label)?.value;
 
     // A fresh joiner, finalised (HR marks the sent offer accepted, as the live rules do).
@@ -911,6 +911,112 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
     ok('…the candidate can save it again', (await profileSvc.saveProfileSection(await jp(), 'personal', { fullName: 'Nia Profile', dob: '1998-03-13', gender: 'Female' })).sections[0].done);
     ok('…unlocking what is not approved is fine', (await unlock('personal')).status === 200);
 
+    // HR changes the candidate's answers (PUT …/profile/:section): the portal's body and checks, approved sections too.
+    const sec = (b: unknown, key: string) => (b as HrProfile).sections?.find((x) => x.key === key);
+    {
+      const put = (s: string, payload: unknown, bearer = appToken) => call(lifecycleAdminRouter as never, 'PUT', `/journeys/${P}/profile/${s}`, bearer, payload);
+      hp = (await getProfile()).body as HrProfile;
+      ok('GET carries each section’s raw values in the PUT’s shape (secrets as last four only)',
+        JSON.stringify(sec(hp, 'personal')?.values) === JSON.stringify({ fullName: 'Nia Profile', dob: '1998-03-13', gender: 'Female', nationality: 'Indian' })
+        && JSON.stringify(sec(hp, 'contact')?.values) === '{}'
+        && JSON.stringify(sec(hp, 'emergency')?.values) === JSON.stringify({ emergencyContact: { name: 'Asha Rao', relation: 'Parent', phone: '+919123456789' } })
+        && JSON.stringify(sec(hp, 'bank')?.values) === JSON.stringify({ holderName: 'Nia Profile', ifsc: 'HDFC0001234', accountLast4: '9012', pf: { firstJob: false, uan: '100000000002' } })
+        && JSON.stringify(sec(hp, 'education')?.values) === JSON.stringify({ qualification: 'Graduate', institution: 'Pune University', year: '2019', firstJob: true, jobs: [] })
+        && JSON.stringify(sec(hp, 'ids')?.values) === JSON.stringify({ aadhaarLast4: '0123', panLast4: '234F' })
+        && !JSON.stringify(hp).includes('123456789012') && !JSON.stringify(hp).includes('Enc'), hp.sections.map((x) => [x.key, x.values]));
+      ok('…and the form’s choices: genders, marital, qualifications, relations (the portal’s lists)',
+        JSON.stringify(hp.options) === JSON.stringify({ ...profileSvc.PROFILE_OPTIONS, relations: ['Parent', 'Partner', 'Sibling', 'Friend'] }) && !hp.sections.some((x) => x.editedByHr), hp.options);
+
+      await approve('personal');
+      res = await put('personal', { fullName: 'Nia R Profile', preferredName: 'Nia', dob: '1998-03-12', gender: 'Female', maritalStatus: 'Married', nationality: 'Indian' });
+      const pSec = sec(res.body, 'personal');
+      ok('PUT personal on an approved section: 200, the GET’s body, still approved, edited by HR’s name with the time', res.status === 200 && (res.body as HrProfile).journeyId === P && Array.isArray((res.body as HrProfile).options?.relations)
+        && !!pSec?.approved && pSec.editedByHr?.byName === 'Hema HR' && !Number.isNaN(Date.parse(pSec.editedByHr.at))
+        && JSON.stringify(pSec.values) === JSON.stringify({ fullName: 'Nia R Profile', preferredName: 'Nia', dob: '1998-03-12', gender: 'Female', maritalStatus: 'Married', nationality: 'Indian' })
+        && value(res.body as HrProfile, 'personal', 'Marital status') === 'Married', res.body);
+      const edited = (await jp()).profileEditedByHr?.personal;
+      ok('…kept on the journey as profileEditedByHr.personal { byUserId, byName, at }, the approval untouched', edited?.byUserId === 'hr' && edited.byName === 'Hema HR' && edited.at instanceof Date
+        && (await jp()).profileApprovals?.personal?.byName === 'Hema HR' && (await jp()).profile?.personal?.fullName === 'Nia R Profile', edited);
+      ok('…the candidate is still locked out of it', (await refusal(async () => profileSvc.saveProfileSection(await jp(), 'personal', { fullName: 'Nia', dob: '1998-03-12', gender: 'Female' }))).status === 409);
+      res = await put('personal', { fullName: 'Nia', dob: '1998-03-12', gender: 'Robot' });
+      ok('the portal’s checks: a gender not on the list is 400 "Pick your gender"', res.status === 400 && (res.body as { error?: string }).error === 'Pick your gender', res);
+      ok('…an unknown section (or the photo): 400', (await put('salary', {})).status === 400 && (await put('photo', {})).status === 400);
+
+      res = await put('contact', { mobile: '98111 22334', current: { line: '12 MG Road', city: 'Pune', state: 'Maharashtra', pin: '411001' }, permanentSame: false, permanent: { line: '4 Lake View', city: 'Nashik', state: 'Maharashtra', pin: '422001' } });
+      ok('PUT contact: saved as the portal saves it (+91 mobile), values back in the same shape', res.status === 200 && JSON.stringify(sec(res.body, 'contact')?.values) === JSON.stringify({
+        mobile: '+919811122334', current: { line: '12 MG Road', city: 'Pune', state: 'Maharashtra', pin: '411001' }, permanentSame: false, permanent: { line: '4 Lake View', city: 'Nashik', state: 'Maharashtra', pin: '422001' } }), res.body);
+      ok('…a bad PIN: 400 with the portal’s words', (await put('contact', { mobile: '9811122334', current: { line: 'x', city: 'Pune', state: 'Maharashtra', pin: '0110' } })).status === 400);
+
+      res = await put('emergency', { emergencyContact: { name: 'Ravi Rao', relation: 'Sibling', phone: '+91 98989 89898', altPhone: '97979 79797' }, emergencyContact2: { name: 'Asha Rao', relation: 'Parent', phone: '+91 91234 56789' } });
+      ok('PUT emergency on an approved section: About you’s contacts replaced, still approved', res.status === 200 && !!sec(res.body, 'emergency')?.approved && JSON.stringify(sec(res.body, 'emergency')?.values) === JSON.stringify({
+        emergencyContact: { name: 'Ravi Rao', relation: 'Sibling', phone: '+919898989898', altPhone: '+919797979797' }, emergencyContact2: { name: 'Asha Rao', relation: 'Parent', phone: '+919123456789' } })
+        && (await jp()).aboutYou?.pf?.uan === '100000000002', res.body);
+      ok('…a relation not on the list, the candidate’s own number, or no contact: 400', (await put('emergency', { emergencyContact: { name: 'X', relation: 'Boss', phone: '+91 98989 89898' } })).status === 400
+        && (await put('emergency', { emergencyContact: { name: 'X', relation: 'Friend', phone: '+91 98111 22334' } })).status === 400 && (await put('emergency', {})).status === 400);
+      res = await put('emergency', { emergencyContact: { name: 'Ravi Rao', relation: 'Sibling', phone: '+91 98989 89898' }, emergencyContact2: null });
+      ok('…null removes the second contact', res.status === 200 && !(await jp()).aboutYou?.emergencyContact2 && !(await jp()).aboutYou?.emergencyContact?.altPhone, (await jp()).aboutYou);
+
+      const bankBefore = (await jp()).profile!.bank!;
+      res = await put('bank', { holderName: 'Nia R Profile', ifsc: 'icic0004321', bankName: 'ICICI Bank', accountNumber: '', accountNumberAgain: '', pf: { firstJob: true } });
+      const bankAfter = (await jp()).profile!.bank!;
+      ok('PUT bank (approved) with the account number left blank: the stored number kept as it was, the rest and the PF changed', res.status === 200 && !!sec(res.body, 'bank')?.approved
+        && bankAfter.accountLast4 === '9012' && bankAfter.accountNumberEnc === bankBefore.accountNumberEnc && bankAfter.ifsc === 'ICIC0004321' && (await jp()).aboutYou?.pf?.firstJob === true
+        && JSON.stringify(sec(res.body, 'bank')?.values) === JSON.stringify({ holderName: 'Nia R Profile', ifsc: 'ICIC0004321', bankName: 'ICICI Bank', accountLast4: '9012', pf: { firstJob: true } }), { bankAfter, values: sec(res.body, 'bank')?.values });
+      ok('…two different account numbers: 400', (await put('bank', { holderName: 'Nia', ifsc: 'ICIC0004321', accountNumber: '998877665544', accountNumberAgain: '998877665545' })).status === 400);
+      ok('…a 13-digit UAN: 400 (nothing saved)', (await put('bank', { holderName: 'Nia', ifsc: 'ICIC0004321', pf: { firstJob: false, uan: '1234567890123' } })).status === 400 && (await jp()).profile?.bank?.holderName === 'Nia R Profile');
+      res = await put('bank', { holderName: 'Nia R Profile', ifsc: 'ICIC0004321', accountNumber: '9988 7766 5544', accountNumberAgain: '998877665544' });
+      const bankNew = (await jp()).profile!.bank!;
+      const { fieldKeyConfigured } = await import('../services/fieldCrypto');
+      ok('…a new account number: stored as the portal stores it (last four, encrypted when a key is set), never sent back; the PF kept', res.status === 200 && bankNew.accountLast4 === '5544'
+        && (fieldKeyConfigured() ? !!bankNew.accountNumberEnc && bankNew.accountNumberEnc !== bankBefore.accountNumberEnc : !bankNew.accountNumberEnc)
+        && !JSON.stringify(res.body).includes('998877665544') && (await jp()).aboutYou?.pf?.firstJob === true, { bankNew, keySet: fieldKeyConfigured() });
+
+      res = await put('ids', { aadhaar: '', pan: 'fghij5678k' });
+      ok('PUT ids with Aadhaar blank: Aadhaar kept, PAN replaced (last four only back)', res.status === 200 && JSON.stringify(sec(res.body, 'ids')?.values) === JSON.stringify({ aadhaarLast4: '0123', panLast4: '678K' })
+        && !JSON.stringify(res.body).includes('FGHIJ5678K') && (await jp()).profile?.ids?.aadhaarLast4 === '0123', res.body);
+      ok('…a bad PAN: 400', (await put('ids', { pan: '12345' })).status === 400);
+      res = await put('education', { qualification: 'Postgraduate', institution: 'IIT Bombay', year: '2021', firstJob: false, jobs: [{ company: 'Acme', role: 'Designer', from: '2020-03', to: '2023-06' }] });
+      ok('PUT education: qualification and jobs, values back in the same shape', res.status === 200 && JSON.stringify(sec(res.body, 'education')?.values) === JSON.stringify({
+        qualification: 'Postgraduate', institution: 'IIT Bombay', year: '2021', firstJob: false, jobs: [{ company: 'Acme', role: 'Designer', from: '2020-03', to: '2023-06' }] }), res.body);
+      ok('…no last job and not first job: 400', (await put('education', { qualification: 'Graduate', institution: 'X', year: '2020', firstJob: false, jobs: [] })).status === 400);
+      const pbSvc = await import('../services/lifecycle/preboardingProfile');
+      const onTj = await pbSvc.hrSaveProfileSection({ userId: 'hr', name: 'Hema HR' }, await jp(), 'personal', { fullName: 'Nia R Profile', dob: '1998-03-12', gender: 'Female' }, at10(tj));
+      ok('HR can still change it on joining day (the Tj − 1 lock is the candidate’s only)', onTj.sections.find((x) => x.key === 'personal')?.values.maritalStatus === undefined
+        && (await refusal(async () => profileSvc.saveProfileSection(await jp(), 'education', { qualification: 'Graduate', institution: 'X', year: '2020', firstJob: true }, at10(tj)))).status === 409);
+      const itPut = randomBytes(32).toString('hex');
+      const otherPut = randomBytes(32).toString('hex');
+      await db.authSessions().insertMany([
+        { tokenHash: createHash('sha256').update(itPut).digest('hex'), userId: 'it', createdAt: new Date(), expiresAt: new Date(Date.now() + 86_400_000) },
+        { tokenHash: createHash('sha256').update(otherPut).digest('hex'), userId: 'hr2', createdAt: new Date(), expiresAt: new Date(Date.now() + 86_400_000) },
+      ] as never);
+      ok('who may: the onboarding tab alone (IT) 403, another company 404; tab rule Onboarding or People › Employees',
+        (await put('personal', {}, itPut)).status === 403 && (await put('personal', {}, otherPut)).status === 404
+        && JSON.stringify(tabsForRequest('PUT', `/admin/lifecycle/journeys/${P}/profile/personal`)) === '["onboarding","employees"]');
+      await unlock('personal');
+    }
+
+    // Ask to re-upload: HR sends back any uploaded document, in review or approved; an approved section unlocks.
+    {
+      const review = (id: string, payload: unknown) => call(lifecycleOfferRouter as never, 'POST', `/documents/${id}/review`, appToken, payload);
+      const addr = (await db.candidateDocuments().findOne({ journeyId: P, docKey: 'address' }))!;
+      res = await review(addr.id, { decision: 'send_back', note: 'The bill is older than 3 months.' });
+      const sent = (res.body as { document?: DocRow }).document;
+      ok('send back a document in review: sent_back with the note', res.status === 200 && sent?.status === 'sent_back' && sent.hrNote === 'The bill is older than 3 months.', res.body);
+      await docsSvc.uploadDocumentFiles(await jp(), addr.id, [{ originalname: 'bill-new.pdf', buffer: PDF('nia-addr-2') }]);
+      await review(addr.id, { decision: 'approve' });
+      res = await approve('contact');
+      ok('…re-uploaded and approved: contact is done and approved', res.status === 200 && !!sec(res.body, 'contact')?.approved, res.body);
+      res = await review(addr.id, { decision: 'send_back', note: 'Please upload the full page.' });
+      const back = (await db.candidateDocuments().findOne({ id: addr.id }))!;
+      ok('send back an APPROVED document: sent_back, the note kept, its approved section (contact) unlocked', res.status === 200 && back.status === 'sent_back' && back.hrNote === 'Please upload the full page.'
+        && !(await jp()).profileApprovals?.contact && !!(await jp()).profileApprovals?.emergency, back);
+      const portalDocs = await docsSvc.journeyDocumentsView(P);
+      ok('…the candidate sees it first on the portal, with the note', portalDocs[0]?.id === addr.id && portalDocs[0].hrNote === 'Please upload the full page.', portalDocs.map((d) => [d.label, d.status]));
+      ok('…one already sent back (nothing new uploaded) is not reviewed again (409)', (await review(addr.id, { decision: 'send_back', note: 'again' })).status === 409);
+      await docsSvc.uploadDocumentFiles(await jp(), addr.id, [{ originalname: 'bill-full.pdf', buffer: PDF('nia-addr-3') }]);
+      ok('…and the re-upload goes in (in review)', (await db.candidateDocuments().findOne({ id: addr.id }))?.status === 'in_review');
+    }
+
     // Who may: HR only; another company not at all.
     const itSess = randomBytes(32).toString('hex');
     await db.authSessions().insertOne({ tokenHash: createHash('sha256').update(itSess).digest('hex'), userId: 'it', createdAt: new Date(), expiresAt: new Date(Date.now() + 86_400_000) } as never);
@@ -978,6 +1084,8 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
     const offerPdf = (await db.offers().findOne({ journeyId: P }))!.versions[0].pdfFileId!;
     ok('…but not an offer PDF or other lifecycle file (403)', (await call(lifecycleOfferRouter as never, 'GET', `/files/${offerPdf}`, empSess)).status === 403);
     ok('…and reads the pre-boarding profile route (HR)', (await call(lifecycleAdminRouter as never, 'GET', `/journeys/${P}/profile`, empSess)).status === 200);
+    const joinedPut = await call(lifecycleAdminRouter as never, 'PUT', `/journeys/${P}/profile/personal`, empSess, { fullName: 'Nia', dob: '1998-03-12', gender: 'Female' });
+    ok('…may edit it too, but not once the joiner has joined (409)', joinedPut.status === 409 && (joinedPut.body as { error?: string }).error === 'Only someone still in pre-boarding can be changed here', joinedPut);
   }
 
   // Clean the scratch uploads this run wrote.
