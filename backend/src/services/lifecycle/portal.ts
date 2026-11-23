@@ -273,6 +273,7 @@ async function passWithTemplate(journey: Journey, withWho = true): Promise<Day1P
   }
   return {
     ...(reporting?.time ? { reportingTime: reporting.time } : {}), ...(reporting?.place ? { place: reporting.place } : {}),
+    ...(reporting?.mapLink ? { mapLink: reporting.mapLink } : {}),
     ...(reporting?.bring ? { bring: [reporting.bring] } : {}), ...(meets ? { askFor: { name: meets.name, ...(meets.phone ? { phone: meets.phone } : {}) } } : {}),
     ...(journey.day1Pass ?? {}),
   };

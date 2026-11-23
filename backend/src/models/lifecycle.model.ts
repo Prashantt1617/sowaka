@@ -230,7 +230,7 @@ export interface LifecycleTemplateSettings {
   /** Final designs: the four fixed pre-boarding rows (false = removed). */
   preboarding?: { offerLetter: boolean; joiningDetails: boolean; profile: boolean; watch: boolean };
   /** Final designs: "Joining and reporting details", the same for every joiner on the template. */
-  reporting?: { time?: string; place?: string; bring?: string; notes?: string; meets: 'hr' | 'manager' | 'buddy' };
+  reporting?: { time?: string; place?: string; /** A maps link to the place (an office picked on the dashboard fills it). */ mapLink?: string; bring?: string; notes?: string; meets: 'hr' | 'manager' | 'buddy' };
   /** Final designs: Sowaka tour lessons kept (absent: all). */
   tourLessons?: TourLessonKey[];
   /** Final designs: "Remind teammates when a task is late" (absent: on). */

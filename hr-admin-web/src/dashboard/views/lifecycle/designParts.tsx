@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { DrawerShell } from '../../drawers/shell';
-import { SEG, iconBtn, segBtn } from '../../ds';
+import { iconBtn } from '../../ds';
+import { fetchTemplateMedia } from '../../../services/lifecycle';
 import { IconClose, IconInfo } from '../../icons';
 import type { DesignMedia, DesignStage } from '../../../services/lifecycle';
 import { GLYPH, rowLine, tileLook } from './designWords';
@@ -108,8 +109,20 @@ export function Block({ label, aside, children }: { label: string; aside?: React
 
 /** The (i) button and the dark note it opens. */
 export function InfoToggle({ label, open, onToggle }: { label: string; open: boolean; onToggle: () => void }) {
+  const me = useRef<HTMLButtonElement>(null);
+  // Open, it closes on a click anywhere else on the screen, or Escape (a click on the (i) itself toggles it).
+  const close = useRef(onToggle);
+  close.current = onToggle;
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => { if (!me.current?.contains(e.target as Node)) close.current(); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') close.current(); };
+    document.addEventListener('pointerdown', away, true);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('pointerdown', away, true); document.removeEventListener('keydown', esc); };
+  }, [open]);
   return (
-    <button type="button" onClick={onToggle} aria-expanded={open} aria-label={label}
+    <button ref={me} type="button" onClick={onToggle} aria-expanded={open} aria-label={label}
       style={{ width: 22, height: 22, border: 0, background: 'transparent', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none' }}>
       <IconInfo size={17} stroke={open ? 'var(--ink)' : 'var(--ink-3)'} />
     </button>
@@ -205,10 +218,51 @@ export function TileFace({ media, w, h, emptyText, textShown, preview }: { media
   );
 }
 
-/** The strip of tiles: + Add first, then each item with its title (and when it shows). */
-export function TileStrip({ items, onAdd, addLabel, onOpen, whenOf }: {
+/**
+ * An uploaded video, image or PDF, played where it sits: fetched (with the
+ * sign-in) only when asked, or at once with `autoLoad` (the preview window).
+ */
+export function MediaPlayer({ media, w, h, autoLoad, emptyText = 'Upload' }: { media: DesignMedia; w: number | string; h: number | string; autoLoad?: boolean; emptyText?: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
+  const load = async () => {
+    if (!media.fileId) return;
+    setState('loading');
+    try { setUrl(URL.createObjectURL(await fetchTemplateMedia(media.fileId))); setState('idle'); } catch { setState('error'); }
+  };
+  useEffect(() => { if (autoLoad) void load(); /* once, for this file */ // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoLoad, media.fileId]);
+  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+  const box: CSSProperties = { width: w, height: h, borderRadius: 14, overflow: 'hidden', background: '#0E0E10', flex: 'none', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+  if (url) {
+    return (
+      <span style={box}>
+        {media.type === 'image' ? <img src={url} alt={media.name ?? 'Image'} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+          : media.type === 'pdf' ? <iframe src={url} title={media.name ?? 'Document'} style={{ width: '100%', height: '100%', border: 0, background: '#fff' }} />
+          : <video src={url} controls autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'contain' }} />}
+      </span>
+    );
+  }
+  const numeric = typeof w === 'number' && typeof h === 'number';
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex', flex: 'none' }}>
+      {media.fileId || !numeric ? <span style={{ ...box, background: tileLook(media).bg }} /> : <TileFace media={media} w={w} h={h} emptyText={emptyText} preview />}
+      {media.fileId && (
+        <button type="button" onClick={() => void load()} disabled={state === 'loading'}
+          style={{ position: 'absolute', inset: 0, border: 0, background: 'rgba(0,0,0,.28)', color: '#fff', borderRadius: 14, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          <Glyph d={GLYPH.video} size={28} color="#fff" />
+          {state === 'loading' ? 'Loading…' : state === 'error' ? 'Could not load. Try again' : media.type === 'video' ? 'Play' : 'View'}
+        </button>
+      )}
+    </span>
+  );
+}
+
+/** The strip of tiles: + Add first, then each item with its title (and when it shows), and Preview once a file is in. */
+export function TileStrip({ items, onAdd, addLabel, onOpen, whenOf, onPreview }: {
   /** `index`: the item's place in its list, when the strip shows them in another order. */
   items: Array<{ id?: string; title: string; media: DesignMedia; stage: DesignStage; index?: number }>; onAdd: () => void; addLabel: string; onOpen: (index: number) => void; whenOf?: (s: DesignStage) => string;
+  onPreview?: (index: number) => void;
 }) {
   return (
     <div style={{ display: 'flex', gap: 12, overflowX: 'auto', padding: '14px 0 12px' }}>
@@ -217,11 +271,19 @@ export function TileStrip({ items, onAdd, addLabel, onOpen, whenOf }: {
         <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)' }}>Add</span>
       </button>
       {items.map((it, i) => (
-        <button key={it.id ?? i} type="button" onClick={() => onOpen(it.index ?? i)} aria-label={`Edit ${it.title}`} style={{ width: 96, flex: 'none', border: 0, background: 'transparent', padding: 0, fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6, color: 'var(--ink)' }}>
-          <TileFace media={it.media} w={96} h={160} emptyText="Upload" />
-          <span style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{it.title}</span>
-          {whenOf && <span style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: -3 }}>{whenOf(it.stage)}</span>}
-        </button>
+        <div key={it.id ?? i} style={{ width: 96, flex: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <button type="button" onClick={() => onOpen(it.index ?? i)} aria-label={`Edit ${it.title}`} style={{ width: 96, border: 0, background: 'transparent', padding: 0, fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6, color: 'var(--ink)' }}>
+            <TileFace media={it.media} w={96} h={160} emptyText="Upload" />
+            <span style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{it.title}</span>
+            {whenOf && <span style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: -3 }}>{whenOf(it.stage)}</span>}
+          </button>
+          {onPreview && it.media.fileId && it.media.type !== 'text' && (
+            <button type="button" onClick={() => onPreview(it.index ?? i)} aria-label={`Preview ${it.title}`}
+              style={{ alignSelf: 'flex-start', border: 0, background: 'transparent', padding: 0, fontFamily: 'inherit', fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', cursor: 'pointer' }}>
+              ▶ Preview
+            </button>
+          )}
+        </div>
       ))}
     </div>
   );

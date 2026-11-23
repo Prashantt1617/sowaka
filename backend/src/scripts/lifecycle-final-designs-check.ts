@@ -102,8 +102,9 @@ async function main() {
     ...view,
     meetings: view.meetings.map((m) => (m.title === 'First goals' ? { ...m, agenda: [...m.agenda, 'Your questions'] } : m)),
     team: { ...view.team, assignees: { hrUserId: 'hr', itUserId: 'it' }, tasks: [...view.team.tasks, { title: 'Take them for lunch on Day 1', role: 'buddy', stage: 'd1', how: 'The canteen on floor 2' }] },
-    preboarding: { ...view.preboarding, reporting: { time: '9:30 AM', place: 'Reception, Pune office', meets: 'hr' } },
+    preboarding: { ...view.preboarding, reporting: { time: '9:30 AM', place: 'Reception, Pune office', mapLink: 'https://www.google.com/maps/search/?api=1&query=18.52,73.85', meets: 'hr' } },
   } as never, 'Ritu Sharma');
+  eq('A maps link that is not a web address is refused', await refusal(() => design.saveTemplateDesign(ORG, def.id, { ...view, preboarding: { ...view.preboarding, reporting: { place: 'Lobby', mapLink: 'javascript:alert(1)', meets: 'hr' } } } as never)), 400);
   ok('Saved: an agenda point, a buddy task with its how-to, the assignees, the reporting details',
     saved.meetings.find((m) => m.title === 'First goals')?.agenda.length === 6 && saved.team.tasks.some((t) => t.title === 'Take them for lunch on Day 1' && t.how === 'The canteen on floor 2' && t.key.startsWith('custom_'))
     && saved.team.assignees.itUserId === 'it' && saved.preboarding.reporting.place === 'Reception, Pune office', saved.team);
@@ -159,6 +160,7 @@ async function main() {
   const pass = await portal.portalPass(await engine.loadJourney(J1), new Date(), { anyDay: true });
   eq('The portal’s Day-1 pass reads the template’s joining and reporting details (saved as 09:30; who meets them: HR)', [pass.reportingTime, pass.place, pass.askFor?.name], ['09:30', 'Reception, Pune office', 'Ritu Sharma']);
   const details = await portal.joiningDetails(await engine.loadJourney(J1));
+  eq('The pass carries the template’s maps link (directions on the Day-1 pass)', pass.mapLink, 'https://www.google.com/maps/search/?api=1&query=18.52,73.85');
   eq('…and so does the joining details tile (one reading)', [details.reportingTime, details.place, details.askFor?.name], ['09:30', 'Reception, Pune office', 'Ritu Sharma']);
   const preRows = (await engine.loadJourney(J1)).templateSnapshot.settings.preboarding!;
   await journeys().updateOne({ id: J1 }, { $set: { 'templateSnapshot.settings.preboarding': { ...preRows, joiningDetails: false } } });

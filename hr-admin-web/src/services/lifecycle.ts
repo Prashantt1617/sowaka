@@ -93,7 +93,7 @@ export type MediaBackground = 'rust' | 'blue' | 'ink' | 'green' | 'purple' | 'sa
 export interface DesignQuestion<T extends string = string> { id?: string; text: string; type: T; options?: string[] }
 export interface DesignMedia { type: 'video' | 'image' | 'text' | 'pdf'; fileId?: string; text?: string; bg?: MediaBackground; minutes?: number; name?: string }
 export interface DesignWatchItem { id?: string; title: string; stage: DesignStage; media: DesignMedia }
-export interface DesignReporting { time?: string; place?: string; bring?: string; notes?: string; meets: 'hr' | 'manager' | 'buddy' }
+export interface DesignReporting { time?: string; place?: string; mapLink?: string; bring?: string; notes?: string; meets: 'hr' | 'manager' | 'buddy' }
 export interface DesignMeeting { id?: string; title: string; meetWith: MeetWith; stage: DesignStage; agenda: string[]; everyMonth?: boolean }
 export interface DesignTask {
   id?: string; title: string; type: JoinerTaskType; stage: DesignStage;
@@ -552,6 +552,17 @@ export const reviewDocument = (id: string, decision: 'approve' | 'send_back', no
 export async function fetchLifecycleFile(id: string): Promise<Blob> {
   const token = getToken();
   const res = await fetch(`${BASE_URL}${L}/files/${encodeURIComponent(id)}`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+    throw new ApiError(res.status, data.error || data.message || `Could not open the file (${res.status})`);
+  }
+  return res.blob();
+}
+
+/** A template's uploaded video, image or PDF, through the authorised endpoint: the editor's preview. */
+export async function fetchTemplateMedia(fileId: string): Promise<Blob> {
+  const token = getToken();
+  const res = await fetch(`${BASE_URL}${L}/templates/media/${encodeURIComponent(fileId)}`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
     throw new ApiError(res.status, data.error || data.message || `Could not open the file (${res.status})`);

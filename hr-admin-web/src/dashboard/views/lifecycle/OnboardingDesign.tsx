@@ -13,6 +13,8 @@ import { IconEye } from '../../icons';
 import { setLeaveGuard, usePageHead } from '../../pageHead';
 import { htmlToPdfBlob } from '../../pdf';
 import { getTemplateDesign, listLetterTemplates, saveTemplateDesign, uploadTemplateMedia } from '../../../services/lifecycle';
+import { getOffices } from '../../../services/hrms';
+import type { OfficeDTO } from '../../../services/hrms';
 import type {
   CheckinAnswerType, DesignAccess, DesignCheckin, DesignMedia, DesignMeeting, DesignQuestion, DesignStage, DesignTask, DesignTeamTask, DesignWatchItem,
   FormAnswerType, JoinerTaskType, LetterTemplateDTO, MeetWith, TeamRole, TemplateDesign, TemplatePreview, TourLesson,
@@ -21,7 +23,7 @@ import { Modal } from './shared';
 import { areaStyle, errText, inputStyle, longDay, todayKey } from './format';
 import { LETTER_CSS, LETTER_TITLE, labelledBody, letterDocument } from './letterDoc';
 import { useCompanyName } from './hooks';
-import { Block, Glyph, GroupHead, InfoNote, InfoToggle, ItemRow, NameDropdown, Overlay, RadioPills, RemoveButton, SidePanel, SOFT_SEG, softSegBtn, TileFace, TileStrip } from './designParts';
+import { Block, Glyph, GroupHead, InfoNote, InfoToggle, ItemRow, MediaPlayer, NameDropdown, Overlay, RadioPills, RemoveButton, SidePanel, SOFT_SEG, softSegBtn, TileFace, TileStrip } from './designParts';
 import {
   BACKGROUNDS, GLYPH, MEETS_LABEL, MEET_LABEL, MEET_WITH, ROLE_LABEL, STAGES, TOUR, addBtn, checkinWhen, chip, clock, pickFile, rowLine, smallBtn, stageName,
   stageOrBefore, tourName, whoChip,
@@ -169,6 +171,9 @@ const smallAction = 'pd-btn sm';
 const whoCol: CSSProperties = { width: 136, flex: 'none', display: 'flex' };
 const whenCol: CSSProperties = { width: 120, flex: 'none', display: 'flex' };
 
+/** A Google Maps link to an office's point (Time Office). */
+const officeMap = (o: Pick<OfficeDTO, 'latitude' | 'longitude'>) => `https://www.google.com/maps/search/?api=1&query=${o.latitude},${o.longitude}`;
+
 export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => void }) {
   const { flash, setView, emps } = useStore();
   const company = useCompanyName();
@@ -178,9 +183,9 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
   const [attempt, setAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [letters, setLetters] = useState<LetterTemplateDTO[] | null>(null);
-  const [preOpen, setPreOpen] = useState(true);
-  const [onbOpen, setOnbOpen] = useState(true);
-  const [probOpen, setProbOpen] = useState(true);
+  const [preOpen, setPreOpen] = useState(false);
+  const [onbOpen, setOnbOpen] = useState(false);
+  const [probOpen, setProbOpen] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
   const [cat, setCat] = useState<Cat>('tasks');
   const [tcat, setTcat] = useState<TCat>('manager');
@@ -188,8 +193,16 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
   const [wlOpen, setWlOpen] = useState(false);
   const [profileInfo, setProfileInfo] = useState(false);
   const [panel, setPanel] = useState<null | 'offer' | 'report'>(null);
+  // A watch-list video, image or PDF opened from its tile's Preview.
+  const [previewing, setPreviewing] = useState<{ title: string; media: DesignMedia } | null>(null);
   const [rep, setRep] = useState<TemplateDesign['preboarding']['reporting'] | null>(null);
   const [repTime, setRepTime] = useState('');
+  // The company's offices (Time Office), so the reporting place can be one of them with its map.
+  const [offices, setOffices] = useState<OfficeDTO[] | null>(null);
+  useEffect(() => {
+    if (panel !== 'report' || offices) return;
+    getOffices().then(setOffices).catch(() => setOffices([]));
+  }, [panel, offices]);
   const [drawer, setDrawer] = useState<DocsDrawer | null>(null);
   const [meet, setMeet] = useState<MeetEdit | null>(null);
   const [ci, setCi] = useState<CiEdit | null>(null);
@@ -367,9 +380,9 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
       return (
         <div style={{ padding: '0 20px 6px' }}>
           <div style={{ paddingTop: 16, fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Watch list</div>
-          <TileStrip items={byStage(d.watch.map((w, index) => ({ ...w, index })))} addLabel="Add to watch list" onAdd={() => openStory('watch', null)} onOpen={(i) => openStory('watch', i)} whenOf={sn} />
+          <TileStrip items={byStage(d.watch.map((w, index) => ({ ...w, index })))} addLabel="Add to watch list" onAdd={() => openStory('watch', null)} onOpen={(i) => openStory('watch', i)} whenOf={sn} onPreview={(i) => setPreviewing(d.watch[i])} />
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Trainings</div>
-          <TileStrip items={byStage(d.trainings.map((w, index) => ({ ...w, index })))} addLabel="Add a training" onAdd={() => openStory('training', null)} onOpen={(i) => openStory('training', i)} whenOf={sn} />
+          <TileStrip items={byStage(d.trainings.map((w, index) => ({ ...w, index })))} addLabel="Add a training" onAdd={() => openStory('training', null)} onOpen={(i) => openStory('training', i)} whenOf={sn} onPreview={(i) => setPreviewing(d.trainings[i])} />
         </div>
       );
     }
@@ -444,7 +457,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
             {preRows.map((r, i) => <div key={r.key}>{r.node(i === preRows.length - 1)}</div>)}
             {wlOpen && pr.watch && (
               <div style={{ marginLeft: 44 }}>
-                <TileStrip items={d.preboarding.videos} addLabel="Add to watch list" onAdd={() => openStory('pre', null)} onOpen={(i) => openStory('pre', i)} />
+                <TileStrip items={d.preboarding.videos} addLabel="Add to watch list" onAdd={() => openStory('pre', null)} onOpen={(i) => openStory('pre', i)} onPreview={(i) => setPreviewing(d.preboarding.videos[i])} />
               </div>
             )}
           </div>
@@ -542,6 +555,13 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
         </SidePanel>
       )}
 
+      {previewing && (
+        <Modal title={previewing.title} width={560} onClose={() => setPreviewing(null)}
+          footer={<button type="button" className="pd-btn" onClick={() => setPreviewing(null)}>Close</button>}>
+          <MediaPlayer key={previewing.media.fileId} media={previewing.media} w="100%" h="min(70vh, 620px)" autoLoad />
+        </Modal>
+      )}
+
       {panel === 'report' && rep && (
         <SidePanel title="Joining and reporting details" sub="Set these once. Every joiner on this template sees them; the joining date comes from each joiner’s offer." width={560} onClose={() => { setPanel(null); setRep(null); }}
           footer={<>
@@ -549,11 +569,31 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
             <button type="button" className="pd-btn primary" onClick={() => {
               const time = repTime.trim() ? parseTime(repTime) : undefined;
               if (time === null) { flash('Write the reporting time like 9:30 AM', 'error'); return; }
+              if (rep.mapLink && !/^https:\/\/\S+$/i.test(rep.mapLink)) { flash('The maps link is a web address starting with https://', 'error'); return; }
               up((x) => ({ ...x, preboarding: { ...x.preboarding, reporting: { ...rep, time } } })); setPanel(null); setRep(null); flash('Reporting details saved');
             }}>Save details</button>
           </>}>
           <label style={fieldLabel}><span>Reporting time</span><input value={repTime} maxLength={12} onChange={(e) => setRepTime(e.target.value)} placeholder="e.g. 9:30 AM" style={inputStyle} /></label>
-          <label style={fieldLabel}><span>Where to report</span><input value={rep.place ?? ''} maxLength={200} onChange={(e) => setRep({ ...rep, place: e.target.value })} placeholder="e.g. Reception, Pune office, 2nd floor" style={inputStyle} /><span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>Add a maps link if it helps.</span></label>
+          <label style={fieldLabel}><span>Office</span>
+            <select value={offices?.find((o) => rep.mapLink === officeMap(o))?.id ?? ''} disabled={!offices?.length} style={inputStyle}
+              onChange={(e) => {
+                const o = offices?.find((x) => x.id === e.target.value);
+                if (!o) { setRep({ ...rep, mapLink: undefined }); return; }
+                const here = `${o.name}${o.city ? `, ${o.city}` : ''}`;
+                setRep({ ...rep, place: rep.place?.trim() ? rep.place : here, mapLink: officeMap(o) });
+              }}>
+              <option value="">{offices === null ? 'Loading offices…' : offices.length ? 'Somewhere else' : 'No offices set up in Time Office'}</option>
+              {offices?.map((o) => <option key={o.id} value={o.id}>{o.name}{o.city ? `, ${o.city}` : ''}</option>)}
+            </select>
+            <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>Pick one of your offices to add its map. The employee gets directions on their Day-1 pass.</span>
+          </label>
+          <label style={fieldLabel}><span>Where to report</span><input value={rep.place ?? ''} maxLength={200} onChange={(e) => setRep({ ...rep, place: e.target.value })} placeholder="e.g. Reception, Pune office, 2nd floor" style={inputStyle} /></label>
+          <label style={fieldLabel}><span>Maps link (optional)</span>
+            <input value={rep.mapLink ?? ''} maxLength={500} inputMode="url" onChange={(e) => setRep({ ...rep, mapLink: e.target.value.trim() || undefined })} placeholder="e.g. https://maps.app.goo.gl/…" style={inputStyle} />
+            <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
+              {rep.mapLink ? <a href={rep.mapLink} target="_blank" rel="noopener noreferrer">Check the link</a> : 'Paste a Google Maps link, or pick an office above. Without one, directions search for the place.'}
+            </span>
+          </label>
           <label style={fieldLabel}><span>What to bring</span><input value={rep.bring ?? ''} maxLength={300} onChange={(e) => setRep({ ...rep, bring: e.target.value })} placeholder="e.g. Original ID, address proof, two photos" style={inputStyle} /></label>
           <label style={fieldLabel}><span>Anything else</span><input value={rep.notes ?? ''} maxLength={300} onChange={(e) => setRep({ ...rep, notes: e.target.value })} placeholder="e.g. Business casual. Parking at Gate 2." style={inputStyle} /></label>
           <Block label="Who meets them">
@@ -942,7 +982,9 @@ function StoryDialog({ story, templateId, months, onChange, onClose, onRemove, o
         <button type="button" className="pd-btn primary" onClick={save} disabled={story.busy}>{story.index !== null ? 'Save' : 'Add'}</button>
       </>}>
       <div style={{ display: 'flex', gap: 22, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        <TileFace media={m} w={168} h={280} emptyText={emptyText} textShown={m.text || 'Your text shows here'} preview />
+        {m.fileId && m.type !== 'text'
+          ? <MediaPlayer key={m.fileId} media={m} w={168} h={280} emptyText={emptyText} />
+          : <TileFace media={m} w={168} h={280} emptyText={emptyText} textShown={m.text || 'Your text shows here'} preview />}
         <div style={{ flex: 1, minWidth: 260, display: 'grid', gap: 16 }}>
           <div role="radiogroup" aria-label="Type" style={SOFT_SEG}>
             {types.map(([k, t, glyph]) => (
