@@ -150,9 +150,9 @@ const doneOf = (list: TaskView[]) => list.filter((t) => t.status === 'done' || t
  * `setBusy` are the caller's, so its own buttons wait too, and `onChanged` reloads the journey after each one.
  *
  * `variant`:
- *  - 'panel' (the joiner panel): one step open at a time (`openStep`; null is the step they are on, -1 none),
- *    each opened and closed with its chevron, and every task and the team's app tasks.
- *  - 'profile' (the pre-boarding profile's Activity tab): every step open at once, no chevrons; only the
+ * Both: every step starts closed and opens with its chevron (several at once); `openStep` opens one from outside.
+ *  - 'panel' (the joiner panel): every task and the team's app tasks.
+ *  - 'profile' (the pre-boarding profile's Activity tab): only the
  *    joiner's own tasks (no "Team tasks in the app", no manager / buddy / HR / IT tasks); no link to the
  *    profile page it is already on.
  */
@@ -203,7 +203,15 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
   // Where they are on the nine steps; the Confirmed column has every step done.
   const cur = STEP_AT[journey.column] ?? 0;
   const allDone = journey.column === 'confirmed';
-  const shownStep = openStep === null ? Math.min(cur, STEPS.length - 1) : openStep;
+  // Every step starts closed (both screens, 23 Nov); its chevron opens and closes it, several may be open.
+  // The panel's own buttons (Review documents, Generate confirmation letter) open a step through `openStep`.
+  const [opened, setOpened] = useState<Set<number>>(() => new Set());
+  useEffect(() => { setOpened(new Set()); }, [journey.id]);
+  useEffect(() => { if (openStep !== null && openStep >= 0) setOpened((cur) => new Set(cur).add(openStep)); }, [openStep]);
+  const toggle = (i: number) => {
+    setOpened((cur) => { const next = new Set(cur); if (next.has(i)) next.delete(i); else next.add(i); return next; });
+    onOpenStep?.(-1); // the panel's buttons can open the same step again later
+  };
 
   // The tasks of each step: pre-boarding under Employee profile, the first week under Week 1, probation by month.
   const live = tasks.filter((t) => t.status !== 'cancelled');
@@ -454,7 +462,7 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
         {STEPS.map((title, i) => {
           const state: 'done' | 'current' | 'todo' = allDone || i < cur ? 'done' : i === cur && !closed ? 'current' : 'todo';
           const line = sub(i, state);
-          const open = all || shownStep === i;
+          const open = opened.has(i);
           const tag = state === 'current' && i === 3 && journey.tj ? weekOf(journey.tj) : '';
           const last = i === STEPS.length - 1;
           const head = (
@@ -476,16 +484,11 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
                 <span style={{ flex: 1, width: 2, minHeight: 12, background: last ? 'transparent' : state === 'done' ? 'color-mix(in srgb, var(--ok-solid) 45%, var(--surface))' : 'var(--line)' }} />
               </span>
               <div style={{ paddingBottom: 6, minWidth: 0 }}>
-                {all ? (
-                  // Every step open: the step's name and line as a plain heading, no chevron.
-                  <div style={{ ...headStyle, background: state === 'current' ? 'var(--accent-soft)' : 'transparent' }}>{head}</div>
-                ) : (
-                  <button type="button" aria-expanded={open} aria-controls={`lf-step-${i}`} onClick={() => onOpenStep?.(shownStep === i ? -1 : i)}
-                    style={{ ...headStyle, cursor: 'pointer', background: open ? 'var(--surface-2)' : state === 'current' ? 'var(--accent-soft)' : 'transparent' }}>
-                    {head}
-                    <IconChevronDown size={16} stroke="var(--ink-3)" style={{ flex: 'none', transform: open ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }} />
-                  </button>
-                )}
+                <button type="button" aria-expanded={open} aria-controls={`lf-step-${i}`} onClick={() => toggle(i)}
+                  style={{ ...headStyle, cursor: 'pointer', background: open ? 'var(--surface-2)' : state === 'current' ? 'var(--accent-soft)' : 'transparent' }}>
+                  {head}
+                  <IconChevronDown size={16} stroke="var(--ink-3)" style={{ flex: 'none', transform: open ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }} />
+                </button>
                 {open && <div id={`lf-step-${i}`} style={{ display: 'grid', gap: 12, padding: '12px 12px 8px' }}>{body(i)}</div>}
               </div>
             </li>
