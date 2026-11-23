@@ -154,13 +154,20 @@ export interface PreboardingRow {
 export async function preboardingPeople(org: string): Promise<PreboardingRow[]> {
   const list = await journeys().find(
     { org, kind: 'onboarding', status: { $nin: NOT_PREBOARDING }, closedAt: { $exists: false } } as never,
-    { projection: { _id: 0, id: 1, org: 1, kind: 1, candidate: 1, designation: 1, department: 1, tj: 1, status: 1, profile: 1, aboutYou: 1, profileApprovals: 1, templateSnapshot: 1 } },
+    { projection: { _id: 0, id: 1, org: 1, kind: 1, candidate: 1, designation: 1, department: 1, tj: 1, status: 1, profile: 1, aboutYou: 1, profileApprovals: 1 } },
   ).toArray() as Journey[];
   const rows = list.length
     ? await candidateDocuments().find({ journeyId: { $in: list.map((j) => j.id) } }, { projection: { _id: 0, journeyId: 1, docKey: 1, label: 1, required: 1, status: 1 } }).toArray()
     : [];
   const byJourney = new Map<string, Array<Pick<CandidateDocument, 'docKey' | 'label' | 'required' | 'status'>>>();
   for (const d of rows) byJourney.set(d.journeyId, [...(byJourney.get(d.journeyId) ?? []), d]);
+  // The template copy is large (5 s for a dozen journeys): read it only for a journey with no document rows yet.
+  const bare = list.filter((j) => !byJourney.has(j.id)).map((j) => j.id);
+  if (bare.length) {
+    const snaps = await journeys().find({ id: { $in: bare } }, { projection: { _id: 0, id: 1, 'templateSnapshot.tasks.systemKey': 1, 'templateSnapshot.tasks.enabled': 1, 'templateSnapshot.tasks.documents': 1 } }).toArray();
+    const snapOf = new Map(snaps.map((x) => [x.id, x.templateSnapshot]));
+    for (const j of list) if (snapOf.has(j.id)) (j as { templateSnapshot?: unknown }).templateSnapshot = snapOf.get(j.id);
+  }
   const people = list.map((j) => {
     // A journey whose documents were never listed yet has the template's list, nothing uploaded.
     const docs = byJourney.get(j.id) ?? (j.templateSnapshot ? documentListFor(j).map((d) => ({ docKey: d.key, label: d.label, required: d.required, status: 'todo' as const })) : []);
