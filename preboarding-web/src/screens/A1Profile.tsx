@@ -40,7 +40,7 @@ export function A1Profile() {
   const [view, setView] = useState<ProfileView>();
   const [error, setError] = useState('');
   useEffect(() => { portal.profile().then(setView, (e: Error) => setError(e.message)); }, []);
-  const next = view?.sections.find((s) => !s.done)?.key;
+  const next = view?.sections.find((s) => !s.done && !s.locked)?.key;
   const pct = view && view.total ? Math.round((view.done / view.total) * 100) : 0;
   // ID documents: "Upload 2 files" (its template documents), as the design shows.
   const hint = (s: ProfileView['sections'][number]) => (s.key === 'ids' && s.documentIds.length ? `Upload ${s.documentIds.length} file${s.documentIds.length === 1 ? '' : 's'}` : HINT[s.key]);
@@ -66,12 +66,12 @@ export function A1Profile() {
                     return (
                       <li key={s.key}>
                         <FigRow to={`/profile/${s.key}`} className={isNext ? 'fig-row--next' : ''}
-                          lead={s.done
+                          lead={s.done || s.locked
                             ? <span className="fig-done"><FigCheckSmall /></span>
                             : <span className={`fig-sec-icon${isNext ? ' fig-sec-icon--next' : ''}`}><FigIcon3D name={SECTION_3D[s.key]} size={20} /></span>}
                           title={LIST_TITLE[s.key]}
-                          sub={s.done ? 'Done' : isNext ? `Up next · ${hint(s).toLowerCase()}` : hint(s)}
-                          subClass={s.done ? 'fig-success' : isNext ? 'fig-label-strong fig-brand' : 'fig-t3'} />
+                          sub={s.locked ? 'Approved by HR' : s.done ? 'Done' : isNext ? `Up next · ${hint(s).toLowerCase()}` : hint(s)}
+                          subClass={s.done || s.locked ? 'fig-success' : isNext ? 'fig-label-strong fig-brand' : 'fig-t3'} />
                       </li>
                     );
                   })}

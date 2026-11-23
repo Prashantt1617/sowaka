@@ -23,6 +23,7 @@ import { readFileBytes, storeFile, uploadName, checkUpload } from './files';
 import { letterPdfForPortal, openLetter, portalLetters, signLetter, type PortalLetter } from './letters';
 import { journeyDocumentsView } from './documents';
 import { PROFILE_SECTIONS, appSectionTitle, sectionStates } from './profile';
+import { sectionLocked } from './profileLock';
 import { ensureMonths } from './probation';
 
 type Me = { userId: string; name: string; org: string };
@@ -197,7 +198,8 @@ export async function joinerOnboarding(me: Me, now = new Date()) {
     : devicesFor(tasks).map((d) => ({ id: 'id' in d && d.id ? d.id : d.key, title: d.title, ready: d.ready }));
   const tour = await tourView(me, j, facts.firstPunch, design.settings.tourLessons);
   const profile = {
-    sections: PROFILE_SECTIONS.map((key) => ({ key, title: appSectionTitle(key), state: facts.sections[key] ? 'done' as const : 'todo' as const })),
+    // `locked`: HR approved the section on the dashboard; the joiner can no longer change it.
+    sections: PROFILE_SECTIONS.map((key) => ({ key, title: appSectionTitle(key), state: facts.sections[key] ? 'done' as const : 'todo' as const, locked: sectionLocked(j, key) })),
     done: facts.profileDone, total: PROFILE_SECTIONS.length, pct: Math.round((facts.profileDone / PROFILE_SECTIONS.length) * 100),
   };
   const goals = await goalsCard(j, p, people);

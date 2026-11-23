@@ -33,6 +33,7 @@ import { agendaResolver, joinerMeetingRows, markMeetingRowMet, saveMeetingRowNot
 import { meetVideos } from './portal';
 import { journeyDocumentsView } from './documents';
 import { PROFILE_SECTION_TITLE, PROFILE_SECTIONS, sectionStates } from './profile';
+import { sectionLocked } from './profileLock';
 import { groupTasks, progressOf } from './board';
 import { designOf } from './design';
 import { joinerOnboarding, joinerTile } from './joinerApp';
@@ -338,7 +339,7 @@ async function watchAndProfile(j: Journey) {
     companyName: watch.company,
     watch: watch.videos,
     profile: {
-      sections: PROFILE_SECTIONS.map((key) => ({ key, title: PROFILE_SECTION_TITLE[key], done: done[key] })),
+      sections: PROFILE_SECTIONS.map((key) => ({ key, title: PROFILE_SECTION_TITLE[key], done: done[key], locked: sectionLocked(j, key) })),
       done: PROFILE_SECTIONS.filter((k) => done[k]).length,
       total: PROFILE_SECTIONS.length,
     },

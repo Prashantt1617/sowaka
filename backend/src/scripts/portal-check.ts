@@ -802,6 +802,184 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
     }
   }
 
+  // ─── The dashboard's pre-boarding profile: HR reads it, approving locks a section, the Employees page ───
+  section('Pre-boarding profile (dashboard): HR view, approve locks the section, the pre-boarding list, a joined employee’s documents');
+  {
+    const profileSvc = await import('../services/lifecycle/profile');
+    const lock = await import('../services/lifecycle/profileLock');
+    const appSvc = await import('../services/lifecycle/appOnboarding');
+    const joinerSvc = await import('../services/lifecycle/joinerApp');
+    const adminSvc = await import('../services/admin.service');
+    const { lifecycleAdminRouter } = await import('../routes/lifecycle-admin.routes');
+    const { adminRouter } = await import('../routes/admin.routes');
+    const { tabsForRequest } = await import('../models/dashboard-tabs');
+    type Field = { label: string; value: string };
+    type FileRow = { id: string; name: string; contentType: string; size: number; url: string };
+    type DocRow = { id: string; label: string; required: boolean; status: string; hrNote?: string; files: FileRow[] };
+    type Sec = { key: string; title: string; done: boolean; approved?: { byName: string; at: string }; fields: Field[]; documents: DocRow[] };
+    type HrProfile = { journeyId: string; candidate: Record<string, string>; done: number; total: number; sections: Sec[] };
+    const value = (p: HrProfile, key: string, label: string) => p.sections.find((x) => x.key === key)?.fields.find((f) => f.label === label)?.value;
+
+    // A fresh joiner, finalised (HR marks the sent offer accepted, as the live rules do).
+    process.env.OFFER_ONLINE_ACCEPT = '0';
+    let P = '';
+    try {
+      P = (await offersSvc.createOffer(HR, { candidate: { name: 'Nia Profile', personalEmail: 'nia.profile@example.com', phone: '+91 98111 22334' }, fields: fields() })).journeyId;
+      await offersSvc.uploadOfferPdf(HR, P, { originalname: 'Offer.pdf', buffer: PDF('nia') });
+      await offersSvc.sendOffer(HR, P, {});
+      await offersSvc.finaliseOffer(HR, P);
+    } finally {
+      process.env.OFFER_ONLINE_ACCEPT = '1';
+    }
+    const jp = async () => (await db.journeys().findOne({ id: P }))!;
+    await profileSvc.saveProfileSection(await jp(), 'personal', { fullName: 'Nia Profile', dob: '1998-03-12', gender: 'Female', maritalStatus: 'Single' });
+    await profileSvc.saveProfileSection(await jp(), 'education', { qualification: 'Graduate', institution: 'Pune University', year: '2019', jobs: [{ company: 'Acme', role: 'Designer', from: '2020-03', to: '2023-06' }] });
+    await profileSvc.saveProfileSection(await jp(), 'bank', { holderName: 'Nia Profile', ifsc: 'HDFC0001234', accountNumber: '123456789012', accountNumberAgain: '123456789012' });
+    await profileSvc.saveProfileSection(await jp(), 'ids', { aadhaar: '234567890123', pan: 'ABCDE1234F' });
+    await portalSvc.saveAboutYou(await jp(), { emergencyContact: { name: 'Asha Rao', relation: 'Parent', phone: '+91 91234 56789' }, pf: { firstJob: false, uan: '100000000001' } });
+
+    const getProfile = () => call(lifecycleAdminRouter as never, 'GET', `/journeys/${P}/profile`, appToken);
+    let res = await getProfile();
+    let hp = res.body as HrProfile;
+    ok('GET /admin/lifecycle/journeys/:id/profile: the six sections in the portal’s order, done counted', res.status === 200 && hp.journeyId === P && hp.total === 6
+      && JSON.stringify(hp.sections.map((x) => x.key)) === '["personal","contact","emergency","bank","education","ids"]'
+      && JSON.stringify(hp.sections.map((x) => x.done)) === '[true,false,true,true,true,false]' && hp.done === 4, { status: res.status, body: res.body });
+    ok('…the candidate: name, personal email, phone, designation, department, Tj and status', hp.candidate?.name === 'Nia Profile' && hp.candidate.personalEmail === 'nia.profile@example.com'
+      && hp.candidate.phone === '+91 98111 22334' && hp.candidate.designation === 'Product Designer' && hp.candidate.department === 'Design' && hp.candidate.tj === tj && hp.candidate.status === 'finalised', hp.candidate);
+    ok('…readable fields: the date of birth, the last job, the emergency contact, the UAN', value(hp, 'personal', 'Date of birth') === '12 Mar 1998' && value(hp, 'personal', 'Full name') === 'Nia Profile'
+      && value(hp, 'education', 'Last job') === 'Designer at Acme (Mar 2020 – Jun 2023)' && value(hp, 'education', 'Year of passing') === '2019'
+      && value(hp, 'emergency', 'Name') === 'Asha Rao' && value(hp, 'emergency', 'Mobile') === '+919123456789' && value(hp, 'bank', 'PF') === 'UAN 100000000001', hp.sections.map((x) => [x.key, x.fields]));
+    ok('…secrets as their last four only (account, Aadhaar, PAN), never the whole number', value(hp, 'bank', 'Account number') === '•••• 9012' && value(hp, 'ids', 'Aadhaar')?.endsWith('0123') === true
+      && value(hp, 'ids', 'PAN') === '••••••234F' && !JSON.stringify(hp).includes('123456789012') && !JSON.stringify(hp).includes('234567890123') && !JSON.stringify(hp).includes('ABCDE1234F'), hp.sections.find((x) => x.key === 'ids'));
+    ok('…each section carries its template documents (ID proof under IDs, address proof under contact, the photo nowhere)',
+      JSON.stringify(hp.sections.find((x) => x.key === 'ids')?.documents.map((d) => [d.label, d.required, d.status])) === '[["ID proof",true,"todo"]]'
+      && hp.sections.find((x) => x.key === 'contact')?.documents[0]?.label === 'Address proof' && !hp.sections.some((x) => x.documents.some((d) => d.label === 'Passport photo')), hp.sections.map((x) => [x.key, x.documents]));
+
+    const approve = (sec: string, bearer = appToken) => call(lifecycleAdminRouter as never, 'POST', `/journeys/${P}/profile/${sec}/approve`, bearer);
+    const unlock = (sec: string) => call(lifecycleAdminRouter as never, 'DELETE', `/journeys/${P}/profile/${sec}/approve`, appToken);
+    res = await approve('ids');
+    ok('approving a section that isn’t done: 409 "This section isn\'t complete yet"', res.status === 409 && (res.body as { error?: string }).error === 'This section isn\'t complete yet', res);
+    ok('…an unknown section: 400', (await approve('photo')).status === 400 && (await approve('salary')).status === 400);
+    res = await approve('personal');
+    hp = res.body as HrProfile;
+    const personal = hp.sections?.find((x) => x.key === 'personal');
+    ok('approve: the same body as the GET, the section approved by HR’s name with the time', res.status === 200 && personal?.approved?.byName === 'Hema HR' && !Number.isNaN(Date.parse(personal.approved.at)) && hp.sections.filter((x) => x.approved).length === 1, res.body);
+    const stored = (await jp()).profileApprovals?.personal;
+    ok('…kept on the journey as profileApprovals.personal { byUserId, byName, at }', stored?.byUserId === 'hr' && stored.byName === 'Hema HR' && stored.at instanceof Date, stored);
+    const refusedPersonal = await refusal(async () => profileSvc.saveProfileSection(await jp(), 'personal', { fullName: 'Nia P', dob: '1998-03-12', gender: 'Female' }));
+    ok('the candidate can no longer save an approved section: 409 with HR’s words', refusedPersonal.status === 409 && refusedPersonal.message === 'HR has approved this section. Write to HR if something needs to change.', refusedPersonal);
+    ok('…the other sections still save', (await profileSvc.saveProfileSection(await jp(), 'education', { qualification: 'Graduate', institution: 'Pune University', year: '2019', firstJob: true })).sections.find((x) => x.key === 'education')?.done === true);
+    const pv = await profileSvc.profileView(await jp());
+    ok('the portal’s profile view marks the approved section locked (and only it)', JSON.stringify(pv.sections.map((x) => x.locked)) === '[true,false,false,false,false,false]', pv.sections);
+    const appHome = await appSvc.onboardingHome({ userId: 'nobody', name: 'Nia Profile', org: ORG }, new Date(), await jp());
+    ok('…and the app’s Your profile too', (appHome.profile.sections as Array<{ key: string; locked: boolean }>).find((x) => x.key === 'personal')?.locked === true
+      && (appHome.profile.sections as Array<{ key: string; locked: boolean }>).filter((x) => x.locked).length === 1, appHome.profile.sections);
+
+    await approve('emergency');
+    const emergencyChange = await refusal(async () => portalSvc.saveAboutYou(await jp(), { emergencyContact: { name: 'Someone Else', relation: 'Friend', phone: '+91 98989 89898' } }));
+    ok('emergency approved: About you refuses a change to the emergency contact (409)', emergencyChange.status === 409 && emergencyChange.message === lock.PROFILE_LOCKED_MESSAGE, emergencyChange);
+    ok('…and a second contact', (await refusal(async () => portalSvc.saveAboutYou(await jp(), { emergencyContact2: { name: 'Ravi', relation: 'Sibling', phone: '+91 98989 89898' } }))).status === 409);
+    ok('…saving the same contact again is not a change', (await portalSvc.saveAboutYou(await jp(), { emergencyContact: { name: 'Asha Rao', relation: 'Parent', phone: '+91 91234 56789' } })).emergencyContact?.name === 'Asha Rao');
+    ok('…the PF (bank’s) still saves while bank is open', (await portalSvc.saveAboutYou(await jp(), { pf: { firstJob: false, uan: '100000000002' } })).pf?.uan === '100000000002');
+    await approve('bank');
+    ok('bank approved: the PF change is refused (409)', (await refusal(async () => portalSvc.saveAboutYou(await jp(), { pf: { firstJob: true } }))).status === 409);
+    ok('…and the bank details', (await refusal(async () => profileSvc.saveProfileSection(await jp(), 'bank', { holderName: 'Nia', ifsc: 'HDFC0001234' }))).status === 409);
+
+    // The ID proof: uploaded (ids is done), opened from the dashboard by its url, approved, then locked.
+    const idRow = (await db.candidateDocuments().findOne({ journeyId: P, docKey: 'id_proof' }))!;
+    await docsSvc.uploadDocumentFiles(await jp(), idRow.id, [{ originalname: 'aadhaar.pdf', buffer: PDF('nia-id') }, { originalname: 'pan.jpg', buffer: JPG }]);
+    hp = (await getProfile()).body as HrProfile;
+    const idsSec = hp.sections.find((x) => x.key === 'ids')!;
+    const idFiles = idsSec.documents[0]?.files ?? [];
+    ok('ID proof uploaded: ids is done, its document in review with both files and dashboard links', idsSec.done && idsSec.documents[0]?.status === 'in_review' && idFiles.length === 2
+      && idFiles.every((f) => f.url === `/admin/lifecycle/files/${f.id}` && f.size > 0 && !!f.contentType && !!f.name), idsSec);
+    const opened = await call(lifecycleOfferRouter as never, 'GET', idFiles[0].url.replace(/^\/admin\/lifecycle/, ''), appToken);
+    ok('…the file url opens the bytes on the dashboard’s authorised route', opened.status === 200 && Buffer.isBuffer(opened.body) && (opened.body as Buffer).equals(PDF('nia-id')), opened.status);
+    res = await approve('ids');
+    ok('…and ids can now be approved', res.status === 200 && !!(res.body as HrProfile).sections.find((x) => x.key === 'ids')?.approved, res.body);
+    const lockedUpload = await refusal(async () => docsSvc.uploadDocumentFiles(await jp(), idRow.id, [{ originalname: 'again.pdf', buffer: PDF('again') }]));
+    ok('uploads to a document of an approved section are refused (409, HR’s words), though the document itself is only in review', lockedUpload.status === 409 && lockedUpload.message === lock.PROFILE_LOCKED_MESSAGE, lockedUpload);
+    ok('…and removing one of its files', (await refusal(async () => docsSvc.removeDocumentFile(await jp(), idRow.id, idFiles[1].id))).status === 409);
+    ok('a document of another section still uploads (address proof, contact open)', (await docsSvc.uploadDocumentFiles(await jp(), (await db.candidateDocuments().findOne({ journeyId: P, docKey: 'address' }))!.id, [{ originalname: 'bill.pdf', buffer: PDF('nia-addr') }])).length > 0);
+    await docsSvc.reviewDocument(HR, idRow.id, { decision: 'send_back', note: 'The PAN is blurred.' });
+    ok('HR sending back a document of an approved section unlocks that section (so it can be uploaded again)', !(await jp()).profileApprovals?.ids && !!(await jp()).profileApprovals?.personal);
+    await docsSvc.uploadDocumentFiles(await jp(), idRow.id, [{ originalname: 'pan-clear.jpg', buffer: JPG }]);
+    ok('…and the re-upload goes in', (await db.candidateDocuments().findOne({ id: idRow.id }))?.status === 'in_review');
+
+    res = await unlock('personal');
+    ok('DELETE …/approve unlocks: the same body, no approval on it', res.status === 200 && !(res.body as HrProfile).sections.find((x) => x.key === 'personal')?.approved && !(await jp()).profileApprovals?.personal, res.body);
+    ok('…the candidate can save it again', (await profileSvc.saveProfileSection(await jp(), 'personal', { fullName: 'Nia Profile', dob: '1998-03-13', gender: 'Female' })).sections[0].done);
+    ok('…unlocking what is not approved is fine', (await unlock('personal')).status === 200);
+
+    // Who may: HR only; another company not at all.
+    const itSess = randomBytes(32).toString('hex');
+    await db.authSessions().insertOne({ tokenHash: createHash('sha256').update(itSess).digest('hex'), userId: 'it', createdAt: new Date(), expiresAt: new Date(Date.now() + 86_400_000) } as never);
+    ok('the onboarding tab alone (IT) cannot read the profile (403) nor approve', (await call(lifecycleAdminRouter as never, 'GET', `/journeys/${P}/profile`, itSess)).status === 403 && (await approve('personal', itSess)).status === 403);
+    const otherSess = randomBytes(32).toString('hex');
+    await db.authSessions().insertOne({ tokenHash: createHash('sha256').update(otherSess).digest('hex'), userId: 'hr2', createdAt: new Date(), expiresAt: new Date(Date.now() + 86_400_000) } as never);
+    ok('another company’s HR: 404', (await call(lifecycleAdminRouter as never, 'GET', `/journeys/${P}/profile`, otherSess)).status === 404 && (await approve('personal', otherSess)).status === 404);
+    ok('tab rules: the profile and the pre-boarding list open to Onboarding or People › Employees; files to Employees too',
+      JSON.stringify(tabsForRequest('GET', `/admin/lifecycle/journeys/${P}/profile`)) === '["onboarding","employees"]' && JSON.stringify(tabsForRequest('POST', `/admin/lifecycle/journeys/${P}/profile/ids/approve`)) === '["onboarding","employees"]'
+      && JSON.stringify(tabsForRequest('GET', '/admin/lifecycle/preboarding')) === '["onboarding","employees"]' && (tabsForRequest('GET', '/admin/lifecycle/files/x') ?? []).includes('employees')
+      && JSON.stringify(tabsForRequest('GET', `/admin/lifecycle/journeys/${P}`)) === '["onboarding"]');
+
+    // The Employees page's pre-boarding list.
+    await db.journeys().updateOne({ id: P }, { $set: { 'profileApprovals.emergency': { byUserId: 'hr', byName: 'Hema HR', at: new Date() } } });
+    res = await call(lifecycleAdminRouter as never, 'GET', '/preboarding', appToken);
+    type Row = { journeyId: string; name: string; designation?: string; department?: string; tj?: string; status: string; profileDone: number; profileTotal: number; approvedSections: number; documentsWaiting: number };
+    const people = Array.isArray(res.body) ? (res.body as Row[]) : [];
+    const nia = people.find((x) => x.journeyId === P);
+    const niaDone = (await profileSvc.profileView(await jp())).done;
+    ok('GET /admin/lifecycle/preboarding (a bare array): the joiner with their profile count, approvals and documents with HR', res.status === 200 && !!nia && nia.name === 'Nia Profile' && nia.designation === 'Product Designer'
+      && nia.department === 'Design' && nia.tj === tj && nia.status === 'finalised' && nia.profileDone === niaDone && nia.profileTotal === 6 && nia.approvedSections === 2 && nia.documentsWaiting === 2, nia);
+    ok('…not the joined (Kabir) nor the closed (declined, not joining)', !people.some((x) => x.journeyId === A || x.journeyId === B.journeyId)
+      && people.every((x) => !['joined', 'declined', 'expired', 'not_joining', 'moved_to_app', 'confirmed'].includes(x.status)), people.map((x) => [x.name, x.status]));
+    ok('…soonest joining first', people.every((x, i) => i === 0 || (people[i - 1].tj ?? '9999') <= (x.tj ?? '9999')), people.map((x) => x.tj));
+    ok('…another company sees its own only', ((await call(lifecycleAdminRouter as never, 'GET', '/preboarding', otherSess)).body as Row[]).every((x) => x.journeyId !== P));
+
+    // Joined: the employee profile's Documents carry the onboarding uploads beside the filed ones.
+    const niaUser = await offersSvc.markJoined(HR, P, { workEmail: 'nia.profile@sowaka.test', employeeId: 'SWT-201' }, at10(tj));
+    ok('once joined, they leave the pre-boarding list', !((await call(lifecycleAdminRouter as never, 'GET', '/preboarding', appToken)).body as Row[]).some((x) => x.journeyId === P));
+    const joinerHome = await joinerSvc.joinerOnboarding({ userId: niaUser.userId, name: 'Nia Profile', org: ORG }).catch((e: Error) => ({ error: e.message }));
+    ok('the joiner app’s profile view carries `locked` per section', 'profile' in joinerHome && joinerHome.profile.sections.find((x) => x.key === 'emergency')?.locked === true
+      && joinerHome.profile.sections.find((x) => x.key === 'personal')?.locked === false, 'profile' in joinerHome ? joinerHome.profile.sections : joinerHome);
+    type EmpDoc = { id: string; name: string; type: string | null; url?: string; uploadedAt: string | null; size: number | null; source: string; label?: string; status?: string; files?: FileRow[] };
+    const empDocs = await call(adminRouter as never, 'GET', `/employees/${niaUser.userId}/documents`, appToken);
+    const list = ((empDocs.body as { documents?: EmpDoc[] }).documents ?? []);
+    const onboardingDocs = list.filter((d) => d.source === 'onboarding');
+    const idEntry = onboardingDocs.find((d) => d.label === 'ID proof');
+    ok('GET /admin/employees/:userId/documents: their onboarding documents, marked source onboarding, with label, status and file links',
+      empDocs.status === 200 && onboardingDocs.length === 3 && !!idEntry && idEntry.status === 'in_review' && idEntry.name === 'ID proof' && idEntry.files?.length === 1 && idEntry.files[0].name === 'pan-clear.jpg'
+      && idEntry.files.every((f) => f.url === `/admin/lifecycle/files/${f.id}`) && idEntry.url === idEntry.files[0].url && typeof idEntry.uploadedAt === 'string', { status: empDocs.status, body: empDocs.body });
+    // A document HR filed (a link record: no S3 in the check), then the list again.
+    await db.users().updateOne({ userId: niaUser.userId }, { $push: { documents: { id: 'filed-cv', name: 'cv.pdf', type: 'Resume', url: 'https://files.example/cv.pdf', uploadedAt: new Date() } } } as never);
+    const both = ((await call(adminRouter as never, 'GET', `/employees/${niaUser.userId}/documents`, appToken)).body as { documents?: EmpDoc[] }).documents ?? [];
+    ok('…a document HR filed comes first, marked source filed with its old fields, the onboarding ones after',
+      both.length === 4 && both[0].source === 'filed' && both[0].id === 'filed-cv' && both[0].name === 'cv.pdf' && both[0].type === 'Resume' && both[0].url === 'https://files.example/cv.pdf' && 'size' in both[0]
+      && both.slice(1).every((d) => d.source === 'onboarding'), both.map((d) => [d.source, d.name]));
+    const afterRemove = await adminSvc.removeEmployeeDocument('hr', niaUser.userId, 'filed-cv', { seesDocuments: true });
+    ok('…removing the filed one answers the list with the onboarding ones still in it', afterRemove.length === 3 && afterRemove.every((d) => d.source === 'onboarding'), afterRemove.map((d) => [d.source, d.name]));
+    const statusOnly = await adminSvc.employeeDocumentsForAdmin('hr', niaUser.userId, { seesDocuments: false });
+    ok('…someone outside HR gets the onboarding documents’ status only (no files or links)', statusOnly.filter((d) => d.source === 'onboarding').every((d) => 'files' in d && d.files.length === 0 && !d.url));
+    const roster = await adminSvc.listAllEmployeesForAdmin('hr', { seesDocuments: true, org: ORG });
+    const niaRow = roster.find((e) => e.userId === niaUser.userId);
+    ok('GET /admin/employees: the employee’s documents carry the onboarding ones (source, label, status, files), the old fields kept',
+      (niaRow?.documents ?? []).filter((d) => d.source === 'onboarding').length === 3 && (niaRow?.documents ?? []).every((d) => 'id' in d && 'name' in d && 'uploadedAt' in d && 'size' in d)
+      && (niaRow?.documents as EmpDoc[]).find((d) => d.label === 'ID proof')?.files?.[0]?.url?.startsWith('/admin/lifecycle/files/') === true, niaRow?.documents);
+    ok('…status only for someone outside HR; none without the dashboard viewer (old callers)',
+      (await adminSvc.listAllEmployeesForAdmin('hr', { seesDocuments: false, org: ORG })).find((e) => e.userId === niaUser.userId)?.documents.every((d) => !('files' in d) || (d as EmpDoc).files?.length === 0) === true
+      && (await adminSvc.listAllEmployeesForAdmin('hr')).find((e) => e.userId === niaUser.userId)?.documents.length === 0);
+    // People › Employees alone (HR without lifecycle tabs) opens the candidate documents, nothing else stored there.
+    await db.users().insertOne(person('emphr', ORG, { name: 'Esha Employees', dashboardAccess: true, dashboardTabs: ['employees'] }) as never);
+    const empSess = randomBytes(32).toString('hex');
+    await db.authSessions().insertOne({ tokenHash: createHash('sha256').update(empSess).digest('hex'), userId: 'emphr', createdAt: new Date(), expiresAt: new Date(Date.now() + 86_400_000) } as never);
+    const empOpen = await call(lifecycleOfferRouter as never, 'GET', `/files/${idEntry?.files?.[0]?.id}`, empSess);
+    ok('People › Employees alone opens an onboarding document’s file', empOpen.status === 200 && Buffer.isBuffer(empOpen.body), empOpen.status);
+    const offerPdf = (await db.offers().findOne({ journeyId: P }))!.versions[0].pdfFileId!;
+    ok('…but not an offer PDF or other lifecycle file (403)', (await call(lifecycleOfferRouter as never, 'GET', `/files/${offerPdf}`, empSess)).status === 403);
+    ok('…and reads the pre-boarding profile route (HR)', (await call(lifecycleAdminRouter as never, 'GET', `/journeys/${P}/profile`, empSess)).status === 200);
+  }
+
   // Clean the scratch uploads this run wrote.
   const { rm } = await import('node:fs/promises');
   const path = await import('node:path');

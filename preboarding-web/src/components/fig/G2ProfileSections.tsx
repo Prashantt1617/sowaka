@@ -49,7 +49,8 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
   const [busy, setBusy] = useState(false);
   const typed = useRef(false);
   useEffect(() => {
-    portal.profile().then((pv) => { setView(pv); setV({ ...savedValues(k, pv), ...(readDraft(k) ?? {}) }); }, (e: Error) => setError(e.message));
+    // An approved (locked) section shows what was saved, never a draft typed on this device.
+    portal.profile().then((pv) => { setView(pv); const isLocked = pv.sections.find((s) => s.key === k)?.locked === true; setV({ ...savedValues(k, pv), ...(isLocked ? {} : readDraft(k) ?? {}) }); }, (e: Error) => setError(e.message));
     portal.documents().then((r) => setDocs(r.documents), () => undefined);
   }, [k]);
   useEffect(() => { if (typed.current) writeDraft(k, v); }, [k, v]);
@@ -57,6 +58,8 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
 
   const i = ORDER.indexOf(k);
   const sec = view?.sections.find((s) => s.key === k);
+  // Approved by HR: shown read-only, nothing to save.
+  const locked = sec?.locked === true;
   const myDocs = useMemo(() => docs.filter((d) => sec?.documentIds.includes(d.id)), [docs, sec]);
   const segs: G2Seg[] = ORDER.map((key, n) => (n === i ? 'on' : view?.sections.find((s) => s.key === key)?.done ? 'done' : 'todo'));
   const last = i === ORDER.length - 1;
@@ -64,7 +67,7 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
     const rules = DOC_CARD[k] ?? [];
     return myDocs.filter((d) => rules.find(([, re]) => re.test(`${d.label} ${d.title ?? ''}`))?.[0] === card)
       .filter((d) => !(card === 'work' && v.worked === 'No' && JOB_PAPERS.test(`${d.docKey} ${d.label}`)))
-      .map((d) => <G2DocUpload key={d.id} doc={d} onChange={setDocs} />);
+      .map((d) => <G2DocUpload key={d.id} doc={d} onChange={setDocs} readOnly={locked} />);
   };
 
   const save = async () => {
@@ -232,18 +235,24 @@ export function G2SectionForm({ k }: { k: ProfileSectionKey }) {
       <main id="main" className="g2-sec">
         {!view && !error ? <FigLoading /> : (
           <>
-            {sec?.done && <p className="fig-note g2-done-note"><FigCheckCircle className="fig-success" /><span>You’ve finished this section. You can still change anything before you join.</span></p>}
+            {locked
+              ? <p className="fig-note g2-done-note"><FigCheckCircle className="fig-success" /><span>Approved by HR. Write to HR if something needs to change.</span></p>
+              : sec?.done && <p className="fig-note g2-done-note"><FigCheckCircle className="fig-success" /><span>You’ve finished this section. You can still change anything before you join.</span></p>}
             {icon ? <FigIntro icon={icon}>{INTRO[k]}</FigIntro> : <p className="fig-intro"><span>{INTRO[k]}</span></p>}
-            {body}
+            {locked
+              ? <fieldset disabled className="g2-locked" aria-label={`${TITLE[k]}, approved by HR`} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: 'contents' }}>{body}</fieldset>
+              : body}
             {error && <p className="fig-field__error" role="alert">{error}</p>}
           </>
         )}
       </main>
       <div className="g2-foot">
-        {k === 'photo'
-          ? <button type="button" className="fig-btn" onClick={() => navigate('/profile')}>Finish profile</button>
-          : <button type="button" className="fig-btn" disabled={busy || !view} onClick={() => void save()}>{busy ? 'Saving…' : last ? 'Save and finish' : 'Save and continue'}</button>}
-        <button type="button" className="fig-link g2-foot__later" onClick={() => navigate('/profile')}>Save and finish later</button>
+        {locked
+          ? <button type="button" className="fig-btn" onClick={() => navigate(last ? '/profile' : `/profile/${ORDER[i + 1]}`)}>{last ? 'Back to employee profile' : 'Next section'}</button>
+          : k === 'photo'
+            ? <button type="button" className="fig-btn" onClick={() => navigate('/profile')}>Finish profile</button>
+            : <button type="button" className="fig-btn" disabled={busy || !view} onClick={() => void save()}>{busy ? 'Saving…' : last ? 'Save and finish' : 'Save and continue'}</button>}
+        {!locked && <button type="button" className="fig-link g2-foot__later" onClick={() => navigate('/profile')}>Save and finish later</button>}
       </div>
     </FigPage>
   );

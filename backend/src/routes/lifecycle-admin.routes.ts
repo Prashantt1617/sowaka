@@ -13,6 +13,7 @@ import { createTemplate, deleteTemplate, getTemplate, isKind, listTemplates, tem
 import multer from 'multer';
 import { MAX_VIDEO_BYTES, saveTemplateDesign, templateDesign, templateMediaBytes, templatePreview, uploadTemplateMedia } from '../services/lifecycle/design';
 import { UTF8_FILE_NAMES, contentDisposition } from '../services/lifecycle/files';
+import { approveProfileSection, hrProfileView, preboardingPeople, unlockProfileSection } from '../services/lifecycle/preboardingProfile';
 
 /**
  * The dashboard's onboarding side of the employee lifecycle, mounted at
@@ -147,6 +148,22 @@ lifecycleAdminRouter.put('/journeys/:id', lifecycleHandler(async (req) => {
   const out = await updateJourneyByHr(me.org, j.id, body(req));
   return { journey: journeyForViewer(out.journey, viewerOf(req)) };
 }));
+// The pre-boarding profile (HR only: the answers, the documents' files): each section's answers and
+// documents; approving a done section locks it for the candidate, unlocking (DELETE) opens it again.
+async function hrJourney(req: Request) {
+  if (!viewerOf(req).seesDocuments) throw new LifecycleError(403, 'Only HR can see the employee profile');
+  const { me, j } = await ownJourney(req);
+  if (j.kind !== 'onboarding') throw new LifecycleError(404, 'Journey not found');
+  return { me, j };
+}
+lifecycleAdminRouter.get('/journeys/:id/profile', lifecycleHandler(async (req) => hrProfileView((await hrJourney(req)).j)));
+lifecycleAdminRouter.post('/journeys/:id/profile/:section/approve', lifecycleHandler(async (req) => {
+  const { me, j } = await hrJourney(req);
+  return approveProfileSection(me, j, req.params.section);
+}));
+lifecycleAdminRouter.delete('/journeys/:id/profile/:section/approve', lifecycleHandler(async (req) => unlockProfileSection((await hrJourney(req)).j, req.params.section)));
+// The Employees page's "In pre-boarding" filter: joiners not yet joined (and not closed), soonest first.
+lifecycleAdminRouter.get('/preboarding', lifecycleHandler(async (req) => preboardingPeople(caller(req).org)));
 // Nudge / Remind: whoever the task waits on, once per task per day.
 lifecycleAdminRouter.post('/journeys/:id/tasks/:taskId/nudge', lifecycleHandler(async (req) => {
   const { me, j } = await ownJourney(req);

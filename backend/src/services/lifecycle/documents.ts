@@ -13,6 +13,7 @@ import { companyDisplayName, companyOf, mails, sendLifecycleEmail } from './emai
 import { completeTask, reopenTask, setJourneyStatus, setTaskInReview } from './engine';
 import { checkUpload, fileMeta, LifecycleOfferError, removeFile, storeFile } from './files';
 import { unlockJourneyLetters } from './letters';
+import { assertSectionOpen, sectionOfDocument } from './profileLock';
 
 export type CandidateDocumentView = CandidateDocument & { files: Array<{ id: string; name: string; contentType: string; size: number }> };
 
@@ -74,6 +75,8 @@ export async function uploadDocumentFiles(journey: Journey, docId: string, files
   const doc = await candidateDocuments().findOne({ id: docId, journeyId: journey.id });
   if (!doc) throw new LifecycleOfferError(404, 'Document not found');
   if (doc.status === 'approved') throw new LifecycleOfferError(409, 'HR has already approved this document');
+  // A document of a profile section HR has approved is locked with it.
+  assertSectionOpen(journey, sectionOfDocument(doc));
   // A re-upload after Send back replaces what was sent back (it is not shown beside the new file).
   const replacing = doc.status === 'sent_back' ? doc.fileIds : [];
   if (doc.fileIds.length - replacing.length + files.length > MAX_FILES_PER_DOCUMENT) throw new LifecycleOfferError(400, `Up to ${MAX_FILES_PER_DOCUMENT} files per document`);
@@ -105,6 +108,7 @@ export async function removeDocumentFile(journey: Journey, docId: string, fileId
   const doc = await candidateDocuments().findOne({ id: docId, journeyId: journey.id });
   if (!doc || !doc.fileIds.includes(fileId)) throw new LifecycleOfferError(404, 'File not found');
   if (doc.status === 'approved') throw new LifecycleOfferError(409, 'HR has already approved this document');
+  assertSectionOpen(journey, sectionOfDocument(doc));
   const left = doc.fileIds.filter((id) => id !== fileId);
   await candidateDocuments().updateOne({ id: doc.id }, { $set: { fileIds: left, ...(left.length ? {} : { status: doc.hrNote ? 'sent_back' : 'todo' }) } });
   await removeFile(fileId);
@@ -130,6 +134,9 @@ export async function reviewDocument(
     if (!note) throw new LifecycleOfferError(400, 'Say what needs fixing');
     if (note.length > 1000) throw new LifecycleOfferError(400, 'The note is too long');
     await candidateDocuments().updateOne({ id: doc.id }, { $set: { status: 'sent_back', hrNote: note, reviewedAt: now, reviewedByName: hr.name } });
+    // Sending back a document of an approved profile section unlocks that section, so the candidate can upload again.
+    const section = sectionOfDocument(doc);
+    if (journey.profileApprovals?.[section]) await journeys().updateOne({ id: journey.id }, { $unset: { [`profileApprovals.${section}`]: '' } });
     await reopenTask(journey.id, 'upload_documents', note, true);
     if (journey.candidate?.personalEmail) {
       const company = await companyOf(journey.org);

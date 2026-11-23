@@ -32,6 +32,8 @@ import {
   addEmployeeDocument,
   createEmployeeForAdmin,
   removeEmployeeDocument,
+  employeeDocumentsForAdmin,
+  seesCandidateDocuments,
   listAllEmployeesForAdmin,
   setOvertimeEligibilityForAdmin,
   updateEmployeeDetailsForAdmin,
@@ -206,7 +208,7 @@ export async function listEmployees(req: Request, res: Response, next: NextFunct
   try {
     res
       .status(200)
-      .json({ success: true, employees: await listAllEmployeesForAdmin(adminUserId(req)) });
+      .json({ success: true, employees: await listAllEmployeesForAdmin(adminUserId(req), { seesDocuments: seesCandidateDocuments(req.auth?.user), org: req.auth?.user?.org }) });
   } catch (error) {
     next(error);
   }
@@ -388,6 +390,7 @@ export async function addEmployeeDocumentHandler(req: Request, res: Response, ne
             bytes: req.file.buffer,
           }
         : undefined,
+      { seesDocuments: seesCandidateDocuments(req.auth?.user) },
     );
     res.status(201).json({ success: true, documents });
   } catch (error) { next(error); }
@@ -399,7 +402,16 @@ export async function removeEmployeeDocumentHandler(req: Request, res: Response,
       adminUserId(req),
       String(req.params.userId ?? ''),
       String(req.params.documentId ?? ''),
+      { seesDocuments: seesCandidateDocuments(req.auth?.user) },
     );
+    res.status(200).json({ success: true, documents });
+  } catch (error) { next(error); }
+}
+
+/** An employee's documents: those HR filed (`source: 'filed'`), then their onboarding uploads (`source: 'onboarding'`). */
+export async function listEmployeeDocumentsHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const documents = await employeeDocumentsForAdmin(adminUserId(req), String(req.params.userId ?? ''), { seesDocuments: seesCandidateDocuments(req.auth?.user) });
     res.status(200).json({ success: true, documents });
   } catch (error) { next(error); }
 }

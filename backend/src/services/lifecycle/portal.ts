@@ -20,6 +20,7 @@ import {
 import { closeJourney, completeTask, isManagerMeeting, journeyTasksView, meetingWithName, type TaskView } from './engine';
 import { LifecycleOfferError } from './files';
 import { maybeSendLettersReady, portalLetters, SIGNED_KINDS } from './letters';
+import { assertSectionOpen } from './profileLock';
 import { CLOSED_STATUSES, mediaPath } from './portalAuth';
 import { addWorkingDaysKey, workCalendar } from './dueRules';
 import { scopedJourneys, scriptScope } from './scriptScope';
@@ -280,6 +281,12 @@ export async function saveAboutYou(journey: Journey, input: { emergencyContact?:
     }
   }
   if (input.emergencyContact === undefined && input.emergencyContact2 === undefined && input.pf === undefined) throw new LifecycleOfferError(400, 'Nothing to save');
+  // A section HR has approved is locked: the emergency contacts go with Emergency contact, the PF with Bank account and PF.
+  // Saving what is already there again is not a change.
+  const before = aboutYouOf(journey);
+  const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  if (!same(about.emergencyContact, before.emergencyContact) || !same(about.emergencyContact2, before.emergencyContact2)) assertSectionOpen(journey, 'emergency');
+  if (!same(about.pf, before.pf)) assertSectionOpen(journey, 'bank');
   about.savedAt = now;
   await journeys().updateOne({ id: journey.id }, { $set: { aboutYou: about, lastActivityAt: now } });
   if (about.emergencyContact && about.pf) await completeTask(journey.id, 'about_you', { name: journey.candidate?.name });
