@@ -93,9 +93,9 @@ Uint8List _oldSelfie(Uint8List jpeg, Rect face) {
   late img.Image last;
   for (var i = 0; i < FaceSpoofCheck.samples; i++) {
     last = _noisy(base, seed * 100 + i);
-    final crops = spoofCropsJob((_frameOf(last), _face))!;
-    now.add(crops.sent);
-    old.add(crops.read); // 160 px at 90: what was sent before
+    final crop = spoofCropJob((_frameOf(last), _face))!;
+    now.add(crop); // 160 px at 90, the bytes the phone read
+    old.add(crop); // the same crop: before November it went from each turn too
   }
   final frameJpeg = Uint8List.fromList(img.encodeJpg(last, quality: 88));
   return (
@@ -130,7 +130,7 @@ AuthSession _session() => AuthSession(
 );
 
 void main() {
-  test('a setup sends under 250 KB and a check under 80 KB, a fraction of before', () async {
+  test('a setup sends under 250 KB and a check under 120 KB (the crops are the 160 px ones the phone read), a fraction of before', () async {
     final base = _base();
     final front = _burst(base, 1);
     // The turned photos: the face mirrored (it sits near the middle), and
@@ -178,9 +178,9 @@ void main() {
     );
 
     expect(photo.width, lessThanOrEqualTo(selfieSide));
-    expect((crop.width, crop.height), (FaceSpoofCheck.sentSide, FaceSpoofCheck.sentSide));
+    expect((crop.width, crop.height), (FaceSpoofCheck.cropSide, FaceSpoofCheck.cropSide));
     expect(enrol, lessThan(250 * 1024));
-    expect(verify, lessThan(80 * 1024));
+    expect(verify, lessThan(120 * 1024));
     expect(enrol, lessThan(oldEnrol ~/ 2));
     expect(progress.first, 0);
     expect(progress.last, 1);

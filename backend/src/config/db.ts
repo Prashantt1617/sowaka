@@ -129,6 +129,27 @@ export function facePhoneLogs(): Collection<FacePhoneLog> {
   return getDb().collection<FacePhoneLog>('face_phone_logs');
 }
 
+/**
+ * The face crops of a burst the server's screen detector refused (unsure or
+ * a screen), with both sides' scores: kept 7 days so a real face refused can
+ * be looked at and the detector tuned on it, then deleted by Mongo itself.
+ */
+export interface FaceRefusedBurst {
+  org: string;
+  userId: string;
+  at: Date;
+  expiresAt: Date;
+  challengeId: string;
+  verdict: 'uncertain' | 'spoof';
+  spoofServer: number | null;
+  scores: number[];
+  spoofPhone?: number;
+  crops: Buffer[];
+}
+export function faceRefusedBursts(): Collection<FaceRefusedBurst> {
+  return getDb().collection<FaceRefusedBurst>('face_refused_bursts');
+}
+
 export function faceVerifications(): Collection<FaceVerification> {
   return getDb().collection<FaceVerification>('face_verifications');
 }
@@ -516,6 +537,9 @@ async function ensureIndexes(database: Db): Promise<void> {
   await database.collection('face_challenges').createIndex({ id: 1 }, { unique: true });
   await database.collection('face_challenges').createIndex({ userId: 1, createdAt: -1 });
   await database.collection('face_challenges').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+  // Refused bursts' crops: read by person and time, gone 7 days after (expiresAt).
+  await database.collection('face_refused_bursts').createIndex({ org: 1, userId: 1, at: -1 });
+  await database.collection('face_refused_bursts').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
   await database
     .collection<OtpChallenge>('otp_challenges')
     .createIndex({ email: 1 }, { unique: true });

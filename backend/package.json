@@ -15,6 +15,7 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "face:calibrate": "tsx src/scripts/face-calibration.ts",
     "face:spoof-check": "tsx src/scripts/face-spoof-check.ts",
+    "face:refused-crops": "tsx src/scripts/face-refused-crops.ts",
     "slow-routes:check": "MONGODB_DB=slow_routes_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/slow-routes-check.ts",
     "time-office-lists:check": "MONGODB_DB=time_office_lists_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/time-office-lists-check.ts",
     "shutdown:check": "tsx src/scripts/shutdown-check.ts",
