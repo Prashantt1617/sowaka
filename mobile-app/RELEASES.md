@@ -20,6 +20,7 @@ sale, change its word to `live`.
 
 | version | build | commit | branch | status | notes |
 |---|---|---|---|---|---|
+| 1.4.3 | 90 | c90a2b99 | releases-90 | built | |
 | 1.4.3 | 89 | 1d29b2e0 | main | built | |
 | 1.4.3 | 88 | a43c0199 | release-1.4.3-88 | built | onboarding final designs (#270, #271); needs backend 55c7f933+; APK ~/Downloads/Sowaka-1.4.3-88.apk, IPA ~/Downloads/Sowaka-1.4.3-88.ipa (87 was built off-ledger) |
 | 1.4.3 | 86 | eca2a909 | app-lc-all | built | 85 + the 20 Nov lifecycle lanes (J1–J3, T1–T2, portal in the app, manager recommendation); needs the backend from PR #258; APK ~/Downloads/Sowaka-1.4.3-86.apk |
