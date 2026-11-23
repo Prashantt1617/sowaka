@@ -386,6 +386,11 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
             {cur >= 2 || allDone
               ? <ProfileRow text={profileText} pct={profilePct} href={profileHref} />
               : <Para>The employee profile opens once the offer is accepted and the joining portal is sent.</Para>}
+            {/* For HR: have they got the app and used it (signed in, punched in)? */}
+            <Facts rows={[
+              ['Logged into the app', data.appSignIn?.signedIn ? `Yes${data.appSignIn.firstAt ? ` · ${shortDay(data.appSignIn.firstAt)}` : ''}` : 'No'],
+              ['Punched in', data.firstPunch?.punched ? `Yes${data.firstPunch.at ? ` · ${shortDay(data.firstPunch.at)}` : ''}` : 'No'],
+            ]} />
             {reviewRows(2)}
             {letters.length > 0 && <Sub>Letters</Sub>}
             {letters.length > 0 && <div style={{ display: 'grid', gap: 8 }}>{letters.map((l) => <LetterRow key={l.id} letter={l} name={name} onOpen={(id, n) => setDialog({ kind: 'file', id, name: n })} onDocuments={() => openDocuments(s.setView, l.kind, journey.id)} />)}</div>}

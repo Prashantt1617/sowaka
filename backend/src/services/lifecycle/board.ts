@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { cachedLifecycle, refreshLifecycle, setBoardPatch, type BoardWrites } from './readCache';
 import { orgsKeeping, patchSwr } from '../swr-cache';
-import { authSessions, candidateDocuments, dateChangeRequests, deviceTokens, journeys, journeyTasks, offers, surveyResponses, users } from '../../config/db';
+import { authSessions, candidateDocuments, dateChangeRequests, deviceTokens, journeys, journeyTasks, offers, surveyResponses, users, attendanceRecords } from '../../config/db';
 import type {
   Day1Pass, Journey, JourneyFlag, JourneyTask, OnboardingBoardColumn, OnboardingBoardTab, OwnerRole, SurveyKind,
 } from '../../models/lifecycle.model';
@@ -503,7 +503,7 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
   // The joining and reporting details THIS joiner has (their own copy of the template, as the portal's Day-1 pass and the
   // teammates' pages read it): a template edit after they started must not show here either.
   const design = await import('./design');
-  const [reporting, appSignIn] = await Promise.all([design.reportingFor(j), appSignInOf(j.userId ?? j.appAccess?.userId)]);
+  const [reporting, appSignIn, firstPunch] = await Promise.all([design.reportingFor(j), appSignInOf(j.userId ?? j.appAccess?.userId), firstPunchAt(j.userId ?? j.appAccess?.userId)]);
   const teamTasksSvc = await import('./teamTasks');
   const [teamRows, teamDefs] = await Promise.all([teamTasksSvc.teamRowsForHr(j), teamTasksSvc.teamDefsFor(j)]);
   // The reviews (documents, joining form, payroll details, the confirmation): each opens where it is done.
@@ -512,6 +512,7 @@ export async function journeyPanel(org: string, journeyId: string, now = new Dat
     journey, tasks: views, documents, letters, offer, dateRequests, probation: probationView, batch, viewer, teamRows, reviews,
     ...(reporting ? { reporting } : {}),
     appSignIn,
+    firstPunch,
   };
 }
 
@@ -524,6 +525,13 @@ export interface AppSignIn { signedIn: boolean; firstAt?: string; lastAt?: strin
  * The first sign-in is the earliest of those, so a session that has expired may make it later than it was.
  * No account (not joined, no app access given): not signed in.
  */
+/** Joining day's "Punched in": their first punch-in ever (HR sees whether they downloaded the app and punched). */
+export async function firstPunchAt(userId: string | undefined): Promise<{ punched: boolean; at?: string }> {
+  if (!userId) return { punched: false };
+  const rec = await attendanceRecords().findOne({ userId, punchIn: { $exists: true } }, { projection: { _id: 0, punchIn: 1 }, sort: { workDate: 1 } });
+  return rec?.punchIn ? { punched: true, at: new Date(rec.punchIn).toISOString() } : { punched: false };
+}
+
 export async function appSignInOf(userId: string | undefined): Promise<AppSignIn> {
   if (!userId) return { signedIn: false };
   const [user, session, phone] = await Promise.all([

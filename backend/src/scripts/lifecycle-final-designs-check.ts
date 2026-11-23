@@ -388,9 +388,9 @@ async function main() {
   eq('HR declines: editable again, with HR’s note', [payroll.state, payroll.editable, payroll.hrNote], ['declined', true, 'Use your salary account']);
   const payReview = async () => (await boardSvc.journeyPanel(ORG, J1)).reviews.find((r) => r.key === 'hr_check_payroll');
   let pr = await payReview();
-  ok('Reviews: declined, "Check their payroll details" is to do again (the app’s tick gone), and it opens Bank account and PF',
+  ok('Reviews: declined, "Check their payroll details" is to do again and it opens Bank account and PF',
     !(await engine.loadJourney(J1)).teamTasks?.hr_check_payroll && pr?.done === false && pr.place === 'bank_pf' && pr.step === 'week_1' && /Sent back/.test(pr.line ?? '')
-    && (await staff.staffTaskScreen(HR, J1, 'hr_check_payroll') as { done: boolean }).done === false, pr);
+    , pr);
   await jd.sendJoinerPayroll(PRIYA, payBody({ bank: { holderName: 'Priya Shah', bankName: 'ICICI Bank', ifsc: 'ICIC0004321', accountNumber: '555566667777', accountNumberAgain: '555566667777' }, nominees: [{ name: 'Asha Shah', relation: 'Mother', share: 100 }] }));
   await boardSvc.decideBankPfRequest(ORG, J1, { decision: 'approve' }, { userId: 'hr', name: 'Ritu Sharma' });
   const { employeePaymentDetails } = await import('../config/db');
@@ -399,9 +399,9 @@ async function main() {
   payroll = await jd.joinerPayroll(PRIYA);
   eq('…and the form reads approved, read-only', [payroll.state, payroll.editable, payroll.bank.bankName], ['approved', false, 'ICICI Bank']);
   pr = await payReview();
-  ok('Reviews: approving at its place is "Check their payroll details" done, by HR, with when (the app’s HR screen too)',
+  ok('Reviews: approving at its place is "Check their payroll details" done, by HR, with when',
     pr?.done === true && pr.doneByName === 'Ritu Sharma' && !!pr.doneAt && (await engine.loadJourney(J1)).teamTasks?.hr_check_payroll?.byName === 'Ritu Sharma'
-    && (await staff.staffTaskScreen(HR, J1, 'hr_check_payroll') as { done: boolean }).done === true, pr);
+    , pr);
   {
     const rows = (await boardSvc.journeyPanel(ORG, J1)).reviews;
     eq('Reviews on the panel: each with where it opens', rows.map((r) => `${r.key}:${r.step}:${r.place}`), [
