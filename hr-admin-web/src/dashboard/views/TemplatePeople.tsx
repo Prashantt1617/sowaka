@@ -91,8 +91,10 @@ export function PeopleSearch({ emps, onTemplate, onChange, placeholder }: { emps
 }
 
 /** Employees: who is on it, searchable. */
-export function TemplateMembers({ members, note, emptyText, extra, title = 'Employees on this template', noun = PEOPLE, columns, onOpen, placeholder }: {
+export function TemplateMembers({ members, note, emptyText, extra, extraLabel, title = 'Employees on this template', noun = PEOPLE, columns, onOpen, placeholder }: {
   members: Emp[]; note?: ReactNode; emptyText: string; extra?: (e: Emp) => ReactNode;
+  /** The extra column's heading (NOTE by default). */
+  extraLabel?: string;
   title?: string; noun?: PeopleNoun;
   /** In place of team, designation, manager and location. */
   columns?: PeopleColumn[];
@@ -104,7 +106,7 @@ export function TemplateMembers({ members, note, emptyText, extra, title = 'Empl
   const [filtering, setFiltering] = useState(false);
   const isOn = useMemo(() => () => true, []);
   const list = filtering ? shown : members;
-  const cols = columns ?? [...BASE_COLUMNS.map((c) => ({ ...c, width: '1fr' })), { head: extra ? 'NOTE' : 'LOCATION', cell: (e: Emp) => (extra ? extra(e) : e.location || '—'), width: '1.2fr' }];
+  const cols = columns ?? [...BASE_COLUMNS.map((c) => ({ ...c, width: '1fr' })), { head: extra ? extraLabel ?? 'NOTE' : 'LOCATION', cell: (e: Emp) => (extra ? extra(e) : e.location || '—'), width: '1.2fr' }];
   return (
     <section className="pd-card" style={{ display: 'grid', gap: 14 }}>
       <div className="pd-card-h" style={{ marginBottom: 0 }}>
@@ -124,7 +126,8 @@ export function TemplateEditPeople({
 }: {
   emps: Emp[];
   placement: (e: Emp) => Placement;
-  onAdd: (ids: string[]) => Promise<void>;
+  /** Resolves false to keep the ticks (the caller asks for more first, e.g. each person's CTC). */
+  onAdd: (ids: string[]) => Promise<void | boolean>;
   /** Absent: people can't be taken off here (the default shift); `removeBlocked` says why. */
   onRemove?: (ids: string[]) => Promise<void>;
   note?: ReactNode;
@@ -161,8 +164,8 @@ export function TemplateEditPeople({
   const run = async (what: 'add' | 'remove') => {
     setBusy(what);
     try {
-      if (what === 'add') await onAdd(toAdd); else await onRemove?.(toRemove);
-      setPicked(new Set());
+      const kept = what === 'add' ? await onAdd(toAdd) : await onRemove?.(toRemove);
+      if (kept !== false) setPicked(new Set());
     } finally { setBusy(''); }
   };
 

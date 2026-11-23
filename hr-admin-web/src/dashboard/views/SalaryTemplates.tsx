@@ -48,6 +48,8 @@ import type { LoadState } from '../ui';
 import * as L from './look';
 import './look.css';
 import { IconClose, IconPlus } from '../icons';
+import { SalaryTemplateTabs } from './SalaryTemplatePeople';
+import { MissingSalaryNotice } from './MissingSalaryNotice';
 
 type Mode = 'list' | 'detail' | 'edit';
 
@@ -500,6 +502,7 @@ export function SalaryTemplates() {
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
           <button onClick={newTemplate} className="lk-btn-p" style={primaryBtn}><IconPlus size={15} /> Create New</button>
         </div>
+        <MissingSalaryNotice where="templates" refreshKey={templates} />
         <Card style={L.cardPad}>
           {state !== 'ready' ? (
             <ListPending state={state} onRetry={() => { setState('loading'); void load(); }} rows={4} cols={3} avatar={false} rowHeight={48} />
@@ -558,6 +561,7 @@ export function SalaryTemplates() {
     const showPool = t.flexiblePoolPaise != null || t.components.some((c) => canBeFlexible(phByCode.get(c.payHeadCode)));
 
     return (
+      <SalaryTemplateTabs key={t.code} template={t} templates={templates} phByCode={phByCode} onChanged={() => void load()}>
       <div>
         <Card style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '20px 20px 16px' }}>
@@ -635,6 +639,7 @@ export function SalaryTemplates() {
 
         <div style={{ marginTop: 16, fontSize: 12, color: 'var(--ink-3)' }}>Paid days (attendance rules, paid leave, all days paid) are set in <strong>Paid Days Templates</strong>, per person.</div>
       </div>
+      </SalaryTemplateTabs>
     );
   }
 
