@@ -341,6 +341,7 @@ export async function mySalarySummary(userId: string, periodRaw: unknown, now = 
     daysPaid: null,
     daysInPeriod: range ? daysBetween(range.from, range.to) : null,
     baseDays: range?.baseDays ?? null,
+    periodBaseDays: range?.baseDays ?? null,
     grossPaise: null,
     takeHomePaise: null,
     lines: [] as SalaryLine[],
@@ -422,6 +423,8 @@ export async function mySalarySummary(userId: string, periodRaw: unknown, now = 
       });
     }
     const daysPaid = inputs?.payableDays ?? (baseDays !== null ? Math.max(0, baseDays - pay.lopDays - pay.notEmployedDays) : null);
+    // What the paid days are out of: the days employed (16 for a 16 Oct joiner), never the whole month.
+    const employedDays = baseDays !== null ? Math.max(0, baseDays - pay.notEmployedDays) : null;
     return {
       ...base,
       released: true,
@@ -429,8 +432,10 @@ export async function mySalarySummary(userId: string, periodRaw: unknown, now = 
       periodFrom: from,
       periodTo: to,
       daysPaid,
-      daysInPeriod: daysBetween(from, to),
-      baseDays,
+      daysInPeriod: daysBetween(from, to) - pay.notEmployedDays,
+      // The app shows "<daysPaid> of <baseDays> days paid": the days employed. The run's own base days are periodBaseDays.
+      baseDays: employedDays,
+      periodBaseDays: baseDays,
       grossPaise: pay.grossPaise,
       takeHomePaise: pay.takeHomePaise,
       lines,
@@ -514,8 +519,10 @@ export async function mySalarySummary(userId: string, periodRaw: unknown, now = 
     periodFrom: range.from,
     periodTo: range.to,
     daysPaid: Math.max(0, range.baseDays - s.lopDays - s.notEmployedDays),
-    daysInPeriod: daysBetween(range.from, range.to),
-    baseDays: range.baseDays,
+    daysInPeriod: daysBetween(range.from, range.to) - s.notEmployedDays,
+    // The app shows "<daysPaid> of <baseDays> days paid": the days employed. The period's own base days are periodBaseDays.
+    baseDays: Math.max(0, range.baseDays - s.notEmployedDays),
+    periodBaseDays: range.baseDays,
     grossPaise: s.grossPaise,
     takeHomePaise: s.takeHomePaise,
     lines,

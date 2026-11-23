@@ -345,15 +345,16 @@ async function salaryCard(org: string, userId: string, joined: string | undefine
   if ('notSetUp' in pay && pay.notSetUp) return { period: prev, label, ...pay.notSetUp };
   if (!('salary' in pay) || !pay.salary) return null;
   const s = pay.salary;
-  const daysInPeriod = s.baseDays;
+  // The days they were employed in it (16 for someone who joined on 16 Oct), never the whole month.
+  const daysInPeriod = s.baseDays === null ? null : Math.max(0, s.baseDays - s.notEmployedDays);
   return {
     period: prev,
     label,
     notConfigured: false,
     released: s.status === 'final',
     payslipId: s.payslipId,
-    // Paid days = the period's base days less the days lost and the days not employed; unknown when the payslip has no base days.
-    daysPaid: daysInPeriod === null ? null : Math.max(0, daysInPeriod - s.lopDays - s.notEmployedDays),
+    // Paid days = the days employed less the real loss of pay; unknown when the payslip has no base days.
+    daysPaid: daysInPeriod === null ? null : Math.max(0, daysInPeriod - s.lopDays),
     daysInPeriod,
     grossPaise: s.grossPaise,
     takeHomePaise: s.takeHomePaise,

@@ -9,7 +9,7 @@ import { type PayslipDTO } from '../services/payroll';
 export const BEFORE_JOINING = 'Before joining';
 export const AFTER_LEAVING = 'After leaving';
 
-type Inputs = Pick<PayslipDTO['inputs'], 'lopDays' | 'lopEnteredByHr' | 'attendanceDeductions'> | null | undefined;
+type Inputs = (Pick<PayslipDTO['inputs'], 'lopDays' | 'lopEnteredByHr' | 'attendanceDeductions'> & { workingDays?: number }) | null | undefined;
 type SlipForDays = { earnings: { fullPaise: number; paidPaise: number }[]; inputs: Inputs };
 
 const linesDays = (inputs: Inputs, label: string) =>
@@ -23,6 +23,9 @@ export function notEmployedOf(inputs: Inputs): { beforeJoining: number; afterLea
   const afterLeaving = Math.min(linesDays(inputs, AFTER_LEAVING), lop - beforeJoining);
   return { beforeJoining, afterLeaving, days: beforeJoining + afterLeaving };
 }
+
+/** The days employed in the period: what paid days are out of (16 for a 16 Oct joiner), never the whole month. */
+export const employedDaysOf = (inputs: Inputs) => Math.max(0, (inputs?.workingDays ?? 0) - notEmployedOf(inputs).days);
 
 /** Real loss of pay: the days not paid less the days not employed. */
 export const lossOfPayDaysOf = (inputs: Inputs) => Math.max(0, (inputs?.lopDays ?? 0) - notEmployedOf(inputs).days);
@@ -53,11 +56,11 @@ export const shortDay = (iso?: string | null) =>
 
 const dayWord = (n: number) => `${n} ${n === 1 ? 'day' : 'days'}`;
 
-/** "Joined 16 Oct · 15 days before joining", "Left 25 Oct · 6 days after leaving"; '' when none. */
+/** "Joined 16 Oct", "Left 25 Oct" (the day count when the date is not known); '' when neither. */
 export function notEmployedNote(slip: { joiningDate?: string; inputs: Inputs & { leftOn?: string } }): string {
   const n = notEmployedOf(slip.inputs);
   const parts: string[] = [];
-  if (n.beforeJoining > 0) parts.push(`${slip.joiningDate ? `Joined ${shortDay(slip.joiningDate)} · ` : ''}${dayWord(n.beforeJoining)} before joining`);
-  if (n.afterLeaving > 0) parts.push(`${slip.inputs?.leftOn ? `Left ${shortDay(slip.inputs.leftOn)} · ` : ''}${dayWord(n.afterLeaving)} after leaving`);
+  if (n.beforeJoining > 0) parts.push(slip.joiningDate ? `Joined ${shortDay(slip.joiningDate)}` : `${dayWord(n.beforeJoining)} before joining`);
+  if (n.afterLeaving > 0) parts.push(slip.inputs?.leftOn ? `Left ${shortDay(slip.inputs.leftOn)}` : `${dayWord(n.afterLeaving)} after leaving`);
   return parts.join(' · ');
 }

@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { getEmployeeCalendar } from '../services/hrms';
 import type { CalendarDayDTO, EmployeeCalendarDTO } from '../services/hrms';
 import { DEDUCTION_TRIGGER_LABELS, inr, type DeductionTrigger, type PayslipDTO } from '../services/payroll';
-import { isNotEmployedLine, lossOfPayDaysOf, lossOfPayPaiseOf, notEmployedNote, notEmployedOf, notEmployedPaiseOf } from './payslipDays';
+import { employedDaysOf, isNotEmployedLine, lossOfPayDaysOf, lossOfPayPaiseOf, notEmployedNote, notEmployedOf, notEmployedPaiseOf } from './payslipDays';
 
 const periodTitle = (period: string) =>
   new Date(`${period}-01T00:00:00Z`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -49,9 +49,9 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-.01em' }}>Loss of pay · {periodTitle(payslip.period)}</div>
             <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>
-              {lopDays} of {payslip.inputs.workingDays} paid days deducted · {inr(lopPaise)}
+              {lopDays} of {employedDaysOf(payslip.inputs)} days employed deducted · {inr(lopPaise)}
               {(payslip.inputs.paidLeaveDaysApplied ?? 0) > 0 && ` · ${payslip.inputs.paidLeaveDaysApplied} ${payslip.inputs.paidLeaveDaysApplied === 1 ? 'day' : 'days'} covered by paid leave`}
-              {notEmployed.days > 0 && ` · not employed ${notEmployed.days} ${notEmployed.days === 1 ? 'day' : 'days'}`}
+              {notEmployed.days > 0 && ` · ${notEmployedNote(payslip)}`}
             </div>
           </div>
           <button type="button" onClick={onClose} style={{ background: 'var(--surface)', border: '1px solid var(--line-2)', borderRadius: 999, width: 32, height: 32, cursor: 'pointer', fontSize: 16, color: 'var(--ink-2)' }}>×</button>
@@ -60,7 +60,7 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
           {error && <div style={{ color: 'var(--bad)', fontWeight: 400, padding: '14px 0' }}>{error}</div>}
           {notEmployed.days > 0 && (
             <div style={{ marginTop: 16, background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 14, padding: '12px 14px' }}>
-              <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>Not employed · {notEmployedNote(payslip)}</div>
+              <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>Not employed · {notEmployed.days} {notEmployed.days === 1 ? 'day' : 'days'} · {notEmployedNote(payslip)}</div>
               <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 4 }}>
                 Not paid, and not loss of pay: they were not with the company on these days. {inr(notEmployedPaise)}.
               </div>

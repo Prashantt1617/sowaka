@@ -15,6 +15,7 @@ export const AFTER_LEAVING = 'After leaving';
 
 /** What these helpers read of a payslip's inputs. */
 export interface PayslipDayInputs {
+  workingDays?: number;
   lopDays?: number;
   lopEnteredByHr?: boolean;
   attendanceDeductions?: { label: string; days: number }[];
@@ -45,6 +46,15 @@ export function notEmployedOf(inputs: PayslipDayInputs | null | undefined): { be
 /** Days not paid because the person was not employed then (before joining, after leaving). */
 export function notEmployedDaysOf(inputs: PayslipDayInputs | null | undefined): number {
   return notEmployedOf(inputs).days;
+}
+
+/**
+ * The days the person was employed in the period: its base days less the days
+ * not employed. What paid days are out of (16 for someone who joined on 16 Oct),
+ * never the whole month.
+ */
+export function employedDaysOf(inputs: PayslipDayInputs | null | undefined): number {
+  return Math.max(0, (inputs?.workingDays ?? 0) - notEmployedDaysOf(inputs));
 }
 
 /** Real loss of pay: the days not paid less the days not employed. */

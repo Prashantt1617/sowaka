@@ -22,7 +22,7 @@ import { closeDueExits, endAccessNow, exitSettings, listExits, recordExit, setEx
 import { createRun, listRuns, recomputeRun } from '../services/payrollRun.service';
 import { paymentDetails, salaryRegister } from '../services/payrollReports.service';
 import { payslipHtml } from '../services/payslip-html';
-import { lossOfPayDaysOf, lossOfPayPaiseOf, notEmployedDaysOf, notEmployedPaiseOf, unpaidPaiseOf } from '../services/payslipDays';
+import { employedDaysOf, lossOfPayDaysOf, lossOfPayPaiseOf, notEmployedDaysOf, notEmployedPaiseOf, unpaidPaiseOf } from '../services/payslipDays';
 import { fromPayslip } from '../services/employeePayroll.home';
 import { createShift, setDefaultShift } from '../services/shift.service';
 import { ZOHO_CATALOG, ZOHO_TEMPLATES } from './payroll-zoho-check';
@@ -213,11 +213,11 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
   const joinerSlip = (await slip('joiner'))!;
   ok('the run still does not pay the 15 days before joining', joinerSlip.inputs.lopDays === 15 && joinerSlip.inputs.payableDays === 15 && joinerSlip.inputs.notEmployedDays === 15, joinerSlip.inputs);
   ok('…its pay is half the month, as before', Math.abs(joinerSlip.grossPaise / stayerSlip!.grossPaise - 15 / 30) < 0.01, [joinerSlip.grossPaise, stayerSlip?.grossPaise]);
-  ok('…loss of pay 0, not employed 15', lossOfPayDaysOf(joinerSlip.inputs) === 0 && notEmployedDaysOf(joinerSlip.inputs) === 15);
+  ok('…loss of pay 0, not employed 15, employed 15 of the 30 days', lossOfPayDaysOf(joinerSlip.inputs) === 0 && notEmployedDaysOf(joinerSlip.inputs) === 15 && employedDaysOf(joinerSlip.inputs) === 15);
   ok('…all the unpaid amount is "not employed"', unpaidPaiseOf(joinerSlip) > 0 && notEmployedPaiseOf(joinerSlip) === unpaidPaiseOf(joinerSlip) && lossOfPayPaiseOf(joinerSlip) === 0);
   const joinerHtml = await asHtml(joinerSlip, '2026-09-16');
   ok('the payslip has no loss-of-pay line, a "Not employed" one instead', !/Loss of pay ·/.test(joinerHtml) && joinerHtml.includes('Not employed · 15 days (joined 16 Sep)'), joinerHtml.match(/<div class="n">[^<]*<\/div>/g));
-  ok('…its days: 15 paid, 0 loss of pay, 15 before joining', joinerHtml.includes('<span>Paid days</span><span>15</span>') && joinerHtml.includes('<span>Loss of pay days</span><span>0</span>') && joinerHtml.includes('<span>Before joining</span><span>15</span>'));
+  ok('…its days: 15 paid, 0 loss of pay, joined 16 Sep (never "of 30")', joinerHtml.includes('<span>Paid days</span><span>15</span>') && joinerHtml.includes('<span>Loss of pay days</span><span>0</span>') && joinerHtml.includes('<span>Joined</span><span>16 Sep</span>'));
   ok('…and the same net pay', joinerHtml.includes(`<div class="amt">${inr(joinerSlip.netPayablePaise)}</div>`));
   const app = fromPayslip(joinerSlip);
   ok('the app: loss of pay 0, 15 days not employed (joined 16 Sep), the same take-home', app.lopDays === 0 && app.lopPaise === 0 && app.notEmployedDays === 15 && app.notEmployedPaise === unpaidPaiseOf(joinerSlip)
@@ -225,12 +225,12 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
   const register = await salaryRegister('hr', MONTH, { includeDrafts: true });
   const regRow = register.rows.find((r) => r.employeeId === 'E7');
   ok('the salary register: LOP 0, 15 days not employed, paid days and net pay as on the slip', regRow?.lopDays === 0 && regRow.notEmployedDays === 15 && regRow.lopAmountPaise === 0
-    && regRow.notEmployedAmountPaise === unpaidPaiseOf(joinerSlip) && regRow.paidDays === 15 && regRow.netPayPaise === joinerSlip.netPayablePaise && regRow.notEmployedNote === '15 days before joining (joined 16 Sep)', regRow);
+    && regRow.notEmployedAmountPaise === unpaidPaiseOf(joinerSlip) && regRow.paidDays === 15 && regRow.employedDays === 15 && regRow.netPayPaise === joinerSlip.netPayablePaise && regRow.notEmployedNote === '15 days before joining (joined 16 Sep)', regRow);
   // Left on the 20th: the 10 days after are "After leaving".
   ok('the leaver: loss of pay 0, 10 days not employed, left 20 Sep', lossOfPayDaysOf(leaverSlip!.inputs) === 0 && notEmployedDaysOf(leaverSlip!.inputs) === 10 && leaverSlip!.inputs.leftOn === '2026-09-20', leaverSlip?.inputs);
   const leaverHtml = await asHtml(leaverSlip!, '2025-01-01');
-  ok('…their payslip: "Not employed · 10 days (left 20 Sep)", 10 after leaving, the same net pay', !/Loss of pay ·/.test(leaverHtml) && leaverHtml.includes('Not employed · 10 days (left 20 Sep)')
-    && leaverHtml.includes('<span>After leaving</span><span>10</span>') && leaverHtml.includes(`<div class="amt">${inr(leaverSlip!.netPayablePaise)}</div>`));
+  ok('…their payslip: "Not employed · 10 days (left 20 Sep)", 20 paid, 0 loss of pay, left 20 Sep, the same net pay', !/Loss of pay ·/.test(leaverHtml) && leaverHtml.includes('Not employed · 10 days (left 20 Sep)')
+    && leaverHtml.includes('<span>Paid days</span><span>20</span>') && leaverHtml.includes('<span>Loss of pay days</span><span>0</span>') && leaverHtml.includes('<span>Left</span><span>20 Sep</span>') && leaverHtml.includes(`<div class="amt">${inr(leaverSlip!.netPayablePaise)}</div>`));
   // Joined the 15th, left the 29th: both, on one line.
   const freshSlip = (await slip('fresh'))!;
   ok('joined and left in the month: 14 before + 1 after, not loss of pay', notEmployedDaysOf(freshSlip.inputs) === 15 && lossOfPayDaysOf(freshSlip.inputs) === freshSlip.inputs.lopDays - 15

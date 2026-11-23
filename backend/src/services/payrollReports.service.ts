@@ -17,7 +17,7 @@ import { workStateOf } from './statutorySettings.service';
 import { decryptField, fieldKeyConfigured } from './fieldCrypto';
 import { payrollAccessOf } from './payrollAccess.service';
 import { billCategories } from './reimbursementBills.service';
-import { AFTER_LEAVING, BEFORE_JOINING, lossOfPayDaysOf, lossOfPayPaiseOf, notEmployedOf, notEmployedPaiseOf, notEmployedWords } from './payslipDays';
+import { AFTER_LEAVING, BEFORE_JOINING, employedDaysOf, lossOfPayDaysOf, lossOfPayPaiseOf, notEmployedOf, notEmployedPaiseOf, notEmployedWords } from './payslipDays';
 
 type Opts = { includeDrafts?: boolean };
 type StoredRun = PayrollRun & { _id: ObjectId };
@@ -255,7 +255,9 @@ export async function salaryRegister(viewer: string, periodIn: unknown, opts: Op
         ifsc: pay?.ifsc ?? '',
         annualCtcPaise: s.annualCtcPaise ?? 0,
         baseDays: s.inputs?.workingDays ?? 0,
-        // Real loss of pay; the days before joining / after leaving are notEmployedDays (lopOf).
+        // The days employed in the period (what paid days are out of: 16 for a 16 Oct joiner), and the real
+        // loss of pay; the days before joining / after leaving are notEmployedDays (lopOf).
+        employedDays: employedDaysOf(s.inputs),
         lopDays: lossOfPayDaysOf(s.inputs),
         paidDays: s.inputs?.payableDays ?? 0,
         ...lopOf(s),

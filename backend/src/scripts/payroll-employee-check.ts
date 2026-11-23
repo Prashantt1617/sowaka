@@ -370,12 +370,14 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
     eSal.notEmployed?.days === 4 && eSal.notEmployed.beforeJoiningDays === 4 && eNot?.kind === 'not_employed' && eNot.label === 'Not employed · 4 days (joined 5 Nov)'
       && /not loss of pay/.test(eNot.explanation) && eNot.amountPaise === eSal.notEmployed.amountPaise && !/before you joined/.test(eLop?.explanation ?? ''), [eSal.notEmployed, eNot, eLop, eSal.lop]);
   check('joiner: loss of pay is only the days since joining; paid days leave out both',
-    eSal.lop !== null && eSal.lop.days === (eLop ? Number(/· (\d+)/.exec(eLop.label)?.[1] ?? -1) : 0) && eSal.daysPaid === (eSal.baseDays ?? 0) - eSal.lop.days - 4, [eSal.lop, eSal.daysPaid, eSal.baseDays]);
+    eSal.lop !== null && eSal.lop.days === (eLop ? Number(/· (\d+)/.exec(eLop.label)?.[1] ?? -1) : 0) && eSal.daysPaid === (eSal.baseDays ?? 0) - eSal.lop.days
+      // "<daysPaid> of <baseDays> days paid" is out of the 26 days employed, not the 30 of November.
+      && eSal.baseDays === 26 && eSal.periodBaseDays === 30, [eSal.lop, eSal.daysPaid, eSal.baseDays, eSal.periodBaseDays]);
   check('joiner: the receipt still adds up to the take-home',
     eSal.takeHomePaise === eSal.lines.reduce((t, l) => t + (l.kind === 'earning' ? l.amountPaise : -l.amountPaise), 0), eSal.lines);
   const eHome = (await homeOn('esha', undefined, nov11)).salary;
   check('joiner: Home\'s estimate says the same (loss of pay apart from the 4 days not employed)',
-    eHome !== null && eHome.notEmployedDays === 4 && eHome.lopDays === eSal.lop?.days && eHome.notEmployedWhen === 'joined 5 Nov'
+    eHome != null && eHome.notEmployedDays === 4 && eHome.lopDays === eSal.lop?.days && eHome.notEmployedWhen === 'joined 5 Nov'
       && eHome.lopPaise === (eLop?.amountPaise ?? 0) && eHome.notEmployedPaise === eNot?.amountPaise && eHome.takeHomePaise === eSal.takeHomePaise, eHome);
   // The cards' extra runs (and October's TDS) go again, so later checks see the company as it was.
   await payslips().deleteMany({ runId: { $in: cardRuns } });

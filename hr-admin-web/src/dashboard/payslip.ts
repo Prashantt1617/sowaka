@@ -7,7 +7,7 @@
 import { type PayslipDTO } from '../services/payroll';
 import { brandOf } from './brand';
 import { downloadHtmlAsPdf } from './pdf';
-import { lossOfPayDaysOf, notEmployedOf } from './payslipDays';
+import { lossOfPayDaysOf, notEmployedOf, shortDay } from './payslipDays';
 
 const esc = (value: string) => value.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] ?? ch));
 
@@ -80,7 +80,7 @@ export function payslipHtml(slip: PayslipDTO, company: PayslipCompany, dates?: P
   const structureReimb = reimbLines.reduce((t, r) => t + r.amount, 0);
   if (slip.reimbursementsPaise - structureReimb > 0) reimbLines.push({ name: 'Business Expense Reimbursements', amount: slip.reimbursementsPaise - structureReimb });
   const net = slip.netPayablePaise;
-  // Days before joining / after leaving are not loss of pay: shown apart.
+  // Days before joining / after leaving are not loss of pay: Paid Days (the days employed less real LOP) and LOP Days, then when they joined / left.
   const notEmployed = notEmployedOf(slip.inputs);
   const rows = Math.max(earnings.length, deductions.length);
   const cell = (x?: { name: string; amount: number; ytd?: number }) =>
@@ -138,8 +138,8 @@ export function payslipHtml(slip: PayslipDTO, company: PayslipCompany, dates?: P
       <div class="days">
         <div class="kv"><span>Paid Days</span><span>:</span><span>${slip.inputs.payableDays}</span></div>
         <div class="kv"><span>LOP Days</span><span>:</span><span>${lossOfPayDaysOf(slip.inputs)}</span></div>
-        ${notEmployed.beforeJoining > 0 ? `<div class="kv"><span>Before Joining</span><span>:</span><span>${notEmployed.beforeJoining}</span></div>` : ''}
-        ${notEmployed.afterLeaving > 0 ? `<div class="kv"><span>After Leaving</span><span>:</span><span>${notEmployed.afterLeaving}</span></div>` : ''}
+        ${notEmployed.beforeJoining > 0 ? `<div class="kv"><span>${slip.joiningDate ? 'Joined' : 'Before Joining'}</span><span>:</span><span>${slip.joiningDate ? esc(shortDay(slip.joiningDate)) : `${notEmployed.beforeJoining} days`}</span></div>` : ''}
+        ${notEmployed.afterLeaving > 0 ? `<div class="kv"><span>${slip.inputs.leftOn ? 'Left' : 'After Leaving'}</span><span>:</span><span>${slip.inputs.leftOn ? esc(shortDay(slip.inputs.leftOn)) : `${notEmployed.afterLeaving} days`}</span></div>` : ''}
       </div>
     </div>
   </div>

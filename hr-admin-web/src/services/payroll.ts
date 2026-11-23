@@ -673,8 +673,8 @@ export type SalaryRegisterRow = {
   baseDays: number; lopDays: number; paidDays: number;
   /** How the loss of pay came about (older servers leave these out). */
   lopSource?: string; attendanceLopDays?: number; lopBreakdown?: string; paidLeaveCoveredDays?: number; fullGrossPaise?: number; lopAmountPaise?: number;
-  /** The days before joining / after leaving: not paid, not loss of pay (lopDays leaves them out). */
-  notEmployedDays?: number; beforeJoiningDays?: number; afterLeavingDays?: number; notEmployedAmountPaise?: number; notEmployedNote?: string;
+  /** The days before joining / after leaving: not paid, not loss of pay (lopDays leaves them out). employedDays = baseDays less them. */
+  employedDays?: number; notEmployedDays?: number; beforeJoiningDays?: number; afterLeavingDays?: number; notEmployedAmountPaise?: number; notEmployedNote?: string;
   earnings: Record<string, number>; grossPaise: number; reimbursements: Record<string, number>; reimbursementsPaise: number;
   deductions: Record<string, number>; taxOnIncomePaise: number; surchargePaise: number; cessPaise: number; incomeTaxPaise: number;
   totalDeductionsPaise: number; employer: Record<string, number>; employerTotalPaise: number; netPayPaise: number;

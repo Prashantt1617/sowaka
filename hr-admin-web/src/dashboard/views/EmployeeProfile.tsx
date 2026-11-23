@@ -39,7 +39,7 @@ import { EmployeeActivity } from './EmployeeActivity';
 import { isSelfOrBelow } from './selfOrBelow';
 import { IncomeTaxCard } from './IncomeTaxCard';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
-import { lossOfPayDaysOf, notEmployedNote } from '../payslipDays';
+import { employedDaysOf, lossOfPayDaysOf, notEmployedNote } from '../payslipDays';
 import { downloadPayslipPdf } from '../payslip';
 import { downloadTdsSheetPdf } from '../tdsSheet';
 import type { CalendarDayDTO, CalendarDayStatus, EmployeeCalendarDTO, HrDayStatus, LeaveBalanceItemDTO } from '../../services/hrms';
@@ -620,14 +620,14 @@ function SalarySlips({ userId }: { userId: string }) {
             const full = payslip.earnings.reduce((t, e) => t + e.fullPaise, 0) + payslip.inputs.overtimePaise + payslip.reimbursementsPaise;
             const lopPaise = payslip.earnings.reduce((t, e) => t + (e.fullPaise - e.paidPaise), 0);
             const lines = (payslip.inputs.attendanceDeductions ?? []).filter((l) => l.days > 0);
-            // Real loss of pay; the days before joining / after leaving are a note under it, not loss of pay.
+            // Paid days out of the days employed, and real loss of pay; "Joined 16 Oct" / "Left …" as a note, not loss of pay.
             const lopDays = lossOfPayDaysOf(payslip.inputs);
             const notEmployed = notEmployedNote(payslip);
             return (
               <tr key={run.id}>
                 <td style={slipTd}><b>{periodTitle(run.period)}</b></td>
                 <td style={slipTd}><Pill label={tone.label} tone={{ bg: tone.bg, fg: tone.fg }} /></td>
-                <td style={{ ...slipTd, textAlign: 'right' }}>{payslip.inputs.payableDays} / {payslip.inputs.workingDays}</td>
+                <td style={{ ...slipTd, textAlign: 'right' }}>{payslip.inputs.payableDays} / {employedDaysOf(payslip.inputs)}</td>
                 <td style={{ ...slipTd, textAlign: 'right' }}>
                   {(lopDays > 0 || notEmployed) && lines.length > 0 ? (
                     <button type="button" onClick={() => setExplain(payslip)} title={lopDays > 0 ? 'Why is there a loss of pay?' : 'The days not paid'} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: lopDays ? 'var(--bad)' : 'var(--ink-4)', fontWeight: 500, fontSize: 14, fontFamily: 'inherit', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3 }}>

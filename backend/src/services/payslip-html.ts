@@ -5,7 +5,7 @@
  * is on the slip rather than folded silently into a smaller earned figure.
  */
 import { DEDUCTION_TRIGGER_LABELS, DeductionTrigger } from '../models/deduction.model';
-import { AFTER_LEAVING, BEFORE_JOINING, lossOfPayDaysOf, lossOfPayPaiseOf, notEmployedOf, notEmployedPaiseOf, notEmployedWhen } from './payslipDays';
+import { AFTER_LEAVING, BEFORE_JOINING, lossOfPayDaysOf, lossOfPayPaiseOf, notEmployedOf, notEmployedPaiseOf, notEmployedWhen, shortDayLabel } from './payslipDays';
 
 export interface PayslipForHtml {
   employeeName: string;
@@ -64,6 +64,7 @@ export function payslipHtml(slip: PayslipForHtml, company: { name: string; addre
   const fullEarnings = slip.earnings.reduce((t, e) => t + e.fullPaise, 0);
   // The days not paid, told apart: loss of pay, and the days before joining / after leaving
   // (not employed then: not loss of pay). The two amounts add up to what the earnings lost.
+  // Paid days (payableDays) are already the days employed less the real loss of pay.
   const notEmployed = notEmployedOf(slip.inputs);
   const lopDays = lossOfPayDaysOf(slip.inputs);
   const lopPaise = lossOfPayPaiseOf(slip);
@@ -136,7 +137,7 @@ export function payslipHtml(slip: PayslipForHtml, company: { name: string; addre
       <div class="kv"><span>Pay date</span><span>${esc(dateLabel(lastDayOf(slip.period)))}</span></div>
     </div>
     <div class="net"><div class="top"><div class="amt">${inr(net)}</div><div class="cap">Total net pay</div></div>
-      <div class="days"><div class="kv"><span>Paid days</span><span>${slip.inputs.payableDays}</span></div><div class="kv"><span>Loss of pay days</span><span>${lopDays}</span></div>${notEmployed.beforeJoining > 0 ? `<div class="kv"><span>Before joining</span><span>${notEmployed.beforeJoining}</span></div>` : ''}${notEmployed.afterLeaving > 0 ? `<div class="kv"><span>After leaving</span><span>${notEmployed.afterLeaving}</span></div>` : ''}${covered > 0 ? `<div class="kv"><span>Covered by paid leave</span><span>${covered}</span></div>` : ''}</div>
+      <div class="days"><div class="kv"><span>Paid days</span><span>${slip.inputs.payableDays}</span></div><div class="kv"><span>Loss of pay days</span><span>${lopDays}</span></div>${notEmployed.beforeJoining > 0 ? `<div class="kv"><span>${slip.joiningDate ? 'Joined' : 'Before joining'}</span><span>${slip.joiningDate ? esc(shortDayLabel(slip.joiningDate)) : `${notEmployed.beforeJoining} days`}</span></div>` : ''}${notEmployed.afterLeaving > 0 ? `<div class="kv"><span>${slip.inputs.leftOn ? 'Left' : 'After leaving'}</span><span>${slip.inputs.leftOn ? esc(shortDayLabel(slip.inputs.leftOn)) : `${notEmployed.afterLeaving} days`}</span></div>` : ''}${covered > 0 ? `<div class="kv"><span>Covered by paid leave</span><span>${covered}</span></div>` : ''}</div>
     </div>
   </div>
   <div class="cols">

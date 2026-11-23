@@ -12,7 +12,7 @@ import { notFbpBillFilter } from '../../services/reimbursementBills.service';
 import { defineTools, rupees, str, SuwiContext } from '../tools';
 import { allRuns, bestByPeriod, daysInMonth, delta, lastDayOf, monthLabel, pct, showLines, slipLines, slipsOfRun, STATUS_LABEL, StoredRun, StoredSlip, taxSource } from './payroll-common';
 import { payslips } from '../../config/db';
-import { lossOfPayDaysOf, lossOfPayPaiseOf, notEmployedDaysOf, notEmployedPaiseOf, notEmployedWords } from '../../services/payslipDays';
+import { employedDaysOf, lossOfPayDaysOf, lossOfPayPaiseOf, notEmployedDaysOf, notEmployedPaiseOf, notEmployedWords } from '../../services/payslipDays';
 
 const ACTIVE = { lifecycleStatus: { $nin: ['offboarded', 'terminated'] } } as const;
 
@@ -58,7 +58,8 @@ function monthView(s: StoredSlip, run: StoredRun) {
     days: {
       // Real loss of pay; the days before joining / after leaving are notEmployedDays (not paid, not loss of pay).
       daysInMonth: i?.workingDays ?? 0, lopDays: lossOfPayDaysOf(i), paidDays: i?.payableDays ?? 0,
-      ...(notEmployedDaysOf(i) > 0 ? { notEmployedDays: notEmployedDaysOf(i), notEmployed: notEmployedWords(i, s.joiningDate, i?.leftOn) } : {}),
+      // Paid days are out of the days employed (16 for a 16 Oct joiner), not the whole month.
+      ...(notEmployedDaysOf(i) > 0 ? { daysEmployed: employedDaysOf(i), notEmployedDays: notEmployedDaysOf(i), notEmployed: notEmployedWords(i, s.joiningDate, i?.leftOn) } : {}),
       lopFromAttendance: i?.attendanceLopDays, lopTypedByHr: i?.lopEnteredByHr === true,
       attendanceRules: (i?.attendanceDeductions ?? []).filter((r) => r.days > 0).map((r) => `${r.label}: ${r.count} → ${r.days} day${r.days === 1 ? '' : 's'}`),
       paidLeaveApplied: i?.paidLeaveDaysApplied ?? 0,
