@@ -161,7 +161,11 @@ async function basicView(journey: Journey) {
     ...(p.personal?.gender ? { gender: p.personal.gender } : {}),
     ...(p.personal?.dob ? { dob: p.personal.dob } : {}),
     ...(manager ? { reportingManager: { userId: manager.userId, name: manager.name } } : {}),
-    ...(journey.appAccess ? { appAccess: { userId: journey.appAccess.userId, createdAt: new Date(journey.appAccess.createdAt).toISOString() } } : {}),
+    ...(journey.appAccess ? { appAccess: {
+      userId: journey.appAccess.userId, createdAt: new Date(journey.appAccess.createdAt).toISOString(),
+      ...(journey.appAccess.emailedTo ? { emailedTo: journey.appAccess.emailedTo } : {}),
+      ...(journey.appAccess.emailedAt ? { emailedAt: new Date(journey.appAccess.emailedAt).toISOString() } : {}),
+    } } : {}),
   };
 }
 

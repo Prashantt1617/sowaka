@@ -338,7 +338,7 @@ export interface Journey {
   employeeId?: string;
   employeeType?: OfferFields['employeeType'];
   /** Onboarding: the app account HR made before joining ("Generate app access"); Mark joined uses it instead of making one. */
-  appAccess?: { userId: string; createdAt: Date; byUserId: string; byName: string };
+  appAccess?: { userId: string; createdAt: Date; byUserId: string; byName: string; emailedTo?: string; emailedAt?: Date };
   plant?: PlantState;
   /** Day-1 pass content HR fills (shown at Tj − 7). */
   day1Pass?: Day1Pass;

@@ -1052,7 +1052,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
     // Basic details (PUT …/profile/basic) and "Generate app access" (POST …/app-access); Mark joined then uses that account.
     let appUserId = '';
     {
-      type Basic = Record<string, unknown> & { appAccess?: { userId: string; createdAt: string } };
+      type Basic = Record<string, unknown> & { appAccess?: { userId: string; createdAt: string; emailedTo?: string; emailedAt?: string } };
       const basicOf = (b: unknown) => (b as { basic?: Basic }).basic;
       const putBasic = (payload: unknown, bearer = appToken) => call(lifecycleAdminRouter as never, 'PUT', `/journeys/${P}/profile/basic`, bearer, payload);
       const access = (payload: unknown, id = P, bearer = appToken) => call(lifecycleAdminRouter as never, 'POST', `/journeys/${id}/app-access`, bearer, payload);
@@ -1099,9 +1099,15 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
       ok('…the onboarding tab alone (IT) 403, another company 404; tab rule Onboarding or People › Employees',
         (await access({ workEmail: 'nia.profile@sowaka.test' }, P, itSess)).status === 403 && (await access({ workEmail: 'nia.profile@sowaka.test' }, P, otherSess)).status === 404
         && JSON.stringify(tabsForRequest('POST', `/admin/lifecycle/journeys/${P}/app-access`)) === '["onboarding","employees"]');
+      clearLifecycleOutbox();
       res = await access({ employeeId: 'SWT-201', workEmail: 'nia.profile@sowaka.test' });
       b = basicOf(res.body);
       appUserId = b?.appAccess?.userId ?? '';
+      const welcome = lifecycleOutbox().filter((m) => m.subject.includes('your Sowaka app is ready'));
+      ok('…the app-access mail: Mark joined’s welcome (sign in with the work email, open the app), to the personal address, the work one copied, worded for before Day 1',
+        welcome.length === 1 && welcome[0].to === 'nia.profile@example.com' && JSON.stringify(welcome[0].cc) === '["nia.profile@sowaka.test"]'
+        && welcome[0].html.includes('nia.profile@sowaka.test') && welcome[0].html.includes('go.getsowaka.com/open') && welcome[0].html.includes('Until you join') && !welcome[0].html.includes('From today'), welcome.map((m) => [m.to, m.cc, m.subject]));
+      ok('…`basic.appAccess` says where and when it was emailed', b?.appAccess?.emailedTo === 'nia.profile@example.com' && !Number.isNaN(Date.parse(String((b.appAccess as Record<string, unknown>).emailedAt))), b?.appAccess);
       const appUser = await db.users().findOne({ userId: appUserId });
       ok('app access: the account made as Mark joined makes it (work email, employee ID, role, team, place, manager, Tj, personal email); `basic.appAccess` back',
         res.status === 200 && !!appUser && appUser.org === ORG && appUser.email === 'nia.profile@sowaka.test' && appUser.employeeId === 'SWT-201' && appUser.designation === 'Product Designer'
@@ -1112,6 +1118,15 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
       res = await access({ employeeId: 'SWT-201', workEmail: 'nia.profile@sowaka.test' });
       ok('…a second time: 409 with the existing account', res.status === 409 && errorOf(res) === 'They already have app access' && (res.body as Basic).appAccess?.userId === appUserId, res.body);
       ok('…the app finds their joining portal through it before Day 1', (await auth.portalJourneyForAppUser(appUserId, ORG))?.id === P);
+      const meNia = { userId: appUserId, name: 'Nia R Profile', org: ORG };
+      const before = await appSvc.lifecycleMe(meNia) as { onboarding?: { journeyId?: string; stage?: string; portal?: boolean; tileVisible?: boolean } };
+      const session = await auth.portalSessionForAppUser(meNia);
+      ok('before Tj the app shows pre-boarding: /lifecycle/me onboarding { stage pre_boarding, portal: true }, and the in-app portal session opens their journey',
+        before.onboarding?.journeyId === P && before.onboarding.stage === 'pre_boarding' && before.onboarding.portal === true && before.onboarding.tileVisible === false
+        && auth.verifyPortalToken(session.token)?.sub === P, { before, url: session.url });
+      const onTjMe = await appSvc.lifecycleMe(meNia, at10(tj)) as { onboarding?: unknown };
+      ok('…on Tj, before Mark joined: no portal any more (it closes the day before) and no onboarding yet', !onTjMe.onboarding
+        && (await refusal(() => auth.portalSessionForAppUser(meNia, at10(tj)))).status === 404, onTjMe);
       ok('…Basic details then keep the account’s work email and employee ID (409 on a change), other fields still edit',
         (await putBasic({ workEmail: 'nia2@sowaka.test' })).status === 409 && (await putBasic({ employeeId: 'SWT-999' })).status === 409
         && (await putBasic({ workEmail: 'nia.profile@sowaka.test', employeeId: 'SWT-201', department: 'Design' })).status === 200);
@@ -1122,6 +1137,8 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
     const niaUser = await offersSvc.markJoined(HR, P, { workEmail: 'nia.profile@sowaka.test', employeeId: 'SWT-201' }, at10(tj));
     ok('Mark joined after app access: that account is the employee (no second one), the journey bound to it',
       niaUser.userId === appUserId && (await db.users().countDocuments({ email: 'nia.profile@sowaka.test' })) === 1 && (await jp()).userId === appUserId && (await jp()).status === 'joined');
+    const joinedMe = await appSvc.lifecycleMe({ userId: appUserId, name: 'Nia R Profile', org: ORG }, at10(tj)) as { onboarding?: { journeyId?: string; stage?: string; portal?: boolean } };
+    ok('…and from Mark joined the same account opens onboarding (Day 1), not the portal', joinedMe.onboarding?.journeyId === P && joinedMe.onboarding.portal === false && joinedMe.onboarding.stage !== 'pre_boarding', joinedMe.onboarding);
     ok('once joined, they leave the pre-boarding list', !((await call(lifecycleAdminRouter as never, 'GET', '/preboarding', appToken)).body as Row[]).some((x) => x.journeyId === P));
     const joinerHome = await joinerSvc.joinerOnboarding({ userId: niaUser.userId, name: 'Nia Profile', org: ORG }).catch((e: Error) => ({ error: e.message }));
     ok('the joiner app’s profile view carries `locked` per section', 'profile' in joinerHome && joinerHome.profile.sections.find((x) => x.key === 'emergency')?.locked === true

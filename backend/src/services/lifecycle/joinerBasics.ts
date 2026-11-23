@@ -13,6 +13,7 @@ import type { Journey, OfferFields } from '../../models/lifecycle.model';
 import { mayEditEmployees } from '../../middleware/admin.middleware';
 import { AdminError, createEmployeeForAdmin } from '../admin.service';
 import { isDateKey } from './dueRules';
+import { companyDisplayName, companyOf, mails, sendLifecycleEmail } from './emails';
 import { moveTj } from './engine';
 import { LifecycleOfferError } from './files';
 
@@ -135,8 +136,10 @@ export async function existingAppAccount(journey: Pick<Journey, 'org' | 'appAcce
 
 /**
  * POST …/app-access — `{ employeeId, workEmail }`: saved on the journey (Basic details' checks), then the
- * app account is made as Mark joined makes it. 409 (with `appAccess`) when it already exists. No email
- * goes out: the welcome mail ("from today…") is still sent at Mark joined.
+ * app account is made as Mark joined makes it, and Mark joined's welcome mail goes out (worded for before
+ * Day 1; `appAccess.emailedTo/emailedAt`). 409 (with `appAccess`) when it already exists. Before Tj the
+ * app opens their portal in-app (portalAuth `portalJourneyForAppUser` finds it by `appAccess.userId`);
+ * from Mark joined, onboarding as before.
  */
 export async function grantAppAccess(hr: { userId: string; name: string }, journey: Journey, input: unknown, now = new Date()): Promise<Journey> {
   assertPreboarding(journey);
@@ -156,7 +159,17 @@ export async function grantAppAccess(hr: { userId: string; name: string }, journ
   const fresh = journey.appAccess ? { ...journey, appAccess: undefined } : journey;
   const saved = await saveBasicDetails(fresh, { workEmail, employeeId }, now);
   const userId = await createJoinerAccount(hr, saved, { workEmail, ...(employeeId ? { employeeId } : {}) });
-  const appAccess = { userId, createdAt: now, byUserId: hr.userId, byName: hr.name };
+  let appAccess: NonNullable<Journey['appAccess']> = { userId, createdAt: now, byUserId: hr.userId, byName: hr.name };
   await journeys().updateOne({ id: journey.id }, { $set: { appAccess, updatedAt: now } });
+  // Mark joined's welcome mail (download links, sign in with the work email), worded for before Day 1: to the
+  // personal address they read, the work address copied (it may not be set up yet). EMAIL_ORGS still applies.
+  const to = journey.candidate?.personalEmail || workEmail;
+  try {
+    const company = companyDisplayName(await companyOf(journey.org), journey.org);
+    await sendLifecycleEmail(journey.org, to, `Welcome to ${company}: your Sowaka app is ready`,
+      mails.joinedWelcome(company, journey.candidate?.name ?? '', workEmail, { beforeDay1: true }), [], to.toLowerCase() === workEmail ? {} : { cc: [workEmail] });
+    appAccess = { ...appAccess, emailedTo: to.toLowerCase(), emailedAt: new Date() };
+    await journeys().updateOne({ id: journey.id }, { $set: { 'appAccess.emailedTo': appAccess.emailedTo, 'appAccess.emailedAt': appAccess.emailedAt } });
+  } catch { /* a mail that fails never undoes the account; no emailedAt then */ }
   return { ...saved, appAccess };
 }
