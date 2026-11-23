@@ -282,10 +282,13 @@ export const mails = {
       + p(`It works for ${minutes} minutes. If you didn't ask for it, ignore this email.`));
   },
   /** Mark joined: the app is theirs now, signed in with the new work email (a code by email, no password). */
-  joinedWelcome(company: string, name: string, workEmail: string) {
+  /** `beforeDay1`: HR's "Generate app access" before joining; the app carries on with the joining steps until Day 1. */
+  joinedWelcome(company: string, name: string, workEmail: string, opts: { beforeDay1?: boolean } = {}) {
     return layout(company,
       p(`Hi ${escapeHtml(firstName(name))},`)
-      + p(`Welcome to ${escapeHtml(company)}! You're all set up. From today, your first week, your tasks and everything else are in the Sowaka app.`)
+      + p(opts.beforeDay1
+        ? `Welcome to ${escapeHtml(company)}! Your Sowaka app account is ready. Until you join, the app carries on with your joining steps; from your first day, your first week, your tasks and everything else are there too.`
+        : `Welcome to ${escapeHtml(company)}! You're all set up. From today, your first week, your tasks and everything else are in the Sowaka app.`)
       + p(`<b>Sign in with your work email:</b> ${escapeHtml(workEmail)}<br />We'll email a sign-in code to that address each time; there's no password to remember.`)
       + p(`Don't have the app yet? The button below opens it, or takes you to the App Store or Google Play.`),
       { label: 'Open the Sowaka app', url: 'https://go.getsowaka.com/open' });

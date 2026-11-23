@@ -795,6 +795,8 @@ export async function ensureIndexes(database: Db): Promise<void> {
   }
   await getDb().collection('lifecycle_journeys').createIndex({ org: 1, kind: 1, status: 1 });
   await getDb().collection('lifecycle_journeys').createIndex({ userId: 1, kind: 1 });
+  // App access made before joining (joinerBasics.ts): the app finds the joiner's portal by it on every /lifecycle/me.
+  await getDb().collection('lifecycle_journeys').createIndex({ 'appAccess.userId': 1 }, { sparse: true });
   await getDb().collection('lifecycle_journey_tasks').createIndex({ journeyId: 1, order: 1 });
   await getDb().collection('lifecycle_journey_tasks').createIndex({ org: 1, status: 1, dueAt: 1 });
   await getDb().collection('lifecycle_offers').createIndex({ journeyId: 1 }, { unique: true });

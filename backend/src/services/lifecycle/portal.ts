@@ -20,6 +20,7 @@ import {
 import { closeJourney, completeTask, isManagerMeeting, journeyTasksView, meetingWithName, type TaskView } from './engine';
 import { LifecycleOfferError } from './files';
 import { maybeSendLettersReady, portalLetters, SIGNED_KINDS } from './letters';
+import { aboutYouValue } from './profile';
 import { assertSectionOpen } from './profileLock';
 import { CLOSED_STATUSES, mediaPath } from './portalAuth';
 import { addWorkingDaysKey, workCalendar } from './dueRules';
@@ -230,7 +231,6 @@ export async function markMeetSeen(journey: Journey, itemId: unknown): Promise<M
 
 // ─── About you ──────────────────────────────────────────────────────────────
 
-const RELATIONS = ['Parent', 'Partner', 'Sibling', 'Friend'] as const;
 /** '+91' and 10 digits (6–9 first), as '+91XXXXXXXXXX'; null when it is not one. */
 export function indianMobile(value: unknown): string | null {
   const digits = String(value ?? '').replace(/[\s()-]/g, '').replace(/^\+?91(?=\d{10}$)/, '').replace(/^0(?=\d{10}$)/, '');
@@ -249,37 +249,7 @@ export function aboutYouView(journey: Journey): AboutYou & { phone?: string; edi
 export async function saveAboutYou(journey: Journey, input: { emergencyContact?: unknown; emergencyContact2?: unknown; pf?: unknown }, now = new Date()): Promise<AboutYou & { phone?: string; editableUntil?: string }> {
   if (CLOSED_STATUSES.has(String(journey.status)) || String(journey.status) === 'joined') throw new LifecycleOfferError(409, 'This can no longer be changed here');
   if (journey.tj && istDate(now) >= journey.tj) throw new LifecycleOfferError(409, 'These details lock the day before you join; ask HR to change them');
-  const about: AboutYou = { ...aboutYouOf(journey) };
-  // One contact as the portal sends it: name, relation, mobile and an optional second number.
-  const contact = (raw: unknown, which: string): NonNullable<AboutYou['emergencyContact']> => {
-    const ec = (raw ?? {}) as Record<string, unknown>;
-    const name = String(ec.name ?? '').trim();
-    if (!name || name.length > 80) throw new LifecycleOfferError(400, `Add ${which}’s name`);
-    const relation = String(ec.relation ?? '') as (typeof RELATIONS)[number];
-    if (!RELATIONS.includes(relation)) throw new LifecycleOfferError(400, `Pick how ${which} is related to you`);
-    const phone = indianMobile(ec.phone);
-    if (!phone) throw new LifecycleOfferError(400, `The mobile number for ${which} must be +91 and 10 digits`);
-    if (phone === indianMobile(journey.candidate?.phone)) throw new LifecycleOfferError(400, 'Add someone else’s number, not your own');
-    const altRaw = String(ec.altPhone ?? '').replace(/[\s()+-]/g, '');
-    const alt = altRaw && altRaw !== '91' ? indianMobile(ec.altPhone) : null;
-    if (altRaw && altRaw !== '91' && !alt) throw new LifecycleOfferError(400, `The other number for ${which} must be +91 and 10 digits`);
-    return { name, relation, phone, ...(alt && alt !== phone ? { altPhone: alt } : {}) };
-  };
-  if (input.emergencyContact !== undefined) about.emergencyContact = contact(input.emergencyContact, 'your emergency contact');
-  if (input.emergencyContact2 !== undefined) {
-    if (input.emergencyContact2 === null) delete about.emergencyContact2;
-    else about.emergencyContact2 = contact(input.emergencyContact2, 'your second contact');
-  }
-  if (input.pf !== undefined) {
-    const pf = (input.pf ?? {}) as Record<string, unknown>;
-    if (pf.firstJob === true) about.pf = { firstJob: true };
-    else {
-      // The UAN is optional (the portal's "UAN (optional)"): HR can find it from the last employer's records.
-      const uan = String(pf.uan ?? '').replace(/\s/g, '');
-      if (uan && !/^\d{12}$/.test(uan)) throw new LifecycleOfferError(400, 'Your UAN is 12 digits');
-      about.pf = uan ? { firstJob: false, uan } : { firstJob: false };
-    }
-  }
+  const about: AboutYou = aboutYouValue(journey, input);
   if (input.emergencyContact === undefined && input.emergencyContact2 === undefined && input.pf === undefined) throw new LifecycleOfferError(400, 'Nothing to save');
   // A section HR has approved is locked: the emergency contacts go with Emergency contact, the PF with Bank account and PF.
   // Saving what is already there again is not a change.
