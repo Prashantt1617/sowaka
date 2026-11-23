@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { DrawerShell, CloseButton } from '../../drawers/shell';
 import { useStore } from '../../store';
-import { canSeePay } from '../../access';
+import { canOpen, canSeePay } from '../../access';
 import { LoadError, Pill, SkeletonLines } from '../../ui';
 import {
   AGENDA_TASK_KEYS, AGENDA_TASK_LABEL, decideBankPfRequest, decideDateRequest, fetchLifecycleFile, getJourney, isNotAvailable, journeyTaskAction, listTemplates, nudgeTask, offerStatusAction, reviewDocument, updateJourney,
@@ -28,6 +28,7 @@ import { DecisionDialog, ProbationMonths, RecommendationNote } from './Probation
 import { KIND_LABEL } from './letterDoc';
 import { downloadFile } from './DocumentParts';
 import { TAB_LABELS, columnLabel, pctColour, weekOf } from './boardModel';
+import { preboardingHref } from './preboardingLinks';
 
 const STATUS_LABEL: Record<string, string> = {
   draft: 'Offer not sent yet', offer_sent: 'Offer sent', accepted: 'Accepted, portal not sent', finalised: 'Finalised, portal sent', active: 'On the portal',
@@ -118,12 +119,30 @@ const month = (m?: string) => (m ? new Date(`${m}-01T00:00:00Z`).toLocaleDateStr
 /** What the candidate filled in on the portal's Employee profile (the secrets as their last four). */
 type Contact = { name: string; relation: string; phone: string; altPhone?: string };
 const contactLine = (c?: Contact) => (c ? `${c.name} (${c.relation}) · ${c.phone}${c.altPhone ? ` · ${c.altPhone}` : ''}` : '');
-function ProfileFacts({ profile: p, sections, emergency, emergency2, pf, onPhoto }: {
-  profile: NonNullable<JourneyDetail['journey']['profile']>; sections?: { done: number; total: number }; emergency?: Contact; emergency2?: Contact; pf?: { firstJob: boolean; uan?: string }; onPhoto: (id: string) => void;
+/**
+ * The Employee profile's heading, with the link to the candidate's pre-boarding profile (its own page, in a
+ * new tab), where HR sees every section and its documents and approves each section.
+ */
+function ProfileHead({ sections, href }: { sections?: { done: number; total: number }; href?: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+      <Sub>Employee profile{sections ? ` · ${sections.done} of ${sections.total} sections done` : ''}</Sub>
+      {href && (
+        <a href={href} target="_blank" rel="noopener" className="pd-btn sm" title="Every section and its documents, to review and approve (opens in a new tab)">
+          Employee profile
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
+        </a>
+      )}
+    </div>
+  );
+}
+
+function ProfileFacts({ profile: p, sections, href, emergency, emergency2, pf, onPhoto }: {
+  profile: NonNullable<JourneyDetail['journey']['profile']>; sections?: { done: number; total: number }; href?: string; emergency?: Contact; emergency2?: Contact; pf?: { firstJob: boolean; uan?: string }; onPhoto: (id: string) => void;
 }) {
   return (
     <>
-      <Sub>Employee profile{sections ? ` · ${sections.done} of ${sections.total} sections done` : ''}</Sub>
+      <ProfileHead sections={sections} href={href} />
       <Facts strong={false} rows={[
         ['Full name', p.personal ? `${p.personal.fullName}${p.personal.preferredName ? ` (${p.personal.preferredName})` : ''}` : ''],
         ['Date of birth', p.personal?.dob ? longDay(p.personal.dob) : ''],
@@ -233,6 +252,8 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
   const nudgeOpen = nudgeable.filter((t) => !t.nudgedToday);
   const revisionWaiting = Boolean(offer && offer.status === 'draft' && offer.version > 1);
   const bankPf = journey.bankPfRequest && (journey.bankPfRequest.status === 'pending' || journey.bankPfRequest.decidedAt) ? journey.bankPfRequest : null;
+  // The candidate's pre-boarding profile page: where HR approves each section (opens in a new tab).
+  const profileHref = canOpen(user, 'preboarding') ? preboardingHref(journey.id) : undefined;
 
   // Where they are on the nine steps; the Confirmed column has every step done.
   const cur = STEP_AT[journey.column] ?? 0;
@@ -380,7 +401,9 @@ export function JoinerPanel({ journeyId, onClose, onChanged }: { journeyId: stri
               </span>
               <span style={{ height: 8, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}><i style={{ display: 'block', height: '100%', width: `${profilePct}%`, borderRadius: 99, background: pctColour(profilePct) }} /></span>
             </span>
-            {journey.profile && <ProfileFacts profile={journey.profile} sections={journey.profileSections} emergency={journey.aboutYou?.emergencyContact} emergency2={journey.aboutYou?.emergencyContact2} pf={journey.aboutYou?.pf} onPhoto={(id) => setDialog({ kind: 'file', id, name: `Photo – ${name}` })} />}
+            {journey.profile
+              ? <ProfileFacts profile={journey.profile} sections={journey.profileSections} href={profileHref} emergency={journey.aboutYou?.emergencyContact} emergency2={journey.aboutYou?.emergencyContact2} pf={journey.aboutYou?.pf} onPhoto={(id) => setDialog({ kind: 'file', id, name: `Photo – ${name}` })} />
+              : profileHref && <ProfileHead sections={journey.profileSections} href={profileHref} />}
             {documents.length > 0 && <Sub>Documents</Sub>}
             {documents.length > 0 && !seesDocuments && <div className="pd-note">Only HR opens candidates’ documents and ID proofs. You see where each one is.</div>}
             {documents.map((d) => <DocumentRow key={d.id} doc={d} busy={busy === `doc:${d.id}`} canReview={seesDocuments}

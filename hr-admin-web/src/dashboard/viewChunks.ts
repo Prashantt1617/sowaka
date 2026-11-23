@@ -75,6 +75,7 @@ const LOADERS: Partial<Record<View, Loader>> = {
   lifecycle_documents: () => import('./views/lifecycle/LifecycleDocuments').then((m) => ({ default: m.LifecycleDocuments })),
   lifecycle_templates: () => import('./views/lifecycle/Templates').then((m) => ({ default: m.LifecycleTemplates })),
   lifecycle_letter_templates: () => import('./views/lifecycle/LetterTemplates').then((m) => ({ default: m.LetterTemplates })),
+  preboarding: () => import('./views/lifecycle/PreboardingProfile').then((m) => ({ default: m.PreboardingProfile })),
 };
 
 /**

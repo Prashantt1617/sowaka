@@ -13,7 +13,7 @@ export type AccessKey = View | typeof SALARY_DETAILS;
 export const PLACEMENT_VIEWS: AccessKey[] = ['placements', 'placementclients', 'placementcustomers'];
 
 /** The employee lifecycle's pages. */
-export const LIFECYCLE_VIEWS: AccessKey[] = ['onboarding', 'offboarding', 'exit_insights', 'lifecycle_documents', 'lifecycle_templates', 'lifecycle_letter_templates'];
+export const LIFECYCLE_VIEWS: AccessKey[] = ['onboarding', 'offboarding', 'exit_insights', 'lifecycle_documents', 'lifecycle_templates', 'lifecycle_letter_templates', 'preboarding'];
 
 /** Pay figures (CTC, salary) show only to someone who may open payroll. */
 export function canSeePay(user: AuthUser | null | undefined): boolean {
@@ -34,6 +34,8 @@ export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boo
   if (LIFECYCLE_VIEWS.includes(view)) {
     if (lifecycleOn() === false) return false;
     if (view === 'lifecycle_letter_templates') return canOpen(user, 'lifecycle_documents');
+    // A candidate's pre-boarding profile is no tab of its own: it goes with the onboarding board or Employees.
+    if (view === 'preboarding') return canOpen(user, 'onboarding') || canOpen(user, 'employees');
   }
   // Setup › Policies goes with Organisation settings, as the server decides it.
   if (view === 'policies') return canOpen(user, 'organisation');
