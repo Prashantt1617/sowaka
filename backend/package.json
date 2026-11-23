@@ -89,6 +89,7 @@
     "payroll:zoho-check": "tsx src/scripts/payroll-zoho-check.ts",
     "payroll:payslip-check": "tsx src/scripts/payroll-payslip-check.ts",
     "payroll:period-check": "tsx src/scripts/payroll-period-check.ts",
+    "payroll:template-people-check": "MONGODB_DB=payroll_template_people_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/payroll-template-people-check.ts",
     "payroll:reconcile": "tsx src/scripts/payroll-org-reconcile.ts",
     "payroll:tds-check": "tsx src/scripts/payroll-tds-check.ts",
     "payroll:tds-seed": "tsx src/scripts/payroll-tds-seed.ts",

@@ -50,6 +50,8 @@ export async function listSalaryStructures(adminUserId: string) {
     paidDaysTemplateCode: doc.paidDaysTemplateCode,
     annualCtcPaise: doc.annualCtcPaise,
     status: doc.status,
+    // 'YYYY-MM-DD': the day this salary (on this template) applies from, when it was given.
+    effectiveFrom: doc.effectiveFrom ? new Date(doc.effectiveFrom).toISOString().slice(0, 10) : undefined,
     updatedAt: doc.updatedAt.toISOString(),
   }));
 }
@@ -122,6 +124,11 @@ export async function upsertSalaryStructure(
   const whole = !!merged.salaryTemplateCode && merged.annualCtcPaise > 0;
   const wantsLive = draft.status === 'active' || (draft.status === undefined && existing?.status === 'active');
   merged.status = wantsLive && whole ? 'active' : 'draft';
+  // The day given is kept as the day this salary applies from when it first goes live or moves to
+  // another template (a CTC change alone is dated in its revision instead).
+  if (draft.effectiveFrom && merged.status === 'active' && (existing?.status !== 'active' || existing.salaryTemplateCode !== merged.salaryTemplateCode)) {
+    merged.effectiveFrom = new Date(`${draft.effectiveFrom}T00:00:00Z`);
+  }
   if (!merged.salaryTemplateCode) {
     await salaryStructures().updateOne({ org, userId }, { $set: merged }, { upsert: true });
     return { structure: viewOf(merged, undefined, await payrollAccessOf(adminUserId)), computed: null, components: [] };

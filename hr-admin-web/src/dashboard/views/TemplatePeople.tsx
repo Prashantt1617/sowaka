@@ -77,7 +77,7 @@ export function PeopleSearch({ emps, onTemplate, onChange, placeholder }: { emps
 }
 
 /** Employees: who is on it, searchable. */
-export function TemplateMembers({ members, note, emptyText, extra }: { members: Emp[]; note?: ReactNode; emptyText: string; extra?: (e: Emp) => ReactNode }) {
+export function TemplateMembers({ members, note, emptyText, extra, extraLabel }: { members: Emp[]; note?: ReactNode; emptyText: string; extra?: (e: Emp) => ReactNode; extraLabel?: string }) {
   const [shown, setShown] = useState<Emp[]>(members);
   const [filtering, setFiltering] = useState(false);
   const isOn = useMemo(() => () => true, []);
@@ -90,7 +90,7 @@ export function TemplateMembers({ members, note, emptyText, extra }: { members: 
       </div>
       {note && <div style={{ ...noteBox, display: 'block' }}>{note}</div>}
       <PeopleSearch emps={members} onTemplate={isOn} onChange={(s, f) => { setShown(s); setFiltering(f); }} placeholder="Search: 3D team, under Ravi, interns in Gurgaon, joined this year…" />
-      <PeopleTable rows={list} emptyText={filtering ? 'Nobody on this template matches.' : emptyText} extra={extra} />
+      <PeopleTable rows={list} emptyText={filtering ? 'Nobody on this template matches.' : emptyText} extra={extra} extraLabel={extraLabel} />
     </section>
   );
 }
@@ -101,7 +101,8 @@ export function TemplateEditPeople({
 }: {
   emps: Emp[];
   placement: (e: Emp) => Placement;
-  onAdd: (ids: string[]) => Promise<void>;
+  /** Resolves false to keep the ticks (the caller asks for more first, e.g. each person's CTC). */
+  onAdd: (ids: string[]) => Promise<void | boolean>;
   /** Absent: people can't be taken off here (the default shift); `removeBlocked` says why. */
   onRemove?: (ids: string[]) => Promise<void>;
   note?: ReactNode;
@@ -130,8 +131,8 @@ export function TemplateEditPeople({
   const run = async (what: 'add' | 'remove') => {
     setBusy(what);
     try {
-      if (what === 'add') await onAdd(toAdd); else await onRemove?.(toRemove);
-      setPicked(new Set());
+      const kept = what === 'add' ? await onAdd(toAdd) : await onRemove?.(toRemove);
+      if (kept !== false) setPicked(new Set());
     } finally { setBusy(''); }
   };
 
@@ -216,13 +217,13 @@ export function TemplateEditPeople({
   );
 }
 
-function PeopleTable({ rows, emptyText, extra }: { rows: Emp[]; emptyText: string; extra?: (e: Emp) => ReactNode }) {
+function PeopleTable({ rows, emptyText, extra, extraLabel }: { rows: Emp[]; emptyText: string; extra?: (e: Emp) => ReactNode; extraLabel?: string }) {
   const [limit, setLimit] = useState(PAGE);
   const cols = '1.6fr 1fr 1fr 1fr 1.2fr';
   return (
     <div style={{ overflowX: 'auto' }}>
       <div style={{ minWidth: 720 }}>
-        <div style={TH(cols)}><Th>EMPLOYEE</Th><Th>TEAM</Th><Th>DESIGNATION</Th><Th>REPORTS TO</Th><Th>{extra ? 'NOTE' : 'LOCATION'}</Th></div>
+        <div style={TH(cols)}><Th>EMPLOYEE</Th><Th>TEAM</Th><Th>DESIGNATION</Th><Th>REPORTS TO</Th><Th>{extra ? extraLabel ?? 'NOTE' : 'LOCATION'}</Th></div>
         {rows.length === 0 && <div style={{ ...TR(cols), color: 'var(--ink-3)', display: 'block' }}>{emptyText}</div>}
         {rows.slice(0, limit).map((e, i) => (
           <div key={e.id} style={TR(cols, i === Math.min(limit, rows.length) - 1)}>
