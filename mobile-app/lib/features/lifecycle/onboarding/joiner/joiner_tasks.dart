@@ -245,7 +245,7 @@ Future<void> _confirm(BuildContext context, JoinerController c, JoinerTask t, {r
             Text(t.title, style: OnbText.h1),
             if (t.meta != null) ...[const SizedBox(height: 4), Text(t.meta!, style: OnbText.label)],
             const SizedBox(height: 16),
-            if (page != null && c.shell.openAppScreen != null && page != 'kpis') ...[
+            if (page != null && c.shell.openAppScreen != null) ...[
               OnbSecondaryButton(
                 key: ValueKey('task-page-${t.id}'),
                 label: t.verb,

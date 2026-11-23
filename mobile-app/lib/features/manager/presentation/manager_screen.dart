@@ -498,7 +498,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
   Future<void> _openAppScreenOver(BuildContext from, String screen) {
     final navigator = Navigator.of(from);
     void toTabs() => navigator.popUntil((route) => route.isFirst);
-    if (screen == 'profile') {
+    // Your profile: the Work detail tab, or the Grow tab for "Review your KPIs".
+    if (screen == 'profile' || screen == 'kpis') {
       return navigator.push<void>(
         MaterialPageRoute(
           builder: (route) => StreamBuilder<ManagerState>(
@@ -513,7 +514,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
                 body: OfflineAware(
                   child: _ProfileScreen(
                 key: const ValueKey('onboarding-profile'),
-                openOn: ProfileTab.workDetail,
+                openOn: screen == 'kpis' ? ProfileTab.grow : ProfileTab.workDetail,
                 session: _session,
                 dashboard: dashboard,
                 bloc: _bloc,
