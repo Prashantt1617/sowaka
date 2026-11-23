@@ -16,8 +16,12 @@ import { ClosedScreen } from './Closed';
 import { FigHomeHeader, FigPage, FigPowered, isAppHost } from '../components/fig/FigShell';
 import { G3WebBottom, G3WebTop } from '../components/fig/G3WebShell';
 import { G3Install } from '../components/fig/G3Install';
-import { FigProgress } from '../components/fig/FigUi';
-import { FigCheck, FigChevronRight, FigIcon3D, FigWavingHand } from '../components/fig/icons';
+import { FigProgress, FigRow } from '../components/fig/FigUi';
+import { G2Policy, type PortalPolicy } from '../components/fig/G2Policy';
+import { policiesOf } from './A1About';
+import { FigCalendar, FigCheck, FigChevronRight, FigClock, FigIcon3D, FigShield, FigWavingHand } from '../components/fig/icons';
+
+const POLICY_ICON = [<FigShield key="s" />, <FigCalendar key="c" />, <FigClock key="k" size={22} />];
 import { FigMessageCircle } from '../components/fig/icons/MessageCircle';
 import '../styles/fig-g1.css';
 
@@ -38,15 +42,25 @@ export function noticesFor(me: PortalHome): Array<{ title: string; to: string; b
 export function A1Home() {
   const { me, reload } = useMe();
   const [profile, setProfile] = useState<ProfileView>();
-  const [stories, setStories] = useState<number>();
+  const [meet, setMeet] = useState<MeetItem[]>();
+  const [reading, setReading] = useState<PortalPolicy | null>(null);
   const [offer, setOffer] = useState<PortalOfferView>();
   const h1 = useFocusHeading<HTMLHeadingElement>('a1-home');
   useEffect(() => { reload(); }, [reload]);
   const closed = me.view === 'closed';
+  // The stories About the company opens, and the company's policies (read here, no longer a story).
+  const stories = meet ? storyCount(meet, (me.contacts ?? []).some((c) => c.role === 'manager')) : undefined;
+  const policyItem = meet?.find((i) => i.id === 'policies');
+  const policies = policiesOf(policyItem);
+  const openPolicy = (p: PortalPolicy) => {
+    if (!p.body) return;
+    setReading(p);
+    if (policyItem && !policyItem.seen) portal.meetSeen(policyItem.id).then(() => setMeet((cur) => cur?.map((i) => (i.id === policyItem.id ? { ...i, seen: true } : i))), () => undefined);
+  };
   useEffect(() => {
     if (closed) return;
     portal.profile().then(setProfile, () => undefined);
-    portal.meet().then((r) => setStories(storyCount(r.items, (me.contacts ?? []).some((c) => c.role === 'manager'))), () => undefined);
+    portal.meet().then((r) => setMeet(r.items), () => undefined);
     portal.offer({ kind: 'session' }).then(setOffer, () => undefined);
   }, [closed]);
 
@@ -118,6 +132,21 @@ export function A1Home() {
         </div>
 
         {me.contacts && me.contacts.length > 0 && <PointsOfContact contacts={me.contacts} />}
+        {policies.length > 0 && (
+          <section aria-labelledby="pol-title" style={{ display: 'grid', gap: 12, marginTop: 24, padding: '0 16px' }}>
+            <h2 id="pol-title" className="fig-title" style={{ margin: 0 }}>Policies to read</h2>
+            <ul className="fig-list">
+              {policies.map((p, n) => (
+                <li key={p.title}>
+                  <FigRow onClick={() => openPolicy(p)} className="g1-policy"
+                    lead={<span className={`g1-policy__icon g1-policy__icon--${n % 3}`}>{POLICY_ICON[n % 3]}</span>}
+                    title={p.title} sub={p.summary || undefined} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+        {reading && <G2Policy policy={reading} onClose={() => setReading(null)} />}
       </main>
       <FigPowered />
       <G3WebBottom />
@@ -126,12 +155,11 @@ export function A1Home() {
 }
 
 /** "Your point of contact": the manager (green) and HR (blue), each with a WhatsApp button when they have a phone. */
-/** How many stories About the company opens (its order: the watch list, welcome, manager, team, first day, policies, role). */
+/** How many stories About the company opens (its order: the watch list, welcome, manager, team, first day, role). */
 function storyCount(items: MeetItem[], hasManager: boolean): number {
   const has = (id: string) => items.some((i) => i.id === id);
   const manager = hasManager || Boolean(items.find((i) => i.id === 'manager_note')?.authorName);
-  const policies = (items.find((i) => i.id === 'policies')?.policies?.length ?? 0) > 0;
-  return items.filter((i) => i.kind === 'watch').length + 1 + (manager ? 2 : 0) + 1 + (policies ? 1 : 0) + (has('role') ? 1 : 0);
+  return items.filter((i) => i.kind === 'watch').length + 1 + (manager ? 2 : 0) + 1 + (has('role') ? 1 : 0);
 }
 
 function PointsOfContact({ contacts }: { contacts: NonNullable<PortalHome['contacts']> }) {

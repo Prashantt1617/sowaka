@@ -158,6 +158,35 @@ r.get('/client/:token', handle(async (req) => {
  * permission (one file of one journey, 12 hours). Serves byte ranges, which
  * Safari needs to play a video at all.
  */
+/**
+ * Watch-list videos and pictures are read whole from storage for every request, and a video plays
+ * through many range requests. A small in-memory cache (up to 120 MB, 20 MB a file, 30 minutes)
+ * keeps the recent ones so each range is a slice of memory, not another full download.
+ */
+const MEDIA_CACHE_MAX = 120 * 1024 * 1024;
+const MEDIA_FILE_MAX = 20 * 1024 * 1024;
+const MEDIA_CACHE_MS = 30 * 60 * 1000;
+const mediaCache = new Map<string, { bytes: Buffer; at: number }>();
+let mediaCacheSize = 0;
+async function mediaBytes(file: { id: string; objectKey: string }): Promise<Buffer> {
+  const hit = mediaCache.get(file.id);
+  if (hit && Date.now() - hit.at < MEDIA_CACHE_MS) {
+    mediaCache.delete(file.id); mediaCache.set(file.id, hit); // most recent last
+    return hit.bytes;
+  }
+  if (hit) { mediaCache.delete(file.id); mediaCacheSize -= hit.bytes.length; }
+  const bytes = await readFileBytes(file);
+  if (bytes.length <= MEDIA_FILE_MAX) {
+    mediaCache.set(file.id, { bytes, at: Date.now() });
+    mediaCacheSize += bytes.length;
+    for (const [id, entry] of mediaCache) {
+      if (mediaCacheSize <= MEDIA_CACHE_MAX) break;
+      mediaCache.delete(id); mediaCacheSize -= entry.bytes.length;
+    }
+  }
+  return bytes;
+}
+
 r.get('/media/:token', handle(async (req, res) => {
   const claims = verifyMediaToken(param(req, 'token'));
   if (!claims) throw new LifecycleOfferError(404, 'File not found');
@@ -172,7 +201,9 @@ r.get('/media/:token', handle(async (req, res) => {
     if (!shared) throw error;
     return shared;
   });
-  const bytes = await readFileBytes(file);
+  const bytes = await mediaBytes(file);
+  // Files never change under an id, and the link is signed and expires: the browser may keep it.
+  res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
   res.setHeader('Content-Type', file.contentType);
   res.setHeader('Content-Disposition', contentDisposition(file.name, false));
   res.setHeader('Accept-Ranges', 'bytes');

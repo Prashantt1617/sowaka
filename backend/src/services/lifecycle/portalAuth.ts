@@ -235,7 +235,10 @@ export async function closedScreen(journey: Journey): Promise<{ state: ClosedScr
 const MEDIA_TTL_SECONDS = PORTAL_TOKEN_TTL_SECONDS;
 /** A short-lived, signed path for one of the journey's files: `/portal/media/<token>`. */
 export function mediaPath(journeyId: string, fileId: string, now = new Date()): string {
-  const exp = Math.floor(now.getTime() / 1000) + MEDIA_TTL_SECONDS;
+  // Rounded up to the next whole day (still at least the TTL away): the same file keeps the same
+  // link all day, so the browser's cache serves it again instead of fetching a new URL each load.
+  const DAY = 86_400;
+  const exp = Math.ceil((Math.floor(now.getTime() / 1000) + MEDIA_TTL_SECONDS) / DAY) * DAY;
   const body = b64(JSON.stringify({ typ: 'media', j: journeyId, f: fileId, exp }));
   return `/portal/media/${body}.${mac(`media.${body}`)}`;
 }

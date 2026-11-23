@@ -373,7 +373,7 @@ const at10 = (day: string) => new Date(`${day}T10:00:00+05:30`);
   const ranged = await call(portalRouter as never, 'GET', mediaPath, undefined, {}, { range: 'bytes=0-3' });
   ok('…and serves byte ranges (Safari asks for them before it plays)', ranged.status === 206 && (ranged.body as Buffer).toString() === 'fake' && ranged.headers['Content-Range'] === `bytes 0-3/${clip.length}`, { status: ranged.status, headers: ranged.headers });
   ok('…a tampered media link is not found', (await call(portalRouter as never, 'GET', `${mediaPath.slice(0, -3)}xyz`)).status === 404);
-  ok('…an expired one neither', auth.verifyMediaToken(auth.mediaPath(A, clipFile.id, new Date(Date.now() - 13 * 3_600_000)).split('/').pop()!) === null);
+  ok('…an expired one neither (links last to the end of the day after their TTL)', auth.verifyMediaToken(auth.mediaPath(A, clipFile.id, new Date(Date.now() - 50 * 3_600_000)).split('/').pop()!) === null);
   ok('…and a link only opens its own journey’s file', (await call(portalRouter as never, 'GET', auth.mediaPath('another-journey', clipFile.id).replace(/^\/portal/, ''))).status === 404);
   await db.journeys().updateOne({ id: A }, { $unset: { 'meetUs.managerNote': '' } });
   ok('an unknown item is refused', (await refusal(() => portalSvc.markMeetSeen(journeyA, 'nope'))).status === 404);
