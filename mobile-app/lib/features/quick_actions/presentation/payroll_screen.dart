@@ -4,8 +4,8 @@ part of 'quick_actions_screen.dart';
 /// picker ([_pickProofFile]).
 typedef PayrollFilePicker = Future<PayrollUpload?> Function(BuildContext);
 
-/// The page Payroll opens on. Anything past [home] opens over the home, so
-/// Back returns to the home and then out of Payroll.
+/// The page Payroll opens on. [taxDeclaration] opens alone (no home under
+/// it), so Back leaves Payroll for where it was opened from.
 enum PayrollStartPage {
   home,
 
@@ -92,13 +92,16 @@ class _PayrollScreenState extends State<PayrollScreen> {
       screen: widget,
       child: Navigator(
         key: _nav,
-        // The page asked for sits over the home: Back returns there.
+        // Opened on Tax from an onboarding task: Tax alone, so Back leaves
+        // Payroll straight to where it was opened from (24 Nov, HR: "come
+        // back directly to the onboarding tasks page from tax declaration").
         onGenerateInitialRoutes: (_, _) => [
-          MaterialPageRoute<void>(builder: (_) => const _PayrollHomePage()),
           if (widget.startPage == PayrollStartPage.taxDeclaration)
             MaterialPageRoute<void>(
               builder: (_) => const _TaxSummaryPage(declare: true),
-            ),
+            )
+          else
+            MaterialPageRoute<void>(builder: (_) => const _PayrollHomePage()),
         ],
         onGenerateRoute: (_) =>
             MaterialPageRoute<void>(builder: (_) => const _PayrollHomePage()),
@@ -134,7 +137,17 @@ Widget _payrollPage(
   return _HubScaffold(
     key: key,
     title: title,
-    onBack: onBack ?? () => Navigator.of(context).maybePop(),
+    // One page back; on Payroll's first page (Tax opened from an onboarding
+    // task), out of Payroll.
+    onBack: onBack ??
+        () {
+          final nav = Navigator.of(context);
+          if (nav.canPop()) {
+            nav.pop();
+          } else {
+            _PayrollScope.of(context).onClose();
+          }
+        },
     closeIcon: closeIcon,
     trailing: trailing,
     profileAction: scope.profileAction,

@@ -493,8 +493,11 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // "Review your KPIs": Grow alone, the monthly KPI reviews the manager
     // writes, read-only (one cannot review oneself).
     if (screen == 'kpis') return _openOwnGrowOver(navigator);
-    // A policy (the payroll policy and salary structure): that policy itself.
+    // A policy (the payroll policy and salary structure, the shift policy):
+    // that policy itself (24 Nov, HR: "review shift details should open the
+    // shift policy").
     if (screen == 'payroll_policy') return _openPolicyOver(navigator, 'payroll');
+    if (screen == 'shift') return _openPolicyOver(navigator, 'shift');
     // Your profile: the Work detail tab.
     if (screen == 'profile') {
       return navigator.push<void>(
@@ -541,7 +544,6 @@ class _ManagerScreenState extends State<ManagerScreen> {
     final entry = switch (screen) {
       'leave' || 'leave_balance' => QuickActionsEntry.leave,
       'overtime' => QuickActionsEntry.overtime,
-      'shift' => QuickActionsEntry.calendar,
       'tax' => QuickActionsEntry.payrollTax,
       'payroll' => QuickActionsEntry.payroll,
       'punch' => QuickActionsEntry.punchTour,
