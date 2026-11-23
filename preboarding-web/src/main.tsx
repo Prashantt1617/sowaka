@@ -13,3 +13,8 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 );
+
+// No zoom on the portal: iOS Safari ignores user-scalable=no for pinches, so its gesture events are stopped here.
+for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+  document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+}
