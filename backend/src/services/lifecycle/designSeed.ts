@@ -245,7 +245,7 @@ export function finalDesignRows(company = 'the company'): TemplateTask[] {
     meetingRow({ key: 'buddy_month1', title: 'Month 1 catch-up', meetWith: 'buddy', stage: 'm1', agenda: AGENDA.month1 }),
     contentRow({ section: 'checkin', title: 'End of probation check-in', stage: 'fin', questions: FIN_QUESTIONS }),
     meetingRow({ key: 'mgr_confirmation', title: 'Confirmation discussion', meetWith: 'manager', stage: 'fin', agenda: AGENDA.confirmation }),
-    teamRow({ key: 'mgr_confirmation_review', title: 'Write the confirmation review', role: 'manager', stage: 'fin', how: 'Opens the review questions in Teams › Joiners.' }),
+    teamRow({ key: 'mgr_confirmation_review', title: 'Write the confirmation review', role: 'manager', stage: 'fin', how: 'In the app: the Actions card “Confirmation review for …”, from the final month.' }),
     teamRow({ key: 'hod_approve', title: 'Approve the confirmation', role: 'head_of_department', stage: 'fin' }),
     teamRow({ key: 'hr_confirmation_letter', title: 'Issue the confirmation letter', role: 'hr', stage: 'fin', how: 'From Document templates, once the confirmation is approved.' }),
   ];

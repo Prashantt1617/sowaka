@@ -16,7 +16,6 @@ const JOINER_SCREENS: Partial<Record<SystemTaskKey, Destination>> = {
   week1_reels: 'lifecycle_week1', intro_post: 'lifecycle_intro', people_to_meet: 'lifecycle_people', day7_survey: 'lifecycle_survey',
   pulse_survey: 'lifecycle_survey', monthly_checkin: 'lifecycle_checkin',
 };
-const MANAGER_SETUP_KEYS: SystemTaskKey[] = ['manager_setup', 'probation_goals', 'assign_buddy'];
 const EMPLOYEE_ROLES = ['employee', 'manager_employee'];
 const MANAGER_ROLES = ['manager', 'hr_manager'];
 
@@ -53,11 +52,7 @@ export async function nudgedToday(taskIds: string[], now = new Date()): Promise<
   return new Set(taskIds.filter((id) => hit.has(nudgeKey(id, now))));
 }
 
-function managerDestination(task: JourneyTask): Destination {
-  if (task.systemKey && MANAGER_SETUP_KEYS.includes(task.systemKey)) return 'lifecycle_joiner_setup';
-  if (task.month && task.systemKey?.startsWith('monthly_')) return 'lifecycle_probation_review';
-  return 'lifecycle_joiner';
-}
+
 
 /**
  * POST /admin/lifecycle/journeys/:id/tasks/:taskId/nudge. Refused (409) for a
@@ -94,8 +89,10 @@ export async function nudgeTask(org: string, journeyId: string, taskId: string, 
     to = joinerName;
   } else {
     await tell([target.userId], {
-      scenario: 'lifecycle_nudge', destination: managerDestination(task),
-      title: `${joinerName}: ${task.title}`, body: `${hr.name} from HR asked for this${due ? `, due ${due}` : ''}.`, data,
+      // HR's own reminder to the manager: it opens the joiner's profile (there is no team task page in the app).
+      scenario: 'lifecycle_nudge', destination: 'employee_profile',
+      title: `${joinerName}: ${task.title}`, body: `${hr.name} from HR asked for this${due ? `, due ${due}` : ''}.`,
+      data: { ...data, ...(j.userId ? { employeeUserId: j.userId } : {}) },
     });
     to = names.get(target.userId!) ?? 'their manager';
   }

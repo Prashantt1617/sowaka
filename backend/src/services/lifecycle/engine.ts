@@ -298,16 +298,15 @@ async function writeTasks(tasks: JourneyTask[]): Promise<void> {
 }
 
 async function tellDueMoved(j: Journey, dueMoved: Map<string, number>): Promise<void> {
-  const who = j.candidate?.name ?? (j.userId ? (await users().findOne({ userId: j.userId }, { projection: { _id: 0, name: 1 } }))?.name : undefined) ?? 'a joiner';
   for (const [userId, count] of dueMoved) {
-    const self = userId === j.userId;
+    // Only the joiner's own tasks: HR assigns and follows everyone else's on the dashboard (24 Nov), so a
+    // manager's, buddy's or head of department's onboarding task never pushes the app.
+    if (userId !== j.userId) continue;
     await tell([userId], {
       scenario: 'lifecycle_due_changed',
-      destination: self ? 'lifecycle_onboarding' : 'lifecycle_joiner',
+      destination: 'lifecycle_onboarding',
       title: 'New due dates',
-      body: self
-        ? `${count === 1 ? 'One of your tasks has' : `${count} of your tasks have`} a new due date.`
-        : `${count === 1 ? 'One task' : `${count} tasks`} for ${who} ${count === 1 ? 'has' : 'have'} a new due date.`,
+      body: `${count === 1 ? 'One of your tasks has' : `${count} of your tasks have`} a new due date.`,
       data: { journeyId: j.id },
     });
   }
@@ -317,7 +316,15 @@ async function tellDueMoved(j: Journey, dueMoved: Map<string, number>): Promise<
 export type Destination =
   | 'lifecycle_onboarding' | 'lifecycle_meeting' | 'lifecycle_starter_task' | 'lifecycle_notes' | 'lifecycle_week1'
   | 'lifecycle_intro' | 'lifecycle_people' | 'lifecycle_survey' | 'lifecycle_probation' | 'lifecycle_checkin' | 'lifecycle_reveal'
-  | 'lifecycle_joiner' | 'lifecycle_joiner_setup' | 'lifecycle_starter_task_done' | 'lifecycle_probation_review';
+  /** The manager's confirmation review and the head of department's approval (`data.journeyId`): their own screens. */
+  | 'lifecycle_confirmation_review' | 'lifecycle_confirmation_approval'
+  /**
+   * Anything else to a teammate about a joiner (joins today, a meeting with them, HR's nudge): the joiner's
+   * profile (`data.employeeUserId`). There is no team task page in the app any more (24 Nov).
+   */
+  | 'employee_profile'
+  /** The joiner's intro post, for their manager (`data.postId`). */
+  | 'connect_post';
 
 /**
  * Every push of the lifecycle goes through here: a delivery failure never fails the write.

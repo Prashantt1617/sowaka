@@ -377,7 +377,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   const passB = passwordIn(lastMailTo(BINA)!.html);
   const passC = passwordIn(lastMailTo(CHETAN)!.html);
   expectMail('Bina and Chetan get their login', ['login>bina', 'login>chetan']);
-  await expectPushes('the manager gets the set-up to-do for each', ['lifecycle_joiner_setup>mgr', 'lifecycle_joiner_setup>mgr']);
+  await expectPushes('no set-up to-do push to the manager (HR assigns onboarding tasks on the dashboard)', []);
   await advanceTo(T('2027-03-02', '16:00'));
   await auth.signIn(CHETAN, passC, '4.4.4.4');
   // HR raises Bina's laptop request now: a done task that must not move when her joining day does.
@@ -682,7 +682,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   eq('goals can no longer change', (await refusal(() => app.saveSetup(MGR, A, { goals: ['Late'] }))).status, 409);
   aHome = await app.onboardingHome(KME);
   ok('app home: the Week 1 done moment shows', aHome.showWeekDone);
-  await expectPushes('Tj + 7: the manager hears week 1 is done (month-1 goals already set: no goals reminder)', ['lifecycle_week_done>mgr']);
+  await expectPushes('Tj + 7: no push to the manager (no onboarding to-dos in their app since 24 Nov)', []);
   // Bina joins today.
   section('8b · Bina joins (Tj 29 Mar)');
   cardB = await onCard(B);
@@ -705,7 +705,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   await advanceTo(T('2027-04-15', '09:30'), 'sparse');
   section('8 · Month-end check-in reminders to both sides');
   const p1 = (await newPushes());
-  ok('Thu 15 Apr (M1 end − 6): the check-in reminder to Kabir and the manager, once each', p1.filter((x) => x.startsWith('lifecycle_checkin_reminder')).join() === ['lifecycle_checkin_reminder>kabir', 'lifecycle_checkin_reminder>mgr'].join(), p1);
+  ok('Thu 15 Apr (M1 end − 6): the check-in reminder to Kabir only, once', p1.filter((x) => x.startsWith('lifecycle_checkin_reminder')).join() === ['lifecycle_checkin_reminder>kabir'].join(), p1);
   eq('…and no goals reminder for month 1 (set on Day 1)', p1.filter((x) => x.startsWith('lifecycle_goals_reminder')), []);
   ok('the month-1 check-in is open', (await task(A, 'monthly_checkin', 1)).status === 'todo');
   await advanceTo(T('2027-04-16', '11:00'), 'sparse');
@@ -722,10 +722,10 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   card = await onCard(A);
   eq('board: Months 2–5', card?.column, 'months_2_5');
   const p2 = await newPushes();
-  eq('Thu 22 Apr: no goals reminder to the manager for Kabir’s month 2', p2.filter((x) => x.startsWith('lifecycle_goals_reminder') || x.startsWith('lifecycle_checkin_reminder')), ['lifecycle_checkin_reminder>bina', 'lifecycle_checkin_reminder>mgr']);
+  eq('Thu 22 Apr: no goals reminder to the manager for Kabir’s month 2', p2.filter((x) => x.startsWith('lifecycle_goals_reminder') || x.startsWith('lifecycle_checkin_reminder')), ['lifecycle_checkin_reminder>bina']);
   await advanceTo(T('2027-05-15', '09:30'), 'sparse');
   const p3 = await newPushes();
-  ok('Sat 15 May: Kabir’s month-2 check-in reminder to both', ['lifecycle_checkin_reminder>kabir', 'lifecycle_checkin_reminder>mgr'].every((x) => p3.includes(x)), p3);
+  ok('Sat 15 May: Kabir’s month-2 check-in reminder to him (not the manager)', p3.includes('lifecycle_checkin_reminder>kabir') && !p3.includes('lifecycle_checkin_reminder>mgr'), p3);
   await advanceTo(T('2027-05-17', '11:00'), 'sparse');
   await app.checkinForMe(KME, 2, { text: 'Shipped the leave flow', rating: 4 });
   await app.managerProbationMonth(MGR, A, 2, { checkin: { text: 'Great month', rating: 4 } });
@@ -733,7 +733,7 @@ const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Bu
   await advanceTo(T('2027-05-22', '09:30'), 'sparse');
   section('8 · Month 3 = the final month: goals reminder, the M3 pulse, the decision window');
   const p4 = await newPushes();
-  for (const x of ['lifecycle_goals_reminder>mgr', 'lifecycle_survey_open>kabir', 'lifecycle_confirmation_window>mgr']) ok(`Sat 22 May: ${x}`, p4.includes(x), p4);
+  for (const x of ['lifecycle_survey_open>kabir', 'lifecycle_confirmation_window>mgr']) ok(`Sat 22 May: ${x}`, p4.includes(x), p4);
   eq('…each once', [p4.filter((x) => x === 'lifecycle_survey_open>kabir').length, p4.filter((x) => x === 'lifecycle_confirmation_window>mgr').length], [1, 1]);
   card = await onCard(A);
   ok('board: Final month, Decide', card?.column === 'final_month' && card.flags.includes('decide'), card);

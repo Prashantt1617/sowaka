@@ -590,15 +590,7 @@ export async function finaliseOffer(hr: HrActor, journeyId: string, now = new Da
     await sendLifecycleEmail(journey.org, created.account.email, `Your ${companyName} joining portal is ready`,
       mails.portalReady(companyName, journey.candidate?.name ?? '', created.account.email, journey.org));
     await candidateAccounts().updateOne({ journeyId }, { $set: { loginSentAt: now } });
-    // The manager's set-up to-do arrives in the app (the task itself opens on the finalised anchor).
-    if (journey.managerUserId) {
-      await notifyUsers([journey.managerUserId], {
-        scenario: 'lifecycle_joiner_setup', title: `Set up ${journey.candidate?.name ?? 'your new joiner'}`,
-        body: `Joining ${formatDay(journey.tj)}. Pick people to meet, write a welcome note and name a buddy.`,
-        // `destination` opens the manager's set-up screen from the push (the launcher routes by it).
-        data: { type: 'lifecycle_joiner_setup', destination: 'lifecycle_joiner_setup', journeyId },
-      });
-    }
+    // No set-up push to the manager: HR assigns every onboarding task on the dashboard (24 Nov).
   } else {
     // A revised offer finalised again: back where the candidate had got to.
     const account = await candidateAccounts().findOne({ journeyId });

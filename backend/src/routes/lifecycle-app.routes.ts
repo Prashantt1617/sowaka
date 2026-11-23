@@ -10,7 +10,6 @@ import { LifecycleError } from '../services/lifecycle/engine';
 import { contentDisposition } from '../services/lifecycle/files';
 import { letterPdfForEmployee } from '../services/lifecycle/letters';
 import { portalSessionForAppUser } from '../services/lifecycle/portalAuth';
-import { answerApproval, teamApproval, teamJoiner, teamJoiners, teamTaskAction } from '../services/lifecycle/teamTasks';
 import { newJoinersForTeammate } from '../services/lifecycle/teamNewJoiners';
 import { lifecycleGate, lifecycleHandler } from './lifecycle-admin.routes';
 import multer from 'multer';
@@ -21,10 +20,7 @@ import {
   markWatched, saveJoinerGoal, sendJoinerCheckin, sendJoinerForm, uploadJoinerFormFile,
 } from '../services/lifecycle/joinerApp';
 import { joinerPayroll, joinerProfileDetails, saveJoinerProfileSection, sendJoinerPayroll } from '../services/lifecycle/joinerDetails';
-import {
-  answerApprovalV2, approvalViewV2, assignBuddy, buddyOptions, commentOnGoals, introduceOnFeed, inviteSenior, markCheckinRead, reviewView, scheduleMeetings,
-  sendReview, sendWelcomeMessage, teamCheckin, teamGoals, teamJoinerPage, teamRowAction, teamRowNotes,
-} from '../services/lifecycle/teamApp';
+import { answerApprovalV2, approvalViewV2, confirmationsFor, reviewView, sendReview } from '../services/lifecycle/teamApp';
 
 /**
  * The app's lifecycle endpoints for the joiner and their manager, mounted at
@@ -108,16 +104,21 @@ lifecycleAppRouter.post('/manager/joiners/:journeyId/welcome', lifecycleHandler(
 lifecycleAppRouter.post('/manager/joiners/:journeyId/tasks/:taskId', lifecycleHandler(async (req) => managerTaskDone(me(req), param(req, 'journeyId'), param(req, 'taskId'), body(req))));
 lifecycleAppRouter.put('/manager/joiners/:journeyId/probation/:month', lifecycleHandler(async (req) => managerProbationMonth(me(req), param(req, 'journeyId'), Number(param(req, 'month')), body(req))));
 
-// Teams › Joiners for the manager, the buddy and the head of department (services/lifecycle/teamTasks.ts):
-// the joiners I'm connected to, one joiner's page with my tasks for them, ticks, and the confirmation approval.
-lifecycleAppRouter.get('/team/joiners', lifecycleHandler(async (req) => teamJoiners(me(req))));
-// Teams › Joiners for every teammate (peers under the same manager, the same department, the manager and the buddy):
-// the people joining tomorrow or in their first month, each opening their profile (services/lifecycle/teamNewJoiners.ts).
+// Teams › New joiners, one list for everyone around a joiner (the manager, the buddy, the head of department,
+// peers under the same manager, the same department): the people joining tomorrow or in their first month,
+// each opening their profile (services/lifecycle/teamNewJoiners.ts). HR assigns every onboarding task on the
+// dashboard (24 Nov): there is no task page for the manager, the buddy or the head of department any more.
 lifecycleAppRouter.get('/team/new-joiners', lifecycleHandler(async (req) => newJoinersForTeammate(me(req))));
-lifecycleAppRouter.get('/team/joiners/:journeyId', lifecycleHandler(async (req) => teamJoiner(me(req), param(req, 'journeyId'))));
-lifecycleAppRouter.post('/team/joiners/:journeyId/tasks/:taskId', lifecycleHandler(async (req) => teamTaskAction(me(req), param(req, 'journeyId'), param(req, 'taskId'), body(req))));
-lifecycleAppRouter.get('/team/joiners/:journeyId/approval', lifecycleHandler(async (req) => teamApproval(me(req), param(req, 'journeyId'))));
-lifecycleAppRouter.post('/team/joiners/:journeyId/approval', lifecycleHandler(async (req) => answerApproval(me(req), param(req, 'journeyId'), body(req))));
+// The probation decision stays in the app (services/lifecycle/teamApp.ts): the confirmations waiting on me
+// (also on /me), the manager's confirmation review and the head of department's approval.
+lifecycleAppRouter.get('/team/confirmations', lifecycleHandler(async (req) => ({ confirmations: await confirmationsFor(me(req)) })));
+lifecycleAppRouter.get('/team/joiners/:journeyId/review', lifecycleHandler(async (req) => reviewView(me(req), param(req, 'journeyId'))));
+lifecycleAppRouter.post('/team/joiners/:journeyId/review', lifecycleHandler(async (req) => sendReview(me(req), param(req, 'journeyId'), body(req))));
+lifecycleAppRouter.get('/team/joiners/:journeyId/confirmation', lifecycleHandler(async (req) => approvalViewV2(me(req), param(req, 'journeyId'))));
+lifecycleAppRouter.post('/team/joiners/:journeyId/confirmation', lifecycleHandler(async (req) => answerApprovalV2(me(req), param(req, 'journeyId'), body(req))));
+// The old Teams › Joiners (the list, a joiner's page, ticks, meetings, the buddy, the welcome message, the
+// feed post, goals, check-ins, someone senior's invite; builds up to 1.4.3) is gone, and answers 404.
+lifecycleAppRouter.all(/^\/team\/joiners(?:\/.*)?$/, lifecycleHandler(async () => { throw new LifecycleError(404, 'Not available'); }));
 
 // ─── Onboarding · Final designs (docs/lifecycle/FINAL-DESIGNS.md §4.2–§4.4) ──
 
@@ -176,25 +177,6 @@ lifecycleAppRouter.get('/joiner/profile', lifecycleHandler(async (req) => joiner
 lifecycleAppRouter.put('/joiner/profile/:section', lifecycleHandler(async (req) => saveJoinerProfileSection(me(req), param(req, 'section'), body(req))));
 lifecycleAppRouter.get('/joiner/payroll', lifecycleHandler(async (req) => joinerPayroll(me(req))));
 lifecycleAppRouter.post('/joiner/payroll', lifecycleHandler(async (req) => sendJoinerPayroll(me(req), body(req))));
-
-// Teams › Joiners (manager, buddy, head of department, someone senior)
-lifecycleAppRouter.get('/team/joiners/:journeyId/page', lifecycleHandler(async (req) => teamJoinerPage(me(req), param(req, 'journeyId'))));
-lifecycleAppRouter.post('/team/joiners/:journeyId/rows/:rowId', lifecycleHandler(async (req) => teamRowAction(me(req), param(req, 'journeyId'), param(req, 'rowId'), body(req))));
-lifecycleAppRouter.put('/team/joiners/:journeyId/rows/:rowId/notes', lifecycleHandler(async (req) => teamRowNotes(me(req), param(req, 'journeyId'), param(req, 'rowId'), body(req))));
-lifecycleAppRouter.get('/team/joiners/:journeyId/buddy-options', lifecycleHandler(async (req) => buddyOptions(me(req), param(req, 'journeyId'))));
-lifecycleAppRouter.post('/team/joiners/:journeyId/buddy', lifecycleHandler(async (req) => assignBuddy(me(req), param(req, 'journeyId'), body(req))));
-lifecycleAppRouter.post('/team/joiners/:journeyId/schedule', lifecycleHandler(async (req) => scheduleMeetings(me(req), param(req, 'journeyId'), body(req))));
-lifecycleAppRouter.post('/team/joiners/:journeyId/welcome-message', lifecycleHandler(async (req) => sendWelcomeMessage(me(req), param(req, 'journeyId'), body(req))));
-lifecycleAppRouter.post('/team/joiners/:journeyId/feed', lifecycleHandler(async (req) => introduceOnFeed(me(req), param(req, 'journeyId'), body(req))));
-lifecycleAppRouter.get('/team/joiners/:journeyId/goals/:month', lifecycleHandler(async (req) => teamGoals(me(req), param(req, 'journeyId'), param(req, 'month'))));
-lifecycleAppRouter.post('/team/joiners/:journeyId/goals/:month', lifecycleHandler(async (req) => commentOnGoals(me(req), param(req, 'journeyId'), param(req, 'month'), body(req))));
-lifecycleAppRouter.get('/team/joiners/:journeyId/checkins/:checkinId', lifecycleHandler(async (req) => teamCheckin(me(req), param(req, 'journeyId'), param(req, 'checkinId'))));
-lifecycleAppRouter.post('/team/joiners/:journeyId/checkins/:checkinId/read', lifecycleHandler(async (req) => markCheckinRead(me(req), param(req, 'journeyId'), param(req, 'checkinId'))));
-lifecycleAppRouter.get('/team/joiners/:journeyId/review', lifecycleHandler(async (req) => reviewView(me(req), param(req, 'journeyId'))));
-lifecycleAppRouter.post('/team/joiners/:journeyId/review', lifecycleHandler(async (req) => sendReview(me(req), param(req, 'journeyId'), body(req))));
-lifecycleAppRouter.get('/team/joiners/:journeyId/confirmation', lifecycleHandler(async (req) => approvalViewV2(me(req), param(req, 'journeyId'))));
-lifecycleAppRouter.post('/team/joiners/:journeyId/confirmation', lifecycleHandler(async (req) => answerApprovalV2(me(req), param(req, 'journeyId'), body(req))));
-lifecycleAppRouter.post('/team/joiners/:journeyId/senior-meeting', lifecycleHandler(async (req) => inviteSenior(me(req), param(req, 'journeyId'), body(req))));
 
 // HR and IT & admin work onboarding from the dashboard only: the app's old Actions › Onboarding
 // screens (`/lifecycle/staff/*`, builds up to 1.4.3) are gone, and answer 404 for everyone.

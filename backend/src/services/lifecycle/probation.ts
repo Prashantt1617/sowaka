@@ -200,7 +200,7 @@ export async function checkinByJoiner(journeyId: string, joiner: { userId: strin
     ...(win ? { win } : {}), ...(ask ? { ask } : {}), at: new Date(),
   } };
   await saveMonth(j, row, set, tasks, joiner);
-  if (j.managerUserId) await tell([j.managerUserId], { scenario: 'lifecycle_checkin_sent', destination: 'lifecycle_probation_review', title: 'Check-in sent', body: `${joiner.name} sent their month-${monthNo} check-in.`, data: { journeyId, month: String(monthNo) } });
+  // No push to the manager: reading check-ins is no longer an app task of theirs (HR follows them on the dashboard).
   return probationForJoiner(journeyId);
 }
 
@@ -280,7 +280,7 @@ export async function recordDecision(journeyId: string, hr: { userId: string; na
   await refreshJourney(journeyId);
   const name = (await users().findOne({ userId: j.userId }, { projection: { _id: 0, name: 1 } }))?.name ?? 'Your joiner';
   const said = outcome === 'confirm' ? 'is confirmed' : outcome === 'extend' ? `has probation extended by ${decision.extendMonths} months` : 'is not confirmed';
-  await tell([j.managerUserId], { scenario: 'lifecycle_decision', destination: 'lifecycle_joiner', title: 'Probation decision', body: `${name} ${said}.`, data: { journeyId } });
+  await tell([j.managerUserId], { scenario: 'lifecycle_decision', destination: 'employee_profile', title: 'Probation decision', body: `${name} ${said}.`, data: { journeyId, ...(j.userId ? { employeeUserId: j.userId } : {}) } });
   return decision;
 }
 

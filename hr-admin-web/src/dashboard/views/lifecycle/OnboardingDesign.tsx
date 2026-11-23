@@ -557,7 +557,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
 
       {/* The team's part */}
       <section className="pd-card" style={card}>
-        <SectionHead tone="team" title="The team’s part" sub="What the manager, buddy, HR and IT do. They see it in Teams › Joiners." open={teamOpen} onToggle={() => setTeamOpen(!teamOpen)} />
+        <SectionHead tone="team" title="The team’s part" sub="What the manager, buddy, HR and IT do. You assign and follow these here; in the app only the confirmation review and its approval are theirs to do." open={teamOpen} onToggle={() => setTeamOpen(!teamOpen)} />
         {teamOpen && (
           <div style={{ borderTop: rowLine }}>
             <div style={{ padding: '6px 20px 8px', borderBottom: rowLine }}>
@@ -776,7 +776,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
           </Block>
           {tt.kind === 'team' && (
             <Block label="How to do it (optional)" aside={<InfoToggle label="About how to do it" open={tt.info} onToggle={() => setTt({ ...tt, info: !tt.info })} />}>
-              {tt.info && <InfoNote>One line on where or how. The teammate sees it behind an (i) on this task in their app.</InfoNote>}
+              {tt.info && <InfoNote>One line on where or how, kept with this task for whoever does it.</InfoNote>}
               <textarea value={tt.how} maxLength={140} onChange={(e) => setTt({ ...tt, how: e.target.value })} placeholder="e.g. The kit is in the HR cupboard, second floor" style={areaStyle} />
             </Block>
           )}

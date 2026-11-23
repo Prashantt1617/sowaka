@@ -511,7 +511,7 @@ void main() {
   });
 
   group('Teams pills', () {
-    testWidgets('the pill row: Joiners last, black when open, its count', (tester) async {
+    testWidgets('the pill row: New joiners last, no count; the others with theirs', (tester) async {
       var picked = '';
       await pumpPage(
         tester,
@@ -523,12 +523,14 @@ void main() {
               TeamPillSpec(key: 'myTeam', label: 'My Team'),
               TeamPillSpec(key: 'requests', label: 'Requests', count: 3),
               TeamPillSpec(key: 'feedback', label: 'Feedback', count: 5),
-              TeamPillSpec(key: 'joiners', label: 'Joiners', count: 2, countColor: TeamColors.joinersCount),
+              TeamPillSpec(key: 'newJoiners', label: 'New joiners'),
             ],
           ),
         ),
       );
-      expect(find.bySemanticsLabel('Joiners, 2'), findsOneWidget);
+      expect(find.bySemanticsLabel('Requests, 3'), findsOneWidget);
+      expect(find.text('New joiners'), findsOneWidget);
+      expect(find.text('Joiners'), findsNothing);
       await tester.tap(find.byKey(const ValueKey('team-pill-requests')));
       expect(picked, 'requests');
     });

@@ -1,19 +1,20 @@
 /**
- * Teams › Joiners for ordinary teammates: the people who join (or have just joined) the viewer's
- * team or department, so everyone around a joiner sees them, not only the manager, the buddy and
- * the head of department (whose task pages are teamTasks.ts / teamApp.ts).
+ * Teams › New joiners, the one joiners list in the app for everyone around a joiner (24 Nov: the old
+ * task-based Teams › Joiners is gone; HR assigns every onboarding task on the dashboard). View only:
+ * each card opens the joiner's profile.
  *
- * Who is a teammate of a joiner, always in the viewer's own company (journeys and people are read
- * by org only):
+ * Who sees a joiner, always in the viewer's own company (journeys and people are read by org only):
+ * - the joiner's manager and buddy;
+ * - their head of department (approverOf: the head the company records for the department, else the
+ *   manager's manager), who approves the confirmation;
  * - a peer: the viewer has the same manager as the joiner (journey.managerUserId);
  * - a department member: the viewer's department is the joiner's (the journey's department, else
- *   the joiner's account's), compared trimmed and case-blind;
- * - the joiner's manager and buddy, who are listed here too (the app shows them once).
+ *   the joiner's account's), compared trimmed and case-blind.
  * Never the joiner themselves.
  *
  * When: from the day before joining (Tj − 1, "Joins tomorrow") to the end of their first month
  * (Tj + 30, "Joined Mon 30 Nov"), in the company's time zone, while the journey is open (not
- * closed, declined, expired or not joining, and past the offer: the same journeys Teams › Joiners
+ * closed, declined, expired or not joining, and past the offer: the same journeys the old Teams › Joiners
  * reads).
  *
  * The profile: the joiner's account (made at Mark joined, or earlier by "Generate app access")
@@ -22,7 +23,7 @@
  * Kept per company and day (readCache 'lc-new-joiners': the window's journeys and the joiners'
  * faces, dropped by every lifecycle write); who sees whom is worked out per request.
  */
-import { journeys, users } from '../../config/db';
+import { companies, journeys, users } from '../../config/db';
 import type { Journey } from '../../models/lifecycle.model';
 import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
 import { initialsOf } from './designRows';
@@ -36,7 +37,7 @@ type Me = { userId: string; name: string; org: string };
 /** How long a joiner stays listed: from Tj − 1 to Tj + this many days. */
 export const NEW_JOINER_DAYS = 30;
 
-export type NewJoinerRelation = 'manager' | 'buddy' | 'peer' | 'department';
+export type NewJoinerRelation = 'manager' | 'buddy' | 'head' | 'peer' | 'department';
 
 export interface NewJoinerCard {
   journeyId: string;
@@ -58,7 +59,7 @@ export interface NewJoinerCard {
 
 type Face = Partial<FaceFields> & { userId: string; name?: string; designation?: string; department?: string; lifecycleStatus?: string; hiddenFromDirectory?: boolean; isCounsellor?: boolean };
 type Kept = {
-  journeys: Array<Pick<Journey, 'id' | 'userId' | 'managerUserId' | 'buddyUserId' | 'department' | 'designation' | 'tj' | 'status'> & { name: string; accountId?: string }>;
+  journeys: Array<Pick<Journey, 'id' | 'userId' | 'managerUserId' | 'buddyUserId' | 'department' | 'designation' | 'tj' | 'status'> & { name: string; accountId?: string; headUserId?: string }>;
   faces: Face[];
 };
 
@@ -94,9 +95,26 @@ async function keptFor(org: string, today: string): Promise<Kept> {
         { projection: { _id: 0, name: 1, designation: 1, department: 1, lifecycleStatus: 1, hiddenFromDirectory: 1, isCounsellor: 1, ...FACE_PROJECTION } },
       ).toArray()) as unknown as Face[])
       : [];
+    // The head of department of each (teamTasks.approverOf, read for the whole window at once): the head the
+    // company records for the department unless that is the joiner or their manager, else the manager's manager.
+    const departmentOf = new Map(faces.map((f) => [f.userId, f.department]));
+    const managerIds = [...new Set(rows.map((j) => j.managerUserId).filter((x): x is string => !!x))];
+    const [company, managers] = await Promise.all([
+      companies().findOne({ id: org }, { projection: { _id: 0, departmentHeads: 1 } }),
+      managerIds.length ? users().find({ org, userId: { $in: managerIds } }, { projection: { _id: 0, userId: 1, managerUserId: 1 } }).toArray() : Promise.resolve([]),
+    ]);
+    const skipOf = new Map(managers.map((m) => [m.userId, m.managerUserId]));
+    const headOf = (j: Journey): string | undefined => {
+      const account = j.userId ?? j.appAccess?.userId;
+      const department = norm(j.department ?? (account ? departmentOf.get(account) : undefined));
+      const head = department ? company?.departmentHeads?.find((h) => norm(h.department) === department)?.userId : undefined;
+      if (head && head !== j.userId && head !== j.managerUserId) return head;
+      const skip = j.managerUserId ? skipOf.get(j.managerUserId) : undefined;
+      return skip && skip !== j.userId && skip !== j.managerUserId ? skip : undefined;
+    };
     return {
-      journeys: rows.map((j) => ({
-        id: j.id, name: j.candidate?.name ?? '', tj: j.tj, status: j.status,
+      journeys: rows.map((j) => ({ j, head: headOf(j) })).map(({ j, head }) => ({
+        id: j.id, name: j.candidate?.name ?? '', tj: j.tj, status: j.status, ...(head ? { headUserId: head } : {}),
         ...(j.userId ? { userId: j.userId } : {}), ...(j.userId ?? j.appAccess?.userId ? { accountId: j.userId ?? j.appAccess?.userId } : {}),
         ...(j.managerUserId ? { managerUserId: j.managerUserId } : {}), ...(j.buddyUserId ? { buddyUserId: j.buddyUserId } : {}),
         ...(j.department ? { department: j.department } : {}), ...(j.designation ? { designation: j.designation } : {}),
@@ -127,6 +145,7 @@ export async function newJoinersForTeammate(me: Me, now = new Date()): Promise<{
     const department = j.department ?? account?.department;
     const relation: NewJoinerRelation | null = j.managerUserId === me.userId ? 'manager'
       : j.buddyUserId === me.userId ? 'buddy'
+        : j.headUserId === me.userId ? 'head'
         : myManager && j.managerUserId === myManager ? 'peer'
           : myDepartment && norm(department) === myDepartment ? 'department'
             : null;

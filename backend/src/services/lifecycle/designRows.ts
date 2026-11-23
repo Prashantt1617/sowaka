@@ -52,16 +52,17 @@ export async function peopleOf(j: Journey, settings: LifecycleTemplateSettings):
 }
 
 /**
- * Where a teammate's push about a joiner opens: the manager, the buddy, someone senior and the head of
- * department open the Teams person page (`lifecycle_joiner`). HR and IT & admin work onboarding from the
- * dashboard only, so they get no app push about it: null for them.
+ * Where a teammate's push about a joiner (a meeting with them) opens: for the manager, the buddy, someone
+ * senior and the head of department, the joiner's profile (`employee_profile`, put `employeeUserId` in the
+ * data): there is no team task page in the app any more (24 Nov). HR and IT & admin work onboarding from
+ * the dashboard only, so they get no app push about it: null for them.
  * [role] is the row's when known; otherwise the role is read from who [userId] is to the joiner.
  */
-export function teammatePushTarget(people: People, userId: string, role?: TeamRole): { destination: 'lifecycle_joiner' } | null {
+export function teammatePushTarget(people: People, userId: string, role?: TeamRole): { destination: 'employee_profile' } | null {
   if (role === 'hr' || role === 'it') return null;
   const team = (['manager', 'buddy', 'senior', 'head_of_department'] as const).some((r) => people[r] === userId);
   if (!role && !team && (people.hr === userId || people.it === userId)) return null;
-  return { destination: 'lifecycle_joiner' };
+  return { destination: 'employee_profile' };
 }
 
 export const roleOfRow = (row: TemplateTask): TeamRole | undefined =>

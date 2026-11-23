@@ -8,7 +8,8 @@
       "data": {
         "journeyId": "b6714d8a-bb77-4739-b8e7-d0a60ff08f20",
         "postId": "59c9b223-3f73-4ac6-b490-71f27935c5c4",
-        "destination": "lifecycle_joiner"
+        "destination": "connect_post",
+        "employeeUserId": "isha"
       }
     },
     {
@@ -20,17 +21,6 @@
         "journeyId": "b6714d8a-bb77-4739-b8e7-d0a60ff08f20",
         "starterTaskId": "54d074a9-828b-4622-a128-4dc69c53e289",
         "destination": "lifecycle_starter_task"
-      }
-    },
-    {
-      "userId": "mgr",
-      "scenario": "lifecycle_starter_task_done",
-      "title": "Isha Verma finished a task",
-      "body": "Redesign the leave request screen",
-      "data": {
-        "journeyId": "b6714d8a-bb77-4739-b8e7-d0a60ff08f20",
-        "starterTaskId": "54d074a9-828b-4622-a128-4dc69c53e289",
-        "destination": "lifecycle_starter_task_done"
       }
     },
     {
@@ -63,7 +53,8 @@
       "data": {
         "journeyId": "b6714d8a-bb77-4739-b8e7-d0a60ff08f20",
         "noteId": "140d3eba-0c25-4b5d-a748-597f49865058",
-        "destination": "lifecycle_joiner"
+        "destination": "employee_profile",
+        "employeeUserId": "isha"
       }
     },
     {
@@ -74,7 +65,8 @@
       "data": {
         "journeyId": "b6714d8a-bb77-4739-b8e7-d0a60ff08f20",
         "meetingId": "fx-meeting",
-        "destination": "lifecycle_joiner"
+        "destination": "employee_profile",
+        "employeeUserId": "isha"
       }
     },
     {
@@ -86,17 +78,6 @@
         "journeyId": "b6714d8a-bb77-4739-b8e7-d0a60ff08f20",
         "postId": "45205369-6261-4d2d-a486-e02cef85a27f",
         "destination": "lifecycle_onboarding"
-      }
-    },
-    {
-      "userId": "mgr",
-      "scenario": "lifecycle_checkin_sent",
-      "title": "Check-in sent",
-      "body": "Ishita Kaur sent their month-1 check-in.",
-      "data": {
-        "journeyId": "fdd1b50c-e8a1-40c4-a3eb-a01083415f0e",
-        "month": "1",
-        "destination": "lifecycle_probation_review"
       }
     },
     {
@@ -117,7 +98,8 @@
       "body": "Ishita Kaur is confirmed.",
       "data": {
         "journeyId": "fdd1b50c-e8a1-40c4-a3eb-a01083415f0e",
-        "destination": "lifecycle_joiner"
+        "destination": "employee_profile",
+        "employeeUserId": "ishita"
       }
     },
     {

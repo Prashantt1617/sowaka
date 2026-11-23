@@ -37,6 +37,7 @@ import '../../shared/app_toast.dart';
 import '../../shared/attachment_picker.dart';
 import '../../shared/image_source_sheet.dart' show ImageSourceChoice;
 import '../../support/presentation/support_desk_screen.dart';
+import '../../lifecycle/onboarding/data/confirmation_api.dart' show ConfirmationKind;
 import '../../lifecycle/onboarding/onboarding_launcher.dart';
 import '../../face_id/face_check_screen.dart' show FaceCheckOutcome;
 
@@ -1370,6 +1371,23 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       highlight: firstDay,
       badge: firstDay ? (joinerTile?.badge ?? 'Day 1') : null,
     );
+    // A probation decision waiting on this person (`/lifecycle/me`
+    // confirmations): the manager's confirmation review, the head of
+    // department's approval. A card each, first, only while it waits; it opens
+    // its own screen (there is no other team-side onboarding task in the app).
+    final confirmationTiles = [
+      for (final pending in onboarding.confirmations)
+        _HomeActionCard(
+          key: ValueKey('confirmation-card-${pending.journeyId}'),
+          icon: pending.kind == ConfirmationKind.review ? Icons.rate_review_outlined : Icons.verified_user_outlined,
+          color: const Color(0xFF0571A6),
+          tint: const Color(0xFFE8F4FA),
+          title: 'Confirmation',
+          subtitle: '${pending.kind == ConfirmationKind.review ? 'Review' : 'Approve'} for ${pending.name.trim().split(RegExp(r'\s+')).first}',
+          semanticLabel: pending.title,
+          onTap: () => openPendingConfirmation(context, pending),
+        ),
+    ];
     // Someone marked present automatically has no attendance to manage: no
     // leave to balance against days worked, and no overtime to claim beyond
     // hours nobody records. What is left is what they can still act on.
@@ -1528,6 +1546,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     mainAxisExtent: 123.185,
                   ),
                   children: [
+                    ...confirmationTiles,
                     // A new joiner, while onboarding runs: the New joiner
                     // artifact's Actions (Onboarding, Policies, Leave,
                     // Overtime, Payroll, Reimbursement, Support Desk).
@@ -8408,7 +8427,12 @@ class _HomeActionCard extends StatelessWidget {
     this.imageSize = 24,
     this.highlight = false,
     this.badge,
+    this.semanticLabel,
   });
+
+  /// Read out in place of the title and subtitle ("Confirmation review for
+  /// Priya"), where the two short lines say less than the whole.
+  final String? semanticLabel;
 
   final IconData icon;
   final Color color;
@@ -8436,7 +8460,8 @@ class _HomeActionCard extends StatelessWidget {
     final Widget iconTile = image != null
         ? _IllustrationTile(asset: image, size: imageSize)
         : _IconTile(icon: icon, color: color, tint: tint, size: 40);
-    return DecoratedBox(
+    final label = semanticLabel;
+    final card = DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
@@ -8529,6 +8554,8 @@ class _HomeActionCard extends StatelessWidget {
         ),
       ),
     );
+    if (label == null) return card;
+    return Semantics(label: label, button: true, excludeSemantics: true, child: card);
   }
 }
 

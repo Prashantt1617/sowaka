@@ -2,19 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../../../services/api_config.dart' show avatarImageProvider;
 import '../../../../profile/profile_launcher.dart';
 import '../../data/new_joiners_api.dart';
 import '../../data/onboarding_api.dart';
 import '../../onboarding_launcher.dart';
 import '../onboarding_kit.dart';
-import 'team_kit.dart';
 
-/// Teams › New joiners: everyone joining the viewer's team or department,
-/// from the day before they join to the end of their first month — for every
-/// teammate, not only the manager, buddy and head of department (who keep
-/// Teams › Joiners and its task pages). View only: each card opens the
-/// person's profile, and there is nothing to do here. A joiner without an
-/// account yet shows "Profile opens on their first day" and opens nothing.
+/// Teams › New joiners, the one joiners list in the app: everyone joining the
+/// viewer's team or department, from the day before they join to the end of
+/// their first month, for their manager, buddy and head of department as for
+/// every teammate (HR assigns the onboarding tasks on the dashboard, so there
+/// is no task page here). View only: each card opens the person's profile. A
+/// joiner without an account yet shows "Profile opens on their first day" and
+/// opens nothing. Cards as the Team tab draws its people (My Team).
 /// `GET /lifecycle/team/new-joiners`.
 class NewJoinersTab extends StatefulWidget {
   const NewJoinersTab({super.key, this.shell, this.api, this.openProfile});
@@ -93,91 +94,200 @@ class _NewJoinersTabState extends State<NewJoinersTab> {
     final joiners = _joiners;
     if (joiners == null) return OnbLoadState(error: _error, onRetry: _load);
     return RefreshIndicator(
+      color: OnbColors.primary,
       onRefresh: _load,
       child: ListView(
         key: const ValueKey('new-joiners-tab'),
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        // The Team tab's own list (My Team): 16 at the sides, 20 on top.
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
         children: [
           if (joiners.isEmpty)
             const Padding(
-              padding: EdgeInsets.only(top: 24),
-              child: Text('No new joiners right now.', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: OnbColors.text3)),
+              padding: EdgeInsets.symmetric(vertical: 40),
+              child: Center(
+                child: Text(
+                  'No new joiners right now.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: _NewJoinerLook.faint, fontSize: 13.5, fontWeight: FontWeight.w600),
+                ),
+              ),
             )
           else
-            TeamListCard(
-              children: [
-                for (final (i, card) in joiners.indexed)
-                  NewJoinerRow(
-                    card: card,
-                    divider: i < joiners.length - 1,
-                    onTap: card.userId == null ? null : () => _open(card.userId!),
-                  ),
-              ],
-            ),
+            for (final (i, card) in joiners.indexed) ...[
+              if (i > 0) const SizedBox(height: 16),
+              NewJoinerRow(card: card, onTap: card.userId == null ? null : () => _open(card.userId!)),
+            ],
         ],
       ),
     );
   }
 }
 
-/// One new joiner: photo (initials), name, role, the joining line, and a
-/// chevron when the profile opens; else the note that it opens on Day 1.
+/// The Team tab's people card, as My Team draws it (node 2488:89724): white,
+/// 16 radius, a hairline and a soft shadow, a 56 photo, the name in Sora 17
+/// and the designation under it.
+abstract final class _NewJoinerLook {
+  static const ink = Color(0xFF222222);
+  static const soft = Color(0xFF717171);
+  static const faint = Color(0xFF9197A2);
+  static const line = Color(0xFFEBEBEB);
+  static const joiningBg = Color(0xFFE6EEFF);
+  static const joiningFg = Color(0xFF0571A6);
+  static const noteBg = Color(0xFFF1F1F4);
+
+  /// The app's initials colours (manager_shared.dart avatarColors).
+  static const avatars = [
+    Color(0xFFBE5A36),
+    Color(0xFF4F8C89),
+    Color(0xFF8A6AA0),
+    Color(0xFFC98A2E),
+    Color(0xFF7E8B6E),
+    Color(0xFFC0392B),
+    Color(0xFF3563C4),
+  ];
+}
+
+/// One new joiner: photo (initial), name, role, and the joining day; a
+/// joiner without an account yet says when their profile opens instead of
+/// opening one.
 class NewJoinerRow extends StatelessWidget {
-  const NewJoinerRow({super.key, required this.card, this.onTap, this.divider = true});
+  const NewJoinerRow({super.key, required this.card, this.onTap});
 
   final NewJoinerCard card;
   final VoidCallback? onTap;
-  final bool divider;
 
   @override
   Widget build(BuildContext context) {
     final role = card.roleLine;
     final note = onTap == null ? (card.profileNote ?? 'Profile opens on their first day') : null;
+    final body = Container(
+      padding: const EdgeInsets.all(17.114),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _NewJoinerLook.line, width: 1.114),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: .1), blurRadius: 1.5, offset: const Offset(0, 1)),
+          BoxShadow(color: Colors.black.withValues(alpha: .1), blurRadius: 1, offset: const Offset(0, 1)),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _NewJoinerPhoto(name: card.name, photoUrl: card.photoUrl, seed: card.journeyId),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  card.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontFamily: 'Sora', color: _NewJoinerLook.ink, fontWeight: FontWeight.w700, fontSize: 17, height: 25.5 / 17),
+                ),
+                if (role != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    role,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontFamily: 'Sora', color: _NewJoinerLook.soft, fontSize: 14, height: 20 / 14),
+                  ),
+                ],
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _NewJoinerPill(card.joiningLine, background: _NewJoinerLook.joiningBg, foreground: _NewJoinerLook.joiningFg),
+                      if (note != null) _NewJoinerPill(note, background: _NewJoinerLook.noteBg, foreground: _NewJoinerLook.soft),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
     return Semantics(
       button: onTap != null,
       label: [card.name, ?role, card.joiningLine, if (onTap != null) 'Open profile' else ?note].join(', '),
       excludeSemantics: true,
-      child: Material(
+      child: KeyedSubtree(
         key: ValueKey('new-joiner-${card.journeyId}'),
-        color: Colors.white,
-        child: InkWell(
-          onTap: onTap,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 76),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(border: divider ? const Border(bottom: BorderSide(color: OnbColors.line)) : null),
-            child: Row(
-              children: [
-                OnbAvatar(name: card.name, photoUrl: card.photoUrl, size: 48),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(card.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: TeamColors.ink)),
-                      if (role != null) ...[
-                        const SizedBox(height: 3),
-                        Text(role, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: OnbColors.text3)),
-                      ],
-                      const SizedBox(height: 3),
-                      Text(card.joiningLine, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.primary)),
-                      if (note != null) ...[
-                        const SizedBox(height: 3),
-                        Text(note, style: const TextStyle(fontSize: 12, color: OnbColors.text3)),
-                      ],
-                    ],
-                  ),
-                ),
-                if (onTap != null) ...[
-                  const SizedBox(width: 8),
-                  const Icon(Icons.chevron_right_rounded, size: 18, color: OnbColors.icon),
-                ],
-              ],
-            ),
-          ),
+        child: onTap == null
+            ? body
+            : Material(
+                color: Colors.transparent,
+                child: InkWell(borderRadius: BorderRadius.circular(16), onTap: onTap, child: body),
+              ),
+      ),
+    );
+  }
+}
+
+/// The 56 photo, or the first letter on one of the app's initials colours
+/// (the same joiner, the same colour).
+class _NewJoinerPhoto extends StatelessWidget {
+  const _NewJoinerPhoto({required this.name, required this.seed, this.photoUrl});
+
+  final String name;
+  final String seed;
+  final String? photoUrl;
+
+  static const size = 56.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmed = name.trim();
+    final letter = trimmed.isEmpty || trimmed == '—' ? '?' : trimmed[0].toUpperCase();
+    final colour = _NewJoinerLook.avatars[seed.codeUnits.fold<int>(0, (a, c) => a + c) % _NewJoinerLook.avatars.length];
+    final initial = Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: colour, shape: BoxShape.circle),
+      alignment: Alignment.center,
+      child: Text(letter, style: const TextStyle(color: Colors.white, fontSize: size * .42, fontWeight: FontWeight.w800)),
+    );
+    final url = photoUrl;
+    if (url == null || url.isEmpty) return initial;
+    return ClipOval(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Image(
+          image: avatarImageProvider(url),
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => initial,
+          frameBuilder: (_, child, frame, wasSyncLoaded) => frame == null && !wasSyncLoaded ? initial : child,
         ),
       ),
     );
   }
+}
+
+/// A small rounded label under the name, as the Team tab's day pills ("Late",
+/// "WFH") are drawn: "Joins tomorrow", "Profile opens on their first day".
+class _NewJoinerPill extends StatelessWidget {
+  const _NewJoinerPill(this.label, {required this.background, required this.foreground});
+
+  final String label;
+  final Color background;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+    decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(6)),
+    child: Text(
+      label,
+      style: TextStyle(fontFamily: 'Sora', color: foreground, fontSize: 12, height: 16.2 / 12, letterSpacing: -0.16),
+    ),
+  );
 }
