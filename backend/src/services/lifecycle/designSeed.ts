@@ -199,7 +199,6 @@ export function finalDesignRows(company = 'the company'): TemplateTask[] {
     signRow,
     contentRow({ section: 'watch', title: 'Welcome from HR', stage: 'pre', media: { type: 'video' } }),
     contentRow({ section: 'watch', title: 'Meet the team', stage: 'pre', media: { type: 'video' } }),
-    teamRow({ key: 'mgr_assign_buddy', title: 'Assign a buddy', role: 'manager', stage: 'pre' }),
     teamRow({ key: 'mgr_schedule', title: 'Schedule their first-week meetings', role: 'manager', stage: 'pre', how: 'The meetings are already created. Pick a time for each one.' }),
     teamRow({ key: 'mgr_welcome', title: 'Send a welcome message', role: 'manager', stage: 'pre' }),
     teamRow({ key: 'mgr_kpis', title: 'Set their KPIs', role: 'manager', stage: 'pre', how: 'In Performance › KPIs. They review them in Week 1.' }),
