@@ -24,11 +24,14 @@ defineTools({
     if (!wanted.length) throw new Error(`Give the ${kind} names to add`);
     const settings = await getCompanySettings(ctx.userId);
     const saved = settings[LIST[kind]];
-    const known = new Set([...saved, ...(kind === 'department' ? settings.departments : settings.designations)].map((n) => n.toLowerCase()));
+    const spelling = new Map((kind === 'department' ? settings.departments : settings.designations).map((n) => [n.toLowerCase(), n]));
+    const known = new Set(spelling.keys());
     const savedLower = new Set(saved.map((n) => n.toLowerCase()));
     const adding: string[] = [];
     const skipped: { who: string; reason: string }[] = [];
-    for (const n of wanted) {
+    for (const typed of wanted) {
+      const n = spelling.get(typed.toLowerCase()) ?? typed; // a name someone already holds keeps its spelling
+
       if (savedLower.has(n.toLowerCase()) || adding.some((a) => a.toLowerCase() === n.toLowerCase())) skipped.push({ who: n, reason: 'Already on the list' });
       else adding.push(n);
     }
