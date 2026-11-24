@@ -187,7 +187,7 @@ export function OffboardingDrawer({ card, tabLabel, columnLabel, onClose, onChan
               </div>
             )}
 
-            <div className="ob-privacy"><LockIcon /><span>The reason and note are seen by the manager and HR. Exit interview answers stay anonymised in Exit insights; nobody sees them against a name.</span></div>
+            <div className="ob-privacy"><LockIcon /><span>The reason and note are seen by the manager and HR. Exit interview answers are anonymised; nobody sees them against a name.</span></div>
           </>
         )}
       </div>

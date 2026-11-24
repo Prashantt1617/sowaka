@@ -127,7 +127,7 @@ export const LIFECYCLE_SECTION = 'EMPLOYEE LIFECYCLE';
 const LIFECYCLE: NavItem[] = [
   { key: 'onboarding', label: 'Onboarding' },
   { key: 'offboarding', label: 'Offboarding' },
-  { key: 'exit_insights', label: 'Exit insights' },
+  // Exit insights is hidden for every company (24 Nov 2026, HR): no menu entry, no access to give, no page.
   { key: 'lifecycle_documents', label: 'Documents' },
   { key: 'lifecycle_templates', label: 'Templates', hidden: true },
 ];

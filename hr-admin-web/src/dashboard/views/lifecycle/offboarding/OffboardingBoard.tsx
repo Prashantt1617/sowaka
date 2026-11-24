@@ -106,7 +106,7 @@ export function OffboardingBoard() {
       </PageActions>
       <Card padded>
         <p className="pd-lead" style={{ marginBottom: 16 }}>
-          {hr ? 'Everyone leaving, from resignation to final settlement. Each tab is one phase; columns are its steps. Exit interview answers never show here: they go to Exit insights, anonymised.'
+          {hr ? 'Everyone leaving, from resignation to final settlement. Each tab is one phase; columns are its steps. Exit interview answers never show here.'
             : 'The exits with a clearance item for your team. Tick yours when it is done.'}
         </p>
         <div className="ob-tabs">
