@@ -90,6 +90,8 @@ export function Feedback() {
   const { user } = useAuth();
   // A manager (team scope): one list of their team, KPIs for everyone in it, reviews for direct reports.
   if (isTeamScope(user)) return <TeamPerformance />;
+  // HR who also manages people, with themselves picked (or My team): the same team view, for their subtree.
+  if (user?.id && s.fbMgrFilter === user.id) return <TeamPerformance onExit={() => s.setFbMgrFilter(null)} />;
   return (
     <Loadable state={s.listState('feedback', 'employees', 'cycle')} onRetry={() => void s.reload()} skeleton={<SkeletonPage cards={1} rows={6} cols={6} />}>
       <FeedbackBody />
@@ -224,6 +226,13 @@ function FeedbackBody() {
             { key: 'employees', label: 'Employees', count: view.fbEmps.length },
           ]}
         />
+        {/* HR who manages people: their own team, to assign KPIs and write their direct reports' reviews. */}
+        {user?.id && s.emps.some((e) => e.managerId === user.id) && (
+          <button type="button" onClick={() => s.setFbMgrFilter(user.id)} className="lk-btn"
+            style={{ height: 40, padding: '0 16px', borderRadius: 999, border: '1px solid var(--line-2)', background: 'var(--surface)', font: 'inherit', fontSize: 14, cursor: 'pointer' }}>
+            My team
+          </button>
+        )}
         <button
           onClick={exportRows}
           disabled={view.fbs.length === 0}

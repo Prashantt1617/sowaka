@@ -18,6 +18,8 @@ export type AuthUser = {
   dashboardTabs?: string[] | null;
   /** 'team': a manager on the dashboard, limited to their own reporting subtree and the manager tabs. */
   dashboardScope?: 'team';
+  /** A manager HR also gave some tabs: those open as HR's, company-wide. */
+  dashboardGivenTabs?: string[];
   isLeadership?: boolean;
   /** Support desk role, given in People › Accesses. Absent or null: no Support desk. */
   supportRole?: 'head' | 'staff' | null;

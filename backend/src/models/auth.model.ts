@@ -26,6 +26,8 @@ export interface AuthUser {
   dashboardTabs?: string[] | null;
   /** A manager on the dashboard (manager-scope.ts): every list is their team. */
   dashboardScope?: 'team';
+  /** With dashboardScope: the tabs HR gave them, which stay company-wide. */
+  dashboardGivenTabs?: string[];
   /** Support desk role; null when they have none (no Support tab). */
   supportRole?: 'head' | 'staff' | null;
   /** May edit the profile details of themselves and everyone below them in the reporting line. */

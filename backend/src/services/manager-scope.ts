@@ -77,20 +77,30 @@ async function managerDashboardOn(org: string): Promise<boolean> {
   return on;
 }
 
-export type DashboardGrant = { access: boolean; tabs: string[] | null; teamScope: boolean };
+export type DashboardGrant = {
+  access: boolean; tabs: string[] | null; teamScope: boolean;
+  /** Tabs HR gave this person (People › Accesses): those stay company-wide even for a manager. */
+  givenTabs?: string[];
+};
 
 /**
  * What the dashboard lets this person do: HR's grant as it is; otherwise, in a company with the manager
  * dashboard on, a manager's (their tabs, their team). Nobody else.
  */
 export async function dashboardGrantOf(user: Pick<User, 'userId' | 'org' | 'dashboardAccess' | 'dashboardAdmin' | 'dashboardTabs'> & { dashboardScope?: string }): Promise<DashboardGrant> {
+  const isManager = async () => !!user.org && (await managerDashboardOn(user.org)) && ((await treeOf(user.org)).get(user.userId) ?? []).length > 0;
   if (user.dashboardAccess === true) {
-    const team = user.dashboardAdmin !== true && user.dashboardScope === 'team';
-    return { access: true, tabs: user.dashboardAdmin === true || !Array.isArray(user.dashboardTabs) ? null : user.dashboardTabs, teamScope: team };
+    const everything = user.dashboardAdmin === true || !Array.isArray(user.dashboardTabs);
+    if (everything) return { access: true, tabs: null, teamScope: false };
+    // Some tabs from HR (Claims, say) and a manager too (24 Nov 2026): HR's tabs as given, company-wide, plus
+    // the manager's own screens for their team.
+    if (await isManager()) {
+      const given = user.dashboardTabs as string[];
+      return { access: true, tabs: [...new Set([...given, ...MANAGER_TABS])], teamScope: true, givenTabs: given };
+    }
+    return { access: true, tabs: user.dashboardTabs as string[], teamScope: user.dashboardScope === 'team' };
   }
-  if (!user.org || !(await managerDashboardOn(user.org))) return { access: false, tabs: null, teamScope: false };
-  const reports = (await treeOf(user.org)).get(user.userId) ?? [];
-  if (!reports.length) return { access: false, tabs: null, teamScope: false };
+  if (!(await isManager())) return { access: false, tabs: null, teamScope: false };
   return { access: true, tabs: [...MANAGER_TABS], teamScope: true };
 }
 
