@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { lifecycleTemplates, resignations, users } from '../../config/db';
 import type { Resignation } from '../../models/lifecycle.model';
 import {
-  LifecycleError, addDays, appUser, beginOffboarding, dashboardActor, daysFromTo, firstName, isDateKey, keyOfInstant, longDay, noticeDaysFor, requireHr, resignationView, shortDay,
+  LifecycleError, addDays, appUser, beginOffboarding, dashboardActor, daysFromTo, firstName, isDateKey, keyOfInstant, longDay, noticeDaysForUser, requireHr, resignationView, shortDay,
   tellOffboarding, todayKey,
 } from './offboarding';
 import type { OffboardingDestination } from './offboarding';
@@ -34,7 +34,7 @@ const managerNameOf = async (id: string | undefined) => (id ? (await users().fin
 /** GET /lifecycle/resignation — the open (or accepted) resignation, and what a new one would give. */
 export async function myResignation(userId: string, now = new Date()) {
   const user = await appUser(userId);
-  const noticeDays = await noticeDaysFor(user.org);
+  const noticeDays = await noticeDaysForUser(user.org, userId);
   const lastDayByNotice = addDays(todayKey(now), noticeDays);
   const r = await resignations().findOne({ org: user.org, userId, status: { $in: ['with_manager', 'with_hr', 'accepted'] } }, { sort: { submittedAt: -1 }, projection: { _id: 0 } });
   // Accepted and long gone (a rehire): only a resignation of the exit under way counts.
@@ -54,7 +54,7 @@ export async function resign(userId: string, body: Record<string, unknown>, now 
   const reason = String(body.reason ?? '').trim().slice(0, 80);
   if (!reason) throw new LifecycleError(400, 'Pick a reason');
   const note = String(body.note ?? '').trim().slice(0, 2000);
-  const noticeDays = await noticeDaysFor(user.org);
+  const noticeDays = await noticeDaysForUser(user.org, userId);
   const managerUserId = user.managerUserId && user.managerUserId !== userId ? user.managerUserId : undefined;
   const r: Resignation = {
     id: randomUUID(), org: user.org, userId, ...(managerUserId ? { managerUserId } : {}), reason, ...(note ? { note } : {}),
@@ -151,19 +151,14 @@ export async function acceptResignation(hrUserId: string, resignationId: string,
   if (!employee) throw new LifecycleError(404, 'Employee not found');
   if (employee.exit) throw new LifecycleError(409, `An exit is already recorded for ${employee.name}`);
   const sent = keyOfInstant(r.submittedAt)!;
-  // A template picked here is this exit's template: its notice sets the last day by notice too
-  // (the resignation was sent with the Default's), not only the interview and the account close.
-  let noticeDays = r.noticeDays;
-  let lastDayByNotice = r.lastDayByNotice;
-  if (body.templateId) {
-    const template = await lifecycleTemplates().findOne({ id: String(body.templateId), org: hr.org, kind: 'offboarding' }, { projection: { _id: 0, settings: 1 } });
-    if (!template) throw new LifecycleError(400, 'No such offboarding template');
-    if (typeof template.settings?.noticeDays === 'number') { noticeDays = template.settings.noticeDays; lastDayByNotice = addDays(sent, noticeDays); }
-  }
+  // The notice is the person's own (their offer letter, else 60 days), set when they resigned; a template
+  // picked here no longer changes it (24 Nov 2026: notice comes from the offer letter, nothing to fill in).
+  const noticeDays = r.noticeDays;
+  const lastDayByNotice = r.lastDayByNotice;
+  if (body.templateId && !(await lifecycleTemplates().findOne({ id: String(body.templateId), org: hr.org, kind: 'offboarding' }, { projection: { _id: 1 } }))) throw new LifecycleError(400, 'No such offboarding template');
   const lastWorkingDay = body.lastWorkingDay == null || body.lastWorkingDay === '' ? (r.manager?.date ?? lastDayByNotice) : String(body.lastWorkingDay);
   if (!isDateKey(lastWorkingDay)) throw new LifecycleError(400, 'Last working day is a date like 2026-12-31');
   if (lastWorkingDay < sent) throw new LifecycleError(400, `The last day cannot be before the resignation (${longDay(sent)})`);
-  const early = lastWorkingDay < lastDayByNotice && body.recoverShortfall !== true;
   // One accept: the resignation moves to accepted in one conditional step before the exit and its journey
   // are made, so a second click (or two HR at once) cannot start a second exit. Undone if the start fails.
   const claimed = await resignations().updateOne(
@@ -176,7 +171,8 @@ export async function acceptResignation(hrUserId: string, resignationId: string,
     res = await beginOffboarding(hr, employee, {
       exitType: 'resignation', lastWorkingDay, noticeFrom: sent, noticeDays,
       ...(body.note ? { note: String(body.note).trim().slice(0, 1000) } : {}),
-      ...(early ? { rules: { noticeRecovery: 'none' } } : {}),
+      // Leaving before the notice ends is paid for the days worked, nothing recovered and no notice pay (24 Nov 2026, HR).
+      rules: { noticePay: 'none', noticeRecovery: 'none' }, noticeHandling: 'not_applicable',
       ...(body.newManagerUserId ? { newManagerUserId: String(body.newManagerUserId) } : {}),
       moveTeamNow: body.moveTeamNow === true,
       ...(body.templateId ? { templateId: String(body.templateId) } : {}),

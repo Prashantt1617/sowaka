@@ -45,7 +45,7 @@ import {
 import { closeJourney, completeTask, createOffboardingJourney, journeyTasksView, moveTl, refreshJourney, reopenTask, setJourneyStatus, skipTask } from './engine';
 import type { TaskView } from './engine';
 import { orgMayEmail, sendLifecycleEmail, smtpConfigured } from './emails';
-import { noticeDaysFor } from './templates';
+import { noticeDaysFor, noticeDaysForUser } from './templates';
 import { scopedUsers, scriptForcesFeatures } from './scriptScope';
 import { env } from '../../config/env';
 import { FACE_PROJECTION, faceUrlOf, type FaceFields } from '../face-photos';
@@ -159,7 +159,7 @@ export async function defaultOffboardingTemplate(org: string) {
 }
 
 /** Days of notice for a resignation: the default offboarding template, else the company's Exit settings, else 30 (templates.ts). */
-export { noticeDaysFor };
+export { noticeDaysFor, noticeDaysForUser };
 
 /** Whether the app shows the Off-boarding page: the template's list when it has one, else on except for terminations and abscondings. */
 export function appPageDefault(type: OffboardingExitType, appPageFor?: OffboardingExitType[]): boolean {
@@ -928,8 +928,7 @@ export async function offboardingDetail(actorUserId: string, employeeUserId: str
   details.push({ label: 'Last day', value: longDay(e.lastWorkingDay) }, { label: 'Manager', value: ctx.managerName ?? '—' });
   if (hr) {
     if (e.noticeDays != null) details.push({ label: 'Notice period', value: `${e.noticeDays} days` });
-    // What HR chose for the notice at the start, and HR's own note (never shown to the employee or the manager).
-    if (ob?.noticeHandling) details.push({ label: 'Notice', value: NOTICE_HANDLING_LABEL[ob.noticeHandling] ?? ob.noticeHandling });
+    // HR's own note (never shown to the employee or the manager).
     if (e.note) details.push({ label: 'HR note', value: e.note });
     if (ctx.journey) details.push({ label: 'Template', value: ctx.journey.templateSnapshot?.name ?? 'Standard' });
     details.push({ label: 'App access ends', value: accessEndsLabel(e.rules?.access, ctx.journey) });
@@ -1091,7 +1090,8 @@ export async function startExit(actorUserId: string, employeeUserId: string, bod
   if (managerUserId && !(await users().findOne({ userId: managerUserId, org: actor.org }, { projection: { _id: 1 } }))) throw new LifecycleError(400, 'The reporting manager must be someone at this company');
   const res = await beginOffboarding(actor, employee, {
     exitType, lastWorkingDay, ...(noticeFrom ? { noticeFrom } : {}),
-    ...(exitType === 'resignation' ? { noticeDays: await noticeDaysFor(actor.org) } : {}),
+    // The person's own notice (offer letter, else 60 days): shown, never typed in, no money on it.
+    noticeDays: await noticeDaysForUser(actor.org, employeeUserId),
     ...(body.hrNote ? { note: String(body.hrNote).trim().slice(0, 1000) } : {}),
     rules: rulesForNotice(exitType, noticeHandling),
     ...(body.newManagerUserId ? { newManagerUserId: String(body.newManagerUserId) } : {}),

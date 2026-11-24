@@ -80,12 +80,11 @@ export function ExitDetail({ userId, onBack, embedded }: { userId: string; onBac
   const stage = exit.caseOpen ? { label: 'Case open', tone: { bg: 'var(--surface-2)', fg: 'var(--ink-2)' } } : STAGE[exit.stage];
   const given = exit.noticeFrom ? daysBetween(exit.noticeFrom, exit.lastWorkingDay) : null;
   const short = exit.noticeDays != null && given != null ? Math.max(0, exit.noticeDays - given) : null;
-  // What the notice came to, in the words that fit how they left.
+  // The notice is their own (offer letter, else 60 days) and only sets the last day: leaving earlier is paid for the
+  // days worked, nothing recovered and no notice pay (24 Nov 2026, HR).
   const noticeText = exit.noticeDays == null ? '—'
-    : exit.kind === 'terminated' ? `${exit.noticeDays} days${exit.rules.noticePay === 'none' ? '' : ', paid instead of worked'}`
-    : exit.kind === 'absconded' ? `${exit.noticeDays} days, not served`
-    : given == null ? `${exit.noticeDays} days`
-    : short ? `${given} of ${exit.noticeDays} days, ${short} short` : `${exit.noticeDays} days, all given`;
+    : exit.kind === 'terminated' || exit.kind === 'absconded' || given == null ? `${exit.noticeDays} days`
+    : short ? `${exit.noticeDays} days · left ${short} ${short === 1 ? 'day' : 'days'} early` : `${exit.noticeDays} days, all worked`;
   const done = exit.clearance.filter((c) => c.done).length;
 
   return (
@@ -162,7 +161,7 @@ export function ExitDetail({ userId, onBack, embedded }: { userId: string; onBac
         </div>
         {!settlement && exit.stage === 'notice' && (
           <div style={noteBox}>
-            The settlement starts on its own on {longDay(dayAfter(exit.lastWorkingDay))}, the day after {name}’s last day. It adds up every held month, unused leave, gratuity and the notice lines, less PF and the year’s remaining tax.
+            The settlement starts on its own on {longDay(dayAfter(exit.lastWorkingDay))}, the day after {name}’s last day. It adds up every held month, unused leave, and gratuity, less PF and the year’s remaining tax.
           </div>
         )}
         {!settlement && exit.caseOpen && (

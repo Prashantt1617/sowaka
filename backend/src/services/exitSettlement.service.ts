@@ -25,7 +25,7 @@ import { scopedUsers, scriptForcesFeatures } from './lifecycle/scriptScope';
 import { companies, exitSettlements, payrollRuns, payslips, salaryStructures, taxDeclarations, users } from '../config/db';
 import { ExitSettlement, SettlementChange, SettlementLine, SettlementTaxWorking } from '../models/exitSettlement.model';
 import { Payslip } from '../models/payrollRun.model';
-import { DEFAULT_EXIT_CLEARANCE, DEFAULT_EXIT_NOTICE, DEFAULT_EXIT_RULES, ExitNoticeSettings, User, UserExit } from '../models/user.model';
+import { DEFAULT_EXIT_CLEARANCE, DEFAULT_EXIT_NOTICE, DEFAULT_EXIT_RULES, ExitNoticeSettings, ExitRules, User, UserExit } from '../models/user.model';
 import { computeTds, fyOf } from '../shared/payroll/tds';
 import { AdminError } from './admin.service';
 import { getMyLeaveBalance } from './leave.service';
@@ -101,7 +101,9 @@ export async function computeSettlement(employee: User, changes: Record<string, 
   const exit = employee.exit;
   const org = employee.org;
   if (!exit || !org) throw new SettlementError(409, 'No exit recorded for this employee');
-  const rules = exit.rules ?? DEFAULT_EXIT_RULES[exit.kind];
+  // No notice money (24 Nov 2026, HR: "if someone is leaving early get the pay for the days he worked, nothing like
+  // shortfall"): the notice only sets the suggested last day. Salary runs to the last day; no notice pay, nothing recovered.
+  const rules: ExitRules = { ...(exit.rules ?? DEFAULT_EXIT_RULES[exit.kind]), noticePay: 'none', noticeRecovery: 'none' };
   const lastDay = exit.lastWorkingDay;
   // No salary structure, no settlement: every line would be worked out at ₹0 (payroll never assumes figures).
   const structureRow = await salaryStructures().findOne({ org, userId: employee.userId }, { projection: { _id: 0, salaryTemplateCode: 1 } });

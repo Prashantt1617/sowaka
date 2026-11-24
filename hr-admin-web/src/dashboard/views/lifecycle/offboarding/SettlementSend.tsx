@@ -312,7 +312,7 @@ function AddLineDialog({ lines, busy, onClose, onSave }: { lines: SettlementLine
                 <input className="pd-inp" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, '').slice(0, 9))} placeholder={line?.computedPaise ? String(Math.round(line.computedPaise / 100)) : '0'} />
               </label>
               <label style={{ display: 'grid', gap: 6, fontWeight: 600, color: 'var(--ink)' }}>Why (shows on the statement)
-                <input className="pd-inp" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. HR chose to pay the notice period" />
+                <input className="pd-inp" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Agreed with the employee" />
               </label>
             </>
           )}

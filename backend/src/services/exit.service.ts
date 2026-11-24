@@ -23,6 +23,7 @@ import { ExitSettlement } from '../models/exitSettlement.model';
 import { approveSettlement, changeSettlementLine, draftDueSettlements, exitNoticeSettings, markSettlementPaid, reopenSettlement, settlementFor, settlementOpen, settlementView } from './exitSettlement.service';
 import { notifyUsers } from './notification.service';
 import { scopedUsers } from './lifecycle/scriptScope';
+import { noticeDaysForUser } from './lifecycle/templates';
 import { logger } from '../utils/logger';
 
 /** An AdminError, so the error handler answers with its status and message. */
@@ -246,7 +247,8 @@ export async function recordExit(adminUserId: string, employeeUserId: string, bo
   const noticeFromRaw = body.noticeFrom == null ? '' : String(body.noticeFrom).trim();
   if (noticeFromRaw && !DATE.test(noticeFromRaw)) throw new ExitError(400, 'Notice from is a date like 2026-11-01');
   if (noticeFromRaw && noticeFromRaw > lastWorkingDay) throw new ExitError(400, 'The notice can\'t start after the last working day');
-  let noticeDays: number | undefined;
+  // Nothing to fill in (24 Nov 2026, HR): the person's own notice from their offer letter, else 60 days.
+  let noticeDays: number | undefined = await noticeDaysForUser(admin.org, employeeUserId);
   if (body.noticeDays != null && body.noticeDays !== '') {
     noticeDays = Number(body.noticeDays);
     if (!Number.isInteger(noticeDays) || noticeDays < 0 || noticeDays > 365) throw new ExitError(400, 'Notice period is whole days, 0 to 365');
@@ -271,7 +273,8 @@ export async function recordExit(adminUserId: string, employeeUserId: string, bo
 
   // The company's rules for this kind, with HR's changes for this person.
   const forKind = (await companyRules(admin.org)).find((k) => k.kind === kind)!.rules;
-  const rules = readRules(body.rules, forKind, 'rules');
+  // Leaving before the notice ends is paid for the days worked: no notice pay, nothing recovered (24 Nov 2026, HR).
+  const rules: ExitRules = { ...readRules(body.rules, forKind, 'rules'), noticePay: 'none', noticeRecovery: 'none' };
   if (rules.access === 'never') throw new ExitError(400, 'Someone who leaves must lose app access: pick "the day after" or "at once"');
 
   const moveNow = body.moveTeamNow === true || body.endAccessNow === true || rules.access === 'at_once' || lastWorkingDay < todayIst(now);
