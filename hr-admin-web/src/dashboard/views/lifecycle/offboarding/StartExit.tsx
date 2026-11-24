@@ -24,9 +24,6 @@ const TYPES: { key: ExitType; label: string; note: string; notice: NoticeHandlin
   { key: 'termination', label: 'Termination', note: 'The company ends employment. Keep the reason in the internal note; it never shows in the app.', notice: 'paid_in_lieu', page: false, pageNote: 'Off by default: HR tells the employee first, then turns this on.', interview: false },
   { key: 'absconding', label: 'Absconding', note: 'Not reachable and absent without notice. Follow your policy before you start this.', notice: 'recovered', page: false, pageNote: 'Off: the employee is not reachable.', interview: false },
 ];
-const NOTICE_LABEL: Record<NoticeHandling, string> = {
-  served: 'Served in full', not_applicable: 'Not applicable', waived: 'Waived by the company', recovered: 'Shortfall recovered from settlement', paid_in_lieu: 'Paid in lieu of notice',
-};
 type Template = { id: string; name: string; isDefault: boolean; active?: boolean };
 
 /**
@@ -124,8 +121,8 @@ export function StartExit({ onBack, onStarted, presetUserId }: { onBack: () => v
       { key: 'e', when: `Tl + ${gratuityDays}`, what: 'Gratuity, if eligible', owner: 'finance' },
     ];
 
-  // Simpler (24 Nov 2026, HR: "make this simpler"): what HR must decide up front (who, the type, the last
-  // day, notice, a successor for their team), the rest under More options; the plan as four dates and the
+  // Simpler (24 Nov 2026, HR: "make this simpler"; no notice field for now, each type keeps its default
+  // handling): what HR must decide up front (who, the type, the last day, a successor for their team), the rest under More options; the plan as four dates and the
   // template's steps with their counts, not every task.
   const workingDaysAfter = (from: string, n: number) => {
     let d = from; let left = n;
@@ -186,13 +183,6 @@ export function StartExit({ onBack, onStarted, presetUserId }: { onBack: () => v
                 <input type="date" className="pd-inp" value={lastDay} onChange={(e) => setLastDay(e.target.value)} />
                 {type === 'resignation' && typeof noticeDays === 'number' && <span className="hint">{noticeDays}-day notice from today, by the template</span>}
                 {lastDay && lastDay < todayKey() && <span className="hint" style={{ color: 'var(--warn)' }}>Already past: {name}'s app turns off as you start this.</span>}
-              </label>
-              <label className="f">Notice
-                <span className="pd-pick">
-                  <select className="pd-inp" value={notice} onChange={(e) => setNotice(e.target.value as NoticeHandling)} style={{ width: '100%' }}>
-                    {[meta.notice, ...(['waived', 'recovered', 'paid_in_lieu'] as NoticeHandling[]).filter((n) => n !== meta.notice)].map((n) => <option key={n} value={n}>{NOTICE_LABEL[n]}</option>)}
-                  </select>
-                </span>
               </label>
             </div>
             {team.length > 0 && (
