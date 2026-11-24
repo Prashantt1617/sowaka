@@ -27,7 +27,8 @@ export function ConfirmJoinerDialog({ onClose, onDone }: { onClose: () => void; 
   const [fields, setFields] = useState<OfferFields>(() => ({ ...blankOfferFields(), validTill: todayKey() }));
   const [templates, setTemplates] = useState<TemplateListItem[]>([]);
   const [templateId, setTemplateId] = useState('');
-  const [emailPortal, setEmailPortal] = useState(false);
+  // On by default (24 Nov, HR): a confirmed joiner can do nothing until they know the portal exists.
+  const [emailPortal, setEmailPortal] = useState(true);
   const [errors, setErrors] = useState<Errors>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -161,7 +162,7 @@ export function ConfirmJoinerDialog({ onClose, onDone }: { onClose: () => void; 
         </Field>
         <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13, lineHeight: 1.5, color: 'var(--ink-2)', cursor: 'pointer' }}>
           <input type="checkbox" checked={emailPortal} onChange={(e) => setEmailPortal(e.target.checked)} style={{ marginTop: 3 }} />
-          <span>Email them the joining portal sign-in now<span style={{ display: 'block', fontSize: 11.5, color: 'var(--ink-3)' }}>Left off, nothing is emailed. Their portal is ready either way: they sign in with a code sent to their personal email.</span></span>
+          <span>Email them the joining portal sign-in now<span style={{ display: 'block', fontSize: 11.5, color: 'var(--ink-3)' }}>Untick to email nothing for now. Their portal is ready either way: they sign in with a code sent to their personal email.</span></span>
         </label>
         <datalist id="cj-designations">{choices.designations.map((d) => <option key={d} value={d} />)}</datalist>
         <datalist id="cj-departments">{choices.departments.map((d) => <option key={d} value={d} />)}</datalist>
