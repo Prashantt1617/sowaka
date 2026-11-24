@@ -4,6 +4,8 @@
 // template, dated from the last working day. The app page is off by default for a termination or
 // an absconding. Resignations sent from the app start on their own.
 import { useEffect, useMemo, useState } from 'react';
+// Its own styles: the form is also used on a profile's Exit tab, where the board's stylesheet isn't loaded.
+import './offboarding.css';
 import { Card, PageActions } from '../../../ui';
 import { usePageHead } from '../../../pageHead';
 import { btn, btnClass } from '../../../ds';
@@ -20,7 +22,7 @@ const TYPES: { key: ExitType; label: string; note: string; notice: NoticeHandlin
   { key: 'retirement', label: 'Retirement', note: 'Retiring on reaching the retirement age in their contract.', notice: 'not_applicable', page: true, pageNote: 'They see their last day, tasks and exit interview.', interview: true },
   { key: 'end_of_contract', label: 'End of contract', note: 'A fixed-term contract or internship that ends on its date.', notice: 'not_applicable', page: true, pageNote: 'They see their last day and tasks.', interview: false },
   { key: 'termination', label: 'Termination', note: 'The company ends employment. Keep the reason in the internal note; it never shows in the app.', notice: 'paid_in_lieu', page: false, pageNote: 'Off by default: HR tells the employee first, then turns this on.', interview: false },
-  { key: 'absconding', label: 'Absconding', note: 'Not reachable and absent without notice. Follow your policy before you start this.', notice: 'recovered', page: false, pageNote: 'Off: the employee is not reachable.', interview: false },
+  { key: 'absconding', label: 'Absconding', note: 'Not reachable and absent without telling anyone. Follow your policy before you start this.', notice: 'recovered', page: false, pageNote: 'Off: the employee is not reachable.', interview: false },
 ];
 type Template = { id: string; name: string; isDefault: boolean; active?: boolean };
 
@@ -34,7 +36,6 @@ export function StartExit({ onBack, onStarted, presetUserId }: { onBack: () => v
   const [type, setType] = useState<ExitType>('resignation');
   const meta = TYPES.find((t) => t.key === type)!;
   const [lastDay, setLastDay] = useState('');
-  const [notice, setNotice] = useState<NoticeHandling>(meta.notice);
   const [templateId, setTemplateId] = useState('');
   const [templates, setTemplates] = useState<Template[]>([]);
   const [manager, setManager] = useState('');
@@ -64,7 +65,6 @@ export function StartExit({ onBack, onStarted, presetUserId }: { onBack: () => v
   }, [chosenId]);
   // A new type (or template) starts from its own defaults: the template says which exits see the app page.
   useEffect(() => {
-    setNotice(meta.notice);
     const pageFor = tpl?.settings.appPageFor;
     setPage(pageFor ? pageFor.includes(type) : meta.page);
   }, [type, tpl]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -82,7 +82,8 @@ export function StartExit({ onBack, onStarted, presetUserId }: { onBack: () => v
     setBusy(true);
     try {
       await startExit(emp.id, {
-        exitType: type, lastWorkingDay: lastDay, noticeHandling: notice, ...(templateId ? { templateId } : {}), ...(manager ? { managerUserId: manager } : {}),
+        exitType: type, lastWorkingDay: lastDay, // No notice (24 Nov 2026, HR: "take notice off from everywhere"): nothing paid in lieu or recovered.
+        noticeHandling: 'not_applicable', ...(templateId ? { templateId } : {}), ...(manager ? { managerUserId: manager } : {}),
         ...(note.trim() ? { hrNote: note.trim() } : {}), tellManagerNow: tellManager, showAppPage: page, ...(successor ? { newManagerUserId: successor } : {}),
       });
       s.flash(`${emp.name}'s exit is started. Last day ${longDay(lastDay)}.`);
@@ -101,19 +102,21 @@ export function StartExit({ onBack, onStarted, presetUserId }: { onBack: () => v
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
-      {presetUserId ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, flex: 1 }}>Start {emp ? `${firstName(emp.name)}'s` : 'an'} exit</h3>
-          {startBtn}
-        </div>
-      ) : (
+      {!presetUserId && (
         <PageActions>
           <button type="button" onClick={onBack} className={btnClass()} style={btn()}>Cancel</button>
           {startBtn}
         </PageActions>
       )}
-      <div style={{ maxWidth: 720 }}>
+      <div>
         <Card padded>
+          {presetUserId && (
+            // On a profile: the title and the action inside the card, together.
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 600, flex: 1 }}>Start {emp ? `${firstName(emp.name)}'s` : 'an'} exit</h3>
+              {startBtn}
+            </div>
+          )}
           <div className="ob-form">
             {!presetUserId && (
               <label className="f">Employee
@@ -130,22 +133,23 @@ export function StartExit({ onBack, onStarted, presetUserId }: { onBack: () => v
                 {TYPES.map((t) => <button key={t.key} type="button" role="radio" aria-checked={type === t.key} className={type === t.key ? 'on' : ''} onClick={() => setType(t.key)}>{t.label}</button>)}
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
               <label className="f">Last working day
-                <input type="date" className="pd-inp" value={lastDay} onChange={(e) => setLastDay(e.target.value)} />
+                <input type="date" className="pd-inp" value={lastDay} onChange={(e) => setLastDay(e.target.value)} style={{ width: '100%' }} />
                 {lastDay && lastDay < todayKey() && <span className="hint" style={{ color: 'var(--warn)' }}>Already past: {name}'s app turns off as you start this.</span>}
               </label>
+              {team.length > 0 && (
+                <label className="f">Their {team.length} {team.length === 1 ? 'report moves' : 'reports move'} to
+                  <span className="pd-pick">
+                    <select className="pd-inp" value={successor} onChange={(e) => setSuccessor(e.target.value)} style={{ width: '100%' }}>
+                      <option value="">Pick a manager</option>
+                      {others.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    </select>
+                  </span>
+                  <span className="hint">{name} leads {team.length} {team.length === 1 ? 'person' : 'people'}; they move the day after the last day.</span>
+                </label>
+              )}
             </div>
-            {team.length > 0 && (
-              <label className="f">{name} leads {team.length} {team.length === 1 ? 'person' : 'people'}. Who will they report to?
-                <span className="pd-pick">
-                  <select className="pd-inp" value={successor} onChange={(e) => setSuccessor(e.target.value)} style={{ width: '100%' }}>
-                    <option value="">Pick a manager</option>
-                    {others.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-                  </select>
-                </span>
-              </label>
-            )}
             <button type="button" onClick={() => setMore(!more)} aria-expanded={more}
               style={{ alignSelf: 'flex-start', border: 0, background: 'none', padding: 0, font: 'inherit', fontSize: 13.5, color: 'var(--accent)', cursor: 'pointer' }}>
               {more ? 'Fewer options' : 'More options'} <span style={{ color: 'var(--ink-3)' }}>· template, manager, note, who is told</span>

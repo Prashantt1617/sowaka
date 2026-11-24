@@ -266,7 +266,6 @@ function AcceptDialog({ d, mode, onClose, onDone }: { d: DrawerDTO; mode: 'accep
   const others = s.emps.filter((e) => e.id !== d.person.userId && !e.exit?.left).sort((a, b) => a.name.localeCompare(b.name));
   const [day, setDay] = useState(mode === 'early' ? '' : r.manager?.date ?? r.lastDayByNotice);
   const [note, setNote] = useState('');
-  const [recover, setRecover] = useState(false);
   const [successor, setSuccessor] = useState('');
   const [busy, setBusy] = useState(false);
   const early = !!day && day < r.lastDayByNotice;
@@ -276,7 +275,7 @@ function AcceptDialog({ d, mode, onClose, onDone }: { d: DrawerDTO; mode: 'accep
   const save = async () => {
     setBusy(true);
     try {
-      await acceptResignation(r.id, { lastWorkingDay: day, ...(note.trim() ? { note: note.trim() } : {}), ...(early && recover ? { recoverShortfall: true } : {}), ...(successor ? { newManagerUserId: successor } : {}) });
+      await acceptResignation(r.id, { lastWorkingDay: day, ...(note.trim() ? { note: note.trim() } : {}), ...(successor ? { newManagerUserId: successor } : {}) });
       s.flash(`${d.person.name}'s resignation is accepted. Last day ${longDay(day)}.`);
       onDone();
     } catch (e) {
@@ -285,17 +284,11 @@ function AcceptDialog({ d, mode, onClose, onDone }: { d: DrawerDTO; mode: 'accep
     }
   };
   return (
-    <Modal title={title} sub={`Notice period ${r.noticeDays} days · last day by notice ${longDay(r.lastDayByNotice)}.${r.manager?.date ? ` ${r.manager.byName} asked for ${longDay(r.manager.date)}.` : ''}`} onClose={onClose}
+    <Modal title={title} sub={`Suggested last day ${longDay(r.lastDayByNotice)}.${r.manager?.date ? ` ${r.manager.byName} asked for ${longDay(r.manager.date)}.` : ''}`} onClose={onClose}
       foot={<><button type="button" className="pd-btn" onClick={onClose}>Cancel</button><button type="button" className="pd-btn primary" disabled={!ok || busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Accept and confirm'}</button></>}>
       <label style={{ display: 'grid', gap: 6, fontWeight: 600, color: 'var(--ink)' }}>Last working day
         <input type="date" className="pd-inp" value={day} min={sent} max={mode === 'early' ? addDays(r.lastDayByNotice, -1) : undefined} onChange={(e) => setDay(e.target.value)} />
       </label>
-      {early && (
-        <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-          <input type="checkbox" checked={recover} onChange={(e) => setRecover(e.target.checked)} style={{ marginTop: 3 }} />
-          <span>Recover the notice not served from the settlement<span style={{ display: 'block', color: 'var(--ink-3)', fontSize: 12.5 }}>Off: the company is releasing {name} early, so nothing is recovered.</span></span>
-        </label>
-      )}
       {team.length > 0 && (
         <label style={{ display: 'grid', gap: 6, fontWeight: 600, color: 'var(--ink)' }}>{name} leads {team.length} {team.length === 1 ? 'person' : 'people'}. Who will they report to?
           <span className="pd-pick">
@@ -321,14 +314,11 @@ function LastDayDialog({ d, onClose, onDone }: { d: DrawerDTO; onClose: () => vo
   const e = d.exit!;
   const name = firstName(d.person.name);
   const [day, setDay] = useState(e.lastWorkingDay);
-  const [recover, setRecover] = useState(false);
   const [busy, setBusy] = useState(false);
-  const byNotice = e.noticeFrom && e.noticeDays != null ? addDays(e.noticeFrom, e.noticeDays) : null;
-  const early = !!byNotice && !!day && day < byNotice;
   const save = async () => {
     setBusy(true);
     try {
-      const out = await changeLastDay(d.person.userId, { lastWorkingDay: day, ...(early && recover ? { recoverShortfall: true } : {}) });
+      const out = await changeLastDay(d.person.userId, { lastWorkingDay: day, });
       s.flash(`${name}'s last day is now ${longDay(day)}`);
       onDone(out);
     } catch (err) {
@@ -337,17 +327,11 @@ function LastDayDialog({ d, onClose, onDone }: { d: DrawerDTO; onClose: () => vo
     }
   };
   return (
-    <Modal title="Change the last day" sub={`Now ${longDay(e.lastWorkingDay)}.${byNotice ? ` By the notice period: ${longDay(byNotice)}.` : ''} Every due date dated from the last day moves with it.`} onClose={onClose}
+    <Modal title="Change the last day" sub={`Now ${longDay(e.lastWorkingDay)}. Every due date dated from the last day moves with it.`} onClose={onClose}
       foot={<><button type="button" className="pd-btn" onClick={onClose}>Cancel</button><button type="button" className="pd-btn primary" disabled={!day || day === e.lastWorkingDay || busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save last day'}</button></>}>
       <label style={{ display: 'grid', gap: 6, fontWeight: 600, color: 'var(--ink)' }}>Last working day
         <input type="date" className="pd-inp" value={day} min={e.noticeFrom ?? undefined} onChange={(ev) => setDay(ev.target.value)} />
       </label>
-      {early && (
-        <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-          <input type="checkbox" checked={recover} onChange={(ev) => setRecover(ev.target.checked)} style={{ marginTop: 3 }} />
-          <span>Recover the notice not served from the settlement<span style={{ display: 'block', color: 'var(--ink-3)', fontSize: 12.5 }}>Off: an early release, so nothing is recovered.</span></span>
-        </label>
-      )}
     </Modal>
   );
 }
