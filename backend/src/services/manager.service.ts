@@ -934,7 +934,8 @@ export async function upsertFeedback(
     if (effectiveStatus === 'sent' && score === 0) {
       throw new ManagerError(400, 'A score is required for every parameter before sending');
     }
-    if (note.length > 1000) throw new ManagerError(400, 'Feedback note is too long');
+    // No practical cap on what a manager writes (24 Nov 2026); 5,000 characters only guards the record.
+    if (note.length > 5000) throw new ManagerError(400, 'Feedback note is too long');
     // A sent review explains every score in words (HR asked for it on
     // 31 Oct 2026): a draft may still be half written. A review sent before
     // the rule keeps its shorter comments until one of them is rewritten.

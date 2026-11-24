@@ -76,7 +76,7 @@ export function ReviewPage({ member, period, onBack, onSaved }: { member: Worksp
     try {
       const r = await api<{ text: string }>('/manager/feedback/refine', { method: 'POST', body: { employeeUserId: member.userId, parameter: p.name, score: p.score, text: p.note } });
       setBeforeRefine({ i: tab, note: p.note });
-      set(tab, { note: r.text.slice(0, 1000) });
+      set(tab, { note: r.text.slice(0, 5000) });
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Suwi could not refine it');
     } finally {
@@ -135,7 +135,7 @@ export function ReviewPage({ member, period, onBack, onSaved }: { member: Worksp
           ))}
         </div>
         <div style={{ position: 'relative' }}>
-          <textarea value={p.note} onChange={(e) => { set(tab, { note: e.target.value }); setBeforeRefine(null); }} rows={9} maxLength={1000}
+          <textarea value={p.note} onChange={(e) => { set(tab, { note: e.target.value }); setBeforeRefine(null); }} rows={9} maxLength={5000}
             placeholder={SpeechCtor ? 'Why this score? Type, or press Record and speak.' : 'Why this score?'}
             style={{ width: '100%', boxSizing: 'border-box', font: 'inherit', fontSize: 14, lineHeight: 1.55, padding: 14, borderRadius: 12, border: `1px solid ${listening ? 'var(--bad)' : 'var(--line-2)'}`, background: 'transparent', color: 'inherit', resize: 'vertical' }} />
           {heard && <div style={{ fontSize: 13, color: 'var(--ink-3)', fontStyle: 'italic', marginTop: 4 }}>{heard}…</div>}
@@ -153,7 +153,10 @@ export function ReviewPage({ member, period, onBack, onSaved }: { member: Worksp
             {refining ? 'Refining…' : 'Refine with Suwi'}
           </button>
           {beforeRefine?.i === tab && <button type="button" style={{ ...ghostBtn, border: 0 }} onClick={() => { set(tab, { note: beforeRefine.note }); setBeforeRefine(null); }}>Undo refine</button>}
-          <span style={{ marginLeft: 'auto', fontSize: 12, color: chars >= NOTE_MIN ? 'var(--ink-3)' : 'var(--bad)' }}>{chars} / {NOTE_MIN}</span>
+          {/* 75 is the least a sent comment needs, not a limit (24 Nov 2026: "163 / 75" read like a cap). */}
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: chars >= NOTE_MIN ? 'var(--ok)' : 'var(--bad)' }}>
+            {chars >= NOTE_MIN ? `${chars} characters ✓` : `${chars} characters · ${NOTE_MIN - chars} more needed (minimum ${NOTE_MIN})`}
+          </span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'auto' }}>
           <button type="button" style={ghostBtn} disabled={tab === 0} onClick={() => setTab(tab - 1)}>← {tab > 0 ? params[tab - 1].name : 'Previous'}</button>
