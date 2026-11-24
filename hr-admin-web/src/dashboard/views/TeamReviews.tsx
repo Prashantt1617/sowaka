@@ -15,6 +15,7 @@ import { ghostBtn, panelCard, panelTitle, smallBtn } from './kpiLook';
 const NOTE_MIN = 75;
 
 type Param = { parameterId: string; name: string; subtitle?: string; weight?: number; score: number; note: string };
+export type WorkspaceMember = Member;
 type Member = {
   userId: string;
   name: string;
@@ -29,7 +30,7 @@ type Member = {
 };
 type Workspace = { period: string; team: Member[] };
 
-const STATUS_LABEL: Record<string, string> = { pending: 'Not started', saved: 'Draft', sent: 'Sent' };
+export const STATUS_LABEL: Record<string, string> = { pending: 'Not started', saved: 'Draft', sent: 'Sent' };
 
 export function TeamReviews() {
   const { flash } = useStore();
@@ -85,7 +86,7 @@ export function TeamReviews() {
   );
 }
 
-function ReviewForm({ member, period, onClose, onSaved }: { member: Member; period: string; onClose: () => void; onSaved: (sent: boolean) => void }) {
+export function ReviewForm({ member, period, onClose, onSaved }: { member: Member; period: string; onClose: () => void; onSaved: (sent: boolean) => void }) {
   const [params, setParams] = useState<Param[]>(() => member.parameters.map((p) => ({ ...p, note: p.note ?? '', score: p.score ?? 0 })));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);

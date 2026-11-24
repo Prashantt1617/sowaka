@@ -20,7 +20,7 @@ import { Modal, Tabs } from './kpiUi';
 import { Td, Th } from './lookUi';
 import * as L from './look';
 import { ghostBtn, panelCard, panelTitle, smallBtn } from './kpiLook';
-import { TeamReviews } from './TeamReviews';
+import { TeamPerformance } from './TeamPerformance';
 import { useAuth } from '../auth/AuthContext';
 import { isTeamScope } from '../access';
 
@@ -87,6 +87,9 @@ const TONE: Record<FbEmp['status'], PillT & { label: string }> = {
 /** Waits for the shared lists this page reads before drawing it. */
 export function Feedback() {
   const s = useStore();
+  const { user } = useAuth();
+  // A manager (team scope): one list of their team, KPIs for everyone in it, reviews for direct reports.
+  if (isTeamScope(user)) return <TeamPerformance />;
   return (
     <Loadable state={s.listState('feedback', 'employees', 'cycle')} onRetry={() => void s.reload()} skeleton={<SkeletonPage cards={1} rows={6} cols={6} />}>
       <FeedbackBody />
@@ -190,7 +193,6 @@ function FeedbackBody() {
 
   return (
     <div>
-      {team && <TeamReviews />}
       {open && (
         <ReviewCard
           emp={open}
