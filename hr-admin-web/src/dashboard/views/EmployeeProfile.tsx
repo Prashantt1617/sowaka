@@ -29,6 +29,7 @@ import { assignShift, clearCalendarDay, clearReportingManager, deleteEmployee, g
 import type { EmployeeDetailsInput, ExitDTO, ShiftDTO } from '../../services/hrms';
 import { ExitBanner, ExitDialog } from './ExitDialog';
 import { ExitDetail } from './ExitDetail';
+import { StartExit } from './lifecycle/offboarding/StartExit';
 import { Field, GENDERS as GENDER_CHOICES, Select, TypeOrPick, grid2, grid3, infoCallout, infoIcon, inputStyle } from './AddEmployeeWizard';
 import { ApiError } from '../../services/http';
 import { useAuth } from '../auth/AuthContext';
@@ -244,6 +245,8 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
   const [exitTick, setExitTick] = useState(0);
   const seesSalary = canOpen(user, SALARY_DETAILS);
   // Exits: dashboard admins, where the company has them switched on, for anyone but themselves.
+  // The employee lifecycle on for this company: Exit starts the offboarding journey from its template.
+  const lifecycleOnHere = user?.features?.lifecycle === true;
   const seesExit = !isTeamScope(user) && user?.dashboardAdmin === true && user?.features?.exits === true && user.id !== emp.id;
   // Edit details: for someone given the right, on themselves and anyone below them.
   const [editingDetails, setEditingDetails] = useState(false);
@@ -462,8 +465,20 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
         <div>
           {!exitReady ? <section className="pd-card"><SkeletonForm fields={6} /></section> : (
             <>
+              {/* With the employee lifecycle on, an exit starts here exactly as on the Offboarding board: the
+                  offboarding template's notice, tasks and app page (24 Nov 2026, HR: "record the exit
+                  according to the new setup"). Once started it is run from the board. */}
+              {lifecycleOnHere && !exitRow && (
+                <StartExit presetUserId={emp.id} onBack={() => setTab('profile')} onStarted={() => { setExitTick((n) => n + 1); void s.reload(); }} />
+              )}
+              {lifecycleOnHere && exitRow && exitRow.state !== 'left' && (
+                <section className="pd-card" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 13.5 }}>{emp.name.split(' ')[0]}'s exit follows the offboarding template: tasks, notice and settlement are run from the Offboarding board.</span>
+                  <button type="button" className="pd-btn primary" onClick={() => s.setView('offboarding')}>Open on the Offboarding board</button>
+                </section>
+              )}
               {/* Recorded or changed here until they have gone; after that, only the settlement and its lists. */}
-              {exitRow?.state !== 'left' && (
+              {!lifecycleOnHere && exitRow?.state !== 'left' && (
                 <ExitDialog key={`${exitTick}:${exitRow?.recordedAt ?? 'none'}`} variant="card" emp={emp} exit={exitRow} emps={s.emps}
                   onClose={() => undefined} onSaved={() => { setExitTick((n) => n + 1); void s.reload(); }} />
               )}

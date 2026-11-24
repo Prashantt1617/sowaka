@@ -15,7 +15,7 @@ import { LIFECYCLE_TEMPLATES_KIND_KEY } from '../../setupGroups';
 import { createTemplate, deleteTemplate, getTemplate, getTemplateJourneys, isNotAvailable, listTemplates, updateTemplate } from '../../../services/lifecycle';
 import type { DueAnchor, DueRule, ExitTypeKey, LifecycleKind, LifecyclePhase, LifecycleTemplate, OwnerRole, TemplateJourney, TemplateListItem, TemplateTask } from '../../../services/lifecycle';
 import { OnboardingDesign } from './OnboardingDesign';
-import { ConfirmDialog, Field, Modal, NotSwitchedOn, OwnerChip, Pick, Switch } from './shared';
+import { ConfirmDialog, Field, Modal, NotSwitchedOn, Pick, Switch } from './shared';
 import { OWNER_LABEL, PHASES, errText, readHandoff, inputStyle, linkBtn, longDay, phaseTitle, ruleText, sectionLabel } from './format';
 import '../people.css';
 
@@ -241,6 +241,7 @@ function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [nameError, setNameError] = useState('');
   const [tab, setTab] = useState<'template' | 'joiners'>('template');
+  const [renaming, setRenaming] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -321,164 +322,201 @@ function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings
   };
   const back = () => { if (!dirty || window.confirm('Leave without saving your changes?')) onBack(); };
 
+  // The offboarding template, as the design canvas draws it (24 Nov 2026, HR: "use this as offboarding
+  // everywhere"): a header with one action, the rules folded into one line, and the journey as five steps,
+  // each opening to its tasks (who, when, a lock for must-dos, a switch for the rest), what happens on its
+  // own, and our suggestions as one-tap chips. Clicking a task's name edits it.
+  const s = t.settings;
+  const rulesLine = `${s.noticeDays ?? 60}-day notice · settled in ${s.settlementWorkingDays ?? 2} working ${s.settlementWorkingDays === 1 ? 'day' : 'days'} · access ends ${(s.accountCloses ?? 'tl_plus_1') === 'tl_plus_1' ? 'the day after' : 'on the last day'}`;
+  const toggleStage = (k: string) => setCollapsed((c) => { const n = new Set(c); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const STEP_NAME: Partial<Record<LifecyclePhase, string>> = { resignation: 'They resign', when_accepted: 'Resignation accepted', notice_period: 'Notice period', last_day: 'Last day', after_exit: 'After they leave' };
   return (
-    <div className="pd-form" style={{ maxWidth: 1180 }}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20, gap: 8, flexWrap: 'wrap' }}>
-        <button type="button" onClick={back} className="pd-btn ghost sm" style={{ marginLeft: -12 }}>← All templates</button>
-        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, minWidth: 0, overflowWrap: 'anywhere' }}>{KIND_LABEL[t.kind]} template · {saved.name}</h2>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {saved.isDefault ? <span style={defaultPill}>Default</span> : <button type="button" className="pd-btn" onClick={() => void makeDefault()} disabled={Boolean(busy) || !t.active} title={t.active ? undefined : 'Turn the template on first'}>Make default</button>}
-          <button type="button" className="pd-btn" onClick={() => void duplicate()} disabled={Boolean(busy)}>Duplicate</button>
-          {!saved.isDefault && <button type="button" className="pd-btn" onClick={() => setConfirmDelete(true)} disabled={Boolean(busy)} style={{ color: 'var(--bad)' }}>Delete</button>}
-          <button type="button" className="pd-btn primary" onClick={() => void save()} disabled={Boolean(busy) || !dirty}>{busy === 'save' ? 'Saving…' : dirty ? 'Save template' : 'Saved'}</button>
+    <div className="pd-form ob-tpl" style={{ maxWidth: 1060, display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Header: one title, one action */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, padding: '8px 4px' }}>
+        <button type="button" onClick={back} aria-label="Back to templates" style={circleBtn}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M15 6l-6 6 6 6" /></svg>
+        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '1 1 260px', minWidth: 0 }}>
+          <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>Offboarding template</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <h1 style={{ margin: 0, fontSize: 26, fontWeight: 600, overflowWrap: 'anywhere' }}>{t.name || 'Untitled'}</h1>
+            {saved.isDefault && <span style={{ fontSize: 12, fontWeight: 500, padding: '4px 10px', borderRadius: 999, background: 'var(--accent-soft)', color: 'var(--accent-ink)' }}>Default</span>}
+            {!t.active && <span style={inactivePill}>Off</span>}
+          </div>
+        </div>
+        <div role="tablist" aria-label="Template or leavers" style={{ display: 'flex', background: 'var(--surface)', borderRadius: 999, padding: 4 }}>
+          {(['template', 'joiners'] as const).map((k) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+              style={{ border: 0, borderRadius: 999, padding: '10px 18px', background: tab === k ? 'var(--ink)' : 'transparent', color: tab === k ? 'var(--surface)' : 'var(--ink)', font: 'inherit', fontSize: 14, cursor: 'pointer' }}>
+              {k === 'template' ? 'Template' : <>Leavers <span style={{ color: tab === k ? 'inherit' : 'var(--ink-3)' }}>{usage}</span></>}
+            </button>
+          ))}
+        </div>
+        <MoreMenu items={[
+          { label: 'Rename', onClick: () => setRenaming(true) },
+          ...(saved.isDefault ? [] : [{ label: 'Make default', onClick: () => void makeDefault(), disabled: !t.active }]),
+          { label: 'Duplicate', onClick: () => void duplicate() },
+          { label: t.active ? 'Turn off' : 'Turn on', onClick: () => setT({ active: !t.active }), disabled: saved.isDefault },
+          ...(saved.isDefault ? [] : [{ label: 'Delete', onClick: () => setConfirmDelete(true), danger: true }]),
+        ]} busy={Boolean(busy)} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button type="button" onClick={() => void save()} disabled={Boolean(busy) || !dirty}
+            style={{ border: 0, borderRadius: 999, padding: '12px 24px', background: dirty ? 'var(--brand, #B23500)' : 'var(--line-2)', color: dirty ? '#fff' : 'var(--ink-3)', font: 'inherit', fontSize: 15, fontWeight: 500, cursor: dirty ? 'pointer' : 'default' }}>
+            {busy === 'save' ? 'Saving…' : dirty ? 'Save' : 'Saved'}
+          </button>
+          <Tip label="Who the changes apply to" right>Changes apply to exits that start after you save.{usage > 0 ? ` The ${usage} ${usage === 1 ? 'person' : 'people'} leaving now keep the tasks they started with.` : ''}</Tip>
         </div>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <StatusTabs<'template' | 'joiners'> options={['template', 'joiners']} active={tab} onSelect={setTab}
-          labels={{ template: 'Template', joiners: t.kind === 'onboarding' ? 'Joiners' : 'Leavers' }} counts={{ joiners: usage }} />
-      </div>
-      {tab === 'joiners' && <TemplatePeople id={id} />}
+      {tab === 'joiners' && <section className="pd-card"><TemplatePeople id={id} /></section>}
 
-      <div style={{ display: tab === 'template' ? 'flex' : 'none', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
-        <div style={{ flex: '1 1 600px', minWidth: 0, display: 'grid', gap: 16 }}>
-          <section className="pd-card">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
-              <Field label="Template name" required error={nameError}>
-                <input value={t.name} onChange={(e) => setT({ name: e.target.value })} style={inputStyle} />
-              </Field>
-              <Field label="Who it is for" hint="Optional">
-                <input value={t.group ?? ''} onChange={(e) => setT({ group: e.target.value })} placeholder="e.g. Full-time staff" style={inputStyle} />
-              </Field>
-              <>
-                <Field label="Notice period">
-                  <Pick value={String(t.settings.noticeDays ?? 60)} onChange={(v) => setSettings({ noticeDays: Number(v) })}>
-                    {[...new Set([30, 60, 90, t.settings.noticeDays ?? 60])].sort((a, b) => a - b).map((n) => <option key={n} value={n}>{n} days</option>)}
-                  </Pick>
-                </Field>
-                <Field label="Exit interview opens">
-                  <Pick value={String(t.settings.exitInterviewOpensDays ?? 5)} onChange={(v) => setSettings({ exitInterviewOpensDays: Number(v) })}>
-                    {[...new Set([5, 7, t.settings.exitInterviewOpensDays ?? 5])].sort((a, b) => a - b).map((n) => <option key={n} value={n}>{n} days before the last day</option>)}
-                  </Pick>
-                </Field>
-                <Field label="App account closes">
-                  <Pick value={t.settings.accountCloses ?? 'tl_plus_1'} onChange={(v) => setSettings({ accountCloses: v as 'tl_plus_1' | 'tl_end_of_shift' })}>
-                    <option value="tl_plus_1">The day after the last day</option>
-                    <option value="tl_end_of_shift">On the last day, end of shift</option>
-                  </Pick>
-                </Field>
-                <Field label="Final settlement within" hint="Working days after the last day">
-                  <input type="number" min={0} max={30} value={t.settings.settlementWorkingDays ?? 2} onChange={(e) => setSettings({ settlementWorkingDays: Math.max(0, Number(e.target.value) || 0) })} style={inputStyle} />
-                </Field>
-                <Field label="Gratuity within" hint="Days after the last day">
-                  <input type="number" min={0} max={90} value={t.settings.gratuityDays ?? 30} onChange={(e) => setSettings({ gratuityDays: Math.max(0, Number(e.target.value) || 0) })} style={inputStyle} />
-                </Field>
-              </>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 24px', marginTop: 14 }}>
-              <label style={checkRow}><input type="checkbox" checked={t.active} onChange={(e) => setT({ active: e.target.checked })} style={checkBox} disabled={saved.isDefault} /> Active{saved.isDefault ? <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 }}> · the default stays on</span> : null}</label>
-            </div>
-            {t.kind === 'offboarding' && (
-              <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 11.5, color: 'var(--ink-2)', marginBottom: 6 }}>The off-boarding page in the app, for these exits</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px' }}>
+      {tab === 'template' && (<>
+        {/* Rules: glimpse first */}
+        <section style={card}>
+          <button type="button" onClick={() => toggleStage('__rules')} aria-expanded={!collapsed.has('__rules') ? false : true}
+            style={{ width: '100%', border: 0, background: 'transparent', padding: '22px 28px', display: 'flex', alignItems: 'center', gap: 16, textAlign: 'left', color: 'var(--ink)', font: 'inherit', cursor: 'pointer' }}>
+            <span style={{ fontSize: 17, fontWeight: 600, flex: '0 0 auto' }}>Rules</span>
+            <span style={{ fontSize: 14, color: 'var(--ink-3)', flex: '1 1 auto', minWidth: 0 }}>{rulesLine}</span>
+            <Chevron open={collapsed.has('__rules')} />
+          </button>
+          {collapsed.has('__rules') && (
+            <div style={{ padding: '4px 28px 28px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20 }}>
+              <RuleSelect label="Notice period" value={String(s.noticeDays ?? 60)} onChange={(v) => setSettings({ noticeDays: Number(v) })}
+                options={[...new Set([30, 60, 90, s.noticeDays ?? 60])].sort((x, y) => x - y).map((n) => [String(n), `${n} days`])} />
+              <RuleSelect label="Final settlement" value={String(s.settlementWorkingDays ?? 2)} onChange={(v) => setSettings({ settlementWorkingDays: Number(v) })}
+                options={[...new Set([2, 5, 7, 10, s.settlementWorkingDays ?? 2])].sort((x, y) => x - y).map((n) => [String(n), `${n} working ${n === 1 ? 'day' : 'days'} after`])} />
+              <RuleSelect label="Gratuity" value={String(s.gratuityDays ?? 30)} onChange={(v) => setSettings({ gratuityDays: Number(v) })}
+                options={[...new Set([30, 45, 60, s.gratuityDays ?? 30])].sort((x, y) => x - y).map((n) => [String(n), `${n} days after`])} />
+              <RuleSelect label="App access ends" value={s.accountCloses ?? 'tl_plus_1'} onChange={(v) => setSettings({ accountCloses: v as 'tl_plus_1' | 'tl_end_of_shift' })}
+                options={[['tl_plus_1', 'The day after the last day'], ['tl_end_of_shift', 'On the last day']]} />
+              <RuleSelect label="Exit interview opens" value={String(s.exitInterviewOpensDays ?? 5)} onChange={(v) => setSettings({ exitInterviewOpensDays: Number(v) })}
+                options={[...new Set([0, 5, 7, s.exitInterviewOpensDays ?? 5])].sort((x, y) => x - y).map((n) => [String(n), n === 0 ? 'On the last day' : `${n} days before the last day`])} />
+              <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 12, borderTop: '1px solid var(--line)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink-3)' }}>
+                  Leaver sees the off-boarding page in the app for
+                  <Tip label="About the off-boarding page">The page with their last day, before-you-go tasks and exit interview. It stays off for termination and absconding unless ticked.</Tip>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, fontSize: 15 }}>
                   {EXIT_TYPES.map(([k, label]) => {
-                    const list = t.settings.appPageFor ?? ['resignation', 'retirement', 'end_of_contract'];
+                    const list = s.appPageFor ?? ['resignation', 'retirement', 'end_of_contract'];
                     return (
-                      <label key={k} style={{ ...checkRow, fontWeight: 400 }}>
-                        <input type="checkbox" checked={list.includes(k)} style={checkBox}
+                      <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={list.includes(k)} style={{ width: 18, height: 18, accentColor: 'var(--ink)' }}
                           onChange={(e) => setSettings({ appPageFor: e.target.checked ? [...new Set([...list, k])] : list.filter((x) => x !== k) })} /> {label}
                       </label>
                     );
                   })}
                 </div>
-                <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 10 }}>
+                <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
                   Salary hold on notice: {canOpen(user, 'exitsettings') ? <button type="button" style={linkBtn} onClick={() => { if (!dirty || window.confirm('Leave without saving your changes?')) setView('exitsettings'); }}>Payroll › Exit settings</button> : 'Payroll › Exit settings'}
                 </div>
               </div>
-            )}
-            {usage > 0 && <div className="pd-note" style={{ marginTop: 14 }}>{usage} {t.kind === 'onboarding' ? (usage === 1 ? 'joiner is' : 'joiners are') : (usage === 1 ? 'exit is' : 'exits are')} on this template. They keep the tasks they started with; changes apply to {t.kind === 'onboarding' ? 'people who join' : 'exits that start'} after you save.</div>}
-          </section>
+            </div>
+          )}
+        </section>
 
+        {/* The journey */}
+        <section style={{ ...card, padding: '24px 28px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 8 }}>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 600 }}>When someone leaves</h2>
+            <Tip label="How dates work">Every date counts from the last working day. If the last day moves (another day agreed, or an early release), every task moves with it.</Tip>
+          </div>
           {phases.map((p, i) => {
-            const list = inPhase(p.key);
-            const on = list.filter((x) => x.enabled).length;
-            const shut = collapsed.has(p.key);
+            const all = inPhase(p.key);
+            const people = all.filter((x) => x.ownerRole !== 'automatic');
+            const autos = all.filter((x) => x.ownerRole === 'automatic');
+            const on = people.filter((x) => x.enabled).length;
+            const isOpen = collapsed.has(p.key);
+            const autoOpen = collapsed.has(`auto:${p.key}`);
+            const sugs = recommended.filter((r) => r.phase === p.key);
             return (
-              <section key={p.key} className="pd-card" style={{ padding: 0 }}>
-                <button type="button" aria-expanded={!shut} onClick={() => setCollapsed((c) => { const n = new Set(c); if (n.has(p.key)) n.delete(p.key); else n.add(p.key); return n; })}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '16px 20px', background: 'none', border: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left' }}>
-                  <span aria-hidden style={{ width: 28, height: 28, borderRadius: 9, background: 'var(--accent-soft)', color: 'var(--accent-ink)', display: 'grid', placeItems: 'center', fontSize: 13, fontWeight: 600, flexShrink: 0 }}>{i + 1}</span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: 'block', fontSize: 16, fontWeight: 600 }}>{p.title}</span>
-                    <span style={{ display: 'block', fontSize: 12.5, color: 'var(--ink-3)' }}>{p.desc}</span>
-                  </span>
-                  <span style={{ fontSize: 12.5, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{on} of {list.length} on</span>
-                  <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink-3)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ transform: shut ? 'rotate(-90deg)' : undefined, transition: 'transform .15s' }}><path d="m6 9 6 6 6-6" /></svg>
+              <div key={p.key} style={{ borderTop: '1px solid var(--line)' }}>
+                <button type="button" onClick={() => toggleStage(p.key)} aria-expanded={isOpen}
+                  style={{ width: '100%', border: 0, background: 'transparent', padding: '18px 0', display: 'flex', alignItems: 'center', gap: 16, textAlign: 'left', color: 'var(--ink)', font: 'inherit', cursor: 'pointer' }}>
+                  <span style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--surface-2)', fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>{i + 1}</span>
+                  <span style={{ fontSize: 16, fontWeight: 500, flex: '1 1 auto' }}>{STEP_NAME[p.key] ?? p.title}</span>
+                  <span style={{ fontSize: 14, color: 'var(--ink-3)' }}>{on === people.length ? `${people.length} ${people.length === 1 ? 'task' : 'tasks'}` : `${on} of ${people.length} on`}</span>
+                  <Chevron open={isOpen} />
                 </button>
-                {!shut && (
-                  <div style={{ padding: '0 20px 16px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: TASK_COLS, gap: 12, background: 'var(--surface-2)', borderRadius: 12, padding: '8px 12px', fontSize: 12, color: 'var(--ink-3)' }}>
-                      <span>Task</span><span>Done by</span><span>Due</span><span />
+                {isOpen && (
+                  <div style={{ padding: '0 0 16px 48px', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: STEP_COLS, gap: 12, padding: '0 12px 8px', fontSize: 12, color: 'var(--ink-3)' }}>
+                      <span>Task</span><span>Who</span><span>When</span><span />
                     </div>
-                    {list.length === 0 && <div className="pd-empty" style={{ padding: 20 }}>No tasks in this phase.</div>}
-                    {list.map((task, n) => (
-                      <TaskRow key={task.id} task={task} open={openTask === task.id} first={n === 0} last={n === list.length - 1}
-                        onToggle={() => setOpenTask(openTask === task.id ? null : task.id)}
-                        onChange={(patch) => setTask(task.id, patch)}
-                        onMove={(by) => move(task, by)}
-                        onRemove={() => {
-                          if (task.recommended) setTask(task.id, { recommended: { ...task.recommended, added: false } });
-                          else setT({ tasks: t.tasks.filter((x) => x.id !== task.id) });
-                          setOpenTask(null);
-                        }} />
+                    {people.length === 0 && <div style={{ padding: '8px 12px', fontSize: 14, color: 'var(--ink-3)' }}>No tasks here yet.</div>}
+                    {people.map((task, n) => (
+                      <div key={task.id}>
+                        <div className="ob-row" style={{ display: 'grid', gridTemplateColumns: STEP_COLS, gap: 12, alignItems: 'center', padding: 12, borderRadius: 12, opacity: task.enabled ? 1 : 0.45, fontSize: 15 }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                            <button type="button" onClick={() => setOpenTask(openTask === task.id ? null : task.id)} title="Edit this task"
+                              style={{ border: 0, background: 'none', padding: 0, font: 'inherit', fontSize: 15, color: 'var(--ink)', cursor: 'pointer', textAlign: 'left', overflowWrap: 'anywhere' }}>
+                              {task.title || <span style={{ color: 'var(--ink-3)' }}>New task</span>}
+                            </button>
+                            {task.helper && <Tip label="More about this task">{task.helper}</Tip>}
+                          </span>
+                          <span style={{ color: 'var(--ink-3)' }}>{OWNER_LABEL[task.ownerRole]}</span>
+                          <span style={{ color: 'var(--ink-3)' }}>{ruleText(task.dueRule, task.dueLabel)}</span>
+                          <span style={{ justifySelf: 'end' }}>
+                            {task.mustDo ? (
+                              <Tip label="Must-do, always on" right icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>}>Must-do. Every exit needs this, so it stays on.</Tip>
+                            ) : (
+                              <Switch on={task.enabled} onChange={(v) => setTask(task.id, { enabled: v })} label={`${task.enabled ? 'Turn off' : 'Turn on'} ${task.title || 'this task'}`} />
+                            )}
+                          </span>
+                        </div>
+                        {openTask === task.id && (
+                          <TaskEditor task={task} first={n === 0} last={n === people.length - 1}
+                            onChange={(patch) => setTask(task.id, patch)} onMove={(by) => move(task, by)}
+                            onRemove={() => { if (task.recommended) setTask(task.id, { recommended: { ...task.recommended, added: false } }); else setT({ tasks: t.tasks.filter((x) => x.id !== task.id) }); setOpenTask(null); }}
+                            onDone={() => setOpenTask(null)} />
+                        )}
+                      </div>
                     ))}
-                    <button type="button" className="pd-btn sm" style={{ marginTop: 12 }} onClick={() => addTask(p.key)}>+ Add a task</button>
+                    {autos.length > 0 && (
+                      <>
+                        <button type="button" onClick={() => toggleStage(`auto:${p.key}`)} aria-expanded={autoOpen}
+                          style={{ alignSelf: 'flex-start', border: 0, background: 'transparent', padding: 12, fontSize: 14, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', gap: 6, font: 'inherit', cursor: 'pointer' }}>
+                          {autos.length === 1 ? '1 thing happens on its own' : `${autos.length} things happen on their own`}
+                          <Chevron open={autoOpen} size={14} />
+                        </button>
+                        {autoOpen && autos.map((a) => (
+                          <div key={a.id} style={{ display: 'grid', gridTemplateColumns: STEP_COLS, gap: 12, padding: '8px 12px', fontSize: 14, color: 'var(--ink-3)', alignItems: 'center' }}>
+                            <span>{a.title}</span><span>Automatic</span><span>{ruleText(a.dueRule, a.dueLabel)}</span>
+                            <span style={{ justifySelf: 'end' }}>{!a.mustDo && <Switch on={a.enabled} onChange={(v) => setTask(a.id, { enabled: v })} label={`${a.enabled ? 'Turn off' : 'Turn on'} ${a.title}`} />}</span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: '8px 12px 0' }}>
+                      <button type="button" onClick={() => addTask(p.key)} style={{ border: '1px solid var(--line-2)', background: 'var(--surface)', borderRadius: 999, padding: '10px 16px', fontSize: 14, color: 'var(--ink)', font: 'inherit', cursor: 'pointer' }}>+ Add task</button>
+                      {sugs.map((r) => (
+                        <button key={r.id} type="button" onClick={() => addRecommended(r)} title={r.recommended?.why || undefined}
+                          style={{ border: '1px dashed var(--line-2)', background: 'transparent', borderRadius: 999, padding: '10px 16px', fontSize: 14, color: 'var(--ink-3)', font: 'inherit', cursor: 'pointer' }}>+ {r.title}</button>
+                      ))}
+                    </div>
                   </div>
                 )}
-              </section>
+              </div>
             );
           })}
-        </div>
+        </section>
+      </>)}
 
-        <aside style={{ flex: '1 1 280px', maxWidth: 400, minWidth: 0, display: 'grid', gap: 16, position: 'sticky', top: 90 }}>
-          <section className="pd-card">
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Recommended</h3>
-            <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 10 }}>Not in this template yet</div>
-            {recommended.length === 0 ? <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>You’ve added all our suggestions.</div> : (
-              <div style={{ display: 'grid', gap: 12 }}>
-                {recommended.map((r) => (
-                  <div key={r.id} style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'grid', gap: 6 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <b style={{ flex: 1, fontSize: 13.5, fontWeight: 500, overflowWrap: 'anywhere' }}>{r.title}</b>
-                      <button type="button" className="pd-btn sm" onClick={() => addRecommended(r)}>Add</button>
-                    </div>
-                    {r.recommended?.why && <div style={{ fontSize: 12.5, color: 'var(--ink-2)', overflowWrap: 'anywhere' }}>{r.recommended.why}</div>}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <OwnerChip role={r.ownerRole} />
-                      <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{phaseTitle(r.phase)} · {ruleText(r.dueRule, r.dueLabel)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-          {t.kind === 'offboarding' && (
-            <section className="pd-card">
-              <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 600 }}>Exit interview</h3>
-              <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>5 questions: main reason, working here, working with their manager, would they come back, anything they’d change. Answers go to HR only and show in Exit insights, anonymised.</p>
-            </section>
-          )}
-          <section className="pd-note" style={{ display: 'block' }}>
-            <b style={{ display: 'block', marginBottom: 4 }}>How due dates work</b>
-            Tl is the last working day. “Tl − 5” is five days before it. If the last day moves (another day agreed, or early release), every due date moves with it.<br /><br />Changes apply to exits that start after you save.
-          </section>
-        </aside>
-      </div>
+      {renaming && (
+        <Modal title="Rename template" width={440} onClose={() => setRenaming(false)}
+          footer={<button type="button" className="pd-btn primary" onClick={() => { if (t.name.trim()) setRenaming(false); else setNameError('Give the template a name'); }}>Done</button>}>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <Field label="Template name" required error={nameError}><input value={t.name} onChange={(e) => setT({ name: e.target.value })} style={inputStyle} autoFocus /></Field>
+            <Field label="Who it is for" hint="Optional"><input value={t.group ?? ''} onChange={(e) => setT({ group: e.target.value })} placeholder="e.g. Full-time staff" style={inputStyle} /></Field>
+            <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Then Save on the page.</div>
+          </div>
+        </Modal>
+      )}
 
       {confirmDelete && (
         <ConfirmDialog title={`Delete ${saved.name}?`} confirm="Delete"
-          body={usage > 0 ? `${usage} ${t.kind === 'onboarding' ? 'joiners are' : 'exits are'} on this template, so it may not be deleted. Turn it off (Active) instead, so nobody new gets it.` : 'Nobody is on this template. It goes for good.'}
+          body={usage > 0 ? `${usage} ${usage === 1 ? 'exit is' : 'exits are'} on this template, so it may not be deleted. Turn it off instead, so nobody new gets it.` : 'Nobody is on this template. It goes for good.'}
           onClose={() => setConfirmDelete(false)}
           onConfirm={async () => { await deleteTemplate(id); flash(`${saved.name} deleted`); setConfirmDelete(false); onBack(); }} />
       )}
@@ -486,30 +524,64 @@ function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings
   );
 }
 
-const TASK_COLS = 'minmax(0, 1fr) minmax(110px, 170px) minmax(110px, 170px) 46px';
+const STEP_COLS = 'minmax(0, 1fr) minmax(110px, 160px) minmax(130px, 200px) 56px';
+const card = { background: 'var(--surface)', borderRadius: 24, overflow: 'visible' } as const;
+const circleBtn = { width: 44, height: 44, borderRadius: '50%', border: 0, background: 'var(--surface)', color: 'var(--ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: '0 0 auto' } as const;
 
-function TaskRow({ task, open, first, last, onToggle, onChange, onMove, onRemove }: {
-  task: TemplateTask; open: boolean; first: boolean; last: boolean;
-  onToggle: () => void; onChange: (p: Partial<TemplateTask>) => void; onMove: (by: -1 | 1) => void; onRemove: () => void;
-}) {
+function Chevron({ open, size = 18 }: { open: boolean; size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden style={{ transform: `rotate(${open ? 180 : 0}deg)`, transition: 'transform .15s', flex: '0 0 auto', color: 'var(--ink-3)' }}><path d="M6 9l6 6 6-6" /></svg>;
+}
+
+/** An "i" (or an icon) that shows a short explanation on hover or focus. */
+function Tip({ label, children, right, icon }: { label: string; children: ReactNode; right?: boolean; icon?: ReactNode }) {
+  const [shown, setShown] = useState(false);
   return (
-    <div style={{ borderBottom: '1px solid var(--line)' }}>
-      <div onClick={onToggle} role="button" tabIndex={0} aria-expanded={open} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
-        className="pd-row-hover" style={{ display: 'grid', gridTemplateColumns: TASK_COLS, gap: 12, alignItems: 'center', padding: '10px 12px', cursor: 'pointer', opacity: task.enabled ? 1 : 0.45 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 500, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', overflowWrap: 'anywhere' }}>
-            {task.title || <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}>New task</span>}
-            {task.recommended?.added && <span style={tagStyle('var(--accent-soft)', 'var(--accent-ink)')}>Added</span>}
-            {task.mustDo && <span style={tagStyle('var(--warn-bg)', 'var(--p-orange)')}>Must-do</span>}
-          </div>
-          {task.helper && <div style={{ fontSize: 12, color: 'var(--ink-3)', overflowWrap: 'anywhere' }}>{task.helper}</div>}
-        </div>
-        <div><OwnerChip role={task.ownerRole} /></div>
-        <div style={{ fontSize: 12.5, color: 'var(--ink-2)' }}>{ruleText(task.dueRule, task.dueLabel)}</div>
-        <div onClick={(e) => e.stopPropagation()}><Switch on={task.enabled} onChange={(v) => onChange({ enabled: v })} label={`${task.enabled ? 'Turn off' : 'Turn on'} ${task.title || 'this task'}`} /></div>
-      </div>
-      {open && <TaskEditor task={task} first={first} last={last} onChange={onChange} onMove={onMove} onRemove={onRemove} onDone={onToggle} />}
-    </div>
+    <span style={{ position: 'relative', display: 'inline-flex', verticalAlign: 'middle' }} onMouseEnter={() => setShown(true)} onMouseLeave={() => setShown(false)}>
+      <button type="button" aria-label={label} onFocus={() => setShown(true)} onBlur={() => setShown(false)}
+        style={icon ? { width: 44, height: 26, border: 0, background: 'transparent', color: 'var(--ink-4)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'help' }
+          : { width: 24, height: 24, borderRadius: '50%', border: '1px solid var(--line-2)', background: 'transparent', color: 'var(--ink-3)', fontSize: 12, fontWeight: 600, cursor: 'help', font: 'inherit', padding: 0 }}>
+        {icon ?? 'i'}
+      </button>
+      {shown && (
+        <span role="tooltip" style={{ position: 'absolute', top: 30, ...(right ? { right: -10 } : { left: -10 }), width: 270, background: 'var(--ink)', color: 'var(--surface)', fontSize: 13, lineHeight: 1.5, padding: '10px 12px', borderRadius: 10, zIndex: 20, fontWeight: 400, textAlign: 'left' }}>{children}</span>
+      )}
+    </span>
+  );
+}
+
+function RuleSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: [string, string][] }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: 'var(--ink-3)' }}>{label}
+      <select value={value} onChange={(e) => onChange(e.target.value)}
+        style={{ height: 48, border: '1px solid var(--line-2)', borderRadius: 12, padding: '0 14px', fontSize: 15, color: 'var(--ink)', background: 'var(--surface)', font: 'inherit' }}>
+        {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+    </label>
+  );
+}
+
+/** The "…" button: rename, make default, duplicate, on/off, delete. */
+function MoreMenu({ items, busy }: { items: { label: string; onClick: () => void; disabled?: boolean; danger?: boolean }[]; busy: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span style={{ position: 'relative' }}>
+      <button type="button" aria-label="More: rename, duplicate, default" aria-expanded={open} onClick={() => setOpen(!open)} disabled={busy} style={circleBtn}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
+      </button>
+      {open && (
+        <>
+          <span onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 20 }} />
+          <span role="menu" style={{ position: 'absolute', top: 50, right: 0, zIndex: 21, minWidth: 180, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: 6, display: 'flex', flexDirection: 'column' }}>
+            {items.map((it) => (
+              <button key={it.label} type="button" role="menuitem" disabled={it.disabled} onClick={() => { setOpen(false); it.onClick(); }}
+                style={{ border: 0, background: 'transparent', textAlign: 'left', padding: '10px 12px', borderRadius: 10, font: 'inherit', fontSize: 14, color: it.danger ? 'var(--bad)' : 'var(--ink)', cursor: it.disabled ? 'default' : 'pointer', opacity: it.disabled ? 0.45 : 1 }}>
+                {it.label}
+              </button>
+            ))}
+          </span>
+        </>
+      )}
+    </span>
   );
 }
 
@@ -623,7 +695,6 @@ function RuleEditor({ label, value, onChange, noneLabel = 'No date' }: { label: 
   );
 }
 
-const tagStyle = (bg: string, fg: string) => ({ fontSize: 10.5, fontWeight: 600, lineHeight: 1.5, padding: '1px 7px', borderRadius: 99, background: bg, color: fg });
 const checkRow = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', cursor: 'pointer' } as const;
 const checkBox = { width: 16, height: 16, accentColor: 'var(--accent)' } as const;
 const defaultPill = { display: 'inline-flex', alignItems: 'center', fontSize: 11.5, fontWeight: 500, lineHeight: 1.5, color: '#fff', background: 'var(--p-blue)', borderRadius: 99, padding: '3px 10px' } as const;
