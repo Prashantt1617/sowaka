@@ -263,7 +263,19 @@ export const callGeminiForCheck = (input: Parameters<typeof callGemini>[0]) => c
 type OPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 type OMsg = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string | OPart[] | null; tool_calls?: { id: string; type: 'function'; function: { name: string; arguments: string } }[]; tool_call_id?: string };
 
-async function callOpenAI(input: { model?: string; system: string; tools?: LlmTool[]; messages: LlmMessage[]; maxTokens?: number }): Promise<LlmReply> {
+/**
+ * GPT Luna's thinking (reasoning_effort: none | low | medium | high). With function tools it must be 'none' on
+ * /v1/chat/completions (else a 400); 'none' is also the quickest and answered as well in our tests (24 Nov:
+ * ~1.1 s vs ~1.9 s by default). Suwi's 'minimal'/'off' map to 'none'; everything else to 'low'.
+ */
+export function openAiReasoning(hasTools: boolean, thinking?: string): 'none' | 'low' {
+  if (hasTools) return 'none';
+  if (thinking === 'minimal' || thinking === 'none' || thinking === 'off') return 'none';
+  // Otherwise 'low': as accurate as the default in our tests, and quicker (~1.4 s vs ~1.9 s).
+  return 'low';
+}
+
+async function callOpenAI(input: { model?: string; system: string; tools?: LlmTool[]; messages: LlmMessage[]; maxTokens?: number; thinking?: string }): Promise<LlmReply> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new SuwiLlmError(503, 'Suwi is not set up on this server yet (no OPENAI_API_KEY)');
   const model = input.model ?? SUWI_MODEL;
@@ -289,6 +301,7 @@ async function callOpenAI(input: { model?: string; system: string; tools?: LlmTo
   const tools = input.tools ?? [];
   const res = await post('https://api.openai.com/v1/chat/completions', { authorization: `Bearer ${key}` }, {
     model, messages, max_completion_tokens: (input.maxTokens ?? 1500) + 1500,
+    reasoning_effort: openAiReasoning((input.tools ?? []).length > 0, input.thinking),
     ...(tools.length ? { tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } })) } : {}),
   }) as { choices?: { message?: { content?: string | null; tool_calls?: { id: string; function: { name: string; arguments: string } }[] } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } }; model?: string };
   const msg = res.choices?.[0]?.message;
