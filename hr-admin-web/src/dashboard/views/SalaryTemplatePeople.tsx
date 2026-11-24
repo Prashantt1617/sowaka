@@ -208,7 +208,12 @@ function AssignSalaryDialog({ template, people, byUser, nameOf, phByCode, curren
     .filter((c) => c.calculation.mode === 'flat_amount' && c.payHeadCode !== template.balancingComponentCode && phByCode.get(c.payHeadCode)?.recurrence !== 'one_time')
     .map((c) => phByCode.get(c.payHeadCode)?.name ?? c.payHeadCode);
 
+  // A yearly CTC under ₹1.2 lakh is almost always a monthly amount typed in the yearly box (24 Nov 2026:
+  // ten Convrse consultants were saved at a twelfth of their fee). Those rows warn and offer ×12; saving
+  // them anyway asks first.
+  const looksMonthly = people.filter((e) => ctcPaise(e.id) > 0 && ctcPaise(e.id) < LOOKS_MONTHLY_PAISE);
   const save = async () => {
+    if (looksMonthly.length > 0 && !window.confirm(`${looksMonthly.map((e) => `${e.name}: ₹${(ctcPaise(e.id) / 100).toLocaleString('en-IN')} a year`).join('\n')}\n\nThese look like monthly amounts. The CTC box is per YEAR. Save them as yearly anyway?`)) return;
     if (missing.length > 0) {
       setErrors(Object.fromEntries(missing.map((e) => [e.id, !(ctcPaise(e.id) > 0) ? 'Enter the annual CTC' : 'Pick the effective-from date'])));
       return flash(`${missing.length === 1 ? `${missing[0].name} needs` : `${missing.length} people need`} an annual CTC and a date`, 'error');
@@ -284,6 +289,15 @@ function AssignSalaryDialog({ template, people, byUser, nameOf, phByCode, curren
                               onChange={(ev) => set(e.id, { ctc: ev.target.value })} style={pairInput} />
                           </span>
                           <div style={L.cellSub}>{paise > 0 ? `${money(Math.round(paise / 12))} a month` : ' '}</div>
+                          {paise > 0 && paise < LOOKS_MONTHLY_PAISE && (
+                            <div style={{ fontSize: 12, color: 'var(--bad)', marginTop: 4 }}>
+                              Per year? That is {money(Math.round(paise / 12))} a month.{' '}
+                              <button type="button" onClick={() => set(e.id, { ctc: String(Math.round(paise / 100) * 12) })}
+                                style={{ border: 0, background: 'none', padding: 0, color: 'var(--accent)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit', fontSize: 12 }}>
+                                It's monthly: make it {money(paise * 12)} a year
+                              </button>
+                            </div>
+                          )}
                         </td>
                         <td style={td}>
                           <input type="date" aria-label={`Effective from for ${e.name}`} value={rows[e.id]?.from ?? ''} onChange={(ev) => set(e.id, { from: ev.target.value })} className="lk-in" style={dateInput} />
@@ -336,6 +350,9 @@ function AssignSalaryDialog({ template, people, byUser, nameOf, phByCode, curren
 }
 
 /** The person's monthly breakup on this template at this CTC, from the same preview Salary details uses. */
+/** Under this a yearly CTC looks like a monthly amount (₹1.2 lakh a year is ₹10,000 a month). */
+const LOOKS_MONTHLY_PAISE = 12_000_000;
+
 function Breakup({ userId, templateCode, annualCtcPaise, moving }: { userId: string; templateCode: string; annualCtcPaise: number; moving: boolean }) {
   const [computed, setComputed] = useState<ComputedStructure | null>(null);
   const [error, setError] = useState('');
