@@ -22,7 +22,16 @@ export type ConnectPostType =
    * catalog key). Posted by Sowaka with `src/scripts/game-launch-post.ts`,
    * never from the app; nobody likes or comments on it.
    */
-  | 'game_launch';
+  | 'game_launch'
+  /**
+   * HR's invitation to the app's Sowaka tour, posted from Dashboard ›
+   * Engagement › Feed (`app-tour-post.service.ts`), never from the app: a
+   * picture (or the app's own drawing of the tour), `body.title`,
+   * `body.caption` and one button (`body.actionLabel`) that opens the tour's
+   * start card. From the company, to everyone; liked and commented on as any
+   * post is. `body.text` is what builds from before the card show instead.
+   */
+  | 'app_tour';
 
 export interface ConnectAuthor {
   userId?: string;

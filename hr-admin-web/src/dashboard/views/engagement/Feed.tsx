@@ -2,8 +2,9 @@
 // it, on the left, and on the right the selected post's numbers or the queue
 // of what employees reported. Replaces Engagement posts and Moderate feed.
 //
-// Everything here is the org's own stored data. Nothing on this page posts
-// to the feed. Closing a contest early lets its usual results push go out.
+// Everything here is the org's own stored data. The one thing this page
+// posts is the app tour invitation (Post the app tour), from the company to
+// everyone. Closing a contest early lets its usual results push go out.
 import { useCallback, useEffect, useState } from 'react';
 import {
   getFeedPage,
@@ -16,12 +17,13 @@ import {
 } from '../../../services/engagement-feed';
 import { CLOSE_CONTEST_CONFIRM, closeContest } from '../../../services/engagement-contests';
 import { btn, btnClass } from '../../ds';
-import { IconStar } from '../../icons';
+import { IconPlus, IconStar } from '../../icons';
 import { useStore } from '../../store';
 import { Card, EmptyRow, LoadError, LoadingFigure, PageActions, SelectBox, SkeletonLines, StatusTabs, SummaryCard } from '../../ui';
 import { useLoad } from '../../useLoad';
 import { Modal } from '../kpiUi';
 import * as L from '../look';
+import { AppTourDialog } from './feed/AppTourPost';
 import { FeedCard, PinGlyph } from './feed/FeedCard';
 import { FeedReports } from './feed/FeedReports';
 import { PostInsights } from './feed/PostInsights';
@@ -40,6 +42,7 @@ export function Feed() {
   const [rev, setRev] = useState(0);
   const [pinFor, setPinFor] = useState<FeedCardDTO | null>(null);
   const [busy, setBusy] = useState('');
+  const [tourOpen, setTourOpen] = useState(false);
 
   const summary = useLoad(() => getFeedSummary(), [rev]);
   const feed = useFeedPages(as, rev);
@@ -111,6 +114,9 @@ export function Feed() {
       <PageActions>
         <button className={btnClass()} style={btn()} onClick={() => setView('contests')}>
           <IconStar /> Contests
+        </button>
+        <button className={btnClass('primary')} style={btn('primary')} onClick={() => setTourOpen(true)}>
+          <IconPlus /> Post the app tour
         </button>
       </PageActions>
 
@@ -229,6 +235,20 @@ export function Feed() {
           )}
         </Card>
       </div>
+
+      {tourOpen && (
+        <AppTourDialog
+          onClose={() => setTourOpen(false)}
+          onPosted={(postId) => {
+            setTourOpen(false);
+            // Everyone's feed, with the new post open on the right.
+            setAs('all');
+            setSide('ins');
+            setSel(postId);
+            changed();
+          }}
+        />
+      )}
 
       {pinFor && (
         <PinDialog

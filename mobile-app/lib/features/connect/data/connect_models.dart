@@ -25,6 +25,10 @@ enum ConnectPostType {
   /// Sowaka Engagements launching a game: a photo, GIF or video, a few
   /// words and one button into the game. No likes or comments.
   gameLaunch,
+
+  /// HR's invitation to the Sowaka tour, posted from the dashboard: a
+  /// picture, a title, a caption and one button that opens the tour.
+  appTour,
 }
 
 class ConnectTeammate {
@@ -156,6 +160,7 @@ String connectPostTypeToWire(ConnectPostType type) {
     ConnectPostType.relayGame => 'relay_game',
     ConnectPostType.secretSquad => 'secret_squad',
     ConnectPostType.gameLaunch => 'game_launch',
+    ConnectPostType.appTour => 'app_tour',
   };
 }
 
@@ -655,6 +660,9 @@ ConnectPostType _parseType(String? value) {
     'relay_game' => ConnectPostType.relayGame,
     'secret_squad' => ConnectPostType.secretSquad,
     'game_launch' => ConnectPostType.gameLaunch,
+    // Builds from before it read it as a plain post: its `text` (the title,
+    // the caption and a line asking them to update) and its picture.
+    'app_tour' => ConnectPostType.appTour,
     _ => ConnectPostType.leadership,
   };
 }

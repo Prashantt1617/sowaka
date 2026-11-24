@@ -314,7 +314,8 @@ async function cardOf(
       photoUrl: author?.photoUrl,
     },
     // Posted by the system (birthdays, Sowaka Engagements) rather than a person.
-    auto: !post.author.userId || Boolean(post.systemKey),
+    // An app tour post is from the company, but HR posted it from here.
+    auto: post.type !== 'app_tour' && (!post.author.userId || Boolean(post.systemKey)),
     audience: audienceOf(post.audience, people),
     publishedAt: post.publishedAt,
     pinnedUntil,
@@ -324,7 +325,12 @@ async function cardOf(
     commentCount: post.comments?.length ?? 0,
     body: {
       title: str(body, 'title'),
-      text: str(body, 'text') || str(body, 'task') || str(body, 'question'),
+      // An app tour post's `text` is what older app builds show instead of
+      // its card; the card itself shows the caption.
+      text:
+        post.type === 'app_tour'
+          ? str(body, 'caption')
+          : str(body, 'text') || str(body, 'task') || str(body, 'question'),
       subtitle: str(body, 'subtitle'),
       label: str(body, 'label'),
       severity: str(body, 'severity'),
@@ -361,6 +367,7 @@ async function cardOf(
               gameKey: str(body, 'gameKey') || undefined,
             }
           : undefined,
+      tour: post.type === 'app_tour' ? { actionLabel: str(body, 'actionLabel') } : undefined,
     },
   };
 }

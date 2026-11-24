@@ -1,6 +1,8 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess, requireDashboardTabs } from '../middleware/admin.middleware';
+import { uploadConnectPostMedia } from '../middleware/connect-media-upload.middleware';
+import { currentAppTourPost, publishAppTourPost } from '../services/app-tour-post.service';
 import { ConnectError } from '../services/connect.service';
 import {
   feedPage,
@@ -42,6 +44,23 @@ engagementFeedRouter.get(
       cursor: req.query.cursor == null ? undefined : String(req.query.cursor),
     }),
   ),
+);
+// The "Start a tour" post: whether one is in the feed, and posting one (an
+// optional picture as `media`, the words as form fields; `replace` to take
+// the one in the feed down).
+engagementFeedRouter.get('/app-tour', handle(async (req) => currentAppTourPost(admin(req))));
+engagementFeedRouter.post(
+  '/app-tour',
+  uploadConnectPostMedia,
+  handle(async (req) => {
+    const files = (req.files ?? {}) as Record<string, Express.Multer.File[]>;
+    const [file] = files.media ?? [];
+    return publishAppTourPost(
+      admin(req),
+      req.body ?? {},
+      file ? { originalName: file.originalname, contentType: file.mimetype, size: file.size, bytes: file.buffer } : undefined,
+    );
+  }),
 );
 engagementFeedRouter.get('/posts/:postId', handle(async (req) => feedPostDetail(admin(req), String(req.params.postId))));
 engagementFeedRouter.put('/posts/:postId/pin', handle(async (req) => pinFeedPost(admin(req), String(req.params.postId), req.body?.until)));
