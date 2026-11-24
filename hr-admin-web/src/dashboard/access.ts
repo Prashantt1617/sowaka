@@ -35,8 +35,12 @@ const TEAM_NEVER: AccessKey[] = [
   'peopletasks', 'onboarding', 'offboarding', 'exit_insights', 'preboarding',
 ];
 
+/** Pages hidden for every company and every role (24 Nov 2026, HR: "hide the exit insights page completely"). */
+const HIDDEN_EVERYWHERE: AccessKey[] = ['exit_insights'];
+
 export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boolean {
   if (!user?.dashboardAccess) return false;
+  if (HIDDEN_EVERYWHERE.includes(view)) return false;
   if (isTeamScope(user)) {
     // Tabs HR gave this manager (Claims, say) open exactly as they would for HR with those tabs.
     const given = user.dashboardGivenTabs ?? [];
