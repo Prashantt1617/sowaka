@@ -1,3 +1,4 @@
+import { scopedUserIds } from './manager-scope';
 /**
  * Time office › Attendance corrections, Leave requests, Overtime and Feedback,
  * kept in memory per company the way the lifecycle boards are (swr-cache via
@@ -48,6 +49,8 @@ async function orgOfAdmin(adminUserId: string): Promise<string | undefined> {
 
 async function kept<T>(adminUserId: string, kind: SwrKind, params: unknown, load: () => Promise<T>): Promise<T> {
   if (!lifecycleReadCacheOn()) return load();
+  // The kept copy is the company's: a manager's team list is read fresh, never kept or served from it.
+  if (await scopedUserIds(adminUserId)) return load();
   const org = await orgOfAdmin(adminUserId);
   return org ? cachedLifecycle(org, kind, params, load) : load();
 }
