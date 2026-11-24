@@ -51,3 +51,7 @@ import './tools/punch-trace';
 import './tools/payroll-run-steps';
 import './tools/payroll-setup-fixes';
 import './tools/payroll-settlement-proofs';
+import './tools/lifecycle-offers';
+import './tools/lifecycle-joiners';
+import './tools/lifecycle-offboarding';
+import './tools/lifecycle-templates';
