@@ -59,12 +59,16 @@ class _TabContent extends StatelessWidget {
           data: state.dashboard!,
           bloc: bloc,
           onOpenProfile: onOpenProfile,
-          profileAction: _ProfileAvatarAction(
-            key: const ValueKey('connect-profile-avatar'),
-            initial: state.dashboard!.managerInitial,
-            photoUrl: state.dashboard!.managerPhotoUrl,
-            onTap: onOpenProfile,
-            size: 30,
+          // The Sowaka tour's "Your digital ID card" stop.
+          profileAction: AppTourAnchor(
+            target: AppTourTarget.avatar,
+            child: _ProfileAvatarAction(
+              key: const ValueKey('connect-profile-avatar'),
+              initial: state.dashboard!.managerInitial,
+              photoUrl: state.dashboard!.managerPhotoUrl,
+              onTap: onOpenProfile,
+              size: 30,
+            ),
           ),
         )),
         // Children are positional: the IndexedStack is keyed on the enum's

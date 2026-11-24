@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
+import '../../../../app_tour/app_tour_anchor.dart';
 import '../../../../shared/app_toast.dart';
 import '../onboarding_kit.dart';
 
@@ -26,11 +27,14 @@ abstract final class TeamColors {
 
 /// One pill over the Team tab.
 class TeamPillSpec {
-  const TeamPillSpec({required this.key, required this.label, this.count = 0, this.countColor = TeamColors.sectionCount});
+  const TeamPillSpec({required this.key, required this.label, this.count = 0, this.countColor = TeamColors.sectionCount, this.tourTarget});
 
   final String key;
   final String label;
   final int count;
+
+  /// Where the Sowaka tour points at this pill (Requests, Feedback).
+  final AppTourTarget? tourTarget;
 
   /// The count's colour while the pill is off (orange; blue on Joiners).
   final Color countColor;
@@ -100,7 +104,13 @@ class _TeamSectionPillsState extends State<TeamSectionPills> {
               children: [
                 for (final (i, pill) in widget.pills.indexed) ...[
                   if (i > 0) const SizedBox(width: 8),
-                  _TeamPill(spec: pill, selected: pill.key == widget.selected, onTap: () => widget.onSelect(pill.key)),
+                  if (pill.tourTarget case final target?)
+                    AppTourAnchor(
+                      target: target,
+                      child: _TeamPill(spec: pill, selected: pill.key == widget.selected, onTap: () => widget.onSelect(pill.key)),
+                    )
+                  else
+                    _TeamPill(spec: pill, selected: pill.key == widget.selected, onTap: () => widget.onSelect(pill.key)),
                 ],
               ],
             ),

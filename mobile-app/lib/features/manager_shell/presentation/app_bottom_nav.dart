@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../app_tour/app_tour_anchor.dart';
 import '../../manager/data/manager_models.dart';
 import 'tab_specs.dart';
 
@@ -47,11 +48,14 @@ class AppBottomNav extends StatelessWidget {
             children: [
               for (final tab in tabs)
                 Expanded(
-                  child: AppNavItem(
-                    key: ValueKey('nav-${tab.name}'),
-                    tab: tab,
-                    selected: tab == selected,
-                    onTap: () => onSelect(tab),
+                  child: _tourAnchor(
+                    tab,
+                    AppNavItem(
+                      key: ValueKey('nav-${tab.name}'),
+                      tab: tab,
+                      selected: tab == selected,
+                      onTap: () => onSelect(tab),
+                    ),
                   ),
                 ),
             ],
@@ -61,6 +65,15 @@ class AppBottomNav extends StatelessWidget {
     );
   }
 }
+
+/// The Sowaka tour's stops on the bar: Connect, Teams, Actions and Games.
+Widget _tourAnchor(ManagerTab tab, Widget item) => switch (tab) {
+  ManagerTab.connect => AppTourAnchor(target: AppTourTarget.navConnect, child: item),
+  ManagerTab.manage => AppTourAnchor(target: AppTourTarget.navTeams, child: item),
+  ManagerTab.quick => AppTourAnchor(target: AppTourTarget.navActions, child: item),
+  ManagerTab.games => AppTourAnchor(target: AppTourTarget.navGames, child: item),
+  _ => item,
+};
 
 /// One tab in the bar: its icon over its label, filled and blue when open
 /// (Games on its yellow key).

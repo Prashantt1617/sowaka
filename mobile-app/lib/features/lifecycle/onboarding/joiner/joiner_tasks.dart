@@ -14,7 +14,7 @@ import 'joiner_details.dart';
 import 'joiner_form.dart';
 import 'joiner_lens.dart';
 import 'joiner_models.dart';
-import 'joiner_more.dart' show JoinerProfileScreen, JoinerTourScreen;
+import 'joiner_more.dart' show JoinerProfileScreen, startJoinerTour;
 import 'joiner_parts.dart';
 
 /// Tasks (New joiner canvas, App · tasks): "Tasks for you", the template's
@@ -202,8 +202,8 @@ Future<void> openJoinerTask(BuildContext context, JoinerController c, JoinerTask
         return;
       }
       if (t.screen == 'tour') {
-        await Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => JoinerTourScreen(c: c)));
-        await c.load();
+        // The spotlight tour over the app (it leaves this page for the tabs).
+        await startJoinerTour(context, c);
         return;
       }
       // Its screen opens over this one; Back returns here, and the fact it

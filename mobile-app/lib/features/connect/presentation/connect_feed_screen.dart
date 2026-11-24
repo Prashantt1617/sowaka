@@ -6,6 +6,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderShiftedBox;
 
+import '../../app_tour/app_tour_anchor.dart';
 import '../../shared/app_update.dart';
 import '../../shared/face_photo.dart';
 import '../../shared/image_crop_sheet.dart';
@@ -5592,6 +5593,14 @@ class _StartAPostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The Sowaka tour's "Your stories, for work" stop.
+    return AppTourAnchor(
+      target: AppTourTarget.connectComposer,
+      child: _card(),
+    );
+  }
+
+  Widget _card() {
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(20),

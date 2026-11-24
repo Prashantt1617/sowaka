@@ -2,183 +2,39 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../../manager/data/manager_api_service.dart';
-import '../../../manager/data/manager_models.dart' show LeaveBalance, LeaveBalanceItem;
-import '../data/onboarding_api.dart';
+import '../../../app_tour/app_tour.dart';
+import '../data/lifecycle_me_store.dart';
 import '../presentation/onboarding_kit.dart';
-import '../presentation/tour_lessons.dart';
 import 'joiner_details.dart' show JoinerProfileSectionScreen;
 import 'joiner_parts.dart';
 
 // ─── Sowaka tour ────────────────────────────────────────────────────────────
 
-TourLesson? lessonOf(String? key) =>
-    key == null ? null : [...joinerTourLessons, ...managerTourLessons].where((l) => l.key == key).firstOrNull;
-
-Future<LeaveBalance?> _balance(JoinerController c) async {
-  final api = c.shell.api;
-  if (api is! HttpOnboardingApi) return null;
-  return ManagerApiService(session: api.session).fetchLeaveBalance().then<LeaveBalance?>((b) => b).catchError((Object _) => null);
-}
-
-TourFacts _facts(JoinerController c, LeaveBalance? b) {
-  double? left(LeaveBalanceItem i) => i.unpaid ? null : i.remaining;
-  final manager = c.data?.meetings.where((m) => m.withRole == 'manager' && m.person != null).map((m) => m.person!.name).firstOrNull;
-  return TourFacts(
-    today: c.shell.now(),
-    managerName: manager,
-    casual: b == null ? null : left(b.casual),
-    sick: b == null ? null : left(b.sick),
-    earned: b == null ? null : left(b.earned),
-  );
-}
-
-/// Plays a lesson (AppLesson): the drawing filled in from her record, Done
-/// told to the server. It opens over the screen it was tapped on, and
-/// closing it returns there (the home's card to the home, a tour row to the
-/// tour). [fromTour] false (the home's card): "Back to the tour" after the
-/// last step puts the tour in the lesson's place, and Back from it is the home.
-Future<void> playJoinerLesson(BuildContext context, JoinerController c, String key, {bool fromTour = false}) async {
-  final lesson = lessonOf(key);
-  if (lesson == null) return;
-  final navigator = Navigator.of(context);
-  final balance = key == 'leave' ? await _balance(c) : null;
-  await navigator.push<void>(
-    MaterialPageRoute(
-      fullscreenDialog: true,
-      builder: (_) => TourLessonScreen(
-        lesson: lesson,
-        facts: _facts(c, balance),
-        onBackToTour: fromTour
-            ? null
-            : () => unawaited(navigator.pushReplacement<void, void>(MaterialPageRoute(builder: (_) => JoinerTourScreen(c: c)))),
-        onDone: (k) async {
-          try {
-            await c.api.lessonDone(k);
-          } catch (_) {
-            // Shown again as not done; she can replay it.
-          }
-          await c.load();
-        },
-      ),
-    ),
-  );
-  unawaited(c.load());
-}
-
-/// Sowaka tour (App · tour): the lessons with their number (a tick once
-/// done), Today / Day n / Done and Start, Play or Replay; "For managers"
-/// for someone with reports.
-class JoinerTourScreen extends StatelessWidget {
-  const JoinerTourScreen({super.key, required this.c});
-
-  final JoinerController c;
-
-  @override
-  Widget build(BuildContext context) => JoinerScaffold(
-    c: c,
-    title: 'Sowaka tour',
-    body: (d) {
-      final t = d.tour;
-      List<Widget> rows(List<String> keys, bool manager) => [
-        for (final (i, k) in keys.indexed)
-          if (lessonOf(k) case final l?)
-            _LessonRow(
-              lesson: l,
-              number: i + 1,
-              done: t.done.contains(k),
-              today: !manager && t.today == k,
-              manager: manager,
-              onTap: () => playJoinerLesson(context, c, k, fromTour: true),
-            ),
-      ];
-      return JPage(
-        onRefresh: c.load,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              JSectionHead(title: 'Sowaka tour', meta: '${t.doneCount} of ${t.lessons.length} done'),
-              const SizedBox(height: 8),
-              JListCard(children: withLines(rows(t.lessons, false))),
-              if (t.managerLessons.isNotEmpty) ...[
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(4, 12, 4, 8),
-                  child: Text('For managers', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: OnbColors.text3)),
-                ),
-                JListCard(children: withLines(rows(t.managerLessons, true))),
-              ],
-            ],
-          ),
-        ],
-      );
+/// The Sowaka tour (the spotlight tour over the app) from the joiner's tile,
+/// card or task: its start card, back over the tabs. Once she reaches the
+/// finish card every lesson the server counts is marked done, so the tile
+/// reads Done.
+Future<void> startJoinerTour(BuildContext context, JoinerController c) {
+  final api = c.api;
+  final tour = c.data?.tour;
+  final pending = [
+    if (tour != null)
+      for (final k in [...tour.lessons, ...tour.managerLessons])
+        if (!tour.done.contains(k)) k,
+  ];
+  return AppTour.start(
+    context,
+    onComplete: () async {
+      for (final k in pending) {
+        try {
+          await api.lessonDone(k);
+        } catch (_) {
+          // Shown as not done; the tour can be taken again from the tile.
+        }
+      }
+      unawaited(LifecycleMeStore.instance.refresh(c.shell.api));
     },
   );
-}
-
-class _LessonRow extends StatelessWidget {
-  const _LessonRow({required this.lesson, required this.number, required this.done, required this.today, required this.onTap, this.manager = false});
-
-  final TourLesson lesson;
-  final int number;
-  final bool done;
-  final bool today;
-  final bool manager;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final (tint, fg) = done ? (OnbColors.successTint, OnbColors.successText) : (today ? (OnbColors.primary, Colors.white) : (OnbColors.screen, OnbColors.text2));
-    final meta = done ? 'Done · ${lesson.length}' : (today ? 'Today · ${lesson.length}' : (manager ? lesson.length : 'Day $number · ${lesson.length}'));
-    final cta = done ? 'Replay' : (today ? 'Start' : 'Play');
-    return Semantics(
-      button: true,
-      label: '${lesson.title}. $meta. $cta',
-      excludeSemantics: true,
-      child: InkWell(
-        key: ValueKey('lesson-${lesson.key}'),
-        onTap: onTap,
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 68),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(12)),
-                child: done ? Icon(Icons.check_rounded, size: 18, color: fg) : Text('$number', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: fg)),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(lesson.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: OnbColors.text)),
-                    const SizedBox(height: 2),
-                    Text(meta, style: TextStyle(fontSize: 12, color: today ? OnbColors.primary : OnbColors.text3)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                height: 32,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: today ? OnbColors.primary : Colors.white,
-                  borderRadius: BorderRadius.circular(999),
-                  border: today ? null : Border.all(color: done ? OnbColors.successLine : OnbColors.lineDark),
-                ),
-                child: Text(cta, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: today ? Colors.white : (done ? OnbColors.successText : OnbColors.text2))),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 // ─── Devices and accesses ───────────────────────────────────────────────────

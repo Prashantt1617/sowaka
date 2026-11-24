@@ -20,7 +20,7 @@ import 'joiner_tasks.dart';
 /// Actions › Onboarding (New joiner canvas, App · home): the stage hero
 /// with the plant and the stage strip (tap a stage ahead to look at it, her
 /// own to come back), "This month’s goals" from Month 1, the first punch-in
-/// card on Day 1, today's Sowaka tour lesson, and the tiles, each opening its
+/// card on Day 1, the Sowaka tour's card, and the tiles, each opening its
 /// screen. One answer (`GET /lifecycle/joiner/onboarding`) for all of it.
 class JoinerHomeScreen extends StatefulWidget {
   const JoinerHomeScreen({super.key, required this.shell, this.api});
@@ -69,8 +69,7 @@ class JoinerHomeBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final lens = JoinerLens(d, c.lens);
     final now = lens.isNow;
-    final today = lessonOf(d.tour.today);
-    final tourCard = now && !lens.showsPunch && today != null && (d.step == 'd1' || d.step == 'w1');
+    final tourCard = now && !lens.showsPunch && d.tour.today != null && (d.step == 'd1' || d.step == 'w1');
     final openScreen = c.shell.openAppScreen;
     return JPage(
       onRefresh: c.load,
@@ -113,9 +112,9 @@ class JoinerHomeBody extends StatelessWidget {
               icon: Icons.play_arrow_rounded,
               iconColor: OnbColors.rust,
               eyebrow: 'SOWAKA TOUR · ${d.step == 'd1' ? 'TOMORROW' : 'TODAY'}',
-              title: today.title,
-              lines: ['${today.length} · ${d.tour.doneCount} of ${d.tour.lessons.length} done'],
-              onTap: () => playJoinerLesson(context, c, today.key),
+              title: 'Let’s show you around',
+              lines: const ['About a minute'],
+              onTap: () => unawaited(startJoinerTour(context, c)),
             ),
           ),
         OnbRise(delay: 60, child: _Tiles(c: c, d: d, lens: lens)),
@@ -447,10 +446,6 @@ class _Tiles extends StatelessWidget {
     void open(Widget page) => unawaited(pushJoiner(context, c, page));
     final now = lens.isNow;
     final tourDone = d.tour.lessons.isNotEmpty && d.tour.doneCount >= d.tour.lessons.length;
-    final today = lessonOf(d.tour.today) ??
-        lessonOf(d.tour.lessons.where((k) => !d.tour.done.contains(k)).firstOrNull) ??
-        lessonOf(d.tour.lessons.firstOrNull);
-    final tourCount = '${d.tour.doneCount} of ${d.tour.lessons.length} done';
     final task = lens.taskTile;
     final half = <Widget>[
       if (lens.showsMeetings)
@@ -475,14 +470,16 @@ class _Tiles extends StatelessWidget {
       if (lens.showsTour)
         _Tile(
           key: const ValueKey('tile-tour'),
-          onTap: () => open(JoinerTourScreen(c: c)),
+          // The spotlight tour over the app, from its start card; Done
+          // once she has reached its finish card (it replays from here).
+          onTap: () => unawaited(startJoinerTour(context, c)),
           gradient: OnbColors.tourGradient,
           light: true,
           icon: const JIconChip(icon: Icons.explore_outlined, tint: Color(0x38FFFFFF), color: Colors.white, size: 32, iconSize: 18),
           name: 'Sowaka tour',
           eyebrow: now ? (tourDone ? 'DONE' : 'UP NEXT') : lens.inLabel,
-          title: now ? (tourDone ? 'All lessons done' : (today?.title ?? '')) : 'Fix a missed punch, leave and overtime',
-          meta: now ? (tourDone ? tourCount : '${today?.length ?? ''} · $tourCount') : 'A new lesson each day',
+          title: now && tourDone ? 'Tour done' : 'Let’s show you around',
+          meta: now && tourDone ? 'Replay it anytime' : 'About a minute',
         ),
       // "Life at …" (the portal's tile): the watch list as stories, opened
       // full screen on the first one not yet watched.

@@ -225,11 +225,13 @@ class _TeamSectionBar extends StatelessWidget {
                 key: TeamSection.requests.name,
                 label: 'Requests',
                 count: _pendingTeamRequests(data) + extraRequests,
+                tourTarget: AppTourTarget.teamsRequests,
               ),
               TeamPillSpec(
                 key: TeamSection.feedback.name,
                 label: 'Feedback',
                 count: _pendingTeamFeedback(data),
+                tourTarget: AppTourTarget.teamsFeedback,
               ),
             ],
             // View only: nothing waits on the viewer there, so no count.
