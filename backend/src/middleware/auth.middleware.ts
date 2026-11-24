@@ -5,6 +5,7 @@ import { cachedAuth, rememberAuth } from '../services/auth-cache';
 import { redactTicket } from '../services/scribble-ticket.service';
 import { runAsRequestUser } from '../services/request-user';
 import { dashboardGrantOf } from '../services/manager-scope';
+import { tabsForRequest } from '../models/dashboard-tabs';
 import { logger } from '../utils/logger';
 import type { User } from '../models/user.model';
 import type { AuthSessionDocument } from '../models/auth.model';
@@ -93,9 +94,16 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // A copy: the cached record must keep what is stored, or the next request would read a manager's
     // tabs as HR's own grant.
     const grant = await dashboardGrantOf(user as never);
-    const seen = (grant.access === (user.dashboardAccess === true) && !grant.teamScope)
+    // A manager HR also gave some tabs: a request behind one of those tabs is answered company-wide, as HR
+    // gave it; everything else (the manager's screens and shared lookups) is their team.
+    let teamScope = grant.teamScope;
+    if (teamScope && grant.givenTabs?.length) {
+      const needed = tabsForRequest(req.method, (req.originalUrl || req.url).split('?')[0]);
+      if (needed && needed.some((t) => grant.givenTabs!.includes(t))) teamScope = false;
+    }
+    const seen = (grant.access === (user.dashboardAccess === true) && !teamScope && !grant.givenTabs)
       ? user
-      : { ...user, dashboardAccess: grant.access, dashboardTabs: grant.tabs ?? undefined, dashboardScope: grant.teamScope ? 'team' : undefined } as typeof user;
+      : { ...user, dashboardAccess: grant.access, dashboardTabs: grant.tabs ?? undefined, dashboardScope: teamScope ? 'team' : undefined } as typeof user;
     req.auth = {
       userId: session.userId,
       token,
@@ -106,7 +114,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     noteAppRequest(req, user);
     // So `orgUsers` and the services that need the caller's org know it
     // without reading the user again.
-    runAsRequestUser({ userId: session.userId, org: user.org, ...(grant.teamScope ? { teamScope: true } : {}) }, () => runAsViewer(seen as Omit<User, 'profilePhotoUrl'>, next));
+    runAsRequestUser({ userId: session.userId, org: user.org, ...(teamScope ? { teamScope: true } : {}) }, () => runAsViewer(seen as Omit<User, 'profilePhotoUrl'>, next));
   } catch (error) {
     next(error);
   }

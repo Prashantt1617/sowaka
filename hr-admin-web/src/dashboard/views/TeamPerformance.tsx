@@ -22,7 +22,7 @@ import { ghostBtn, panelCard, smallBtn } from './kpiLook';
 
 type Workspace = { period: string; team: WorkspaceMember[] };
 
-export function TeamPerformance() {
+export function TeamPerformance({ onExit }: { onExit?: () => void } = {}) {
   const { emps, flash } = useStore();
   const { user } = useAuth();
   const me = user?.id ?? '';
@@ -46,7 +46,17 @@ export function TeamPerformance() {
   }, []);
 
   // Everyone below the manager (the server's list is their subtree), not themselves.
-  const team = useMemo(() => emps.filter((e) => e.id !== me).sort((a, b) => Number(b.managerId === me) - Number(a.managerId === me) || a.name.localeCompare(b.name)), [emps, me]);
+  // Everyone below them in the reporting line, at any depth (a manager's list is this already; HR's is the
+  // whole company, so the subtree is walked from them).
+  const team = useMemo(() => {
+    const below = new Set<string>();
+    const queue = [me];
+    while (queue.length) {
+      const id = queue.shift()!;
+      for (const e of emps) if (e.managerId === id && e.id !== me && !below.has(e.id)) { below.add(e.id); queue.push(e.id); }
+    }
+    return emps.filter((e) => below.has(e.id)).sort((a, b) => Number(b.managerId === me) - Number(a.managerId === me) || a.name.localeCompare(b.name));
+  }, [emps, me]);
   const period = ws?.period;
 
   const loadKpi = useCallback((userId: string) => {
@@ -71,6 +81,7 @@ export function TeamPerformance() {
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
+      {onExit && <button type="button" style={{ ...ghostBtn, marginBottom: 10 }} onClick={onExit}>← All reviews</button>}
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
         <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
           {period ? `${periodLabel(period)} cycle · ` : ''}{team.length} people in your team · reviews sent {sent} of {direct.length} direct reports

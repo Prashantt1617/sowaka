@@ -38,6 +38,9 @@ const TEAM_NEVER: AccessKey[] = [
 export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boolean {
   if (!user?.dashboardAccess) return false;
   if (isTeamScope(user)) {
+    // Tabs HR gave this manager (Claims, say) open exactly as they would for HR with those tabs.
+    const given = user.dashboardGivenTabs ?? [];
+    if (given.length && canOpen({ ...user, dashboardScope: undefined, dashboardGivenTabs: undefined, dashboardTabs: given }, view)) return true;
     if (TEAM_NEVER.includes(view) || PLACEMENT_VIEWS.includes(view)) return false;
     // No Setup page or its pages; of Bulk assign, only KPI templates (reached from Performance).
     if (SETUP_VIEWS.includes(view as View)) return false;

@@ -462,6 +462,8 @@ async function toAuthUser(
     dashboardTabs: grant.tabs,
     // A manager on the dashboard: every list is their team (manager-scope.ts).
     ...(grant.teamScope ? { dashboardScope: 'team' as const } : {}),
+    // A manager HR also gave some tabs: those tabs work as HR's, company-wide (manager-scope.ts).
+    ...(grant.givenTabs?.length ? { dashboardGivenTabs: grant.givenTabs } : {}),
     // Whether the dashboard shows the Support desk, and which desk.
     supportRole: supportRoleOf(user),
     // Whether the profile offers Edit details (own and their reports'); the server checks it again.
