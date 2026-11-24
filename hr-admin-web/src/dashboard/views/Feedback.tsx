@@ -20,6 +20,9 @@ import { Modal, Tabs } from './kpiUi';
 import { Td, Th } from './lookUi';
 import * as L from './look';
 import { ghostBtn, panelCard, panelTitle, smallBtn } from './kpiLook';
+import { TeamReviews } from './TeamReviews';
+import { useAuth } from '../auth/AuthContext';
+import { isTeamScope } from '../access';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -93,6 +96,9 @@ export function Feedback() {
 
 function FeedbackBody() {
   const s = useStore();
+  // A manager on the dashboard writes reviews for their direct reports here; HR's page is unchanged.
+  const { user } = useAuth();
+  const team = isTeamScope(user);
   const [section, setSection] = useState<Section>('managers');
   const [status, setStatus] = useState<StatusFilter>('all');
   // Which score the table's Score column shows and sorts on: the overall
@@ -184,6 +190,7 @@ function FeedbackBody() {
 
   return (
     <div>
+      {team && <TeamReviews />}
       {open && (
         <ReviewCard
           emp={open}
