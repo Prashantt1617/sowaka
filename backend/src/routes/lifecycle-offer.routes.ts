@@ -23,7 +23,7 @@ import {
 } from '../services/lifecycle/letters';
 import { documentStatusOnly, lifecycleViewer } from '../services/lifecycle/board';
 import {
-  createOffer, decideDateRequest, declineOffer, finaliseOffer, type HrActor, markJoined, markNotJoining, offerView, reopenOffer, reviseOffer,
+  confirmOffer, createOffer, decideDateRequest, declineOffer, finaliseOffer, type HrActor, markJoined, markNotJoining, offerView, reopenOffer, reviseOffer,
   sendOffer, uploadOfferPdf,
 } from '../services/lifecycle/offers';
 import { logger } from '../utils/logger';
@@ -101,6 +101,11 @@ const r = lifecycleOfferRouter;
 r.post('/offers', ...guard(OFFER_TABS), handle(async (req) => {
   const b = body(req);
   return createOffer(actorOf(req), { candidate: b.candidate as never, fields: b.fields, templateId: b.templateId });
+}));
+/** Add user › Confirm new user: the offer was given outside the app; the joiner is created confirmed (finalised), no offer email. */
+r.post('/offers/confirm', ...guard(OFFER_TABS), handle(async (req) => {
+  const b = body(req);
+  return confirmOffer(actorOf(req), { candidate: b.candidate as never, fields: b.fields, templateId: b.templateId, emailPortal: b.emailPortal });
 }));
 r.get('/offers/:journeyId', ...guard(OFFER_TABS), handle(async (req) => {
   const hr = actorOf(req);

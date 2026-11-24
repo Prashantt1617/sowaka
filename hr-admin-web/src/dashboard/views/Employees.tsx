@@ -2,11 +2,8 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { ETYPE } from '../theme';
 import { Avatar, Loadable, Pill, SearchInput, SelectBox, SkeletonPage } from '../ui';
-import { IconPlus } from '../icons';
 import type { Emp } from '../seed';
-import { AddEmployeeWizard } from './AddEmployeeWizard';
-import { AccountLimitModal } from './AccountLimitModal';
-import { getAccountLimit } from '../../services/hrms';
+import { AddUserButton } from './AddUserButton';
 import { EmployeeProfile, type ProfileTab } from './EmployeeProfile';
 import { Td, Th } from './kpiUi';
 import { canOpen } from '../access';
@@ -28,20 +25,6 @@ export function Employees() {
 
 function EmployeesBody() {
   const s = useStore();
-  const [addOpen, setAddOpen] = useState(false);
-  // Set to the company's limit when it is already reached: the popup instead of the wizard.
-  const [limitReached, setLimitReached] = useState<number | null | false>(false);
-  const [checkingLimit, setCheckingLimit] = useState(false);
-  // A company without a limit (every company unless Sowaka sets one) goes straight to the wizard.
-  // If the check itself fails, the wizard opens anyway: the server still refuses an account over the limit.
-  const openAdd = () => {
-    if (checkingLimit) return;
-    setCheckingLimit(true);
-    getAccountLimit()
-      .then(({ max, used }) => { if (max !== null && used >= max) setLimitReached(max); else setAddOpen(true); })
-      .catch(() => setAddOpen(true))
-      .finally(() => setCheckingLimit(false));
-  };
   const [selected, setSelected] = useState<Emp | null>(null);
   const [page, setPage] = useState(1);
   // Who the list shows: everyone working here (on notice included), only those on notice, those who left,
@@ -52,6 +35,8 @@ function EmployeesBody() {
   const showPreboarding = who === 'preboarding' && preboarding;
   // The departments of those still to join, for the team filter while their list shows.
   const [preTeams, setPreTeams] = useState<string[]>([]);
+  // Bumped when Add user › Confirm new user adds someone to join: their list loads again.
+  const [preKey, setPreKey] = useState(0);
   // Opened from elsewhere (Suwi's links): which person, and on which tab.
   const [initialTab, setInitialTab] = useState<ProfileTab | undefined>(undefined);
   const req = s.profileRequest;
@@ -93,14 +78,11 @@ function EmployeesBody() {
 
   return (
     <div>
-      {addOpen && <AddEmployeeWizard onClose={() => setAddOpen(false)} />}
-      {limitReached !== false && <AccountLimitModal max={limitReached} onClose={() => setLimitReached(false)} />}
       <div className="pd-head" style={{ justifyContent: 'flex-end', marginTop: -8 }}>
         <div className="pd-actions">
           {!showPreboarding && <button onClick={() => void exportEmployees(rows)} disabled={rows.length === 0} className="pd-btn"><IconExport /> Export list</button>}
-          <button onClick={openAdd} disabled={checkingLimit} className="pd-btn primary">
-            <IconPlus size={15} /> Add user
-          </button>
+          {/* Add user: Add existing user (the wizard), Create new offer or Confirm new user (one flow with Onboarding's). */}
+          <AddUserButton onConfirmed={() => { if (preboarding) { setWho('preboarding'); setPreKey((n) => n + 1); } }} />
         </div>
       </div>
 
@@ -126,7 +108,7 @@ function EmployeesBody() {
             </SelectBox>
           )}
         </div>
-        {showPreboarding ? <PreboardingList search={s.empSearch} team={s.empTeam} onTeams={setPreTeams} /> : (
+        {showPreboarding ? <PreboardingList key={preKey} search={s.empSearch} team={s.empTeam} onTeams={setPreTeams} /> : (
         <>
         <div className="pd-countline" style={{ marginBottom: 14 }}><b>{rows.length}</b> of {who === 'left' ? leftCount : working.length} {who === 'left' ? 'who left' : 'people'}</div>
         <div className="pd-tbl-wrap">

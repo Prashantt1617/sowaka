@@ -516,6 +516,11 @@ export interface OfferVersion {
   acceptedDevice?: string;
   finalisedAt?: Date;
   finalisedByUserId?: string;
+  /**
+   * Add user › Confirm new user: the offer was given and accepted outside the app (no offer letter
+   * or email from Sowaka); HR recorded it, and that confirmation finalised it.
+   */
+  outsideApp?: { byUserId: string; byName: string; at: Date };
 }
 
 export interface Offer {
