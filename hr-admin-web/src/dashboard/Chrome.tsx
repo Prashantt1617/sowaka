@@ -520,7 +520,7 @@ export function Topbar() {
   // IT, Admin and Finance clearance staff see their team under their name, not "HR".
   const lifecycleOn = useLifecycleOn(Boolean(user?.dashboardAccess));
   const offViewer = useOffboardingCount(lifecycleOn === true && canOpen(user, 'offboarding'))?.viewer;
-  const roleLabel = offViewer?.kind === 'team' && offViewer.team ? TEAM_NAME[offViewer.team] : 'HR';
+  const roleLabel = isTeamScope(user) ? 'Manager' : offViewer?.kind === 'team' && offViewer.team ? TEAM_NAME[offViewer.team] : 'HR';
   const iconBtn = {
     position: 'relative' as const,
     width: 42,
