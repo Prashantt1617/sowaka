@@ -74,6 +74,8 @@
     "suwi-holidays:check": "MONGODB_DB=suwi_holidays_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-holidays-check.ts",
     "suwi-perf:check": "MONGODB_DB=suwi_perf_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-perf-check.ts",
     "suwi-decide:check": "MONGODB_DB=suwi_decide_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-decide-requests-check.ts",
+    "suwi-time:check": "MONGODB_DB=suwi_time_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-time-check.ts",
+    "suwi-decide:check":"MONGODB_DB=suwi_decide_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-decide-requests-check.ts",
     "suwi-speed:check": "MONGODB_DB=suwi_speed_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-speed-check.ts && npm run -s suwi-orch:check",
     "suwi-orch:check": "MONGODB_DB=suwi_orch_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-orchestration-check.ts",
     "celebrations:check": "tsx src/scripts/connect-celebrations-check.ts",
