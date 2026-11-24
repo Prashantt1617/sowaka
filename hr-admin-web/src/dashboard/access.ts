@@ -31,6 +31,8 @@ const TEAM_NEVER: AccessKey[] = [
   'setup', 'suwi', 'suwitimings', 'overview', 'cuptv', 'usersroles', 'employeeimport', 'exits', 'exitsettings',
   SALARY_DETAILS, 'lifecycle_documents', 'lifecycle_templates', 'lifecycle_letter_templates', 'support',
   'kpi', 'kpitemplates', 'cycle', 'notificationlook', 'investmentproofs', 'payrollconfig', 'fbprequests', 'fbpsplits',
+  // Hidden from managers too (24 Nov 2026, HR): People › Tasks and the whole Employee lifecycle.
+  'peopletasks', 'onboarding', 'offboarding', 'exit_insights', 'preboarding',
 ];
 
 export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boolean {

@@ -18,11 +18,9 @@ import { requestUserFor } from './request-user';
 export const MANAGER_TABS = [
   // Time Office
   'leave', 'overtime', 'attendance', 'oolcheckins', 'attendancereport',
-  // People (no salary details, no exits, no Accesses)
+  // People (no salary details, no exits, no Accesses, no Tasks)
   'employees', 'orgchart',
-  // Employee lifecycle (not Documents: offers and letters carry pay; not Templates: that is Setup; not Exit
-  // insights: it reads every leaver in the company, and leavers are no longer in anyone's team)
-  'onboarding', 'offboarding',
+  // Not the Employee lifecycle (24 Nov 2026, HR: "hide employee lifecycle as well").
   // Performance: reviews, and assigning KPI templates HR set up (not the parameters, templates or cycle setup)
   'feedback', 'kpibulk',
 ] as const;
