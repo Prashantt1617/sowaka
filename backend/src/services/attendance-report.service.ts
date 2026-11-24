@@ -899,7 +899,8 @@ async function gradeEmployeeDays(org: string, setup: OrgSetup, user: Person, fro
           previousLabel: label,
           ...(mark.note ? { note: mark.note } : {}),
           ...(mark.setByName ? { setByName: mark.setByName } : {}),
-          setAt: mark.setAt.toISOString(),
+          // Some marks hold the time as text (14 of Convrse's from 26–27 Oct 2026): read both, never crash the calendar.
+          setAt: new Date(mark.setAt).toISOString(),
         },
       } : {}),
     });
