@@ -299,9 +299,9 @@ export function Sidebar() {
   const lifecycle = useLifecycleOn(Boolean(user?.dashboardAccess));
   // Where the lifecycle is on, the Offboarding board takes the place of People › Exits.
   const replaced = (key: View) => key === 'exits' && (user?.features?.lifecycle === true || lifecycle === true);
-  // A manager (team scope) has no Bulk assign page: KPI templates are assigned from Performance › Assign KPIs.
-  const team = isTeamScope(user);
-  const navItem = (item: NavItem): NavItem => (team && item.key === 'kpibulk' ? { ...item, label: 'Assign KPIs', hidden: false } : item);
+  // A manager (team scope) assigns KPIs from Performance › Performance Reviews (one row per person), so no
+  // separate Assign KPIs entry (24 Nov 2026, HR: "remove assign from here, not needed").
+  const navItem = (item: NavItem): NavItem => item;
   const sections = SECTIONS
     .filter((s) => s.title !== LIFECYCLE_SECTION || lifecycle === true)
     .map((s) => ({ ...s, items: s.items.map(navItem).filter((item) => !item.hidden && !replaced(item.key) && canOpen(user, item.key)) })).filter((s) => s.items.length > 0);

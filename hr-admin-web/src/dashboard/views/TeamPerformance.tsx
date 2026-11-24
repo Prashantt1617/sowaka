@@ -15,7 +15,8 @@ import { PersonAvatar } from '../PersonAvatar';
 import { getKpiAssignment, listKpiParameters, listKpiTemplates } from '../../services/kpi';
 import type { KpiAssignmentDTO, KpiParameterDTO, KpiTemplateDTO } from '../../services/kpi';
 import { KpiAssignModal } from './KpiAssign';
-import { ReviewForm, STATUS_LABEL, type WorkspaceMember } from './TeamReviews';
+import { STATUS_LABEL, type WorkspaceMember } from './TeamReviews';
+import { ReviewPage } from './ReviewPage';
 import { periodLabel } from '../period';
 import { ghostBtn, panelCard, smallBtn } from './kpiLook';
 
@@ -60,6 +61,14 @@ export function TeamPerformance() {
   const sent = direct.filter((e) => byId.get(e.id)?.feedbackStatus === 'sent').length;
   const who = assigning ? team.find((e) => e.id === assigning) : undefined;
 
+  // Writing a review is a page of its own: one tab per parameter, dictation and Refine with Suwi.
+  if (reviewing && period) {
+    return (
+      <ReviewPage member={reviewing} period={period} onBack={() => setReviewing(null)}
+        onSaved={(wasSent) => { flash(wasSent ? `Review sent to ${reviewing.name}` : `Draft saved for ${reviewing.name}`); setReviewing(null); loadWorkspace(); }} />
+    );
+  }
+
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -99,13 +108,18 @@ export function TeamPerformance() {
                     <td style={td}>{isDirect ? <span style={{ color: status === 'sent' ? 'var(--ok)' : 'var(--ink-3)' }}>{STATUS_LABEL[status] ?? status}{status === 'sent' && m?.score ? ` · ${Number(m.score).toFixed(1)}` : ''}</span> : <span style={{ color: 'var(--ink-4)' }}>By {e.manager || 'their manager'}</span>}</td>
                     <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button type="button" style={smallBtn} disabled={!period} onClick={() => setAssigning(e.id)}>{a?.parameters?.length ? 'Edit KPIs' : 'Assign KPIs'}</button>
-                      {isDirect && (
-                        <button type="button" style={{ ...smallBtn, marginLeft: 8 }} disabled={!m || !m.parameters?.length}
-                          title={m && !m.parameters?.length ? 'Assign KPIs first: the review scores them' : undefined}
-                          onClick={() => m && setReviewing(m)}>
+                      {isDirect && (m?.parameters?.length && a?.parameters?.length ? (
+                        <button type="button" style={{ ...smallBtn, marginLeft: 8 }} onClick={() => setReviewing(m)}>
                           {status === 'pending' ? 'Write review' : 'Edit review'}
                         </button>
-                      )}
+                      ) : (
+                        // No KPIs yet: the review has nothing to score, so it stays locked until they are assigned.
+                        <button type="button" disabled aria-disabled title="Assign KPIs first: the review scores them"
+                          style={{ ...smallBtn, marginLeft: 8, opacity: 0.55, cursor: 'not-allowed', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+                          Write review
+                        </button>
+                      ))}
                     </td>
                   </tr>
                 );
@@ -121,10 +135,6 @@ export function TeamPerformance() {
           params={params} templates={templates} existing={kpis[who.id] ?? null}
           onClose={() => setAssigning(null)}
           onSaved={() => { flash(`KPIs saved for ${who.name}`); setAssigning(null); loadKpi(who.id); loadWorkspace(); }} />
-      )}
-      {reviewing && period && (
-        <ReviewForm member={reviewing} period={period} onClose={() => setReviewing(null)}
-          onSaved={(wasSent) => { flash(wasSent ? `Review sent to ${reviewing.name}` : `Draft saved for ${reviewing.name}`); setReviewing(null); loadWorkspace(); }} />
       )}
     </div>
   );
