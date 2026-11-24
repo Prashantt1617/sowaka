@@ -44,7 +44,7 @@ export async function requireTeamScope(req: Request, res: Response, next: NextFu
   const m = PERSON.exec(path);
   if (m && !NOT_PEOPLE.has(m[1])) {
     try {
-      await assertInTeam(req.auth!.user.userId, decodeURIComponent(m[1]));
+      await assertInTeam(req.auth!.user.userId, decodeURIComponent(m[1] ?? ''));
     } catch {
       res.status(403).json({ success: false, message: 'That person is not in your team', requestId: req.requestId });
       return;
