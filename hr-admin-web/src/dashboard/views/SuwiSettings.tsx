@@ -73,7 +73,7 @@ export function SuwiSettings() {
           <div style={{ flex: 1, minWidth: 260 }}>
             <div style={{ fontSize: 17, fontWeight: 600 }}>Suwi, your HR assistant</div>
             <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 2 }}>
-              {service.ready ? `Running on ${service.provider === 'gemini' ? 'Google Gemini' : 'Anthropic Claude'} (${service.model}).` : 'Not set up on this server yet: no AI key.'} Suwi only sees what each person's role allows and never acts without a confirmation.
+              {service.ready ? `Running on ${service.provider === 'gemini' ? 'Google Gemini' : service.provider === 'openai' ? 'OpenAI' : 'Anthropic Claude'} (${service.model}).` : 'Not set up on this server yet: no AI key.'} Suwi only sees what each person's role allows and never acts without a confirmation.
             </div>
           </div>
           <button type="button" onClick={() => s.setSuwiOpen(true)} style={primary}>Ask Suwi</button>
