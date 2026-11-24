@@ -11,7 +11,7 @@ import { useStore } from './store';
 import type { StoreList } from './store';
 import { PersonAvatar } from './PersonAvatar';
 import { ORG_DISPLAY_NAME, PLATFORM_NAME } from './org';
-import { canOpen } from './access';
+import { canOpen, isTeamScope } from './access';
 import { useSupportBadge } from './supportBadge';
 import { useFbpBadge } from './fbpBadge';
 import type { ThemeMode } from './themeMode';
@@ -299,9 +299,12 @@ export function Sidebar() {
   const lifecycle = useLifecycleOn(Boolean(user?.dashboardAccess));
   // Where the lifecycle is on, the Offboarding board takes the place of People › Exits.
   const replaced = (key: View) => key === 'exits' && (user?.features?.lifecycle === true || lifecycle === true);
+  // A manager (team scope) has no Bulk assign page: KPI templates are assigned from Performance › Assign KPIs.
+  const team = isTeamScope(user);
+  const navItem = (item: NavItem): NavItem => (team && item.key === 'kpibulk' ? { ...item, label: 'Assign KPIs', hidden: false } : item);
   const sections = SECTIONS
     .filter((s) => s.title !== LIFECYCLE_SECTION || lifecycle === true)
-    .map((s) => ({ ...s, items: s.items.filter((item) => !item.hidden && !replaced(item.key) && canOpen(user, item.key)) })).filter((s) => s.items.length > 0);
+    .map((s) => ({ ...s, items: s.items.map(navItem).filter((item) => !item.hidden && !replaced(item.key) && canOpen(user, item.key)) })).filter((s) => s.items.length > 0);
   // A cancellation request on an approved leave waits on HR's decision too.
   const leavesPending = leaves.filter((l) => l.status === 'Pending' || l.cancelRequest?.status === 'Pending').length;
   const otPending = ots.filter((o) => o.status === 'Pending').length;

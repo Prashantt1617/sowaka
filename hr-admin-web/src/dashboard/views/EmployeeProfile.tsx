@@ -32,7 +32,7 @@ import { ExitDetail } from './ExitDetail';
 import { Field, GENDERS as GENDER_CHOICES, Select, TypeOrPick, grid2, grid3, infoCallout, infoIcon, inputStyle } from './AddEmployeeWizard';
 import { ApiError } from '../../services/http';
 import { useAuth } from '../auth/AuthContext';
-import { canOpen, SALARY_DETAILS } from '../access';
+import { canOpen, isTeamScope, SALARY_DETAILS } from '../access';
 import { getEmployeePayslips, getEpfBalance, getPaymentDetails, inr as inrPaise, saveEpfBalance, savePaymentDetails, type EpfBalanceDTO, type PaymentDetailsDTO, type PaymentDetailsInput, type PayrollRunDTO, type PayslipDTO } from '../../services/payroll';
 import { EmployeeSalary } from './EmployeeSalary';
 import { EmployeeActivity } from './EmployeeActivity';
@@ -244,7 +244,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
   const [exitTick, setExitTick] = useState(0);
   const seesSalary = canOpen(user, SALARY_DETAILS);
   // Exits: dashboard admins, where the company has them switched on, for anyone but themselves.
-  const seesExit = user?.dashboardAdmin === true && user?.features?.exits === true && user.id !== emp.id;
+  const seesExit = !isTeamScope(user) && user?.dashboardAdmin === true && user?.features?.exits === true && user.id !== emp.id;
   // Edit details: for someone given the right, on themselves and anyone below them.
   const [editingDetails, setEditingDetails] = useState(false);
   // HR (a dashboard admin with the right) edits anyone; others their own reporting line.
@@ -285,7 +285,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
       <ExitLoader userId={emp.id} enabled={user?.dashboardAdmin === true && user?.features?.exits === true} tick={exitTick} onLoaded={(e) => { setExitRow(e); setExitReady(true); }} />
       <div className="pd-prof-top">
         <button onClick={onBack} className="pd-btn ghost sm" style={{ marginLeft: -12 }}>{backLabel}</button>
-        {SHOW_DELETE_EMPLOYEE && user?.dashboardAdmin === true && user.id !== emp.id && (
+        {SHOW_DELETE_EMPLOYEE && !isTeamScope(user) && user?.dashboardAdmin === true && user.id !== emp.id && (
           <button type="button" onClick={() => setDeleting(true)} className="pd-btn sm" style={{ color: 'var(--bad)' }}><PdTrash /> Delete employee</button>
         )}
       </div>

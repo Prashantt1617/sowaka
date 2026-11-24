@@ -21,8 +21,35 @@ export function canSeePay(user: AuthUser | null | undefined): boolean {
 }
 
 /** Every tab, unless HR limited them. People › Accesses is an admin's alone; Support desk needs a Support role. */
+/** A manager on the dashboard: only the manager tabs, over their own reporting subtree. */
+export function isTeamScope(user: AuthUser | null | undefined): boolean {
+  return user?.dashboardScope === 'team';
+}
+
+/** Pages a manager (team scope) may never open, whatever their tabs say. */
+const TEAM_NEVER: AccessKey[] = [
+  'setup', 'suwi', 'suwitimings', 'overview', 'cuptv', 'usersroles', 'employeeimport', 'exits', 'exitsettings',
+  SALARY_DETAILS, 'lifecycle_documents', 'lifecycle_templates', 'lifecycle_letter_templates', 'support',
+  'kpi', 'kpitemplates', 'cycle', 'notificationlook', 'investmentproofs', 'payrollconfig', 'fbprequests', 'fbpsplits',
+];
+
 export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boolean {
   if (!user?.dashboardAccess) return false;
+  if (isTeamScope(user)) {
+    if (TEAM_NEVER.includes(view) || PLACEMENT_VIEWS.includes(view)) return false;
+    // No Setup page or its pages; of Bulk assign, only KPI templates (reached from Performance).
+    if (SETUP_VIEWS.includes(view as View)) return false;
+    if (view === 'bulkassign') return false;
+    if (BULK_VIEWS.includes(view as View) && view !== 'kpibulk') return false;
+    if (LIFECYCLE_VIEWS.includes(view) && lifecycleOn() === false) return false;
+    if (view === 'preboarding') return canOpen(user, 'onboarding') || canOpen(user, 'employees');
+    if (view === 'companycalendar') return canOpen(user, 'attendancereport') || (canOpen(user, 'attendance') && canOpen(user, 'leave'));
+    if (view === 'punchlog') return canOpen(user, 'attendancereport') || canOpen(user, 'attendance') || canOpen(user, 'oolcheckins');
+    if (view === 'leavebalances') return canOpen(user, 'leave');
+    if (view === 'peopletasks') return canOpen(user, 'employees');
+    // Only the tabs the server gave; payroll, tax, claims, engagement and the rest are never among them.
+    return Array.isArray(user.dashboardTabs) && user.dashboardTabs.includes(view);
+  }
   if (view === 'usersroles' || view === 'employeeimport') return user.dashboardAdmin === true;
   // How every push sounds and looks, for the whole company: an admin's, as the server decides it.
   // Hidden from every dashboard (17 Nov 2026): Sowaka sets each company's sounds and pictures directly.
