@@ -38,3 +38,7 @@ import './tools/leave-balance';
 import './tools/review';
 import './tools/holidays';
 import './tools/org-lists';
+import './tools/kpi-parameters';
+import './tools/review-draft';
+import './tools/connect-moderate';
+import './tools/connect-contests';
