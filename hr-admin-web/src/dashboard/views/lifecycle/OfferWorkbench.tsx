@@ -17,7 +17,7 @@ import {
 import type { JourneyDetail, LetterTemplateDTO, LetterView, OfferFields, SalaryBreakup, TemplateListItem } from '../../../services/lifecycle';
 import { htmlToPdfBlob } from '../../pdf';
 import { BlobPreview, FilePreview, Field, Pick } from './shared';
-import { OFFER_FIELD_LABEL, areaStyle, errText, firstName, inputStyle, longDay, todayKey } from './format';
+import { NEW_OFFER_STASH_KEY, OFFER_FIELD_LABEL, areaStyle, errText, firstName, inputStyle, longDay, todayKey } from './format';
 import {
   LETTER_TITLE, annexureHtml, checklistHtml, fieldLabel, fillBody, filled, sanitizeHtml, letterFileName, letterInner, letterPdf, missingFields, placeholders, simpleDocument,
 } from './letterDoc';
@@ -91,8 +91,14 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
 
   const isNew = !journeyId;
   // What HR typed stays until it is saved, generated or sent, also across leaving the page.
-  const dropStash = useFormStash(`lf-docs:offer:${journeyId || 'new'}`, Boolean(isNew || detail), { name, email, phone, fields, edits, bodyEdit },
-    (k) => { setName(k.name ?? ''); setEmail(k.email ?? ''); setPhone(k.phone ?? ''); setFields((f) => ({ ...f, ...k.fields })); setEdits(k.edits ?? {}); setBodyEdit(k.bodyEdit ?? null); });
+  // Add user's form hands its details over in the same stash (templateId included): the template's own
+  // probation and notice then do not overwrite what HR already chose there.
+  const keptChoices = useRef(false);
+  const dropStash = useFormStash(journeyId ? `lf-docs:offer:${journeyId}` : NEW_OFFER_STASH_KEY, Boolean(isNew || detail), { name, email, phone, fields, edits, bodyEdit, templateId },
+    (k) => {
+      setName(k.name ?? ''); setEmail(k.email ?? ''); setPhone(k.phone ?? ''); setFields((f) => ({ ...f, ...k.fields })); setEdits(k.edits ?? {}); setBodyEdit(k.bodyEdit ?? null);
+      if (k.templateId) { keptChoices.current = true; setTemplateId(k.templateId); }
+    });
 
   // The joiner, their offer and their documents (for the joining checklist).
   useEffect(() => {
@@ -127,14 +133,14 @@ export function OfferWorkbench({ person, people, onPerson, pay, company, logo, h
       const active = t.filter((x) => x.active);
       setTemplates(active);
       const def = active.find((x) => x.isDefault) ?? active[0];
-      if (def) {
+      if (def && !keptChoices.current) {
         setTemplateId(def.id);
         if (def.settings.probationMonths) setFields((f) => ({ ...f, probationMonths: def.settings.probationMonths! }));
       }
     }).catch(() => setTemplates([]));
     listTemplates('offboarding').then((t) => {
       const days = t.find((x) => x.isDefault)?.settings.noticeDays;
-      if (typeof days === 'number') setFields((f) => ({ ...f, noticeDays: days }));
+      if (typeof days === 'number' && !keptChoices.current) setFields((f) => ({ ...f, noticeDays: days }));
     }).catch(() => undefined);
     // The letterhead's address before the offer is saved (the server's merge values carry it after).
     getOrganisationProfile().then((p) => setAddress([p.addressLine1, p.addressLine2, p.city, p.state, p.pincode].map((x) => x?.trim()).filter(Boolean).join(', '))).catch(() => undefined);

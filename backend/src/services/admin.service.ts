@@ -138,6 +138,10 @@ export interface CreateEmployeeInput {
   location?: string; employeeType?: string; managerUserId?: string;
   birthday?: string; joiningDate?: string;
   employeeId?: string; gender?: string; mobile?: string; branch?: string;
+  /** Their own email (Add user's form): the onboarding portal and app onboarding use it. */
+  personalEmail?: string;
+  /** The onboarding template a recent joiner's journey follows (the company default when left out). */
+  onboardingTemplateId?: string;
 }
 
 export async function createEmployeeForAdmin(adminUserId: string, input: CreateEmployeeInput) {
@@ -148,6 +152,8 @@ export async function createEmployeeForAdmin(adminUserId: string, input: CreateE
   if (!name) throw new AdminError(400, 'Full name is required');
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) throw new AdminError(400, 'A valid work email is required');
   if (await users().findOne({ email })) throw new AdminError(409, 'An employee with this email already exists');
+  const personalEmail = input.personalEmail?.trim().toLowerCase() || undefined;
+  if (personalEmail && !/^\S+@\S+\.\S+$/.test(personalEmail)) throw new AdminError(400, 'Check the personal email');
   const parseDate = (value: string | undefined, label: string) => {
     if (!value) return undefined;
     const date = new Date(`${value}T00:00:00.000Z`);
@@ -171,6 +177,7 @@ export async function createEmployeeForAdmin(adminUserId: string, input: CreateE
     ...(employeeId ? { employeeId } : {}),
     gender: input.gender?.trim() || undefined,
     phone: input.mobile?.trim() || undefined,
+    ...(personalEmail ? { personalEmail } : {}),
     branch: input.branch?.trim() || undefined,
     designation: input.designation?.trim() || undefined,
     department: input.department?.trim() || undefined,
@@ -193,9 +200,16 @@ export async function createEmployeeForAdmin(adminUserId: string, input: CreateE
     await users().deleteOne({ userId: employee.userId });
     throw accountLimitError(limit);
   }
+  // Joined within the last month (onboarding runs till the end of Month 1): they get the onboarding
+  // journey on the company's template, so the app shows the Onboarding tab and HR sees them on the board.
+  const onboardingJourneyId = employee.org
+    ? await (await import('./lifecycle/recentJoiners')).ensureRecentJoinerJourney({ userId: employee.userId, org: employee.org }, new Date(), {
+      byUserId: adminUserId, ...(input.onboardingTemplateId ? { templateId: input.onboardingTemplateId } : {}),
+    })
+    : null;
   // The welcome post is switched off: adding an employee no longer announces
   // them on Connect. [generateNewJoineePost] is kept for when it comes back.
-  return employee;
+  return { ...employee, ...(onboardingJourneyId ? { onboardingJourneyId } : {}) };
 }
 
 /**
