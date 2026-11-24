@@ -55,6 +55,8 @@ const AREA_WORDS: [SuwiArea, RegExp][] = [
   ['settings', /setting|polic|how do i|where (do|can)|shift|template|holiday|week ?off|help/],
   ['requests', /leave|overtime|correction|check-?in|pending|waiting|approv|request|decid|remind/],
   ['attendance', /late|absent|attend|punch|leave|present|missed|half day|wfh|work from home|in today|calendar|geotag|location/],
+  ['people', /access|admin|exit|leaving|resign|offboard|import|joiner|new hire|export|download|spreadsheet|excel|csv/],
+  ['settings', /organi[sz]ation|company (details|profile|address|name)|sender|reply-?to|registered (name|address)/],
 ];
 const PAGE_AREAS: [RegExp, SuwiArea][] = [
   [/pay|salary|tax|fbp|form16|statutory/, 'payroll'], [/reimburs|claim|bill/, 'claims'], [/kpi|feedback|cycle|review/, 'performance'],

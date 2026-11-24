@@ -1,9 +1,9 @@
 // Delete an employee: the card says what is removed and what stays (payslips
 // and Form 16 are records of what was issued), is blocked until their reports
 // and waiting requests are dealt with, and asks HR to type the person's name.
-// Confirm runs the same service as the profile's Delete button. There is no
-// exit (keep the record, mark as left) service yet, so there is no undo and
-// the card says so.
+// Confirm runs the same service as the profile's Delete button. No undo, and
+// the card says so. Someone who is leaving gets an exit instead
+// (start-exit.ts), which keeps the record.
 import { deleteEmployeeForAdmin } from '../../services/admin.service';
 import { defineExecutor, propose } from '../proposals';
 import { defineTools } from '../tools';
@@ -15,7 +15,7 @@ defineTools({
   area: 'people',
   acts: true,
   label: (i) => `Prepared: delete ${i.person}`,
-  description: 'Prepare deleting an employee\'s account and record (there is no "mark as exited" yet: this removes them). Changes nothing: it creates a "What will happen" card listing what is removed and what is kept, blocked while anyone reports to them or a request of theirs is waiting, for HR to confirm by typing the person\'s name. Cannot be undone.',
+  description: 'Prepare DELETING an employee\'s account and record outright. For someone who is leaving or has left (resigned, retiring, end of contract, terminated, absconded), do NOT use this: use prepare_start_exit, which keeps their record and history and ends access after the last working day. Use this only for a record added by mistake (a duplicate, a test account) or when HR explicitly says to delete. Changes nothing: it creates a "What will happen" card listing what is removed and what is kept, blocked while anyone reports to them or a request of theirs is waiting, for HR to confirm by typing the person\'s name. Cannot be undone.',
   input_schema: { type: 'object', properties: { person: { type: 'string', description: 'Name, employee ID or userId' } }, required: ['person'] },
   api: { method: 'DELETE', path: '/admin/employees/x' },
   async run(ctx, i) {
@@ -46,7 +46,7 @@ defineTools({
         { text: 'Removed: their profile and login, app sessions and device notifications, salary structure, and bank, PAN and UAN details.', why: 'These are the person\'s live record; once they have left, nothing should be able to pay them or sign in as them.' },
         { text: 'Kept: attendance, leave and overtime history, payslips and Form 16, claims, posts and KPI feedback.', why: 'These are records of what already happened. Past payroll and reports must still add up, and tax documents must stay available.' },
         { text: 'They drop out of headcount, the org chart, teams and every list from now.' },
-        { text: 'No Undo: Suwi cannot restore a deleted record. If they might come back, keep the record and remove their dashboard access instead.', tone: 'warn' },
+        { text: 'No Undo: Suwi cannot restore a deleted record. If they are leaving, record an exit instead (it keeps the record and ends access after the last working day).', tone: 'warn' },
       ],
       effectiveFrom: ctx.today, undoable: false, typeToConfirm: person.name,
       payload: { userId: person.userId, name: person.name, byUserId: ctx.userId },
