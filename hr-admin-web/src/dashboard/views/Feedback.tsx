@@ -104,6 +104,8 @@ function FeedbackBody() {
   // A manager on the dashboard writes reviews for their direct reports here; HR's page is unchanged.
   const { user } = useAuth();
   const team = isTeamScope(user);
+  // Whoever is looking manages someone: "You" heads the managers list and My team shows.
+  const isManagerHere = Boolean(user?.id && s.emps.some((e) => e.managerId === user.id && e.id !== user.id));
   const [section, setSection] = useState<Section>('managers');
   const [status, setStatus] = useState<StatusFilter>('all');
   // Which score the table's Score column shows and sorts on: the overall
@@ -227,8 +229,8 @@ function FeedbackBody() {
           ]}
         />
         {/* HR who manages people: their own team, to assign KPIs and write their direct reports' reviews. */}
-        {user?.id && s.emps.some((e) => e.managerId === user.id) && (
-          <button type="button" onClick={() => s.setFbMgrFilter(user.id)} className="lk-btn"
+        {isManagerHere && (
+          <button type="button" onClick={() => s.setFbMgrFilter(user!.id)} className="lk-btn"
             style={{ height: 40, padding: '0 16px', borderRadius: 999, border: '1px solid var(--line-2)', background: 'var(--surface)', font: 'inherit', fontSize: 14, cursor: 'pointer' }}>
             My team
           </button>
@@ -330,7 +332,9 @@ function FeedbackBody() {
           onChange={(v) => { s.setFbMgrFilter(v === 'all' ? null : v); resetPage(); }}
         >
           <option value="all">All managers</option>
-          {mgrs.map((m) => (
+          {/* A manager themselves (24 Nov 2026): "You" first, opening their own team to set KPIs and write reviews. */}
+          {isManagerHere && <option value={user!.id}>You · your team</option>}
+          {mgrs.filter((m) => m.id !== user?.id).map((m) => (
             <option key={m.id} value={m.id}>{m.name}</option>
           ))}
         </SelectBox>
