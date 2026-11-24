@@ -90,7 +90,7 @@ export function LifecycleTemplates() {
             <thead>
               <tr>
                 <th style={{ textAlign: 'left' }}>Template</th>
-                <th style={{ textAlign: 'left', width: 140 }}>{kind === 'onboarding' ? 'Probation' : 'Notice period'}</th>
+                <th style={{ textAlign: 'left', width: 140 }}>{kind === 'onboarding' ? 'Probation' : 'Final settlement'}</th>
                 <th style={{ textAlign: 'left', width: 240 }}>Tasks</th>
                 <th style={{ textAlign: 'left', width: 170 }}>{kind === 'onboarding' ? 'Joiners using it' : 'Exits using it'}</th>
                 <th style={{ width: 100 }} />
@@ -111,7 +111,7 @@ export function LifecycleTemplates() {
                       </span>
                     </span>
                   </td>
-                  <td>{kind === 'onboarding' ? (t.settings.probationMonths ? `${t.settings.probationMonths} months` : '—') : (t.settings.noticeDays ? `${t.settings.noticeDays} days` : '—')}</td>
+                  <td>{kind === 'onboarding' ? (t.settings.probationMonths ? `${t.settings.probationMonths} months` : '—') : (typeof t.settings.settlementWorkingDays === 'number' ? `${t.settings.settlementWorkingDays} working days after` : '—')}</td>
                   <td>
                     <span style={{ fontWeight: 500 }}>{taskCount(t)}</span> tasks
                     {t.recommendedNotAdded > 0 && <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>{t.recommendedNotAdded} recommended not added</div>}
@@ -327,7 +327,7 @@ function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings
   // each opening to its tasks (who, when, a lock for must-dos, a switch for the rest), what happens on its
   // own, and our suggestions as one-tap chips. Clicking a task's name edits it.
   const s = t.settings;
-  const rulesLine = `${s.noticeDays ?? 60}-day notice · settled in ${s.settlementWorkingDays ?? 2} working ${s.settlementWorkingDays === 1 ? 'day' : 'days'} · access ends ${(s.accountCloses ?? 'tl_plus_1') === 'tl_plus_1' ? 'the day after' : 'on the last day'}`;
+  const rulesLine = `Settled in ${s.settlementWorkingDays ?? 2} working ${s.settlementWorkingDays === 1 ? 'day' : 'days'} · access ends ${(s.accountCloses ?? 'tl_plus_1') === 'tl_plus_1' ? 'the day after' : 'on the last day'}`;
   const toggleStage = (k: string) => setCollapsed((c) => { const n = new Set(c); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   const STEP_NAME: Partial<Record<LifecyclePhase, string>> = { resignation: 'They resign', when_accepted: 'Resignation accepted', notice_period: 'Notice period', last_day: 'Last day', after_exit: 'After they leave' };
   return (
@@ -382,8 +382,6 @@ function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings
           </button>
           {collapsed.has('__rules') && (
             <div style={{ padding: '4px 28px 28px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20 }}>
-              <RuleSelect label="Notice period" value={String(s.noticeDays ?? 60)} onChange={(v) => setSettings({ noticeDays: Number(v) })}
-                options={[...new Set([30, 60, 90, s.noticeDays ?? 60])].sort((x, y) => x - y).map((n) => [String(n), `${n} days`])} />
               <RuleSelect label="Final settlement" value={String(s.settlementWorkingDays ?? 2)} onChange={(v) => setSettings({ settlementWorkingDays: Number(v) })}
                 options={[...new Set([2, 5, 7, 10, s.settlementWorkingDays ?? 2])].sort((x, y) => x - y).map((n) => [String(n), `${n} working ${n === 1 ? 'day' : 'days'} after`])} />
               <RuleSelect label="Gratuity" value={String(s.gratuityDays ?? 30)} onChange={(v) => setSettings({ gratuityDays: Number(v) })}
