@@ -90,10 +90,11 @@ const keyOf = (d: string | null | undefined) => (d ? todayKey(new Date(d)) : nul
   await ensureDefaultTemplates(ORG);
   ok('the seeded template starts from Exit settings (60 days)', (await lifecycleTemplates().findOne({ org: ORG, kind: 'offboarding', isDefault: true }))?.settings.noticeDays === 60);
   await lifecycleTemplates().updateOne({ org: ORG, kind: 'offboarding', isDefault: true }, { $set: { id: 'tpl-std', 'settings.noticeDays': 45, 'settings.exitInterviewOpensDays': 5 } });
-  ok('the default offboarding template wins (45 days)', (await myResignation('ravi', now)).noticeDays === 45);
+  // 24 Nov 2026: the notice is the person's own (their offer letter, else 60 days); a template no longer sets it.
+  ok('no offer letter: 60 days, whatever the template says', (await myResignation('ravi', now)).noticeDays === 60);
   ok('a reason is required', (await refusal(() => resign('ravi', { reason: '  ' }, now))).status === 400);
   const sent = await resign('ravi', { reason: 'Better opportunity', note: 'Thank you for five years.' }, now);
-  ok('sent: with the manager, last day by notice from the notice period', sent.resignation.status === 'with_manager' && sent.resignation.lastDayByNotice === addDays(T, 45) && sent.resignation.managerName === 'Meera Manager', sent.resignation);
+  ok('sent: with the manager, last day by notice from the notice period', sent.resignation.status === 'with_manager' && sent.resignation.lastDayByNotice === addDays(T, 60) && sent.resignation.managerName === 'Meera Manager', sent.resignation);
   ok('only one open resignation', (await refusal(() => resign('ravi', { reason: 'Pay' }, now))).status === 409);
   ok('the tab shows it, and no new one', (await myResignation('ravi', now)).resignation?.id === sent.resignation.id && !(await myResignation('ravi', now)).canResign);
 
@@ -101,7 +102,7 @@ const keyOf = (d: string | null | undefined) => (d ? todayKey(new Date(d)) : nul
   const list = await managerResignations('mgr', now);
   ok('on the manager\'s Requests, with reason and note', list.resignations.length === 1 && list.resignations[0].reason === 'Better opportunity' && list.resignations[0].note.startsWith('Thank you'), list);
   ok('another manager cannot act on it', (await refusal(() => managerResignationAction('mgr2', sent.resignation.id, { action: 'accept' }, now))).status === 404);
-  ok('an early release is before the notice day', (await refusal(() => managerResignationAction('mgr', sent.resignation.id, { action: 'release_early', date: addDays(T, 50) }, now))).status === 400);
+  ok('an early release is before the notice day', (await refusal(() => managerResignationAction('mgr', sent.resignation.id, { action: 'release_early', date: addDays(T, 65) }, now))).status === 400);
   const asked = addDays(T, 40);
   const acted = await managerResignationAction('mgr', sent.resignation.id, { action: 'release_early', date: asked, note: 'Fine by me' }, now);
   ok('the manager agrees an early release: with HR', acted.resignation.status === 'with_hr' && acted.resignation.manager?.date === asked, acted.resignation);
@@ -135,7 +136,7 @@ const keyOf = (d: string | null | undefined) => (d ? todayKey(new Date(d)) : nul
   ok('a manager needs a successor first (the live exit\'s rule), and nothing is written', leadRefused.status === 409 && /reports to Lata Lead/.test(leadRefused.message) && (await resignations().findOne({ id: lr.resignation.id }))?.status === 'with_manager' && !(await users().findOne({ userId: 'lead' }))?.exit, leadRefused);
   const accepted = await acceptResignation('hr', sent.resignation.id, {}, now);
   const ravi = await users().findOne({ userId: 'ravi' });
-  ok('the exit is recorded: resigned, notice from the day sent, the agreed last day', ravi?.exit?.kind === 'resigned' && ravi.exit.noticeFrom === T && ravi.exit.lastWorkingDay === asked && ravi.lifecycleStatus === 'notice' && ravi.exit.noticeDays === 45, ravi?.exit);
+  ok('the exit is recorded: resigned, notice from the day sent, the agreed last day', ravi?.exit?.kind === 'resigned' && ravi.exit.noticeFrom === T && ravi.exit.lastWorkingDay === asked && ravi.lifecycleStatus === 'notice' && ravi.exit.noticeDays === 60 && ravi.exit.rules?.noticeRecovery === 'none' && ravi.exit.rules?.noticePay === 'none', ravi?.exit);
   ok('an early release recovers no shortfall', ravi?.exit?.rules?.noticeRecovery === 'none', ravi?.exit?.rules);
   ok('the journey: accepted, Tl, from the template', !!accepted.journeyId && (await journeys().findOne({ id: accepted.journeyId }))?.status === 'accepted' && (await journeys().findOne({ id: accepted.journeyId }))?.tl === asked);
   ok('the exit carries the journey and the resignation', ravi?.exit?.offboarding?.journeyId === accepted.journeyId && ravi.exit.offboarding.resignationId === sent.resignation.id && ravi.exit.offboarding.showAppPage === true && ravi.exit.offboarding.exitType === 'resignation');
@@ -327,7 +328,7 @@ const keyOf = (d: string | null | undefined) => (d ? todayKey(new Date(d)) : nul
   ok('not someone with an exit already', (await refusal(() => startExit('hr', 'ravi', { exitType: 'retirement', lastWorkingDay: addDays(T, 10) }, now))).status === 409);
   const term = await startExit('hr', 'tom', { exitType: 'termination', lastWorkingDay: addDays(T, 10), noticeHandling: 'paid_in_lieu', hrNote: 'Policy breach' }, now);
   const tom = await users().findOne({ userId: 'tom' });
-  ok('termination: kind terminated, paid in lieu, the app page off by default', tom?.exit?.kind === 'terminated' && tom.exit.rules?.noticePay === 'pay' && tom.exit.offboarding?.showAppPage === false && tom.exit.note === 'Policy breach' && !!term.journeyId, tom?.exit);
+  ok('termination: kind terminated, no notice pay (24 Nov 2026), the app page off by default', tom?.exit?.kind === 'terminated' && tom.exit.rules?.noticePay === 'none' && tom.exit.offboarding?.showAppPage === false && tom.exit.note === 'Policy breach' && !!term.journeyId, tom?.exit);
   ok('…its company rule ends access at once, as on People › Exits', !!tom?.exit?.accessEndedAt && tom.lifecycleStatus === 'terminated');
   const eoc = await startExit('hr', 'ivy', { exitType: 'end_of_contract', lastWorkingDay: addDays(T, 20), noticeHandling: 'waived', tellManagerNow: false }, now);
   const ivy = await users().findOne({ userId: 'ivy' });
@@ -396,12 +397,12 @@ const keyOf = (d: string | null | undefined) => (d ? todayKey(new Date(d)) : nul
   ok('closeOnboardingForExit is safe to run again', (await closeOnboardingForExit('wanda', 'resignation')).length === 0);
 
   // The drawer shows HR's note and the notice choice; "Not applicable" is its own rule (nothing paid, nothing recovered).
-  ok('the drawer shows the HR note and the notice choice', term.details.some((d) => d.label === 'HR note' && d.value === 'Policy breach') && term.details.some((d) => d.label === 'Notice' && d.value === 'Paid in lieu of notice'), term.details);
+  ok('the drawer shows the HR note and the notice period, no notice money row', term.details.some((d) => d.label === 'HR note' && d.value === 'Policy breach') && term.details.some((d) => d.label === 'Notice period' && d.value === '60 days') && !term.details.some((d) => d.label === 'Notice'), term.details);
   await users().insertOne(person('abby', { name: 'Abhay Absent', employeeId: 'OC-AB', department: 'Sales' }) as never);
   const abs = await startExit('hr', 'abby', { exitType: 'absconding', lastWorkingDay: addDays(T, -3), noticeHandling: 'not_applicable', hrNote: 'No contact since the 12th' }, now);
   const abby = await users().findOne({ userId: 'abby' });
   ok('absconding with notice "Not applicable": stored, and nothing recovered or paid', abby?.exit?.offboarding?.noticeHandling === 'not_applicable' && abby.exit.rules?.noticeRecovery === 'none' && abby.exit.rules?.noticePay === 'none', abby?.exit);
-  ok('…the drawer says "Notice: Not applicable" and shows the note', abs.details.some((d) => d.label === 'Notice' && d.value === 'Not applicable') && abs.details.some((d) => d.label === 'HR note' && d.value === 'No contact since the 12th'), abs.details);
+  ok('…the drawer shows the note, no notice money row', !abs.details.some((d) => d.label === 'Notice') && abs.details.some((d) => d.label === 'HR note' && d.value === 'No contact since the 12th'), abs.details);
   ok('rulesForNotice: Not applicable is no pay, no recovery', JSON.stringify(rulesForNotice('absconding', 'not_applicable')) === JSON.stringify({ noticePay: 'none', noticeRecovery: 'none' }));
   ok('…Served in full keeps the company rules', rulesForNotice('resignation', 'served') === undefined);
 

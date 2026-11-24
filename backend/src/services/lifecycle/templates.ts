@@ -4,7 +4,7 @@
  * starts, so editing a template never touches a running journey.
  */
 import { randomUUID } from 'node:crypto';
-import { companies, journeys, lifecycleTemplates, users } from '../../config/db';
+import { companies, journeys, letters, lifecycleTemplates, offers, users } from '../../config/db';
 import type {
   LifecycleKind, LifecycleTemplate, LifecycleTemplateSettings, LifecyclePhase, OwnerRole, SystemTaskKey, TaskKind, TaskSurface, TeamTaskKind, TeamTaskSpec, TemplateTask,
 } from '../../models/lifecycle.model';
@@ -98,6 +98,30 @@ export async function noticeDaysFor(org: string): Promise<number> {
   if (typeof template?.settings?.noticeDays === 'number') return template.settings.noticeDays;
   const company = await companies().findOne({ id: org }, { projection: { _id: 0, exitNoticeDays: 1 } });
   return typeof company?.exitNoticeDays === 'number' ? company.exitNoticeDays : 30;
+}
+
+/** Notice for someone with no offer letter that says (24 Nov 2026, HR: "keep it as 60 days"). */
+export const DEFAULT_PERSON_NOTICE_DAYS = 60;
+
+/**
+ * One person's notice period, never typed in at exit time (24 Nov 2026, HR: "nothing to fill in, pick it
+ * from the offer letter"): their own offer's notice (the accepted, else the latest, version of their
+ * onboarding journey's offer), else an offer letter made for them in Documents, else 60 days.
+ * It only sets the suggested last day: leaving earlier is paid for the days worked, nothing recovered.
+ */
+export async function noticeDaysForUser(org: string, userId: string): Promise<number> {
+  const journey = await journeys().findOne({ org, userId, kind: 'onboarding' }, { sort: { createdAt: -1 }, projection: { _id: 0, id: 1 } });
+  if (journey) {
+    const offer = await offers().findOne({ org, journeyId: journey.id }, { projection: { _id: 0, versions: 1 } });
+    const versions = offer?.versions ?? [];
+    const pick = [...versions].reverse().find((v) => v.status === 'accepted' || !!v.finalisedAt) ?? versions[versions.length - 1];
+    if (pick && Number.isInteger(pick.fields?.noticeDays) && pick.fields.noticeDays > 0) return pick.fields.noticeDays;
+  }
+  const letter = await letters().findOne({ org, userId, kind: 'offer' }, { sort: { _id: -1 }, projection: { _id: 0, values: 1 } });
+  const said = letter?.values?.noticeDays ?? letter?.values?.notice ?? letter?.values?.noticePeriod;
+  const n = said ? parseInt(String(said), 10) : NaN;
+  if (Number.isInteger(n) && n > 0 && n <= 365) return n;
+  return DEFAULT_PERSON_NOTICE_DAYS;
 }
 
 export async function defaultTemplate(org: string, kind: LifecycleKind): Promise<LifecycleTemplate> {

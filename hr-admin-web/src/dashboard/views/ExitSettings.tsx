@@ -1,7 +1,7 @@
 // Setup › Payroll › Exit settings: what each kind of exit does, for this company.
-// The notice period exits start from, then one row per kind (Resigned,
-// Terminated…) and one column per rule (salary during notice, when the app
-// turns off, notice pay, notice shortfall), each with an (i). Gratuity follows the law and leave
+// One row per kind (Resigned, Terminated…) and one column per rule (salary
+// until they leave, when the app turns off), each with an (i). No notice
+// period, notice pay or shortfall (24 Nov 2026, HR: notice is off everywhere). Gratuity follows the law and leave
 // encashment each leave type's rule, so neither is here. These
 // are the starting point when HR records an exit; HR can still change any of
 // them for that one person. Saved on the company (/admin/exit-settings).
@@ -12,7 +12,7 @@ import { Card, LoadError, SkeletonForm, Th } from '../ui';
 import { TH, TR, btn, btnClass, cellName, cellSub } from '../ds';
 import { getExitSettings, saveExitSettings } from '../../services/hrms';
 import type { ExitNoticeSettings, ExitRuleKind, ExitRules, ExitSettingsDTO } from '../../services/hrms';
-import { NOTICE_PAY_INFO, NOTICE_SHORTFALL_INFO, RULE_KIND_LABEL, RULE_KINDS, RULE_ROWS, asText, fromText } from './exitRules';
+import { RULE_KIND_LABEL, RULE_KINDS, RULE_ROWS, asText, fromText } from './exitRules';
 import './people.css';
 import { InfoTip } from './InfoTip';
 
@@ -77,13 +77,8 @@ export function ExitSettings() {
           What happens when someone leaves. Recording an exit starts from these, and you can change any of them for that one person.
           Gratuity follows the law (after 5 years) and unused leave follows each leave type’s own encashment rule, so they are not set here.
         </div>
-        <label className="pd-label" style={{ maxWidth: 280 }}>
-          <span>Notice period, in days</span>
-          <input id="exit-notice-days" inputMode="numeric" value={notice} placeholder="e.g. 30" onChange={(e) => setNotice(e.target.value.replace(/[^0-9]/g, '').slice(0, 3))} className="pd-inp" />
-          <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>How much notice people must give. Recording an exit fills this in; you can change it for one person.</span>
-        </label>
         <div style={{ overflowX: 'auto' }}>
-          <div style={{ minWidth: 860 }}>
+          <div style={{ minWidth: 520 }}>
             <div style={TH(COLS)}>
               <Th>WHEN SOMEONE</Th>
               {RULE_ROWS.map((row) => (
@@ -119,36 +114,7 @@ export function ExitSettings() {
           </div>
         </div>
         <div style={{ display: 'grid', gap: 14, paddingTop: 18, borderTop: '1px solid var(--line)' }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>Money for notice days</div>
-          <SentenceRow label="Someone leaves before their notice is over. For each day short, take back" info={<InfoTip label="Notice shortfall" text={NOTICE_SHORTFALL_INFO} />}>
-            <span className="pd-pick" style={{ width: 260 }}>
-              <select id="exit-recovery-basis" value={amounts.recoveryBasis} onChange={(e) => setAmounts({ ...amounts, recoveryBasis: e.target.value as ExitNoticeSettings['recoveryBasis'] })} className="pd-inp" style={{ height: 38 }}>
-                <option value="basic_30">a day’s Basic pay</option>
-                <option value="gross_30">a day’s full salary</option>
-                <option value="basic_month">a day’s Basic, by days in the month</option>
-              </select>
-            </span>
-          </SentenceRow>
-          <SentenceRow label="You let someone go before their notice is over. For each day they don’t work, pay" info={<InfoTip label="Notice pay" text={NOTICE_PAY_INFO} />}>
-            <span className="pd-pick" style={{ width: 260 }}>
-              <select id="exit-pay-basis" value={amounts.noticePayBasis} onChange={(e) => setAmounts({ ...amounts, noticePayBasis: e.target.value as ExitNoticeSettings['noticePayBasis'] })} className="pd-inp" style={{ height: 38 }}>
-                <option value="gross_30">a day’s full salary</option>
-                <option value="basic_30">a day’s Basic pay</option>
-                <option value="gross_month">a day’s full salary, by days in the month</option>
-              </select>
-            </span>
-          </SentenceRow>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.5 }}>
-            <button type="button" id="exit-leave-covers" role="switch" aria-checked={amounts.leaveCoversShortfall} aria-label="Use unused leave for the days short" onClick={() => setAmounts({ ...amounts, leaveCoversShortfall: !amounts.leaveCoversShortfall })}
-              style={{ width: 38, height: 22, borderRadius: 99, border: 'none', padding: 2, cursor: 'pointer', transition: 'background .15s', display: 'flex', flexShrink: 0, marginTop: 1, background: amounts.leaveCoversShortfall ? 'var(--accent)' : 'var(--line-2)', justifyContent: amounts.leaveCoversShortfall ? 'flex-end' : 'flex-start' }}>
-              <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,.2)' }} />
-            </button>
-            <div>
-              Use their unused leave for the days short first
-              <span style={{ display: 'block', fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>5 days short with 8 days of leave left: nothing is taken back, and 3 days of leave are paid out.</span>
-            </div>
-          </div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginTop: 6 }}>When a manager leaves</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>When a manager leaves</div>
           <SentenceRow label="Tell their team about their new manager">
             <input id="exit-team-days" inputMode="numeric" value={String(amounts.teamNoticeDays)} onChange={(e) => setAmounts({ ...amounts, teamNoticeDays: Number(e.target.value.replace(/[^0-9]/g, '').slice(0, 2) || 0) })} className="pd-inp" style={{ width: 64, height: 38, textAlign: 'center' }} aria-label="Days before the last day" />
             <span style={{ fontSize: 13.5, color: 'var(--ink)' }}>days before the manager’s last day</span>
@@ -164,7 +130,7 @@ export function ExitSettings() {
   );
 }
 
-const COLS = '1.25fr 1fr 1fr 1fr 1fr';
+const COLS = '1.25fr 1fr 1fr';
 
 /** A setting read as a sentence: the words, then the choice. */
 function SentenceRow({ label, info, children }: { label: string; info?: ReactNode; children: ReactNode }) {

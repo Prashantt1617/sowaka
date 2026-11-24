@@ -1,5 +1,5 @@
 // People › Employee › Record exit, in plain words: why they are leaving, when
-// they told you, their last day, the notice (worked out for you), who their
+// they told you, their last day (the notice is their own, from the offer letter, else 60 days), who their
 // team reports to next, and what happens next as switches. The switches start
 // from Setup › Payroll › Exit settings for the reason picked; changing one here
 // changes it for this person only. Until the last day nothing changes for them;
@@ -11,8 +11,6 @@ import type { Emp } from '../seed';
 import { useStore } from '../store';
 import { endExitAccessNow, getExitSettings, recordExit, withdrawExit } from '../../services/hrms';
 import type { ExitDTO, ExitKind, ExitRules, ExitSettingsDTO } from '../../services/hrms';
-import { NOTICE_PAY_INFO, NOTICE_SHORTFALL_INFO } from './exitRules';
-import { InfoTip } from './InfoTip';
 
 export const EXIT_KINDS: [ExitKind, string][] = [
   ['resigned', 'Resigned'], ['terminated', 'Terminated'], ['absconded', 'Absconded'], ['retired', 'Retired'], ['other', 'Other'],
@@ -21,8 +19,6 @@ const todayKey = () => new Date(Date.now() + 5.5 * 3_600_000).toISOString().slic
 /** "30 Nov 2026" from "2026-11-30". */
 export const longDay = (key: string) => new Date(`${key}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 const shortDay = (key: string) => new Date(`${key}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-/** Days from the first to the last, both counted. */
-const daysBetween = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1;
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
 const dayAfter = (key: string) => new Date(Date.parse(`${key}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 
@@ -31,7 +27,7 @@ export function ExitBanner({ exit }: { exit: ExitDTO }) {
   const left = exit.state === 'left';
   return (
     <div role="status" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 16, borderRadius: 12, background: left ? 'var(--surface-2)' : 'var(--warn-bg)', color: left ? 'var(--ink-2)' : 'var(--warn)', fontSize: 13.5 }}>
-      <strong style={{ fontWeight: 600 }}>{left ? `Left · ${exit.kindLabel.toLowerCase()}` : `On notice · ${exit.kindLabel.toLowerCase()}`}</strong>
+      <strong style={{ fontWeight: 600 }}>{left ? `Left · ${exit.kindLabel.toLowerCase()}` : `Leaving · ${exit.kindLabel.toLowerCase()}`}</strong>
       <span>
         Last day at work {longDay(exit.lastWorkingDay)}.
         {left ? ' Their app is off.' : exit.rules.access === 'at_once' ? '' : ' Their app turns off the day after.'}
@@ -64,7 +60,6 @@ export function ExitDialog({ emp, exit, emps, onClose, onSaved, variant = 'dialo
   const [kind, setKind] = useState<ExitKind>(exit?.kind ?? 'resigned');
   const [noticeFrom, setNoticeFrom] = useState(exit?.noticeFrom ?? (exit ? '' : todayKey()));
   const [lastDay, setLastDay] = useState(exit?.lastWorkingDay ?? '');
-  const [noticeDays, setNoticeDays] = useState(exit?.noticeDays != null ? String(exit.noticeDays) : '');
   const [note, setNote] = useState(exit?.note ?? '');
   const [showNote, setShowNote] = useState(!!exit?.note);
   const [manager, setManager] = useState(exit?.team?.newManagerUserId ?? (emp.managerId && emp.managerId !== emp.id ? emp.managerId : ''));
@@ -79,7 +74,6 @@ export function ExitDialog({ emp, exit, emps, onClose, onSaved, variant = 'dialo
     getExitSettings().then((d) => {
       if (!live) return;
       setSettings(d);
-      if (!exit && d.noticeDays != null) setNoticeDays(String(d.noticeDays));
     }).catch(() => undefined);
     return () => { live = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -89,22 +83,17 @@ export function ExitDialog({ emp, exit, emps, onClose, onSaved, variant = 'dialo
   const set = (p: Partial<ExitRules>) => rules && setRules({ ...rules, ...p });
 
   const pastDay = !!lastDay && lastDay < todayKey();
-  const owed = noticeDays === '' ? null : Number(noticeDays);
-  const served = noticeFrom && lastDay && lastDay >= noticeFrom ? daysBetween(noticeFrom, lastDay) : null;
-  const short = owed != null && served != null ? Math.max(0, owed - served) : null;
   const ready = !!lastDay && (team.length === 0 || !!manager) && !!rules && !(noticeFrom && lastDay && lastDay < noticeFrom);
-  // Turning the shortfall back on uses the reason's own mode (the whole notice for an absconding), else the unserved days.
   // The team moves at once when HR says so, or when the app goes off as this is saved.
   const teamNow = moveNow || rules?.access === 'at_once' || pastDay;
-  const recoveryMode: ExitRules['noticeRecovery'] = kindRules && kindRules.noticeRecovery !== 'none' ? kindRules.noticeRecovery : 'days_not_served';
 
   const act = async (what: 'save' | 'withdraw' | 'end') => {
     setBusy(what);
     try {
       if (what === 'save') {
         await recordExit(emp.id, {
-          kind, lastWorkingDay: lastDay, ...(noticeFrom ? { noticeFrom } : {}), noticeDays: owed,
-          note: note.trim(), ...(team.length ? { newManagerUserId: manager, ...(moveNow ? { moveTeamNow: true } : {}) } : {}), ...(rules ? { rules } : {}),
+          kind, lastWorkingDay: lastDay, ...(noticeFrom ? { noticeFrom } : {}),
+          note: note.trim(), ...(team.length ? { newManagerUserId: manager, ...(moveNow ? { moveTeamNow: true } : {}) } : {}), ...(rules ? { rules: { ...rules, noticePay: 'none', noticeRecovery: 'none' } } : {}),
         });
         flash(rules?.access === 'at_once' || pastDay ? `${emp.name}'s exit is saved and their app is off` : `${emp.name}'s exit is saved`);
       } else if (what === 'withdraw') {
@@ -134,7 +123,7 @@ export function ExitDialog({ emp, exit, emps, onClose, onSaved, variant = 'dialo
           <>
             <div className="pd-md-b">
               {confirm === 'withdraw'
-                ? <div>{name} stays, as before. The last day and notice are cleared.</div>
+                ? <div>{name} stays, as before. The last day is cleared.</div>
                 : <div>{name} is signed out of the app now and can't sign in again. Salary is still worked out up to {longDay(lastDay || exit?.lastWorkingDay || todayKey())}.</div>}
             </div>
             <div className="pd-md-f">
@@ -164,23 +153,7 @@ export function ExitDialog({ emp, exit, emps, onClose, onSaved, variant = 'dialo
                 </Question>
               </div>
 
-              <div style={{ display: 'grid', gap: 6 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 13.5, color: 'var(--ink-2)' }}>
-                  Notice for this role:
-                  <input id="exit-days" inputMode="numeric" value={noticeDays} placeholder="days" onChange={(e) => setNoticeDays(e.target.value.replace(/[^0-9]/g, '').slice(0, 3))} className="pd-inp" style={{ width: 70, height: 32, padding: '0 8px' }} aria-label="Notice period in days" />
-                  days
-                </div>
-                {served != null && (
-                  <div style={{ fontSize: 13, color: short ? 'var(--warn)' : 'var(--ok)' }}>
-                    {owed == null
-                      ? `${name} will work ${served} days after telling you.`
-                      : short
-                        ? `${name} will work ${served} of ${owed} days, so ${short} ${short === 1 ? 'day is' : 'days are'} short.`
-                        : `${name} will work ${served} days, so nothing is short.`}
-                  </div>
-                )}
-                {noticeFrom && lastDay && lastDay < noticeFrom && <div style={{ fontSize: 13, color: 'var(--bad)' }}>The last day can't be before they told you.</div>}
-              </div>
+              {noticeFrom && lastDay && lastDay < noticeFrom && <div style={{ fontSize: 13, color: 'var(--bad)' }}>The last day can't be before they told you.</div>}
 
               {team.length > 0 && (
                 <Question label={`${name} leads ${team.length} ${team.length === 1 ? 'person' : 'people'}. Who will they report to?`}>
@@ -211,13 +184,6 @@ export function ExitDialog({ emp, exit, emps, onClose, onSaved, variant = 'dialo
                     <Row control={<Switch id="exit-access" label="Turn off the app right away" on={rules.access === 'at_once' || pastDay} onChange={(v) => set({ access: v ? 'at_once' : 'day_after' })} />}>
                       Turn off {name}'s app right away
                       <span style={hint}>{pastDay ? 'The last day has passed, so it turns off as you save.' : 'Otherwise it turns off the day after their last day.'}</span>
-                    </Row>
-                    <Row control={<Switch id="exit-notice-pay" label="Pay for notice they won't work" on={rules.noticePay === 'pay'} onChange={(v) => set({ noticePay: v ? 'pay' : 'none' })} />}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>Pay for the notice {name} won't work <InfoTip label="Notice pay" text={NOTICE_PAY_INFO} /></span>
-                    </Row>
-                    <Row control={<Switch id="exit-recovery" label="Take back pay for notice they didn't give" on={rules.noticeRecovery !== 'none'} onChange={(v) => set({ noticeRecovery: v ? recoveryMode : 'none' })} />}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>Take back pay for notice {name} didn't give <InfoTip label="Notice shortfall" text={NOTICE_SHORTFALL_INFO} /></span>
-                      {rules.noticeRecovery !== 'none' && <span style={hint}>{rules.noticeRecovery === 'whole_notice' ? 'The whole notice period.' : short ? `${short} ${short === 1 ? 'day' : 'days'}, from the final settlement.` : 'Nothing is short right now.'}</span>}
                     </Row>
                   </div>
                 )}

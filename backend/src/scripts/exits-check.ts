@@ -124,7 +124,7 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
   // Absconded: the default rule ends access as it is recorded.
   const ran = await recordExit('hr', 'runner', { kind: 'absconded', lastWorkingDay: '2026-09-12' }, sept10);
   ok('absconded: access ends at once (the default rule)', ran.state === 'left' && ran.rules.access === 'at_once' && (await users().findOne({ userId: 'runner' }))?.lifecycleStatus === 'terminated', ran);
-  ok('…and its other defaults are copied onto the exit', ran.rules.noticeRecovery === 'whole_notice' && ran.rules.noticePay === 'none', ran.rules);
+  ok('…and no notice money on it (24 Nov 2026: nothing recovered, no notice pay)', ran.rules.noticeRecovery === 'none' && ran.rules.noticePay === 'none', ran.rules);
   // End access now, for an exit whose rule waits for the day after.
   await recordExit('hr', 'stayer', { kind: 'resigned', lastWorkingDay: '2026-09-28' }, sept10);
   const ended = await endAccessNow('hr', 'stayer', sept10);
