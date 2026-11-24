@@ -25,7 +25,6 @@ import { downloadTdsSheetPdf } from '../tdsSheet';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
 import { employedDaysOf, isNotEmployedLine, lossOfPayDaysOf, notEmployedNote, notEmployedOf } from '../payslipDays';
 import { EmployeeCalendar } from './EmployeeProfile';
-import { Form16Section } from './Form16Section';
 import { MissingSalaryNotice } from './MissingSalaryNotice';
 import { exportReport } from './PayrollReports';
 import { getSalaryRegister } from '../../services/payroll';
@@ -192,8 +191,6 @@ export function PayrollRuns() {
           </table>
         )}
       </Card>
-
-      <Form16Section />
     </div>
   );
 }
