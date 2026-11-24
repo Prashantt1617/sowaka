@@ -38,7 +38,8 @@ type TCat = 'manager' | 'buddy' | 'hr' | 'it' | 'lead';
 type AddKind = 'do' | 'review' | 'ack' | 'other' | 'form' | 'meet' | 'access' | 'team';
 type StoryList = 'pre' | 'watch' | 'training';
 
-const CATS: Array<[Cat, string]> = [['meet', 'Meetings'], ['tasks', 'Tasks'], ['feedback', 'Check-ins'], ['tour', 'Sowaka tour'], ['watch', 'Watch list'], ['access', 'Devices and accesses']];
+// The Sowaka tour is the same app tour for everyone (24 Nov): not set per template, so no tab here.
+const CATS: Array<[Cat, string]> = [['meet', 'Meetings'], ['tasks', 'Tasks'], ['feedback', 'Check-ins'], ['watch', 'Watch list'], ['access', 'Devices and accesses']];
 const TCATS: Array<[TCat, string]> = [['manager', 'Manager'], ['buddy', 'Buddy'], ['hr', 'HR'], ['it', 'IT & admin'], ['lead', 'Leadership']];
 const TASK_GROUPS: Array<[JoinerTaskType, string]> = [['do', 'Do in Sowaka'], ['review', 'Review'], ['ack', 'Read and acknowledge'], ['sign', 'Sign'], ['other', 'More tasks'], ['form', 'Fill in a form']];
 const TASK_GLYPH: Record<JoinerTaskType, string> = { do: GLYPH.task, review: GLYPH.review, ack: GLYPH.ack, sign: GLYPH.sign, other: GLYPH.task, form: GLYPH.form };
@@ -341,6 +342,11 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
     watch: toUpload ? `${toUpload} to upload` : String(d.watch.length + d.trainings.length), access: String(d.accesses.length),
   };
   const removeAt = <K extends 'meetings' | 'tasks' | 'checkins' | 'accesses'>(key: K, i: number, t: string) => { up((x) => ({ ...x, [key]: (x[key] as unknown[]).filter((_, n) => n !== i) })); removed(t); };
+  // On/off instead of the bin (24 Nov, HR): a row switched off stays in the template and reaches no joiner until switched on.
+  const toggleAt = <K extends 'meetings' | 'tasks' | 'checkins' | 'accesses'>(key: K, i: number, t: string, on: boolean) => {
+    up((x) => ({ ...x, [key]: (x[key] as Array<{ enabled?: boolean }>).map((it, n) => (n === i ? { ...it, enabled: on ? undefined : false } : it)) }));
+    flash(on ? `“${t}” switched on` : `“${t}” switched off: joiners won’t get it`);
+  };
   const openMeet = (i: number) => { const m = d.meetings[i]; setMeet({ index: i, title: m.title, meetWith: m.meetWith, stage: m.stage, agenda: [...m.agenda], info: false }); };
   const openCi = (i: number | null) => {
     if (i === null) { setCi({ index: null, title: '', stage: 'm1', questions: [{ text: '', type: 'long' }], info: false }); return; }
@@ -373,7 +379,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
     const list = byStage(d.meetings.map((m, i) => ({ m, i, stage: m.stage }))).filter((x) => !x.m.everyMonth);
     const used = STAGES.filter((s) => list.some((x) => x.m.stage === s));
     return used.map((s, gi) => groupBlock(`meet:${s}`, stageOrBefore(s, months), list.filter((x) => x.m.stage === s), ({ m, i }, last) => (
-      <ItemRow key={m.id ?? i} icon={GLYPH.meet} title={m.title} onOpen={() => openMeet(i)} indent last={last} onRemove={() => removeAt('meetings', i, m.title)}>
+      <ItemRow key={m.id ?? i} icon={GLYPH.meet} title={m.title} onOpen={() => openMeet(i)} indent last={last} enabled={m.enabled !== false} onToggle={(on) => toggleAt('meetings', i, m.title, on)}>
         <span style={whoCol}><span style={whoChip(m.meetWith)}>{MEET_LABEL[m.meetWith]}</span></span>
         <button type="button" className={smallAction} style={smallBtn} onClick={() => openMeet(i)}>Agenda</button>
       </ItemRow>
@@ -383,7 +389,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
     const list = byStage(d.tasks.map((t, i) => ({ t, i, stage: t.stage })));
     const used = TASK_GROUPS.filter(([k]) => list.some((x) => x.t.type === k));
     return used.map(([k, h], gi) => groupBlock(`tasks:${k}`, h, list.filter((x) => x.t.type === k), ({ t, i }, last) => (
-      <ItemRow key={t.id ?? i} icon={TASK_GLYPH[t.type]} title={t.title} indent last={last} onRemove={() => removeAt('tasks', i, t.title)}
+      <ItemRow key={t.id ?? i} icon={TASK_GLYPH[t.type]} title={t.title} indent last={last} enabled={t.enabled !== false} onToggle={(on) => toggleAt('tasks', i, t.title, on)}
         titleNode={t.type === 'sign' ? (
           <button type="button" aria-label="Choose documents to sign" onClick={() => setDrawer({ index: i, sel: t.signDocs?.[0] ?? 'appointment', pick: [...(t.signDocs ?? [])] })}
             style={{ flex: 1, minWidth: 0, border: 0, background: 'transparent', padding: 0, display: 'flex', flexDirection: 'column', gap: 6, fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', color: 'var(--ink)' }}>
@@ -424,7 +430,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
     if (cat === 'meet') rows = meetRows();
     if (cat === 'tasks') rows = taskRows();
     if (cat === 'feedback') rows = lastFlags(byStage(d.checkins.map((c, i) => ({ c, i, stage: c.stage })))).map(([{ c, i }, last]) => (
-      <ItemRow key={c.id ?? i} icon={GLYPH.survey} title={c.title} onOpen={() => openCi(i)} last={last} onRemove={() => removeAt('checkins', i, c.title)}>
+      <ItemRow key={c.id ?? i} icon={GLYPH.survey} title={c.title} onOpen={() => openCi(i)} last={last} enabled={c.enabled !== false} onToggle={(on) => toggleAt('checkins', i, c.title, on)}>
         <span style={whenCol}><span style={chip}>{checkinWhen(c.stage, months)}</span></span>
         <button type="button" className={smallAction} style={smallBtn} onClick={() => openCi(i)}>Questions</button>
       </ItemRow>
@@ -435,7 +441,7 @@ export function OnboardingDesign({ id, onBack }: { id: string; onBack: () => voi
       </ItemRow>
     ));
     if (cat === 'access') rows = lastFlags(d.accesses).map(([a, last], i) => (
-      <ItemRow key={a.id ?? i} icon={GLYPH.access} title={a.title} last={last} onRemove={() => removeAt('accesses', i, a.title)}>
+      <ItemRow key={a.id ?? i} icon={GLYPH.access} title={a.title} last={last} enabled={a.enabled !== false} onToggle={(on) => toggleAt('accesses', i, a.title, on)}>
         <span style={whoCol}><span style={whoChip(a.role)}>{ROLE_LABEL[a.role]}</span></span>
         <span style={whenCol}><span style={chip}>By end of Week 1</span></span>
       </ItemRow>

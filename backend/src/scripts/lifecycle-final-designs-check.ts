@@ -164,6 +164,22 @@ async function main() {
   const w1 = home.checkins.find((c) => c.title === 'Week 1 check-in')!;
   eq('Week 1 check-in is open (2 days before the end of Week 1); the others locked', [w1.state, home.checkins.filter((c) => c.state === 'locked').length, home.summary.checkinDue?.title], ['open', 2, 'Week 1 check-in']);
   eq('Watch list: pre-boarding videos show from Day 1, trainings apart', [home.watch.length, home.trainings.length, home.watch[0].step], [6, 2, 'd1']);
+  {
+    // On/off instead of delete (24 Nov): a row switched off stays in the template and reaches no joiner.
+    const v = await design.templateDesign(ORG, def.id);
+    const shiftAt = v.tasks.findIndex((t) => t.title === 'Review your shift details');
+    const ciAt = v.checkins.findIndex((c) => c.title === 'Week 1 check-in');
+    await design.saveTemplateDesign(ORG, def.id, { ...v, tasks: v.tasks.map((t, i) => (i === shiftAt ? { ...t, enabled: false } : t)), checkins: v.checkins.map((c, i) => (i === ciAt ? { ...c, enabled: false } : c)) } as never);
+    const offView = await design.templateDesign(ORG, def.id);
+    const offHome = await joiner.joinerOnboarding(PRIYA);
+    eq('Switched off: kept in the editor, off; gone for the joiner (task and check-in)',
+      [offView.tasks.length, (offView.tasks[shiftAt] as { enabled?: boolean }).enabled, (offView.checkins[ciAt] as { enabled?: boolean }).enabled, offHome.tasks.some((t) => t.title === 'Review your shift details'), offHome.checkins.some((c) => c.title === 'Week 1 check-in')],
+      [v.tasks.length, false, false, false, false]);
+    await design.saveTemplateDesign(ORG, def.id, { ...offView, tasks: offView.tasks.map((t) => ({ ...t, enabled: undefined })), checkins: offView.checkins.map((c) => ({ ...c, enabled: undefined })) } as never);
+    const onHome = await joiner.joinerOnboarding(PRIYA);
+    eq('…switched on again: back for the joiner', [onHome.tasks.some((t) => t.title === 'Review your shift details'), onHome.checkins.some((c) => c.title === 'Week 1 check-in')], [true, true]);
+    home = onHome;
+  }
   eq('The trainings section is called "Trainings" until HR renames it', (home as { labels?: { trainings: string } }).labels?.trainings, 'Trainings');
   {
     const v = await design.templateDesign(ORG, def.id);
