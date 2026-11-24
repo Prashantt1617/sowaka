@@ -5,11 +5,12 @@
  * grades a day reads these first (see `overridesFor`), and the org report's
  * cache is dropped on every write so payroll and the report see it at once.
  */
-import { attendanceMarkRemovals, attendanceOverrides, payrollRuns, users } from '../config/db';
+import { ObjectId } from 'mongodb';
+import { attendanceMarkRemovals, attendanceOverrides, leaves, payrollRuns, users } from '../config/db';
 import { AttendanceOverride, HR_DAY_STATUSES, HrDayStatus } from '../models/attendance.model';
 import { invalidateAttendanceReport, joinedOn } from './attendance-report.service';
 import { payrollPeriodHolding } from './payroll-inputs.service';
-import { todayIso } from './shift.service';
+import { leaveTypeRulesFor, todayIso } from './shift.service';
 
 export class AttendanceOverrideError extends Error {
   constructor(public readonly statusCode: number, message: string) {
@@ -110,11 +111,69 @@ export async function markableDates(adminUserId: string, userId: string, dates: 
   return out;
 }
 
+/** UTC midnight of a YYYY-MM-DD day, as leave rows keep their dates. */
+const dayDate = (day: string) => new Date(`${day}T00:00:00.000Z`);
+
+/** The approved leave row an "On leave" mark wrote, cancelled when the mark changes or goes (its day goes back to the balance). */
+async function releaseMarkLeave(prev: AttendanceOverride | null, adminUserId: string, keepId?: string) {
+  if (!prev?.leaveId || prev.leaveId === keepId || !ObjectId.isValid(prev.leaveId)) return;
+  const now = new Date();
+  await leaves().updateOne(
+    { _id: new ObjectId(prev.leaveId), status: 'approved' },
+    { $set: { status: 'cancelled', cancelledAt: now, cancelledByUserId: adminUserId, cancelledByRole: 'admin', cancelNote: "HR changed the day's mark", updatedAt: now } },
+  );
+}
+
+/**
+ * What an "On leave" mark takes (24 Nov 2026, HR: "when I mark someone on leave their leave balance
+ * should be deducted, and it should ask which leave"). A day an approved leave already covers needs
+ * nothing more. Otherwise HR names the leave type: a paid type needs a day left in this year's balance;
+ * the mark then writes an approved one-day leave of that type (HR's own, decided by them), which every
+ * balance, the leave history and payroll read like any other leave.
+ */
+async function leaveForMark(org: string, adminUserId: string, userId: string, workDate: string, typeInput: unknown, note: string, prev: AttendanceOverride | null) {
+  const day = dayDate(workDate);
+  const covering = await leaves().findOne({ userId, status: 'approved', startDate: { $lte: day }, endDate: { $gte: day } });
+  const rules = await leaveTypeRulesFor(userId);
+  if (covering && String(covering._id) !== prev?.leaveId) {
+    const rule = rules.find((r) => r.key === covering.type);
+    return { leaveType: rule?.name ?? covering.type, unpaid: Boolean(rule?.unpaid) };
+  }
+  const key = String(typeInput ?? '').trim();
+  if (!key) throw new AttendanceOverrideError(400, 'Pick which leave this day comes out of');
+  const rule = rules.find((r) => r.key === key || r.name.toLowerCase() === key.toLowerCase());
+  if (!rule) throw new AttendanceOverrideError(400, `Their leave types are: ${rules.map((r) => r.name).join(', ')}`);
+  // The same leave as the mark already took: nothing new to take.
+  if (covering && String(covering._id) === prev?.leaveId && covering.type === rule.key) {
+    return { leaveType: rule.name, unpaid: Boolean(rule.unpaid), leaveId: prev.leaveId };
+  }
+  if (!rule.unpaid) {
+    const { getMyLeaveBalance } = await import('./leave.service');
+    const balance = await getMyLeaveBalance(userId, Number(workDate.slice(0, 4)), day);
+    const item = balance.types.find((t) => t.key === rule.key) as { remaining?: number } | undefined;
+    // The day this mark took before is given back first, when it was the same type.
+    const back = covering && String(covering._id) === prev?.leaveId && covering.type === rule.key ? 1 : 0;
+    const available = (item?.remaining ?? 0) + back;
+    if (available < 1) {
+      throw new AttendanceOverrideError(409, `Only ${Math.max(0, available)} day${available === 1 ? '' : 's'} of ${rule.name} left. Pick another leave type or leave without pay.`);
+    }
+  }
+  const now = new Date();
+  const { insertedId } = await leaves().insertOne({
+    userId, type: rule.key, startDate: day, endDate: day, days: 1,
+    reason: note || 'Marked on leave by HR on the calendar',
+    status: 'approved', decidedByUserId: adminUserId, decidedByRole: 'admin', decidedAt: now,
+    createdAt: now.getTime(), updatedAt: now,
+  });
+  void org;
+  return { leaveType: rule.name, unpaid: Boolean(rule.unpaid), leaveId: String(insertedId) };
+}
+
 export async function setAttendanceOverride(
   adminUserId: string,
   userId: string,
   workDate: string,
-  input: { status?: unknown; note?: unknown },
+  input: { status?: unknown; note?: unknown; leaveType?: unknown },
 ) {
   const status = String(input.status ?? '') as HrDayStatus;
   if (!HR_DAY_STATUSES.includes(status)) {
@@ -125,14 +184,19 @@ export async function setAttendanceOverride(
   await checkDate(workDate, org);
   // Not theirs to mark: payroll counts the days before joining on its own.
   if (joined && workDate < joined) throw new AttendanceOverrideError(400, `They joined on ${joined}: days before that cannot be marked`);
+  const prev = await attendanceOverrides().findOne({ org, userId, workDate }, { projection: { _id: 0 } }) as AttendanceOverride | null;
+  const leave = status === 'on_leave' ? await leaveForMark(org, adminUserId, userId, workDate, input.leaveType, note, prev) : null;
   const doc: AttendanceOverride = {
     org, userId, workDate, status,
     ...(note ? { note } : {}),
     setByUserId: adminUserId,
     ...(adminName ? { setByName: adminName } : {}),
     setAt: new Date(),
+    ...(leave ? { leaveType: leave.leaveType, ...(leave.unpaid ? { unpaid: true } : {}), ...(leave.leaveId ? { leaveId: leave.leaveId } : {}) } : {}),
   };
   await attendanceOverrides().replaceOne({ org, userId, workDate }, doc, { upsert: true });
+  await releaseMarkLeave(prev, adminUserId, leave?.leaveId);
+  if (leave?.leaveId || prev?.leaveId) (await import('./leave.service')).leaveRowChanged(userId);
   invalidateAttendanceReport(org);
   return doc;
 }
@@ -140,7 +204,11 @@ export async function setAttendanceOverride(
 export async function clearAttendanceOverride(adminUserId: string, userId: string, workDate: string) {
   const { org } = await adminAndEmployee(adminUserId, userId);
   await checkDate(workDate, org);
+  const prev = await attendanceOverrides().findOne({ org, userId, workDate }, { projection: { _id: 0 } }) as AttendanceOverride | null;
   const result = await attendanceOverrides().deleteOne({ org, userId, workDate });
+  // An "On leave" mark's own leave goes with it: the day returns to their balance.
+  await releaseMarkLeave(prev, adminUserId);
+  if (prev?.leaveId) (await import('./leave.service')).leaveRowChanged(userId);
   invalidateAttendanceReport(org);
   return { removed: result.deletedCount === 1 };
 }

@@ -478,7 +478,7 @@ function dayGrader(setup: OrgSetup, { punchesBy, approvedLeaves, holidayRows, ma
     if (hrMark) {
       if (hrMark.status === 'week_off' || hrMark.status === 'holiday') return { key, off: hrMark.status };
       if (hrMark.status === 'on_leave') {
-        return { key, day: [user.userId, key, 'on_leave', 0, null, null, 'Marked by HR', 'hr', 0], halfDayLeave: false };
+        return { key, day: [user.userId, key, hrMark.unpaid ? 'unpaid_leave' : 'on_leave', 0, null, null, hrMark.leaveType ?? 'Marked by HR', 'hr', 0], halfDayLeave: false };
       }
       return { key, day: [user.userId, key, hrMark.status, 0, null, null, null, 'hr', 0], halfDayLeave: false };
     }
@@ -827,7 +827,7 @@ export interface CalendarDay {
   /** The holiday's name, the leave type, or which punch is missing. */
   label: string | null;
   /** Set when HR marked the day: what it would have been, and who changed it. */
-  hr?: { previousStatus: CalendarDayStatus; previousLabel: string | null; note?: string; setByName?: string; setAt: string };
+  hr?: { previousStatus: CalendarDayStatus; previousLabel: string | null; note?: string; setByName?: string; setAt: string; leaveType?: string };
   /** A missed punch: what the shift says that gap counts as, which is what payroll pays it as. */
   countsAs?: DayMark;
   /** Leave without pay for half the day: half a day of loss of pay, not a whole one. */
@@ -885,8 +885,8 @@ async function gradeEmployeeDays(org: string, setup: OrgSetup, user: Person, fro
     const mark = marks.get(`${user.userId}|${date}`);
     days.push({
       date,
-      status: mark ? mark.status : status,
-      label: mark ? (mark.note || HR_STATUS_LABEL[mark.status]) : label,
+      status: mark ? (mark.status === 'on_leave' && mark.unpaid ? 'unpaid_leave' : mark.status) : status,
+      label: mark ? (mark.note || (mark.status === 'on_leave' && mark.leaveType ? mark.leaveType : HR_STATUS_LABEL[mark.status])) : label,
       punchIn: punchIn ? punchIn.toISOString() : null,
       punchOut: punchOut ? punchOut.toISOString() : null,
       lateByMinutes: mark ? 0 : lateByMinutes,
@@ -899,6 +899,7 @@ async function gradeEmployeeDays(org: string, setup: OrgSetup, user: Person, fro
           previousLabel: label,
           ...(mark.note ? { note: mark.note } : {}),
           ...(mark.setByName ? { setByName: mark.setByName } : {}),
+          ...(mark.leaveType ? { leaveType: mark.leaveType } : {}),
           // Some marks hold the time as text (14 of Convrse's from 26–27 Oct 2026): read both, never crash the calendar.
           setAt: new Date(mark.setAt).toISOString(),
         },

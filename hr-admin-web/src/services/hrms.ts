@@ -342,7 +342,7 @@ export type CalendarDayDTO = {
   /** Leave without pay for half the day: half a day of loss of pay. */
   halfDay?: true;
   /** Set when HR marked the day: what it would have been, and who changed it. */
-  hr?: { previousStatus: CalendarDayStatus; previousLabel: string | null; note?: string; setByName?: string; setAt: string };
+  hr?: { previousStatus: CalendarDayStatus; previousLabel: string | null; note?: string; setByName?: string; setAt: string; leaveType?: string };
   /** Whether HR may mark this day now: the current month, or any day of the open pay period (26–31 of last month for a 26th–25th cycle) or of an open run. */
   canMark?: boolean;
 };
@@ -415,8 +415,9 @@ export const getEmployeeCalendar = (userId: string, month: string) =>
   api<{ calendar: EmployeeCalendarDTO }>(`/admin/employees/${userId}/calendar?month=${month}`).then((r) => r.calendar);
 
 /** Mark one day of the current month; it overrides punches, leave and holidays everywhere. */
-export const setCalendarDay = (userId: string, date: string, status: HrDayStatus, note?: string) =>
-  api(`/admin/employees/${userId}/calendar/${date}`, { method: 'PUT', body: { status, ...(note ? { note } : {}) } });
+/** `leaveType` for "On leave": which leave the day comes out of (the server takes one day from that balance). */
+export const setCalendarDay = (userId: string, date: string, status: HrDayStatus, note?: string, leaveType?: string) =>
+  api(`/admin/employees/${userId}/calendar/${date}`, { method: 'PUT', body: { status, ...(note ? { note } : {}), ...(leaveType ? { leaveType } : {}) } });
 
 /** Take HR's mark off a day; it goes back to what the record says. */
 export const clearCalendarDay = (userId: string, date: string) =>

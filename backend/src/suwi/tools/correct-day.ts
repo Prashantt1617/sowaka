@@ -7,7 +7,7 @@ import { attendanceOverrides, paidDaysTemplates, payrollRuns, salaryStructures, 
 import { HR_DAY_STATUSES, HrDayStatus } from '../../models/attendance.model';
 import { clearAttendanceOverride, currentMonthIst, setAttendanceOverride } from '../../services/attendance-override.service';
 import { CalendarDay, employeeCalendar, employeeDayStatuses } from '../../services/attendance-report.service';
-import { policyForUser, shiftPolicyViewOf } from '../../services/shift.service';
+import { leaveTypeRulesFor, policyForUser, shiftPolicyViewOf } from '../../services/shift.service';
 import { defineTools, str } from '../tools';
 import { defineExecutor, propose } from '../proposals';
 import { isDate, niceDate } from './team';
@@ -49,7 +49,7 @@ defineTools(
     acts: true,
     label: (i) => `Prepared: mark ${i.name ?? 'their'} ${i.date} as ${i.status}`,
     description: "ONE person only (for two or more people, or a group such as everyone present on a day, use prepare_bulk_mark_day: one call for all of them). Prepare correcting one day of a person's attendance with HR's mark (present, half_day, absent, on_leave, week_off, holiday), the same as tapping the day on their calendar. Changes nothing: the card shows the day's current mark, the new mark, the effect in paid days, and that a mark only reaches the current month (or a month whose payroll run is still open). Needs their userId and the date.",
-    input_schema: { type: 'object', properties: { userId: { type: 'string' }, name: { type: 'string' }, date: { type: 'string', description: 'YYYY-MM-DD' }, status: { type: 'string', enum: HR_DAY_STATUSES }, note: { type: 'string', description: 'Why, in a few words (shown on the calendar)' } }, required: ['userId', 'date', 'status'] },
+    input_schema: { type: 'object', properties: { userId: { type: 'string' }, name: { type: 'string' }, date: { type: 'string', description: 'YYYY-MM-DD' }, status: { type: 'string', enum: HR_DAY_STATUSES }, note: { type: 'string', description: 'Why, in a few words (shown on the calendar)' }, leaveType: { type: 'string', description: 'For on_leave: which of their leave types the day comes out of (key or name, e.g. casual, sick, or their leave without pay type). The day is taken from that balance.' } }, required: ['userId', 'date', 'status'] },
     api: { method: 'PUT', path: '/admin/employees/x/calendar/x' },
     async run(ctx, i) {
       const userId = str(i.userId);
@@ -63,12 +63,17 @@ defineTools(
       if (!person) throw new Error('That person is not in this company');
       const { month, thisMonth, openRun, M } = await markableMonth(ctx.org, date);
 
+      // "On leave" takes a day from a leave type (24 Nov 2026): which one, unless an approved leave already covers the day.
+      const leaveRules = status === 'on_leave' ? await leaveTypeRulesFor(userId) : [];
+      const leaveRule = status === 'on_leave' ? leaveRules.find((r) => r.key === str(i.leaveType) || r.name.toLowerCase() === str(i.leaveType).toLowerCase()) : undefined;
       const cal = await employeeCalendar(ctx.userId, userId, month);
       const day = cal.days.find((d) => d.date === date);
       if (!day) throw new Error('That day is not on their calendar');
+      const alreadyOnLeave = day.status === 'on_leave' || day.status === 'unpaid_leave';
+      if (status === 'on_leave' && !leaveRule && !(alreadyOnLeave && !day.hr)) throw new Error(`Say which leave the day comes out of: ${leaveRules.map((r) => r.name).join(', ')}`);
       const before = lopOf(day.hr ? { status: day.hr.previousStatus, countsAs: day.countsAs } : day);
       const currentLop = day.hr ? lopOfMark(day.status as HrDayStatus) : before;
-      const after = lopOfMark(status);
+      const after = status === 'on_leave' && leaveRule?.unpaid ? 1 : lopOfMark(status);
       const delta = Math.round((currentLop - after) * 2) / 2; // paid days gained
       const [y, m] = month.split('-').map(Number);
       const base = new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -94,14 +99,14 @@ defineTools(
         summary: `${niceDate(date)} is ${describe(day)}; it becomes ${LABEL[status]}${str(i.note) ? ` ("${str(i.note)}")` : ''}. ${payLine}`,
         lines: [
           { text: `Now: ${describe(day)}${day.punchIn ? `, in ${ist(day.punchIn)}` : ''}${day.punchOut ? `, out ${ist(day.punchOut)}` : ''}${day.lateByMinutes ? `, late by ${day.lateByMinutes} min` : ''}.`, why: `Graded by ${cal.shift} (${cal.window}, ${cal.punchFormat}). HR's mark replaces the graded day everywhere: the report, the calendar, payroll and the app.` },
-          { text: `New: ${LABEL[status]}, marked by ${ctx.user.name}${str(i.note) ? ` with the note "${str(i.note)}"` : ''}.` },
+          { text: `New: ${LABEL[status]}${leaveRule ? ` (${leaveRule.name}${leaveRule.unpaid ? ', unpaid' : ', one day taken from that balance'})` : ''}, marked by ${ctx.user.name}${str(i.note) ? ` with the note "${str(i.note)}"` : ''}.` },
           { text: payLine, why: 'Loss of pay = calendar absences + ½ per half day (+ missed punches as the shift counts them), on top of the rules in their paid-days template; the base is the days in the month.', tone: allPaid || delta >= 0 ? 'info' : 'warn' },
           { text: openRun ? `${M} is an earlier month, allowed because its payroll run is still open; the run picks up the change when it is recalculated.` : `Only the current month can be marked (${monthName(thisMonth)}); after ${M}'s payroll is submitted, this day can no longer be changed.`, why: 'A mark moves pay, so it can only land where pay has not been settled.' },
           { text: `Their app shows ${niceDate(date)} as ${LABEL[status]} (marked by HR) from the moment you confirm; the shift stays ${policy.name} (${policy.startTime}–${policy.endTime}).` },
           ...(existing ? [{ text: `This replaces HR's earlier mark (${LABEL[existing.status]}${existing.setByName ? ` by ${existing.setByName}` : ''}); Undo puts that mark back.`, tone: 'info' as const }] : [{ text: 'Undo removes the mark and the day goes back to what the punches say.', tone: 'info' as const }]),
         ],
         effectiveFrom: date, undoable: true,
-        payload: { userId, date, status, note: str(i.note), byUserId: ctx.userId, name: person.name, previous: existing ? { status: existing.status, note: existing.note ?? '' } : null },
+        payload: { userId, date, status, note: str(i.note), ...(leaveRule ? { leaveType: leaveRule.key } : {}), byUserId: ctx.userId, name: person.name, previous: existing ? { status: existing.status, note: existing.note ?? '', ...(existing.leaveType ? { leaveType: existing.leaveType } : {}) } : null },
       });
       return { data: { prepared: true, title, current: describe(day), newMark: LABEL[status], payEffect: payLine, note: 'Nothing is saved until HR presses Confirm on the card.' }, proposalId, links: [{ label: `Open ${first}'s calendar`, userId, tab: 'calendar' }] };
     },
@@ -115,8 +120,8 @@ async function readBack(org: string, userId: string, date: string) {
 
 defineExecutor('correct_day', {
   async run(p) {
-    const { userId, date, status, note, byUserId, name } = p.payload as { userId: string; date: string; status: HrDayStatus; note: string; byUserId: string; name: string };
-    await setAttendanceOverride(byUserId, userId, date, { status, note });
+    const { userId, date, status, note, leaveType, byUserId, name } = p.payload as { userId: string; date: string; status: HrDayStatus; note: string; leaveType?: string; byUserId: string; name: string };
+    await setAttendanceOverride(byUserId, userId, date, { status, note, leaveType });
     return { message: `Marked ${name.split(' ')[0]}'s ${niceDate(date)} as ${LABEL[status]}. ${await readBack(p.org, userId, date)}`.trim() };
   },
   async undo(p) {

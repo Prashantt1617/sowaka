@@ -297,11 +297,11 @@ export function CompanyCalendar() {
       setOpening('');
     }
   };
-  const saveFix = async (status: HrDayStatus | null, note: string) => {
+  const saveFix = async (status: HrDayStatus | null, note: string, leaveType?: string) => {
     if (!fixing) return;
     setSaving(true);
     try {
-      if (status) await setCalendarDay(fixing.userId, fixing.day.date, status, note.trim() || undefined);
+      if (status) await setCalendarDay(fixing.userId, fixing.day.date, status, note.trim() || undefined, leaveType);
       else await clearCalendarDay(fixing.userId, fixing.day.date);
       s.flash(status ? `${fixing.name} · ${dayLabel(fixing.day.date)} marked ${CAL_TONE[status].label.toLowerCase()}` : `${fixing.name} · ${dayLabel(fixing.day.date)} back to what was recorded`);
       setFixing(null);
@@ -523,7 +523,7 @@ export function CompanyCalendar() {
         </div>,
         document.body,
       )}
-      {fixing && <MarkDay day={fixing.day} saving={saving} onClose={() => setFixing(null)} onSave={(status, note) => void saveFix(status, note)} />}
+      {fixing && <MarkDay day={fixing.day} userId={fixing.userId} saving={saving} onClose={() => setFixing(null)} onSave={(status, note, leaveType) => void saveFix(status, note, leaveType)} />}
     </div>
   );
 }
