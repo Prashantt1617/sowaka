@@ -425,6 +425,7 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
                             onChange={(patch) => setEdit(p.userId, patch)}
                             saving={saving}
                             onSave={() => void recalc()}
+                            pending={Object.keys(edits).length}
                           />
                         )}
                         <SlipNumbers p={p} />
@@ -510,53 +511,91 @@ function LopCalendar({ slip, period, editable, onMarked, onExplain, onClose }: {
 // added from a dropdown (overtime pay, the company's one-time earnings and deductions: arrears, bonus, extra
 // days, an advance recovered…), and Save recalculates the run at once so gross, deductions and net pay show
 // the change. Kept on the run until changed; the × clears one.
-function ThisMonthOnly({ p, items, edit, onChange, saving, onSave }: { p: PayslipDTO; items: PayHeadDTO[]; edit: Edit; onChange: (patch: Edit) => void; saving: boolean; onSave: () => void }) {
+function ThisMonthOnly({ p, items, edit, onChange, saving, onSave, pending }: { p: PayslipDTO; items: PayHeadDTO[]; edit: Edit; onChange: (patch: Edit) => void; saving: boolean; onSave: () => void; pending: number }) {
   const saved = p.inputs.componentAmounts ?? {};
   const value = (code: string) => edit.amounts?.[code] ?? (saved[code] !== undefined ? String(saved[code] / 100) : '');
   const ot = edit.overtime ?? (p.inputs.overtimePaise ? String(p.inputs.overtimePaise / 100) : '');
   const OT = '__overtime';
   const otHint = p.inputs.approvedOtHours ? `${p.inputs.approvedOtHours} h approved${!p.inputs.overtimeEnteredByHr && p.inputs.overtimePaise > 0 ? ' · paid by the template’s rule' : ''}` : 'earning';
   const all = [
-    { code: OT, label: 'Overtime pay', hint: otHint },
-    ...items.map((h) => ({ code: h.code, label: h.payslipName ?? h.name, hint: h.category === 'deduction' ? 'deduction' : 'one-time earning' })),
+    { code: OT, label: 'Overtime pay', hint: otHint, kind: 'earning' as const },
+    ...items.map((h) => ({ code: h.code, label: h.payslipName ?? h.name, hint: h.category === 'deduction' ? 'deduction' : 'one-time earning', kind: h.category === 'deduction' ? 'deduction' as const : 'earning' as const })),
   ];
   const get = (code: string) => (code === OT ? ot : value(code));
   const put = (code: string, v: string) => (code === OT ? onChange({ overtime: v }) : onChange({ amounts: { ...(edit.amounts ?? {}), [code]: v } }));
   const touched = (code: string) => (code === OT ? edit.overtime !== undefined : edit.amounts?.[code] !== undefined);
-  // Shown: anything with an amount, saved or typed, and anything just added from the dropdown.
+  // Shown: anything with an amount, saved or typed, and anything just added from the menu.
   const [added, setAdded] = useState<string[]>([]);
+  const [menu, setMenu] = useState(false);
   const shown = all.filter((x) => added.includes(x.code) || (get(x.code) !== '' && Number(get(x.code)) !== 0) || (touched(x.code) && get(x.code) !== ''));
   const left = all.filter((x) => !shown.some((y) => y.code === x.code));
-  const dirty = edit.overtime !== undefined || Object.keys(edit.amounts ?? {}).length > 0;
+  const groups = [
+    { title: 'Earnings', rows: left.filter((x) => x.kind === 'earning') },
+    { title: 'Deductions', rows: left.filter((x) => x.kind === 'deduction') },
+  ].filter((g) => g.rows.length);
   return (
     <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px dashed var(--line-2)' }} onClick={(ev) => ev.stopPropagation()}>
-      <div style={{ ...L.eyebrow, marginBottom: 8 }}>This month only</div>
-      {shown.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 10 }}>Nothing extra this month. Add arrears, a bonus, overtime or a deduction below.</div>}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
-        {shown.map((x) => (
-          <div key={x.code} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span style={{ minWidth: 220, fontSize: 13 }}>{x.label} <span style={{ color: 'var(--ink-3)', fontSize: 11.5 }}>· {x.hint}</span></span>
-            <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>₹</span>
-            <input type="number" min={0} autoFocus={added[added.length - 1] === x.code} value={get(x.code)} placeholder="0" onChange={(ev) => put(x.code, ev.target.value)}
-              onKeyDown={(ev) => { if (ev.key === 'Enter') onSave(); }}
-              className="lk-in" style={{ ...cellInput, width: 140, textAlign: 'left', borderColor: touched(x.code) ? 'var(--accent)' : 'var(--line-2)' }} />
-            <button type="button" title="Remove for this month" onClick={() => { put(x.code, ''); setAdded((a) => a.filter((c) => c !== x.code)); }}
-              style={{ border: 0, background: 'none', color: 'var(--ink-3)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>×</button>
-          </div>
-        ))}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+        <div style={{ ...L.eyebrow, margin: 0 }}>This month only</div>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+          {pending > 0 && <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>{pending} {pending === 1 ? 'person' : 'people'} changed, not saved yet</span>}
+          <button type="button" onClick={onSave} disabled={saving || pending === 0} className="lk-btn-p" style={{ ...primaryBtn, opacity: saving || pending === 0 ? 0.55 : 1 }}
+            title="Saves every change in this run, for everyone, and recalculates once">
+            {saving ? 'Recalculating…' : 'Save & recalculate'}
+          </button>
+        </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      {shown.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10, marginBottom: 12 }}>
+          {shown.map((x) => (
+            <div key={x.code} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--surface)', border: `1px solid ${touched(x.code) ? 'var(--accent)' : 'var(--line)'}`, borderRadius: 12 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.label}</div>
+                <div style={{ fontSize: 11.5, color: x.kind === 'deduction' ? 'var(--bad)' : 'var(--ink-3)' }}>{x.hint}</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--line-2)', borderRadius: 8, padding: '0 8px', background: 'var(--surface)' }}>
+                <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>₹</span>
+                <input type="number" min={0} autoFocus={added[added.length - 1] === x.code} value={get(x.code)} placeholder="0" onChange={(ev) => put(x.code, ev.target.value)}
+                  style={{ width: 96, border: 0, outline: 'none', background: 'transparent', font: 'inherit', fontSize: 13.5, padding: '7px 4px', color: 'var(--ink)', textAlign: 'right' }} />
+              </div>
+              <button type="button" title="Remove for this month" aria-label={`Remove ${x.label}`} onClick={() => { put(x.code, ''); setAdded((a) => a.filter((c) => c !== x.code)); }}
+                style={{ border: 0, background: 'none', color: 'var(--ink-3)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '0 2px' }}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         {left.length > 0 && (
-          <select value="" onChange={(ev) => { const c = ev.target.value; if (c) setAdded((a) => [...a, c]); }} className="lk-in"
-            style={{ ...cellInput, width: 260, textAlign: 'left', cursor: 'pointer' }} aria-label="Add a pay item for this month">
-            <option value="">+ Add a pay item…</option>
-            {left.map((x) => <option key={x.code} value={x.code}>{x.label} ({x.hint})</option>)}
-          </select>
+          <div style={{ position: 'relative' }}>
+            <button type="button" onClick={() => setMenu((m) => !m)} aria-expanded={menu} className="lk-btn"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 36, padding: '0 14px', borderRadius: 999, border: '1px dashed var(--line-2)', background: 'var(--surface)', color: 'var(--accent-ink, var(--ink))', font: 'inherit', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+              <span aria-hidden style={{ fontSize: 16, lineHeight: 1 }}>+</span> Add pay item
+            </button>
+            {menu && (
+              <>
+                <div onClick={() => setMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 20 }} />
+                <div role="menu" style={{ position: 'absolute', top: 42, left: 0, zIndex: 21, width: 300, maxHeight: 320, overflowY: 'auto', background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: 6 }}>
+                  {groups.map((g) => (
+                    <div key={g.title}>
+                      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ink-3)', padding: '8px 10px 4px' }}>{g.title}</div>
+                      {g.rows.map((x) => (
+                        <button key={x.code} type="button" role="menuitem" onClick={() => { setAdded((a) => [...a, x.code]); setMenu(false); }}
+                          className="lk-menu-item"
+                          style={{ display: 'flex', width: '100%', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, padding: '8px 10px', border: 0, borderRadius: 10, background: 'transparent', font: 'inherit', fontSize: 13, color: 'var(--ink)', cursor: 'pointer', textAlign: 'left' }}
+                          onMouseEnter={(ev) => { ev.currentTarget.style.background = 'var(--surface-2)'; }}
+                          onMouseLeave={(ev) => { ev.currentTarget.style.background = 'transparent'; }}>
+                          <span>{x.label}</span>
+                          {x.code === OT && p.inputs.approvedOtHours ? <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>{p.inputs.approvedOtHours} h approved</span> : null}
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         )}
-        <button type="button" onClick={onSave} disabled={saving || !dirty} className="lk-btn-p" style={{ ...primaryBtn, opacity: saving || !dirty ? 0.55 : 1 }}>
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-        <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>Save recalculates this run: gross, deductions and net pay update. One-time earnings are paid on top of the monthly CTC.</span>
+        <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>{shown.length === 0 ? 'Nothing extra this month. ' : ''}Change as many people as you need, then Save &amp; recalculate once. One-time earnings are paid on top of the monthly CTC.</span>
       </div>
     </div>
   );
