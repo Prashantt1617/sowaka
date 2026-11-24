@@ -23,6 +23,8 @@ import { cachedLifecycle, refreshLifecycle } from './readCache';
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { subtreeOf } from '../manager-scope';
+import { requestViewer } from '../../middleware/request-viewer';
 import { companies, exitSettlements, handoverItems, journeyTasks, journeys, lifecycleFiles, lifecycleTemplates, payslips, resignations, surveyResponses, users } from '../../config/db';
 import { payrollPeriodHolding } from '../payroll-inputs.service';
 import { AdminError } from '../admin.service';
@@ -78,7 +80,7 @@ export type Viewer =
   | { kind: 'hr'; seesPay: boolean; canAct: boolean }
   | { kind: 'team'; team: Exclude<ClearanceTeam, 'manager'> | null; seesPay: boolean; canAct: false };
 
-export interface Actor { userId: string; org: string; name: string; viewer: Viewer }
+export interface Actor { userId: string; org: string; name: string; viewer: Viewer; /** A manager on the dashboard: only these people (their subtree). */ teamIds?: Set<string> }
 
 const PAY_TABS = ['payruns', 'salarydetails'];
 
@@ -106,9 +108,16 @@ export function teamOfDepartment(department: string | undefined): Exclude<Cleara
  * staff for their team. HR's actions that record an exit still need a dashboard admin (recordExit).
  */
 export async function dashboardActor(userId: string): Promise<Actor> {
-  const u = await users().findOne({ userId }, { projection: { _id: 0, userId: 1, org: 1, name: 1, dashboardAccess: 1, dashboardAdmin: 1, dashboardTabs: 1, department: 1, clearanceTeam: 1 } });
+  // The request's own signed-in person first: a manager's dashboard access is given at sign-in, not stored.
+  const u = (requestViewer(userId) as (User & { dashboardScope?: string }) | undefined)
+    ?? await users().findOne({ userId }, { projection: { _id: 0, userId: 1, org: 1, name: 1, dashboardAccess: 1, dashboardAdmin: 1, dashboardTabs: 1, department: 1, clearanceTeam: 1 } }) as (User & { dashboardScope?: string }) | null;
   if (!u?.org || u.dashboardAccess !== true) throw new LifecycleError(403, 'You do not have HR dashboard access');
   await requireLifecycleOrg(u.org);
+  // A manager (24 Nov 2026): HR's board and actions, for their own team only, without pay.
+  if (u.dashboardScope === 'team') {
+    const teamIds = await subtreeOf(u.org, userId);
+    return { userId, org: u.org, name: u.name, viewer: { kind: 'hr', seesPay: false, canAct: true }, teamIds };
+  }
   const all = u.dashboardAdmin === true || !Array.isArray(u.dashboardTabs);
   const tabs = new Set(u.dashboardTabs ?? []);
   const seesPay = all || PAY_TABS.some((t) => tabs.has(t));
@@ -675,7 +684,11 @@ export function refreshOffBoardData(org: string): Promise<OffBoardData> {
 }
 
 async function allCards(actor: Actor, today: string, opts: { fresh?: boolean; full?: boolean } = {}): Promise<BoardCard[]> {
-  const { open, people, managers, ctxs } = await offBoardData(actor.org, opts);
+  const data = await offBoardData(actor.org, opts);
+  const { people, managers } = data;
+  // A manager sees their own team's resignations and exits only.
+  const open = actor.teamIds ? data.open.filter((r) => actor.teamIds!.has(r.userId)) : data.open;
+  const ctxs = actor.teamIds ? data.ctxs.filter((c) => actor.teamIds!.has(c.user.userId)) : data.ctxs;
   const out: BoardCard[] = [];
   if (actor.viewer.kind === 'hr') {
     for (const r of open) {

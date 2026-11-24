@@ -1,3 +1,4 @@
+import { assertInTeam, scopedUserIds } from './manager-scope';
 import { ObjectId } from 'mongodb';
 import { feedbackRecords, kpiAssignments, kpiParameters, kpiTemplates, users } from '../config/db';
 import { requestViewer } from '../middleware/request-viewer';
@@ -159,10 +160,16 @@ export async function listKpiParameters(adminUserId: string, includeArchived = f
   return rows.map((r) => parameterView(r, r.createdByUserId ? nameById.get(r.createdByUserId) : undefined));
 }
 
+/** A manager on the dashboard assigns what HR set up; parameters, templates and the cycle are HR's. */
+async function refuseTeamScope(adminUserId: string): Promise<void> {
+  if (await scopedUserIds(adminUserId)) throw new KpiError(403, 'Only HR can set up KPI parameters, templates and the cycle');
+}
+
 export async function createKpiParameter(
   adminUserId: string,
   input: { title?: unknown; description?: unknown },
 ) {
+  await refuseTeamScope(adminUserId);
   const org = await requireOrg(adminUserId);
   const now = new Date();
   const doc: KpiParameter = {
@@ -193,6 +200,7 @@ export async function updateKpiParameter(
   id: string,
   input: { description?: unknown },
 ) {
+  await refuseTeamScope(adminUserId);
   const org = await requireOrg(adminUserId);
   const period = await currentPeriodFor(org);
   await promoteDueEdits(org, period);
@@ -224,6 +232,7 @@ export async function updateKpiParameter(
 
 /** Drops a staged edit, leaving the live wording untouched. */
 export async function cancelKpiParameterEdit(adminUserId: string, id: string) {
+  await refuseTeamScope(adminUserId);
   const org = await requireOrg(adminUserId);
   const _id = objectId(id, 'Parameter id');
   const result = await kpiParameters().updateOne({ _id, org }, { $unset: { pendingEdit: '' } });
@@ -236,6 +245,7 @@ export async function cancelKpiParameterEdit(adminUserId: string, id: string) {
  * reference parameters by id, and a sent review must stay readable.
  */
 export async function archiveKpiParameter(adminUserId: string, id: string, archived: boolean) {
+  await refuseTeamScope(adminUserId);
   const org = await requireOrg(adminUserId);
   const _id = objectId(id, 'Parameter id');
   const result = await kpiParameters().updateOne(
@@ -256,6 +266,7 @@ export async function archiveKpiParameter(adminUserId: string, id: string, archi
  * one, so history is safe.
  */
 export async function deleteKpiParameter(adminUserId: string, id: string) {
+  await refuseTeamScope(adminUserId);
   const org = await requireOrg(adminUserId);
   const _id = objectId(id, 'Parameter id');
   const existing = await kpiParameters().findOne({ _id, org });
@@ -451,6 +462,7 @@ export async function createKpiTemplate(
   adminUserId: string,
   input: Record<string, unknown>,
 ) {
+  await refuseTeamScope(adminUserId);
   const org = await requireOrg(adminUserId);
   const now = new Date();
   const parameterIds = await resolveParameterIds(org, input.parameterIds);
@@ -483,6 +495,7 @@ export async function updateKpiTemplate(
   id: string,
   input: Record<string, unknown>,
 ) {
+  await refuseTeamScope(adminUserId);
   const org = await requireOrg(adminUserId);
   const _id = objectId(id, 'Template id');
   const existing = await kpiTemplates().findOne({ _id, org });
@@ -510,6 +523,15 @@ export async function updateKpiTemplate(
  * template with no facets at all targets the whole org, which is deliberate —
  * "everyone" is a legitimate thing to want.
  */
+/** The company's roster for a KPI page, by name; a manager's (team scope) is their subtree only. */
+async function teamRoster(adminUserId: string, org: string) {
+  const [rows, team] = await Promise.all([
+    users().find({ org }, { projection: ROSTER_FIELDS }).sort({ name: 1 }).toArray(),
+    scopedUserIds(adminUserId),
+  ]);
+  return team ? rows.filter((r) => team.has((r as { userId: string }).userId)) : rows;
+}
+
 export async function kpiTemplateAudience(
   adminUserId: string,
   id: string,
@@ -521,7 +543,7 @@ export async function kpiTemplateAudience(
   // audience shows, never an inline photo.
   const [template, roster] = await Promise.all([
     kpiTemplates().findOne({ _id: objectId(id, 'Template id'), org }),
-    users().find({ org }, { projection: ROSTER_FIELDS }).sort({ name: 1 }).toArray(),
+    teamRoster(adminUserId, org),
   ]);
   if (!template) throw new KpiError(404, 'Template not found');
 
@@ -585,7 +607,7 @@ export async function resolveKpiAudience(
   const departments = facet(input.departments);
   const managerUserIds = facet(input.managerUserIds);
 
-  const roster = await users().find({ org }, { projection: ROSTER_FIELDS }).sort({ name: 1 }).toArray();
+  const roster = await teamRoster(adminUserId, org);
   const matched = roster.filter((u) => {
     if (locations.length && !locations.includes(u.location ?? '')) return false;
     if (designations.length && !designations.includes(u.designation ?? '')) return false;
@@ -643,7 +665,7 @@ export async function kpiTemplateMembers(
   const assignments = await kpiAssignments().find({ org, period, templateId: id }).toArray();
   if (!assignments.length) return { period, templateName: template.name, members: [] };
 
-  const roster = await users().find({ org }, { projection: ROSTER_FIELDS }).toArray();
+  const roster = await teamRoster(adminUserId, org);
   const byId = new Map(roster.map((u) => [u.userId, u]));
   const nameById = new Map(roster.map((u) => [u.userId, u.name]));
 
@@ -696,6 +718,7 @@ export async function assignTemplateToUsers(
     ? [...new Set(input.userIds.map((u) => String(u).trim()).filter(Boolean))]
     : [];
   if (!userIds.length) throw new KpiError(400, 'Select at least one employee');
+  for (const u of userIds) await assertInTeam(adminUserId, u);
 
   // Every id must be someone in this org — never assign across a tenant.
   const found = await users().find({ org, userId: { $in: userIds } }).toArray();
@@ -734,6 +757,7 @@ export async function assignTemplateToUsers(
 
 /** Deletable only while nobody is assigned from it, in any cycle. */
 export async function deleteKpiTemplate(adminUserId: string, id: string) {
+  await refuseTeamScope(adminUserId);
   const org = await requireOrg(adminUserId);
   const _id = objectId(id, 'Template id');
   const existing = await kpiTemplates().findOne({ _id, org });
@@ -814,6 +838,7 @@ export async function assignKpis(
   const org = await requireOrg(adminUserId);
   const userId = String(input.userId ?? '').trim();
   if (!userId) throw new KpiError(400, 'userId is required');
+  await assertInTeam(adminUserId, userId);
   const period = requirePeriod(input.period);
 
   const employee = await users().findOne({ userId, org });
@@ -857,6 +882,7 @@ export async function removeKpiAssignment(
   userId: string,
   periodInput: unknown,
 ) {
+  await assertInTeam(adminUserId, userId);
   const org = await requireOrg(adminUserId);
   const period = requirePeriod(periodInput);
   const result = await kpiAssignments().deleteOne({ org, userId, period });

@@ -36,6 +36,8 @@ export async function companyOfCaller(userId: string): Promise<string | undefine
 /** `load()`'s answer kept for the caller's company (shared by everyone there who may read it); live when the cache is off or there is no company. */
 export async function keptForCompanyOf<T>(callerUserId: string, kind: SwrKind, params: unknown, load: () => Promise<T>): Promise<T> {
   if (!lifecycleReadCacheOn()) return load();
+  // A manager's team-scoped read is never kept for (or served from) the company's copy.
+  if (requestUserFor(callerUserId)?.teamScope) return load();
   const org = await companyOfCaller(callerUserId);
   return org ? cachedLifecycle(org, kind, params, load) : load();
 }

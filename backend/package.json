@@ -68,6 +68,7 @@
     "game-voice:check": "tsx src/scripts/game-voice-check.ts",
     "employee-activity:check": "tsx src/scripts/employee-activity-check.ts",
     "suwi-bulk:check": "tsx src/scripts/suwi-bulk-check.ts",
+    "manager-dashboard:check": "MONGODB_URI='mongodb://127.0.0.1:27133/?replicaSet=rs0' MONGODB_DB=manager_dashboard_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/manager-dashboard-check.ts",
     "hr-leave-mark:check": "MONGODB_DB=hr_leave_mark_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/hr-leave-mark-check.ts",
     "suwi-markday:check": "MONGODB_DB=suwi_markday_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-bulk-mark-day-check.ts",
     "suwi-holidays:check": "MONGODB_DB=suwi_holidays_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-holidays-check.ts",

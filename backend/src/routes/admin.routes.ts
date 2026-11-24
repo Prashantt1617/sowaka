@@ -52,6 +52,7 @@ import {
   updateOvertimeEligibility, listExitsHandler, exitSettingsHandler, setExitSettingsHandler, recordExitHandler, withdrawExitHandler, endAccessNowHandler,
   exitDetailHandler, exitClearanceHandler, exitInterviewHandler, exitCloseCaseHandler, exitSettlementHandler } from '../controllers/admin.controller';
 import { requireAuth } from '../middleware/auth.middleware';
+import { requireTeamScope } from '../middleware/team-scope.middleware';
 import { uploadEmployeeDocumentFile } from '../middleware/employee-document-upload.middleware';
 import { requireDashboardAccess, requireDashboardAdmin, requireDashboardTabs } from '../middleware/admin.middleware';
 import {
@@ -82,7 +83,7 @@ import { adminCreateGame, adminDeleteGame, adminListGames, adminPublishGame, adm
 // HR dashboard surface: org-wide reads + request overrides. Every route requires
 // an authenticated user (requireAuth) who additionally has dashboardAccess.
 export const adminRouter = Router();
-adminRouter.use(requireAuth, requireDashboardAccess, requireDashboardTabs);
+adminRouter.use(requireAuth, requireDashboardAccess, requireDashboardTabs, requireTeamScope);
 
 // People › Accesses: who sees which tabs. A dashboard admin's alone.
 adminRouter.get('/accesses', requireDashboardAdmin, listAccessesHandler);

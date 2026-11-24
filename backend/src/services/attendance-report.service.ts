@@ -1,3 +1,4 @@
+import { scopedUserIds } from './manager-scope';
 import { attendanceMarkRemovals, attendanceOverrides, attendanceRecords, holidays, leaves, shiftAssignments, shiftTemplates, users } from '../config/db';
 import { requestViewer } from '../middleware/request-viewer';
 import { AttendanceMarkRemoval, AttendanceOverride, AttendanceRecord, HrDayStatus } from '../models/attendance.model';
@@ -600,6 +601,28 @@ export async function attendanceReport(
   input: { from?: string; to?: string },
   opts: { refresh?: boolean } = {},
 ): Promise<AttendanceReport> {
+  const report = await orgAttendanceReport(adminUserId, input, opts);
+  // A manager on the dashboard sees their team's rows only (the cached report stays the company's).
+  const team = await scopedUserIds(adminUserId);
+  return team ? teamPartOf(report, team) : report;
+}
+
+/** The report cut to these people. */
+function teamPartOf(report: AttendanceReport, team: Set<string>): AttendanceReport {
+  return {
+    ...report,
+    people: Object.fromEntries(Object.entries(report.people).filter(([id]) => team.has(id))),
+    days: report.days.filter((d) => team.has(d[0])),
+    offDays: report.offDays.filter((d) => team.has(d[0])),
+    halfDayLeave: report.halfDayLeave.filter((k) => team.has(k.split('|')[0] ?? '')),
+  };
+}
+
+async function orgAttendanceReport(
+  adminUserId: string,
+  input: { from?: string; to?: string },
+  opts: { refresh?: boolean } = {},
+): Promise<AttendanceReport> {
   const from = input.from ?? '';
   const to = input.to ?? '';
   if (!DATE.test(from) || !DATE.test(to)) throw new ReportError(400, 'from and to must be YYYY-MM-DD');
@@ -625,7 +648,7 @@ export async function attendanceReport(
   if (cached && cached.expires + STALE_SERVE_MS > Date.now()) {
     if (!refreshingReports.has(cacheKey)) {
       refreshingReports.add(cacheKey);
-      attendanceReport(adminUserId, input, { refresh: true })
+      orgAttendanceReport(adminUserId, input, { refresh: true })
         .catch(() => undefined)
         .finally(() => refreshingReports.delete(cacheKey));
     }

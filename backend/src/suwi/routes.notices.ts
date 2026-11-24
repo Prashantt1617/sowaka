@@ -6,13 +6,14 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess } from '../middleware/admin.middleware';
+import { refuseTeamScope } from '../middleware/team-scope.middleware';
 import { contextFor } from './tools';
 import { settingsFor } from './store';
 import { noticeCounts, suwiNotices } from './notices';
 import { digestFor, istToday } from './digest';
 
 export const suwiNoticesRouter = Router();
-suwiNoticesRouter.use(requireAuth, requireDashboardAccess);
+suwiNoticesRouter.use(requireAuth, requireDashboardAccess, refuseTeamScope);
 
 const me = (req: Request) => req.auth!.user!;
 const fail = (res: Response, e: unknown, next: NextFunction) => {

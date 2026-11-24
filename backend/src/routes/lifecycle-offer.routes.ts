@@ -1,3 +1,4 @@
+import { requireTeamScope } from '../middleware/team-scope.middleware';
 /**
  * Dashboard › Employee lifecycle: offers, documents, letters (CONTRACT
  * "Dashboard — offers, documents, letters"). Mounted at `/admin/lifecycle`
@@ -90,7 +91,7 @@ const gate = (tabs: string[]) => async (req: Request, res: Response, next: NextF
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MULTER_FILE_LIMIT, files: 1 }, ...UTF8_FILE_NAMES }).single('file');
 const oneFile = (req: Request, res: Response, next: NextFunction) => upload(req, res, (error) => (error ? sendLifecycleError(error, res, next) : next()));
 
-const guard = (tabs: string[]) => [requireAuth, requireDashboardAccess, requireDashboardTabs, gate(tabs)];
+const guard = (tabs: string[]) => [requireAuth, requireDashboardAccess, requireDashboardTabs, requireTeamScope, gate(tabs)];
 const body = (req: Request) => (req.body ?? {}) as Record<string, unknown>;
 const param = (req: Request, name: string) => String(req.params[name] ?? '');
 

@@ -1,3 +1,4 @@
+import { assertInTeam } from './manager-scope';
 import { ObjectId } from 'mongodb';
 import { attendanceRecords, leaveBalanceAdjustments, leaves, leaveYearEnds, overtimeRequests, users } from '../config/db';
 import { Leave, LeaveCancelRequest, LeaveStatus } from '../models/leave.model';
@@ -1035,6 +1036,8 @@ export async function decideLeaveCancellation(
   }
   const leaveId = new ObjectId(leaveIdInput);
   const leave = await leaves().findOne({ _id: leaveId });
+  // A manager on the dashboard decides for their own team only.
+  if (as === 'admin' && leave) await assertInTeam(deciderUserId, leave.userId);
   if (!leave) {
     throw new LeaveError(404, 'Leave request not found');
   }
@@ -1128,6 +1131,7 @@ export async function adminCancelLeave(adminUserId: string, leaveIdInput: string
   const leave = await leaves().findOne({ _id: leaveId });
   if (!leave) throw new LeaveError(404, 'Leave request not found');
   if (leave.userId === adminUserId) throw new LeaveError(403, 'You cannot override your own request');
+  await assertInTeam(adminUserId, leave.userId);
   const [admin, employee] = await Promise.all([
     users().findOne({ userId: adminUserId }, { projection: { _id: 0, org: 1 } }),
     users().findOne({ userId: leave.userId }),
@@ -1214,6 +1218,8 @@ export async function adminDecideLeave(
   if (leave.userId === adminUserId) {
     throw new LeaveError(403, 'You cannot override your own request');
   }
+  // A manager on the dashboard decides only for their team.
+  await assertInTeam(adminUserId, leave.userId);
   if (leave.status === 'cancelled') {
     throw new LeaveError(409, 'The employee cancelled this leave');
   }

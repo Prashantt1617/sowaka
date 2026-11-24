@@ -4,6 +4,7 @@
  * panel; and HR's actions on a journey (manager, buddy, Day-1 pass, template,
  * a task, a bank/PF change).
  */
+import { scopedUserIds } from '../manager-scope';
 import { randomUUID } from 'node:crypto';
 import { cachedLifecycle, refreshLifecycle, setBoardPatch, type BoardWrites } from './readCache';
 import { orgsKeeping, patchSwr } from '../swr-cache';
@@ -385,7 +386,10 @@ export async function onboardingBoard(org: string, viewerUserId: string, query: 
   if ((from && !isDateKey(from)) || (to && !isDateKey(to))) throw new LifecycleError(400, 'from and to are YYYY-MM-DD');
   const q = String(query.q ?? '').trim().toLowerCase();
 
-  const { all, tasksBy, tills, folks, names } = await boardData(org, now, opts);
+  const { all: everyone, tasksBy, tills, folks, names } = await boardData(org, now, opts);
+  // A manager on the dashboard (24 Nov 2026): joiners in their team only (joined, or joining under someone in it).
+  const team = await scopedUserIds(viewerUserId);
+  const all = team ? everyone.filter((j) => (j.userId && team.has(j.userId)) || (j.managerUserId && team.has(j.managerUserId))) : everyone;
 
   const counts: Record<OnboardingBoardTab, number> = { pre_boarding: 0, first_week: 0, probation: 0 };
   const columns = BOARD_COLUMNS[tab].map((c) => ({ ...c, cards: [] as BoardCard[] }));

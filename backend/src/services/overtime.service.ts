@@ -1,3 +1,4 @@
+import { assertInTeam } from './manager-scope';
 import { ObjectId } from 'mongodb';
 import { overtimeRequests, shiftAssignments, users } from '../config/db';
 import {
@@ -378,6 +379,7 @@ export async function adminDecideOvertime(
   const requestId = new ObjectId(requestIdInput);
   const request = await overtimeRequests().findOne({ _id: requestId });
   if (!request) throw new OvertimeError(404, 'Overtime request not found');
+  await assertInTeam(adminUserId, request.userId);
   if (request.userId === adminUserId) {
     throw new OvertimeError(403, 'You cannot override your own request');
   }

@@ -427,6 +427,8 @@ async function toAuthUser(
     prefetched ? prefetched.manager : managerNameFor(user.managerUserId),
     resolveProfilePhoto(user),
   ]);
+  // HR's dashboard grant, or a manager's where the company switched the manager dashboard on.
+  const grant = await (await import('./manager-scope')).dashboardGrantOf(user as never);
 
   return {
     id: user.userId,
@@ -454,10 +456,12 @@ async function toAuthUser(
     // Which games, so the app shows only what is on — the garden's tree
     // included, which used to follow the Games tab alone.
     enabledGames: enabledGamesOf(company),
-    dashboardAccess: user.dashboardAccess === true,
+    dashboardAccess: grant.access,
     dashboardAdmin: user.dashboardAdmin === true,
-    // The dashboard tabs this person may open; null means every tab.
-    dashboardTabs: user.dashboardAdmin === true || !Array.isArray(user.dashboardTabs) ? null : user.dashboardTabs,
+    // The dashboard tabs this person may open; null means every tab. A manager's are the manager tabs.
+    dashboardTabs: grant.tabs,
+    // A manager on the dashboard: every list is their team (manager-scope.ts).
+    ...(grant.teamScope ? { dashboardScope: 'team' as const } : {}),
     // Whether the dashboard shows the Support desk, and which desk.
     supportRole: supportRoleOf(user),
     // Whether the profile offers Edit details (own and their reports'); the server checks it again.
