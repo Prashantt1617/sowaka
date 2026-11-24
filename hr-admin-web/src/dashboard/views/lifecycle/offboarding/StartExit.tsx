@@ -124,65 +124,73 @@ export function StartExit({ onBack, onStarted, presetUserId }: { onBack: () => v
       { key: 'e', when: `Tl + ${gratuityDays}`, what: 'Gratuity, if eligible', owner: 'finance' },
     ];
 
+  // Simpler (24 Nov 2026, HR: "make this simpler"): what HR must decide up front (who, the type, the last
+  // day, notice, a successor for their team), the rest under More options; the plan as four dates and the
+  // template's steps with their counts, not every task.
+  const workingDaysAfter = (from: string, n: number) => {
+    let d = from; let left = n;
+    while (left > 0) { d = addDays(d, 1); const wd = new Date(`${d}T00:00:00Z`).getUTCDay(); if (wd !== 0 && wd !== 6) left -= 1; }
+    return d;
+  };
+  const accessEnds = lastDay ? ((tpl?.settings.accountCloses ?? 'tl_plus_1') === 'tl_plus_1' ? addDays(lastDay, 1) : lastDay) : '';
+  const dates: [string, string][] = lastDay ? [
+    ['Last working day', longDay(lastDay)],
+    ['App access ends', longDay(accessEnds)],
+    ['Final settlement by', longDay(workingDaysAfter(lastDay, settlementDays))],
+    ['Gratuity, if eligible, by', longDay(addDays(lastDay, gratuityDays))],
+  ] : [];
+  // The template's steps after the resignation itself (an exit HR starts is already accepted), with counts.
+  const STEP: Record<string, string> = { when_accepted: 'Once started', notice_period: 'Notice period', last_day: 'Last day', after_exit: 'After they leave' };
+  const steps = tpl ? Object.keys(STEP).map((k) => {
+    const list = tpl.tasks.filter((t) => t.phase === k && t.enabled && (!t.recommended || t.recommended.added) && (page || !/interview/i.test(t.title)));
+    return { key: k, name: STEP[k], people: list.filter((t) => t.ownerRole !== 'automatic'), auto: list.filter((t) => t.ownerRole === 'automatic') };
+  }).filter((x) => x.people.length + x.auto.length > 0) : [];
+  const [more, setMore] = useState(false);
+  const [openStep, setOpenStep] = useState<string | null>(null);
+  const startBtn = <button type="button" id="ob-start-exit" disabled={!ready || busy} onClick={() => void start()} className={btnClass('primary')} style={btn('primary')}>{busy ? 'Starting…' : 'Start exit'}</button>;
+  void plan;
+
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
       {presetUserId ? (
-        // Inside a profile: the actions sit on the card, not in the page head.
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, flex: 1 }}>Start an exit</h3>
-          <button type="button" id="ob-start-exit" disabled={!ready || busy} onClick={() => void start()} className={btnClass('primary')} style={btn('primary')}>{busy ? 'Starting…' : 'Start exit'}</button>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, flex: 1 }}>Start {emp ? `${firstName(emp.name)}'s` : 'an'} exit</h3>
+          {startBtn}
         </div>
       ) : (
         <PageActions>
           <button type="button" onClick={onBack} className={btnClass()} style={btn()}>Cancel</button>
-          <button type="button" id="ob-start-exit" disabled={!ready || busy} onClick={() => void start()} className={btnClass('primary')} style={btn('primary')}>{busy ? 'Starting…' : 'Start exit'}</button>
+          {startBtn}
         </PageActions>
       )}
-      <p className="pd-lead" style={{ marginBottom: 16 }}>For exits HR starts: retirement, end of contract, termination, or a resignation that came by email. Resignations sent from the app start on their own.</p>
       <div className="ob-two">
         <Card padded>
           <div className="ob-form">
-            <label className="f">Employee
-              <span className="pd-pick">
-                <select className="pd-inp" value={userId} onChange={(e) => setUserId(e.target.value)} style={{ width: '100%' }} disabled={!!presetUserId}>
-                  <option value="">Pick an employee</option>
-                  {people.map((e) => <option key={e.id} value={e.id}>{[e.name, e.role, e.team, e.employeeId !== '—' ? e.employeeId : ''].filter(Boolean).join(' · ')}</option>)}
-                </select>
-              </span>
-            </label>
+            {!presetUserId && (
+              <label className="f">Employee
+                <span className="pd-pick">
+                  <select className="pd-inp" value={userId} onChange={(e) => setUserId(e.target.value)} style={{ width: '100%' }}>
+                    <option value="">Pick an employee</option>
+                    {people.map((e) => <option key={e.id} value={e.id}>{[e.name, e.role, e.team, e.employeeId !== '—' ? e.employeeId : ''].filter(Boolean).join(' · ')}</option>)}
+                  </select>
+                </span>
+              </label>
+            )}
             <div className="f" style={{ display: 'grid', gap: 8, fontSize: 13, fontWeight: 600 }}>Exit type
               <div className="pd-seg" role="radiogroup" aria-label="Exit type">
                 {TYPES.map((t) => <button key={t.key} type="button" role="radio" aria-checked={type === t.key} className={type === t.key ? 'on' : ''} onClick={() => setType(t.key)}>{t.label}</button>)}
               </div>
-              <span className="hint">{meta.note}</span>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
               <label className="f">Last working day
                 <input type="date" className="pd-inp" value={lastDay} onChange={(e) => setLastDay(e.target.value)} />
+                {type === 'resignation' && typeof noticeDays === 'number' && <span className="hint">{noticeDays}-day notice from today, by the template</span>}
                 {lastDay && lastDay < todayKey() && <span className="hint" style={{ color: 'var(--warn)' }}>Already past: {name}'s app turns off as you start this.</span>}
               </label>
               <label className="f">Notice
                 <span className="pd-pick">
                   <select className="pd-inp" value={notice} onChange={(e) => setNotice(e.target.value as NoticeHandling)} style={{ width: '100%' }}>
                     {[meta.notice, ...(['waived', 'recovered', 'paid_in_lieu'] as NoticeHandling[]).filter((n) => n !== meta.notice)].map((n) => <option key={n} value={n}>{NOTICE_LABEL[n]}</option>)}
-                  </select>
-                </span>
-              </label>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-              <label className="f">Offboarding template
-                <span className="pd-pick">
-                  <select className="pd-inp" value={templateId} onChange={(e) => setTemplateId(e.target.value)} style={{ width: '100%' }}>
-                    <option value="">{templates.find((t) => t.isDefault)?.name ?? 'Standard'} (default)</option>
-                    {templates.filter((t) => !t.isDefault).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
-                </span>
-              </label>
-              <label className="f">Reporting manager
-                <span className="pd-pick">
-                  <select className="pd-inp" value={manager} onChange={(e) => setManager(e.target.value)} style={{ width: '100%' }}>
-                    <option value="">No manager</option>
-                    {others.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
                   </select>
                 </span>
               </label>
@@ -195,31 +203,82 @@ export function StartExit({ onBack, onStarted, presetUserId }: { onBack: () => v
                     {others.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
                   </select>
                 </span>
-                <span className="hint">They move the day after the last day (at once when the app turns off now).</span>
               </label>
             )}
-            <label className="f">Internal note · HR only
-              <textarea className="pd-inp" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder={type === 'resignation' ? `Resignation received by email on ${longDay(todayKey())}.` : ''} />
-            </label>
-            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13 }}>
-              <input type="checkbox" checked={tellManager} onChange={(e) => setTellManager(e.target.checked)} style={{ marginTop: 3 }} />
-              <span><b style={{ fontWeight: 600 }}>Tell the manager now</b><span className="hint" style={{ display: 'block' }}>They get the handover checklist to fill in.</span></span>
-            </label>
-            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13 }}>
-              <input type="checkbox" checked={page} onChange={(e) => setPage(e.target.checked)} style={{ marginTop: 3 }} />
-              <span><b style={{ fontWeight: 600 }}>Show the Off-boarding page in the employee's app</b><span className="hint" style={{ display: 'block' }}>{meta.pageNote}</span></span>
-            </label>
+            <button type="button" onClick={() => setMore(!more)} aria-expanded={more}
+              style={{ alignSelf: 'flex-start', border: 0, background: 'none', padding: 0, font: 'inherit', fontSize: 13.5, color: 'var(--accent)', cursor: 'pointer' }}>
+              {more ? 'Fewer options' : 'More options'} <span style={{ color: 'var(--ink-3)' }}>· template, manager, note, who is told</span>
+            </button>
+            {more && (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+                  <label className="f">Offboarding template
+                    <span className="pd-pick">
+                      <select className="pd-inp" value={templateId} onChange={(e) => setTemplateId(e.target.value)} style={{ width: '100%' }}>
+                        <option value="">{templates.find((t) => t.isDefault)?.name ?? 'Standard'} (default)</option>
+                        {templates.filter((t) => !t.isDefault).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                    </span>
+                  </label>
+                  <label className="f">Reporting manager
+                    <span className="pd-pick">
+                      <select className="pd-inp" value={manager} onChange={(e) => setManager(e.target.value)} style={{ width: '100%' }}>
+                        <option value="">No manager</option>
+                        {others.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                      </select>
+                    </span>
+                  </label>
+                </div>
+                <label className="f">Internal note · HR only
+                  <textarea className="pd-inp" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder={type === 'resignation' ? `Resignation received by email on ${longDay(todayKey())}.` : ''} />
+                </label>
+                <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 13 }}>
+                  <input type="checkbox" checked={tellManager} onChange={(e) => setTellManager(e.target.checked)} /> Tell the manager now (they get the handover checklist)
+                </label>
+                <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 13 }}>
+                  <input type="checkbox" checked={page} onChange={(e) => setPage(e.target.checked)} /> Show the off-boarding page in {name}'s app
+                </label>
+              </>
+            )}
           </div>
         </Card>
         <Card padded>
           <div className="pd-card-h"><h3>What happens next</h3></div>
-          <div className="hint" style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 10 }}>From the {templateName} offboarding template, dated from the last working day{lastDay ? ` (${longDay(lastDay)})` : ''}.</div>
-          <div className="ob-plan">
-            {plan.map((p) => (
-              <div key={p.key}><b>{p.when === 'Tl' && lastDay ? longDay(lastDay) : p.when}</b><span>{p.what}</span><OwnerChip owner={{ role: p.owner }} /></div>
-            ))}
-          </div>
-          <div className="pd-note" style={{ marginTop: 14, fontSize: 12.5 }}>From the template: final settlement within {settlementDays} working {settlementDays === 1 ? 'day' : 'days'} of the last day, gratuity within {gratuityDays} days{typeof noticeDays === 'number' ? `, ${noticeDays}-day notice` : ''}. Whether salary is held during notice comes from Payroll › Exit settings.</div>
+          {!lastDay ? <div className="hint" style={{ fontSize: 13, color: 'var(--ink-3)' }}>Pick the last working day to see the dates.</div> : (
+            <div style={{ display: 'grid', gap: 2, marginBottom: 14 }}>
+              {dates.map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--line)', fontSize: 13.5 }}>
+                  <span style={{ color: 'var(--ink-3)' }}>{k}</span><b style={{ fontWeight: 500 }}>{v}</b>
+                </div>
+              ))}
+            </div>
+          )}
+          {steps.length > 0 && (
+            <>
+              <div className="hint" style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 6 }}>Tasks from the {templateName} template</div>
+              {steps.map((st) => (
+                <div key={st.key} style={{ borderTop: '1px solid var(--line)' }}>
+                  <button type="button" onClick={() => setOpenStep(openStep === st.key ? null : st.key)} aria-expanded={openStep === st.key}
+                    style={{ width: '100%', border: 0, background: 'none', padding: '10px 0', display: 'flex', alignItems: 'center', gap: 10, font: 'inherit', fontSize: 13.5, color: 'var(--ink)', cursor: 'pointer', textAlign: 'left' }}>
+                    <span style={{ flex: 1 }}>{st.name}</span>
+                    <span style={{ color: 'var(--ink-3)', fontSize: 12.5 }}>{st.people.length} {st.people.length === 1 ? 'task' : 'tasks'}{st.auto.length ? ` · ${st.auto.length} automatic` : ''}</span>
+                    <span aria-hidden style={{ color: 'var(--ink-3)', transform: openStep === st.key ? 'rotate(180deg)' : undefined }}>⌄</span>
+                  </button>
+                  {openStep === st.key && (
+                    <div style={{ display: 'grid', gap: 6, padding: '0 0 10px' }}>
+                      {[...st.people, ...st.auto].map((t) => (
+                        <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                          <span style={{ flex: 1, minWidth: 0 }}>{t.title}</span>
+                          <span style={{ color: 'var(--ink-3)', fontSize: 12 }}>{ruleText(t.dueRule, t.dueLabel)}</span>
+                          <OwnerChip owner={{ role: t.ownerRole as OwnerRole }} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
         </Card>
       </div>
     </div>
