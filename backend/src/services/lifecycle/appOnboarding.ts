@@ -5,6 +5,7 @@
  * intro post, people to meet, starter tasks, 1:1 notes, meetings, surveys).
  */
 import { offboardingMe } from './offboarding';
+import { ensureRecentJoinerJourney } from './recentJoiners';
 import { portalJourneyForAppUser } from './portalAuth';
 import { randomUUID } from 'node:crypto';
 import {
@@ -83,7 +84,10 @@ const tileVisible = (j: Journey, now = new Date()) =>
 export async function lifecycleMe(me: Me, now = new Date()) {
   if (!(await lifecycleEnabled(me.org))) return { enabled: false };
   const out: Record<string, unknown> = { enabled: true };
-  const onboarding = await journeys().find({ userId: me.userId, kind: 'onboarding', closedAt: { $exists: false } }).sort({ createdAt: -1 }).limit(1).next();
+  const findOnboarding = () => journeys().find({ userId: me.userId, kind: 'onboarding', closedAt: { $exists: false } }).sort({ createdAt: -1 }).limit(1).next();
+  let onboarding = await findOnboarding();
+  // Joined within the last month with no onboarding yet: it starts now, from the company's default template.
+  if (!onboarding && (await ensureRecentJoinerJourney(me, now))) onboarding = await findOnboarding();
   if (onboarding) {
     const j = strip(onboarding);
     const tasks = await tasksOf(j.id);

@@ -695,6 +695,33 @@ async function main() {
     ['Joins tomorrow', 'Joins today', 'Joined today', 'Joined Mon 30 Nov']);
   ok('Kept per company and dropped by every lifecycle write', readCache.kindsChangedBy('/lifecycle/team/joiners/x/review').includes('lc-new-joiners' as never));
 
+  section('Recent joiners get onboarding on their own (joined within the last month, none yet)');
+  {
+    const recent = await import('../services/lifecycle/recentJoiners');
+    const ago = (n: number) => new Date(Date.now() - n * 86_400_000);
+    await users().insertMany([
+      person('rj1', 'Recent Joiner', { joiningDate: ago(5), managerUserId: 'mgr', department: 'Operations' }),
+      person('rj2', 'Old Hand', { joiningDate: ago(40) }),
+      person('rj3', 'Gone Already', { joiningDate: ago(3), lifecycleStatus: 'offboarded' }),
+      person('rj4', 'Stale Manager', { joiningDate: ago(2), managerUserId: 'nobody-here' }),
+    ] as never[]);
+    const dry = await recent.backfillRecentJoiners({ apply: false, org: ORG });
+    eq('Dry run: lists the recent joiners only (not 40 days ago, not offboarded), writes nothing',
+      [dry.map((r) => r.userId).filter((u) => u.startsWith('rj')).sort(), await journeys().countDocuments({ userId: { $in: ['rj1', 'rj4'] } })], [['rj1', 'rj4'], 0]);
+    const meRj = await app.lifecycleMe(me('rj1', 'Recent Joiner')) as { onboarding?: { tileVisible: boolean } };
+    const j1 = await journeys().findOne({ userId: 'rj1', kind: 'onboarding' });
+    eq('Opening the app starts it: joined on their joining date, the tile shows, the template’s tasks',
+      [!!j1, j1?.status, j1?.tj, j1?.managerUserId, meRj.onboarding?.tileVisible, (await joiner.joinerOnboarding(me('rj1', 'Recent Joiner'))).tasks.length > 0],
+      [true, 'joined', rules.addDaysKey(today, -5), 'mgr', true, true]);
+    await app.lifecycleMe(me('rj1', 'Recent Joiner'));
+    eq('…never twice', await journeys().countDocuments({ userId: 'rj1', kind: 'onboarding' }), 1);
+    eq('Joined 40 days ago, or offboarded: nothing', [await recent.ensureRecentJoinerJourney({ userId: 'rj2', org: ORG }), await recent.ensureRecentJoinerJourney({ userId: 'rj3', org: ORG })], [false, false]);
+    const applied = await recent.backfillRecentJoiners({ apply: true, org: ORG });
+    eq('Backfill: the one left (a manager not at the company is left off, not refused)',
+      [applied.filter((r) => r.userId.startsWith('rj')).map((r) => [r.userId, !!r.journeyId]), (await journeys().findOne({ userId: 'rj4' }))?.managerUserId], [[['rj4', true]], undefined]);
+    eq('…and again: nothing to do', (await recent.backfillRecentJoiners({ apply: true, org: ORG })).filter((r) => r.userId.startsWith('rj')).length, 0);
+  }
+
   await closeDb();
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
