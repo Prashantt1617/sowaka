@@ -86,7 +86,7 @@ defineTools(
     name: 'search_people',
     area: 'people',
     label: (i) => (i.reportsTo ? `${i.reportsTo}'s team` : i.text ? `People matching "${i.text}"` : 'The employee list'),
-    description: "Find employees in this company. Filter by free text (name, employee ID, email, designation, department, location), by department, designation, location, a manager's team (reportsTo = manager's name; includeIndirect for everyone below them), employee type, joined after/before (YYYY-MM-DD), or people missing a detail. Each row has userId, name, employeeId, designation, department, location, manager, type, joining date, the org path (managers up to the top) and `empty`: the fields blank on the record. Fields not in the result are hidden, not empty.",
+    description: "Find employees in this company. Filter by free text (name, employee ID, email, designation, department, location), by department, designation, location, a manager's team (reportsTo = manager's name; includeIndirect for everyone below them), employee type, joined after/before (YYYY-MM-DD, both days included), or people missing a detail. For \"who joined in the last N days / this month / since X\" ALWAYS pass joinedAfter (and joinedBefore when there is an end) instead of reading the whole list, and give `total` as the number: rows are capped by limit, so never count or filter the rows yourself. Each row has userId, name, employeeId, designation, department, location, manager, type, joining date, the org path (managers up to the top) and `empty`: the fields blank on the record. Fields not in the result are hidden, not empty.",
     input_schema: {
       type: 'object',
       properties: {
@@ -126,6 +126,8 @@ defineTools(
         return true;
       });
       const limit = num(i.limit, 25, 1, 200);
+      // Joining filters list the newest joiner first (24 Nov: a miscount came from reading the roster in name order).
+      if (typeof i.joinedAfter === 'string' || typeof i.joinedBefore === 'string') rows.sort((a, b) => (isoDay(b.joiningDate) ?? '').localeCompare(isoDay(a.joiningDate) ?? ''));
       return {
         data: {
           total: rows.length,
