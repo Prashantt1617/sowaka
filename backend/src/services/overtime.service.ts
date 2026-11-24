@@ -1,3 +1,4 @@
+import { assertInTeam } from './manager-scope';
 import { ObjectId } from 'mongodb';
 import { overtimeRequests, shiftAssignments, users } from '../config/db';
 import {
@@ -218,6 +219,7 @@ export async function decideOvertime(
   const requestId = new ObjectId(requestIdInput);
   const request = await overtimeRequests().findOne({ _id: requestId });
   if (!request) throw new OvertimeError(404, 'Overtime request not found');
+  await assertInTeam(adminUserId, request.userId);
   if (request.managerUserId !== managerUserId) {
     throw new OvertimeError(403, 'Only the assigned manager can decide this overtime request');
   }

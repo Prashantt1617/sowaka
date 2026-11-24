@@ -1,3 +1,4 @@
+import { assertInTeam } from './manager-scope';
 import { ObjectId } from 'mongodb';
 import { attendanceRecords, leaveBalanceAdjustments, leaves, leaveYearEnds, overtimeRequests, users } from '../config/db';
 import { Leave, LeaveCancelRequest, LeaveStatus } from '../models/leave.model';
@@ -1214,6 +1215,8 @@ export async function adminDecideLeave(
   if (leave.userId === adminUserId) {
     throw new LeaveError(403, 'You cannot override your own request');
   }
+  // A manager on the dashboard decides only for their team.
+  await assertInTeam(adminUserId, leave.userId);
   if (leave.status === 'cancelled') {
     throw new LeaveError(409, 'The employee cancelled this leave');
   }
