@@ -175,6 +175,15 @@ export interface AttendanceOverride {
   setByUserId: string;
   setByName?: string;
   setAt: Date;
+  /**
+   * An "On leave" mark (24 Nov 2026): the leave type the day comes out of, and the approved leave row
+   * the mark wrote for it (so the balance drops by a day and the leave shows in their history). Absent
+   * when an approved leave already covered the day. `unpaid` when the type is leave without pay: the
+   * day then grades as unpaid leave, which payroll docks.
+   */
+  leaveType?: string;
+  leaveId?: string;
+  unpaid?: boolean;
 }
 
 /**

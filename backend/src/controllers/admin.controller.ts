@@ -354,7 +354,7 @@ export async function setCalendarDayHandler(req: Request, res: Response, next: N
       adminUserId(req),
       String(req.params.userId ?? ''),
       String(req.params.date ?? ''),
-      (req.body ?? {}) as { status?: unknown; note?: unknown },
+      (req.body ?? {}) as { status?: unknown; note?: unknown; leaveType?: unknown },
     );
     res.status(200).json({ success: true, mark: { ...mark, setAt: mark.setAt.toISOString() } });
   } catch (error) { next(error); }

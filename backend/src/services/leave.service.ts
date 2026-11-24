@@ -306,6 +306,8 @@ export async function getMyLeaves(userId: string): Promise<LeaveView[]> {
 function leaveChanged(userId: string): void {
   leaveChangedNow(userId).catch(() => undefined);
 }
+/** For HR's "On leave" day marks (attendance-override.service), which write and cancel leave rows. */
+export const leaveRowChanged = leaveChanged;
 
 /**
  * The work of `leaveChanged`. The company is the signed-in person's when known (no lookup), so the

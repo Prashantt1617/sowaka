@@ -45,6 +45,7 @@ import { downloadTdsSheetPdf } from '../tdsSheet';
 import type { CalendarDayDTO, CalendarDayStatus, EmployeeCalendarDTO, HrDayStatus, LeaveBalanceItemDTO } from '../../services/hrms';
 import { getEmployeeLeaveBalance, setEmployeeLeaveTotal } from '../../services/hrms';
 import { btn, btnClass } from '../ds';
+import { MarkDay } from './MarkDay';
 
 // —— Deterministic per-person derivations ————————————————————————————————
 const GENDERS = ['Male', 'Female'];
@@ -565,7 +566,7 @@ const LEAVE_NAMES: Record<string, string> = { sick: 'Sick leave', casual: 'Casua
 // The current month by Indian time: the month HR can still correct.
 const thisMonth = () => new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 7);
 // What HR can mark a day as, in the order the dialog offers them.
-const HR_CHOICES: HrDayStatus[] = ['present', 'half_day', 'absent', 'on_leave', 'week_off', 'holiday'];
+// The day dialog is MarkDay.tsx's, shared with the Company calendar (it asks which leave an "On leave" day comes out of).
 const shiftMonth = (month: string, by: number) => {
   const [y, m] = month.split('-').map(Number);
   const d = new Date(Date.UTC(y, m - 1 + by, 1));
@@ -691,10 +692,10 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
     setCal(fresh);
     if (fresh.month === thisMonth()) onChanged(fresh);
   };
-  const mark = async (day: CalendarDayDTO, status: HrDayStatus | null, note: string) => {
+  const mark = async (day: CalendarDayDTO, status: HrDayStatus | null, note: string, leaveType?: string) => {
     setSaving(true);
     try {
-      if (status) await setCalendarDay(userId, day.date, status, note.trim() || undefined);
+      if (status) await setCalendarDay(userId, day.date, status, note.trim() || undefined, leaveType);
       else await clearCalendarDay(userId, day.date);
       await reload();
       setEditing(null);
@@ -815,53 +816,8 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
         </div>
       </div>
       {(shown?.days.some(dayEditable) ?? monthEditable) && <div className="pd-subnote" style={{ marginTop: 12 }}>{highlight ? 'Ringed days cost pay. ' : ''}{markHint}. The mark replaces what the punches, leave or holidays say, on the dashboard, in payroll and in the employee's app.</div>}
-      {editing && <MarkDay day={editing} saving={saving} onClose={() => setEditing(null)} onSave={(status, note) => void mark(editing, status, note)} />}
+      {editing && <MarkDay day={editing} userId={userId} saving={saving} onClose={() => setEditing(null)} onSave={(status, note, leaveType) => void mark(editing, status, note, leaveType)} />}
     </section>
-  );
-}
-
-/** Pick what one day was. Shows what it is now and, when HR already marked it, what it was before. */
-function MarkDay({ day, saving, onClose, onSave }: { day: CalendarDayDTO; saving: boolean; onClose: () => void; onSave: (status: HrDayStatus | null, note: string) => void }) {
-  const [status, setStatus] = useState<HrDayStatus>(day.hr && HR_CHOICES.includes(day.status as HrDayStatus) ? (day.status as HrDayStatus) : 'present');
-  const [note, setNote] = useState(day.hr?.note ?? '');
-  const recorded = day.hr ? CAL_TONE[day.hr.previousStatus] : CAL_TONE[day.status];
-  const when = new Date(`${day.date}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
-  return (
-    <div className="pd-scrim">
-      <div className="bg" onClick={onClose} />
-      <div className="pd-modal" style={{ width: 'min(440px, 100%)' }}>
-        <div className="pd-md-h">
-          <div>
-            <h3>{when}</h3>
-            <div className="pd-md-sub">
-              Recorded as <strong style={{ color: recorded.fg }}>{recorded.label}</strong>
-              {day.hr && <> · now <strong style={{ color: CAL_TONE[day.status].fg }}>{CAL_TONE[day.status].label}</strong>, marked by {day.hr.setByName ?? 'HR'}</>}
-            </div>
-          </div>
-        </div>
-        <div className="pd-md-b">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-            {HR_CHOICES.map((choice) => {
-              const tone = CAL_TONE[choice];
-              const on = status === choice;
-              return (
-                <button key={choice} type="button" onClick={() => setStatus(choice)}
-                  style={{ border: `1.5px solid ${on ? tone.fg : 'transparent'}`, background: tone.bg, color: tone.fg, borderRadius: 999, height: 40, padding: '0 6px', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  {tone.label}
-                </button>
-              );
-            })}
-          </div>
-          <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} placeholder="Note (optional), e.g. client visit approved by email"
-            className="pd-inp" style={{ width: '100%' }} />
-        </div>
-        <div className="pd-md-f">
-          {day.hr && <button type="button" disabled={saving} onClick={() => onSave(null, '')} className="pd-btn ghost" style={{ color: 'var(--bad)', paddingLeft: 0 }}>Remove mark</button>}
-          <button type="button" onClick={onClose} className="pd-btn" style={{ marginLeft: 'auto' }}>Cancel</button>
-          <button type="button" disabled={saving} onClick={() => onSave(status, note)} className="pd-btn primary">{saving ? 'Saving…' : 'Save'}</button>
-        </div>
-      </div>
-    </div>
   );
 }
 

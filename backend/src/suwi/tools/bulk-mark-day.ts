@@ -26,7 +26,7 @@ const HAD_WORDS: Record<Had, string> = {
   half_day: 'had a half day', absent: 'were absent', on_leave: 'were on leave', missed_punch: 'missed a punch',
 };
 
-type Person = { userId: string; name: string; previous: { status: HrDayStatus; note: string } | null };
+type Person = { userId: string; name: string; previous: { status: HrDayStatus; note: string; leaveType?: string } | null };
 type Report = Awaited<ReturnType<typeof attendanceReport>>;
 
 /** Each person's day on `date` from the report: the graded status, late minutes and whether they punched at all. */
@@ -58,6 +58,7 @@ defineTools({
       date: { type: 'string', description: 'YYYY-MM-DD: the day to mark' },
       status: { type: 'string', enum: HR_DAY_STATUSES },
       note: { type: 'string', description: 'Why, in a few words (shown on the calendar), e.g. "Holiday for working on 10 Nov"' },
+      leaveType: { type: 'string', description: 'For on_leave: the leave type every one of them takes the day from (key or name, e.g. casual). Someone without a day left in it is listed as not marked when HR confirms.' },
       everyone: { type: 'boolean' },
       department: { type: 'string' }, location: { type: 'string' }, designation: { type: 'string' },
       manager: { type: 'string', description: "Manager's name: only their reports" },
@@ -76,6 +77,8 @@ defineTools({
     if (!isDate(date)) throw new Error('The date must be YYYY-MM-DD');
     if (!HR_DAY_STATUSES.includes(status)) throw new Error(`Mark the day as one of: ${HR_DAY_STATUSES.join(', ')}`);
     if (date > ctx.today) throw new Error(`${niceDate(date)} has not happened yet`);
+    const leaveType = str(i.leaveType);
+    if (status === 'on_leave' && !leaveType) throw new Error('Say which leave type the day comes out of (casual, sick, earned, or leave without pay): marking "On leave" takes a day from that balance');
     const { M, openRun } = await markableMonth(ctx.org, date);
     const onDate = str(i.onDate);
     const had = (HAD.includes(str(i.hadStatus) as Had) ? str(i.hadStatus) : 'present') as Had;
@@ -99,7 +102,7 @@ defineTools({
     const ids = people.map((p) => p.userId);
     const [joined, existing] = await Promise.all([
       users().find({ org: ctx.org, userId: { $in: ids } }, { projection: { _id: 0, userId: 1, joiningDate: 1 } }).toArray(),
-      attendanceOverrides().find({ org: ctx.org, userId: { $in: ids }, workDate: date }, { projection: { _id: 0, userId: 1, status: 1, note: 1 } }).toArray(),
+      attendanceOverrides().find({ org: ctx.org, userId: { $in: ids }, workDate: date }, { projection: { _id: 0, userId: 1, status: 1, note: 1, leaveType: 1 } }).toArray(),
     ]);
     const joinedOn = new Map(joined.map((u) => [u.userId, u.joiningDate ? new Date(u.joiningDate).toISOString().slice(0, 10) : '']));
     const marked = new Map(existing.map((o) => [o.userId, o]));
@@ -115,7 +118,7 @@ defineTools({
       const now = markDay.get(p.userId);
       const current = prev ? `${LABEL[prev.status] ?? prev.status} (HR)` : now ? LABEL[now.status] ?? now.status : 'Not on their calendar';
       gained += Math.max(0, lopOf(prev?.status ?? now?.status ?? '') - lopOf(status));
-      chosen.push({ userId: p.userId, name: p.name, previous: prev ? { status: prev.status as HrDayStatus, note: prev.note ?? '' } : null });
+      chosen.push({ userId: p.userId, name: p.name, previous: prev ? { status: prev.status as HrDayStatus, note: prev.note ?? '', ...(prev.leaveType ? { leaveType: prev.leaveType } : {}) } : null });
       rows.push({ name: p.name, current, next: LABEL[status] });
     }
     if (!chosen.length) return { data: { prepared: false, message: 'Everyone picked is left out (see skipped).', skipped: skipped.slice(0, 20) } };
@@ -126,14 +129,14 @@ defineTools({
       summary: `${chosen.length} ${chosen.length === 1 ? 'person' : 'people'} (${how}) get ${niceDate(date)} marked ${LABEL[status]}${note ? ` ("${note}")` : ''}.${skipped.length ? ` ${skipped.length} left out.` : ''}`,
       lines: [
         { text: `Who: ${how}. ${chosen.length} ${chosen.length === 1 ? 'person' : 'people'} in the table below.` },
-        { text: `New: ${niceDate(date)} becomes ${LABEL[status]}, marked by ${ctx.user.name}${note ? ` with the note "${note}"` : ''}. HR's mark replaces the graded day everywhere: the report, the calendar, payroll and the app.` },
+        { text: `New: ${niceDate(date)} becomes ${LABEL[status]}${status === 'on_leave' ? ` (${leaveType}: one day from each person's balance; anyone with none left is reported when you confirm)` : ''}, marked by ${ctx.user.name}${note ? ` with the note "${note}"` : ''}. HR's mark replaces the graded day everywhere: the report, the calendar, payroll and the app.` },
         { text: gained > 0 ? `Pay: up to +${gained} paid day${gained === 1 ? '' : 's'} in all for ${M}, from days that were absent or half days (a paid-days template that pays every day is not affected).` : `Pay: no loss of pay changes for ${M} from what the days show now.`, tone: 'info' },
         { text: openRun ? `${M} is an earlier month, allowed because its payroll run is still open; the run picks up the change when it is recalculated.` : `Only the current month can be marked; after ${M}'s payroll is submitted, these days can no longer be changed.` },
         ...(skipped.length ? [{ text: `Left out: ${skipped.length} (listed under the table).`, tone: 'warn' as const }] : []),
         { text: 'Undo puts every day back as it was (HR\'s earlier mark, or what the punches say).', tone: 'info' },
       ],
       effectiveFrom: date, undoable: true,
-      payload: { date, status, note, byUserId: ctx.userId, people: chosen },
+      payload: { date, status, note, ...(status === 'on_leave' ? { leaveType } : {}), byUserId: ctx.userId, people: chosen },
     });
     await proposalsCol().updateOne({ _id: new ObjectId(proposalId) }, { $set: { preview: { field: `${niceDate(date)}`, rows: rows.slice(0, 300), skipped: skipped.slice(0, 100) } } });
     return {
@@ -145,10 +148,10 @@ defineTools({
 
 defineExecutor('bulk_correct_day', {
   async run(p) {
-    const { date, status, note, byUserId, people } = p.payload as { date: string; status: HrDayStatus; note: string; byUserId: string; people: Person[] };
+    const { date, status, note, leaveType, byUserId, people } = p.payload as { date: string; status: HrDayStatus; note: string; leaveType?: string; byUserId: string; people: Person[] };
     const failed: string[] = [];
     for (const x of people) {
-      try { await setAttendanceOverride(byUserId, x.userId, date, { status, note }); }
+      try { await setAttendanceOverride(byUserId, x.userId, date, { status, note, leaveType }); }
       catch (e) { failed.push(`${x.name} (${(e as Error).message})`); }
     }
     const done = people.length - failed.length;
