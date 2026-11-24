@@ -12,6 +12,9 @@ import { api } from '../../../../services/http';
 import { startExit } from '../../../../services/lifecycleOffboarding';
 import type { ExitType, NoticeHandling } from '../../../../services/lifecycleOffboarding';
 import { OwnerChip, addDays, firstName, longDay, todayKey } from './parts';
+import { getTemplate } from '../../../../services/lifecycle';
+import type { LifecycleTemplate } from '../../../../services/lifecycle';
+import { ruleText } from '../format';
 import type { OwnerRole } from '../../../../services/lifecycleOffboarding';
 
 const TYPES: { key: ExitType; label: string; note: string; notice: NoticeHandling; page: boolean; pageNote: string; interview: boolean }[] = [
@@ -26,9 +29,13 @@ const NOTICE_LABEL: Record<NoticeHandling, string> = {
 };
 type Template = { id: string; name: string; isDefault: boolean; active?: boolean };
 
-export function StartExit({ onBack, onStarted }: { onBack: () => void; onStarted: (userId: string) => void }) {
+/**
+ * `presetUserId`: started from that employee's profile (People › Employees › Exit), so the employee is
+ * fixed and the page is a card inside the profile, not a page of its own.
+ */
+export function StartExit({ onBack, onStarted, presetUserId }: { onBack: () => void; onStarted: (userId: string) => void; presetUserId?: string }) {
   const s = useStore();
-  const [userId, setUserId] = useState('');
+  const [userId, setUserId] = useState(presetUserId ?? '');
   const [type, setType] = useState<ExitType>('resignation');
   const meta = TYPES.find((t) => t.key === type)!;
   const [lastDay, setLastDay] = useState('');
@@ -50,8 +57,27 @@ export function StartExit({ onBack, onStarted }: { onBack: () => void; onStarted
       .catch(() => undefined);
     return () => { live = false; };
   }, []);
-  // A new type starts from its own defaults.
-  useEffect(() => { setNotice(meta.notice); setPage(meta.page); }, [type]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The template this exit follows, whole (24 Nov 2026: Record exit follows the offboarding template): its
+  // rules (notice, settlement, gratuity, which exits see the app page) and its tasks are what this page shows.
+  const chosenId = templateId || templates.find((t) => t.isDefault)?.id || '';
+  const [tpl, setTpl] = useState<LifecycleTemplate | null>(null);
+  useEffect(() => {
+    let live = true;
+    if (!chosenId) { setTpl(null); return; }
+    getTemplate(chosenId).then((t) => { if (live) setTpl(t); }).catch(() => { if (live) setTpl(null); });
+    return () => { live = false; };
+  }, [chosenId]);
+  // A new type (or template) starts from its own defaults: the template says which exits see the app page.
+  useEffect(() => {
+    setNotice(meta.notice);
+    const pageFor = tpl?.settings.appPageFor;
+    setPage(pageFor ? pageFor.includes(type) : meta.page);
+  }, [type, tpl]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A resignation's last day starts at today + the template's notice period, until HR picks one.
+  const noticeDays = tpl?.settings.noticeDays;
+  useEffect(() => {
+    if (type === 'resignation' && !lastDay && typeof noticeDays === 'number') setLastDay(addDays(todayKey(), noticeDays));
+  }, [type, noticeDays]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const people = useMemo(() => s.emps.filter((e) => !e.exit).sort((a, b) => a.name.localeCompare(b.name)), [s.emps]);
   const emp = s.emps.find((e) => e.id === userId);
@@ -79,30 +105,46 @@ export function StartExit({ onBack, onStarted }: { onBack: () => void; onStarted
   };
 
   // HRExitStart: the page names itself, with the way back beside the title and Cancel / Start exit on the right.
-  usePageHead({ title: 'Start an exit', eyebrow: 'Employee lifecycle · Offboarding', onBack, backLabel: 'Back to offboarding' });
-  const plan: { when: string; what: string; owner: OwnerRole }[] = [
-    { when: 'On start', what: 'Handover checklist', owner: 'manager' },
-    { when: 'On start', what: 'IT, Admin and Finance told', owner: 'automatic' },
-    ...(meta.interview && page ? [{ when: 'Tl − 5', what: 'Exit interview opens', owner: 'automatic' as const }] : []),
-    { when: 'Tl', what: 'Laptop, ID and access returned', owner: 'it' },
-    { when: 'Tl + 1', what: 'App account closes', owner: 'automatic' },
-    { when: 'Tl + 2 working days', what: 'Settlement PDF emailed', owner: 'hr' },
-    { when: 'Tl + 30', what: 'Gratuity, if eligible', owner: 'finance' },
-  ];
+  usePageHead(presetUserId ? null : { title: 'Start an exit', eyebrow: 'Employee lifecycle · Offboarding', onBack, backLabel: 'Back to offboarding' });
+  const PHASE_ORDER = ['resignation', 'when_accepted', 'notice_period', 'last_day', 'after_exit'];
+  const settlementDays = tpl?.settings.settlementWorkingDays ?? 2;
+  const gratuityDays = tpl?.settings.gratuityDays ?? 30;
+  const plan: { key: string; when: string; what: string; owner: OwnerRole }[] = tpl
+    ? tpl.tasks
+      .filter((t) => t.enabled && (!t.recommended || t.recommended.added))
+      // The exit interview only where the app page is on.
+      .filter((t) => page || !/interview/i.test(t.title))
+      .sort((a, b) => PHASE_ORDER.indexOf(a.phase) - PHASE_ORDER.indexOf(b.phase) || a.order - b.order)
+      .map((t) => ({ key: t.id, when: ruleText(t.dueRule, t.dueLabel), what: t.title, owner: t.ownerRole as OwnerRole }))
+    : [
+      { key: 'a', when: 'On start', what: 'Handover checklist', owner: 'manager' },
+      { key: 'b', when: 'On start', what: 'IT, Admin and Finance told', owner: 'automatic' },
+      { key: 'c', when: 'Tl', what: 'Laptop, ID and access returned', owner: 'it' },
+      { key: 'd', when: `Tl + ${settlementDays} working days`, what: 'Settlement PDF emailed', owner: 'hr' },
+      { key: 'e', when: `Tl + ${gratuityDays}`, what: 'Gratuity, if eligible', owner: 'finance' },
+    ];
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
-      <PageActions>
-        <button type="button" onClick={onBack} className={btnClass()} style={btn()}>Cancel</button>
-        <button type="button" id="ob-start-exit" disabled={!ready || busy} onClick={() => void start()} className={btnClass('primary')} style={btn('primary')}>{busy ? 'Starting…' : 'Start exit'}</button>
-      </PageActions>
+      {presetUserId ? (
+        // Inside a profile: the actions sit on the card, not in the page head.
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, flex: 1 }}>Start an exit</h3>
+          <button type="button" id="ob-start-exit" disabled={!ready || busy} onClick={() => void start()} className={btnClass('primary')} style={btn('primary')}>{busy ? 'Starting…' : 'Start exit'}</button>
+        </div>
+      ) : (
+        <PageActions>
+          <button type="button" onClick={onBack} className={btnClass()} style={btn()}>Cancel</button>
+          <button type="button" id="ob-start-exit" disabled={!ready || busy} onClick={() => void start()} className={btnClass('primary')} style={btn('primary')}>{busy ? 'Starting…' : 'Start exit'}</button>
+        </PageActions>
+      )}
       <p className="pd-lead" style={{ marginBottom: 16 }}>For exits HR starts: retirement, end of contract, termination, or a resignation that came by email. Resignations sent from the app start on their own.</p>
       <div className="ob-two">
         <Card padded>
           <div className="ob-form">
             <label className="f">Employee
               <span className="pd-pick">
-                <select className="pd-inp" value={userId} onChange={(e) => setUserId(e.target.value)} style={{ width: '100%' }}>
+                <select className="pd-inp" value={userId} onChange={(e) => setUserId(e.target.value)} style={{ width: '100%' }} disabled={!!presetUserId}>
                   <option value="">Pick an employee</option>
                   {people.map((e) => <option key={e.id} value={e.id}>{[e.name, e.role, e.team, e.employeeId !== '—' ? e.employeeId : ''].filter(Boolean).join(' · ')}</option>)}
                 </select>
@@ -174,10 +216,10 @@ export function StartExit({ onBack, onStarted }: { onBack: () => void; onStarted
           <div className="hint" style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 10 }}>From the {templateName} offboarding template, dated from the last working day{lastDay ? ` (${longDay(lastDay)})` : ''}.</div>
           <div className="ob-plan">
             {plan.map((p) => (
-              <div key={p.what}><b>{p.when === 'Tl' && lastDay ? longDay(lastDay) : p.when === 'Tl + 30' && lastDay ? longDay(addDays(lastDay, 30)) : p.when}</b><span>{p.what}</span><OwnerChip owner={{ role: p.owner }} /></div>
+              <div key={p.key}><b>{p.when === 'Tl' && lastDay ? longDay(lastDay) : p.when}</b><span>{p.what}</span><OwnerChip owner={{ role: p.owner }} /></div>
             ))}
           </div>
-          <div className="pd-note" style={{ marginTop: 14, fontSize: 12.5 }}>Final wages are due within 2 working days of the last day, gratuity within 30 days. Whether salary is held during notice comes from Payroll › Exit settings.</div>
+          <div className="pd-note" style={{ marginTop: 14, fontSize: 12.5 }}>From the template: final settlement within {settlementDays} working {settlementDays === 1 ? 'day' : 'days'} of the last day, gratuity within {gratuityDays} days{typeof noticeDays === 'number' ? `, ${noticeDays}-day notice` : ''}. Whether salary is held during notice comes from Payroll › Exit settings.</div>
         </Card>
       </div>
     </div>

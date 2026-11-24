@@ -14,16 +14,19 @@ export function usePageHeadOverride(): PageHeadOverride | null {
 }
 
 /** Sets the page head while the calling page is on screen; cleared when it leaves. */
-export function usePageHead(head: PageHeadOverride) {
-  const { title, eyebrow, backLabel, tag } = head;
+export function usePageHead(head: PageHeadOverride | null) {
+  // null: the page sits inside another (a profile's Exit tab) and leaves the head as it is.
+  const { title, eyebrow, backLabel, tag } = head ?? { title: '' };
   // The latest onBack, without re-setting the head on every render.
-  const back = useRef(head.onBack);
-  back.current = head.onBack;
-  const hasBack = Boolean(head.onBack);
+  const back = useRef(head?.onBack);
+  back.current = head?.onBack;
+  const hasBack = Boolean(head?.onBack);
+  const on = head !== null;
   useEffect(() => {
+    if (!on) return undefined;
     set({ title, eyebrow, backLabel, ...(tag ? { tag } : {}), ...(hasBack ? { onBack: () => back.current?.() } : {}) });
     return () => set(null);
-  }, [title, eyebrow, backLabel, tag, hasBack]);
+  }, [on, title, eyebrow, backLabel, tag, hasBack]);
 }
 
 // —— Unsaved changes ——
