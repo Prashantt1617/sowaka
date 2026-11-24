@@ -2,7 +2,7 @@
 // towards it, from the same calendar the attendance report grades. Opened
 // from a payslip row on the profile and on a payroll run.
 import { useEffect, useState } from 'react';
-import { getEmployeeCalendar } from '../services/hrms';
+import { getEmployeeCalendar, getPayCycle } from '../services/hrms';
 import type { CalendarDayDTO, EmployeeCalendarDTO } from '../services/hrms';
 import { DEDUCTION_TRIGGER_LABELS, inr, type DeductionTrigger, type PayslipDTO } from '../services/payroll';
 import { employedDaysOf, isNotEmployedLine, lossOfPayDaysOf, lossOfPayPaiseOf, notEmployedNote, notEmployedOf, notEmployedPaiseOf } from './payslipDays';
@@ -23,16 +23,46 @@ const clock = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString('e
 const dayLabel = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' });
 const mins = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${m % 60 ? `${m % 60}m` : ''}`.trim() : `${m} min`);
 
-export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: string; payslip: PayslipDTO; onClose: () => void }) {
+const addMonths = (period: string, n: number) => {
+  const [y, m] = period.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + n, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+
+/**
+ * The days a payslip pays for (24 Nov 2026: Convrse pays 26th to 25th, and the explainer listed only the
+ * calendar month, so 26–31 Oct's absences were missing from November's). The run's own window when known,
+ * else the company's pay cycle (its start day), else the calendar month.
+ */
+async function windowOf(period: string, known?: { from?: string; to?: string }): Promise<{ from: string; to: string }> {
+  if (known?.from && known.to) return { from: known.from, to: known.to };
+  const monthEnd = (p: string) => new Date(Date.UTC(Number(p.slice(0, 4)), Number(p.slice(5, 7)), 0)).toISOString().slice(0, 10);
+  try {
+    const cycle = await getPayCycle();
+    const start = Number((cycle.current ?? cycle.previous)?.from.slice(8, 10) ?? 1);
+    if (start > 1) {
+      const prev = addMonths(period, -1);
+      return { from: `${prev}-${String(start).padStart(2, '0')}`, to: `${period}-${String(start - 1).padStart(2, '0')}` };
+    }
+  } catch { /* the calendar month */ }
+  return { from: `${period}-01`, to: monthEnd(period) };
+}
+
+export function LossOfPayExplainer({ userId, payslip, onClose, window: known }: { userId: string; payslip: PayslipDTO; onClose: () => void; window?: { from?: string; to?: string } }) {
   const [cal, setCal] = useState<EmployeeCalendarDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
-    getEmployeeCalendar(userId, payslip.period)
-      .then((c) => { if (live) setCal(c); })
-      .catch((e: Error) => { if (live) setError(e.message); });
+    (async () => {
+      const w = await windowOf(payslip.period, known);
+      // Every month the window touches (two for a 26th–25th cycle), cut to the window.
+      const months = [...new Set([w.from.slice(0, 7), w.to.slice(0, 7)])];
+      const cals = await Promise.all(months.map((m) => getEmployeeCalendar(userId, m)));
+      const days = cals.flatMap((c) => c.days).filter((d) => d.date >= w.from && d.date <= w.to);
+      if (live) setCal({ ...cals[cals.length - 1], days });
+    })().catch((e: Error) => { if (live) setError(e.message); });
     return () => { live = false; };
-  }, [userId, payslip.period]);
+  }, [userId, payslip.period, known?.from, known?.to]);
   // The days before joining / after leaving are listed apart: not loss of pay, the person was not employed.
   const lines = (payslip.inputs.attendanceDeductions ?? []).filter((l) => l.days > 0 && !isNotEmployedLine(payslip.inputs, l));
   const lopDays = lossOfPayDaysOf(payslip.inputs);

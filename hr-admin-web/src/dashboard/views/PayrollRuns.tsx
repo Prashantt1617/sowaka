@@ -435,7 +435,7 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
           </tbody>
         </table>
       </Card>
-      {explain && <LossOfPayExplainer userId={explain.userId} payslip={explain} onClose={() => onExplain(null)} />}
+      {explain && <LossOfPayExplainer userId={explain.userId} payslip={explain} window={{ from: run.periodFrom, to: run.periodTo }} onClose={() => onExplain(null)} />}
       {lopFor && (
         <LopCalendar
           slip={lopFor}
