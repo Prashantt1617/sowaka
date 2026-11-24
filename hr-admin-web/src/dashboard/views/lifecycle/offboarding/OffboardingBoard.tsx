@@ -22,7 +22,7 @@ import './offboarding.css';
 
 const TABS: { key: BoardTab; label: string; note: string }[] = [
   { key: 'resignations', label: 'Resignations', note: 'From resignation to HR accepting it' },
-  { key: 'notice', label: 'Notice period', note: 'Accepted to the last working day' },
+  { key: 'notice', label: 'Leaving soon', note: 'Accepted, working till the last day' },
   { key: 'exit', label: 'Exit and settlement', note: 'Last day to settlement and letters' },
 ];
 type Quick = '' | 'mine' | 'late' | 'week';

@@ -8,7 +8,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useStore } from '../../store';
-import { canOpen } from '../../access';
 import { ListPending, LoadError, SkeletonLines, StatusTabs } from '../../ui';
 import { downloadCsv } from '../../export';
 import { LIFECYCLE_TEMPLATES_KIND_KEY } from '../../setupGroups';
@@ -16,7 +15,7 @@ import { createTemplate, deleteTemplate, getTemplate, getTemplateJourneys, isNot
 import type { DueAnchor, DueRule, ExitTypeKey, LifecycleKind, LifecyclePhase, LifecycleTemplate, OwnerRole, TemplateJourney, TemplateListItem, TemplateTask } from '../../../services/lifecycle';
 import { OnboardingDesign } from './OnboardingDesign';
 import { ConfirmDialog, Field, Modal, NotSwitchedOn, Pick, Switch } from './shared';
-import { OWNER_LABEL, PHASES, errText, readHandoff, inputStyle, linkBtn, longDay, phaseTitle, ruleText, sectionLabel } from './format';
+import { OWNER_LABEL, PHASES, errText, readHandoff, inputStyle, longDay, phaseTitle, ruleText, sectionLabel } from './format';
 import '../people.css';
 
 const KINDS: LifecycleKind[] = ['onboarding', 'offboarding'];
@@ -230,7 +229,7 @@ function TemplatePeople({ id }: { id: string }) {
 // —— The editor ——————————————————————————————————————————————————————————
 
 function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings: TemplateListItem[]; onBack: () => void; onOpen: (id: string) => void }) {
-  const { flash, setView, user } = useStore();
+  const { flash } = useStore();
   const [saved, setSaved] = useState<LifecycleTemplate | null>(null);
   const [draft, setDraft] = useState<LifecycleTemplate | null>(null);
   const [error, setError] = useState('');
@@ -329,7 +328,7 @@ function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings
   const s = t.settings;
   const rulesLine = `Settled in ${s.settlementWorkingDays ?? 2} working ${s.settlementWorkingDays === 1 ? 'day' : 'days'} · access ends ${(s.accountCloses ?? 'tl_plus_1') === 'tl_plus_1' ? 'the day after' : 'on the last day'}`;
   const toggleStage = (k: string) => setCollapsed((c) => { const n = new Set(c); if (n.has(k)) n.delete(k); else n.add(k); return n; });
-  const STEP_NAME: Partial<Record<LifecyclePhase, string>> = { resignation: 'They resign', when_accepted: 'Resignation accepted', notice_period: 'Notice period', last_day: 'Last day', after_exit: 'After they leave' };
+  const STEP_NAME: Partial<Record<LifecyclePhase, string>> = { resignation: 'They resign', when_accepted: 'Resignation accepted', notice_period: 'Before the last day', last_day: 'Last day', after_exit: 'After they leave' };
   return (
     <div className="pd-form ob-tpl" style={{ maxWidth: 1060, display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* Header: one title, one action */}
@@ -405,9 +404,6 @@ function TemplateEditor({ id, siblings, onBack, onOpen }: { id: string; siblings
                       </label>
                     );
                   })}
-                </div>
-                <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
-                  Salary hold on notice: {canOpen(user, 'exitsettings') ? <button type="button" style={linkBtn} onClick={() => { if (!dirty || window.confirm('Leave without saving your changes?')) setView('exitsettings'); }}>Payroll › Exit settings</button> : 'Payroll › Exit settings'}
                 </div>
               </div>
             </div>
