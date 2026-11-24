@@ -244,9 +244,10 @@ export function SuwiPanel() {
           {!busy && (
             <div className="sora-chips">
               {!guide && prompts.map((p) => <button key={p} type="button" onClick={() => void ask(p)} className="sora-chip">{p}</button>)}
-              <button type="button" onClick={() => (bulk ? s.setSuwiBulk(null) : s.openSuwiBulk('any'))} aria-pressed={Boolean(bulk)} className={bulk ? 'sora-chip sora-bulk on' : 'sora-chip sora-bulk'}>
-                {bulk ? 'Bulk assign · on' : 'Bulk assign'}
-              </button>
+              {/* No Bulk assign chip here (24 Nov 2026, HR); it only shows, to switch it off, while a section's Bulk assign has it on. */}
+              {bulk && (
+                <button type="button" onClick={() => s.setSuwiBulk(null)} aria-pressed className="sora-chip sora-bulk on">Bulk assign · on</button>
+              )}
             </div>
           )}
           {attached && (
