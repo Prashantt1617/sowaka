@@ -1,3 +1,4 @@
+import { requireTeamScope } from '../middleware/team-scope.middleware';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { hasAllDashboardTabs, requireDashboardAccess, requireDashboardTabs } from '../middleware/admin.middleware';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -75,7 +76,7 @@ async function ownJourney(req: Request) {
   return { me, j };
 }
 
-lifecycleAdminRouter.use(requireAuth, requireDashboardAccess, requireDashboardTabs);
+lifecycleAdminRouter.use(requireAuth, requireDashboardAccess, requireDashboardTabs, requireTeamScope);
 
 // Read by the dashboard to show the group at all, so it answers while the switch is off.
 lifecycleAdminRouter.get('/settings', lifecycleHandler(async (req) => {

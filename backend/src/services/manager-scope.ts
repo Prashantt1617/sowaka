@@ -20,8 +20,9 @@ export const MANAGER_TABS = [
   'leave', 'overtime', 'attendance', 'oolcheckins', 'attendancereport',
   // People (no salary details, no exits, no Accesses)
   'employees', 'orgchart',
-  // Employee lifecycle (not Documents: offers and letters carry pay; not Templates: that is Setup)
-  'onboarding', 'offboarding', 'exit_insights',
+  // Employee lifecycle (not Documents: offers and letters carry pay; not Templates: that is Setup; not Exit
+  // insights: it reads every leaver in the company, and leavers are no longer in anyone's team)
+  'onboarding', 'offboarding',
   // Performance: reviews, and assigning KPI templates HR set up (not the parameters, templates or cycle setup)
   'feedback', 'kpibulk',
 ] as const;

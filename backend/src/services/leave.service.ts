@@ -1036,6 +1036,8 @@ export async function decideLeaveCancellation(
   }
   const leaveId = new ObjectId(leaveIdInput);
   const leave = await leaves().findOne({ _id: leaveId });
+  // A manager on the dashboard decides for their own team only.
+  if (as === 'admin' && leave) await assertInTeam(deciderUserId, leave.userId);
   if (!leave) {
     throw new LeaveError(404, 'Leave request not found');
   }
@@ -1129,6 +1131,7 @@ export async function adminCancelLeave(adminUserId: string, leaveIdInput: string
   const leave = await leaves().findOne({ _id: leaveId });
   if (!leave) throw new LeaveError(404, 'Leave request not found');
   if (leave.userId === adminUserId) throw new LeaveError(403, 'You cannot override your own request');
+  await assertInTeam(adminUserId, leave.userId);
   const [admin, employee] = await Promise.all([
     users().findOne({ userId: adminUserId }, { projection: { _id: 0, org: 1 } }),
     users().findOne({ userId: leave.userId }),

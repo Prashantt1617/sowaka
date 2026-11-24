@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { NextFunction, Request, Response, Router } from 'express';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess } from '../middleware/admin.middleware';
+import { refuseTeamScope } from '../middleware/team-scope.middleware';
 import { users } from '../config/db';
 import { logger } from '../utils/logger';
 import { askSuwi } from './agent';
@@ -18,7 +19,7 @@ import { SUWI_AREAS } from './tools';
 import { INSIGHT_KINDS, INSIGHT_ROUTE, InsightKind, insightFor, mayRead } from './insight';
 
 export const suwiRouter = Router();
-suwiRouter.use(requireAuth, requireDashboardAccess);
+suwiRouter.use(requireAuth, requireDashboardAccess, refuseTeamScope);
 
 const me = (req: Request) => req.auth!.user!;
 const fail = (res: Response, e: unknown, next: NextFunction) => {

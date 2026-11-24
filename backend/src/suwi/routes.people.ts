@@ -6,11 +6,12 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess } from '../middleware/admin.middleware';
+import { refuseTeamScope } from '../middleware/team-scope.middleware';
 import { importRiskFor } from './importRisk';
 import { searchPeople } from './peopleSearch';
 
 export const suwiPeopleRouter = Router();
-suwiPeopleRouter.use(requireAuth, requireDashboardAccess);
+suwiPeopleRouter.use(requireAuth, requireDashboardAccess, refuseTeamScope);
 
 const fail = (res: Response, e: unknown, next: NextFunction) => {
   const code = (e as { statusCode?: number }).statusCode;

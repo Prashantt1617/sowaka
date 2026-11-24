@@ -1,3 +1,4 @@
+import { requireTeamScope } from '../middleware/team-scope.middleware';
 import { NextFunction, Request, Response, Router } from 'express';
 import { MULTER_FILE_LIMIT } from '../services/lifecycle/files';
 import multer from 'multer';
@@ -90,7 +91,7 @@ lifecycleOffboardingRouter.post('/manager/leavers/:userId/handover/done', send((
 
 // ———————————————————————————————— the dashboard: /admin/lifecycle (the offboarding and exit_insights tabs)
 export const lifecycleOffboardingAdminRouter = Router();
-lifecycleOffboardingAdminRouter.use(requireAuth, requireDashboardAccess, requireDashboardTabs, lifecycleOn);
+lifecycleOffboardingAdminRouter.use(requireAuth, requireDashboardAccess, requireDashboardTabs, requireTeamScope, lifecycleOn);
 lifecycleOffboardingAdminRouter.get('/offboarding/board', send((req) => offboardingBoard(me(req), req.query as Record<string, string>)));
 // Before /offboarding/:userId, which would take "count" for a person.
 lifecycleOffboardingAdminRouter.get('/offboarding/count', send((req) => offboardingCount(me(req))));

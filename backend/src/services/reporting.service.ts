@@ -1,3 +1,4 @@
+import { assertInTeam } from './manager-scope';
 import { attendanceRegularizations, overtimeRequests, reimbursementClaims, users } from '../config/db';
 import { User } from '../models/user.model';
 import { invalidateAttendanceReport } from './attendance-report.service';
@@ -73,6 +74,9 @@ export async function assignManager(
 ): Promise<ReportingLine & { movedRequests: number }> {
   const employeeUserId = normalizeUserId(employeeUserIdInput);
   const managerUserId = normalizeUserId(managerUserIdInput);
+  // A manager on the dashboard moves people within their own team only: both ends must be in it.
+  await assertInTeam(actorUserId, employeeUserId);
+  await assertInTeam(actorUserId, managerUserId);
 
   if (!employeeUserId || !managerUserId) {
     throw new ReportingError(400, 'employeeUserId and managerUserId are required');

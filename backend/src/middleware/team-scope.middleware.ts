@@ -3,7 +3,8 @@
  * HR's alone, and any per-person route on someone outside the manager's subtree. HR (no team scope) passes.
  */
 import { NextFunction, Request, Response } from 'express';
-import { assertInTeam } from '../services/manager-scope';
+import { journeys, resignations } from '../config/db';
+import { assertInTeam, scopedUserIds } from '../services/manager-scope';
 
 /** Never for a team-scoped caller, whatever the tabs say. */
 const REFUSED: Array<{ path: RegExp; methods?: string[] }> = [
@@ -23,7 +24,17 @@ const REFUSED: Array<{ path: RegExp; methods?: string[] }> = [
   { path: /^\/admin\/kpi\/parameters/, methods: ['POST', 'PUT', 'PATCH', 'DELETE'] },
   { path: /^\/admin\/kpi\/templates\/?$/, methods: ['POST'] },
   { path: /^\/admin\/kpi\/templates\/[^/]+\/?$/, methods: ['PUT', 'PATCH', 'DELETE'] },
+  // Employee lifecycle: offers, letters and documents carry pay; templates, settings and exit insights are HR's.
+  { path: /^\/admin\/lifecycle\/(offers|letters|letter-templates|templates|exit-insights|settlement)/ },
+  { path: /^\/admin\/lifecycle\/settings/, methods: ['POST', 'PUT', 'PATCH', 'DELETE'] },
+  { path: /^\/admin\/lifecycle\/journeys\/[^/]+\/pending-setup/ },
 ];
+
+/** A journey's own routes: its joiner, or the manager they join under, must be in the caller's team. */
+const JOURNEY = /^\/admin\/lifecycle\/journeys\/([^/?]+)/;
+/** Offboarding routes on one person. */
+const LEAVER = /^\/admin\/lifecycle\/(?:offboarding|resignations)\/([^/?]+)/;
+const NOT_LEAVERS = new Set(['board', 'count', 'counts', 'settings', 'clearance-team', 'clearance-teams', 'nudges']);
 
 /** Per-person routes: the person must be in the caller's team. */
 const PERSON = /^\/admin\/(?:employees|kpi\/assignments)\/([^/?]+)/;
@@ -41,6 +52,26 @@ export async function requireTeamScope(req: Request, res: Response, next: NextFu
     res.status(403).json({ success: false, message: 'Only HR can do this', requestId: req.requestId });
     return;
   }
+  const userId = req.auth?.user?.userId ?? '';
+  const journey = JOURNEY.exec(path);
+  if (journey) {
+    const j = await journeys().findOne({ id: decodeURIComponent(journey[1]) }, { projection: { _id: 0, userId: 1, managerUserId: 1 } });
+    const team = await scopedUserIds(userId);
+    if (team && !(j && ((j.userId && team.has(j.userId)) || (j.managerUserId && team.has(j.managerUserId))))) {
+      res.status(403).json({ success: false, message: 'That person is not in your team', requestId: req.requestId });
+      return;
+    }
+  }
+  const leaver = LEAVER.exec(path);
+  if (leaver && !NOT_LEAVERS.has(leaver[1])) {
+    const id = decodeURIComponent(leaver[1]);
+    // A resignation route names the resignation; others name the person.
+    const r = await resignations().findOne({ id }, { projection: { _id: 0, userId: 1 } });
+    try { await assertInTeam(userId, r?.userId ?? id); } catch {
+      res.status(403).json({ success: false, message: 'That person is not in your team', requestId: req.requestId });
+      return;
+    }
+  }
   const m = PERSON.exec(path);
   if (m && !NOT_PEOPLE.has(m[1])) {
     try {
@@ -51,4 +82,10 @@ export async function requireTeamScope(req: Request, res: Response, next: NextFu
     }
   }
   next();
+}
+
+/** Suwi reads the whole company: not for a manager on the dashboard (24 Nov 2026). */
+export function refuseTeamScope(req: Request, res: Response, next: NextFunction) {
+  if (!isTeamScoped(req)) return next();
+  res.status(403).json({ success: false, message: 'Suwi is for HR', requestId: req.requestId });
 }

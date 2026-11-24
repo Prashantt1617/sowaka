@@ -523,6 +523,15 @@ export async function updateKpiTemplate(
  * template with no facets at all targets the whole org, which is deliberate —
  * "everyone" is a legitimate thing to want.
  */
+/** The company's roster for a KPI page, by name; a manager's (team scope) is their subtree only. */
+async function teamRoster(adminUserId: string, org: string) {
+  const [rows, team] = await Promise.all([
+    users().find({ org }, { projection: ROSTER_FIELDS }).sort({ name: 1 }).toArray(),
+    scopedUserIds(adminUserId),
+  ]);
+  return team ? rows.filter((r) => team.has((r as { userId: string }).userId)) : rows;
+}
+
 export async function kpiTemplateAudience(
   adminUserId: string,
   id: string,
@@ -534,7 +543,7 @@ export async function kpiTemplateAudience(
   // audience shows, never an inline photo.
   const [template, roster] = await Promise.all([
     kpiTemplates().findOne({ _id: objectId(id, 'Template id'), org }),
-    users().find({ org }, { projection: ROSTER_FIELDS }).sort({ name: 1 }).toArray(),
+    teamRoster(adminUserId, org),
   ]);
   if (!template) throw new KpiError(404, 'Template not found');
 
@@ -598,7 +607,7 @@ export async function resolveKpiAudience(
   const departments = facet(input.departments);
   const managerUserIds = facet(input.managerUserIds);
 
-  const roster = await users().find({ org }, { projection: ROSTER_FIELDS }).sort({ name: 1 }).toArray();
+  const roster = await teamRoster(adminUserId, org);
   const matched = roster.filter((u) => {
     if (locations.length && !locations.includes(u.location ?? '')) return false;
     if (designations.length && !designations.includes(u.designation ?? '')) return false;
@@ -656,7 +665,7 @@ export async function kpiTemplateMembers(
   const assignments = await kpiAssignments().find({ org, period, templateId: id }).toArray();
   if (!assignments.length) return { period, templateName: template.name, members: [] };
 
-  const roster = await users().find({ org }, { projection: ROSTER_FIELDS }).toArray();
+  const roster = await teamRoster(adminUserId, org);
   const byId = new Map(roster.map((u) => [u.userId, u]));
   const nameById = new Map(roster.map((u) => [u.userId, u.name]));
 
