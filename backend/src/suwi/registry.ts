@@ -38,3 +38,7 @@ import './tools/leave-balance';
 import './tools/review';
 import './tools/holidays';
 import './tools/org-lists';
+import './tools/lifecycle-offers';
+import './tools/lifecycle-joiners';
+import './tools/lifecycle-offboarding';
+import './tools/lifecycle-templates';
