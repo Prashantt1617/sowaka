@@ -10,11 +10,13 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../../store';
 import { ApiError } from '../../../services/http';
-import { NON_WORKING_DAY, confirmOffer, listTemplates } from '../../../services/lifecycle';
-import type { OfferFields, TemplateListItem } from '../../../services/lifecycle';
+import { NON_WORKING_DAY, confirmOffer, getTemplateDesign, listTemplates } from '../../../services/lifecycle';
+import type { OfferFields, TemplateDesign, TemplateListItem } from '../../../services/lifecycle';
 import { Field, Modal, Pick } from './shared';
+import { Overlay } from './designParts';
+import { EmployeePreview } from './EmployeePreview';
 import { OFFER_FIELD_LABEL, areaStyle, errText, firstName, inputStyle, longDay, todayKey } from './format';
-import { useOfferChoices } from './hooks';
+import { useCompanyName, useOfferChoices } from './hooks';
 import { blankOfferFields, cleanOfferFields, validateOffer } from './offerValues';
 import { FieldGrid, missingInput } from './DocumentParts';
 
@@ -58,6 +60,13 @@ export function AddUserDialog({ pay, canAddEmployee, canOffer, onClose, onDone, 
   // The server refused the joining date (a week-off or holiday): what it said; `allowedTj` once HR keeps it.
   const [nonWorking, setNonWorking] = useState<{ tj: string; text: string } | null>(null);
   const [allowedTj, setAllowedTj] = useState('');
+  // "joining portal" in the confirm option: the pre-boarding portal as this template shows it.
+  const company = useCompanyName();
+  const [portal, setPortal] = useState<TemplateDesign | 'loading' | 'error' | null>(null);
+  const openPortal = () => {
+    setPortal('loading');
+    getTemplateDesign(templateId).then(setPortal).catch(() => setPortal('error'));
+  };
 
   // The onboarding templates (the default's probation) and the notice a resignation gets, as the offer form does.
   useEffect(() => {
@@ -132,44 +141,59 @@ export function AddUserDialog({ pay, canAddEmployee, canOffer, onClose, onDone, 
     const who = firstName(name);
     const offerOff = !pay ? payNote : !canOffer ? 'Needs access to Employee lifecycle › Documents' : '';
     return (
-      <Modal title={`${who || 'They'} join${who ? 's' : ''} on ${longDay(fields.tj)}`} width={560} onClose={onClose} busy={busy}
-        sub="The joining date is still to come. Send the offer letter from the app, or confirm them now if they accepted an offer already."
-        footer={<button type="button" className="pd-btn" onClick={() => { setAhead(false); setError(''); setNonWorking(null); }} disabled={busy}>← Back</button>}>
-        <div className="au-opts" role="list">
-          <button type="button" role="listitem" className="au-opt" disabled={Boolean(offerOff) || busy} title={offerOff || undefined}
-            onClick={() => onOffer(details())}>
-            <span className="au-ic" aria-hidden><DocIcon /></span>
-            <span className="au-tx">
-              <b>Send offer letter</b>
-              <span>{offerOff || 'Opens the offer letter with these details filled in. Check it, then send it from the app.'}</span>
-            </span>
-            <Chevron />
-          </button>
-          <div role="listitem" className="au-opt" style={{ cursor: 'default', alignItems: 'flex-start' }}>
-            <span className="au-ic" aria-hidden><TickIcon /></span>
-            <span className="au-tx" style={{ gap: 8 }}>
-              <b>Confirm</b>
-              <span>They accepted an offer outside the app. They go on the onboarding board as confirmed; no offer letter is sent.</span>
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--ink-2)', cursor: 'pointer' }}>
-                <input type="checkbox" checked={emailPortal} onChange={(e) => setEmailPortal(e.target.checked)} style={{ marginTop: 3 }} disabled={busy} />
-                <span style={{ color: 'var(--ink-2)', fontSize: 13 }}>Send them an email with the joining portal sign-in</span>
-              </label>
-              {nonWorking && nonWorking.tj === fields.tj && (
-                <span role="alert" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 10px', borderRadius: 10, background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', color: 'var(--warn)', fontSize: 12.5 }}>
-                  <span style={{ flex: '1 1 200px', color: 'var(--warn)' }}>{nonWorking.text || `${longDay(nonWorking.tj)} is a week-off or a holiday.`}</span>
-                  <button type="button" className="pd-btn sm" disabled={busy} onClick={() => { const { tj } = nonWorking; setAllowedTj(tj); void confirm(tj); }}>Use this date anyway</button>
-                </span>
-              )}
-              <span style={{ display: 'flex' }}>
-                <button type="button" className="pd-btn primary sm" onClick={() => void confirm()} disabled={busy || !pay} title={!pay ? payNote : undefined}>
-                  {busy ? 'Confirming…' : 'Confirm user'}
-                </button>
+      <>
+        <Modal title={`${who || 'They'} join${who ? 's' : ''} on ${longDay(fields.tj)}`} width={560} onClose={onClose} busy={busy || portal !== null}
+          sub="Send them an offer letter, or confirm them if they've already accepted."
+          footer={<button type="button" className="pd-btn" onClick={() => { setAhead(false); setError(''); setNonWorking(null); }} disabled={busy}>← Back</button>}>
+          <div className="au-opts" role="list">
+            <button type="button" role="listitem" className="au-opt" disabled={Boolean(offerOff) || busy} title={offerOff || undefined}
+              onClick={() => onOffer(details())}>
+              <span className="au-ic" aria-hidden><DocIcon /></span>
+              <span className="au-tx">
+                <b>Send offer letter</b>
+                <span>{offerOff || 'Review and send from pre-set templates'}</span>
               </span>
-            </span>
+              <Chevron />
+            </button>
+            <div role="listitem" className="au-opt" style={{ cursor: 'default', alignItems: 'flex-start' }}>
+              <span className="au-ic" aria-hidden><TickIcon /></span>
+              <span className="au-tx" style={{ gap: 8 }}>
+                <b>Confirm without offer letter</b>
+                <span>They've already accepted your offer, for example by email or in person. They'll show as confirmed on the board.</span>
+                <span style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--ink-2)' }}>
+                  <input id="au-email-portal" type="checkbox" checked={emailPortal} onChange={(e) => setEmailPortal(e.target.checked)} style={{ marginTop: 3, cursor: 'pointer' }} disabled={busy} />
+                  <span style={{ color: 'var(--ink-2)', fontSize: 13 }}>
+                    <label htmlFor="au-email-portal" style={{ cursor: 'pointer' }}>Email them their </label>
+                    <button type="button" onClick={openPortal} title="Preview the joining portal"
+                      style={{ border: 0, padding: 0, background: 'none', font: 'inherit', color: 'var(--accent)', textDecoration: 'underline', textUnderlineOffset: 2, cursor: 'pointer' }}>joining portal</button>
+                    <label htmlFor="au-email-portal" style={{ cursor: 'pointer' }}>.</label>
+                  </span>
+                </span>
+                {nonWorking && nonWorking.tj === fields.tj && (
+                  <span role="alert" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 10px', borderRadius: 10, background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', color: 'var(--warn)', fontSize: 12.5 }}>
+                    <span style={{ flex: '1 1 200px', color: 'var(--warn)' }}>{nonWorking.text || `${longDay(nonWorking.tj)} is a week-off or a holiday.`}</span>
+                    <button type="button" className="pd-btn sm" disabled={busy} onClick={() => { const { tj } = nonWorking; setAllowedTj(tj); void confirm(tj); }}>Use this date anyway</button>
+                  </span>
+                )}
+                <span style={{ display: 'flex' }}>
+                  <button type="button" className="pd-btn primary sm" onClick={() => void confirm()} disabled={busy || !pay} title={!pay ? payNote : undefined}>
+                    {busy ? 'Confirming…' : 'Confirm'}
+                  </button>
+                </span>
+              </span>
+            </div>
           </div>
-        </div>
-        {error && <div role="alert" style={{ color: 'var(--bad)', fontSize: 13, marginTop: 10 }}>{error}</div>}
-      </Modal>
+          {error && <div role="alert" style={{ color: 'var(--bad)', fontSize: 13, marginTop: 10 }}>{error}</div>}
+        </Modal>
+        {portal !== null && (
+          <Overlay label="Joining portal preview" onClose={() => setPortal(null)}>
+            <button type="button" onClick={() => setPortal(null)} aria-label="Close preview" className="pd-btn sm" style={{ alignSelf: 'flex-end' }}>Close</button>
+            {portal === 'loading' ? <div style={{ color: 'var(--on-sel, #fff)', fontSize: 13 }}>Loading the joining portal…</div>
+              : portal === 'error' ? <div style={{ color: 'var(--on-sel, #fff)', fontSize: 13 }}>Could not load the preview.</div>
+              : <EmployeePreview d={portal} stage="pre" company={company} />}
+          </Overlay>
+        )}
+      </>
     );
   }
 
