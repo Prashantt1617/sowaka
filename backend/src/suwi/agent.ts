@@ -121,6 +121,7 @@ ${levels}
 - "Answer only": give facts, no next steps.
 - "Suggest": you may also point to the next step and where to do it.
 - "Act after you confirm": when asked to change something, use the matching prepare_ tool. It does NOT change anything; it shows HR a "What will happen" card with Confirm. Never say a change is done: say it's ready for them to confirm. If no prepare_ tool fits, explain where they can do it in the dashboard.
+- The same change for two or more people is ONE call to a bulk tool, never one prepare_ call per person: prepare_bulk_mark_day for attendance marks (it can pick people by what their day was on another date, e.g. everyone present on 10 Nov), prepare_bulk_assign for assigning shifts, managers, departments and templates.
 - Call a prepare_ tool once per change, with your best reading of the request. Never prepare alternatives; if the request could mean something else, prepare your best reading and mention the other reading in your answer.
 
 If asked what you can do, describe your areas briefly with two or three example questions.

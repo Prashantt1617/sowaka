@@ -15,7 +15,7 @@ import { monthName } from './payroll-actions';
 
 const lopDays = (n: number) => `${n === 0.5 ? '½' : n} day${n === 1 || n === 0.5 ? '' : 's'}`;
 
-const LABEL: Record<string, string> = { present: 'Present', half_day: 'Half day', absent: 'Absent', on_leave: 'On leave', unpaid_leave: 'Leave without pay', week_off: 'Week off', holiday: 'Holiday', missed_punch: 'Missed punch', upcoming: 'Upcoming' };
+export const LABEL: Record<string, string> = { present: 'Present', half_day: 'Half day', absent: 'Absent', on_leave: 'On leave', unpaid_leave: 'Leave without pay', week_off: 'Week off', holiday: 'Holiday', missed_punch: 'Missed punch', upcoming: 'Upcoming' };
 
 /** Paid days a graded day costs: an absence a day, a half day half, a missed punch whatever the shift says, leave without pay its days. */
 function lopOf(day: Pick<CalendarDay, 'status' | 'countsAs'> & { halfDay?: boolean }): number {
@@ -30,13 +30,25 @@ const ist = (iso: string) => new Date(Date.parse(iso) + 5.5 * 3_600_000).toISOSt
 const lopOfMark = (s: HrDayStatus) => (s === 'absent' ? 1 : s === 'half_day' ? 0.5 : 0);
 const describe = (day: CalendarDay) => `${LABEL[day.status] ?? day.status}${day.label ? ` (${day.label}${day.status === 'missed_punch' && day.countsAs ? `, counts as ${day.countsAs}` : ''})` : ''}${day.hr ? ', marked by HR' : ''}`;
 
+/** The same month rule the calendar applies, checked up front so a card never promises what Confirm would refuse. */
+export async function markableMonth(org: string, date: string) {
+  const month = date.slice(0, 7);
+  const thisMonth = currentMonthIst();
+  const openRun = month < thisMonth ? await payrollRuns().findOne({ org, period: month, status: { $in: ['draft', 'pending_approval'] } } as never, { projection: { _id: 1 } }) : null;
+  const finished = await payrollRuns().findOne({ org, period: month, status: { $in: ['approved', 'paid'] } } as never, { projection: { _id: 1 } });
+  const M = monthName(month);
+  if (finished) throw new Error(`Payroll for ${M} is submitted: its days can no longer be changed`);
+  if (month !== thisMonth && !openRun) throw new Error(`Only the current month (${monthName(thisMonth)}) can be corrected, or an earlier month whose payroll run is still open; ${M} is neither`);
+  return { month, thisMonth, openRun: Boolean(openRun), M };
+}
+
 defineTools(
   {
     name: 'prepare_correct_day',
     area: 'attendance',
     acts: true,
     label: (i) => `Prepared: mark ${i.name ?? 'their'} ${i.date} as ${i.status}`,
-    description: "Prepare correcting one day of a person's attendance with HR's mark (present, half_day, absent, on_leave, week_off, holiday), the same as tapping the day on their calendar. Changes nothing: the card shows the day's current mark, the new mark, the effect in paid days, and that a mark only reaches the current month (or a month whose payroll run is still open). Needs their userId and the date.",
+    description: "ONE person only (for two or more people, or a group such as everyone present on a day, use prepare_bulk_mark_day: one call for all of them). Prepare correcting one day of a person's attendance with HR's mark (present, half_day, absent, on_leave, week_off, holiday), the same as tapping the day on their calendar. Changes nothing: the card shows the day's current mark, the new mark, the effect in paid days, and that a mark only reaches the current month (or a month whose payroll run is still open). Needs their userId and the date.",
     input_schema: { type: 'object', properties: { userId: { type: 'string' }, name: { type: 'string' }, date: { type: 'string', description: 'YYYY-MM-DD' }, status: { type: 'string', enum: HR_DAY_STATUSES }, note: { type: 'string', description: 'Why, in a few words (shown on the calendar)' } }, required: ['userId', 'date', 'status'] },
     api: { method: 'PUT', path: '/admin/employees/x/calendar/x' },
     async run(ctx, i) {
@@ -49,14 +61,7 @@ defineTools(
       if (date > ctx.today) throw new Error(`${niceDate(date)} has not happened yet`);
       const person = await users().findOne({ org: ctx.org, userId }, { projection: { _id: 0, name: 1 } });
       if (!person) throw new Error('That person is not in this company');
-      // The same month rule the calendar applies, checked here so the card never promises what Confirm would refuse.
-      const month = date.slice(0, 7);
-      const thisMonth = currentMonthIst();
-      const openRun = month < thisMonth ? await payrollRuns().findOne({ org: ctx.org, period: month, status: { $in: ['draft', 'pending_approval'] } } as never, { projection: { _id: 1 } }) : null;
-      const finished = await payrollRuns().findOne({ org: ctx.org, period: month, status: { $in: ['approved', 'paid'] } } as never, { projection: { _id: 1 } });
-      const M = monthName(month);
-      if (finished) throw new Error(`Payroll for ${M} is submitted: its days can no longer be changed`);
-      if (month !== thisMonth && !openRun) throw new Error(`Only the current month (${monthName(thisMonth)}) can be corrected, or an earlier month whose payroll run is still open; ${M} is neither`);
+      const { month, thisMonth, openRun, M } = await markableMonth(ctx.org, date);
 
       const cal = await employeeCalendar(ctx.userId, userId, month);
       const day = cal.days.find((d) => d.date === date);

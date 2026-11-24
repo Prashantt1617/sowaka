@@ -18,6 +18,7 @@ import './tools/letters';
 import './tools/attendance-patterns';
 import './tools/geotag';
 import './tools/correct-day';
+import './tools/bulk-mark-day';
 import './tools/paid-days';
 import './tools/shift-template';
 import './tools/claims';
