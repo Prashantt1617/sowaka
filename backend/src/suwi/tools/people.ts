@@ -119,6 +119,8 @@ defineTools(
         const j = isoDay(p.joiningDate) ?? '';
         if (typeof i.joinedAfter === 'string' && (!j || j < i.joinedAfter)) return false;
         if (typeof i.joinedBefore === 'string' && (!j || j > i.joinedBefore)) return false;
+        // "Joined since X" means joined: a joining date still to come is not counted (24 Nov).
+        if (typeof i.joinedAfter === 'string' && typeof i.joinedBefore !== 'string' && j > ctx.today) return false;
         if (typeof i.missing === 'string') {
           const v = i.missing === 'manager' ? p.managerUserId : i.missing === 'location' ? (p.location ?? p.branch) : (p as Record<string, unknown>)[i.missing];
           if (v !== undefined && v !== null && String(v).trim() !== '') return false;
@@ -128,11 +130,22 @@ defineTools(
       const limit = num(i.limit, 25, 1, 200);
       // Joining filters list the newest joiner first (24 Nov: a miscount came from reading the roster in name order).
       if (typeof i.joinedAfter === 'string' || typeof i.joinedBefore === 'string') rows.sort((a, b) => (isoDay(b.joiningDate) ?? '').localeCompare(isoDay(a.joiningDate) ?? ''));
+      // A joining list, or any list too long to retype, is drawn by the panel from the data itself: the model
+      // dropped a row when it wrote ten joiners out by hand, so it now gets the count and HR gets every row.
+      const byJoining = typeof i.joinedAfter === 'string' || typeof i.joinedBefore === 'string';
+      const shown = rows.slice(0, limit);
+      const tables = byJoining || shown.length > 8 ? [{
+        title: `${byJoining ? `Joined ${typeof i.joinedAfter === 'string' ? `from ${i.joinedAfter}` : ''}${typeof i.joinedBefore === 'string' ? ` to ${i.joinedBefore}` : typeof i.joinedAfter === 'string' ? ` to ${ctx.today}` : ''}`.replace(/\s+/g, ' ').trim() : lead ? `${lead.name}'s team` : 'People'} (${rows.length})`,
+        columns: ['Who', 'Joined', 'Designation', 'Department'],
+        rows: shown.map((p) => [p.name, isoDay(p.joiningDate) ?? '—', p.designation || '—', p.department || '—']),
+      }] : undefined;
       return {
+        ...(tables && shown.length ? { tables } : {}),
         data: {
           total: rows.length,
+          ...(tables && shown.length ? { shownToHr: `HR sees all ${shown.length} in the table under your answer: give the total (${rows.length}) and anything notable in one or two sentences, and do not list the people.` } : {}),
           ...(lead ? { team: { of: lead.name, userId: lead.userId, designation: lead.designation || null, direct: teamOf(lead.userId, all, false).length, total: teamOf(lead.userId, all, true).length, showing: i.includeIndirect === true ? 'everyone below them' : 'direct reports' } } : {}),
-          people: rows.slice(0, limit).map((p) => view(p, byId)),
+          people: shown.map((p) => view(p, byId)),
           note: rows.length > limit ? `Showing ${limit} of ${rows.length}` : undefined,
           hidden: HIDDEN_NOTE,
         },
