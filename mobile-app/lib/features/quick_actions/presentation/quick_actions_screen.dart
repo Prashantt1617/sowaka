@@ -39,6 +39,7 @@ import '../../shared/image_source_sheet.dart' show ImageSourceChoice;
 import '../../support/presentation/support_desk_screen.dart';
 import '../../lifecycle/onboarding/data/confirmation_api.dart' show ConfirmationKind;
 import '../../lifecycle/onboarding/onboarding_launcher.dart';
+import '../../app_tour/app_tour_anchor.dart';
 import '../../face_id/face_check_screen.dart' show FaceCheckOutcome;
 
 part 'placements_screen.dart';
@@ -1521,21 +1522,25 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 17, 16, 24),
               children: [
-                _HomeAttendanceCard(
-                  key: _attendanceCardKey,
-                  date: today,
-                  punchIn: punchIn,
-                  punchOut: punchOut,
-                  expectedOut: expectedOut,
-                  shiftLength: standardShift,
-                  needsCorrection: needsCorrection,
-                  onTap: () => _open(_QuickPage.calendar),
-                  onPunch: widget.dashboard.shift.punchesFromApp
-                      ? _startPunch
-                      : null,
-                  autoPresent:
-                      widget.dashboard.shift.markedPresentAutomatically,
-                  singlePunch: widget.dashboard.shift.singlePunchDay,
+                // The Sowaka tour's punch-in and punch-out stops.
+                AppTourAnchor(
+                  target: AppTourTarget.punchCard,
+                  child: _HomeAttendanceCard(
+                    key: _attendanceCardKey,
+                    date: today,
+                    punchIn: punchIn,
+                    punchOut: punchOut,
+                    expectedOut: expectedOut,
+                    shiftLength: standardShift,
+                    needsCorrection: needsCorrection,
+                    onTap: () => _open(_QuickPage.calendar),
+                    onPunch: widget.dashboard.shift.punchesFromApp
+                        ? _startPunch
+                        : null,
+                    autoPresent:
+                        widget.dashboard.shift.markedPresentAutomatically,
+                    singlePunch: widget.dashboard.shift.singlePunchDay,
+                  ),
                 ),
                 if (missedPunches > 0) ...[
                   const SizedBox(height: 14),
@@ -1547,65 +1552,69 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 const SizedBox(height: 16),
                 const _HomeSectionLabel('Actions'),
                 const SizedBox(height: 12),
-                GridView(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  // Without this the grid inherits MediaQuery.padding, which
-                  // on a notched phone injected ~59px above the first row —
-                  // the long-standing gap under the "Actions" label that never
-                  // reproduced on desktop.
-                  padding: EdgeInsets.zero,
-                  // Fixed row height rather than an aspect ratio: the tiles hold
-                  // a fixed-height icon plus two text lines, so deriving height
-                  // from width overflows on narrow windows.
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    // The design's row (node 4166:19896): a 40 tile, 10, a 21
-                    // title, 2 and a 16 subtitle inside 16 of padding, with
-                    // the card stretched to the row.
-                    mainAxisExtent: 123.185,
-                  ),
-                  children: [
-                    ...confirmationTiles,
-                    // A new joiner, while onboarding runs: the New joiner
-                    // artifact's Actions (Onboarding, Policies, Leave,
-                    // Overtime, Payroll, Reimbursement, Support Desk).
-                    if (joiner) ...[
-                      onboardingTile,
-                      policiesTile,
-                      ?leaveTile,
-                      ?overtimeTile,
-                      payrollTile,
-                      reimbursementTile,
-                      supportTile,
-                      ?placementsTile,
-                    ] else ...[
-                      ?leaveTile,
-                      ?overtimeTile,
-                      reimbursementTile,
-                      ?placementsTile,
-                      supportTile,
-                      payrollTile,
-                      policiesTile,
+                // The Sowaka tour's "Your HR speed dial".
+                AppTourAnchor(
+                  target: AppTourTarget.actionTiles,
+                  child: GridView(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    // Without this the grid inherits MediaQuery.padding, which
+                    // on a notched phone injected ~59px above the first row —
+                    // the long-standing gap under the "Actions" label that never
+                    // reproduced on desktop.
+                    padding: EdgeInsets.zero,
+                    // Fixed row height rather than an aspect ratio: the tiles hold
+                    // a fixed-height icon plus two text lines, so deriving height
+                    // from width overflows on narrow windows.
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                      // The design's row (node 4166:19896): a 40 tile, 10, a 21
+                      // title, 2 and a 16 subtitle inside 16 of padding, with
+                      // the card stretched to the row.
+                      mainAxisExtent: 123.185,
+                    ),
+                    children: [
+                      ...confirmationTiles,
+                      // A new joiner, while onboarding runs: the New joiner
+                      // artifact's Actions (Onboarding, Policies, Leave,
+                      // Overtime, Payroll, Reimbursement, Support Desk).
+                      if (joiner) ...[
+                        onboardingTile,
+                        policiesTile,
+                        ?leaveTile,
+                        ?overtimeTile,
+                        payrollTile,
+                        reimbursementTile,
+                        supportTile,
+                        ?placementsTile,
+                      ] else ...[
+                        ?leaveTile,
+                        ?overtimeTile,
+                        reimbursementTile,
+                        ?placementsTile,
+                        supportTile,
+                        payrollTile,
+                        policiesTile,
+                      ],
+                      // Off-boarding (R3): someone serving notice, where the
+                      // lifecycle is on. Last, and quiet.
+                      if (_offboarding.showsOffboardingPage)
+                        _HomeActionCard(
+                          key: const ValueKey('offboarding-card'),
+                          icon: Icons.door_front_door_outlined,
+                          color: const Color(0xFF0571A6),
+                          tint: const Color(0xFFEAF3F8),
+                          title: 'Off-boarding',
+                          subtitle: switch (_offboarding.me.offboarding?.tl) {
+                            final tl? => 'Last day ${shortDay(tl)}',
+                            null => 'Before you go',
+                          },
+                          onTap: _openOffboarding,
+                        ),
                     ],
-                    // Off-boarding (R3): someone serving notice, where the
-                    // lifecycle is on. Last, and quiet.
-                    if (_offboarding.showsOffboardingPage)
-                      _HomeActionCard(
-                        key: const ValueKey('offboarding-card'),
-                        icon: Icons.door_front_door_outlined,
-                        color: const Color(0xFF0571A6),
-                        tint: const Color(0xFFEAF3F8),
-                        title: 'Off-boarding',
-                        subtitle: switch (_offboarding.me.offboarding?.tl) {
-                          final tl? => 'Last day ${shortDay(tl)}',
-                          null => 'Before you go',
-                        },
-                        onTap: _openOffboarding,
-                      ),
-                  ],
+                  ),
                 ),
               ],
             ),
@@ -8144,41 +8153,45 @@ class _HomeAttendanceCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF7F7F9),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: const Color(0xFFEBEBEB)),
-                      ),
-                      child: SvgPicture.asset(
-                        'assets/icons/attendance_card_calendar.svg',
-                        width: 16,
-                        height: 16,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    const Expanded(
-                      child: Text(
-                        'Attendance',
-                        style: TextStyle(
-                          fontFamily: 'Sora',
-                          color: Color(0xFF111827),
-                          fontSize: 16,
-                          height: 16.2 / 16,
-                          letterSpacing: -0.16,
-                          fontWeight: FontWeight.w600,
+                // The Sowaka tour's "Your work calendar" stop.
+                AppTourAnchor(
+                  target: AppTourTarget.attendanceTitle,
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF7F7F9),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: const Color(0xFFEBEBEB)),
+                        ),
+                        child: SvgPicture.asset(
+                          'assets/icons/attendance_card_calendar.svg',
+                          width: 16,
+                          height: 16,
                         ),
                       ),
-                    ),
-                    SvgPicture.asset(
-                      'assets/icons/chevron_right_expand.svg',
-                      width: 19.9854,
-                      height: 19.9854,
-                    ),
-                  ],
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Attendance',
+                          style: TextStyle(
+                            fontFamily: 'Sora',
+                            color: Color(0xFF111827),
+                            fontSize: 16,
+                            height: 16.2 / 16,
+                            letterSpacing: -0.16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      SvgPicture.asset(
+                        'assets/icons/chevron_right_expand.svg',
+                        width: 19.9854,
+                        height: 19.9854,
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Row(

@@ -21,6 +21,9 @@ enum ProfileTab {
   posts('Post'),
   counselor('Counselor'),
   documentation('Documentation'),
+
+  /// The App tour card (the Sowaka tour, again): one's own, before Settings.
+  help('Help'),
   settings('Settings');
 
   const ProfileTab(this.label);
@@ -109,6 +112,7 @@ List<ProfileTab> ownProfileTabs({
   ProfileTab.rank,
   ProfileTab.posts,
   if (showsHelp) ProfileTab.counselor,
+  ProfileTab.help,
   ProfileTab.settings,
 ];
 
@@ -594,6 +598,7 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
       ],
       // Never on someone else's profile.
       ProfileTab.counselor => const <Widget>[],
+      ProfileTab.help => const <Widget>[],
       ProfileTab.settings => const <Widget>[],
       ProfileTab.onboarding => const <Widget>[],
     };
@@ -1603,6 +1608,8 @@ class _ProfileScreenState extends State<_ProfileScreen> {
       ProfileTab.rank => [_RankHistory(service: _profileService)],
       ProfileTab.posts => [if (posts != null) posts.tab(session)],
       ProfileTab.counselor => [HelpProfileSection(session: session)],
+      // The Sowaka tour from its first stop (it closes the profile).
+      ProfileTab.help => [const AppTourHelpCard()],
       // One's own documents are not loaded with the workspace.
       ProfileTab.documentation => const <Widget>[],
       ProfileTab.settings => [

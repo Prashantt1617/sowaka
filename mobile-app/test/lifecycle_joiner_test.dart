@@ -9,6 +9,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile_app/features/app_tour/app_tour.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/data/joiner_meetings_api.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/data/onboarding_models.dart';
 import 'package:mobile_app/features/lifecycle/onboarding/joiner/joiner_api.dart';
@@ -386,11 +387,57 @@ void main() {
       expect(find.byKey(const ValueKey('tile-checkins')), findsOneWidget);
     });
 
-    testWidgets('Day 1 after it: tomorrow’s lesson on the tour card', (tester) async {
+    testWidgets('Day 1 after it: the Sowaka tour on its card and tile', (tester) async {
       await _open(tester, _home('d1', punched: true));
       expect(find.byKey(const ValueKey('first-punch-card')), findsNothing);
       expect(find.text('SOWAKA TOUR · TOMORROW'), findsOneWidget);
-      expect(find.text('1 min · 1 of 4 done'), findsWidgets);
+      // The spotlight tour over the app, not a lesson: the card and the tile.
+      expect(find.text('Let’s show you around'), findsNWidgets(2));
+      expect(find.text('About a minute'), findsNWidgets(2));
+    });
+
+    testWidgets('the tour tile opens the tour’s start card; its finish marks every lesson done', (tester) async {
+      // A shell with no tabs and no Help card: every stop is left out, so
+      // Start tour goes straight to the finish card.
+      final host = AppTourHost(
+        tabs: () => const [],
+        showTab: (_, _) {},
+        showTeamSection: (_) {},
+        openHelp: () {},
+        closeProfile: () {},
+        isManager: () => false,
+        firstName: () => 'Priya',
+      );
+      AppTour.register(host);
+      addTearDown(() {
+        AppTour.unregister(host);
+        AppTour.close();
+      });
+      final api = await _open(tester, _home('d1', punched: true));
+      await scrollTo(tester, find.byKey(const ValueKey('tile-tour')));
+      await tester.tap(find.byKey(const ValueKey('tile-tour')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byKey(const ValueKey('app-tour-start-card')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('app-tour-start')));
+      for (var i = 0; i < 60; i++) {
+        await tester.pump(const Duration(milliseconds: 60));
+      }
+      expect(find.text('You’re all set, Priya'), findsOneWidget);
+      expect(api.calls.where((c) => c.startsWith('lesson:')), ['lesson:missed', 'lesson:leave', 'lesson:overtime']);
+      await tester.tap(find.byKey(const ValueKey('app-tour-explore')));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(AppTour.isRunning, isFalse);
+    });
+
+    testWidgets('the tour tile reads Done once every lesson is', (tester) async {
+      await _open(tester, _home('w1', punched: true, extra: {
+        'tour': {'lessons': ['punch', 'missed'], 'done': ['punch', 'missed']},
+      }));
+      await scrollTo(tester, find.byKey(const ValueKey('tile-tour')));
+      expect(find.descendant(of: find.byKey(const ValueKey('tile-tour')), matching: find.text('DONE')), findsOneWidget);
+      expect(find.text('Tour done'), findsOneWidget);
+      expect(find.text('Replay it anytime'), findsOneWidget);
     });
 
     testWidgets('a stage ahead is looked at, and her own brings her back; a done one does nothing', (tester) async {

@@ -72,6 +72,7 @@ import '../../face_id/face_setup_screen.dart';
 import '../../lifecycle/onboarding/data/onboarding_api.dart';
 import '../../lifecycle/onboarding/data/onboarding_models.dart';
 import '../../lifecycle/onboarding/onboarding_launcher.dart';
+import '../../app_tour/app_tour.dart';
 import '../../lifecycle/onboarding/presentation/manager/new_joiners_tab.dart';
 import '../../lifecycle/onboarding/presentation/manager/team_kit.dart';
 
@@ -233,7 +234,28 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // what `/lifecycle/me` says decides whether they show at all.
     registerOnboardingShell(_onboardingShell);
     unawaited(LifecycleMeStore.instance.refresh(HttpOnboardingApi(session: widget.session)));
+    // The Sowaka tour walks these tabs (from onboarding's tile and Profile ›
+    // Help).
+    AppTour.register(_tourHost);
   }
+
+  /// What the Sowaka tour moves: the tabs (as the bar opens them), Teams'
+  /// sections, one's own profile on Help.
+  late final AppTourHost _tourHost = AppTourHost(
+    tabs: () => visibleTabs(_session.user.enabledTabs),
+    showTab: (tab, reset) {
+      if (reset || _bloc.state.tab != tab) {
+        _bloc.add(ChangeManagerTab(tab, fresh: true));
+      }
+    },
+    showTeamSection: (section) => _bloc.add(ShowTeamSection(section)),
+    openHelp: () => _openProfile(on: ProfileTab.help),
+    closeProfile: () {
+      if (_profileOpen) _closeProfile();
+    },
+    isManager: () => _bloc.state.canManage,
+    firstName: () => _session.user.name.trim().split(RegExp(r'\s+')).first,
+  );
 
   @override
   void dispose() {
@@ -242,6 +264,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
     unregisterSupportTicketOpener(_raiseSupportTicket);
     unregisterInboxProfileAction(_inboxProfileAction);
     unregisterOnboardingShell(_onboardingShell);
+    AppTour.unregister(_tourHost);
     NetworkStatus.offline.removeListener(_onNetworkChanged);
     activeManagerBloc.value = null;
     _quickActionsController
