@@ -24,6 +24,8 @@ export interface AuthUser {
   dashboardAdmin?: boolean;
   /** Dashboard tabs this person may open; null means every tab. */
   dashboardTabs?: string[] | null;
+  /** A manager on the dashboard (manager-scope.ts): every list is their team. */
+  dashboardScope?: 'team';
   /** Support desk role; null when they have none (no Support tab). */
   supportRole?: 'head' | 'staff' | null;
   /** May edit the profile details of themselves and everyone below them in the reporting line. */

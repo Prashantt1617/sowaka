@@ -4,6 +4,7 @@ import { accountClosedFor, hashSessionToken } from '../services/auth.service';
 import { cachedAuth, rememberAuth } from '../services/auth-cache';
 import { redactTicket } from '../services/scribble-ticket.service';
 import { runAsRequestUser } from '../services/request-user';
+import { dashboardGrantOf } from '../services/manager-scope';
 import { logger } from '../utils/logger';
 import type { User } from '../models/user.model';
 import type { AuthSessionDocument } from '../models/auth.model';
@@ -88,17 +89,24 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       rememberAuth(tokenHash, sessionOnly as AuthSessionDocument, user);
     }
 
+    // HR's dashboard grant, or a manager's (their tabs, their team) where the company switched it on.
+    // A copy: the cached record must keep what is stored, or the next request would read a manager's
+    // tabs as HR's own grant.
+    const grant = await dashboardGrantOf(user as never);
+    const seen = (grant.access === (user.dashboardAccess === true) && !grant.teamScope)
+      ? user
+      : { ...user, dashboardAccess: grant.access, dashboardTabs: grant.tabs ?? undefined, dashboardScope: grant.teamScope ? 'team' : undefined } as typeof user;
     req.auth = {
       userId: session.userId,
       token,
-      dashboardAccess: user.dashboardAccess === true,
-      user,
+      dashboardAccess: grant.access,
+      user: seen,
     };
     // The dashboard's App usage page: who used the app, and when.
     noteAppRequest(req, user);
     // So `orgUsers` and the services that need the caller's org know it
     // without reading the user again.
-    runAsRequestUser({ userId: session.userId, org: user.org }, () => runAsViewer(user as Omit<User, 'profilePhotoUrl'>, next));
+    runAsRequestUser({ userId: session.userId, org: user.org, ...(grant.teamScope ? { teamScope: true } : {}) }, () => runAsViewer(seen as Omit<User, 'profilePhotoUrl'>, next));
   } catch (error) {
     next(error);
   }

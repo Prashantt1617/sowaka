@@ -10,6 +10,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 export interface RequestUser {
   userId: string;
   org?: string;
+  /** A manager on the dashboard (manager-scope.ts): every list is their subtree. */
+  teamScope?: boolean;
 }
 
 const scope = new AsyncLocalStorage<RequestUser>();

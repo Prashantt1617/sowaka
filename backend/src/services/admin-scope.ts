@@ -2,6 +2,7 @@ import type { Collection, Document, WithId } from 'mongodb';
 import { users } from '../config/db';
 import { User } from '../models/user.model';
 import { requestUserFor } from './request-user';
+import { scopedUserIds } from './manager-scope';
 
 /**
  * All users in the same organization as the given dashboard user — the scope of
@@ -24,14 +25,18 @@ export async function orgUsers(
 }
 
 /** The filter `orgUsers` scopes by; null when the caller has no user record. */
-async function orgFilterFor(adminUserId: string): Promise<{ org?: string; hiddenFromDirectory?: { $ne: true } } | null> {
+async function orgFilterFor(adminUserId: string): Promise<{ org?: string; hiddenFromDirectory?: { $ne: true }; userId?: { $in: string[] } } | null> {
   // The signed-in caller's org is already known from this request's auth
   // check; reading their record again would add a round trip to every list.
   const caller = requestUserFor(adminUserId);
   const admin = caller ?? (await users().findOne({ userId: adminUserId }, { projection: { _id: 0, org: 1 } }));
   if (!admin) return null;
+  // A manager on the dashboard sees their own team only: the subtree below them, them included.
+  const team = admin.org ? await scopedUserIds(adminUserId) : null;
   // A service account (hiddenFromDirectory) is nobody's colleague: not on any list the roster feeds.
-  return admin.org ? { org: admin.org, hiddenFromDirectory: { $ne: true } } : { hiddenFromDirectory: { $ne: true } };
+  return admin.org
+    ? { org: admin.org, hiddenFromDirectory: { $ne: true }, ...(team ? { userId: { $in: [...team] } } : {}) }
+    : { hiddenFromDirectory: { $ne: true } };
 }
 
 /**
