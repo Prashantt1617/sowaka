@@ -6,7 +6,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext';
 import { useBrandDocument } from './brand';
 import { LoginScreen } from './auth/LoginScreen';
 import { OVERVIEW_ITEM, SECTIONS, Sidebar, Topbar, Toast } from './Chrome';
-import { canOpen } from './access';
+import { canOpen, isTeamScope } from './access';
 import { Placeholder } from './views/Placeholder';
 import { Drawers } from './drawers';
 import { rememberBrandOrg } from './brand';
@@ -102,7 +102,8 @@ function Shell() {
         </div>
       </main>
       <Drawers />
-      <SuwiPanel />
+      {/* Suwi reads the whole company: not for a manager (team scope). */}
+      {!isTeamScope(user) && <SuwiPanel />}
       <Toast />
     </div>
   );

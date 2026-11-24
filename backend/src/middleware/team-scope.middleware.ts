@@ -9,6 +9,8 @@ import { assertInTeam, scopedUserIds } from '../services/manager-scope';
 /** Never for a team-scoped caller, whatever the tabs say. */
 const REFUSED: Array<{ path: RegExp; methods?: string[] }> = [
   { path: /^\/admin\/accesses/ },
+  // People › Tasks is HR's (24 Nov 2026).
+  { path: /^\/admin\/employees\/tasks/ },
   { path: /^\/admin\/exits/ },
   { path: /^\/admin\/exit-settings/ },
   { path: /^\/admin\/employees\/[^/]+\/exit/ },
