@@ -373,7 +373,8 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
               const expanded = open === p.userId;
               return (
                 <FragmentRows key={p.userId}>
-                  <tr>
+                  <tr onClick={(ev) => { if ((ev.target as HTMLElement).closest('button, input, select, a, textarea, label')) return; setOpen(expanded ? null : p.userId); }}
+                    style={{ cursor: 'pointer', background: expanded ? 'var(--surface-2)' : undefined }} title={expanded ? undefined : 'Open the payslip'}>
                     <Td>
                       <div style={L.cellName}>{p.employeeName}</div>
                       <div style={L.cellSub}>{[p.employeeId, p.department].filter(Boolean).join(' · ') || '—'}</div>
@@ -408,7 +409,6 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
                     </Td>
                     <Td right>
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                        <button type="button" onClick={() => setOpen(expanded ? null : p.userId)} className="lk-btn" style={slipBtn}>{expanded ? 'Hide' : 'Details'}</button>
                         <button type="button" onClick={() => void downloadPayslipPdf(p, detail.company, detail.run).catch((e) => alert(e instanceof Error ? e.message : String(e)))} className="lk-btn" style={slipBtn}>Payslip</button>
                         {p.id && <button type="button" onClick={() => void downloadTdsSheetPdf(p.id!).catch((e) => alert(e instanceof Error ? e.message : String(e)))} className="lk-btn" style={slipBtn}>TDS sheet</button>}
                       </div>
@@ -423,6 +423,8 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
                             items={oneTime}
                             edit={e}
                             onChange={(patch) => setEdit(p.userId, patch)}
+                            saving={saving}
+                            onSave={() => void recalc()}
                           />
                         )}
                         <SlipNumbers p={p} />
@@ -504,27 +506,58 @@ function LopCalendar({ slip, period, editable, onMarked, onExplain, onClose }: {
   );
 }
 
-// This month only, for one person: overtime pay, and one-time earnings or
-// deductions (a bonus, a hold, an advance recovered). Kept on the run until
-// changed; blank clears one.
-function ThisMonthOnly({ p, items, edit, onChange }: { p: PayslipDTO; items: PayHeadDTO[]; edit: Edit; onChange: (patch: Edit) => void }) {
+// This month only, for one person (24 Nov 2026, HR): the pay items given this month are listed, more are
+// added from a dropdown (overtime pay, the company's one-time earnings and deductions: arrears, bonus, extra
+// days, an advance recovered…), and Save recalculates the run at once so gross, deductions and net pay show
+// the change. Kept on the run until changed; the × clears one.
+function ThisMonthOnly({ p, items, edit, onChange, saving, onSave }: { p: PayslipDTO; items: PayHeadDTO[]; edit: Edit; onChange: (patch: Edit) => void; saving: boolean; onSave: () => void }) {
   const saved = p.inputs.componentAmounts ?? {};
   const value = (code: string) => edit.amounts?.[code] ?? (saved[code] !== undefined ? String(saved[code] / 100) : '');
   const ot = edit.overtime ?? (p.inputs.overtimePaise ? String(p.inputs.overtimePaise / 100) : '');
-  const field = (label: string, v: string, set: (v: string) => void, changed: boolean, hint?: string) => (
-    <label key={label} style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11.5, color: 'var(--ink-2)' }}>
-      <span>{label}{hint && <span style={{ color: 'var(--ink-3)' }}> · {hint}</span>}</span>
-      <input type="number" min={0} value={v} placeholder="0" onChange={(ev) => set(ev.target.value)} className="lk-in" style={{ ...cellInput, width: 120, textAlign: 'left', borderColor: changed ? 'var(--accent)' : 'var(--line-2)' }} />
-    </label>
-  );
+  const OT = '__overtime';
+  const otHint = p.inputs.approvedOtHours ? `${p.inputs.approvedOtHours} h approved${!p.inputs.overtimeEnteredByHr && p.inputs.overtimePaise > 0 ? ' · paid by the template’s rule' : ''}` : 'earning';
+  const all = [
+    { code: OT, label: 'Overtime pay', hint: otHint },
+    ...items.map((h) => ({ code: h.code, label: h.payslipName ?? h.name, hint: h.category === 'deduction' ? 'deduction' : 'one-time earning' })),
+  ];
+  const get = (code: string) => (code === OT ? ot : value(code));
+  const put = (code: string, v: string) => (code === OT ? onChange({ overtime: v }) : onChange({ amounts: { ...(edit.amounts ?? {}), [code]: v } }));
+  const touched = (code: string) => (code === OT ? edit.overtime !== undefined : edit.amounts?.[code] !== undefined);
+  // Shown: anything with an amount, saved or typed, and anything just added from the dropdown.
+  const [added, setAdded] = useState<string[]>([]);
+  const shown = all.filter((x) => added.includes(x.code) || (get(x.code) !== '' && Number(get(x.code)) !== 0) || (touched(x.code) && get(x.code) !== ''));
+  const left = all.filter((x) => !shown.some((y) => y.code === x.code));
+  const dirty = edit.overtime !== undefined || Object.keys(edit.amounts ?? {}).length > 0;
   return (
-    <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px dashed var(--line-2)' }}>
+    <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px dashed var(--line-2)' }} onClick={(ev) => ev.stopPropagation()}>
       <div style={{ ...L.eyebrow, marginBottom: 8 }}>This month only</div>
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        {field('Overtime pay', ot, (v) => onChange({ overtime: v }), edit.overtime !== undefined, p.inputs.approvedOtHours ? `${p.inputs.approvedOtHours} h approved${!p.inputs.overtimeEnteredByHr && p.inputs.overtimePaise > 0 ? ' · paid by the template’s rule' : ''}` : undefined)}
-        {items.map((h) => field(h.payslipName ?? h.name, value(h.code), (v) => onChange({ amounts: { ...(edit.amounts ?? {}), [h.code]: v } }), edit.amounts?.[h.code] !== undefined, h.category === 'deduction' ? 'deduction' : 'one-time earning'))}
+      {shown.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 10 }}>Nothing extra this month. Add arrears, a bonus, overtime or a deduction below.</div>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+        {shown.map((x) => (
+          <div key={x.code} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ minWidth: 220, fontSize: 13 }}>{x.label} <span style={{ color: 'var(--ink-3)', fontSize: 11.5 }}>· {x.hint}</span></span>
+            <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>₹</span>
+            <input type="number" min={0} autoFocus={added[added.length - 1] === x.code} value={get(x.code)} placeholder="0" onChange={(ev) => put(x.code, ev.target.value)}
+              onKeyDown={(ev) => { if (ev.key === 'Enter') onSave(); }}
+              className="lk-in" style={{ ...cellInput, width: 140, textAlign: 'left', borderColor: touched(x.code) ? 'var(--accent)' : 'var(--line-2)' }} />
+            <button type="button" title="Remove for this month" onClick={() => { put(x.code, ''); setAdded((a) => a.filter((c) => c !== x.code)); }}
+              style={{ border: 0, background: 'none', color: 'var(--ink-3)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>×</button>
+          </div>
+        ))}
       </div>
-      <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 8 }}>Then Save &amp; recalculate. One-time earnings are paid on top of the monthly CTC.</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        {left.length > 0 && (
+          <select value="" onChange={(ev) => { const c = ev.target.value; if (c) setAdded((a) => [...a, c]); }} className="lk-in"
+            style={{ ...cellInput, width: 260, textAlign: 'left', cursor: 'pointer' }} aria-label="Add a pay item for this month">
+            <option value="">+ Add a pay item…</option>
+            {left.map((x) => <option key={x.code} value={x.code}>{x.label} ({x.hint})</option>)}
+          </select>
+        )}
+        <button type="button" onClick={onSave} disabled={saving || !dirty} className="lk-btn-p" style={{ ...primaryBtn, opacity: saving || !dirty ? 0.55 : 1 }}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>Save recalculates this run: gross, deductions and net pay update. One-time earnings are paid on top of the monthly CTC.</span>
+      </div>
     </div>
   );
 }
