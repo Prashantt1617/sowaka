@@ -53,13 +53,13 @@ export function costUsd(model: string, u: LlmUsage): number {
 }
 
 /**
- * One round with the model. `onText` hears the reply's text as it is written (Gemini streams it;
- * the other providers call it once with the whole text), so the panel can show the first words
+ * One round with the model. `onText` hears the reply's text as it is written (Gemini and OpenAI stream
+ * it; Claude calls it once with the whole text), so the panel can show the first words
  * while the rest comes.
  */
 export async function callModel(input: { model?: string; system: string; tools?: LlmTool[]; messages: LlmMessage[]; maxTokens?: number; onText?: (soFar: string) => void; thinking?: string }): Promise<LlmReply> {
   const reply = await (SUWI_PROVIDER === 'gemini' ? callGemini(input) : SUWI_PROVIDER === 'openai' ? callOpenAI(input) : callClaude(input));
-  if (input.onText && SUWI_PROVIDER !== 'gemini') {
+  if (input.onText && SUWI_PROVIDER === 'claude') {
     const text = reply.content.filter((b): b is Extract<ContentBlock, { type: 'text' }> => b.type === 'text').map((b) => b.text).join('\n');
     if (text) input.onText(text);
   }
@@ -75,13 +75,14 @@ const THINKING = (process.env.SUWI_THINKING ?? 'low').trim();
 let thinkingRefused = false;
 const thinkingConfig = () => (THINKING && THINKING !== 'off' && !thinkingRefused ? { thinkingConfig: { thinkingLevel: THINKING } } : {});
 
-async function post(url: string, headers: Record<string, string>, body: unknown): Promise<unknown> {
+/** The request, tried up to three times when the service is busy; the first good response (its body not read yet). */
+async function send(url: string, headers: Record<string, string>, body: unknown): Promise<Response> {
   let lastError = '';
   for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(60_000) })
       .catch((e: Error) => { lastError = e.message; return null; });
     if (!res) continue;
-    if (res.ok) return res.json();
+    if (res.ok) return res;
     const text = await res.text();
     lastError = `${res.status}: ${text.slice(0, 300)}`;
     // Overloaded or rate limited: wait and try again. Anything else is final.
@@ -90,6 +91,10 @@ async function post(url: string, headers: Record<string, string>, body: unknown)
   }
   if (lastError.startsWith('429')) throw new SuwiLlmError(429, "The AI service has run out of quota for now (its plan or billing needs a look). Try again in a few minutes.");
   throw new SuwiLlmError(502, `Suwi couldn't reach the AI service (${lastError.slice(0, 120) || 'no response'})`);
+}
+
+async function post(url: string, headers: Record<string, string>, body: unknown): Promise<unknown> {
+  return (await send(url, headers, body)).json();
 }
 
 // —— Anthropic Claude ——
@@ -275,7 +280,44 @@ export function openAiReasoning(hasTools: boolean, thinking?: string): 'none' | 
   return 'low';
 }
 
-async function callOpenAI(input: { model?: string; system: string; tools?: LlmTool[]; messages: LlmMessage[]; maxTokens?: number; thinking?: string }): Promise<LlmReply> {
+type OpenAiReply = { choices?: { message?: { content?: string | null; tool_calls?: { id: string; function: { name: string; arguments: string } }[] } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } }; model?: string };
+
+/** A streamed chat completion put back together as the plain reply: text deltas heard as they come, tool calls joined by index. */
+async function streamOpenAI(url: string, headers: Record<string, string>, body: unknown, onText: (soFar: string) => void): Promise<OpenAiReply> {
+  const res = await send(url, headers, body);
+  if (!res.body) throw new SuwiLlmError(502, "Suwi couldn't read the AI service's reply");
+  let text = '';
+  let buffer = '';
+  const calls: { id: string; name: string; args: string }[] = [];
+  const out: OpenAiReply = {};
+  const decoder = new TextDecoder();
+  const take = (event: string) => {
+    const data = event.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join('');
+    if (!data || data === '[DONE]') return;
+    const chunk = JSON.parse(data) as { model?: string; usage?: OpenAiReply['usage']; choices?: { delta?: { content?: string | null; tool_calls?: { index: number; id?: string; function?: { name?: string; arguments?: string } }[] } }[] };
+    if (chunk.model) out.model = chunk.model;
+    if (chunk.usage) out.usage = chunk.usage;
+    const delta = chunk.choices?.[0]?.delta;
+    if (delta?.content) { text += delta.content; onText(text); }
+    for (const t of delta?.tool_calls ?? []) {
+      const c = (calls[t.index] ??= { id: '', name: '', args: '' });
+      if (t.id) c.id = t.id;
+      if (t.function?.name) c.name += t.function.name;
+      if (t.function?.arguments) c.args += t.function.arguments;
+    }
+  };
+  for await (const piece of res.body as unknown as AsyncIterable<Uint8Array>) {
+    buffer += decoder.decode(piece, { stream: true }).replace(/\r\n/g, '\n');
+    let cut: number;
+    while ((cut = buffer.indexOf('\n\n')) >= 0) { take(buffer.slice(0, cut)); buffer = buffer.slice(cut + 2); }
+  }
+  if (buffer.trim()) take(buffer);
+  const toolCalls = calls.filter(Boolean).map((c) => ({ id: c.id, function: { name: c.name, arguments: c.args } }));
+  out.choices = [{ message: { content: text || null, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) } }];
+  return out;
+}
+
+async function callOpenAI(input: { model?: string; system: string; tools?: LlmTool[]; messages: LlmMessage[]; maxTokens?: number; thinking?: string; onText?: (soFar: string) => void }): Promise<LlmReply> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new SuwiLlmError(503, 'Suwi is not set up on this server yet (no OPENAI_API_KEY)');
   const model = input.model ?? SUWI_MODEL;
@@ -299,11 +341,17 @@ async function callOpenAI(input: { model?: string; system: string; tools?: LlmTo
     }
   }
   const tools = input.tools ?? [];
-  const res = await post('https://api.openai.com/v1/chat/completions', { authorization: `Bearer ${key}` }, {
+  const body = {
     model, messages, max_completion_tokens: (input.maxTokens ?? 1500) + 1500,
     reasoning_effort: openAiReasoning((input.tools ?? []).length > 0, input.thinking),
     ...(tools.length ? { tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } })) } : {}),
-  }) as { choices?: { message?: { content?: string | null; tool_calls?: { id: string; function: { name: string; arguments: string } }[] } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } }; model?: string };
+  };
+  const url = 'https://api.openai.com/v1/chat/completions';
+  const headers = { authorization: `Bearer ${key}` };
+  // Streamed when the panel is waiting for words (24 Nov): the first ones show in about a second instead of after the whole reply.
+  const res = input.onText
+    ? await streamOpenAI(url, headers, { ...body, stream: true, stream_options: { include_usage: true } }, input.onText)
+    : await post(url, headers, body) as OpenAiReply;
   const msg = res.choices?.[0]?.message;
   const content: ContentBlock[] = [];
   if (msg?.content) content.push({ type: 'text', text: msg.content });
