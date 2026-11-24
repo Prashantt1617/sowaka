@@ -30,6 +30,8 @@ export interface ParsedSheet {
   emailColumn?: string;
   nameColumn?: string;
   fieldColumns: Partial<Record<SheetField, string>>;
+  /** Every row as the sheet has it, by header (and `__row`, its row number): People › Import reads these. */
+  records?: Record<string, string>[];
 }
 
 /** CSV with quoted fields, doubled quotes and line breaks inside quotes. */
@@ -100,12 +102,14 @@ export function parseSheet(file: string, text: string): ParsedSheet | null {
       values: Object.fromEntries(Object.entries(fields).map(([f, at]) => [f, r[at as number] ?? '']).filter(([, v]) => v)) as SheetRow['values'],
     })).filter((r) => r.employeeId || r.email || r.name);
     if (!parsed.length) continue;
+    const records = rows.slice(1, 2001).map(({ r, row }) => ({ __row: String(row), ...Object.fromEntries(headers.map((h, i) => [h, r[i] ?? '']).filter(([h]) => h)) }));
     return {
       file, ...(tab ? { tab } : {}), rows: parsed.slice(0, 2000),
       ...(id >= 0 ? { idColumn: headers[id] } : {}),
       ...(email >= 0 ? { emailColumn: headers[email] } : {}),
       ...(name >= 0 ? { nameColumn: headers[name] } : {}),
       fieldColumns: Object.fromEntries(Object.entries(fields).map(([f, at]) => [f, headers[at as number]])),
+      records,
     };
   }
   return null;

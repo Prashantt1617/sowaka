@@ -51,6 +51,8 @@ const DRAFT = /\b(draft|write|compose|letter|policy|announce|announcement|post (
 const ANALYSIS = /\b(why|compare|comparison|trend|pattern|insight|analy[sz]e|analysis|recommend|suggest|should (i|we)|plan|forecast|risk|explain why|what if|root cause|improve)\b/i;
 /** Asking for a change: the full loop (agent.ts) prepares confirm cards. */
 const ACT = /\b(approve|reject|decline|assign|create|add|make|set up|move|delete|remove|remind|nudge|send|publish|post it|correct|fix (the|his|her|their)|mark|enable|disable|turn (on|off)|run payroll|bulk|change (the|his|her|their)|update (the|his|her|their))\b/i;
+/** People changes said other ways: access, exits, imports, company details. */
+const ACT_PEOPLE = /\b(give|grant|revoke|take away|start an? exit|record an? exit|offboard|import|change (our|my)|update (our|my))\b/i;
 
 /** A question about something, not a request to do it ("how do I add a holiday?", "who should approve…"). */
 const ASKING = /^\s*(how|where|what|which|who|whom|whose|when|why|is|are|was|were|do|does|did|has|have|should|list|show|tell me|explain)\b/i;
@@ -61,7 +63,7 @@ const REQUESTING = /^\s*(can you|could you|would you|will you|please|pls|kindly|
 export function asksForChange(ctx: SuwiContext, question: string): boolean {
   if (!Object.values(ctx.levels).some((l) => l === 'act')) return false;
   if (ASKING.test(question) && !REQUESTING.test(question)) return false;
-  return ACT.test(question);
+  return ACT.test(question) || ACT_PEOPLE.test(question);
 }
 
 function firstSentence(s: string, max = 120): string {
