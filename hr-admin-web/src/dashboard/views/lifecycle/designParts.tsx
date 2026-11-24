@@ -10,6 +10,7 @@ import { fetchTemplateMedia } from '../../../services/lifecycle';
 import { IconClose, IconInfo } from '../../icons';
 import type { DesignMedia, DesignStage } from '../../../services/lifecycle';
 import { GLYPH, rowLine, tileLook } from './designWords';
+import { Switch } from './shared';
 
 
 
@@ -39,16 +40,20 @@ export function RemoveButton({ label, onClick, cross }: { label: string; onClick
 }
 
 /** One row of a list: its icon, its title, what sits on the right; `onOpen` makes the whole row open it. */
-export function ItemRow({ icon, title, titleNode, onOpen, openLabel, children, onRemove, indent, last, chevron }: {
-  icon: string; title: string; titleNode?: ReactNode; onOpen?: () => void; openLabel?: string; children?: ReactNode; onRemove?: () => void; indent?: boolean; last?: boolean; chevron?: boolean;
+export function ItemRow({ icon, title, titleNode, onOpen, openLabel, children, onRemove, enabled, onToggle, indent, last, chevron }: {
+  icon: string; title: string; titleNode?: ReactNode; onOpen?: () => void; openLabel?: string; children?: ReactNode; onRemove?: () => void;
+  /** With [onToggle]: an on/off switch instead of the bin (a row switched off stays in the template, greyed, and reaches no joiner). */
+  enabled?: boolean; onToggle?: (on: boolean) => void; indent?: boolean; last?: boolean; chevron?: boolean;
 }) {
+  const off = onToggle && enabled === false;
   return (
     <div style={{ minHeight: 60, padding: `10px 0 10px ${indent ? 16 : 0}px`, borderBottom: last ? 0 : rowLine, display: 'flex', alignItems: 'center', gap: 12, position: 'relative' }}>
-      <IconCircle d={icon} />
-      {titleNode ?? <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', overflowWrap: 'anywhere' }}>{title}</span>}
+      <span style={{ opacity: off ? 0.45 : 1, display: 'flex' }}><IconCircle d={icon} /></span>
+      {titleNode ?? <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 500, color: off ? 'var(--ink-3)' : 'var(--ink)', overflowWrap: 'anywhere' }}>{title}{off && <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 600, color: 'var(--ink-3)' }}>Off</span>}</span>}
       {onOpen && <button type="button" onClick={onOpen} aria-label={openLabel ?? `Open ${title}`} style={{ position: 'absolute', inset: 0, zIndex: 1, border: 0, background: 'transparent', padding: 0, cursor: 'pointer' }} />}
       {children}
-      {onRemove && <RemoveButton label={title} onClick={onRemove} />}
+      {onToggle && <span style={{ position: 'relative', zIndex: 2, display: 'flex' }}><Switch on={enabled !== false} onChange={onToggle} label={`${title}: ${enabled === false ? 'switched off' : 'on'}`} /></span>}
+      {!onToggle && onRemove && <RemoveButton label={title} onClick={onRemove} />}
       {chevron && <Glyph d={GLYPH.chevron} size={16} color="var(--ink-3)" />}
     </div>
   );

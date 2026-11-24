@@ -141,7 +141,9 @@ export interface TemplateDesign {
 function viewOf(t: Pick<LifecycleTemplate, 'id' | 'name' | 'isDefault' | 'settings' | 'tasks' | 'updatedAt' | 'updatedByName'>): TemplateDesign {
   const rows = t.tasks.filter(isDesignRow).sort((a, b) => a.order - b.order);
   const of = (section: DesignItem['section']) => rows.filter((r) => r.design!.section === section);
-  const watchView = (r: TemplateTask): WatchItemView => ({ id: r.id, title: r.title, stage: r.design!.stage, media: { ...(r.design!.media ?? { type: 'video' }) } });
+  // Switched off in the editor: kept, shown off, reaching no joiner.
+  const off = (r: TemplateTask) => (r.enabled === false ? { enabled: false as const } : {});
+  const watchView = (r: TemplateTask): WatchItemView => ({ id: r.id, title: r.title, stage: r.design!.stage, media: { ...(r.design!.media ?? { type: 'video' }) }, ...off(r) });
   const s = t.settings ?? {};
   return {
     templateId: t.id, name: t.name, isDefault: t.isDefault,
@@ -153,7 +155,7 @@ function viewOf(t: Pick<LifecycleTemplate, 'id' | 'name' | 'isDefault' | 'settin
     },
     meetings: of('meeting').map((r) => ({
       id: r.id, title: r.title, meetWith: r.design!.meetWith!, stage: r.design!.stage, agenda: [...(r.agenda ?? r.team?.agenda ?? [])],
-      ...(r.design!.everyMonth ? { everyMonth: true } : {}),
+      ...(r.design!.everyMonth ? { everyMonth: true } : {}), ...off(r),
     })),
     tasks: of('task').map((r) => {
       const d = r.design!;
@@ -161,22 +163,22 @@ function viewOf(t: Pick<LifecycleTemplate, 'id' | 'name' | 'isDefault' | 'settin
         id: r.id, title: r.title, type: d.taskType ?? 'other', stage: d.stage,
         ...(d.screen ? { screen: d.screen } : {}), ...(d.source ? { source: d.source } : {}), ...(d.link ? { link: d.link } : {}),
         ...(d.fileId ? { fileId: d.fileId } : {}), ...(d.letterTemplateId ? { letterTemplateId: d.letterTemplateId } : {}),
-        ...(d.signDocs ? { signDocs: [...d.signDocs] } : {}), ...(d.questions ? { questions: d.questions.map((q) => ({ ...q })) } : {}),
+        ...(d.signDocs ? { signDocs: [...d.signDocs] } : {}), ...(d.questions ? { questions: d.questions.map((q) => ({ ...q })) } : {}), ...off(r),
       };
     }),
-    checkins: of('checkin').map((r) => ({ id: r.id, title: r.title, stage: r.design!.stage, questions: (r.design!.questions ?? []).map((q) => ({ ...q })) })),
+    checkins: of('checkin').map((r) => ({ id: r.id, title: r.title, stage: r.design!.stage, questions: (r.design!.questions ?? []).map((q) => ({ ...q })), ...off(r) })),
     tour: s.tourLessons ? [...s.tourLessons] : [...TOUR_LESSON_KEYS],
     watch: of('watch').filter((r) => r.design!.stage !== 'pre').map(watchView),
     trainings: of('training').map(watchView),
     labels: { trainings: s.trainingsLabel || TRAININGS_LABEL },
-    accesses: of('access').map((r) => ({ id: r.id, title: r.title, role: r.design!.role === 'hr' ? 'hr' as const : 'it' as const })),
+    accesses: of('access').map((r) => ({ id: r.id, title: r.title, role: r.design!.role === 'hr' ? 'hr' as const : 'it' as const, ...off(r) })),
     probation: { months: s.probationMonths === 3 ? 3 : 6, ...(s.probationShiftTemplateId ? { shiftTemplateId: s.probationShiftTemplateId } : {}) },
     team: {
       remindLate: s.remindLateTeamTasks !== false,
       assignees: { ...(s.assignees ?? {}) },
       tasks: of('team').map((r) => ({
         id: r.id, key: r.team?.key ?? r.id, title: r.title, role: r.design!.role!, stage: r.design!.stage,
-        ...(r.design!.how ? { how: r.design!.how } : {}), ...(r.design!.everyMonth ? { everyMonth: true } : {}),
+        ...(r.design!.how ? { how: r.design!.how } : {}), ...(r.design!.everyMonth ? { everyMonth: true } : {}), ...off(r),
       })),
     },
   };
@@ -225,6 +227,8 @@ export async function saveTemplateDesign(org: string, id: string, input: Record<
   };
   const files: string[] = [];
   const letters: string[] = [];
+  // A row HR switched off stays in the template (enabled: false) and reaches no joiner; switched on again later.
+  const mark = (raw: Record<string, unknown>) => { const r = rows[rows.length - 1]; if (r) r.enabled = raw.enabled !== false; };
 
   // Pre-boarding videos, the watch list and trainings.
   const watchOf = (raw: Record<string, unknown>, section: 'watch' | 'training', where: string, pre: boolean) => {
@@ -233,6 +237,7 @@ export async function saveTemplateDesign(org: string, id: string, input: Record<
     const media = cleanMedia(raw.media ?? { type: 'video' }, section === 'training' ? ['video', 'pdf'] : ['video', 'image', 'text'], where);
     if (media.fileId) files.push(media.fileId);
     rows.push(contentRow({ id: was?.id ?? `fd-${section}-${randomUUID().slice(0, 8)}`, section, title: title(raw.title ?? (media.type === 'text' ? 'A note from us' : 'Untitled'), where), stage, media, order: next() }));
+    mark(raw);
   };
   const pre = (input.preboarding ?? {}) as Record<string, unknown>;
   list(pre.videos, 'preboarding.videos').forEach((v, i) => watchOf(v, 'watch', `Pre-boarding video ${i + 1}`, true));
@@ -246,6 +251,7 @@ export async function saveTemplateDesign(org: string, id: string, input: Record<
       stage: stageOf(m.stage, where, false), agenda: cleanAgendaPoints(m.agenda, where), everyMonth: m.everyMonth === true, order: next(),
     });
     rows.push(row);
+    mark(m);
   });
   list(input.tasks, 'tasks').forEach((t, i) => {
     const where = `Task ${i + 1}`;
@@ -261,6 +267,7 @@ export async function saveTemplateDesign(org: string, id: string, input: Record<
     const row = taskRow({ id: was?.id ?? `fd-task-${randomUUID().slice(0, 8)}`, title: title(t.title, where), stage: design.stage, design: rest, ...(was?.systemKey ? { systemKey: was.systemKey } : {}), order: next() });
     if (was?.systemKey === 'sign_letters') rows.push({ ...was, ...row, ...rulesOfStage(design), surface: 'app' });
     else rows.push(row);
+    mark(t);
   });
   list(input.checkins, 'checkins').forEach((c, i) => {
     const where = `Check-in ${i + 1}`;
@@ -268,6 +275,7 @@ export async function saveTemplateDesign(org: string, id: string, input: Record<
     const stage = stageOf(c.stage, where, false);
     if (stage === 'm1' || stage === 'w1' || stage === 'd1' || stage === 'mid' || stage === 'fin') {
       rows.push(contentRow({ id: was?.id ?? `fd-checkin-${randomUUID().slice(0, 8)}`, section: 'checkin', title: title(c.title, where), stage, questions: cleanQuestions(c.questions ?? [], CHECKIN_TYPES, where), order: next() }));
+      mark(c);
     }
   });
   list(input.watch, 'watch').forEach((w, i) => watchOf(w, 'watch', `Watch list item ${i + 1}`, false));
@@ -276,6 +284,7 @@ export async function saveTemplateDesign(org: string, id: string, input: Record<
     const where = `Device or access ${i + 1}`;
     const was = prior(a.id, 'access');
     rows.push(accessRow({ id: was?.id ?? `fd-access-${randomUUID().slice(0, 8)}`, title: title(a.title, where), role: a.role === 'hr' ? 'hr' : 'it', order: next() }));
+    mark(a);
   });
   const team = (input.team ?? {}) as Record<string, unknown>;
   const keys = new Set<string>();
@@ -292,6 +301,7 @@ export async function saveTemplateDesign(org: string, id: string, input: Record<
       id: was?.id ?? `fd-team-${randomUUID().slice(0, 8)}`, key, title: title(t.title, where), role, stage: stageOf(t.stage, where),
       ...(how ? { how } : {}), everyMonth: was?.design?.everyMonth === true || t.everyMonth === true, order: next(),
     }));
+    mark(t);
   });
   for (const r of rows) if (r.team?.key && keys.has(r.team.key) && r.design?.section === 'meeting') throw new LifecycleError(400, `${r.title}: a meeting and a team task share a key`);
 

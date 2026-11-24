@@ -92,17 +92,17 @@ export type TourLesson = 'punch' | 'missed' | 'leave' | 'overtime' | 'approveLea
 export type MediaBackground = 'rust' | 'blue' | 'ink' | 'green' | 'purple' | 'sand';
 export interface DesignQuestion<T extends string = string> { id?: string; text: string; type: T; options?: string[] }
 export interface DesignMedia { type: 'video' | 'image' | 'text' | 'pdf'; fileId?: string; text?: string; bg?: MediaBackground; minutes?: number; name?: string; /** A video's still frame: its tile's thumbnail. */ posterFileId?: string }
-export interface DesignWatchItem { id?: string; title: string; stage: DesignStage; media: DesignMedia }
+export interface DesignWatchItem { id?: string; title: string; stage: DesignStage; media: DesignMedia; enabled?: boolean }
 export interface DesignReporting { time?: string; place?: string; mapLink?: string; bring?: string; notes?: string; meets: 'hr' | 'manager' | 'buddy' }
-export interface DesignMeeting { id?: string; title: string; meetWith: MeetWith; stage: DesignStage; agenda: string[]; everyMonth?: boolean }
+export interface DesignMeeting { id?: string; title: string; meetWith: MeetWith; stage: DesignStage; agenda: string[]; everyMonth?: boolean; enabled?: boolean }
 export interface DesignTask {
   id?: string; title: string; type: JoinerTaskType; stage: DesignStage;
   screen?: string; source?: 'policies'; link?: string; fileId?: string; letterTemplateId?: string; signDocs?: string[];
-  questions?: Array<DesignQuestion<FormAnswerType>>;
+  questions?: Array<DesignQuestion<FormAnswerType>>; enabled?: boolean;
 }
-export interface DesignCheckin { id?: string; title: string; stage: DesignStage; questions: Array<DesignQuestion<CheckinAnswerType>> }
-export interface DesignAccess { id?: string; title: string; role: 'it' | 'hr' }
-export interface DesignTeamTask { id?: string; key?: string; title: string; role: TeamRole; stage: DesignStage; how?: string; everyMonth?: boolean }
+export interface DesignCheckin { id?: string; title: string; stage: DesignStage; questions: Array<DesignQuestion<CheckinAnswerType>>; enabled?: boolean }
+export interface DesignAccess { id?: string; title: string; role: 'it' | 'hr'; enabled?: boolean }
+export interface DesignTeamTask { id?: string; key?: string; title: string; role: TeamRole; stage: DesignStage; how?: string; everyMonth?: boolean; enabled?: boolean }
 export interface TemplateDesign {
   templateId: string; name: string; isDefault: boolean; updatedAt?: string; updatedByName?: string;
   preboarding: {
