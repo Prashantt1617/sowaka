@@ -416,7 +416,7 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
                   </tr>
                   {expanded && (
                     <tr>
-                      <td colSpan={8} style={{ background: 'var(--surface-2)', padding: '16px 20px', borderBottom: '1px solid var(--line)', borderRadius: 14 }}>
+                      <td colSpan={8} style={{ background: 'var(--surface-2)', padding: '16px 20px', borderBottom: '1px solid var(--line)', borderRadius: '0 0 14px 14px' }}>
                         {isDraft && (
                           <ThisMonthOnly
                             p={p}
@@ -583,7 +583,8 @@ function SlipNumbers({ p }: { p: PayslipDTO }) {
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 28 }}>
       <div>
         {head('Earnings')}
-        {p.earnings.map((l) => (
+        {/* A one-time item not given this month (₹0 at ₹0) is left out: "This month only" above is where it is added. */}
+        {p.earnings.filter((l) => l.paidPaise !== 0 || l.fullPaise !== 0).map((l) => (
           <div key={l.code}>{row(l.name, l.paidPaise, { muted: l.hidden, sub: [l.fullPaise !== l.paidPaise ? `rate ${money2(l.fullPaise)}` : '', l.hidden ? 'not on payslip' : ''].filter(Boolean).join(' · ') || undefined })}</div>
         ))}
         {p.inputs.overtimePaise > 0 && row('Overtime', p.inputs.overtimePaise)}
