@@ -9,6 +9,7 @@ import {
   updateMyProfilePhoto,
 } from '../controllers/manager.controller';
 import { requireAuth } from '../middleware/auth.middleware';
+import { refineReviewNote } from '../services/review-refine.service';
 import { uploadProfilePhoto } from '../middleware/profile-photo-upload.middleware';
 
 export const managerRouter = Router();
@@ -24,6 +25,12 @@ managerRouter.get('/feedback-snapshot', feedbackSnapshot);
 managerRouter.patch('/photo', uploadProfilePhoto, updateMyProfilePhoto);
 // Picked once during onboarding; the app sends the whole list, not a diff.
 managerRouter.patch('/interests', updateMyInterests);
+// "Refine with Suwi" on a review comment (dashboard review page): the manager's own words, tidied.
+managerRouter.post('/feedback/refine', async (req, res, next) => {
+  try {
+    res.status(200).json({ success: true, ...(await refineReviewNote(req.auth!.userId, (req.body ?? {}) as Record<string, unknown>)) });
+  } catch (error) { next(error); }
+});
 managerRouter.put('/feedback/:employeeUserId', saveManagerFeedback);
 managerRouter.put('/recognition/:category', saveRecognitionNomination);
 
