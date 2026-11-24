@@ -48,6 +48,8 @@ export interface OfferView {
   changedFields?: Array<keyof OfferFields>; refNo?: string; sentAt?: Date; acceptedAt?: Date; finalisedAt?: Date;
   validTill: string; pdfFileId?: string;
   versions: Array<{ version: number; status: OfferVersion['status']; sentAt?: Date; acceptedAt?: Date; changedFields?: Array<keyof OfferFields> }>;
+  /** Confirm new user: given and accepted outside the app, confirmed by `byName` on `at`; `portalEmailed`: the joining portal sign-in went out. */
+  outsideApp?: { byName: string; at: Date; portalEmailed: boolean };
 }
 
 export type PortalOfferState = 'offer' | 'accepted' | 'finalised' | 'declined' | 'expired' | 'replaced' | 'not_joining' | 'closed';
@@ -197,12 +199,15 @@ export async function offerView(journeyId: string, opts: { hidePay?: boolean } =
   if (!offer) return null;
   const v = current(offer);
   const { ctc, ...rest } = v.fields;
+  const outside = offer.versions.find((x) => x.outsideApp)?.outsideApp;
+  const portalEmailed = outside ? Boolean((await candidateAccounts().findOne({ journeyId }, { projection: { _id: 0, loginSentAt: 1 } }))?.loginSentAt) : false;
   return {
     journeyId, version: v.version, status: v.status,
     fields: { ...rest, ...(opts.hidePay ? {} : { ctc }), managerName: await nameOf(v.fields.managerUserId) },
     changedFields: v.changedFields, refNo: v.refNo, sentAt: v.sentAt, acceptedAt: v.acceptedAt, finalisedAt: v.finalisedAt,
     validTill: v.fields.validTill, pdfFileId: v.pdfFileId,
     versions: offer.versions.map((x) => ({ version: x.version, status: x.status, sentAt: x.sentAt, acceptedAt: x.acceptedAt, changedFields: x.changedFields })),
+    ...(outside ? { outsideApp: { byName: outside.byName, at: outside.at, portalEmailed } } : {}),
   };
 }
 
@@ -292,6 +297,37 @@ export async function createOffer(hr: HrActor, input: { candidate?: { name?: unk
     await refreshJourney(journey.id, now, made.tasks ? { journey: { ...journey, offerId: offer.id, updatedAt: now }, tasks: made.tasks } : undefined);
   }
   return { journeyId: journey.id, offer: (await offerView(journey.id))! };
+}
+
+/**
+ * Add user › Confirm new user: someone who accepted an offer outside the app (no offer letter from
+ * Sowaka). The same form and checks as `createOffer` (reporting manager, joining date, CTC; pay
+ * access), then the offer is recorded as given and accepted outside the app and HR's confirmation
+ * finalises it (`finaliseOffer`): the journey stands where a sent, accepted and finalised offer does,
+ * with its offer_sent, accepted and finalised anchors (so the portal, documents and Day-1 pass rules
+ * run as for any accepted offer) and the portal account made. No PDF is needed, and nothing is
+ * emailed unless HR asks to send the joining portal sign-in (`emailPortal: true`).
+ */
+export async function confirmOffer(hr: HrActor, input: { candidate?: { name?: unknown; personalEmail?: unknown; phone?: unknown }; fields?: unknown; templateId?: unknown; emailPortal?: unknown }, now = new Date()): Promise<{ journeyId: string; offer: OfferView }> {
+  if (!hr.seesPay) throw new LifecycleOfferError(403, 'Confirming a new user needs access to pay');
+  // No reply to wait for: the offer was accepted already, so it is "valid" until today only.
+  const fields = { ...(input.fields && typeof input.fields === 'object' ? input.fields as Record<string, unknown> : {}), validTill: istDate(now) };
+  const { journeyId } = await createOffer(hr, { candidate: input.candidate, fields, templateId: input.templateId });
+  const offer = await offerOf(journeyId);
+  const v = current(offer);
+  await offers().updateOne({ id: offer.id, 'versions.version': v.version }, { $set: {
+    'versions.$.status': 'accepted', 'versions.$.sentAt': now, 'versions.$.acceptedAt': now,
+    'versions.$.acceptedDevice': `Offer given outside the app · confirmed by ${hr.name}`,
+    'versions.$.outsideApp': { byUserId: hr.userId, byName: hr.name, at: now }, updatedAt: now,
+  } });
+  const by = { userId: hr.userId, name: hr.name };
+  // HR's own steps, done by HR (before the status, which would finish them as Automatic).
+  await completeTask(journeyId, 'send_offer', by, 'Offer given outside the app');
+  await setJourneyStatus(journeyId, 'offer_sent');
+  await completeTask(journeyId, 'accept_offer', by, 'Accepted outside the app');
+  await setJourneyStatus(journeyId, 'accepted', { lastActivityAt: now });
+  await finaliseOffer(hr, journeyId, now, { emailPortal: input.emailPortal === true });
+  return { journeyId, offer: (await offerView(journeyId))! };
 }
 
 /**
@@ -562,7 +598,8 @@ export async function acceptOfferForJourney(journey: Journey, meta: { ip: string
 // ─── HR: finalise, decline, reopen, not joining, mark joined ────────────────
 
 /** Two-sided acceptance: HR accepts the candidate's accepted version. The first time, the portal account is created and the login emailed. */
-export async function finaliseOffer(hr: HrActor, journeyId: string, now = new Date()): Promise<OfferView> {
+/** `emailPortal: false` (Confirm new user, unless HR asks): the portal account is made but its sign-in is not emailed. */
+export async function finaliseOffer(hr: HrActor, journeyId: string, now = new Date(), opts: { emailPortal?: boolean } = {}): Promise<OfferView> {
   const journey = await journeyOf(hr.org, journeyId);
   const status = String(journey.status);
   // HR records the candidate's yes (they replied to the email): from a sent offer, or a revision
@@ -588,9 +625,11 @@ export async function finaliseOffer(hr: HrActor, journeyId: string, now = new Da
   const companyName = companyDisplayName(company, journey.org);
   if (created) {
     await setJourneyStatus(journeyId, 'finalised');
-    await sendLifecycleEmail(journey.org, created.account.email, `Your ${companyName} joining portal is ready`,
-      mails.portalReady(companyName, journey.candidate?.name ?? '', created.account.email, journey.org));
-    await candidateAccounts().updateOne({ journeyId }, { $set: { loginSentAt: now } });
+    if (opts.emailPortal !== false) {
+      await sendLifecycleEmail(journey.org, created.account.email, `Your ${companyName} joining portal is ready`,
+        mails.portalReady(companyName, journey.candidate?.name ?? '', created.account.email, journey.org));
+      await candidateAccounts().updateOne({ journeyId }, { $set: { loginSentAt: now } });
+    }
     // No set-up push to the manager: HR assigns every onboarding task on the dashboard (24 Nov).
   } else {
     // A revised offer finalised again: back where the candidate had got to.

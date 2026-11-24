@@ -7,19 +7,19 @@
 // the whole tab) as a list with filters. A card opens the joiner panel (H1b).
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../store';
-import { canSeePay } from '../../access';
 import { Card, LoadError, PageActions, Pill, SearchInput, Skeleton, SkeletonFrame } from '../../ui';
-import { IconChevronLeft, IconDownload, IconPlus, IconSearch } from '../../icons';
+import { IconChevronLeft, IconDownload, IconSearch } from '../../icons';
 import { downloadCsv } from '../../export';
 import { getBoard, getClosedJourneys, isNotAvailable } from '../../../services/lifecycle';
 import type { BoardCard, BoardDTO, BoardTab, ClosedJourneyRow, JourneyFlag } from '../../../services/lifecycle';
 import { FlagPill, NotSwitchedOn, OwnerChip, PlantFace } from './shared';
 import { ClockIcon } from './offboarding/parts';
-import { DOCS_OPEN_KEY, OWNER_LABEL, daysTo, dueText, errText, firstName, flagLabel, inputStyle, labelStyle, longDay, shortDay } from './format';
+import { OWNER_LABEL, daysTo, dueText, errText, firstName, flagLabel, inputStyle, labelStyle, longDay, shortDay } from './format';
 import { OFFER_STATES, TAB_LABELS, TONE, columnsOf, offerOf, pctColour, pctOf, weekOf } from './boardModel';
 import type { ColumnDef, OfferState, Tone } from './boardModel';
 import { refreshOnboardingBadge } from '../../onboardingBadge';
 import { JoinerPanel } from './JoinerPanel';
+import { AddUserButton } from '../AddUserButton';
 import '../people.css';
 // The two boards share one look: lanes, cards and the filter row come from the offboarding board's sheet.
 import './offboarding/offboarding.css';
@@ -53,8 +53,6 @@ interface ListFilters { col: string; q: string; offer: OfferState | 'all' | 'rev
 const NO_FILTERS: Omit<ListFilters, 'col'> = { q: '', offer: 'all', from: '', to: '' };
 
 export function OnboardingBoard() {
-  const { user, setView: goTo } = useStore();
-  const pay = canSeePay(user);
   const [view, setViewRaw] = useState<View>(() => {
     try { const t = sessionStorage.getItem(TAB_KEY) as View | null; return t && VIEWS.includes(t) ? t : 'pre_boarding'; } catch { return 'pre_boarding'; }
   });
@@ -68,11 +66,6 @@ export function OnboardingBoard() {
   const [attempt, setAttempt] = useState(0);
   const [openId, setOpenId] = useState('');
   const [list, setList] = useState<ListFilters | null>(null);
-  // New offer letter opens Documents › Offer letter for a new joiner (H3): the form beside the letter.
-  const newOffer = () => {
-    try { sessionStorage.setItem(DOCS_OPEN_KEY, JSON.stringify({ kind: 'offer', newOffer: true })); } catch { /* Documents opens on the offer letter anyway */ }
-    goTo('lifecycle_documents');
-  };
 
   // Every tab at once (the server keeps one board in memory, so the three are one read): switching
   // tabs is instant, and a search can say which other tab a name is in.
@@ -136,7 +129,7 @@ export function OnboardingBoard() {
       { header: 'Manager', value: (p) => p.card.managerName ?? '' },
       { header: 'Joining date', value: (p) => p.card.tj ?? '' },
       { header: 'Step', value: (p) => cols[p.col]?.label ?? '' },
-      { header: 'Offer sent', value: (p) => (p.card.offerSentAt ?? '').slice(0, 10) },
+      { header: 'Offer sent', value: (p) => (p.card.offerOutsideApp ? 'Outside the app' : (p.card.offerSentAt ?? '').slice(0, 10)) },
       { header: 'Offer', value: (p) => offerOf(p.card).label },
       { header: 'Next step', value: (p) => p.card.waitingOn[0]?.title ?? '' },
       { header: 'Waiting on', value: (p) => (p.card.waitingOn[0] ? `${OWNER_LABEL[p.card.waitingOn[0].ownerRole]}${p.card.waitingOn[0].ownerName ? ` (${p.card.waitingOn[0].ownerName})` : ''}` : '') },
@@ -152,7 +145,8 @@ export function OnboardingBoard() {
     <div className="pd-form" style={{ animation: 'fade .3s ease both' }}>
       <PageActions>
         <button type="button" className="pd-btn" onClick={exportBoard} disabled={!inTab.length}><IconDownload stroke="currentColor" /> Export</button>
-        <button type="button" className="pd-btn primary" onClick={newOffer} disabled={!pay} title={pay ? undefined : 'Only people with payroll access can set the CTC on an offer'}><IconPlus /> New offer letter</button>
+        {/* Add user (as on People › Employees): Add existing user, Create new offer (Documents › Offer letter) or Confirm new user. */}
+        <AddUserButton onConfirmed={(id) => { setView('pre_boarding'); setList(null); reload(); setOpenId(id); }} />
       </PageActions>
 
       <Card padded>
@@ -186,7 +180,7 @@ export function OnboardingBoard() {
               ]} tab={tab} q={search.trim()} onTab={pick} />}
             </div>
             {inTab.length === 0 && tab === 'pre_boarding' && (
-              <div className="pd-note" style={{ marginBottom: 14 }}>No joiners yet. Start with <b>New offer letter</b>: the candidate gets the offer by email and accepts it on their portal, and their card moves along this board from there.</div>
+              <div className="pd-note" style={{ marginBottom: 14 }}>No joiners yet. Start with <b>Add user</b>: create a new offer (the candidate gets it by email and replies to accept), or confirm someone who accepted an offer outside the app. Their card moves along this board from there.</div>
             )}
             <div className="ob-lanes scry" style={{ gridAutoColumns: 'minmax(230px, 1fr)' }}>
               {columnsOf(tab).map((col, ci) => {
@@ -393,7 +387,7 @@ function ListView({ tab, cards, filters, onFilters, onBack, openId, onOpen }: {
                   <td>{p.card.department ?? '—'}</td>
                   <td>{cols[p.col]?.label}</td>
                   <td className="num" style={{ whiteSpace: 'nowrap' }}>{p.card.tj ? longDay(p.card.tj) : '—'}</td>
-                  <td className="num" style={{ whiteSpace: 'nowrap' }}>{p.card.offerSentAt ? shortDay(p.card.offerSentAt) : '—'}</td>
+                  <td className="num" style={{ whiteSpace: 'nowrap' }}>{p.card.offerOutsideApp ? 'Outside the app' : p.card.offerSentAt ? shortDay(p.card.offerSentAt) : '—'}</td>
                   <td><Pill dot={false} label={label} tone={o.tone} fontSize={11} padding="2px 9px" /></td>
                   <td className="r"><button type="button" className="pd-btn sm" data-journey-card={p.card.journeyId} onClick={(e) => { e.stopPropagation(); onOpen(p.card.journeyId); }}>Open</button></td>
                 </tr>

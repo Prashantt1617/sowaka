@@ -14,7 +14,9 @@
  *    day per task, never for HR's own tasks;
  *  - the sidebar counts, the Needs attention filter, a template's journeys;
  *  - email drafts and extra attachments, the offer's portal-link switch, the
- *    relieving letter's personal email, Annexure A's salary breakup.
+ *    relieving letter's personal email, Annexure A's salary breakup;
+ *  - Add user › Confirm new user: an offer given outside the app, finalised
+ *    without any email, the manager required, pay only.
  *
  *   npm run lifecycle:dash-check   (MONGODB_DB=el_dash_onb_check; local mongod only)
  */
@@ -252,6 +254,51 @@ type Handler = { handle: (req: unknown, res: unknown, next: (err?: unknown) => v
   eq('Deciding it without payroll access: 403', (await admin('POST', `/journeys/${W.id}/bank-pf-request`, 'onbhr', { decision: 'decline' })).status, 403);
   const declined = await admin('POST', `/journeys/${W.id}/bank-pf-request`, 'hr', { decision: 'decline', note: 'Send a cancelled cheque' });
   eq('An admin declines it; the joiner is told', [declined.status, (declined.body as { journey: { bankPfRequest: { status: string } } }).journey.bankPfRequest.status, await db.notifications().countDocuments({ userId: 'isha', scenario: 'lifecycle_bank_pf_decided' })], [200, 'declined', 1]);
+
+  // ─── Add user › Confirm new user ──────────────────────────────────────────
+  section('Confirm new user: an offer given outside the app, confirmed without any email');
+  clearLifecycleOutbox();
+  const noManager = await offerApi('POST', '/offers/confirm', 'hr', { candidate: { name: 'Tara Outside', personalEmail: 'tara.dash@example.com' }, fields: fields({ managerUserId: '' }) });
+  ok('No reporting manager: 400, as for an offer', noManager.status === 400 && /reporting manager/i.test((noManager.body as { error: string }).error), noManager);
+  eq('…and no joiner was made', await db.journeys().countDocuments({ org: ORG, 'candidate.personalEmail': 'tara.dash@example.com' }), 0);
+  eq('Without pay access: 403', (await offerApi('POST', '/offers/confirm', 'onb', { candidate: { name: 'Tara Outside', personalEmail: 'tara.dash@example.com' }, fields: fields() })).status, 403);
+  const confirmed = await offerApi('POST', '/offers/confirm', 'hr', { candidate: { name: 'Tara Outside', personalEmail: 'tara.dash@example.com', phone: '+91 98765 43210' }, fields: fields() });
+  const T = (confirmed.body as { journeyId: string }).journeyId;
+  const tOffer = (confirmed.body as { offer: { status: string; finalisedAt?: string; pdfFileId?: string; outsideApp?: { byName: string; at: string; portalEmailed: boolean } } }).offer;
+  ok('POST /offers/confirm: made, the offer accepted and finalised with no PDF', confirmed.status === 200 && !!T && tOffer?.status === 'accepted' && !!tOffer.finalisedAt && !tOffer.pdfFileId, confirmed.body);
+  eq('…the offer view says given outside the app, confirmed by HR, portal not emailed', [tOffer?.outsideApp?.byName, !!tOffer?.outsideApp?.at, tOffer?.outsideApp?.portalEmailed], ['Hema HR', true, false]);
+  const tJourney = await engine.loadJourney(T);
+  eq('The journey is finalised, as a sent + accepted + finalised offer is', tJourney.status, 'finalised');
+  ok('…with the offer_sent, accepted and finalised anchors (the portal, documents and Day-1 rules run from them)', !!tJourney.anchors.offer_sent && !!tJourney.anchors.accepted && !!tJourney.anchors.finalised, tJourney.anchors);
+  const tTasks = await engine.tasksOf(T);
+  const doneBy = (key: string) => tTasks.filter((t) => t.systemKey === key).map((t) => `${t.status}:${t.doneByName ?? ''}`);
+  eq('…send, accept and finalise are done (send and accept by HR)', [doneBy('send_offer')[0], doneBy('accept_offer')[0], doneBy('finalise_offer')[0]?.split(':')[0]], ['done:Hema HR', 'done:Hema HR', 'done']);
+  eq('No email went out: no offer, no portal sign-in, nothing to HR', lifecycleOutbox().length, 0);
+  const tAccount = await db.candidateAccounts().findOne({ journeyId: T });
+  ok('The joining portal account is there (they sign in with a code to their email), its sign-in not sent', !!tAccount && tAccount.email === 'tara.dash@example.com' && !tAccount.loginSentAt, tAccount);
+  const tCard = (await board.onboardingBoard(ORG, 'hr', { tab: 'pre_boarding' }, new Date(), { fresh: true })).columns.flatMap((col) => col.cards.map((card) => ({ col: col.key, card }))).find((x) => x.card.journeyId === T);
+  ok('The board: past Offer sent, on the step a finalised offer is on (the dashboard’s Employee profile), marked outside the app', !!tCard && tCard.col === 'documents' && tCard.card.offerOutsideApp === true && !!tCard.card.acceptedAt, tCard);
+  const tOnb = await admin('GET', `/journeys/${T}`, 'onb');
+  ok('The panel’s offer says outside the app, without the CTC for the onboarding tab', tOnb.status === 200 && (tOnb.body as { offer: { outsideApp?: { byName: string } } }).offer.outsideApp?.byName === 'Hema HR' && !has(tOnb.body, '1437000'), tOnb.body);
+  eq('The same person again: 409, an open offer', (await offerApi('POST', '/offers/confirm', 'hr', { candidate: { name: 'Tara Outside', personalEmail: 'tara.dash@example.com' }, fields: fields() })).status, 409);
+  const withPortal = await offerApi('POST', '/offers/confirm', 'hr', { candidate: { name: 'Uday Portal', personalEmail: 'uday.dash@example.com' }, fields: fields(), emailPortal: true });
+  const portalMails = lifecycleOutbox().filter((m) => m.to === 'uday.dash@example.com');
+  ok('emailPortal: true sends only the joining portal sign-in', withPortal.status === 200 && portalMails.length === 1 && /joining portal is ready/.test(portalMails[0].subject) && lifecycleOutbox().length === 1, lifecycleOutbox().map((m) => m.subject));
+  eq('…and the view says so', (withPortal.body as { offer: { outsideApp?: { portalEmailed: boolean } } }).offer.outsideApp?.portalEmailed, true);
+  // The same joiner through the app (offer sent, then marked accepted): every task in the same state, with the same dates.
+  const V = (await offersSvc.createOffer(HR, { candidate: { name: 'Vani App', personalEmail: 'vani.dash@example.com' }, fields: fields() })).journeyId;
+  await offersSvc.uploadOfferPdf(HR, V, { originalname: 'Offer.pdf', buffer: PDF('offer v') });
+  await offersSvc.sendOffer(HR, V, { subject: 'Offer', body: 'Hi Vani' });
+  // As the live server does it (no online accept): HR marks the sent offer accepted.
+  process.env.OFFER_ONLINE_ACCEPT = '0';
+  await offersSvc.finaliseOffer(HR, V);
+  process.env.OFFER_ONLINE_ACCEPT = '1';
+  // A done offer step's own dates differ (the reply-by day, the accepted anchor) and no longer matter.
+  const shape = async (id: string) => (await engine.tasksOf(id)).map((t) => `${t.systemKey ?? t.title}|${t.status}${t.status === 'done' ? '' : `|${t.opensAt?.toISOString().slice(0, 10) ?? ''}|${t.dueAt?.toISOString().slice(0, 10) ?? ''}`}`).sort();
+  const [shapeT, shapeV] = [await shape(T), await shape(V)];
+  eq('Its tasks match an app offer sent and marked accepted (status; opens and due of the open ones)', [shapeT.filter((x) => !shapeV.includes(x)), shapeV.filter((x) => !shapeT.includes(x))], [[], []]);
+  const colOf = async (id: string) => (await board.onboardingBoard(ORG, 'hr', { tab: 'pre_boarding' }, new Date(), { fresh: true })).columns.find((col) => col.cards.some((card) => card.journeyId === id))?.key;
+  eq('…and so do its status and board column', [(await engine.loadJourney(T)).status, await colOf(T)], [(await engine.loadJourney(V)).status, await colOf(V)]);
 
   // ─── Documents: status only for the onboarding tab ─────────────────────────
   section('Candidates’ documents are HR’s');

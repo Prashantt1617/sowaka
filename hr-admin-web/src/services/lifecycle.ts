@@ -177,6 +177,8 @@ export interface BoardCard {
   offerVersion?: number;
   acceptedAt?: string;
   replyBy?: string;
+  /** Confirm new user: the offer was given and accepted outside the app. */
+  offerOutsideApp?: boolean;
 }
 
 export interface ProfileAddressView { line: string; city: string; state: string; pin: string }
@@ -371,6 +373,8 @@ export interface OfferView {
   validTill: string;
   pdfFileId?: string;
   versions: Array<{ version: number; status: OfferVersionStatus | string; sentAt?: string; acceptedAt?: string }>;
+  /** Add user › Confirm new user: given and accepted outside the app, confirmed by `byName` on `at`; `portalEmailed`: the joining portal sign-in went out. */
+  outsideApp?: { byName: string; at: string; portalEmailed: boolean };
 }
 
 export type CandidateDocumentStatus = 'todo' | 'in_review' | 'approved' | 'sent_back';
@@ -582,6 +586,13 @@ type OfferSave = { allowNonWorkingDay?: boolean };
 const withAllow = (fields: OfferFields, opts: OfferSave) => (opts.allowNonWorkingDay ? { ...fields, allowNonWorkingDay: true } : fields);
 export const createOffer = (input: { candidate: { name: string; personalEmail: string; phone?: string }; fields: OfferFields; templateId?: string }, opts: OfferSave = {}) =>
   api<{ journeyId: string; offer: OfferView }>(`${L}/offers`, json('POST', { ...input, fields: withAllow(input.fields, opts) }));
+/**
+ * Add user › Confirm new user: someone who accepted an offer outside the app. The offer's own details and
+ * checks; the joiner is made confirmed (finalised) with no offer letter and no email, unless `emailPortal`
+ * asks for the joining portal sign-in to go to their personal email.
+ */
+export const confirmOffer = (input: { candidate: { name: string; personalEmail: string; phone?: string }; fields: OfferFields; templateId?: string; emailPortal?: boolean }, opts: OfferSave = {}) =>
+  api<{ journeyId: string; offer: OfferView }>(`${L}/offers/confirm`, json('POST', { ...input, fields: withAllow(input.fields, opts) }));
 export const updateOffer = (journeyId: string, fields: OfferFields, opts: OfferSave = {}) =>
   api<{ offer: OfferView }>(`${L}/offers/${journeyId}`, json('PUT', { fields: withAllow(fields, opts) })).then((r) => r.offer);
 export const getOffer = (journeyId: string) =>

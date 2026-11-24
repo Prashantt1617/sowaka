@@ -258,7 +258,10 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
   const sentAt = offer?.sentAt ?? [...(offer?.versions ?? [])].reverse().find((v) => v.sentAt)?.sentAt;
   const acceptedAt = offer?.acceptedAt ?? [...(offer?.versions ?? [])].reverse().find((v) => v.acceptedAt)?.acceptedAt;
   const replyIn = offer?.validTill ? daysTo(offer.validTill) : null;
-  const portalSent = !['draft', 'offer_sent', 'accepted'].includes(status) && !closed;
+  // Add user › Confirm new user: the offer was given outside the app, and its portal sign-in emailed only if HR asked.
+  const outside = offer?.outsideApp;
+  const portalSent = !['draft', 'offer_sent', 'accepted'].includes(status) && !closed && (!outside || outside.portalEmailed);
+  const outsideLine = outside ? `Offer given outside the app · confirmed by ${outside.byName} on ${longDay(outside.at)}` : '';
   const pendingDates = dateRequests.filter((r) => r.status === 'pending').length;
 
   // Each step's line under its name.
@@ -269,11 +272,13 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
     const leadLine = lead ? { text: lead.dueAt ? `${lead.title} · ${dueText(lead.dueAt, lead.late)}` : lead.title, red: Boolean(lead.late) } : { text: 'Nothing waiting' };
     switch (i) {
       case 0:
+        if (outside) return { text: 'Given outside the app' };
         if (state === 'done') return { text: sentAt ? `Sent ${shortDay(sentAt)}` : 'Sent before joining' };
         if (status === 'draft') return { text: revisionWaiting ? 'Revision saved, not sent' : 'Not sent yet' };
         if (replyIn !== null && replyIn < 0) return { text: `Overdue by ${-replyIn} day${replyIn === -1 ? '' : 's'}`, red: true };
         return { text: `Sent ${shortDay(sentAt)}${offer?.validTill ? ` · reply by ${shortDay(offer.validTill)}` : ''}` };
       case 1:
+        if (outside) return { text: `Confirmed ${shortDay(outside.at)} · ${outside.portalEmailed ? 'portal sent' : 'portal not emailed'}` };
         if (state === 'todo') return { text: `Waiting for ${first}’s reply` };
         if (state === 'done') return { text: `Accepted ${acceptedAt ? shortDay(acceptedAt) : ''} · portal sent` };
         return { text: `Accepted ${acceptedAt ? shortDay(acceptedAt) : ''} · portal not sent yet` };
@@ -346,9 +351,11 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
             ['Joining date', longDay(offer.fields.tj)], ['Work location', offer.fields.location],
             ['CTC', pay ? `${rupees(offer.fields.ctc)} a year` : 'Hidden · needs payroll access'],
             ['Probation', `${offer.fields.probationMonths} months`], ['Notice', `${offer.fields.noticeDays} days`],
-            ['Offer', `Version ${offer.version}`], ['Sent on', sentAt ? longDay(sentAt) : '—'], ['Reply by', longDay(offer.validTill)],
+            ['Offer', `Version ${offer.version}`],
+            ...(outside ? [['Given', 'Outside the app'] as [string, ReactNode]] : [['Sent on', sentAt ? longDay(sentAt) : '—'] as [string, ReactNode], ['Reply by', longDay(offer.validTill)] as [string, ReactNode]]),
             ['Personal email', journey.candidate?.personalEmail],
           ]} />
+          {outside && <Para>{outsideLine}. No offer letter went from the app.</Para>}
           {offer.changedFields && offer.changedFields.length > 0 && <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>Changed in this version: {changedFieldsText(offer.changedFields)}</div>}
           {revisionWaiting && <div className="pd-note" style={{ color: 'var(--warn)' }}>Saved as a draft. {first} still sees version {offer.version - 1} until you send this one.</div>}
           {offer.pdfFileId && (
@@ -372,8 +379,16 @@ export function JourneySteps({ data, busy, setBusy, onChanged, variant = 'panel'
           {PRE_JOIN.has(status) && pay && <span><button type="button" className="pd-btn sm" onClick={() => openDocuments(s.setView, 'offer', journey.id)}><PencilIcon />Edit offer</button></span>}
           {PRE_JOIN.has(status) && pay && status !== 'draft' && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', lineHeight: 1.5 }}>Editing makes version {offer.version + 1} of the offer letter. {first} keeps version {offer.version} until you send the new one.</div>}
         </>
-      ) : <Para>No offer yet. New offer letter starts one.</Para>;
+      ) : <Para>No offer yet. Add user › Create new offer starts one.</Para>;
       case 1:
+        if (outside) {
+          return (
+            <>
+              <Para>{outsideLine}.{outside.portalEmailed ? ' Their joining portal sign-in went to their personal email.' : ' Nothing was emailed: their joining portal is ready, and they sign in with a code sent to their personal email.'}</Para>
+              <Facts rows={[['Joining portal', <span key="p" style={{ color: outside.portalEmailed ? 'var(--ok)' : 'var(--warn)' }}>{outside.portalEmailed ? 'Link sent' : 'Ready · not emailed'}</span>], ['Personal email', journey.candidate?.personalEmail], ['Work email', journey.candidate?.workEmail]]} />
+            </>
+          );
+        }
         if (cur < 1 && !allDone) return <Para>{first} gets the offer PDF by email and replies to you to accept it. Then Mark offer accepted sends the joining portal link, where they sign in with a code to their email.</Para>;
         return (
           <>

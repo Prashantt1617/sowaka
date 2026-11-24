@@ -61,6 +61,8 @@ export interface BoardCard {
   optionalWaiting?: number;
   /** Pre-boarding cards: when the current offer went out, when it was accepted, and its reply-by day (the design's card rows). */
   offerSentAt?: string; acceptedAt?: string; replyBy?: string; offerVersion?: number;
+  /** Confirm new user: the offer was given and accepted outside the app. */
+  offerOutsideApp?: boolean;
 }
 
 // ─── Who is asking ──────────────────────────────────────────────────────────
@@ -180,10 +182,10 @@ async function boardJourneys(org: string, now: Date, full = false, only?: string
 }
 
 /** Each journey's offer dates, from its current offer (the last version that went out). */
-export async function offerDates(ids: string[]): Promise<Map<string, { offerSentAt?: string; acceptedAt?: string; replyBy?: string; offerVersion?: number }>> {
-  const out = new Map<string, { offerSentAt?: string; acceptedAt?: string; replyBy?: string; offerVersion?: number }>();
+export async function offerDates(ids: string[]): Promise<Map<string, { offerSentAt?: string; acceptedAt?: string; replyBy?: string; offerVersion?: number; offerOutsideApp?: boolean }>> {
+  const out = new Map<string, { offerSentAt?: string; acceptedAt?: string; replyBy?: string; offerVersion?: number; offerOutsideApp?: boolean }>();
   if (!ids.length) return out;
-  const rows = await offers().find({ journeyId: { $in: ids } }, { projection: { _id: 0, journeyId: 1, 'versions.version': 1, 'versions.sentAt': 1, 'versions.acceptedAt': 1, 'versions.fields.validTill': 1 } }).toArray();
+  const rows = await offers().find({ journeyId: { $in: ids } }, { projection: { _id: 0, journeyId: 1, 'versions.version': 1, 'versions.sentAt': 1, 'versions.acceptedAt': 1, 'versions.fields.validTill': 1, 'versions.outsideApp.at': 1 } }).toArray();
   for (const row of rows) {
     const versions = row.versions ?? [];
     const sent = [...versions].reverse().find((v) => v.sentAt);
@@ -193,6 +195,7 @@ export async function offerDates(ids: string[]): Promise<Map<string, { offerSent
       ...(sent?.sentAt ? { offerSentAt: new Date(sent.sentAt).toISOString(), offerVersion: sent.version } : {}),
       ...(accepted?.acceptedAt ? { acceptedAt: new Date(accepted.acceptedAt).toISOString() } : {}),
       ...(till && isDateKey(till) ? { replyBy: till } : {}),
+      ...(versions.some((v) => v.outsideApp) ? { offerOutsideApp: true } : {}),
     });
   }
   return out;
