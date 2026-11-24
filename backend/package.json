@@ -70,6 +70,8 @@
     "suwi-bulk:check": "tsx src/scripts/suwi-bulk-check.ts",
     "hr-leave-mark:check": "MONGODB_DB=hr_leave_mark_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/hr-leave-mark-check.ts",
     "suwi-markday:check": "MONGODB_DB=suwi_markday_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-bulk-mark-day-check.ts",
+    "suwi-holidays:check": "MONGODB_DB=suwi_holidays_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-holidays-check.ts",
+    "suwi-decide:check": "MONGODB_DB=suwi_decide_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-decide-requests-check.ts",
     "suwi-speed:check": "MONGODB_DB=suwi_speed_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-speed-check.ts && npm run -s suwi-orch:check",
     "suwi-orch:check": "MONGODB_DB=suwi_orch_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-orchestration-check.ts",
     "celebrations:check": "tsx src/scripts/connect-celebrations-check.ts",
