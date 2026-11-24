@@ -11,13 +11,18 @@ import { User } from '../models/user.model';
 import { listAllLeavesForAdmin } from '../services/leave.service';
 import { listAllReimbursementsForAdmin } from '../services/reimbursement.service';
 import { logger } from '../utils/logger';
-import { callModel, costUsd, SUWI_PROVIDER } from './llm';
+import { callModel, costUsd, SUWI_MODEL, SUWI_PROVIDER } from './llm';
 import { suwiNotices } from './notices';
 import { auditCol, settingsFor, spentThisMonthUsd } from './store';
 import { contextFor, SuwiContext } from './tools';
 
 /** The cheap model for routine phrasing; never used for questions. */
-export const SUWI_SMALL_MODEL = process.env.SUWI_SMALL_MODEL || (SUWI_PROVIDER === 'gemini' ? 'gemini-3.5-flash-lite' : 'claude-haiku-4-5');
+/**
+ * The quick model (routing, short answers): set by SUWI_SMALL_MODEL, else the provider's own small one.
+ * OpenAI: the main model (GPT Luna) until a smaller one is named (24 Nov: a Claude default there would fail).
+ */
+export const SUWI_SMALL_MODEL = process.env.SUWI_SMALL_MODEL
+  || (SUWI_PROVIDER === 'gemini' ? 'gemini-3.5-flash-lite' : SUWI_PROVIDER === 'openai' ? SUWI_MODEL : 'claude-haiku-4-5');
 
 export interface SuwiDigest {
   org: string;
