@@ -35,6 +35,7 @@ type Basic = {
   doj: string;
   payrollInclusion: 'this' | 'next';
   workEmail: string;
+  personalEmail: string;
   mobile: string;
   isDirector: boolean;
   gender: string;
@@ -46,7 +47,7 @@ type Basic = {
 
 const EMPTY_BASIC: Basic = {
   firstName: '', middleName: '', lastName: '', employeeId: '', doj: '',
-  payrollInclusion: 'this', workEmail: '', mobile: '', isDirector: false,
+  payrollInclusion: 'this', workEmail: '', personalEmail: '', mobile: '', isDirector: false,
   gender: '', workLocation: '', designation: '', department: '', manager: '',
 };
 
@@ -60,12 +61,31 @@ type RosterOptions = {
   nextMonth: string;
 };
 
-export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
+/**
+ * What Add user's form already took (24 Nov): the wizard opens on Basic details with these filled in, for
+ * someone whose joining date has passed. Joined within the last month, they also get onboarding.
+ */
+export type WizardPrefill = {
+  basic: Partial<Basic>;
+  managerUserId?: string;
+  employeeType?: string;
+  onboardingTemplateId?: string;
+};
+
+/** "Kabir Singh Mehta" → first, middle and last name for Basic details. */
+export function splitName(full: string): Pick<Basic, 'firstName' | 'middleName' | 'lastName'> {
+  const parts = full.trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return { firstName: parts[0] ?? '', middleName: '', lastName: '' };
+  return { firstName: parts[0], middleName: parts.slice(1, -1).join(' '), lastName: parts[parts.length - 1] };
+}
+
+export function AddEmployeeWizard({ onClose, prefill }: { onClose: () => void; prefill?: WizardPrefill }) {
   const { flash, emps, user, cycle, reload } = useStore();
   const [step, setStep] = useState(0);
   const [invite, setInvite] = useState(false);
   const [done, setDone] = useState(false);
-  const [basic, setBasic] = useState<Basic>(EMPTY_BASIC);
+  const prefillManager = prefill?.managerUserId ? emps.find((e) => e.id === prefill.managerUserId) : undefined;
+  const [basic, setBasic] = useState<Basic>(() => ({ ...EMPTY_BASIC, ...prefill?.basic, ...(prefillManager ? { manager: prefillManager.name } : {}) }));
   const [touched, setTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -111,14 +131,15 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
       designations: uniq([...emps.map((e) => e.role), ...savedNames.designations]),
       departments: uniq([...emps.map((e) => e.team), ...savedNames.departments]),
       // Anyone already managing someone is offered as a reporting manager.
+      // The manager Add user's form chose is offered too, even before anyone reports to them.
       managers: [...new Map(
-        emps.filter((e) => emps.some((other) => other.managerId === e.id))
+        emps.filter((e) => e.id === prefill?.managerUserId || emps.some((other) => other.managerId === e.id))
           .map((e) => [e.id, { userId: e.id, name: e.name }]),
       ).values()].sort((a, b) => a.name.localeCompare(b.name)),
       thisMonth: monthName(cycle.period),
       nextMonth: monthName(cycle.next),
     };
-  }, [emps, cycle, savedNames]);
+  }, [emps, cycle, savedNames, prefill?.managerUserId]);
 
   const set = <K extends keyof Basic>(k: K, v: Basic[K]) => setBasic({ ...basic, [k]: v });
 
@@ -128,6 +149,7 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
     employeeId: !basic.employeeId.trim(),
     doj: !basic.doj.trim(),
     workEmail: !basic.workEmail.trim(),
+    personalEmail: Boolean(basic.personalEmail.trim()) && !/^\S+@\S+\.\S+$/.test(basic.personalEmail.trim()),
     gender: !basic.gender.trim(),
     designation: !basic.designation.trim(),
     department: !basic.department.trim(),
@@ -229,6 +251,9 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
       const created = await createEmployee({
         name: fullName,
         email: basic.workEmail.trim(),
+        personalEmail: basic.personalEmail.trim() || undefined,
+        employeeType: prefill?.employeeType,
+        onboardingTemplateId: prefill?.onboardingTemplateId,
         employeeId: basic.employeeId.trim() || undefined,
         designation: basic.designation.trim() || undefined,
         department: basic.department.trim() || undefined,
@@ -239,7 +264,9 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
         managerUserId: options.managers.find((m) => m.name === basic.manager)?.userId,
       });
       setCreatedUserId(created.userId);
-      flash(`${created.name} created — invitation sent to ${created.email}`);
+      flash(created.onboardingJourneyId
+        ? `${created.name} created — invitation sent to ${created.email}. Joined this month, so onboarding is on their app`
+        : `${created.name} created — invitation sent to ${created.email}`);
       setInvite(false);
       setStep(1);
       setTouched(false);
@@ -301,7 +328,7 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
                 {step === 0 ? (
                   <BasicStep basic={basic} set={set} touched={touched} missing={missing} options={options} />
                 ) : step === 1 ? (
-                  <PersonalStep userId={createdUserId} />
+                  <PersonalStep userId={createdUserId} personalEmail={basic.personalEmail} />
                 ) : step === 2 ? (
                   <PaymentStep holderName={fullName} />
                 ) : step === 3 ? (
@@ -633,6 +660,14 @@ function BasicStep({ basic, set, touched, missing, options }: {
         <Field label="Mobile Number">
           <input value={basic.mobile} onChange={(e) => set('mobile', e.target.value)} placeholder="+91 98765 43210" style={inputStyle} />
         </Field>
+      </div>
+
+      {/* Personal email (24 Nov): their own address, for the joining portal and onboarding on the app */}
+      <div style={grid2}>
+        <Field label="Personal Email" error={touched && missing.personalEmail}>
+          <input type="email" value={basic.personalEmail} onChange={(e) => set('personalEmail', e.target.value)} placeholder="e.g. name@gmail.com" style={inputStyle} />
+        </Field>
+        <div />
       </div>
 
       {/* Email info callout */}
@@ -1331,8 +1366,8 @@ function ageFromDob(dob: string): string {
   return age >= 0 && age < 120 ? String(age) : '';
 }
 
-function PersonalStep({ userId }: { userId: string | null }) {
-  const [p, setP] = useState<PersonalData>(EMPTY_PERSONAL);
+function PersonalStep({ userId, personalEmail }: { userId: string | null; personalEmail?: string }) {
+  const [p, setP] = useState<PersonalData>(() => ({ ...EMPTY_PERSONAL, personalEmail: personalEmail ?? '' }));
   const set = <K extends keyof PersonalData>(k: K, v: PersonalData[K]) => setP((s) => ({ ...s, [k]: v }));
   const age = ageFromDob(p.dob);
 

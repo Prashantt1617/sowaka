@@ -170,6 +170,8 @@ export function decisionLine(d: ConfirmationDecision, pay: boolean): string {
 
 /** Documents opens on this letter kind and person once (set by the board's panel: { kind, journeyId | userId }). */
 export const DOCS_OPEN_KEY = 'sowaka.lifecycle.docs.open';
+/** The new offer's kept form (OfferWorkbench's stash): Add user writes its details here before opening it. */
+export const NEW_OFFER_STASH_KEY = 'lf-docs:offer:new';
 
 /** Opens Documents on a letter kind for this joiner (the offer letter is where an offer is edited and sent; `mail` opens its email). */
 export function openDocuments(setView: (v: 'lifecycle_documents') => void, kind: LetterKind, journeyId: string, mail?: boolean) {

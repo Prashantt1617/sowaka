@@ -695,6 +695,22 @@ async function main() {
     ['Joins tomorrow', 'Joins today', 'Joined today', 'Joined Mon 30 Nov']);
   ok('Kept per company and dropped by every lifecycle write', readCache.kindsChangedBy('/lifecycle/team/joiners/x/review').includes('lc-new-joiners' as never));
 
+  section('Add user: someone who joined within the last month gets onboarding when HR adds them (24 Nov)');
+  {
+    const admin = await import('../services/admin.service');
+    const key = (n: number) => rules.addDaysKey(today, -n);
+    const added = await admin.createEmployeeForAdmin('mgr', {
+      name: 'Added Recently', email: 'added.recently@sowaka.test', personalEmail: 'Added.Recently@Gmail.com',
+      joiningDate: key(6), designation: 'Analyst', managerUserId: 'mgr',
+    }) as { userId: string; onboardingJourneyId?: string; personalEmail?: string };
+    const aj = await journeys().findOne({ userId: added.userId, kind: 'onboarding' });
+    eq('Joined 6 days ago: account made with the personal email, joined journey on that date, its id returned',
+      [added.personalEmail, !!added.onboardingJourneyId, aj?.id === added.onboardingJourneyId, aj?.status, aj?.tj, aj?.candidate?.personalEmail],
+      ['added.recently@gmail.com', true, true, 'joined', key(6), 'added.recently@gmail.com']);
+    const old = await admin.createEmployeeForAdmin('mgr', { name: 'Added Long Ago', email: 'added.old@sowaka.test', joiningDate: key(45) }) as { userId: string; onboardingJourneyId?: string };
+    eq('Joined 45 days ago: the account only, no onboarding', [old.onboardingJourneyId, await journeys().countDocuments({ userId: old.userId })], [undefined, 0]);
+  }
+
   await closeDb();
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

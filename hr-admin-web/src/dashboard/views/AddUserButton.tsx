@@ -1,10 +1,9 @@
-// Add user: one button and one flow on People › Employees and Employee lifecycle › Onboarding. It
-// opens a chooser with three ways in:
-// - Add existing user: someone already working here, through the Add employee wizard (after the
-//   account-limit check, as before);
-// - Create new offer: Documents › Offer letter for a new joiner, which sends the offer from the app;
-// - Confirm new user: someone who accepted an offer outside the app, with the offer's own details
-//   (ConfirmJoiner.tsx), confirmed on the onboarding board without any email.
+// Add user (24 Nov, HR): one button and one flow on People › Employees and Employee lifecycle › Onboarding.
+// It opens one form (AddUserDialog, the offer letter's details); Continue goes by the joining date:
+// - passed: the Add employee wizard with Basic details filled in (after the account-limit check, as
+//   before). A joining date within the last month also starts onboarding on their app;
+// - still to come: Send offer letter (Documents › Offer letter, filled in) or Confirm (on the onboarding
+//   board as confirmed, with or without the joining portal email).
 // Where the employee lifecycle is off for the company, the button goes straight to the wizard.
 import { useState } from 'react';
 import { useStore } from '../store';
@@ -12,65 +11,63 @@ import { canOpen, canSeePay } from '../access';
 import { useLifecycleOn } from '../lifecycleSwitch';
 import { getAccountLimit } from '../../services/hrms';
 import { IconPlus } from '../icons';
-import { AddEmployeeWizard } from './AddEmployeeWizard';
+import { AddEmployeeWizard, splitName } from './AddEmployeeWizard';
+import type { WizardPrefill } from './AddEmployeeWizard';
 import { AccountLimitModal } from './AccountLimitModal';
-import { Modal } from './lifecycle/shared';
-import { DOCS_OPEN_KEY } from './lifecycle/format';
-import { ConfirmJoinerDialog } from './lifecycle/ConfirmJoiner';
+import { DOCS_OPEN_KEY, NEW_OFFER_STASH_KEY } from './lifecycle/format';
+import { AddUserDialog } from './lifecycle/ConfirmJoiner';
+import type { NewUserDetails } from './lifecycle/ConfirmJoiner';
 import './people.css';
 
-type Open = null | 'chooser' | 'wizard' | 'confirm';
-
-interface Choice { key: 'existing' | 'offer' | 'confirm'; title: string; text: string; off?: string; go: () => void }
+type Open = null | 'form' | 'wizard';
 
 export function AddUserButton({ onConfirmed }: { onConfirmed?: (journeyId: string) => void }) {
   const { user, setView } = useStore();
   const lifecycle = useLifecycleOn(Boolean(user?.dashboardAccess));
   const [open, setOpen] = useState<Open>(null);
+  const [prefill, setPrefill] = useState<WizardPrefill | undefined>(undefined);
   // Set to the company's limit when it is already reached: the popup instead of the wizard.
   const [limitReached, setLimitReached] = useState<number | null | false>(false);
   const [checkingLimit, setCheckingLimit] = useState(false);
 
   const pay = canSeePay(user);
-  const lifecycleOk = lifecycle === true;
-  const payNote = 'Needs payroll access: the offer states the CTC';
 
   // A company without a limit (every company unless Sowaka sets one) goes straight to the wizard.
   // If the check itself fails, the wizard opens anyway: the server still refuses an account over the limit.
-  const addExisting = () => {
+  const openWizard = (p?: WizardPrefill) => {
     if (checkingLimit) return;
     setCheckingLimit(true);
+    setPrefill(p);
     getAccountLimit()
       .then(({ max, used }) => { if (max !== null && used >= max) { setOpen(null); setLimitReached(max); } else setOpen('wizard'); })
       .catch(() => setOpen('wizard'))
       .finally(() => setCheckingLimit(false));
   };
-  // Documents › Offer letter, on a new joiner (the form beside the letter), as New offer letter did.
-  const newOffer = () => {
-    try { sessionStorage.setItem(DOCS_OPEN_KEY, JSON.stringify({ kind: 'offer', newOffer: true })); } catch { /* Documents opens on the offer letter anyway */ }
+
+  // Joined already: the wizard, Basic details filled in from the form.
+  const joined = (d: NewUserDetails) => openWizard({
+    basic: {
+      ...splitName(d.name), personalEmail: d.personalEmail, mobile: d.phone, doj: d.fields.tj,
+      designation: d.fields.designation.trim(), department: (d.fields.department ?? '').trim(), workLocation: (d.fields.location ?? '').trim(),
+    },
+    managerUserId: d.fields.managerUserId || undefined,
+    employeeType: d.fields.employeeType,
+    onboardingTemplateId: d.templateId || undefined,
+  });
+
+  // Still to join: Documents › Offer letter on a new joiner, the form kept as that page's own draft.
+  const offer = (d: NewUserDetails) => {
+    try {
+      sessionStorage.setItem(NEW_OFFER_STASH_KEY, JSON.stringify({ name: d.name, email: d.personalEmail, phone: d.phone, fields: d.fields, edits: {}, bodyEdit: null, templateId: d.templateId }));
+      sessionStorage.setItem(DOCS_OPEN_KEY, JSON.stringify({ kind: 'offer', newOffer: true }));
+    } catch { /* Documents opens on the offer letter anyway */ }
     setOpen(null);
     setView('lifecycle_documents');
   };
 
-  const choices: Choice[] = [
-    {
-      key: 'existing', title: 'Add existing user', text: 'Someone already working here: their employee record and app access.',
-      off: canOpen(user, 'employees') ? undefined : 'Needs access to People › Employees', go: addExisting,
-    },
-    {
-      key: 'offer', title: 'Create new offer', text: 'Make the offer letter and send it to the candidate from the app.',
-      off: !pay ? payNote : !canOpen(user, 'lifecycle_documents') ? 'Needs access to Employee lifecycle › Documents' : undefined, go: newOffer,
-    },
-    {
-      key: 'confirm', title: 'Confirm new user', text: 'Someone who accepted an offer outside the app: the same details as an offer, no letter or email sent.',
-      off: !pay ? payNote : !(canOpen(user, 'onboarding') || canOpen(user, 'lifecycle_documents')) ? 'Needs access to Employee lifecycle › Onboarding' : undefined,
-      go: () => setOpen('confirm'),
-    },
-  ];
-
   const start = () => {
-    if (lifecycleOk) setOpen('chooser');
-    else addExisting();
+    if (lifecycle === true) setOpen('form');
+    else openWizard();
   };
 
   return (
@@ -78,32 +75,15 @@ export function AddUserButton({ onConfirmed }: { onConfirmed?: (journeyId: strin
       <button type="button" onClick={start} disabled={checkingLimit} className="pd-btn primary">
         <IconPlus size={15} /> Add user
       </button>
-      {open === 'chooser' && (
-        <Modal title="Add user" sub="Who are you adding?" width={480} onClose={() => setOpen(null)} busy={checkingLimit}>
-          <div className="au-opts" role="list">
-            {choices.map((c) => (
-              <button key={c.key} type="button" role="listitem" className="au-opt" onClick={c.go} disabled={Boolean(c.off) || checkingLimit} title={c.off}>
-                <span className="au-ic" aria-hidden><ChoiceIcon kind={c.key} /></span>
-                <span className="au-tx">
-                  <b>{c.title}</b>
-                  <span>{c.off ?? c.text}</span>
-                </span>
-                <svg className="au-go" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="m9 6 6 6-6 6" /></svg>
-              </button>
-            ))}
-          </div>
-        </Modal>
+      {open === 'form' && (
+        <AddUserDialog pay={pay} canAddEmployee={canOpen(user, 'employees')}
+          canOffer={canOpen(user, 'lifecycle_documents')}
+          onClose={() => setOpen(null)}
+          onDone={(id) => { setOpen(null); onConfirmed?.(id); }}
+          onJoined={joined} onOffer={offer} />
       )}
-      {open === 'wizard' && <AddEmployeeWizard onClose={() => setOpen(null)} />}
-      {open === 'confirm' && <ConfirmJoinerDialog onClose={() => setOpen(null)} onDone={(id) => { setOpen(null); onConfirmed?.(id); }} />}
+      {open === 'wizard' && <AddEmployeeWizard prefill={prefill} onClose={() => { setOpen(null); setPrefill(undefined); }} />}
       {limitReached !== false && <AccountLimitModal max={limitReached} onClose={() => setLimitReached(false)} />}
     </>
   );
-}
-
-function ChoiceIcon({ kind }: { kind: Choice['key'] }) {
-  const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
-  if (kind === 'existing') return <svg {...common}><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M16 7.5h5M18.5 5v5" /></svg>;
-  if (kind === 'offer') return <svg {...common}><path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z" /><path d="M14 3v5h5M8.5 13h7M8.5 17h4.5" /></svg>;
-  return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="m8 12.5 2.7 2.7L16.5 9.5" /></svg>;
 }

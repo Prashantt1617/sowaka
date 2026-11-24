@@ -323,6 +323,10 @@ export type CreateEmployeeInput = {
   location?: string; employeeType?: string; managerUserId?: string;
   birthday?: string; joiningDate?: string;
   employeeId?: string; gender?: string; mobile?: string; branch?: string;
+  /** Their own email: the joining portal and app onboarding use it. */
+  personalEmail?: string;
+  /** The onboarding template for someone who joined within the last month. */
+  onboardingTemplateId?: string;
 };
 
 /** One employee's month, every day named — including the ones nobody worked. */
@@ -583,7 +587,7 @@ export const deleteEmployee = (userId: string, confirmName: string) =>
   api<{ deleted: boolean }>(`/admin/employees/${userId}`, { method: 'DELETE', body: { confirmName } });
 
 export const createEmployee = (input: CreateEmployeeInput) =>
-  api<{ employee: EmployeeDTO }>('/admin/employees', { method: 'POST', body: input })
+  api<{ employee: EmployeeDTO & { onboardingJourneyId?: string } }>('/admin/employees', { method: 'POST', body: input })
     .then((r) => r.employee);
 
 export type LeaderboardEntryDTO = { rank: number; userId: string; playerName: string; score: number; achievedAt: string };
