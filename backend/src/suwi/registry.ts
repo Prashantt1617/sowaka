@@ -48,3 +48,6 @@ import './tools/shift-template-edit';
 import './tools/leave-settings';
 import './tools/holiday-leave-refund';
 import './tools/punch-trace';
+import './tools/payroll-run-steps';
+import './tools/payroll-setup-fixes';
+import './tools/payroll-settlement-proofs';

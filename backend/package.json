@@ -73,6 +73,7 @@
     "suwi-markday:check": "MONGODB_DB=suwi_markday_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-bulk-mark-day-check.ts",
     "suwi-holidays:check": "MONGODB_DB=suwi_holidays_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-holidays-check.ts",
     "suwi-perf:check": "MONGODB_DB=suwi_perf_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-perf-check.ts",
+    "suwi-payroll:check": "MONGODB_DB=suwi_payroll_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-payroll-check.ts",
     "suwi-decide:check": "MONGODB_DB=suwi_decide_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-decide-requests-check.ts",
     "suwi-time:check": "MONGODB_DB=suwi_time_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-time-check.ts",
     "suwi-decide:check":"MONGODB_DB=suwi_decide_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-decide-requests-check.ts",
