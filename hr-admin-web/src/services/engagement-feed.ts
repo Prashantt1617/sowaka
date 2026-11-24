@@ -1,6 +1,6 @@
 // Engagement › Feed: the company's Connect feed as HR reads and moderates it.
 // Reports reuse the Moderate feed endpoints (/admin/connect/reports).
-import { api } from './http';
+import { api, apiUpload } from './http';
 
 export type FeedAs = 'all' | 'company' | 'team' | 'list' | `person:${string}`;
 
@@ -49,6 +49,8 @@ export type FeedCardDTO = {
     challenge?: { entries: number; votes: number; pointsPerVote: number; closesAt?: string; official: boolean };
     event?: { date: string; time: string; location: string; prize: string };
     game?: { name: string; actionLabel: string; accentColor: string; startsAt?: string; endsAt?: string; gameKey?: string };
+    /** An app tour post: its button, which opens the app's tour. */
+    tour?: { actionLabel: string };
   };
 };
 
@@ -102,3 +104,30 @@ export const removeFeedPost = (postId: string) =>
 /** Removes a comment and its replies; open reports on them close as actioned. */
 export const removeFeedComment = (postId: string, commentId: string) =>
   api(`${BASE}/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`, { method: 'DELETE' });
+
+// —— The "Start a tour" post ——————————————————————————————————————————————
+
+export type AppTourWords = { title: string; caption: string; actionLabel: string };
+
+export type AppTourStatusDTO = {
+  defaults: AppTourWords;
+  /** The app tour post in the feed now, if there is one. */
+  current: { id: string; title: string; publishedAt: string } | null;
+};
+
+export const getAppTourStatus = () => api<AppTourStatusDTO>(`${BASE}/app-tour`);
+
+/**
+ * Posts the app tour invitation to everyone's feed, with an optional picture.
+ * One is in the feed at a time: `replace` takes the current one down (its
+ * likes and comments with it); without it the server refuses a second (409).
+ */
+export function postAppTour(words: AppTourWords, image: File | null, replace: boolean) {
+  const form = new FormData();
+  form.append('title', words.title);
+  form.append('caption', words.caption);
+  form.append('actionLabel', words.actionLabel);
+  form.append('replace', replace ? 'true' : 'false');
+  if (image) form.append('media', image);
+  return apiUpload<{ id: string; replaced: string[] }>(`${BASE}/app-tour`, form);
+}

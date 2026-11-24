@@ -67,6 +67,7 @@ export function PostInsights({ postId, rev, onChanged }: { postId: string; rev: 
             <Pill label={post.tag || 'Post'} tone={L.TONES.mute} />
             {post.pinnedUntil && <Pill label={`Pinned until ${shortDate(post.pinnedUntil, false)}`} tone={L.TONES.warn} />}
             {post.type === 'game_launch' && <Pill label="Posted by Sowaka Engagements" tone={L.TONES.info} />}
+            {post.type === 'app_tour' && <Pill label="Posted by HR from this page" tone={L.TONES.info} />}
             {post.auto && post.type !== 'game_launch' && <Pill label="Auto-posted" tone={L.TONES.info} />}
             {insights.reportsOpen > 0 && <Pill label={`Reported ×${insights.reportsOpen}`} tone={L.TONES.bad} />}
           </div>

@@ -22,6 +22,7 @@ import '../data/audience_lists.dart';
 import '../data/connect_api_service.dart';
 import '../data/connect_models.dart';
 import '../data/connect_socket_service.dart';
+import 'app_tour_post_card.dart';
 import 'audience_lists_ui.dart';
 import 'feed_video.dart';
 import 'game_play_screen.dart';
@@ -1020,6 +1021,8 @@ bool _postShowsHeader(ConnectPostType type) {
     case ConnectPostType.survey:
     case ConnectPostType.hrAnnouncement:
     case ConnectPostType.recommendation:
+    // From the company, under its name, as an announcement is.
+    case ConnectPostType.appTour:
       return true;
     case ConnectPostType.birthday:
     case ConnectPostType.anniversary:
@@ -2106,6 +2109,7 @@ class _PostBody extends StatelessWidget {
       ConnectPostType.survey => const SizedBox.shrink(),
       // Drawn whole by GameLaunchPostCard before it reaches here.
       ConnectPostType.gameLaunch => const SizedBox.shrink(),
+      ConnectPostType.appTour => AppTourPostCard(post: post),
       ConnectPostType.event => _EventBody(
         post: post,
         onAction: onAction,

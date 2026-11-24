@@ -5,6 +5,7 @@ import { mediaUrl } from '../../../../services/api';
 import type { FeedCardDTO } from '../../../../services/engagement-feed';
 import { Avatar } from '../../../ui';
 import { PersonAvatar } from '../../../PersonAvatar';
+import { AppTourCardBody } from './AppTourPost';
 import { ago, shortDate } from './format';
 
 function AuthorAvatar({ post }: { post: FeedCardDTO }) {
@@ -75,9 +76,16 @@ export function FeedCard({ post }: { post: FeedCardDTO }) {
         </div>
       )}
 
-      {b.title && <div className="af-t">{b.title}</div>}
-      {b.text && <p className="af-b">{b.text}</p>}
-      {b.subtitle && !b.text && <p className="af-b">{b.subtitle}</p>}
+      {b.tour && (
+        // Picture first, then the words and the button that opens the tour.
+        <AppTourCardBody
+          words={{ title: b.title, caption: b.text, actionLabel: b.tour.actionLabel }}
+          imageSrc={media[0] && !media[0].video ? mediaUrl(media[0].url) : undefined}
+        />
+      )}
+      {!b.tour && b.title && <div className="af-t">{b.title}</div>}
+      {!b.tour && b.text && <p className="af-b">{b.text}</p>}
+      {!b.tour && b.subtitle && !b.text && <p className="af-b">{b.subtitle}</p>}
 
       {game && (
         <div className="af-game" style={{ background: `linear-gradient(135deg, ${game.accentColor || '#0571A6'}, ${game.accentColor || '#0571A6'}CC)` }}>
@@ -89,7 +97,7 @@ export function FeedCard({ post }: { post: FeedCardDTO }) {
         </div>
       )}
 
-      {media.length > 0 && (
+      {media.length > 0 && !b.tour && (
         <div className={`af-media${media.length > 1 ? ' n2' : ''}`}>
           {media.slice(0, 4).map((m, i) =>
             m.video ? (

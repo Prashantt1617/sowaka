@@ -2612,7 +2612,7 @@ function pollOptionMediaFields(media: PollOptionMedia | undefined) {
   return { imageObjectKey: media.objectKey };
 }
 
-function postMeta(type: ConnectPostType) {
+export function postMeta(type: ConnectPostType) {
   const meta = {
     leadership: ['Leadership', '👑', '#C98A2E', '#F4ECDD'],
     hr_announcement: ['Announcement', '📣', '#C98A2E', '#F4ECDD'],
@@ -2632,6 +2632,7 @@ function postMeta(type: ConnectPostType) {
     most_likely: ['Most Likely', '🫵', '#6D28D9', '#F3E8FF'],
     secret_squad: ['Secret Squad', '🕵️', '#3A2E9E', '#EEEAFF'],
     game_launch: ['Games', '🎮', '#0571A6', '#E8F3FA'],
+    app_tour: ['App tour', '🧭', '#0B6FAA', '#EEF5FB'],
   } satisfies Record<ConnectPostType, [string, string, string, string]>;
   const [tag, tagIcon, tagColor, tagTint] = meta[type];
   return { tag, tagIcon, tagColor, tagTint };
