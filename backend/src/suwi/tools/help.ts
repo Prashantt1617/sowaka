@@ -32,8 +32,10 @@ defineTools({
   async run(ctx, i) {
     const question = str(i.question, 300);
     const view = str(i.view, 40);
+    // The question decides the page; the page HR is on only breaks a tie (24 Nov: "how to assign a salary
+    // template" asked on Employees linked to Employees). With no question, the page itself.
     const pages = VIEWS.filter((v) => (view && v.view === view) || (question && score(question, v.keywords, v.title) > 0))
-      .map((v) => ({ ...v, s: view && v.view === view ? 99 : score(question, v.keywords, v.title) }))
+      .map((v) => ({ ...v, s: question ? score(question, v.keywords, v.title) + (view && v.view === view ? 0.5 : 0) : view && v.view === view ? 99 : 0 }))
       .sort((a, b) => b.s - a.s).slice(0, 4);
     const howTos = HOW_TOS.filter((h) => question && score(question, h.keywords, h.title) > 0 || (view && h.view === view))
       .map((h) => ({ ...h, s: score(question, h.keywords, h.title) })).sort((a, b) => b.s - a.s).slice(0, 3);
@@ -56,10 +58,10 @@ defineTools({
         note: onlyUnsupported
           ? 'Sowaka does not do this (see notSupported). Say so plainly in one or two sentences; do not suggest a workaround inside Sowaka unless one is listed.'
           : pages.length || howTos.length
-          ? 'Answer from these entries only. Name the page as Section › Title and give the steps as listed.'
+          ? 'Answer from these entries only. Name the page as Section › Title and give the steps as listed. If you have a prepare_ tool that does this (for example prepare_assign_salary_template, prepare_add_holiday, prepare_decide_leave), end by offering to do it for them and say what you need (who, which template, the amount).'
           : 'Nothing in the dashboard matches. Say plainly that Sowaka does not have this, and list anything close from allNotSupported.',
       },
-      links: first ? [{ label: `Open ${first.title}`, view: first.view }] : [],
+      links: first ? [{ label: `Open ${VIEWS.find((v) => v.view === first.view)?.title ?? first.title}`, view: first.view }] : [],
     };
   },
 });
