@@ -38,3 +38,6 @@ import './tools/leave-balance';
 import './tools/review';
 import './tools/holidays';
 import './tools/org-lists';
+import './tools/payroll-run-steps';
+import './tools/payroll-setup-fixes';
+import './tools/payroll-settlement-proofs';
