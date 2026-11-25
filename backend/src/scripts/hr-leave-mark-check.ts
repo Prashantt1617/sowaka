@@ -70,6 +70,25 @@ const err = async (f: () => Promise<unknown>) => { try { await f(); return ''; }
   const n = await leaves().countDocuments({ userId: 'asha', status: 'approved' });
   await setAttendanceOverride('founder', 'asha', d2, { status: 'on_leave' });
   ok('a day an approved leave covers needs no type and takes nothing more', (await leaves().countDocuments({ userId: 'asha', status: 'approved' })) === n);
+  // HR picks another type on a day their own approved one-day leave covers: the leave is swapped (25 Nov 2026).
+  const other = unpaid ?? rules.find((r) => r.key !== paid.key);
+  if (other) {
+    const d4 = `${month}05`;
+    const own = await leaves().insertOne({ userId: 'asha', type: other.key, startDate: new Date(`${d4}T00:00:00Z`), endDate: new Date(`${d4}T00:00:00Z`), days: 1, reason: 'home emergency', status: 'approved', createdAt: Date.now() });
+    const left = async () => (await (await import('../services/leave.service')).getMyLeaveBalance('asha', Number(d4.slice(0, 4)))).types.find((t) => t.key === paid.key)?.remaining ?? 0;
+    const before = await left();
+    if (before >= 1) {
+      await setAttendanceOverride('founder', 'asha', d4, { status: 'on_leave', leaveType: paid.key });
+      const old = await leaves().findOne({ _id: own.insertedId });
+      const mark = await attendanceOverrides().findOne({ org: 'acme', userId: 'asha', workDate: d4 });
+      ok('picking another type cancels their own leave and books the picked one', old?.status === 'cancelled' && mark?.leaveType === paid.name && !!mark?.leaveId && !mark?.unpaid, { old: old?.status, mark });
+      ok('…and the picked type gives up one day', (await left()) === before - 1, { before, after: await left() });
+    }
+    // A longer leave is not cut up from the calendar.
+    const d5 = `${month}06`, d6 = `${month}07`;
+    await leaves().insertOne({ userId: 'asha', type: other.key, startDate: new Date(`${d5}T00:00:00Z`), endDate: new Date(`${d6}T00:00:00Z`), days: 2, reason: 'trip', status: 'approved', createdAt: Date.now() });
+    ok('a day inside a longer approved leave is refused with where to change it', /Leave requests/.test(await err(() => setAttendanceOverride('founder', 'asha', d5, { status: 'on_leave', leaveType: paid.key }))));
+  }
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

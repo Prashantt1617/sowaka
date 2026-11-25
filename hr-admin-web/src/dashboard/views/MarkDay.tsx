@@ -37,9 +37,10 @@ export function MarkDay({ day, userId, saving, onClose, onSave }: { day: Calenda
   const [note, setNote] = useState(day.hr?.note ?? '');
   const recorded = day.hr ? CAL_TONE[day.hr.previousStatus] : CAL_TONE[day.status];
   const when = new Date(`${day.date}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
-  // Already on approved leave that day (their own request): marking it On leave takes nothing more.
+  // Already on approved leave that day (their own request): left alone it takes nothing more; picking another
+  // type swaps it (25 Nov 2026: HR could not turn an approved leave without pay into casual leave from here).
   const covered = !day.hr && (day.status === 'on_leave' || day.status === 'unpaid_leave');
-  const askType = status === 'on_leave' && !covered;
+  const askType = status === 'on_leave';
   const [types, setTypes] = useState<LeaveBalanceItemDTO[] | null>(null);
   const [typeError, setTypeError] = useState('');
   const [leaveType, setLeaveType] = useState('');
@@ -54,7 +55,7 @@ export function MarkDay({ day, userId, saving, onClose, onSave }: { day: Calenda
       .catch(() => setTypeError('Could not load their leave balance'));
   }, [askType, types, userId, day.hr?.leaveType]);
   const usable = (t: LeaveBalanceItemDTO) => t.unpaid || t.unlimited || t.remaining >= 1 || t.name === day.hr?.leaveType;
-  const canSave = !askType || Boolean(leaveType);
+  const canSave = !askType || covered || Boolean(leaveType);
   // On the page body, not inside the calendar: the page fades in with a transform, which would pin a
   // fixed overlay to the top of the page instead of the screen.
   return createPortal(
@@ -84,7 +85,7 @@ export function MarkDay({ day, userId, saving, onClose, onSave }: { day: Calenda
             })}
           </div>
           {status === 'on_leave' && covered && (
-            <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Already on approved leave that day: nothing more is taken from their balance.</div>
+            <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Already on approved leave that day{day.label ? ` (${day.label})` : ''}. Leave it as it is, or pick another type below: their request is cancelled and the day comes out of the type you pick.</div>
           )}
           {askType && (
             <div style={{ display: 'grid', gap: 8 }}>
@@ -114,7 +115,7 @@ export function MarkDay({ day, userId, saving, onClose, onSave }: { day: Calenda
         <div className="pd-md-f">
           {day.hr && <button type="button" disabled={saving} onClick={() => onSave(null, '')} className="pd-btn ghost" style={{ color: 'var(--bad)', paddingLeft: 0 }}>Remove mark</button>}
           <button type="button" onClick={onClose} className="pd-btn" style={{ marginLeft: 'auto' }}>Cancel</button>
-          <button type="button" disabled={saving || !canSave} title={canSave ? undefined : 'Pick which leave'} onClick={() => onSave(status, note, askType ? leaveType : undefined)} className="pd-btn primary">{saving ? 'Saving…' : 'Save'}</button>
+          <button type="button" disabled={saving || !canSave} title={canSave ? undefined : 'Pick which leave'} onClick={() => onSave(status, note, askType && leaveType ? leaveType : undefined)} className="pd-btn primary">{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
     </div>,
