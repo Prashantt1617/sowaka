@@ -60,8 +60,9 @@ export function mediaCandidates(
 /**
  * How long a reader may keep what it was sent. Every key's bytes never
  * change, so a copy, or an original that was asked for, is kept a year.
- * An original sent in place of a copy that does not exist yet is kept a
- * week, so a phone picks up the smaller copy once it has been made.
+ * An original sent in place of a copy that does not exist yet is kept an
+ * hour, so a phone and CloudFront pick up the smaller copy soon after it is made
+ * (a week kept 6 MB avatars on every phone long after their 200 KB copy existed).
  *
  * `public`, so CloudFront keeps them too and a scroll through the feed is
  * served from the edge rather than from this server: the URLs are not behind
@@ -71,7 +72,7 @@ export function mediaCandidates(
  */
 export function mediaCacheControl(served: MediaCandidate, asked: number | 'original' | undefined, objectKey: string) {
   const standIn = !served.copy && asked !== 'original' && mayHaveCopies(objectKey);
-  return standIn ? 'public, max-age=604800' : 'public, max-age=31536000, immutable';
+  return standIn ? 'public, max-age=3600' : 'public, max-age=31536000, immutable';
 }
 
 /**
@@ -84,4 +85,17 @@ export function mediaCacheControl(served: MediaCandidate, asked: number | 'origi
 export function pushPictureName(contentType: string): string {
   const ext = contentType === 'image/png' ? 'png' : contentType === 'image/gif' ? 'gif' : 'jpg';
   return `picture.${ext}`;
+}
+
+/**
+ * A copy that is not there yet. S3 answers a missing key with 404 only to a user allowed to list the
+ * bucket; the upload user is not (no s3:ListBucket), so a missing copy comes back as 403 AccessDenied.
+ * Read as an error, no copy was ever made and every `?w=` ask streamed the whole original: 24.7 GB of
+ * profile photos in 45 minutes of the 19 Nov Knights tournament (25 Nov 2026). Only asked of copy keys,
+ * which live under our own prefix, so a 403 there means "not made yet".
+ */
+export function isMissingObject(error: unknown) {
+  const failure = error as { name?: string; Code?: string; $metadata?: { httpStatusCode?: number } } | undefined;
+  return failure?.name === 'NoSuchKey' || failure?.$metadata?.httpStatusCode === 404
+    || failure?.name === 'AccessDenied' || failure?.Code === 'AccessDenied' || failure?.$metadata?.httpStatusCode === 403;
 }
