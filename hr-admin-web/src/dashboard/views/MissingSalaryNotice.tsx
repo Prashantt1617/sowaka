@@ -2,18 +2,22 @@
 // salary (no salary template, or a template without a CTC). The run pays only
 // people with an active salary structure, so without this they are missed in
 // silence — a month's joiners most of all. Shown on Payroll Runs (for the
-// period picked, and on a run) and on Salary templates.
-import { useEffect, useState } from 'react';
+// period picked, and on a run) and on Salary templates. Each row has a template
+// picker: choosing one asks for the CTC and the start date, as Edit employees does.
+import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
+import { listPayHeads, listSalaryStructures, listSalaryTemplates } from '../../services/payroll';
+import type { PayHeadDTO, SalaryTemplateDTO } from '../../services/payroll';
 import { dayLabel, getPeopleWithoutSalary, REASON_TEXT } from '../../services/salaryTemplatePeople';
-import type { PeopleWithoutSalary } from '../../services/salaryTemplatePeople';
+import type { PeopleWithoutSalary, StructureRowWithFrom } from '../../services/salaryTemplatePeople';
+import { AssignSalaryDialog } from './SalaryTemplatePeople';
 import * as L from './look';
 
 const SHOWN = 6;
 
-export function MissingSalaryNotice({ period, where = 'run', note, refreshKey }: {
+export function MissingSalaryNotice({ period, where = 'run', note, refreshKey, onAssigned }: {
   /** 'YYYY-MM'; absent = the current pay period. */
   period?: string;
   /** On a run (with the button to Salary templates), or on Salary templates itself. */
@@ -22,11 +26,31 @@ export function MissingSalaryNotice({ period, where = 'run', note, refreshKey }:
   note?: string;
   /** Changes when the page knows the answer may have changed (a run recalculated, people assigned). */
   refreshKey?: unknown;
+  /** Someone was given a salary from the list's picker. */
+  onAssigned?: () => void;
 }) {
-  const { setView } = useStore();
+  const { setView, emps, flash } = useStore();
   const [data, setData] = useState<PeopleWithoutSalary | null>(null);
   const [failed, setFailed] = useState('');
   const [all, setAll] = useState(false);
+  const [mine, setMine] = useState(0);
+  // For the per-person template picker: the templates, pay heads (for the breakup) and who has which salary.
+  const [templates, setTemplates] = useState<SalaryTemplateDTO[] | null>(null);
+  const [payHeads, setPayHeads] = useState<PayHeadDTO[]>([]);
+  const [structures, setStructures] = useState<StructureRowWithFrom[]>([]);
+  const [assigning, setAssigning] = useState<{ userId: string; code: string } | null>(null);
+  const hasPeople = !!data && data.people.length > 0;
+  useEffect(() => {
+    if (!hasPeople || templates) return;
+    Promise.all([listSalaryTemplates(), listPayHeads(), listSalaryStructures()])
+      .then(([t, ph, st]) => { setTemplates(t); setPayHeads(ph); setStructures(st as StructureRowWithFrom[]); })
+      .catch(() => setTemplates([]));
+  }, [hasPeople, templates, mine]);
+  const live = useMemo(() => (templates ?? []).filter((t) => t.active), [templates]);
+  const byUser = useMemo(() => new Map(structures.map((s) => [s.userId, s])), [structures]);
+  const nameOf = useMemo(() => new Map((templates ?? []).map((t) => [t.code, t.name])), [templates]);
+  const phByCode = useMemo(() => new Map(payHeads.map((p) => [p.code, p])), [payHeads]);
+  const empOf = useMemo(() => new Map(emps.map((e) => [e.id, e])), [emps]);
 
   useEffect(() => {
     if (period !== undefined && !/^\d{4}-\d{2}$/.test(period)) { setData(null); return; }
@@ -36,7 +60,7 @@ export function MissingSalaryNotice({ period, where = 'run', note, refreshKey }:
       .then((d) => { if (live) setData(d); })
       .catch((e) => { if (live) { setData(null); setFailed(e instanceof ApiError ? e.message : 'Could not check who is missing'); } });
     return () => { live = false; };
-  }, [period, refreshKey]);
+  }, [period, refreshKey, mine]);
 
   if (failed) return <div style={{ fontSize: 12.5, color: 'var(--ink-3)', margin: '0 0 16px' }}>Could not check who has no salary template: {failed}</div>;
   if (!data || data.people.length === 0) return null;
@@ -67,13 +91,14 @@ export function MissingSalaryNotice({ period, where = 'run', note, refreshKey }:
       </div>
 
       <div style={{ overflowX: 'auto', marginTop: 12 }}>
-        <table className="lk-t" style={{ ...L.table, minWidth: 520 }}>
+        <table className="lk-t" style={{ ...L.table, minWidth: 720 }}>
           <thead>
             <tr>
               <th style={th}>Name</th>
               <th style={th}>Employee ID</th>
               <th style={th}>Joining date</th>
               <th style={th}>What is missing</th>
+              <th style={th}>Salary template</th>
             </tr>
           </thead>
           <tbody>
@@ -86,6 +111,17 @@ export function MissingSalaryNotice({ period, where = 'run', note, refreshKey }:
                 <td style={td}>{p.employeeId || '—'}</td>
                 <td style={td}>{dayLabel(p.joiningDate)}</td>
                 <td style={{ ...td, color: 'var(--ink-2)' }}>{REASON_TEXT[p.reason]}</td>
+                <td style={td}>
+                  {empOf.has(p.userId) ? (
+                    <select id={`assign-${p.userId}`} aria-label={`Salary template for ${p.name}`} value=""
+                      disabled={!templates || live.length === 0}
+                      onChange={(e) => { if (e.target.value) setAssigning({ userId: p.userId, code: e.target.value }); }}
+                      style={pick}>
+                      <option value="">{!templates ? 'Loading…' : live.length === 0 ? 'No active templates' : 'Assign a template…'}</option>
+                      {live.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}
+                    </select>
+                  ) : <span style={{ color: 'var(--ink-3)' }}>Not in the employee list</span>}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -97,6 +133,31 @@ export function MissingSalaryNotice({ period, where = 'run', note, refreshKey }:
         </button>
       )}
       {note && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 8 }}>{note}</div>}
+      {assigning && (() => {
+        const template = live.find((t) => t.code === assigning.code);
+        const emp = empOf.get(assigning.userId);
+        if (!template || !emp) return null;
+        return (
+          <AssignSalaryDialog
+            template={template}
+            people={[emp]}
+            byUser={byUser}
+            nameOf={nameOf}
+            phByCode={phByCode}
+            current={data.current}
+            onClose={() => setAssigning(null)}
+            onSaved={async (saved, left) => {
+              if (left.length === 0) setAssigning(null);
+              if (saved > 0) {
+                flash(`${emp.name} is on ${template.name}`);
+                setTemplates(null);
+                setMine((k) => k + 1);
+                onAssigned?.();
+              }
+            }}
+          />
+        );
+      })()}
     </section>
   );
 }
@@ -107,3 +168,7 @@ const box: CSSProperties = {
 };
 const th: CSSProperties = { ...L.th, padding: '8px 10px' };
 const td: CSSProperties = { ...L.td, padding: '8px 10px', fontSize: 13 };
+const pick: CSSProperties = {
+  font: 'inherit', fontSize: 13, color: 'var(--ink)', background: 'var(--surface)', border: '1px solid var(--line)',
+  borderRadius: 10, padding: '7px 10px', minWidth: 180, cursor: 'pointer',
+};
