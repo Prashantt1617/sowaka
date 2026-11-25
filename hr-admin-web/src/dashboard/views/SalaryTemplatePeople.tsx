@@ -126,13 +126,32 @@ export function SalaryTemplateTabs({ template, templates, phByCode, onChanged, c
             addWord="Add"
             onAdd={async (ids) => {
               if (!template.active) { flash(`${template.name} is inactive: make it active (Edit) before putting people on it`, 'error'); return false; }
-              setAsking(ids);
-              return false;
+              // People who already have a salary just move here with their CTC (25 Nov 2026, HR: "this screen is not
+              // needed; it simply moves to this template and the next payroll run calculates on it"). Only people
+              // with no salary yet are asked for a CTC and the day it starts.
+              const moving = ids.filter((id) => (byUser.get(id)?.annualCtcPaise ?? 0) > 0);
+              const fresh = ids.filter((id) => !moving.includes(id));
+              if (moving.length) {
+                try {
+                  const r = await assignTemplatePeople(template.code, moving.map((userId) => ({ userId })));
+                  const refused = r.results.filter((x) => !x.ok);
+                  await load();
+                  onChanged();
+                  if (r.saved > 0) flash(`${r.saved} ${r.saved === 1 ? 'person' : 'people'} moved to ${template.name} with their CTC; the next pay run uses it`);
+                  if (refused.length) flash(`${refused.map((x) => `${x.name}: ${x.message ?? 'not moved'}`).join('; ')}`, 'error');
+                } catch (e) {
+                  flash(e instanceof ApiError ? e.message : 'Could not move them', 'error');
+                  return false;
+                }
+              }
+              if (fresh.length) { setAsking(fresh); return false; }
+              setEditKey((k) => k + 1);
+              return true;
             }}
             note={<>
               {!template.active && <><strong style={{ color: 'var(--bad)', fontWeight: 600 }}>This template is inactive:</strong> make it active (Template › Edit) before putting people on it. </>}
-              Adding someone gives them a salary on {template.name}: you enter each person’s <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>annual CTC</strong> and the day it applies from next.
-              {' '}Someone on another template moves here with their CTC.
+              Someone on another template simply <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>moves here with their CTC</strong>; the next pay run works their salary out on {template.name}.
+              {' '}Someone with no salary yet needs an annual CTC and the day it starts. To change pay from a date, use Revise on their salary: the run splits the month at that date.
               {withoutSalary > 0 && <> <strong style={{ color: 'var(--warn)', fontWeight: 600 }}>{withoutSalary} {withoutSalary === 1 ? 'person has' : 'people have'} no salary yet</strong> and {withoutSalary === 1 ? 'is' : 'are'} listed first (“None” under Now): pay runs leave them out until they are on a template.</>}
             </>}
             removeBlocked="A salaried employee always needs a salary template, so nobody is taken off one here. To change someone’s template, open the template they should be on › Edit employees › Add: they move there with their CTC."

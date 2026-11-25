@@ -31,7 +31,8 @@ export type PeopleWithoutSalary = {
 export const getPeopleWithoutSalary = (period?: string) =>
   api<PeopleWithoutSalary>(`/admin/payroll/people-without-salary${period ? `?period=${encodeURIComponent(period)}` : ''}`);
 
-export type TemplatePersonInput = { userId: string; annualCtcPaise: number; effectiveFrom: string };
+/** Someone who already has a CTC may be sent with neither: they move here keeping it, for the next run's whole period. */
+export type TemplatePersonInput = { userId: string; annualCtcPaise?: number; effectiveFrom?: string };
 export type TemplatePersonResult = { userId: string; name: string; ok: boolean; movedFrom?: string; message?: string };
 
 /** Puts people on a salary template, each with an annual CTC and the day it applies from. */

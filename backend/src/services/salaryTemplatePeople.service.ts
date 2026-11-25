@@ -144,7 +144,7 @@ export async function assignPeopleToTemplate(adminUserId: string, codeInput: str
   if (!template.active) throw new SalaryStructureError(409, `${template.name} is inactive: make it active before putting people on it`);
 
   const raw = (body ?? {}) as { people?: unknown };
-  if (!Array.isArray(raw.people) || raw.people.length === 0) throw new SalaryStructureError(400, 'people must be a list of { userId, annualCtcPaise, effectiveFrom }');
+  if (!Array.isArray(raw.people) || raw.people.length === 0) throw new SalaryStructureError(400, 'people must be a list of { userId, annualCtcPaise?, effectiveFrom? } (both needed for someone with no salary yet)');
   if (raw.people.length > MAX_PEOPLE) throw new SalaryStructureError(400, `At most ${MAX_PEOPLE} people at a time`);
   const asked = raw.people.map((p) => (p ?? {}) as Record<string, unknown>);
   const ids = asked.map((p) => String(p.userId ?? '').trim());
@@ -155,25 +155,32 @@ export async function assignPeopleToTemplate(adminUserId: string, codeInput: str
     .find({ org, userId: { $in: ids } }, { projection: { _id: 0, userId: 1, name: 1, lifecycleStatus: 1 } })
     .toArray();
   const byId = new Map(roster.map((u) => [u.userId, u]));
+  const current = new Map(
+    (await salaryStructures().find({ org, userId: { $in: ids } }, { projection: { _id: 0, userId: 1, salaryTemplateCode: 1, annualCtcPaise: 1 } }).toArray())
+      .map((s) => [s.userId, s]),
+  );
   // Everything is checked before anything is saved: a typo in one row saves nobody.
+  // Someone who already has a CTC simply moves here with it (25 Nov 2026, HR: "it simply moves to this template
+  // and the payroll run after has its calculations on this template"): no CTC or date is asked, and the move
+  // applies to the next run's whole period. A pay change with a date is a salary revision, which splits the period.
   const rows = asked.map((p, i) => {
     const userId = ids[i];
     const person = byId.get(userId);
     if (!person) throw new SalaryStructureError(404, `Employee ${userId} is not in this company`);
     if (GONE.includes(person.lifecycleStatus)) throw new SalaryStructureError(409, `${person.name} has left the company`);
-    const ctc = Number(p.annualCtcPaise);
+    const had = current.get(userId)?.annualCtcPaise ?? 0;
+    const keeps = p.annualCtcPaise === undefined || p.annualCtcPaise === null;
+    const ctc = keeps ? had : Number(p.annualCtcPaise);
     if (!Number.isInteger(ctc) || ctc <= 0) throw new SalaryStructureError(400, `${person.name}: enter the annual CTC`);
-    const from = String(p.effectiveFrom ?? '');
-    if (!DAY.test(from) || new Date(`${from}T00:00:00Z`).toISOString().slice(0, 10) !== from) {
+    const from = p.effectiveFrom === undefined || p.effectiveFrom === null || p.effectiveFrom === '' ? '' : String(p.effectiveFrom);
+    if (!from && !(keeps && had > 0)) throw new SalaryStructureError(400, `${person.name}: pick the day their salary applies from`);
+    if (from && (!DAY.test(from) || new Date(`${from}T00:00:00Z`).toISOString().slice(0, 10) !== from)) {
       throw new SalaryStructureError(400, `${person.name}: the effective-from date must be a date, YYYY-MM-DD`);
     }
-    return { userId, name: person.name, annualCtcPaise: ctc, effectiveFrom: from };
+    return { userId, name: person.name, annualCtcPaise: ctc, effectiveFrom: from || undefined };
   });
 
-  const existing = new Map(
-    (await salaryStructures().find({ org, userId: { $in: ids } }, { projection: { _id: 0, userId: 1, salaryTemplateCode: 1 } }).toArray())
-      .map((s) => [s.userId, s.salaryTemplateCode]),
-  );
+  const existing = new Map([...current].map(([id, s]) => [id, s.salaryTemplateCode]));
   const results: TemplatePersonResult[] = [];
   for (const row of rows) {
     const before = existing.get(row.userId);
@@ -182,7 +189,7 @@ export async function assignPeopleToTemplate(adminUserId: string, codeInput: str
       await upsertSalaryStructure(adminUserId, row.userId, {
         salaryTemplateCode: code,
         annualCtcPaise: row.annualCtcPaise,
-        effectiveFrom: row.effectiveFrom,
+        ...(row.effectiveFrom ? { effectiveFrom: row.effectiveFrom } : {}),
         status: 'active',
         // As Salary details' Revise does on a change of template: the old template's own changes go.
         ...(moving ? { overrides: {} } : {}),
