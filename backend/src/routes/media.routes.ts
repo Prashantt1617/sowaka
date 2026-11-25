@@ -5,6 +5,7 @@ import { isConnectMediaKey, readConnectMedia } from '../services/s3-connect-medi
 import { copyKey, mayHaveCopies, requestedWidth } from '../services/image-fit';
 import { copyMadeFor, copyWidthFor, type MadeCopy } from '../services/media-copies';
 import {
+  isMissingObject,
   mediaCacheControl,
   mediaCandidates,
   pushPictureName,
@@ -15,10 +16,6 @@ import {
 export const mediaRouter = Router();
 
 /** S3's answer for a key that was never written (as against one it failed to read). */
-function isMissingObject(error: unknown) {
-  const failure = error as { name?: string; $metadata?: { httpStatusCode?: number } } | undefined;
-  return failure?.name === 'NoSuchKey' || failure?.$metadata?.httpStatusCode === 404;
-}
 
 // helmet() sets `Cross-Origin-Resource-Policy: same-origin` on everything,
 // which a browser applies to an <img> too: the dashboard and the Flutter web
