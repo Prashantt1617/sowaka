@@ -57,6 +57,11 @@ export async function findPerson(ctx: SuwiContext, ref: unknown, all?: Person[])
   const r = str(ref);
   if (!r) throw new Error('Say who: a name, employee ID or userId');
   const people = all ?? await roster(ctx);
+  // "me", "my team" (25 Nov 2026: a manager's "who is in my team?" matched Arjun Mehra and Meera on "me").
+  if (/^(me|my|myself|i|mine|my ?self|my team|the asker|yourself)$/i.test(r)) {
+    const self = people.find((p) => p.userId === ctx.userId) ?? (await peopleWith<Person>(ctx.org, PEOPLE_FIELDS)).find((p) => p.userId === ctx.userId);
+    if (self) return self;
+  }
   const exact = people.find((p) => p.userId === r || (p.employeeId && p.employeeId.toLowerCase() === r.toLowerCase()) || (p.email && p.email.toLowerCase() === r.toLowerCase()));
   if (exact) return exact;
   const n = norm(r);
