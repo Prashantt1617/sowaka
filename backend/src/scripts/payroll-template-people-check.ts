@@ -147,6 +147,15 @@ const person = (userId: string, extra: Partial<User> = {}): User => ({
   const j2 = await salaryStructures().findOne({ org: ORG, userId: 'joiner' });
   ok('already on it with a new CTC: a revision from the new date; the template date stays', again.saved === 1 && j2?.revisions?.length === 2 && j2.revisions[1].effectiveFrom === '2026-12-01'
     && j2.revisions[1].previousCtcPaise === 5_00_000_00 && j2.effectiveFrom?.toISOString().slice(0, 10) === '2026-11-12', j2);
+  // A move with nothing but the person (25 Nov 2026): someone with a CTC moves keeping it, undated, no revision.
+  const paidBefore = await salaryStructures().findOne({ userId: 'paid' });
+  const moved = await assignPeopleToTemplate('hr', 'BELOW_TAXABLE', { people: [{ userId: 'paid' }] });
+  const pm = await salaryStructures().findOne({ userId: 'paid' });
+  ok('a move with no CTC or date keeps the CTC', moved.saved === 1 && pm?.salaryTemplateCode === 'BELOW_TAXABLE' && pm.annualCtcPaise === 3_72_000_00, pm);
+  ok('…adds no revision and keeps the date it had', (pm?.revisions?.length ?? 0) === (paidBefore?.revisions?.length ?? 0) && pm?.effectiveFrom?.toISOString() === paidBefore?.effectiveFrom?.toISOString(), [pm?.revisions, pm?.effectiveFrom]);
+  ok('someone with no salary still needs a CTC', (await refusal(() => assignPeopleToTemplate('hr', 'TAXABLE_SALARY', { people: [{ userId: 'lateoct' }] }))).status === 400);
+  ok('…and a date', (await refusal(() => assignPeopleToTemplate('hr', 'TAXABLE_SALARY', { people: [{ userId: 'lateoct', annualCtcPaise: 4_00_000_00 }] }))).status === 400);
+  await assignPeopleToTemplate('hr', 'TAXABLE_SALARY', { people: [{ userId: 'paid' }] });
   await salaryStructures().updateOne({ org: ORG, userId: 'joiner' }, { $set: { annualCtcPaise: 5_00_000_00 } });
 
   const after = await peopleWithoutSalary('hr', '2026-11');
