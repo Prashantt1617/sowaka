@@ -156,7 +156,13 @@ export function TemplateEditPeople({
   const [busy, setBusy] = useState('');
   const [limit, setLimit] = useState(PAGE);
   const onTemplate = useMemo(() => (e: Emp) => placement(e).on, [placement]);
-  const list = filtering ? shown : pool;
+  // Adding: people already on the template come last (25 Nov 2026, HR), the search's own order kept otherwise.
+  const list = useMemo(() => {
+    const base = filtering ? shown : pool;
+    if (mode !== 'add') return base;
+    const off = base.filter((e) => !onTemplate(e));
+    return off.length === base.length ? base : [...off, ...base.filter((e) => onTemplate(e))];
+  }, [filtering, shown, pool, mode, onTemplate]);
   useEffect(() => { setLimit(PAGE); }, [list]);
   const switchTo = (m: 'add' | 'remove') => { setMode(m); setPicked(new Set()); setDropped(new Set()); setFiltering(false); };
 
