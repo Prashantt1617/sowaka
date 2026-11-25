@@ -162,7 +162,7 @@ export async function getCurrentAuthUser(
     throw new AuthError(401, 'User is not active', { accountClosed: await accountClosedFor(user) });
   }
 
-  const role = reports ? 'manager' : 'employee';
+  const role = reports || user.canPostAnnouncements === true ? 'manager' : 'employee';
   return toAuthUser(
     { ...user, role },
     preloaded && preloaded.org === user.org && preloaded.managerUserId === user.managerUserId
@@ -264,7 +264,10 @@ async function completeLogin(user: User): Promise<{ user: AuthUser; record: User
     extra('company', Promise.resolve(companyFor(user.org))),
     extra('manager', Promise.resolve(managerNameFor(user.managerUserId))),
   ]);
-  const role = reports ? 'manager' : 'employee';
+  // The app offers the Announcement post type to "managers" only, and that used to mean "has a report".
+  // HR people with no reports could not post one from the app (25 Nov 2026), so the per-person
+  // `canPostAnnouncements` grant counts too, until the app reads the grant itself.
+  const role = reports || user.canPostAnnouncements === true ? 'manager' : 'employee';
   if (role !== user.role) {
     // Not waited for: the answer already carries the new role.
     void extra('role', users().updateOne({ userId: user.userId }, { $set: { role, updatedAt: now } }));
