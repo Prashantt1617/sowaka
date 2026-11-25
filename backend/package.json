@@ -76,7 +76,6 @@
     "suwi-payroll:check": "MONGODB_DB=suwi_payroll_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-payroll-check.ts",
     "suwi-decide:check": "MONGODB_DB=suwi_decide_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-decide-requests-check.ts",
     "suwi-time:check": "MONGODB_DB=suwi_time_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-time-check.ts",
-    "suwi-decide:check":"MONGODB_DB=suwi_decide_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-decide-requests-check.ts",
     "suwi-lifecycle:check": "MONGODB_DB=suwi_lifecycle_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-lifecycle-check.ts",
     "suwi-people:check": "MONGODB_DB=suwi_people_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-people-check.ts",
     "suwi-speed:check": "MONGODB_DB=suwi_speed_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/suwi-speed-check.ts && npm run -s suwi-orch:check",
