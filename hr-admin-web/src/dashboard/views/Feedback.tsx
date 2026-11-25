@@ -245,7 +245,15 @@ function FeedbackBody() {
       </div>
 
       <div style={{ maxWidth: 268, marginBottom: 20 }}>
-        <SummaryCard label="Reviews submitted" value={`${totDone} / ${totExp}`} />
+        {/* With a manager picked, the count is that manager's (25 Nov 2026, HR: "it shows reviewed 18 but I don't
+            see any reviews here": 18 was the company's, the list Surajit's team). The company's stays underneath. */}
+        {focused ? (
+          <SummaryCard label={`Reviews submitted · ${focused.id === user?.id ? 'your team' : `${focused.name}'s team`}`}
+            value={`${scoped.filter((e) => e.status === 'sent').length} / ${scoped.length}`}
+            sub={`Whole company: ${totDone} / ${totExp}`} />
+        ) : (
+          <SummaryCard label="Reviews submitted" value={`${totDone} / ${totExp}`} />
+        )}
       </div>
 
       {/* —— Per-manager completion ——————————————————————————————————— */}
