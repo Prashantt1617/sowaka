@@ -101,9 +101,7 @@ export function Feedback() {
 
 function FeedbackBody() {
   const s = useStore();
-  // A manager on the dashboard writes reviews for their direct reports here; HR's page is unchanged.
   const { user } = useAuth();
-  const team = isTeamScope(user);
   // Whoever is looking manages someone: "You" heads the managers list and My team shows.
   const isManagerHere = Boolean(user?.id && s.emps.some((e) => e.managerId === user.id && e.id !== user.id));
   const [section, setSection] = useState<Section>('managers');
@@ -526,7 +524,7 @@ function FeedbackBody() {
  * are drawn against a fixed 0-5 scale, not the range of the data, so 4.1 / 4.2
  * / 4.3 reads as three similar cycles instead of a steep climb.
  */
-function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
+export function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
   emp: FbEmp;
   /** The cycle being viewed, which may be a past one. */
   period: string;
