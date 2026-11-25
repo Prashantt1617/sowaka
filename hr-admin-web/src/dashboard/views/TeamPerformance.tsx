@@ -33,7 +33,7 @@ import { ghostBtn, panelCard, smallBtn } from './kpiLook';
 type Workspace = { period: string; team: WorkspaceMember[] };
 
 export function TeamPerformance({ onExit }: { onExit?: () => void } = {}) {
-  const { emps, flash, fbRaw, empRaw, reload } = useStore();
+  const { emps, flash, fbRaw, empRaw, reload, reviewPrefill, setReviewPrefill } = useStore();
   const { user } = useAuth();
   const me = user?.id ?? '';
   const [ws, setWs] = useState<Workspace | null>(null);
@@ -90,6 +90,21 @@ export function TeamPerformance({ onExit }: { onExit?: () => void } = {}) {
   useEffect(() => { if (period) team.forEach((e) => loadKpi(e.id)); }, [period, team, loadKpi]);
 
   const byId = useMemo(() => new Map((ws?.team ?? []).map((m) => [m.userId, m])), [ws]);
+
+  // A review Suwi walked the manager through ("give review to Inderjeet"): open its review page filled in.
+  useEffect(() => {
+    if (!reviewPrefill || !ws) return;
+    setReviewPrefill(null);
+    const m = ws.team.find((x) => x.userId === reviewPrefill.userId);
+    const base = !m ? null
+      : reviewPrefill.period === ws.period ? { ...m }
+      : m.previousCycle?.period === reviewPrefill.period ? { ...m, parameters: m.previousCycle.parameters, feedbackStatus: m.previousCycle.feedbackStatus, score: m.previousCycle.score }
+      : null;
+    if (!base) { flash('That review can no longer be opened here: the person or the cycle has changed', 'error'); return; }
+    const given = new Map(reviewPrefill.parameters.map((p) => [p.parameterId, p]));
+    base.parameters = base.parameters.map((p) => { const g = given.get(p.parameterId); return g ? { ...p, score: g.score, note: g.note } : p; });
+    setReviewing({ member: base, period: reviewPrefill.period });
+  }, [reviewPrefill, ws, setReviewPrefill, flash]);
   const shown = team.filter((e) => !q || [e.name, e.role, e.team, e.manager].join(' ').toLowerCase().includes(q.toLowerCase()));
   const direct = team.filter((e) => e.managerId === me);
   const sent = direct.filter((e) => byId.get(e.id)?.feedbackStatus === 'sent').length;

@@ -1,7 +1,9 @@
 // Suwi, the HR assistant: ask, confirm or undo a prepared action, settings and activity.
 import { api } from './http';
 
-export type SuwiLink = { label: string; view?: string; userId?: string; tab?: string };
+/** A review Suwi walked a manager through: opens the review page with these scores and comments filled in. */
+export type SuwiReviewPrefill = { userId: string; period: string; parameters: { parameterId: string; score: number; note: string }[] };
+export type SuwiLink = { label: string; view?: string; userId?: string; tab?: string; review?: SuwiReviewPrefill };
 export type SuwiProposal = {
   id: string; kind: string; area: string; title: string; summary: string;
   lines: { text: string; why?: string; tone?: 'info' | 'warn' }[];

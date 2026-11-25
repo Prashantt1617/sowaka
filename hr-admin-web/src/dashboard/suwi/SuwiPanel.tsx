@@ -1,13 +1,14 @@
 // Ask Suwi: the side panel on every dashboard page. HR asks in plain words;
 // the answer shows what Suwi checked, buttons to the records, and any change
 // it prepared as a "What will happen" card that only Confirm carries out.
+import { isTeamScope } from '../access';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useStore, type SuwiBulkArea } from '../store';
 import type { View } from '../theme';
 import { IconClose } from '../icons';
 import { ApiError } from '../../services/http';
-import { askSuwi, cancelSuwiAction, confirmSuwiAction, undoSuwiAction, type SuwiAnswer, type SuwiHistoryTurn, type SuwiProposal, type SuwiTable } from '../../services/suwi';
+import { askSuwi, cancelSuwiAction, confirmSuwiAction, undoSuwiAction, type SuwiAnswer, type SuwiHistoryTurn, type SuwiLink, type SuwiProposal, type SuwiTable } from '../../services/suwi';
 import { Markdown } from './markdown';
 import { downloadCsv } from '../export';
 import { BULK_GUIDES } from './bulkGuide';
@@ -41,6 +42,8 @@ const PROMPTS: Partial<Record<View, string[]>> = {
   reimbursements: ['Which claims are pending?', 'Which claims are waiting more than 7 days?'],
   orgchart: ['Who reports to whom in Engineering?', 'Who has no manager?'],
 };
+/** A manager's Suwi sees their own team only: their prompts. */
+const MANAGER_PROMPTS = ['Help me write a review for someone in my team', 'Who in my team is absent or on leave today?', 'Who in my team was late 3 or more times this month?'];
 const DEFAULT_PROMPTS = ['What needs my attention today?', 'Who was late 3 or more times this month?', 'What can you help with?'];
 
 export function SuwiPanel() {
@@ -153,11 +156,19 @@ export function SuwiPanel() {
   }, [open, pending, busy]); // eslint-disable-line react-hooks/exhaustive-deps
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void ask(draft); } };
   const updateProposal = (p: SuwiProposal) => setMsgs((m) => m.map((x) => (x.role === 'assistant' ? { ...x, answer: { ...x.answer, proposals: x.answer.proposals.map((q) => (q.id === p.id ? p : q)) } } : x)));
-  const openLink = (l: { view?: string; userId?: string; tab?: string }) => {
+  const openLink = (l: SuwiLink) => {
+    if (l.review) {
+      // The review page, filled in with what the manager told Suwi. HR reviewing their own reports sees it under
+      // their own team on Performance Reviews.
+      s.setReviewPrefill(l.review);
+      if (!isTeamScope(s.user) && s.user?.id) s.setFbMgrFilter(s.user.id);
+      s.setView('feedback' as View);
+      return;
+    }
     if (l.userId) s.openProfile(l.userId, l.tab);
     else if (l.view) s.setView(l.view as View);
   };
-  const prompts = PROMPTS[s.view] ?? DEFAULT_PROMPTS;
+  const prompts = isTeamScope(s.user) ? MANAGER_PROMPTS : PROMPTS[s.view] ?? DEFAULT_PROMPTS;
   const guide = bulk ? BULK_GUIDES[bulk] : null;
   const first = (s.user?.name ?? '').trim().split(/\s+/)[0] || 'there';
 
