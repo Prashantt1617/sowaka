@@ -32,6 +32,7 @@ import { getMyLeaveBalance } from './leave.service';
 import { payrollPeriodHolding } from './payroll-inputs.service';
 import { estimatePayslip } from './payrollRun.service';
 import { computeStructureFor } from './salaryStructure.service';
+import { structureAsOf } from '../shared/payroll/salary-revisions';
 import { leaveTypeRulesFor } from './shift.service';
 import { statutorySettingsFor } from './statutorySettings.service';
 import { tdsConfigsFor } from './tds.service';
@@ -159,7 +160,8 @@ export async function computeSettlement(employee: User, changes: Record<string, 
   let grossPaise = 0;
   if (structure?.salaryTemplateCode) {
     try {
-      const { computed } = await computeStructureFor(org, employee.userId, structure, employee, lastPeriod);
+      // On the salary in force on the last working day.
+      const { computed } = await computeStructureFor(org, employee.userId, structureAsOf(structure, lastDay), employee, lastPeriod);
       basicPaise = computed.earnings.filter((l) => l.componentType === 'basic').reduce((t, l) => t + l.monthlyPaise, 0);
       grossPaise = computed.grossMonthlyPaise;
     } catch (error) {

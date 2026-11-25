@@ -45,6 +45,14 @@ import { addInto, billCategories, billsByComponent, ReimbursementTax, reimbursem
 import { decryptField, fieldKeyConfigured } from './fieldCrypto';
 import { splitAmountsFor, splitsByUser } from './employeePayroll.split';
 import { cachedLifecycle } from './lifecycle/readCache';
+import type { PayslipArrears, PayslipArrearsItem, SalarySegmentView } from '../models/payrollRun.model';
+import type { SalaryCalcResult } from './salary-calculator';
+import {
+  addDays, allocateLop, arrearsLines, arrearsShare, atTime, combineSegments, daysBetween, paidDaysOf, payRevisions,
+  recurringEarnings, salarySegments, salaryVersions, sameState, structureAsKnownAt, versionOn,
+} from '../shared/payroll/salary-revisions';
+import type { MonthlyLine, SalaryState } from '../shared/payroll/salary-revisions';
+import type { SalaryStructure } from '../models/salaryStructure.model';
 
 export class PayrollRunError extends Error {
   constructor(
@@ -273,6 +281,19 @@ async function buildRunPayslips(
     ? new Set<string>()
     : new Set((await exitSettlements().find({ org, status: { $in: ['approved', 'paid'] }, lines: { $elemMatch: { period, estimated: true } } }, { projection: { _id: 0, userId: 1 } }).toArray()).map((r) => r.userId));
 
+  // ——— Salary revisions: each day is paid on the salary in force that day (salary-revisions).
+  const revisions = await revisionInputs(org, period, range, structures, otherRunIds);
+  // The arrears pay head: the company's earning flagged Arrears (a one-time one first). None: arrears
+  // are worked out and shown but not paid ("not set up"), and offered again once there is one.
+  const arrearsHead = catalog
+    .filter((h) => h.category === 'earning' && h.arrears === true && h.active)
+    .sort((a, b) => (a.recurrence === 'one_time' ? 0 : 1) - (b.recurrence === 'one_time' ? 0 : 1) || a.code.localeCompare(b.code))[0];
+  const configByPeriod = new Map<string, Promise<StatutoryConfig>>([[period, Promise.resolve(config)]]);
+  const configOf = (p: string) => {
+    if (!configByPeriod.has(p)) configByPeriod.set(p, statutoryConfigForPeriod(p));
+    return configByPeriod.get(p)!;
+  };
+
   const now = new Date();
   const slips: Payslip[] = [];
 
@@ -286,19 +307,29 @@ async function buildRunPayslips(
       ? templatesByCode.get(structure.salaryTemplateCode)
       : undefined;
     if (!template) continue;
-    // The template plus this person's own add / remove / edit.
-    const resolvedComponents = resolveTemplateComponents(applyOverrides(template.components, structure.overrides, catalogByCode), catalogByCode);
     // This month's one-time amounts: a component not on the salary is added
     // for this run; either way it is paid / taken at the amount HR typed.
     const amounts = runAmounts[structure.userId] ?? {};
-    for (const code of Object.keys(amounts)) {
-      const head = catalogByCode.get(code);
-      if (!head) continue;
-      const i = resolvedComponents.findIndex((h) => h.code === code);
-      const runHead = { ...(i >= 0 ? resolvedComponents[i] : head), calculation: { mode: 'flat_amount' as const }, active: true };
-      if (i >= 0) resolvedComponents[i] = runHead;
-      else resolvedComponents.push(runHead);
-    }
+    // What is paid this run: HR's amounts, plus worked-out arrears (below) unless HR typed that line.
+    const payAmounts: Record<string, number> = { ...amounts };
+    let workedOutArrearsCode: string | undefined;
+    // A salary's components: its template plus the person's own add / remove / edit, and this run's amounts.
+    const componentsFor = (state: SalaryState, paid: Record<string, number>) => {
+      const tpl = (state.salaryTemplateCode && templatesByCode.get(state.salaryTemplateCode)) || template;
+      const resolvedComponents = resolveTemplateComponents(applyOverrides(tpl.components, state.overrides, catalogByCode), catalogByCode);
+      for (const code of Object.keys(paid)) {
+        const head = catalogByCode.get(code);
+        if (!head) continue;
+        const i = resolvedComponents.findIndex((h) => h.code === code);
+        // Worked-out arrears are paid exactly as worked out, once: never prorated by this month's days.
+        // (A figure HR typed is taken as any typed amount always was.)
+        const asArrears = code === workedOutArrearsCode ? { prorate: false, recurrence: 'one_time' as const } : {};
+        const runHead = { ...(i >= 0 ? resolvedComponents[i] : head), calculation: { mode: 'flat_amount' as const }, active: true, ...asArrears };
+        if (i >= 0) resolvedComponents[i] = runHead;
+        else resolvedComponents.push(runHead);
+      }
+      return { tpl, resolvedComponents };
+    };
 
     const ruleSet = await resolveRuleSetCached(ruleSetCache, org, workStateOf(employee), config);
     // Joined during this month: paid from the joining day, PF ceilings counted from it.
@@ -323,22 +354,80 @@ async function buildRunPayslips(
       : undefined;
     // Left during it: the days after the last working day are not paid, like the days before joining.
     const leftDays = left && left < range.to ? Math.round((Date.parse(range.to) - Date.parse(left)) / 86_400_000) : 0;
-    const salaryFor = (p: string, from?: string) => calculateSalaryStructure({
-      monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
-      payHeads: resolvedComponents,
-      componentValues: { ...(structure.componentValues ?? {}), ...splitAmountsFor(splits.get(structure.userId), p), ...amounts },
-      balancingComponentCode: template.balancingComponentCode,
-      ruleSet,
-      config,
-      month: Number(p.slice(5, 7)),
-      period: p,
-      bonusCategory: structure.bonusCategory,
-      statutory: structure.statutory,
-      settings,
-      statutoryWages: template.statutoryWages,
-      employedFrom: from,
+    // One salary (as in force on some day) worked out for a pay month. A salary from before a
+    // revision whose template or own changes no longer resolve is worked out on the current ones.
+    const calcOf = (state: SalaryState, p: string, from: string | undefined, cfg: StatutoryConfig, rs: ResolvedRuleSet, paid: Record<string, number>): SalaryCalcResult => {
+      const work = (st: SalaryState) => {
+        const { tpl, resolvedComponents } = componentsFor(st, paid);
+        return calculateSalaryStructure({
+          monthlyCtcPaise: Math.round(st.annualCtcPaise / 12),
+          payHeads: resolvedComponents,
+          componentValues: { ...(st.componentValues ?? {}), ...splitAmountsFor(splits.get(structure.userId), p), ...paid },
+          balancingComponentCode: tpl.balancingComponentCode,
+          ruleSet: rs,
+          config: cfg,
+          month: Number(p.slice(5, 7)),
+          period: p,
+          bonusCategory: structure.bonusCategory,
+          statutory: structure.statutory,
+          settings,
+          statutoryWages: tpl.statutoryWages,
+          employedFrom: from,
+        });
+      };
+      try {
+        return work(state);
+      } catch (error) {
+        if (state.salaryTemplateCode === structure.salaryTemplateCode && state.overrides === structure.overrides) throw error;
+        return work({ ...state, salaryTemplateCode: structure.salaryTemplateCode, overrides: structure.overrides });
+      }
+    };
+    // The salary in force on each day of this period; one part for anyone without a revision in it.
+    const versions = salaryVersions(structure, revisions.held.get(structure.userId));
+    const segments = salarySegments(versions, range.from, range.to);
+
+    // Arrears: a revision dated in an earlier, submitted period that its payslip did not know of.
+    const arrearsItems = await arrearsFor({
+      structure, range, earlier: revisions.earlier.get(structure.userId) ?? [], settled: revisions.settled.get(structure.userId) ?? new Set(),
+      covered: revisions.covered, firstFinalizedAt: revisions.firstFinalizedAt, joined,
+      oneTimeCode: (code) => catalogByCode.get(code)?.recurrence === 'one_time' || code === arrearsHead?.code,
+      calc: async (state, p, from) => {
+        const cfg = await configOf(p);
+        const rs = cfg.fy === config.fy ? ruleSet : await resolveRuleSet(org, workStateOf(employee), cfg);
+        return calcOf(state, p, from, cfg, rs, {});
+      },
     });
-    const base = salaryFor(period, employedFrom);
+    let arrears: PayslipArrears | undefined;
+    if (arrearsItems.length) {
+      // What a revision raised is paid; what one lowered is shown, never taken back automatically.
+      const workedOutPaise = arrearsItems.reduce((t, i) => t + Math.max(0, i.amountPaise), 0);
+      const typed = !!arrearsHead && amounts[arrearsHead.code] !== undefined;
+      const status: PayslipArrears['status'] = typed ? 'entered_by_hr'
+        : workedOutPaise === 0 ? (arrearsItems.some((i) => i.amountPaise < 0) ? 'negative' : 'paid')
+          : !arrearsHead ? 'not_set_up' : 'paid';
+      if (status === 'paid' && workedOutPaise > 0) {
+        payAmounts[arrearsHead!.code] = workedOutPaise;
+        workedOutArrearsCode = arrearsHead!.code;
+      }
+      arrears = {
+        ...(arrearsHead ? { payHeadCode: arrearsHead.code } : {}),
+        status,
+        workedOutPaise,
+        paidPaise: status === 'paid' ? workedOutPaise : status === 'entered_by_hr' ? amounts[arrearsHead!.code] : 0,
+        items: arrearsItems,
+      };
+    }
+
+    // A later month (the year's tax projection) on the salary in force by its end.
+    const salaryFor = (p: string, from?: string) =>
+      calcOf(p === period ? segments[segments.length - 1].version.state : versionOn(versions, calendarEnd(p)).state, p, from, config, ruleSet, payAmounts);
+    // Each part of the period on its own salary; one part is the month as always.
+    const segmentCalcs = segments.map((seg) => calcOf(seg.version.state, period, employedFrom, config, ruleSet, payAmounts));
+    const periodDays = daysBetween(range.from, range.to);
+    const split = segments.length > 1;
+    // The month as one, from its parts (monthly figures day-weighted; what is paid comes once loss of pay is placed).
+    const latest = segmentCalcs[segmentCalcs.length - 1];
+    let base = split ? combineSegments(segmentCalcs.map((calc, i) => ({ calc, days: segments[i].days, lopDays: 0 })), periodDays, workingDays).calc : latest;
 
     const periodInputs = await getEmployeePeriodInputs(structure.userId, range, { billCategories: [...billCats.keys()], reservedClaimIds });
     // Loss of pay: the calendar's absences and half days, plus whatever else
@@ -357,6 +446,41 @@ async function buildRunPayslips(
     const attendanceLopDays = Math.min(Math.max(0, docked.days - allowance) + unpaidLeave.days + notYetEmployedDays + leftDays, workingDays);
     const lopEnteredByHr = lopOverrides[structure.userId] !== undefined;
     const lopDays = lopEnteredByHr ? clampLop(lopOverrides[structure.userId], workingDays) : attendanceLopDays;
+    // A period on more than one salary: its loss of pay placed in the parts (the dated days where
+    // they fall), so a day lost on the old salary costs the old rate and one on the new the new.
+    let paidOverride: Record<string, number> | undefined;
+    let salarySegmentsView: SalarySegmentView[] | undefined;
+    if (split) {
+      const notEmployedIn = (from: string, to: string) => {
+        let n = 0;
+        if (employedFrom) { const end = addDays(employedFrom, -1); if (end >= from) n += daysBetween(from, end < to ? end : to); }
+        if (leftDays > 0 && left) { const start = addDays(left, 1); if (start <= to) n += daysBetween(start > from ? start : from, to); }
+        return n;
+      };
+      // The calendar's own days, part by part, when loss of pay comes from it.
+      const dated = !lopEnteredByHr && readsAttendance
+        ? await Promise.all(segments.map((seg) => attendanceCountsForPeriod(adminUserId, period, { from: seg.from, to: seg.to }, scope?.today, structure.userId).then((m) => m.get(structure.userId))))
+        : segments.map(() => undefined);
+      const lops = allocateLop(lopDays, segments.map((seg, i) => ({
+        capacity: (seg.days * workingDays) / periodDays,
+        notEmployed: notEmployedIn(seg.from, seg.to),
+        unpaid: unpaidLeaveDeduction(dated[i]).days,
+        docked: paidDaysOn && dated[i] ? dated[i]!.absent + dated[i]!.half_day / 2 + dated[i]!.missedPunchLop : 0,
+      })), lopEnteredByHr ? 0 : Math.min(allowance, docked.days));
+      const combined = combineSegments(segmentCalcs.map((calc, i) => ({ calc, days: segments[i].days, lopDays: lops[i] })), periodDays, workingDays);
+      base = combined.calc;
+      paidOverride = combined.paidPaise;
+      salarySegmentsView = segments.map((seg, i) => ({
+        from: seg.from,
+        to: seg.to,
+        days: seg.days,
+        lopDays: lops[i],
+        paidDays: paidDaysOf(seg.days, lops[i], periodDays, workingDays),
+        annualCtcPaise: seg.version.state.annualCtcPaise,
+        ...(seg.version.state.salaryTemplateCode ? { salaryTemplateCode: seg.version.state.salaryTemplateCode } : {}),
+      }));
+    }
+
     // Overtime: what HR typed on the run, else the template's rule applied to
     // the month's approved overtime hours.
     const overtimeEnteredByHr = otOverrides[structure.userId] !== undefined && otOverrides[structure.userId] !== null;
@@ -384,6 +508,7 @@ async function buildRunPayslips(
       incomeTaxPaise,
       period,
       employedFrom,
+      ...(paidOverride ? { paidPaise: paidOverride } : {}),
     };
     let slip = computePayslip(base, slipInput);
     // Income tax from the TDS engine, when the org has it on and HR didn't type one.
@@ -391,8 +516,9 @@ async function buildRunPayslips(
     let reimbTax: ReimbursementTax | undefined;
     if (!incomeTaxEnteredByHr && tdsOn) {
       const declaration = declarations.get(structure.userId);
+      // The months to come are on the salary the person is on now (the period's last part).
       const futureTaxable = taxableAfterMealExemption(
-        base.earnings.filter((l) => !l.oneTime).map((l) => ({ taxable: l.taxable, componentType: l.componentType, amountPaise: l.monthlyPaise })),
+        latest.earnings.filter((l) => !l.oneTime).map((l) => ({ taxable: l.taxable, componentType: l.componentType, amountPaise: l.monthlyPaise })),
         config.mealCard.exemptMonthlyPaise,
       );
       // The months still to come on each month's own structure (a PF ceiling change moves the balance), as Zoho projects;
@@ -409,7 +535,7 @@ async function buildRunPayslips(
       }, 0);
       // This year's reimbursements so far less the bills approved so far: a late bill lowers the tax from now on.
       reimbTax = reimbursementTax(addInto(new Map(reimbPaidBefore.get(structure.userId) ?? []), slip.reimbursementLines), bills.get(structure.userId), catalogByCode);
-      const byType = (type: string) => base.earnings.filter((l) => l.componentType === type).reduce((t, l) => t + l.monthlyPaise, 0);
+      const byType = (type: string) => latest.earnings.filter((l) => l.componentType === type).reduce((t, l) => t + l.monthlyPaise, 0);
       const result = runTds({
         configs: tdsConfigs,
         regime: declaration?.regime ?? settings.tds!.defaultRegime,
@@ -420,8 +546,8 @@ async function buildRunPayslips(
         futureTaxablePaise,
         basicMonthlyPaise: byType('basic'),
         hraMonthlyPaise: byType('hra'),
-        employeePfMonthlyPaise: base.statutory.epf.employeePaise,
-        ptMonthlyPaise: base.statutory.pt.amountPaise,
+        employeePfMonthlyPaise: latest.statutory.epf.employeePaise,
+        ptMonthlyPaise: latest.statutory.pt.amountPaise,
         declarations: declaration?.declarations,
       });
       if (result) {
@@ -443,8 +569,9 @@ async function buildRunPayslips(
       joiningDate: employee.joiningDate,
       // On notice by the end of this period: the pay is held for the final settlement.
       ...(noticeStart && noticeStart <= range.to ? { held: { reason: 'notice' as const, since: noticeStart } } : {}),
-      annualCtcPaise: structure.annualCtcPaise,
-      monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
+      // The salary in force at the period's end (a revision dated later is not yet).
+      annualCtcPaise: segments[segments.length - 1].version.state.annualCtcPaise,
+      monthlyCtcPaise: Math.round(segments[segments.length - 1].version.state.annualCtcPaise / 12),
       earnings: slip.earnings.map((e) => ({
         code: e.code,
         name: e.name,
@@ -484,6 +611,8 @@ async function buildRunPayslips(
         attendanceDeductions: [...docked.lines, ...unpaidLeave.lines, ...(notYetEmployedDays > 0 ? [{ label: 'Before joining', count: notYetEmployedDays, days: notYetEmployedDays, trigger: 'absent' as const, every: 1, deductDays: 1 }] : []), ...(leftDays > 0 ? [{ label: 'After leaving', count: leftDays, days: leftDays, trigger: 'absent' as const, every: 1, deductDays: 1 }] : [])],
         paidLeaveDaysApplied: Math.min(allowance, docked.days),
         payableDays: slip.payableDays,
+        ...(salarySegmentsView ? { salarySegments: salarySegmentsView } : {}),
+        ...(arrears ? { arrears } : {}),
         approvedLeaveDays: periodInputs.approvedLeaveDays,
         approvedOtHours: periodInputs.approvedOtHours,
         overtimePaise,
@@ -498,6 +627,193 @@ async function buildRunPayslips(
     throw new PayrollRunError(409, 'No payslips could be generated for this period');
   }
   return slips;
+}
+
+// ————————————————————————————————————————————————————————————————
+// Salary revisions: what the run reads, and arrears
+// ————————————————————————————————————————————————————————————————
+
+/** An earlier, submitted payslip of one person, as arrears read it. */
+interface EarlierSlip {
+  period: string;
+  from: string;
+  to: string;
+  baseDays: number;
+  /** When its run was submitted (paid / approved): a revision saved after it is news to it. */
+  finalizedAt: number;
+  lopDays: number;
+  leftOn?: string;
+  /** The monthly amount of each earning it paid on (fullPaise). */
+  earnings: { code: string; name: string; fullPaise: number }[];
+  /** Codes HR typed on that run (one-time items): not salary, never compared. */
+  typedCodes: string[];
+  /** It was itself paid in parts (made by this code): what it paid on is worked out, not read. */
+  split: boolean;
+}
+
+interface RevisionInputs {
+  earlier: Map<string, EarlierSlip[]>;
+  /** `revisionKey|period` (or `revisionKey|note:from`) already carried by another run: never again. */
+  settled: Map<string, Set<string>>;
+  /** Revisions whose arrears for THIS period another run paid: this period keeps the old salary for their days. */
+  held: Map<string, Set<string>>;
+  /** The days the company's runs (not rejected) pay for, this one included. */
+  covered: { from: string; to: string }[];
+  /** When the company's first run was submitted (Infinity: none yet). */
+  firstFinalizedAt: number;
+}
+
+/**
+ * What the run needs to pay revisions by date: for the people with a revision only (nobody else
+ * costs a read), their submitted payslips before this period, and the arrears other runs carry.
+ */
+async function revisionInputs(org: string, period: string, range: PeriodRange, structures: SalaryStructure[], otherRunIds: string[]): Promise<RevisionInputs> {
+  const out: RevisionInputs = { earlier: new Map(), settled: new Map(), held: new Map(), covered: [{ from: range.from, to: range.to }], firstFinalizedAt: Infinity };
+  const people = structures.filter((s) => payRevisions(s).length > 0).map((s) => s.userId);
+  if (people.length === 0) return out;
+  const runs = await payrollRuns().find({ org, status: { $ne: 'rejected' } } as never, { projection: { _id: 1, period: 1, status: 1, periodFrom: 1, periodTo: 1, baseDays: 1, paidAt: 1, decidedAt: 1, updatedAt: 1 } }).toArray();
+  const submitted = new Map<string, { period: string; from: string; to: string; baseDays: number; finalizedAt: number }>();
+  for (const run of runs) {
+    const r = run.periodFrom && run.periodTo
+      ? { from: run.periodFrom, to: run.periodTo, baseDays: run.baseDays ?? daysBetween(run.periodFrom, run.periodTo) }
+      : await payrollPeriodRange(org, run.period).catch(() => parsePeriod(run.period));
+    out.covered.push({ from: r.from, to: r.to });
+    if (run.status !== 'paid' && run.status !== 'approved') continue;
+    const finalizedAt = new Date(run.paidAt ?? run.decidedAt ?? run.updatedAt).getTime();
+    out.firstFinalizedAt = Math.min(out.firstFinalizedAt, finalizedAt);
+    if (run.period < period) submitted.set(run._id.toHexString(), { period: run.period, from: r.from, to: r.to, baseDays: r.baseDays, finalizedAt });
+  }
+  const [earlier, carried] = await Promise.all([
+    submitted.size
+      ? payslips().find({ org, userId: { $in: people }, runId: { $in: [...submitted.keys()] } }, { projection: { _id: 0, userId: 1, runId: 1, 'earnings.code': 1, 'earnings.name': 1, 'earnings.fullPaise': 1, 'inputs.lopDays': 1, 'inputs.leftOn': 1, 'inputs.componentAmounts': 1, 'inputs.salarySegments': 1 } }).toArray()
+      : Promise.resolve([] as Payslip[]),
+    otherRunIds.length
+      ? payslips().find({ org, userId: { $in: people }, runId: { $in: otherRunIds }, 'inputs.arrears': { $exists: true } } as never, { projection: { _id: 0, userId: 1, 'inputs.arrears': 1 } }).toArray()
+      : Promise.resolve([] as Payslip[]),
+  ]);
+  for (const slip of earlier) {
+    const run = submitted.get(slip.runId)!;
+    const list = out.earlier.get(slip.userId) ?? [];
+    list.push({
+      period: run.period, from: run.from, to: run.to, baseDays: run.baseDays, finalizedAt: run.finalizedAt,
+      lopDays: slip.inputs?.lopDays ?? 0, leftOn: slip.inputs?.leftOn,
+      earnings: (slip.earnings ?? []).map((e) => ({ code: e.code, name: e.name, fullPaise: e.fullPaise })),
+      typedCodes: Object.keys(slip.inputs?.componentAmounts ?? {}),
+      split: (slip.inputs?.salarySegments?.length ?? 0) > 1,
+    });
+    out.earlier.set(slip.userId, list);
+  }
+  for (const slip of carried) {
+    const a = slip.inputs?.arrears;
+    // Worked out but not paid for want of an Arrears component: still owed, offered again.
+    if (!a || a.status === 'not_set_up') continue;
+    const settled = out.settled.get(slip.userId) ?? new Set<string>();
+    for (const item of a.items ?? []) {
+      settled.add(item.notInSowaka ? `${item.revisionKey}|note:${item.from}` : `${item.revisionKey}|${item.period}`);
+      if (!item.notInSowaka && item.period === period) {
+        const held = out.held.get(slip.userId) ?? new Set<string>();
+        held.add(item.revisionKey);
+        out.held.set(slip.userId, held);
+      }
+    }
+    out.settled.set(slip.userId, settled);
+  }
+  return out;
+}
+
+/** The days of [from, to] no range covers, as runs of consecutive days. */
+function uncoveredDays(from: string, to: string, covered: { from: string; to: string }[]): { from: string; to: string }[] {
+  const out: { from: string; to: string }[] = [];
+  let day = from;
+  while (day <= to) {
+    const cover = covered.find((c) => c.from <= day && day <= c.to);
+    if (cover) { day = addDays(cover.to, 1); continue; }
+    const next = covered.filter((c) => c.from > day).map((c) => c.from).sort()[0];
+    const end = next && addDays(next, -1) < to ? addDays(next, -1) : to;
+    out.push({ from: day, to: end });
+    day = addDays(end, 1);
+  }
+  return out;
+}
+
+/**
+ * Arrears this run owes one person: for each earlier, submitted period, the days a revision
+ * saved after that run was submitted says were on another salary than the payslip paid
+ * (revisions saved before it went out were paid as that run had them: accepted as paid, never
+ * recovered). Per earning: the revised monthly amount less the one that payslip used, times the
+ * share of those days it paid. A revision dated in days no Sowaka run paid (a month paid outside
+ * Sowaka) gets a line saying so instead of a figure: HR enters any arrears for those by hand.
+ * A revision and period already carried by another run are left out: paid once.
+ */
+async function arrearsFor(a: {
+  structure: SalaryStructure;
+  range: PeriodRange;
+  earlier: EarlierSlip[];
+  settled: Set<string>;
+  covered: { from: string; to: string }[];
+  firstFinalizedAt: number;
+  joined?: string;
+  oneTimeCode: (code: string) => boolean;
+  calc: (state: SalaryState, period: string, employedFrom: string | undefined) => Promise<SalaryCalcResult>;
+}): Promise<PayslipArrearsItem[]> {
+  const revs = payRevisions(a.structure);
+  const items: PayslipArrearsItem[] = [];
+  if (revs.length === 0) return items;
+  const versions = salaryVersions(a.structure);
+  const lastDay = addDays(a.range.from, -1);
+  for (const s of [...a.earlier].sort((x, y) => (x.period < y.period ? -1 : 1))) {
+    const unknown = revs.filter((r) => atTime(r.at) > s.finalizedAt && r.effectiveFrom <= s.to);
+    if (unknown.length === 0) continue;
+    const firstDay = unknown.map((r) => r.effectiveFrom).sort()[0];
+    const start = firstDay > s.from ? firstDay : s.from;
+    const end = s.to < lastDay ? s.to : lastDay;
+    if (start > end) continue;
+    const employedFrom = a.joined && a.joined > s.from ? a.joined : undefined;
+    // What that payslip paid on: its own monthly amounts (one salary for its whole period), or,
+    // for one itself paid in parts, the salaries as they stood when it was submitted.
+    const known = s.split ? salaryVersions(structureAsKnownAt(a.structure, s.finalizedAt)) : undefined;
+    const paidOn: MonthlyLine[] = s.earnings
+      .filter((e) => !s.typedCodes.includes(e.code) && !a.oneTimeCode(e.code))
+      .map((e) => ({ code: e.code, name: e.name, monthlyPaise: e.fullPaise, prorate: true }));
+    for (const seg of salarySegments(versions, start, end)) {
+      const key = seg.version.key ?? 'before';
+      if (a.settled.has(`${key}|${s.period}`)) continue;
+      const subs = known ? salarySegments(known, seg.from, seg.to) : [{ from: seg.from, to: seg.to, days: seg.days, version: undefined }];
+      const revised = await a.calc(seg.version.state, s.period, employedFrom);
+      for (const sub of subs) {
+        if (sub.version && sameState(sub.version.state, seg.version.state)) continue;
+        const share = arrearsShare({ period: s.period, from: s.from, to: s.to, baseDays: s.baseDays, lopDays: s.lopDays, joinedOn: employedFrom, leftOn: s.leftOn }, sub.from, sub.to);
+        const oldLines = sub.version ? recurringEarnings(await a.calc(sub.version.state, s.period, employedFrom)) : paidOn;
+        const { lines, amountPaise } = arrearsLines(oldLines, recurringEarnings(revised), share);
+        if (lines.length === 0) continue;
+        items.push({
+          revisionKey: key, effectiveFrom: seg.version.from ?? sub.from, period: s.period, from: sub.from, to: sub.to,
+          days: share.days, lopDays: share.lopDays, paidDays: share.paidDays, baseDays: s.baseDays,
+          previousCtcPaise: sub.version?.state.annualCtcPaise ?? seg.version.revision?.previousCtcPaise ?? 0,
+          annualCtcPaise: seg.version.state.annualCtcPaise, lines, amountPaise,
+        });
+      }
+    }
+  }
+  // Days before this period that no Sowaka run paid (paid outside Sowaka), for revisions saved
+  // after the company's first Sowaka run went out (before it, the payroll of the time had them).
+  versions.forEach((v, k) => {
+    const r = v.revision;
+    if (!r || !v.key || atTime(r.at) <= a.firstFinalizedAt || r.effectiveFrom > lastDay) return;
+    const next = versions[k + 1]?.from;
+    const from = a.joined && a.joined > r.effectiveFrom ? a.joined : r.effectiveFrom;
+    const to = next && addDays(next, -1) < lastDay ? addDays(next, -1) : lastDay;
+    for (const gap of from <= to ? uncoveredDays(from, to, a.covered) : []) {
+      if (a.settled.has(`${v.key}|note:${gap.from}`)) continue;
+      items.push({
+        revisionKey: v.key, effectiveFrom: r.effectiveFrom, period: gap.to.slice(0, 7), from: gap.from, to: gap.to,
+        days: daysBetween(gap.from, gap.to), lopDays: 0, paidDays: 0, baseDays: 0,
+        previousCtcPaise: versions[k - 1].state.annualCtcPaise, annualCtcPaise: v.state.annualCtcPaise,
+        lines: [], amountPaise: 0, notInSowaka: true,
+      });
+    }
+  });
+  return items;
 }
 
 /** The part of a later month someone is still employed for: 1 until they leave, 0 after, the days up to the last one in between. */

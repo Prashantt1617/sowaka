@@ -7,7 +7,7 @@
 import { type PayslipDTO } from '../services/payroll';
 import { brandOf } from './brand';
 import { downloadHtmlAsPdf } from './pdf';
-import { lossOfPayDaysOf, notEmployedOf, shortDay } from './payslipDays';
+import { arrearsItemText, lossOfPayDaysOf, notEmployedOf, salarySplitText, shortDay } from './payslipDays';
 
 const esc = (value: string) => value.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] ?? ch));
 
@@ -143,6 +143,8 @@ export function payslipHtml(slip: PayslipDTO, company: PayslipCompany, dates?: P
       </div>
     </div>
   </div>
+  ${salarySplitText(slip.inputs) ? `<div style="font-size:12px;color:#555;margin:0 0 8px">Salary by date: ${esc(salarySplitText(slip.inputs))}</div>` : ''}
+  ${(slip.inputs.arrears?.items ?? []).map((i) => `<div style="font-size:12px;color:#555;margin:0 0 6px">Arrears for ${esc(arrearsItemText(i))}</div>`).join('')}
   ${slip.bankAccountNo ? `<div class="bank"><span style="color:#555">Bank Account No</span><span>:</span><span>${esc(slip.bankAccountNo)}</span></div>` : '<div style="height:14px"></div>'}
   <table>
     <thead><tr><th>EARNINGS</th><th class="r">AMOUNT</th><th class="r">YTD</th><th class="gap"></th><th>DEDUCTIONS</th><th class="r">AMOUNT</th><th class="r">YTD</th></tr></thead>

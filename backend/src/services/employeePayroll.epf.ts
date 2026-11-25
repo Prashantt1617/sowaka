@@ -25,6 +25,7 @@ import { splitAmountsFor } from './employeePayroll.split';
 import { decryptField, fieldKeyConfigured, isEncrypted } from './fieldCrypto';
 import { PayrollConfigError, statutoryConfigForPeriod } from './payrollConfig.service';
 import { computeStructureFor, SalaryStructureError } from './salaryStructure.service';
+import { structureAsOf } from '../shared/payroll/salary-revisions';
 import { statutorySettingsFor } from './statutorySettings.service';
 
 // —— the stored balance ——
@@ -167,9 +168,11 @@ export async function myEpf(userId: string, now = new Date()) {
   } else {
     try {
       const splits = await flexibleSplits().find({ org, userId }).toArray();
+      // The salary in force today: a revision dated later is not shown yet.
+      const asOf = structureAsOf(structure, new Date(now.getTime() + 5.5 * 3_600_000).toISOString().slice(0, 10));
       const { computed } = await computeStructureFor(org, userId, {
-        ...structure,
-        componentValues: { ...(structure.componentValues ?? {}), ...splitAmountsFor(splits, period) },
+        ...asOf,
+        componentValues: { ...(asOf.componentValues ?? {}), ...splitAmountsFor(splits, period) },
       }, undefined, period);
       const config = await statutoryConfigForPeriod(period);
       const epf = computed.statutory.epf;

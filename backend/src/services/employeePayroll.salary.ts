@@ -24,6 +24,7 @@ import { splitAmountsFor } from './employeePayroll.split';
 import { PayrollConfigError, statutoryConfigForPeriod } from './payrollConfig.service';
 import { myLatestReleasedPayslipBefore, myReleasedPayslipFor } from './payrollRun.service';
 import { computeStructureFor } from './salaryStructure.service';
+import { structureAsOf } from '../shared/payroll/salary-revisions';
 import { resolveRuleSet } from './statutory.service';
 import { workStateOf } from './statutorySettings.service';
 import { AFTER_LEAVING, BEFORE_JOINING } from './payslipDays';
@@ -458,11 +459,12 @@ export async function mySalarySummary(userId: string, periodRaw: unknown, now = 
   const s = estimate.salary!;
 
   // The same structure, worked out the same way, for what each line is made of.
-  const structure = await salaryStructures().findOne({ org, userId });
+  // The salary in force at the period's end: a revision dated later is not shown yet.
+  const structure = structureAsOf((await salaryStructures().findOne({ org, userId }))!, range.to);
   const splits = await flexibleSplits().find({ org, userId }).toArray();
   const { computed } = await computeStructureFor(org, userId, {
-    ...structure!,
-    componentValues: { ...(structure!.componentValues ?? {}), ...splitAmountsFor(splits, period) },
+    ...structure,
+    componentValues: { ...(structure.componentValues ?? {}), ...splitAmountsFor(splits, period) },
   }, undefined, period);
   const yesterday = dayOf(new Date(now.getTime() - 86_400_000));
   const to = range.to < yesterday ? range.to : yesterday;

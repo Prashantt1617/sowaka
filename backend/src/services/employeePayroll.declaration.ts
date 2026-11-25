@@ -23,6 +23,7 @@ import {
 } from './employeePayroll.common';
 import { deleteReimbursementReceipt, hasReceiptStorage, presignReceiptDownload, uploadInvestmentProof } from './s3-receipt.service';
 import { computeStructureFor } from './salaryStructure.service';
+import { structureAsOf } from '../shared/payroll/salary-revisions';
 import { statutorySettingsFor } from './statutorySettings.service';
 import { tdsConfigsFor } from './tds.service';
 
@@ -77,7 +78,7 @@ async function epfYearOf(org: string, userId: string): Promise<number> {
   const structure = await salaryStructures().findOne({ org, userId });
   if (!structure?.salaryTemplateCode) return 0;
   try {
-    const { computed } = await computeStructureFor(org, userId, structure);
+    const { computed } = await computeStructureFor(org, userId, structureAsOf(structure, new Date().toISOString().slice(0, 10)));
     return computed.statutory.epf.employeePaise * 12;
   } catch {
     return 0; // a template that no longer resolves: no PF shown, the rest still works

@@ -177,6 +177,8 @@ type EForm = {
   epfWhen: 'always' | 'pfCeiling';
   esi: boolean;
   showInPayslip: boolean;
+  /** One-time earnings: the run pays salary arrears from back-dated revisions with it. */
+  arrears: boolean;
 };
 
 function blankEarning(type: string): EForm {
@@ -186,7 +188,7 @@ function blankEarning(type: string): EForm {
     calcMode: spec.nature === 'variable' ? 'per_person' : spec.defaultPercent ? 'percentage' : 'flat', amount: '0', percent: spec.defaultPercent ?? '50', active: true,
     partOfStructure: spec.nature === 'fixed', taxable: true, proRata: spec.nature === 'fixed',
     fbp: spec.fbp === 'forced', fbpRestrict: spec.fbp === 'forced', taxPref: 'subsequent',
-    epf: isFixed(type, 'epf'), epfWhen: 'always', esi: isFixed(type, 'esi'), showInPayslip: true,
+    epf: isFixed(type, 'epf'), epfWhen: 'always', esi: isFixed(type, 'esi'), showInPayslip: true, arrears: false,
   };
 }
 function formFromPayHead(ph: PayHeadDTO, associated: boolean): EForm {
@@ -207,6 +209,7 @@ function formFromPayHead(ph: PayHeadDTO, associated: boolean): EForm {
     epfWhen: isFixed(type, 'epf') ? 'always' : ph.considerForEpf?.condition && ph.considerForEpf.condition !== 'always' ? 'pfCeiling' : 'always',
     esi: pick('esi', ph.considerForEsi?.consider, false),
     showInPayslip: pick('showInPayslip', ph.showInPayslip, true),
+    arrears: ph.arrears === true,
   };
 }
 function inputFromForm(f: EForm, code: string): PayHeadInput {
@@ -234,6 +237,7 @@ function inputFromForm(f: EForm, code: string): PayHeadInput {
     considerForEsi: { consider: f.esi },
     showInPayslip: f.showInPayslip,
     recurrence: live.recurrence ?? 'recurring',
+    ...(live.recurrence === 'one_time' ? { arrears: f.arrears } : {}),
     active: f.active,
   };
 }
@@ -913,6 +917,9 @@ function EarningModal({ form, setForm, onClose, onSave, saving, takenTypes, onDe
               )}
               <Checkbox checked={form.esi} disabled={locked} fixed={fx('esi')} onChange={(v) => set('esi', v)} label="Consider for ESI Contribution" />
               <Checkbox checked={form.showInPayslip} disabled={locked} fixed={fx('showInPayslip')} onChange={(v) => set('showInPayslip', v)} label="Show this component in payslip" />
+              {LIVE_TYPES[form.type]?.recurrence === 'one_time' && (
+                <Checkbox checked={form.arrears} onChange={(v) => set('arrears', v)} label="Pay salary arrears with this component (a revision dated in a month already submitted)" />
+              )}
             </div>
           </div>
 

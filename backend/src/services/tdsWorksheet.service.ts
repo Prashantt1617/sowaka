@@ -27,6 +27,7 @@ import { companyOf, PayrollRunError, requireAdminOrg } from './payrollRun.servic
 import { decryptField, fieldKeyConfigured } from './fieldCrypto';
 import { payrollAccessOf } from './payrollAccess.service';
 import { splitAmountsFor, splitsByUser } from './employeePayroll.split';
+import { structureAsOf } from '../shared/payroll/salary-revisions';
 
 const RUN_RANK: Record<string, number> = { paid: 4, approved: 3, pending_approval: 2, draft: 1 };
 
@@ -120,12 +121,18 @@ export async function worksheetFor(org: string, slip: Payslip) {
   // The salary as it would be computed for any month (for months before Sowaka and the projection).
   const template = structure?.salaryTemplateCode ? templates.find((t) => t.code === structure.salaryTemplateCode) : undefined;
   const ruleSet = await ruleSetP;
+  // Each month on the salary in force by its end (a revision counts from its date's month on).
+  const asOfMonth = (p: string) => {
+    const [py, pm] = p.split('-').map(Number);
+    const st = structureAsOf(structure!, new Date(Date.UTC(py, pm, 0)).toISOString().slice(0, 10));
+    return { st, tpl: templates.find((t) => t.code === st.salaryTemplateCode) ?? template! };
+  };
   const salaryFor = structure && template && ruleSet
     ? (p: string, employedFrom?: string) => calculateSalaryStructure({
-      monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
-      payHeads: resolveTemplateComponents(applyOverrides(template.components, structure.overrides, headByCode), headByCode),
-      componentValues: { ...(structure.componentValues ?? {}), ...splitAmountsFor(splits.get(userId), p) },
-      balancingComponentCode: template.balancingComponentCode,
+      monthlyCtcPaise: Math.round(asOfMonth(p).st.annualCtcPaise / 12),
+      payHeads: resolveTemplateComponents(applyOverrides(asOfMonth(p).tpl.components, asOfMonth(p).st.overrides, headByCode), headByCode),
+      componentValues: { ...(asOfMonth(p).st.componentValues ?? {}), ...splitAmountsFor(splits.get(userId), p) },
+      balancingComponentCode: asOfMonth(p).tpl.balancingComponentCode,
       ruleSet,
       config: statutory,
       month: Number(p.slice(5, 7)),
@@ -133,7 +140,7 @@ export async function worksheetFor(org: string, slip: Payslip) {
       bonusCategory: structure.bonusCategory,
       statutory: structure.statutory,
       settings,
-      statutoryWages: template.statutoryWages,
+      statutoryWages: asOfMonth(p).tpl.statutoryWages,
       employedFrom,
     })
     : undefined;

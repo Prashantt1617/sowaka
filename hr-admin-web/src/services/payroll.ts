@@ -75,6 +75,8 @@ export type PayHeadInput = {
   fbp?: boolean;
   prorate?: boolean;
   recurrence?: 'recurring' | 'one_time';
+  /** A one-time earning the run pays salary arrears with. */
+  arrears?: boolean;
   maxClaimablePaise?: number;
   unclaimedHandling?: 'carry_forward' | 'encash_monthly';
   payslipName?: string;
@@ -321,7 +323,7 @@ export type StructureOverrides = {
   remove?: string[];
   edit?: Record<string, CalculationBasis>;
 };
-export type SalaryRevision = { previousCtcPaise: number; annualCtcPaise: number; effectiveFrom: string; at: string };
+export type SalaryRevision = { previousCtcPaise: number; annualCtcPaise: number; effectiveFrom: string; at: string; kind?: 'correction' };
 /** One line of a person's resolved structure, with where it came from. */
 export type StructureComponent = { payHeadCode: string; calculation: CalculationBasis; source: 'template' | 'edited' | 'added' };
 
@@ -335,6 +337,10 @@ export type SalaryStructureDTO = {
   componentValues: Record<string, number>;
   overrides: StructureOverrides;
   revisions: SalaryRevision[];
+  /** What payroll pays today (a revision dated later is not in force yet). */
+  ctcInForcePaise?: number;
+  /** Revisions saved with a later effective date: paid from that day. */
+  upcomingRevisions?: { effectiveFrom: string; annualCtcPaise: number }[];
   statutory: EmployeeStatutory;
   bonusCategory?: string;
   status: 'draft' | 'active';
@@ -599,12 +605,30 @@ export type PayslipDTO = {
     attendanceDeductions?: { label: string; count: number; days: number; trigger?: DeductionTrigger; every?: number; deductDays?: number }[];
     paidLeaveDaysApplied?: number;
     payableDays: number;
+    /** The period paid on more than one salary (a CTC revision took effect inside it). */
+    salarySegments?: SalarySegmentDTO[];
+    /** Arrears for earlier, submitted periods from a back-dated revision. */
+    arrears?: PayslipArrearsDTO;
     approvedLeaveDays: number;
     approvedOtHours: number;
     overtimePaise: number;
     reimbursementsPaise: number;
     reimbursementClaimIds: string[];
   };
+};
+
+export type SalarySegmentDTO = { from: string; to: string; days: number; lopDays: number; paidDays: number; annualCtcPaise: number; salaryTemplateCode?: string };
+export type PayslipArrearsDTO = {
+  payHeadCode?: string;
+  status: 'paid' | 'entered_by_hr' | 'not_set_up' | 'negative';
+  workedOutPaise: number;
+  paidPaise: number;
+  items: {
+    revisionKey: string; effectiveFrom: string; period: string; from: string; to: string;
+    days: number; lopDays: number; paidDays: number; baseDays: number;
+    previousCtcPaise: number; annualCtcPaise: number; amountPaise: number; notInSowaka?: true;
+    lines: { code: string; name: string; oldMonthlyPaise: number; newMonthlyPaise: number; amountPaise: number }[];
+  }[];
 };
 
 export const listRuns = () =>
