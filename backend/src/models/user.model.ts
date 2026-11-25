@@ -283,6 +283,11 @@ export interface User {
    * Granted per person; absent means no. Entering and voting need nothing.
    */
   canCreateContests?: boolean;
+  /**
+   * May post an HR announcement from the app without having anyone report to them (HR people).
+   * The app shows the Announcement post type to role 'manager'; auth.service counts this grant as that.
+   */
+  canPostAnnouncements?: boolean;
   // Grants access to the HR dashboard (org-wide view + request overrides).
   // Independent of the reporting role — a manager/employee may or may not have it.
   dashboardAccess?: boolean;
