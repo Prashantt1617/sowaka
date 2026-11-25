@@ -10,6 +10,10 @@
 // Past cycles and each person's review history (25 Nov 2026, HR: "the managers dashboard lacks it; I should be
 // able to see past reviews like this too"): the same cycle picker and history card as HR's page, from the review
 // records the dashboard already loads, which the server limits to the manager's subtree.
+//
+// Last cycle stays open (25 Nov 2026, HR: "I should be able to edit the feedback from dashboard and app as well
+// for even the last month's cycle"): picked in the cycle list, a direct report's row offers Write / Edit review
+// for that month, as the app's Grow page does; the server accepts this cycle or the one before it only.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../services/http';
 import { useStore } from '../store';
@@ -29,7 +33,7 @@ import { ghostBtn, panelCard, smallBtn } from './kpiLook';
 type Workspace = { period: string; team: WorkspaceMember[] };
 
 export function TeamPerformance({ onExit }: { onExit?: () => void } = {}) {
-  const { emps, flash, fbRaw, empRaw } = useStore();
+  const { emps, flash, fbRaw, empRaw, reload } = useStore();
   const { user } = useAuth();
   const me = user?.id ?? '';
   const [ws, setWs] = useState<Workspace | null>(null);
@@ -38,7 +42,7 @@ export function TeamPerformance({ onExit }: { onExit?: () => void } = {}) {
   const [templates, setTemplates] = useState<TemplateList>([]);
   const [kpis, setKpis] = useState<Record<string, KpiAssignmentDTO | null | undefined>>({});
   const [assigning, setAssigning] = useState<string | null>(null);
-  const [reviewing, setReviewing] = useState<WorkspaceMember | null>(null);
+  const [reviewing, setReviewing] = useState<{ member: WorkspaceMember; period: string } | null>(null);
   const [q, setQ] = useState('');
 
   const loadWorkspace = useCallback(() => {
@@ -68,6 +72,8 @@ export function TeamPerformance({ onExit }: { onExit?: () => void } = {}) {
   const [viewPeriod, setViewPeriod] = useState<string | null>(null);
   const shownPeriod = viewPeriod ?? period;
   const isPast = Boolean(period && shownPeriod && shownPeriod !== period);
+  // Last cycle is still open to the manager's own reviews (the server takes this cycle or the one before).
+  const isOpenPrev = Boolean(isPast && period && shownPeriod === previousPeriod(period));
   const periods = useMemo(
     () => (period ? [...new Set([period, previousPeriod(period), ...fbRaw.map((r) => r.period)])].sort().reverse() : []),
     [period, fbRaw],
@@ -90,10 +96,16 @@ export function TeamPerformance({ onExit }: { onExit?: () => void } = {}) {
   const who = assigning ? team.find((e) => e.id === assigning) : undefined;
 
   // Writing a review is a page of its own: one tab per parameter, dictation and Refine with Suwi.
-  if (reviewing && period) {
+  if (reviewing) {
+    const { member } = reviewing;
     return (
-      <ReviewPage member={reviewing} period={period} onBack={() => setReviewing(null)}
-        onSaved={(wasSent) => { flash(wasSent ? `Review sent to ${reviewing.name}` : `Draft saved for ${reviewing.name}`); setReviewing(null); loadWorkspace(); }} />
+      <ReviewPage key={`${member.userId}:${reviewing.period}`} member={member} period={reviewing.period} onBack={() => setReviewing(null)}
+        onSaved={(wasSent) => {
+          flash(wasSent ? `Review for ${periodLabel(reviewing.period)} saved for ${member.name}` : `Draft saved for ${member.name}`);
+          setReviewing(null); loadWorkspace();
+          // The past-cycle view reads the review records the store loaded; bring them up to date.
+          if (reviewing.period !== period) void reload();
+        }} />
     );
   }
 
@@ -134,6 +146,8 @@ export function TeamPerformance({ onExit }: { onExit?: () => void } = {}) {
                 const status = m?.feedbackStatus ?? 'pending';
                 const fb = fbBy.get(e.id);
                 const hasHistory = Boolean(fb && (fb.status === 'sent' || fb.history.length > 0));
+                const prev = m?.previousCycle && m.previousCycle.period === shownPeriod ? m.previousCycle : null;
+                const prevStatus = prev?.feedbackStatus ?? 'pending';
                 if (isPast) {
                   return (
                     <tr key={e.id} style={{ borderTop: '1px solid var(--line)' }}>
@@ -148,9 +162,20 @@ export function TeamPerformance({ onExit }: { onExit?: () => void } = {}) {
                       </td>
                       <td style={td}>{isDirect ? 'You' : e.manager || '—'}</td>
                       <td style={td}>{fb?.status === 'sent' && fb.params.length ? `${fb.params.length} parameter${fb.params.length === 1 ? '' : 's'}` : <span style={{ color: 'var(--ink-4)' }}>—</span>}</td>
-                      <td style={td}>{fb?.status === 'sent' ? <span style={{ color: 'var(--ok)' }}>Reviewed · {fb.overall.toFixed(1)}{fb.managerName ? <span style={{ color: 'var(--ink-3)' }}> by {fb.managerName}</span> : null}</span> : <span style={{ color: 'var(--ink-4)' }}>Not reviewed</span>}</td>
+                      <td style={td}>{fb?.status === 'sent' ? <span style={{ color: 'var(--ok)' }}>Reviewed · {fb.overall.toFixed(1)}{fb.managerName ? <span style={{ color: 'var(--ink-3)' }}> by {fb.managerName}</span> : null}</span>
+                        : isOpenPrev && isDirect && prevStatus === 'saved' ? <span style={{ color: 'var(--ink-3)' }}>Draft</span>
+                        : <span style={{ color: 'var(--ink-4)' }}>{isOpenPrev && isDirect ? 'Not reviewed yet · still open' : 'Not reviewed'}</span>}</td>
                       <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <button type="button" style={smallBtn} disabled={!hasHistory} onClick={() => setHistoryOf(e.id)}>View review</button>
+                        <button type="button" style={isOpenPrev && isDirect ? ghostBtn : smallBtn} disabled={!hasHistory} onClick={() => setHistoryOf(e.id)}>View review</button>
+                        {isOpenPrev && isDirect && (prev?.parameters?.length ? (
+                          <button type="button" style={{ ...smallBtn, marginLeft: 8 }}
+                            onClick={() => m && prev && setReviewing({ member: { ...m, parameters: prev.parameters, feedbackStatus: prev.feedbackStatus, score: prev.score }, period: prev.period })}>
+                            {prevStatus === 'pending' ? 'Write review' : 'Edit review'}
+                          </button>
+                        ) : (
+                          <button type="button" disabled aria-disabled title={`No KPIs were assigned for ${periodLabel(shownPeriod!)}: the review scores them`}
+                            style={{ ...smallBtn, marginLeft: 8, opacity: 0.55, cursor: 'not-allowed' }}>Write review</button>
+                        ))}
                       </td>
                     </tr>
                   );
@@ -173,7 +198,7 @@ export function TeamPerformance({ onExit }: { onExit?: () => void } = {}) {
                       {hasHistory && <button type="button" style={{ ...ghostBtn, marginRight: 8 }} onClick={() => setHistoryOf(e.id)}>History</button>}
                       <button type="button" style={smallBtn} disabled={!period} onClick={() => setAssigning(e.id)}>{a?.parameters?.length ? 'Edit KPIs' : 'Assign KPIs'}</button>
                       {isDirect && (m?.parameters?.length && a?.parameters?.length ? (
-                        <button type="button" style={{ ...smallBtn, marginLeft: 8 }} onClick={() => setReviewing(m)}>
+                        <button type="button" style={{ ...smallBtn, marginLeft: 8 }} onClick={() => period && setReviewing({ member: m, period })}>
                           {status === 'pending' ? 'Write review' : 'Edit review'}
                         </button>
                       ) : (
