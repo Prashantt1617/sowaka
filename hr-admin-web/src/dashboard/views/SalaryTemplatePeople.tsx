@@ -164,7 +164,7 @@ export function SalaryTemplateTabs({ template, templates, phByCode, onChanged, c
 type Row = { ctc: string; from: string };
 
 /** Each person's annual CTC and effective-from date, with the monthly breakup on request; then saved together. */
-function AssignSalaryDialog({ template, people, byUser, nameOf, phByCode, current, onClose, onSaved }: {
+export function AssignSalaryDialog({ template, people, byUser, nameOf, phByCode, current, onClose, onSaved }: {
   template: SalaryTemplateDTO;
   people: Emp[];
   byUser: Map<string, StructureRowWithFrom>;

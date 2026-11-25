@@ -145,35 +145,65 @@ export function TemplateEditPeople({
   // Adding and removing are separate lists: who is not on it yet, and who is.
   const [mode, setMode] = useState<'add' | 'remove'>('add');
   const pool = useMemo(() => emps.filter((e) => (mode === 'add' ? !placement(e).on : placement(e).on)), [emps, placement, mode]);
+  // In Add, the unfiltered list is only who is not on it yet; a search (e.g. "under Vikrant")
+  // also finds the people already on it, ticked, so unticking one takes them off.
+  const searchPool = mode === 'add' ? emps : pool;
   const [shown, setShown] = useState<Emp[]>(pool);
   const [filtering, setFiltering] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  /** Add mode: people on the template who were unticked, to be taken off. */
+  const [dropped, setDropped] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState('');
   const [limit, setLimit] = useState(PAGE);
   const onTemplate = useMemo(() => (e: Emp) => placement(e).on, [placement]);
   const list = filtering ? shown : pool;
   useEffect(() => { setLimit(PAGE); }, [list]);
-  const switchTo = (m: 'add' | 'remove') => { setMode(m); setPicked(new Set()); setFiltering(false); };
+  const switchTo = (m: 'add' | 'remove') => { setMode(m); setPicked(new Set()); setDropped(new Set()); setFiltering(false); };
 
+  const byId = useMemo(() => new Map(emps.map((e) => [e.id, e])), [emps]);
   const ids = [...picked];
-  const toAdd = ids.filter((id) => { const e = emps.find((x) => x.id === id); return e && !placement(e).on; });
-  const toRemove = ids.filter((id) => { const e = emps.find((x) => x.id === id); return e && placement(e).on; });
-  const moving = toAdd.filter((id) => { const e = emps.find((x) => x.id === id); return e && placement(e).elsewhere; }).length;
-  const allShown = list.length > 0 && list.every((e) => picked.has(e.id));
-  const toggle = (id: string) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const run = async (what: 'add' | 'remove') => {
-    setBusy(what);
+  const toAdd = ids.filter((id) => { const e = byId.get(id); return e && !placement(e).on; });
+  const toRemove = mode === 'add'
+    ? [...dropped].filter((id) => { const e = byId.get(id); return e && placement(e).on; })
+    : ids.filter((id) => { const e = byId.get(id); return e && placement(e).on; });
+  const moving = toAdd.filter((id) => { const e = byId.get(id); return e && placement(e).elsewhere; }).length;
+  /** On the template already, shown in Add: ticked unless unticked to take off. */
+  const kept = (e: Emp) => mode === 'add' && placement(e).on;
+  const isTicked = (e: Emp) => (kept(e) ? !dropped.has(e.id) : picked.has(e.id));
+  const lockedOn = (e: Emp) => kept(e) && !onRemove;
+  const allShown = list.length > 0 && list.every(isTicked);
+  const flip = (set: typeof setPicked, id: string, on?: boolean) => set((p) => { const n = new Set(p); if (on ?? !n.has(id)) n.add(id); else n.delete(id); return n; });
+  const toggle = (e: Emp) => {
+    if (lockedOn(e)) return;
+    if (kept(e)) flip(setDropped, e.id); else flip(setPicked, e.id);
+  };
+  const tickAll = () => {
+    for (const e of list) {
+      if (lockedOn(e)) continue;
+      if (kept(e)) flip(setDropped, e.id, allShown); else flip(setPicked, e.id, !allShown);
+    }
+  };
+  const run = async () => {
+    setBusy(mode === 'add' && toAdd.length ? 'add' : 'remove');
     try {
-      const kept = what === 'add' ? await onAdd(toAdd) : await onRemove?.(toRemove);
-      if (kept !== false) setPicked(new Set());
+      if (mode === 'add' && toAdd.length) {
+        // false: the caller asks for more first (each person's CTC); the ticks and untick stay.
+        if ((await onAdd(toAdd)) === false) return;
+      }
+      if (toRemove.length && onRemove) await onRemove(toRemove);
+      setPicked(new Set()); setDropped(new Set());
     } finally { setBusy(''); }
   };
+  const addLabel = toAdd.length && toRemove.length
+    ? `${addWord} ${toAdd.length}, take off ${toRemove.length}`
+    : toRemove.length ? `Take off ${count(toRemove.length, noun)}` : `${addWord} ${toAdd.length ? count(toAdd.length, noun) : ''}`.trim();
+  const changes = toAdd.length + (mode === 'add' ? toRemove.length : 0);
 
   return (
     <section className="pd-card" style={{ display: 'grid', gap: 14 }}>
       <div className="pd-card-h" style={{ marginBottom: 0 }}>
         <h3>{mode === 'add' ? `Add ${many} to this template` : `Remove ${many} from this template`}</h3>
-        <small>{filtering ? `${list.length} of ${pool.length}` : count(pool.length, noun)}</small>
+        <small>{filtering ? `${list.length} of ${searchPool.length}` : count(pool.length, noun)}</small>
       </div>
       <div style={{ justifySelf: 'start' }}>
         <StatusTabs<'add' | 'remove'> options={['add', 'remove']} active={mode} onSelect={switchTo} labels={{ add: `Add ${many}`, remove: `Remove ${many}` }} />
@@ -182,24 +212,29 @@ export function TemplateEditPeople({
       {mode === 'remove' && !onRemove ? (
         <div style={{ ...noteBox, display: 'block' }}>{removeBlocked ?? `${cap(many)} can’t be taken off this template here.`}</div>
       ) : (<>
-      <PeopleSearch key={mode} emps={pool} onTemplate={onTemplate} onChange={(s, f) => { setShown(s); setFiltering(f); }}
+      <PeopleSearch key={mode} emps={searchPool} onTemplate={onTemplate} onChange={(s, f) => { setShown(s); setFiltering(f); }}
         placeholder={placeholders ? placeholders[mode] : mode === 'add' ? 'Who to add? e.g. people on the 3D team under Ravi, interns in Gurgaon' : 'Who to remove? e.g. Sales team, joined before 2025'} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink-2)', cursor: 'pointer' }}>
-          <input type="checkbox" id="pick-all" checked={allShown} onChange={() => setPicked((p) => { const n = new Set(p); for (const e of list) { if (allShown) n.delete(e.id); else n.add(e.id); } return n; })} style={tick} />
+          <input type="checkbox" id="pick-all" checked={allShown} onChange={tickAll} style={tick} />
           {allShown ? 'Untick all shown' : `Tick all ${list.length} shown`}
         </label>
         <span style={{ flex: 1 }} />
         {picked.size > 0 && <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{picked.size} ticked</span>}
         {mode === 'add'
-          ? <button type="button" id="people-add" disabled={!!busy || toAdd.length === 0} onClick={() => void run('add')} className="pd-btn primary">
-              {busy === 'add' ? 'Saving…' : `${addWord} ${toAdd.length ? count(toAdd.length, noun) : ''}`.trim()}
+          ? <button type="button" id="people-add" disabled={!!busy || changes === 0} onClick={() => void run()} className={`pd-btn ${toAdd.length === 0 && toRemove.length ? 'danger' : 'primary'}`}>
+              {busy ? 'Saving…' : addLabel}
             </button>
-          : <button type="button" id="people-remove" disabled={!!busy || toRemove.length === 0} onClick={() => void run('remove')} className="pd-btn danger">
+          : <button type="button" id="people-remove" disabled={!!busy || toRemove.length === 0} onClick={() => void run()} className="pd-btn danger">
               {busy === 'remove' ? 'Saving…' : `Remove ${toRemove.length ? count(toRemove.length, noun) : ''}`.trim()}
             </button>}
       </div>
+      {mode === 'add' && filtering && list.some(kept) && (
+        <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>
+          {onRemove ? `People already on this template show ticked: untick someone to take them off.` : `People already on this template show ticked. ${removeBlocked ?? ''}`.trim()}
+        </div>
+      )}
       {mode === 'add' && moving > 0 && <div style={{ fontSize: 12.5, color: 'var(--warn)' }}>{moving} of them {moving === 1 ? 'is' : 'are'} on another template now and will move to this one.</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 220px', gap: 16, alignItems: 'start' }}>
@@ -209,11 +244,11 @@ export function TemplateEditPeople({
           {list.slice(0, limit).map((e, i) => {
             const p = placement(e);
             return (
-              <label key={e.id} className="dc-row" style={{ ...TR(editCols, i === Math.min(limit, list.length) - 1), alignItems: 'start', cursor: 'pointer' }}>
-                <input type="checkbox" checked={picked.has(e.id)} onChange={() => toggle(e.id)} style={{ ...tick, marginTop: 7 }} aria-label={`Tick ${e.name}`} />
+              <label key={e.id} className="dc-row" style={{ ...TR(editCols, i === Math.min(limit, list.length) - 1), alignItems: 'start', cursor: lockedOn(e) ? 'default' : 'pointer' }}>
+                <input type="checkbox" checked={isTicked(e)} disabled={lockedOn(e)} title={lockedOn(e) ? removeBlocked : undefined} onChange={() => toggle(e)} style={{ ...tick, marginTop: 7, ...(lockedOn(e) ? { cursor: 'not-allowed', opacity: 0.6 } : null) }} aria-label={kept(e) ? `${e.name} is on this template${onRemove ? ': untick to take off' : ''}` : `Tick ${e.name}`} />
                 <Person e={e} onOpen={onOpen} />
                 {cols.map((c) => <span key={c.head} style={wrapText}>{c.cell(e)}</span>)}
-                <span style={{ ...wrapText, fontSize: 12.5, color: p.on ? 'var(--ok)' : 'var(--ink-3)', fontWeight: p.on ? 500 : 400 }}>{p.on ? 'On this template' : p.elsewhere ?? 'None'}</span>
+                <span style={{ ...wrapText, fontSize: 12.5, color: p.on ? (dropped.has(e.id) ? 'var(--bad)' : 'var(--ok)') : 'var(--ink-3)', fontWeight: p.on ? 500 : 400 }}>{p.on ? (dropped.has(e.id) ? 'Taking off' : 'On this template') : p.elsewhere ?? 'None'}</span>
               </label>
             );
           })}
@@ -226,21 +261,36 @@ export function TemplateEditPeople({
             <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{mode === 'add' ? 'To add' : 'To remove'}</span>
             <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{picked.size}</span>
             <span style={{ flex: 1 }} />
-            {picked.size > 0 && <button type="button" onClick={() => setPicked(new Set())} className="pd-btn ghost sm" style={{ height: 24, padding: '0 6px', fontSize: 12 }}>Clear</button>}
+            {(picked.size > 0 || dropped.size > 0) && <button type="button" onClick={() => { setPicked(new Set()); setDropped(new Set()); }} className="pd-btn ghost sm" style={{ height: 24, padding: '0 6px', fontSize: 12 }}>Clear</button>}
           </div>
-          {picked.size === 0 && <div style={{ fontSize: 12.5, color: 'var(--ink-3)', lineHeight: 1.45, paddingBottom: 6 }}>Tick {many} in the list; they collect here.</div>}
+          {picked.size === 0 && dropped.size === 0 && <div style={{ fontSize: 12.5, color: 'var(--ink-3)', lineHeight: 1.45, paddingBottom: 6 }}>Tick {many} in the list; they collect here.</div>}
           <div style={{ display: 'grid', gap: 2, maxHeight: 420, overflowY: 'auto' }}>
             {ids.map((id) => {
-              const e = emps.find((x) => x.id === id);
+              const e = byId.get(id);
               if (!e) return null;
               return (
                 <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 2px', fontSize: 13, color: 'var(--ink)' }}>
                   <span style={{ flex: 1, minWidth: 0, lineHeight: 1.35 }}>{e.name}</span>
-                  <button type="button" aria-label={`Untick ${e.name}`} onClick={() => toggle(id)} style={{ ...chipX, color: 'var(--ink-3)' }}>×</button>
+                  <button type="button" aria-label={`Untick ${e.name}`} onClick={() => toggle(e)} style={{ ...chipX, color: 'var(--ink-3)' }}>×</button>
                 </div>
               );
             })}
           </div>
+          {mode === 'add' && dropped.size > 0 && (
+            <div style={{ display: 'grid', gap: 2, borderTop: '1px solid var(--line)', paddingTop: 8 }}>
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--bad)' }}>To take off <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 }}>{dropped.size}</span></span>
+              {[...dropped].map((id) => {
+                const e = byId.get(id);
+                if (!e) return null;
+                return (
+                  <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 2px', fontSize: 13, color: 'var(--ink)' }}>
+                    <span style={{ flex: 1, minWidth: 0, lineHeight: 1.35 }}>{e.name}</span>
+                    <button type="button" aria-label={`Keep ${e.name} on this template`} onClick={() => toggle(e)} style={{ ...chipX, color: 'var(--ink-3)' }}>×</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </aside>
       </div>
       </>)}
