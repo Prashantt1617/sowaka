@@ -135,13 +135,23 @@ async function leaveForMark(org: string, adminUserId: string, userId: string, wo
   const day = dayDate(workDate);
   const covering = await leaves().findOne({ userId, status: 'approved', startDate: { $lte: day }, endDate: { $gte: day } });
   const rules = await leaveTypeRulesFor(userId);
+  const key = String(typeInput ?? '').trim();
+  const asked = key ? rules.find((r) => r.key === key || r.name.toLowerCase() === key.toLowerCase()) : undefined;
+  // A leave of their own (applied in the app, approved) already covers the day.
+  let replaced: typeof covering = null;
   if (covering && String(covering._id) !== prev?.leaveId) {
     const rule = rules.find((r) => r.key === covering.type);
-    return { leaveType: rule?.name ?? covering.type, unpaid: Boolean(rule?.unpaid) };
+    // HR named no type, or the same one: the leave that is there is the day's leave.
+    if (!asked || asked.key === covering.type) return { leaveType: rule?.name ?? covering.type, unpaid: Boolean(rule?.unpaid) };
+    // HR picked another type (25 Nov 2026: an approved leave without pay could not be made casual leave from the
+    // calendar; the pick was ignored). A one-day leave is swapped: cancelled here and the picked type booked below.
+    // A longer or half-day leave is not cut up from the calendar.
+    const oneDay = covering.startDate.getTime() === day.getTime() && covering.endDate.getTime() === day.getTime() && !(covering as { halfDay?: boolean }).halfDay;
+    if (!oneDay) throw new AttendanceOverrideError(409, `This day is part of an approved ${rule?.name ?? covering.type} request. Cancel that request in Leave requests first, then mark the day.`);
+    replaced = covering;
   }
-  const key = String(typeInput ?? '').trim();
   if (!key) throw new AttendanceOverrideError(400, 'Pick which leave this day comes out of');
-  const rule = rules.find((r) => r.key === key || r.name.toLowerCase() === key.toLowerCase());
+  const rule = asked;
   if (!rule) throw new AttendanceOverrideError(400, `Their leave types are: ${rules.map((r) => r.name).join(', ')}`);
   // The same leave as the mark already took: nothing new to take.
   if (covering && String(covering._id) === prev?.leaveId && covering.type === rule.key) {
@@ -159,6 +169,13 @@ async function leaveForMark(org: string, adminUserId: string, userId: string, wo
     }
   }
   const now = new Date();
+  // The swap: their own leave is cancelled only now, after the picked type passed its balance check.
+  if (replaced) {
+    await leaves().updateOne(
+      { _id: replaced._id, status: 'approved' },
+      { $set: { status: 'cancelled', cancelledAt: now, cancelledByUserId: adminUserId, cancelledByRole: 'admin', cancelNote: `HR changed the leave type to ${rule.name} on the calendar`, updatedAt: now } },
+    );
+  }
   const { insertedId } = await leaves().insertOne({
     userId, type: rule.key, startDate: day, endDate: day, days: 1,
     reason: note || 'Marked on leave by HR on the calendar',
