@@ -6,6 +6,10 @@
 // Edit KPIs, picking only from the parameters and templates HR set up (the same assignment modal as the
 // profile). Direct reports also have Write review / Edit review, through the app's own endpoints
 // (GET /manager/workspace, PUT /manager/feedback/:userId), which accept direct reports only.
+//
+// Past cycles and each person's review history (25 Nov 2026, HR: "the managers dashboard lacks it; I should be
+// able to see past reviews like this too"): the same cycle picker and history card as HR's page, from the review
+// records the dashboard already loads, which the server limits to the manager's subtree.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../services/http';
 import { useStore } from '../store';
@@ -17,13 +21,15 @@ import type { KpiAssignmentDTO, KpiParameterDTO, KpiTemplateDTO } from '../../se
 import { KpiAssignModal } from './KpiAssign';
 import { STATUS_LABEL, type WorkspaceMember } from './TeamReviews';
 import { ReviewPage } from './ReviewPage';
-import { periodLabel } from '../period';
+import { periodLabel, previousPeriod } from '../period';
+import { adaptFeedbackList } from '../adapters';
+import { ReviewCard } from './Feedback';
 import { ghostBtn, panelCard, smallBtn } from './kpiLook';
 
 type Workspace = { period: string; team: WorkspaceMember[] };
 
 export function TeamPerformance({ onExit }: { onExit?: () => void } = {}) {
-  const { emps, flash } = useStore();
+  const { emps, flash, fbRaw, empRaw } = useStore();
   const { user } = useAuth();
   const me = user?.id ?? '';
   const [ws, setWs] = useState<Workspace | null>(null);
@@ -58,6 +64,18 @@ export function TeamPerformance({ onExit }: { onExit?: () => void } = {}) {
     return emps.filter((e) => below.has(e.id)).sort((a, b) => Number(b.managerId === me) - Number(a.managerId === me) || a.name.localeCompare(b.name));
   }, [emps, me]);
   const period = ws?.period;
+  // The cycle on screen: the live one unless a past one is picked. Past cycles are read-only here.
+  const [viewPeriod, setViewPeriod] = useState<string | null>(null);
+  const shownPeriod = viewPeriod ?? period;
+  const isPast = Boolean(period && shownPeriod && shownPeriod !== period);
+  const periods = useMemo(
+    () => (period ? [...new Set([period, previousPeriod(period), ...fbRaw.map((r) => r.period)])].sort().reverse() : []),
+    [period, fbRaw],
+  );
+  const fbView = useMemo(() => (shownPeriod ? adaptFeedbackList(fbRaw, empRaw, shownPeriod) : null), [fbRaw, empRaw, shownPeriod]);
+  const fbBy = useMemo(() => new Map((fbView?.fbEmps ?? []).map((e) => [e.userId, e])), [fbView]);
+  const [historyOf, setHistoryOf] = useState<string | null>(null);
+  const historyEmp = historyOf ? fbBy.get(historyOf) : undefined;
 
   const loadKpi = useCallback((userId: string) => {
     if (!period) return;
@@ -83,8 +101,19 @@ export function TeamPerformance({ onExit }: { onExit?: () => void } = {}) {
     <div style={{ animation: 'fade .3s ease both' }}>
       {onExit && <button type="button" style={{ ...ghostBtn, marginBottom: 10 }} onClick={onExit}>← All reviews</button>}
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-        <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
-          {period ? `${periodLabel(period)} cycle · ` : ''}{team.length} people in your team · reviews sent {sent} of {direct.length} direct reports
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {periods.length > 0 && (
+            <select value={shownPeriod ?? ''} title="Review cycle" aria-label="Review cycle"
+              onChange={(ev) => { setViewPeriod(ev.target.value === period ? null : ev.target.value); setHistoryOf(null); }}
+              style={{ border: '1px solid var(--line-2)', borderRadius: 999, height: 36, padding: '0 12px', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer' }}>
+              {periods.map((p) => <option key={p} value={p}>{periodLabel(p)}{p === period ? ' — current' : ''}</option>)}
+            </select>
+          )}
+          <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
+            {isPast
+              ? `${team.length} people in your team · ${team.filter((e) => fbBy.get(e.id)?.status === 'sent').length} reviewed in ${periodLabel(shownPeriod!)}`
+              : `${team.length} people in your team · reviews sent ${sent} of ${direct.length} direct reports`}
+          </div>
         </div>
         <SearchInput value={q} onChange={setQ} placeholder="Search your team" />
       </div>
@@ -94,7 +123,7 @@ export function TeamPerformance({ onExit }: { onExit?: () => void } = {}) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: 'var(--surface-2)', color: 'var(--ink-3)', textAlign: 'left' }}>
-                <th style={th}>Employee</th><th style={th}>Reports to</th><th style={th}>KPIs this cycle</th><th style={th}>Review</th><th style={{ ...th, textAlign: 'right' }}>Actions</th>
+                <th style={th}>Employee</th><th style={th}>Reports to</th><th style={th}>{isPast ? 'Scored on' : 'KPIs this cycle'}</th><th style={th}>Review</th><th style={{ ...th, textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -103,6 +132,29 @@ export function TeamPerformance({ onExit }: { onExit?: () => void } = {}) {
                 const a = kpis[e.id];
                 const m = byId.get(e.id);
                 const status = m?.feedbackStatus ?? 'pending';
+                const fb = fbBy.get(e.id);
+                const hasHistory = Boolean(fb && (fb.status === 'sent' || fb.history.length > 0));
+                if (isPast) {
+                  return (
+                    <tr key={e.id} style={{ borderTop: '1px solid var(--line)' }}>
+                      <td style={td}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <PersonAvatar userId={e.id} name={e.name} src={e.photoUrl || undefined} size={30} />
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 500 }}>{e.name}</div>
+                            <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>{[e.role, e.team].filter(Boolean).join(' · ')}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style={td}>{isDirect ? 'You' : e.manager || '—'}</td>
+                      <td style={td}>{fb?.status === 'sent' && fb.params.length ? `${fb.params.length} parameter${fb.params.length === 1 ? '' : 's'}` : <span style={{ color: 'var(--ink-4)' }}>—</span>}</td>
+                      <td style={td}>{fb?.status === 'sent' ? <span style={{ color: 'var(--ok)' }}>Reviewed · {fb.overall.toFixed(1)}{fb.managerName ? <span style={{ color: 'var(--ink-3)' }}> by {fb.managerName}</span> : null}</span> : <span style={{ color: 'var(--ink-4)' }}>Not reviewed</span>}</td>
+                      <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <button type="button" style={smallBtn} disabled={!hasHistory} onClick={() => setHistoryOf(e.id)}>View review</button>
+                      </td>
+                    </tr>
+                  );
+                }
                 return (
                   <tr key={e.id} style={{ borderTop: '1px solid var(--line)' }}>
                     <td style={td}>
@@ -118,6 +170,7 @@ export function TeamPerformance({ onExit }: { onExit?: () => void } = {}) {
                     <td style={td}>{a === undefined ? <span style={{ color: 'var(--ink-4)' }}>…</span> : a?.parameters?.length ? `${a.parameters.length} parameter${a.parameters.length === 1 ? '' : 's'}` : <span style={{ color: 'var(--warn)' }}>Not set</span>}</td>
                     <td style={td}>{isDirect ? <span style={{ color: status === 'sent' ? 'var(--ok)' : 'var(--ink-3)' }}>{STATUS_LABEL[status] ?? status}{status === 'sent' && m?.score ? ` · ${Number(m.score).toFixed(1)}` : ''}</span> : <span style={{ color: 'var(--ink-4)' }}>By {e.manager || 'their manager'}</span>}</td>
                     <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      {hasHistory && <button type="button" style={{ ...ghostBtn, marginRight: 8 }} onClick={() => setHistoryOf(e.id)}>History</button>}
                       <button type="button" style={smallBtn} disabled={!period} onClick={() => setAssigning(e.id)}>{a?.parameters?.length ? 'Edit KPIs' : 'Assign KPIs'}</button>
                       {isDirect && (m?.parameters?.length && a?.parameters?.length ? (
                         <button type="button" style={{ ...smallBtn, marginLeft: 8 }} onClick={() => setReviewing(m)}>
@@ -141,6 +194,9 @@ export function TeamPerformance({ onExit }: { onExit?: () => void } = {}) {
         </div>
       </Card>
       <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 10 }}>You can set KPIs for anyone in your team, from the parameters and templates HR set up. Reviews are written by each person's own manager.</div>
+      {historyEmp && shownPeriod && period && (
+        <ReviewCard emp={historyEmp} period={shownPeriod} livePeriod={period} onClose={() => setHistoryOf(null)} />
+      )}
       {who && period && (
         <KpiAssignModal userId={who.id} userName={who.name} userDesignation={who.role} period={period}
           params={params} templates={templates} existing={kpis[who.id] ?? null}
