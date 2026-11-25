@@ -27,6 +27,8 @@ type Member = {
   feedbackStatus: 'pending' | 'saved' | 'sent' | string;
   score?: number;
   parameters: Param[];
+  /** Last cycle, still open to the viewer's review (direct reports only; null elsewhere). */
+  previousCycle?: { period: string; feedbackStatus: 'pending' | 'saved' | 'sent' | string; score: number; parameters: Param[]; extra: string } | null;
 };
 type Workspace = { period: string; team: Member[] };
 
