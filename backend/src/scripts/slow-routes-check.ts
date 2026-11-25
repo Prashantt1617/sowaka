@@ -308,7 +308,7 @@ const main = async () => {
   ok('a file that cannot be resized is not read again for an hour', notPicture === null && reads === readsBefore);
   media.setMediaStoreForCheck(null);
   ok('copies and originals asked for are kept a year by CloudFront and the app', mediaCacheControl({ key: 'connect/a.jpg@w256', copy: true }, 256, 'connect/a.jpg') === 'public, max-age=31536000, immutable');
-  ok('an original standing in for a missing copy is kept a week', mediaCacheControl({ key: 'connect/a.jpg', copy: false }, 256, 'connect/a.jpg') === 'public, max-age=604800');
+  ok('an original standing in for a missing copy is kept an hour', mediaCacheControl({ key: 'connect/a.jpg', copy: false }, 256, 'connect/a.jpg') === 'public, max-age=3600');
 
   // —— 7. The warm-up waits for live requests ——
   pace.enableBackgroundPace(true);

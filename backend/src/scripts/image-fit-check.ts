@@ -15,7 +15,7 @@ import {
   requestedWidth,
   withoutMetadata,
 } from '../services/image-fit';
-import { mediaCacheControl, mediaCandidates, rememberMissingCopy } from '../services/media-lookup';
+import { isMissingObject, mediaCacheControl, mediaCandidates, rememberMissingCopy } from '../services/media-lookup';
 
 let failed = 0;
 function check(name: string, ok: boolean, got?: unknown) {
@@ -120,9 +120,13 @@ async function picture(width: number, height: number, format: 'jpeg' | 'png', al
   check('a video is kept exactly as it came', (await withoutMetadata(clip)) === clip);
 
   const year = 'public, max-age=31536000, immutable';
+  // S3 answers a missing key with 403 when the reader may not list the bucket (the upload user may not): still "not made yet".
+  check('a missing copy reads as missing: 404, NoSuchKey, and the 403 AccessDenied S3 sends without ListBucket',
+    isMissingObject({ name: 'NoSuchKey' }) && isMissingObject({ $metadata: { httpStatusCode: 404 } })
+    && isMissingObject({ name: 'AccessDenied', $metadata: { httpStatusCode: 403 } }) && !isMissingObject({ name: 'TimeoutError' }) && !isMissingObject(undefined));
   check('a copy is kept a year, by CloudFront too', mediaCacheControl({ key: `${key}@w720`, copy: true }, 700, key) === year);
   check('an original asked for is kept a year', mediaCacheControl({ key, copy: false }, 'original', key) === year);
-  check('an original standing in for a missing copy is kept a week', mediaCacheControl({ key, copy: false }, 700, key) === 'public, max-age=604800');
+  check('an original standing in for a missing copy is kept an hour', mediaCacheControl({ key, copy: false }, 700, key) === 'public, max-age=3600');
   check('a video is kept a year', mediaCacheControl({ key: 'connect/c.mp4', copy: false }, undefined, 'connect/c.mp4') === year);
 
   console.log(failed ? `\n${failed} failed` : '\nall passed');
