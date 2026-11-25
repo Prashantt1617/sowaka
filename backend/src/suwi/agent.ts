@@ -47,14 +47,16 @@ const LIVE_ANSWER_TTL_S = 60;
  * tools are offered, so the model reads a fraction of the tool list. Nothing recognised: every tool.
  */
 const AREA_WORDS: [SuwiArea, RegExp][] = [
-  ['payroll', /pay(roll|slip|run)?s?|salar|ctc|tax|tds|pf|esi|bonus|deduct|form ?16|gross|net pay|arrear|gratuity|settlement/],
-  ['claims', /claim|reimburs|bills?|expense|receipt/],
-  ['performance', /kpi|review|apprais|performanc|rating|goal|feedback/],
-  ['connect', /posts?|poll|connect|engag|feed|survey|relay|games?|recogni|kudos|contest|tournament|report(ed)? content/],
-  ['people', /people|employee|headcount|designation|department|profile|joined|joining|birthday|missing|document|reports? to|team|who is/],
-  ['settings', /setting|polic|how do i|where (do|can)|shift|template|holiday|week ?off|help/],
-  ['requests', /leave|overtime|correction|check-?in|pending|waiting|approv|request|decid|remind/],
-  ['attendance', /late|absent|attend|punch|leave|present|missed|half day|wfh|work from home|in today|calendar|geotag|location/],
+  ['payroll', /\bpay(roll|slip|run)?s?\b|salar|\bctc\b|\btax|\btds\b|\bpf\b|\besi\b|bonus|deduct|form ?16|gross|net pay|arrear|gratuity|settlement/],
+  ['claims', /claim|reimburs|\bbills?\b|expense|receipt/],
+  ['performance', /\bkpi|review|apprais|performanc|rating|goal|feedback/],
+  ['connect', /\bposts?\b|\bpoll|connect|engag|\bfeed\b|survey|relay|\bgames?\b|recogni|kudos|contest|tournament|report(ed)? content/],
+  ['people', /\bpeople\b|employee|headcount|designation|department|profile|joined|joining|birthday|missing|document|reports? to|\bteam\b|\bwho is\b/],
+  ['settings', /setting|polic|how do i|where (do|can)|\bshift|template|holiday|week ?off|\bhelp\b/],
+  ['requests', /\bleave|overtime|correction|check-?in|pending|waiting|approv|request|decid|remind/],
+  ['attendance', /\blate\b|absent|attend|punch|\bleave|present|missed|half day|\bwfh\b|work from home|\bin today\b|\bcalendar|geotag|location/],
+  ['people', /access|admin|exit|leaving|resign|offboard|import|joiner|new hire|export|download|spreadsheet|excel|csv/],
+  ['settings', /organi[sz]ation|company (details|profile|address|name)|sender|reply-?to|registered (name|address)/],
 ];
 const PAGE_AREAS: [RegExp, SuwiArea][] = [
   [/pay|salary|tax|fbp|form16|statutory/, 'payroll'], [/reimburs|claim|bill/, 'claims'], [/kpi|feedback|cycle|review/, 'performance'],

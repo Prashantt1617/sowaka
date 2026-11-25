@@ -9,6 +9,7 @@ import { IconClose } from '../icons';
 import { ApiError } from '../../services/http';
 import { askSuwi, cancelSuwiAction, confirmSuwiAction, undoSuwiAction, type SuwiAnswer, type SuwiHistoryTurn, type SuwiProposal, type SuwiTable } from '../../services/suwi';
 import { Markdown } from './markdown';
+import { downloadCsv } from '../export';
 import { BULK_GUIDES } from './bulkGuide';
 import { ATTACH_ACCEPT, AttachError, fileSize, readAttachment, type Attached, type ShownFile } from './attach';
 import './suwi.css';
@@ -330,7 +331,11 @@ function AnswerTable({ t }: { t: SuwiTable }) {
           <tbody>{rows.map((r, i) => <tr key={i}>{r.map((v, j) => <td key={j}>{v}</td>)}</tr>)}</tbody>
         </table>
       </div>
-      {t.rows.length > 8 && <button type="button" className="suwi-whyb" onClick={() => setAll(!all)}>{all ? 'Show fewer' : `Show all ${t.rows.length}`}</button>}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        {t.rows.length > 8 && <button type="button" className="suwi-whyb" onClick={() => setAll(!all)}>{all ? 'Show fewer' : `Show all ${t.rows.length}`}</button>}
+        {/* Every table Suwi shows downloads as it is (24 Nov 2026: "Export November attendance" gives the file). */}
+        <button type="button" className="suwi-whyb" onClick={() => downloadCsv(`${t.title.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'suwi-table'}.csv`, t.columns.map((c, j) => ({ header: c, value: (r: (string | number)[]) => r[j] ?? '' })), t.rows)}>Download CSV</button>
+      </div>
     </div>
   );
 }
