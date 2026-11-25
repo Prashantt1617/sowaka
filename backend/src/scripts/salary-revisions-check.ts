@@ -134,6 +134,9 @@ async function plainPayslip(org: string, period: string, s: SalaryStructure, emp
   // Same-day revisions are one change, from what the first replaced.
   const sameDay = payRevisions({ annualCtcPaise: L(12), revisions: [oldRevision(0, R(100_000), '2026-11-05', new Date('2026-11-01T10:00:00Z')), oldRevision(R(100_000), L(12), '2026-11-05', new Date('2026-11-01T10:05:00Z'))] });
   ok('a first salary corrected the same day is no revision', sameDay.length === 0, sameDay);
+  // A real raise saved weeks later on the same date as the first salary is a revision (25 Nov 2026).
+  const raiseSameDay = payRevisions({ annualCtcPaise: L(15), revisions: [oldRevision(0, L(12), '2026-10-01', new Date('2026-10-31T13:11:00Z')), oldRevision(L(12), L(15), '2026-10-01', new Date('2026-11-25T12:22:00Z'))] });
+  ok('a raise on the first salary\'s own date, saved later, is a revision', raiseSameDay.length === 1 && raiseSameDay[0].previousCtcPaise === L(12) && raiseSameDay[0].annualCtcPaise === L(15), raiseSameDay);
   ok('a future revision is not in force yet', structureAsOf({ annualCtcPaise: L(15), revisions: [revision(L(12), L(15), '2026-12-01', now)] }, '2026-11-25').annualCtcPaise === L(12));
 
   // ———————————————————————————————————————— company A: calendar months

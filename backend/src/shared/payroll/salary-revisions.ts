@@ -67,9 +67,24 @@ export function payRevisions(structure: StructureLike): SalaryRevision[] {
     if (!isDay(r.effectiveFrom) || r.kind === 'correction') continue;
     byDay.set(r.effectiveFrom, [...(byDay.get(r.effectiveFrom) ?? []), r]);
   }
-  const out: SalaryRevision[] = [];
+  // A same-day group is one change, except that a real raise saved on the same date as the very first
+  // salary is a revision of its own (25 Nov 2026: three raises back-dated to 1 Oct, the day their salary
+  // was first entered on, would otherwise read as the first salary and pay no arrears). Within a group
+  // that starts at the first salary, only a monthly figure ×12 is folded in as a correction.
+  const chunks: SalaryRevision[][] = [];
   for (const day of [...byDay.keys()].sort()) {
     const group = byDay.get(day)!.sort((a, b) => atTime(a.at) - atTime(b.at));
+    let chunk: SalaryRevision[] = [];
+    for (const r of group) {
+      const prev = chunk[chunk.length - 1];
+      const startsAtFirstSalary = chunk.length > 0 && !(chunk[0].previousCtcPaise > 0);
+      if (prev && startsAtFirstSalary && r.annualCtcPaise !== prev.annualCtcPaise * 12) { chunks.push(chunk); chunk = []; }
+      chunk.push(r);
+    }
+    chunks.push(chunk);
+  }
+  const out: SalaryRevision[] = [];
+  for (const group of chunks) {
     const first = group[0];
     const last = group[group.length - 1];
     const one: SalaryRevision = { ...last, id: revisionKey(last), previousCtcPaise: first.previousCtcPaise };
