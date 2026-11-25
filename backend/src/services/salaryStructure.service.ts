@@ -1,3 +1,4 @@
+import { ObjectId } from 'mongodb';
 import { salaryStructures, salaryTemplates, users } from '../config/db';
 import { requestViewer } from '../middleware/request-viewer';
 import { PayHead } from '../models/payHead.model';
@@ -13,6 +14,9 @@ import { statutorySettingsFor, workStateOf } from './statutorySettings.service';
 import { catalogWithStandard, materializeStandard } from './standardComponents.service';
 import { decryptField, encryptField, fieldKeyConfigured, isEncrypted, maskTail } from './fieldCrypto';
 import { payrollAccessOf } from './payrollAccess.service';
+import { payRevisions, structureAsOf } from '../shared/payroll/salary-revisions';
+
+const todayIst = () => new Date(Date.now() + 5.5 * 3_600_000).toISOString().slice(0, 10);
 
 export class SalaryStructureError extends Error {
   constructor(
@@ -33,6 +37,8 @@ export interface SalaryStructureInput {
   statutory?: unknown;
   bonusCategory?: unknown;
   status?: unknown;
+  /** 'correction': a CTC change that fixes a wrong figure, not a change of pay (never split or paid as arrears). */
+  revisionKind?: unknown;
 }
 
 export async function listSalaryStructures(adminUserId: string) {
@@ -91,15 +97,24 @@ export async function upsertSalaryStructure(
 
   const existing = await salaryStructures().findOne({ org, userId });
   const now = new Date();
-  // A CTC change is a revision; the history keeps every one.
+  // A CTC change is a revision; the history keeps every one. Payroll pays each day on the salary
+  // in force that day (shared/payroll/salary-revisions), so each revision keeps what it replaced:
+  // the old template, fixed amounts and own changes, to work the days before it out on.
+  // A template move with no CTC change is not a revision: it applies to the next run's whole period.
   const previousCtc = existing?.annualCtcPaise ?? 0;
   const revisions: SalaryRevision[] = [...(existing?.revisions ?? [])];
   if (draft.annualCtcPaise !== undefined && draft.annualCtcPaise !== previousCtc) {
     revisions.push({
+      id: new ObjectId().toHexString(),
       previousCtcPaise: previousCtc,
       annualCtcPaise: draft.annualCtcPaise,
       effectiveFrom: draft.effectiveFrom ?? now.toISOString().slice(0, 10),
       at: now,
+      // Only a change to a live salary is a change of pay; one made while setting it up is not.
+      whileActive: existing?.status === 'active',
+      ...(input.revisionKind === 'correction' ? { kind: 'correction' as const } : {}),
+      ...(existing ? { previous: { salaryTemplateCode: existing.salaryTemplateCode, componentValues: existing.componentValues, overrides: existing.overrides } } : {}),
+      templateCode: draft.salaryTemplateCode ?? existing?.salaryTemplateCode,
     });
   }
   const merged: SalaryStructure = {
@@ -470,6 +485,10 @@ function viewOf(doc: SalaryStructure, templateName?: string, payroll = false) {
     componentValues: doc.componentValues ?? {},
     overrides: doc.overrides ?? {},
     revisions: (doc.revisions ?? []).map((r) => ({ ...r, at: r.at instanceof Date ? r.at.toISOString() : String(r.at) })),
+    // What payroll pays today, and revisions dated later (saved, not in force yet): payroll pays
+    // each day on the salary in force that day (shared/payroll/salary-revisions).
+    ctcInForcePaise: structureAsOf(doc, todayIst()).annualCtcPaise,
+    upcomingRevisions: payRevisions(doc).filter((r) => r.effectiveFrom > todayIst()).map((r) => ({ effectiveFrom: r.effectiveFrom, annualCtcPaise: r.annualCtcPaise })),
     statutory: openIds(doc.statutory, payroll),
     bonusCategory: doc.bonusCategory,
     status: doc.status,

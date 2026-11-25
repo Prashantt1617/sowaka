@@ -23,7 +23,7 @@ import type { LoadState } from '../ui';
 import { downloadPayslipPdf } from '../payslip';
 import { downloadTdsSheetPdf } from '../tdsSheet';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
-import { employedDaysOf, isNotEmployedLine, lossOfPayDaysOf, notEmployedNote, notEmployedOf } from '../payslipDays';
+import { arrearsItemText, employedDaysOf, isNotEmployedLine, lossOfPayDaysOf, notEmployedNote, notEmployedOf, salarySplitText } from '../payslipDays';
 import { EmployeeCalendar } from './EmployeeProfile';
 import { MissingSalaryNotice } from './MissingSalaryNotice';
 import { exportReport } from './PayrollReports';
@@ -545,6 +545,20 @@ function ThisMonthOnly({ p, items, edit, onChange, saving, onSave, pending }: { 
           </button>
         </div>
       </div>
+      {p.inputs.arrears && p.inputs.arrears.payHeadCode && p.inputs.arrears.workedOutPaise > 0 && (() => {
+        // Worked out from a back-dated revision; HR can leave it, not pay it (0), or type another figure on its line.
+        const a = p.inputs.arrears!;
+        const code = a.payHeadCode!;
+        const typed = touched(code) ? get(code) : a.status === 'entered_by_hr' ? String(a.paidPaise / 100) : undefined;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12.5, marginBottom: 12, color: 'var(--ink-2)' }}>
+            <span>Salary arrears worked out: <strong style={{ fontWeight: 500 }}>{money2(a.workedOutPaise)}</strong>{typed !== undefined && typed !== '' ? ` · paying ${money2(Math.round(Number(typed) * 100))} as typed` : ''}</span>
+            {typed === undefined || typed === ''
+              ? <button type="button" onClick={() => put(code, '0')} style={linkBtn}>Don't pay this month</button>
+              : <button type="button" onClick={() => put(code, '')} style={linkBtn}>Pay the worked-out figure</button>}
+          </div>
+        );
+      })()}
       {shown.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10, marginBottom: 12 }}>
           {shown.map((x) => (
@@ -622,6 +636,7 @@ function SlipNumbers({ p }: { p: PayslipDTO }) {
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 28 }}>
       <div>
         {head('Earnings')}
+        {salarySplitText(p.inputs) && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', margin: '-2px 0 6px', lineHeight: 1.45 }}>Paid by date: {salarySplitText(p.inputs)}</div>}
         {/* A one-time item not given this month (₹0 at ₹0) is left out: "This month only" above is where it is added. */}
         {p.earnings.filter((l) => l.paidPaise !== 0 || l.fullPaise !== 0).map((l) => (
           <div key={l.code}>{row(l.name, l.paidPaise, { muted: l.hidden, sub: [l.fullPaise !== l.paidPaise ? `rate ${money2(l.fullPaise)}` : '', l.hidden ? 'not on payslip' : ''].filter(Boolean).join(' · ') || undefined })}</div>
@@ -685,9 +700,30 @@ function SlipNumbers({ p }: { p: PayslipDTO }) {
           </div>
         </div>
       )}
+      {p.inputs.arrears && (
+        <div style={{ gridColumn: '1 / -1', borderTop: '1px dashed var(--line-2)', paddingTop: 12 }}>
+          {head(`Salary arrears · ${ARREARS_STATUS[p.inputs.arrears.status]}`)}
+          {p.inputs.arrears.items.map((i) => (
+            <div key={`${i.revisionKey}|${i.from}`} style={{ marginBottom: 6 }}>
+              <div style={{ fontSize: 12.5, color: i.notInSowaka ? 'var(--warn)' : 'var(--ink-2)' }}>{arrearsItemText(i)}</div>
+              {i.lines.map((l) => (
+                <div key={l.code}>{row(l.name, l.amountPaise, { muted: true, sub: `${money2(l.oldMonthlyPaise)} → ${money2(l.newMonthlyPaise)} a month` })}</div>
+              ))}
+            </div>
+          ))}
+          {row('Paid with this run', p.inputs.arrears.paidPaise, { strong: true })}
+        </div>
+      )}
     </div>
   );
 }
+
+const ARREARS_STATUS: Record<NonNullable<PayslipDTO['inputs']['arrears']>['status'], string> = {
+  paid: 'worked out and paid',
+  entered_by_hr: 'amount typed on this run',
+  not_set_up: 'not paid: mark a one-time earning as Arrears on Salary Components, then recalculate',
+  negative: 'the revision lowered pay: nothing is recovered automatically',
+};
 
 const cellInput: CSSProperties = { width: 76, height: 34, padding: '0 10px', border: '1px solid var(--line-2)', borderRadius: 10, fontSize: 13, fontFamily: 'inherit', textAlign: 'right', background: 'var(--surface)', color: 'var(--ink)' };
 const linkBtn: CSSProperties = { background: 'none', border: 'none', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 11.5, fontWeight: 500, marginLeft: 6, padding: 0 };

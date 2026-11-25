@@ -101,11 +101,73 @@ export interface PayslipInputs {
   /** Paid leave days from the template's monthly allowance that offset the docked days. */
   paidLeaveDaysApplied?: number;
   payableDays: number;
+  /**
+   * The period paid on more than one salary (a CTC revision took effect inside it): each part,
+   * its days and loss of pay, on the salary in force then. Absent when one salary covered the period.
+   */
+  salarySegments?: SalarySegmentView[];
+  /** Arrears for earlier, already submitted periods from a back-dated revision (see salary-revisions). */
+  arrears?: PayslipArrears;
   approvedLeaveDays: number;
   approvedOtHours: number;
   overtimePaise: number;
   reimbursementsPaise: number;
   reimbursementClaimIds: string[];
+}
+
+export interface SalarySegmentView {
+  from: string;
+  to: string;
+  /** Calendar days of the period in this part. */
+  days: number;
+  /** Loss of pay (and days not employed) placed in this part. */
+  lopDays: number;
+  /** Paid days of this part, in the period's base days. */
+  paidDays: number;
+  annualCtcPaise: number;
+  salaryTemplateCode?: string;
+}
+
+export interface PayslipArrearsLine {
+  code: string;
+  name: string;
+  /** The component's monthly amount for that period on the old salary and on the revised one. */
+  oldMonthlyPaise: number;
+  newMonthlyPaise: number;
+  amountPaise: number;
+}
+
+export interface PayslipArrearsItem {
+  /** The revision (revisionKey) and the earlier period it pays for: paid once per pair. */
+  revisionKey: string;
+  effectiveFrom: string;
+  period: string;
+  from: string;
+  to: string;
+  days: number;
+  lopDays: number;
+  paidDays: number;
+  baseDays: number;
+  previousCtcPaise: number;
+  annualCtcPaise: number;
+  lines: PayslipArrearsLine[];
+  amountPaise: number;
+  /** Days no Sowaka run paid (a month paid outside Sowaka): no figure, HR enters any arrears by hand. */
+  notInSowaka?: true;
+}
+
+export interface PayslipArrears {
+  /** The earning (flagged Arrears on Salary Components) it is paid with; absent when the company has none. */
+  payHeadCode?: string;
+  /**
+   * paid: worked out and paid; entered_by_hr: HR typed the amount on the run (0 = not paid);
+   * not_set_up: no component is flagged Arrears, nothing paid (and still owed: the next run offers it again);
+   * negative: the revision lowered pay, nothing recovered automatically.
+   */
+  status: 'paid' | 'entered_by_hr' | 'not_set_up' | 'negative';
+  workedOutPaise: number;
+  paidPaise: number;
+  items: PayslipArrearsItem[];
 }
 
 export interface Payslip {

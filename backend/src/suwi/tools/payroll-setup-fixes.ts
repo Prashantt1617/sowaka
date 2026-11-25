@@ -319,7 +319,8 @@ defineExecutor('payroll.fix_monthly_ctc', {
       try {
         const now = await salaryStructures().findOne({ org: p.org, userId: x.userId });
         if (now?.annualCtcPaise !== x.fromPaise) throw new Error(`CTC changed since this was prepared (now ${rupees(now?.annualCtcPaise ?? 0)})`);
-        await upsertSalaryStructure(p.userId, x.userId, { annualCtcPaise: x.toPaise, ...(x.effectiveFrom ? { effectiveFrom: x.effectiveFrom } : {}) });
+        // A correction of a figure typed wrong, not a raise: never splits a month or makes arrears.
+        await upsertSalaryStructure(p.userId, x.userId, { annualCtcPaise: x.toPaise, revisionKind: 'correction', ...(x.effectiveFrom ? { effectiveFrom: x.effectiveFrom } : {}) });
         done.push({ userId: x.userId, name: x.name, fromPaise: x.fromPaise, revisions: now.revisions ?? null });
       } catch (e) { failed.push(`${x.name} (${(e as Error).message})`); }
     }
@@ -334,7 +335,7 @@ defineExecutor('payroll.fix_monthly_ctc', {
     const failed: string[] = [];
     for (const d of done) {
       try {
-        await upsertSalaryStructure(p.userId, d.userId, { annualCtcPaise: d.fromPaise });
+        await upsertSalaryStructure(p.userId, d.userId, { annualCtcPaise: d.fromPaise, revisionKind: 'correction' });
         // The save records each CTC change as a revision; the correction and its undo were not real revisions,
         // so the history goes back to what it was (as prepare_assign_salary_template's Undo does).
         await salaryStructures().updateOne({ org: p.org, userId: d.userId }, { $set: { revisions: d.revisions ?? [] } as never });

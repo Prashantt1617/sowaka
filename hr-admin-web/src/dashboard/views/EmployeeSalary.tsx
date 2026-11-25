@@ -239,7 +239,12 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
       <section className="pd-card" style={{ marginBottom: 20 }}>
         <h3 style={secTitle}>Salary Details{structure.status === 'draft' && <span style={{ ...tag, marginLeft: 10 }}>Draft: not in payroll runs</span>}</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 44, flexWrap: 'wrap' }}>
-          <div><div style={labelSm}>Annual CTC</div><div style={valueLg}>₹{rupees(structure.annualCtcPaise)} <span style={unit}>per year</span></div></div>
+          <div><div style={labelSm}>Annual CTC</div><div style={valueLg}>₹{rupees(structure.annualCtcPaise)} <span style={unit}>per year</span></div>
+            {/* A revision dated later is saved but not paid yet: payroll pays each day on the salary in force that day. */}
+            {(structure.upcomingRevisions?.length ?? 0) > 0 && structure.ctcInForcePaise !== undefined && (
+              <div style={{ ...unit, marginTop: 4 }}>₹{rupees(structure.upcomingRevisions![0].annualCtcPaise)} from {dmy(structure.upcomingRevisions![0].effectiveFrom)}; payroll pays ₹{rupees(structure.ctcInForcePaise)} until then</div>
+            )}
+          </div>
           <div><div style={labelSm}>Monthly CTC</div><div style={valueLg}>₹{rupees(monthlyCtc)} <span style={unit}>per month</span></div></div>
           <div><div style={labelSm}>Salary Template</div><div style={{ ...valueLg, fontSize: 14, letterSpacing: 0 }}>{structure.templateName ?? template?.name ?? structure.salaryTemplateCode ?? '—'}{Object.keys(structure.overrides.edit ?? {}).length + (structure.overrides.add?.length ?? 0) + (structure.overrides.remove?.length ?? 0) > 0 && <span style={{ ...unit, marginLeft: 6 }}>· with own changes</span>}</div></div>
           <button onClick={() => setRevising(true)} className="pd-btn primary" style={{ marginLeft: 'auto' }}>Revise</button>

@@ -66,3 +66,20 @@ export function notEmployedNote(slip: { joiningDate?: string; inputs: Inputs & {
   if (n.afterLeaving > 0) parts.push(slip.inputs?.leftOn ? `Left ${shortDay(slip.inputs.leftOn)}` : `${dayWord(n.afterLeaving)} after leaving`);
   return parts.join(' · ');
 }
+
+// —— A period paid on more than one salary, and arrears (salary revisions, 25 Nov 2026) ——
+const inrYear = (paise: number) => `₹${Math.round(paise / 100).toLocaleString('en-IN')} a year`;
+const dayList = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
+
+/** "26 Oct – 17 Nov on ₹12,00,000 a year; 18 Nov – 25 Nov on ₹15,00,000 a year"; '' for one salary. */
+export function salarySplitText(inputs: { salarySegments?: { from: string; to: string; annualCtcPaise: number; lopDays: number }[] } | null | undefined): string {
+  const parts = inputs?.salarySegments ?? [];
+  if (parts.length < 2) return '';
+  return parts.map((p) => `${shortDay(p.from)} – ${shortDay(p.to)} on ${inrYear(p.annualCtcPaise)}${p.lopDays > 0 ? ` (${p.lopDays} LOP)` : ''}`).join('; ');
+}
+
+/** One arrears item in words: which days, how many paid, old vs new. */
+export function arrearsItemText(item: { from: string; to: string; days: number; paidDays: number; lopDays: number; previousCtcPaise: number; annualCtcPaise: number; notInSowaka?: true }): string {
+  if (item.notInSowaka) return `${shortDay(item.from)} – ${shortDay(item.to)} was not paid in Sowaka: enter any arrears for it by hand`;
+  return `${shortDay(item.from)} – ${shortDay(item.to)}: ${dayList(item.days)}${item.lopDays > 0 ? `, ${item.lopDays} LOP` : ''}, paid on ${inrYear(item.previousCtcPaise)}, revised to ${inrYear(item.annualCtcPaise)}`;
+}

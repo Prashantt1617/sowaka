@@ -36,6 +36,11 @@ export interface PayslipInputSet {
   period?: string;
   /** "YYYY-MM-DD": joined during this month; PF ceilings count from this day. */
   employedFrom?: string;
+  /**
+   * A month paid on more than one salary (salary-revisions combineSegments): what each prorated
+   * earning that differs between the parts is paid, by code. Absent for everyone else.
+   */
+  paidPaise?: Record<string, number>;
 }
 
 /**
@@ -131,7 +136,9 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
     fullPaise: line.monthlyPaise,
     // A full month pays the structure exactly (a balancing component can carry
     // paise when the monthly CTC does); a prorated month rounds to the rupee.
-    paidPaise: line.prorate && factor !== 1 ? roundToRupee(line.monthlyPaise * factor) : line.monthlyPaise,
+    paidPaise: line.prorate && input.paidPaise?.[line.code] !== undefined
+      ? input.paidPaise[line.code]
+      : line.prorate && factor !== 1 ? roundToRupee(line.monthlyPaise * factor) : line.monthlyPaise,
   }));
 
   const earningsPaid = earnings.reduce((sum, line) => sum + line.paidPaise, 0);

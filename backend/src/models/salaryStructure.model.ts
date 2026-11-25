@@ -22,13 +22,34 @@ export interface StructureOverrides {
   edit?: Record<string, CalculationBasis>;
 }
 
-/** One CTC change, kept for the Salary Revision History. */
+/** What a revision replaced: the salary as it stood before it (besides the CTC). */
+export interface SalaryRevisionSnapshot {
+  salaryTemplateCode?: string;
+  componentValues?: Record<string, number>;
+  overrides?: StructureOverrides;
+}
+
+/**
+ * One CTC change, kept for the Salary Revision History. Payroll pays each day
+ * of a period on the salary in force that day (see shared/payroll/salary-revisions):
+ * the old one before `effectiveFrom`, this one from it.
+ */
 export interface SalaryRevision {
+  /** Saved since 25 Nov 2026; older revisions are told apart by effectiveFrom + at. */
+  id?: string;
   previousCtcPaise: number;
   annualCtcPaise: number;
   /** "YYYY-MM-DD" */
   effectiveFrom: string;
   at: Date;
+  /** The salary was live (in payroll) when this was saved; a change made while setting it up is not a revision of pay. Absent on older revisions. */
+  whileActive?: boolean;
+  /** A correction of a wrong figure (e.g. a monthly CTC typed as annual), not a change of pay: never splits a month or makes arrears. */
+  kind?: 'correction';
+  /** What the salary was before this revision (template, fixed amounts, own changes). Absent on older revisions: the current ones stand in. */
+  previous?: SalaryRevisionSnapshot;
+  /** The template this revision put the person on. */
+  templateCode?: string;
 }
 
 /** Per-employee statutory applicability (Zoho's employee "Statutory Components"). */

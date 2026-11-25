@@ -5,7 +5,7 @@
  * is on the slip rather than folded silently into a smaller earned figure.
  */
 import { DEDUCTION_TRIGGER_LABELS, DeductionTrigger } from '../models/deduction.model';
-import { AFTER_LEAVING, BEFORE_JOINING, lossOfPayDaysOf, lossOfPayPaiseOf, notEmployedOf, notEmployedPaiseOf, notEmployedWhen, shortDayLabel } from './payslipDays';
+import { AFTER_LEAVING, BEFORE_JOINING, arrearsItemText, salarySplitText, lossOfPayDaysOf, lossOfPayPaiseOf, notEmployedOf, notEmployedPaiseOf, notEmployedWhen, shortDayLabel } from './payslipDays';
 
 export interface PayslipForHtml {
   employeeName: string;
@@ -32,6 +32,9 @@ export interface PayslipForHtml {
     overtimePaise: number;
     attendanceDeductions?: { label: string; count: number; days: number; trigger?: string }[];
     paidLeaveDaysApplied?: number;
+    /** Paid on more than one salary (a revision inside the period), and arrears for earlier periods. */
+    salarySegments?: { from: string; to: string; annualCtcPaise: number; lopDays: number }[];
+    arrears?: { items: { from: string; to: string; days: number; paidDays: number; lopDays: number; previousCtcPaise: number; annualCtcPaise: number; notInSowaka?: true }[] };
   };
 }
 
@@ -140,6 +143,7 @@ export function payslipHtml(slip: PayslipForHtml, company: { name: string; addre
       <div class="days"><div class="kv"><span>Paid days</span><span>${slip.inputs.payableDays}</span></div><div class="kv"><span>Loss of pay days</span><span>${lopDays}</span></div>${notEmployed.beforeJoining > 0 ? `<div class="kv"><span>${slip.joiningDate ? 'Joined' : 'Before joining'}</span><span>${slip.joiningDate ? esc(shortDayLabel(slip.joiningDate)) : `${notEmployed.beforeJoining} days`}</span></div>` : ''}${notEmployed.afterLeaving > 0 ? `<div class="kv"><span>${slip.inputs.leftOn ? 'Left' : 'After leaving'}</span><span>${slip.inputs.leftOn ? esc(shortDayLabel(slip.inputs.leftOn)) : `${notEmployed.afterLeaving} days`}</span></div>` : ''}${covered > 0 ? `<div class="kv"><span>Covered by paid leave</span><span>${covered}</span></div>` : ''}</div>
     </div>
   </div>
+  ${salarySplitText(slip.inputs) ? `<div class="s" style="margin:0 0 10px">Salary by date: ${esc(salarySplitText(slip.inputs))}</div>` : ''}${(slip.inputs.arrears?.items ?? []).map((i) => `<div class="s" style="margin:0 0 8px">Arrears for ${esc(arrearsItemText(i))}</div>`).join('')}
   <div class="cols">
     <table><thead><tr><th>Earnings</th><th class="r">Amount</th></tr></thead><tbody>${earningRows}${otRow}${reimb}<tr class="tot"><td>Gross earnings</td><td class="r">${inr(grossFull)}</td></tr></tbody></table>
     <table><thead><tr><th>Deductions</th><th class="r">Amount</th></tr></thead><tbody>${deductionRows}<tr class="tot"><td>Total deductions</td><td class="r">${inr(totalDeductions)}</td></tr></tbody></table>

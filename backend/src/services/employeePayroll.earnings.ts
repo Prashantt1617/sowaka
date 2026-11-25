@@ -25,6 +25,7 @@ import { homePayPeriod } from './employeePayroll.home';
 import { splitAmountsFor } from './employeePayroll.split';
 import { PayrollConfigError } from './payrollConfig.service';
 import { SalaryStructureError, computeStructureFor } from './salaryStructure.service';
+import { structureAsOf } from '../shared/payroll/salary-revisions';
 import { lossOfPayDaysOf, notEmployedDaysOf } from './payslipDays';
 
 /** The runs whose payslips the person sees (as the Payslips list reads them). */
@@ -130,10 +131,13 @@ async function currentPeriod(org: string, now: Date): Promise<string> {
 
 /** The structure's yearly components as it pays in `period`, or why they can't be shown. */
 async function structureComponents(org: string, userId: string, period: string): Promise<{ components: EarningsComponent[]; notSetUp: EarningsNotSetUp | null }> {
-  const structure = await salaryStructures().findOne({ org, userId });
-  if (!structure?.salaryTemplateCode) {
+  const saved = await salaryStructures().findOne({ org, userId });
+  if (!saved?.salaryTemplateCode) {
     return { components: [], notSetUp: { reason: 'no_salary_structure', message: askHr('Your salary structure is not set up yet') } };
   }
+  // As in force by the month's end: a revision dated later is not counted yet.
+  const [py, pm] = period.split('-').map(Number);
+  const structure = structureAsOf(saved, new Date(Date.UTC(py, pm, 0)).toISOString().slice(0, 10));
   const splits = await flexibleSplits().find({ org, userId }).toArray();
   try {
     const { computed } = await computeStructureFor(org, userId, {

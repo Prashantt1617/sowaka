@@ -23,6 +23,7 @@ import {
 import { splitAmountsFor } from './employeePayroll.split';
 import { PayrollConfigError, statutoryConfigForPeriod } from './payrollConfig.service';
 import { computeStructureFor, SalaryStructureError } from './salaryStructure.service';
+import { structureAsOf } from '../shared/payroll/salary-revisions';
 import { statutorySettingsFor } from './statutorySettings.service';
 import { runTds, tdsConfigsFor } from './tds.service';
 
@@ -108,10 +109,15 @@ async function projection(args: {
   try {
     statutory = await statutoryConfigForPeriod(start);
     // Each month on its own structure, as a run projects them (a PF ceiling change moves the balance).
-    months = await Promise.all(periods.map(async (p) => (await computeStructureFor(org, userId, {
-      ...structure,
-      componentValues: { ...(structure.componentValues ?? {}), ...splitAmountsFor(splits, p) },
-    }, employee, p)).computed));
+    // Each month on the salary in force by its end: a revision dated in a later month counts from it.
+    months = await Promise.all(periods.map(async (p) => {
+      const [py, pm] = p.split('-').map(Number);
+      const asOf = structureAsOf(structure, new Date(Date.UTC(py, pm, 0)).toISOString().slice(0, 10));
+      return (await computeStructureFor(org, userId, {
+        ...asOf,
+        componentValues: { ...(asOf.componentValues ?? {}), ...splitAmountsFor(splits, p) },
+      }, employee, p)).computed;
+    }));
   } catch (error) {
     if (error instanceof PayrollConfigError && error.statusCode === 409) {
       throw new NotSetUp('statutory_not_set_up', askHr(`Your tax can't be worked out yet: the statutory settings (PF, ESI, professional tax) for FY ${fy} are not set up`));
