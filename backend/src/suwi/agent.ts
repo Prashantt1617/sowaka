@@ -134,7 +134,7 @@ If asked what you can do, describe your areas briefly with two or three example 
 This question:
 - Company: ${companyName}
 - Today: ${ctx.today} (India time)
-- Asking: ${ctx.user.name}${ctx.user.dashboardAdmin ? ', a dashboard admin' : ''}${ctx.payroll ? ', with payroll access' : ', without payroll access'}${teamScoped(ctx.user) ? `\n- ${ctx.user.name} is a MANAGER, not HR: they see only their own team (everyone below them in the reporting line), and your tools return only those people. Never answer about anyone else. To write a review of one of their direct reports, tell them to say "give review to <name>" and Suwi will take them through each KPI.` : ''}
+- Asking: ${ctx.user.name}${ctx.user.dashboardAdmin ? ', a dashboard admin' : ''}${ctx.payroll ? ', with payroll access' : ', without payroll access'}${teamScoped(ctx.user) ? `\n- ${ctx.user.name} is a MANAGER, not HR: they see only their own team (everyone below them in the reporting line), and your tools return only those people. Never answer about anyone else. To write a review of one of their direct reports, tell them to say "give review to <name>" (or just "fill feedback") and Suwi will take them through each KPI; they can also paste every score and comment in one message.` : ''}
 - Page: ${page || 'overview'}${ctx.sheet ? `\n- Sheet loaded: ${describeSheet(ctx.sheet)}. To assign to the people in it, call prepare_bulk_assign with fromSheet: true; never copy IDs out of it. When the sheet has a column for what is being assigned, leave value empty and each row's own value is used (one card per value). Rows that can't be matched come back as skipped with their row number: tell HR each one.` : ''}${page.startsWith('bulk') ? `
 - HR opened Bulk assign: use prepare_bulk_assign for any "assign X to Y" request, one card per thing assigned. If they attached a sheet, pass every Employee ID in it. If they haven't said what or who, ask in one short question.` : ''}${ctx.user.dashboardAdmin ? `
 - Suwi budget this month: $${budget.spentUsd.toFixed(2)} of $${budget.monthlyUsd} used (only dashboard admins are told this)` : ''}`;
@@ -186,11 +186,26 @@ export async function askSuwi(
   const question = typed || (attachment?.image ? 'Have a look at the attached image.' : attachment ? 'Have a look at the attached spreadsheet.' : '');
   if (!question) throw new SuwiLlmError(400, 'Ask Suwi a question');
   const page = typeof input.page === 'string' ? input.page.slice(0, 40) : '';
-  // A review written one KPI at a time (reviewChat.ts): under way, or being started. No model.
+  // A review written with Suwi (reviewChat.ts): under way, or being started. A question about something else
+  // mid-review is answered as usual below, with a line saying the review is still open (it waits, nothing lost).
   if (!attachment && !opts.prepare) {
     const chat = await reviewChat(user, typed);
-    if (chat) return chat;
+    if (chat && 'answer' in chat) return chat.answer;
+    if (chat) {
+      const done = await askOnward(user, input, question, page, attachment, started, onProgress, onPartial, opts);
+      return { ...done, text: `${done.text}\n\n${chat.aside}` };
+    }
   }
+  return askOnward(user, input, question, page, attachment, started, onProgress, onPartial, opts);
+}
+
+/** Everything after the review conversation: a kept answer, or a new one (and the audit row either way). */
+async function askOnward(
+  user: Omit<User, 'profilePhotoUrl'>,
+  input: { question?: unknown; page?: unknown; history?: unknown; attachments?: unknown },
+  question: string, page: string, attachment: ReturnType<typeof attachmentOf>, started: number,
+  onProgress: ((checking: string) => void) | undefined, onPartial: ((textSoFar: string) => void) | undefined, opts: { prepare?: boolean },
+): Promise<SuwiAnswer> {
   // A kept answer to the same question, by the same person, on the same data (suwi/kept.ts): the data
   // version changes with every write Suwi reads from, so a change always misses. Never for a file or a
   // follow-up (the history changes what the question means), and only while Suwi is on.
