@@ -5,7 +5,7 @@
 // the reporting line rather than from feedback records, so a manager who has
 // reviewed nobody still appears as 0/5 — that manager is the reason this page
 // exists.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import type { Pill as PillT } from '../theme';
@@ -23,6 +23,7 @@ import { ghostBtn, panelCard, panelTitle, smallBtn } from './kpiLook';
 import { TeamPerformance } from './TeamPerformance';
 import { useAuth } from '../auth/AuthContext';
 import { isTeamScope } from '../access';
+import { getKpiAssignment, type KpiAssignmentDTO } from '../../services/kpi';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -552,6 +553,17 @@ export function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
   const [period, setPeriod] = useState(viewedPeriod);
   const shown = cycles.find((c) => c.period === period) ?? cycles[cycles.length - 1];
   const isCurrent = shown.current;
+  // A review not started yet still shows what the person is reviewed on (25 Nov 2026, HR: "here I should be
+  // able to see his parameters even if not filled yet"): the KPIs assigned for the cycle being viewed.
+  const [assigned, setAssigned] = useState<KpiAssignmentDTO | null | undefined>(undefined);
+  const notStarted = isCurrent && emp.status === 'none';
+  useEffect(() => {
+    if (!notStarted) return;
+    let live = true;
+    setAssigned(undefined);
+    getKpiAssignment(emp.userId, viewedPeriod).then((a) => { if (live) setAssigned(a); }).catch(() => { if (live) setAssigned(null); });
+    return () => { live = false; };
+  }, [notStarted, emp.userId, viewedPeriod]);
   const tone = isCurrent ? TONE[emp.status] : TONE.sent;
 
   return (
@@ -622,12 +634,35 @@ export function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
       </div>
 
       {/* ââ The selected cycle âââââââââââââââââââââââââââââââââââââââââ */}
-      {isCurrent && emp.status === 'none' ? (
-        <div style={{ ...panelCard, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13, lineHeight: 1.6, padding: 40 }}>
+      {notStarted ? (
+        <>
+        <div style={{ ...panelCard, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13, lineHeight: 1.6, padding: 28, marginBottom: 20 }}>
           {emp.managerName === '—'
             ? 'Nobody manages this employee yet, so no review is due.'
             : `${emp.managerName} has not started this review for the current cycle.`}
         </div>
+        <div style={panelCard}>
+          <div style={panelTitle}>Parameters for {periodLabel(viewedPeriod)}</div>
+          {assigned === undefined ? (
+            <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>Loading…</div>
+          ) : !assigned?.parameters?.length ? (
+            <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>No KPIs are assigned for this cycle yet.</div>
+          ) : (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {assigned.parameters.map((p) => (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 0', borderTop: '1px solid var(--line)' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500 }}>{p.title}</div>
+                    {p.description && <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2, lineHeight: 1.5 }}>{p.description}</div>}
+                  </div>
+                  {assigned.weights?.[p.id] != null && <span style={{ fontSize: 12.5, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{assigned.weights[p.id]}%</span>}
+                  <span style={{ fontSize: 12.5, color: 'var(--ink-4)', whiteSpace: 'nowrap' }}>Not scored</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        </>
       ) : (
         <>
         <div style={{ ...panelCard, marginBottom: 20 }}>
