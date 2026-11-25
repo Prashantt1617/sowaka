@@ -19,7 +19,11 @@ import { SUWI_AREAS } from './tools';
 import { INSIGHT_KINDS, INSIGHT_ROUTE, InsightKind, insightFor, mayRead } from './insight';
 
 export const suwiRouter = Router();
-suwiRouter.use(requireAuth, requireDashboardAccess, refuseTeamScope);
+// Managers (team scope) may ask and answer their own cards (25 Nov 2026, HR: "enable Suwi for the managers'
+// dashboard"); their tools see their own team only (tools.ts TEAM_TOOLS). Settings, activity, timings and insights
+// stay HR's.
+const MANAGER_SUWI = /^\/(ask(\/[^/]+)?|actions\/[^/]+\/(confirm|cancel|undo))\/?$/;
+suwiRouter.use(requireAuth, requireDashboardAccess, (req, res, next) => (MANAGER_SUWI.test(req.path) ? next() : refuseTeamScope(req, res, next)));
 
 const me = (req: Request) => req.auth!.user!;
 const fail = (res: Response, e: unknown, next: NextFunction) => {

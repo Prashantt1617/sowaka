@@ -5,7 +5,8 @@
 // "not set".
 import { shiftTemplates, users } from '../../config/db';
 import { User } from '../../models/user.model';
-import { defineTools, num, str, SuwiContext } from '../tools';
+import { defineTools, num, str, SuwiContext, teamScoped } from '../tools';
+import { subtreeOf } from '../../services/manager-scope';
 import { peopleWith } from '../toolCache';
 
 export const ACTIVE = { lifecycleStatus: { $nin: ['offboarded', 'terminated'] } } as const;
@@ -19,7 +20,11 @@ const PROJECTION = { _id: 0, userId: 1, name: 1, employeeId: 1, email: 1, design
 /** Everyone on the active roll of the asker's company. */
 export async function roster(ctx: SuwiContext): Promise<Person[]> {
   // The company's people bundle (toolCache.ts): read once per data version, not once per tool call.
-  return peopleWith<Person>(ctx.org, PEOPLE_FIELDS);
+  const all = await peopleWith<Person>(ctx.org, PEOPLE_FIELDS);
+  // A manager's Suwi sees their own subtree only (them included), as their dashboard does.
+  if (!teamScoped(ctx.user)) return all;
+  const mine = await subtreeOf(ctx.org, ctx.userId);
+  return all.filter((p) => mine.has(p.userId));
 }
 const PEOPLE_FIELDS = Object.keys(PROJECTION).filter((k) => k !== '_id');
 

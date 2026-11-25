@@ -103,7 +103,7 @@ function Shell() {
       </main>
       <Drawers />
       {/* Suwi reads the whole company: not for a manager (team scope). */}
-      {!isTeamScope(user) && <SuwiPanel />}
+      <SuwiPanel />
       <Toast />
     </div>
   );

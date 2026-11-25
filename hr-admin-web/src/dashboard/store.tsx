@@ -1,5 +1,6 @@
 // Central state + handlers for the HR dashboard. Data is loaded from the
 // live manager-scoped API and mutated through it (approve/decline).
+import type { SuwiReviewPrefill } from '../services/suwi';
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { View, ReqStatus, FeedbackStatus } from './theme';
@@ -237,6 +238,8 @@ function useProvideStore() {
   const openSuwiBulk = (area: SuwiBulkArea) => { setSuwiBulk(area); setSuwiOpen(true); };
   // Words handed to the panel's field (a Bulk assign example) for HR to edit and send.
   const [suwiDraft, setSuwiDraft] = useState<string | null>(null);
+  // A review Suwi walked a manager through, for the review page to open filled in (Performance Reviews picks it up).
+  const [reviewPrefill, setReviewPrefill] = useState<SuwiReviewPrefill | null>(null);
   const [profileRequest, setProfileRequest] = useState<{ userId: string; tab?: string } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState<UserForm>(emptyForm);
@@ -728,7 +731,7 @@ function useProvideStore() {
     // Suwi
     suwiOpen, setSuwiOpen, profileRequest, openProfile, clearProfileRequest: () => setProfileRequest(null),
     suwiAsk, askSuwiQuestion, clearSuwiAsk: () => setSuwiAsk(null),
-    suwiBulk, openSuwiBulk, setSuwiBulk, suwiDraft, setSuwiDraft,
+    suwiBulk, openSuwiBulk, setSuwiBulk, suwiDraft, setSuwiDraft, reviewPrefill, setReviewPrefill,
   };
 }
 

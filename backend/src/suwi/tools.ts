@@ -42,7 +42,11 @@ export interface SuwiContext {
   sheet?: ParsedSheet;
 }
 
-export interface SuwiLink { label: string; view?: string; userId?: string; tab?: string }
+export interface SuwiLink {
+  label: string; view?: string; userId?: string; tab?: string;
+  /** Opens the review page for this person and cycle with these scores and comments filled in (reviewChat.ts). */
+  review?: { userId: string; period: string; parameters: { parameterId: string; score: number; note: string }[] };
+}
 /** A list the panel draws as a table from the data itself, so the model never has to write it out. */
 export interface SuwiTable { title: string; columns: string[]; rows: (string | number)[][] }
 export interface ToolOutput {
@@ -90,8 +94,20 @@ export function defineTools(...tools: SuwiTool[]) {
 }
 export const toolByName = (name: string) => REGISTRY.get(name);
 
+/** A manager on the dashboard (team scope): sees and acts on their own subtree only. */
+export const teamScoped = (u: Omit<User, 'profilePhotoUrl'>) => (u as { dashboardScope?: string }).dashboardScope === 'team';
+
+/**
+ * What a manager's Suwi may use (25 Nov 2026, HR: "enable Suwi for the managers' dashboard"): only tools whose
+ * data is limited to their team. People lookups read a roster cut to their subtree (people.ts), attendance reads
+ * the report the server already scopes, and review drafting saves only for their own direct reports. Every other
+ * tool reads the whole company, so it is not offered, whatever their tabs say.
+ */
+const TEAM_TOOLS = new Set(['search_people', 'person_details', 'dashboard_help', 'attendance_summary', 'review_draft', 'prepare_save_review_draft']);
+
 /** May this person use this tool? The same checks as the API it stands for. */
 export function toolAllowed(ctx: SuwiContext, t: SuwiTool): boolean {
+  if (teamScoped(ctx.user) && !TEAM_TOOLS.has(t.name)) return false;
   if (t.payroll && !ctx.payroll) return false;
   if (t.acts && ctx.levels[t.area] !== 'act') return false;
   if (hasAllDashboardTabs(ctx.user)) return true;

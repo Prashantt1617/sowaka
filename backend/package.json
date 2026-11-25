@@ -90,6 +90,7 @@
     "engagement-queries:check": "MONGODB_DB=engagement_queries_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/engagement-queries-check.ts",
     "grow-chain:check": "tsx src/scripts/grow-chain-check.ts",
     "feedback-note:check": "tsx src/scripts/feedback-note-check.ts",
+    "suwi-review-chat:check": "tsx src/scripts/suwi-review-chat-check.ts",
     "feedback-period:check": "tsx src/scripts/feedback-period-check.ts",
     "squad:check": "tsx src/scripts/secret-squad-check.ts",
     "face-id:check": "FACE_MAX_ATTEMPTS=3 FACE_INCONCLUSIVE_FALLBACK=3 tsx src/scripts/face-id-check.ts",
