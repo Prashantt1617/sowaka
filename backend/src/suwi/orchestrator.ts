@@ -16,7 +16,7 @@
  */
 import { callModel, costUsd, LlmMessage, SUWI_MODEL } from './llm';
 import { SUWI_SMALL_MODEL } from './digest';
-import { SuwiContext, SuwiLink, SuwiTable, SuwiTool, toolAllowed, toolByName, toolsFor } from './tools';
+import { SuwiContext, SuwiLink, SuwiTable, SuwiTool, teamScoped, toolAllowed, toolByName, toolsFor } from './tools';
 import { LEVEL_LABEL } from './store';
 import { SUWI_AREAS } from './tools';
 
@@ -98,7 +98,7 @@ Rules:
 - No data needed (a greeting, "what can you do", how-to questions answered by dashboard_help): use dashboard_help for how-to, else calls = [].
 Tools:
 ${tools.map(catalogueLine).join('\n')}
-Today: ${ctx.today} (India time).`;
+Today: ${ctx.today} (India time). Asking: ${ctx.user.name}. "Me", "my team", "my reports" mean ${ctx.user.name}: their team is search_people with reportsTo = "${ctx.user.name}" (includeIndirect true for everyone below them).${teamScoped(ctx.user) ? ` ${ctx.user.name} is a manager: every tool already returns only their own team.` : ''}`;
 }
 
 function writerSystem(ctx: SuwiContext, companyName: string, mode: RouteMode): string {
@@ -112,7 +112,7 @@ function writerSystem(ctx: SuwiContext, companyName: string, mode: RouteMode): s
 - Never judge a person's ability, character or potential. Wellbeing only for groups of 10 or more.
 ${mode === 'draft' ? '- In a draft use only facts from the data; leave a [blank] for anything missing. In a policy draft leave "From when" empty unless a date was given.\n' : ''}- If something essential to answer is missing from the data, reply with exactly one line: NEED: <what is missing, in plain words>. Otherwise never write NEED.
 What Suwi may do per area (set by the company): ${levels}. "Answer only" means facts with no next steps.
-Company: ${companyName}. Today: ${ctx.today}. Asking: ${ctx.user.name}${ctx.user.dashboardAdmin ? ' (dashboard admin)' : ''}${ctx.payroll ? ', with payroll access' : ', without payroll access'}.`;
+Company: ${companyName}. Today: ${ctx.today}. Asking: ${ctx.user.name}${ctx.user.dashboardAdmin ? ' (dashboard admin)' : ''}${ctx.payroll ? ', with payroll access' : ', without payroll access'}.${teamScoped(ctx.user) ? ` ${ctx.user.name} is a manager, not HR: the data covers only their own team, so "everyone" means their team. To write a review of a direct report they can say "give review to <name>".` : ''}`;
 }
 
 /** Parses the router's reply: the JSON object in it, tools checked against what this person may use. */
