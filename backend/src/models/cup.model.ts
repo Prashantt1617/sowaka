@@ -23,6 +23,42 @@ export type CupSeeding = 'leaderboard' | 'lucky';
 /** Where the event has got to. */
 export type CupPhase = 'scheduled' | 'lobby' | 'running' | 'done';
 
+/** Word Trip's qualifier, on the event while round 1 is a qualifier (the lobby phase): which attempt is open, since when. */
+export interface CupQual {
+  stage: 'a1' | 'a2' | 'extra';
+  openedAt: Date;
+  windowSec: number;
+  a1At?: Date;
+  /** The tie-break run: those tied across the cut, and how many places they share. */
+  extraUserIds?: string[];
+  spots?: number;
+  cut?: number;
+  /** The cut is made: everyone who played, in rank order. */
+  done?: boolean;
+  ranking?: string[];
+  doneAt?: Date;
+}
+
+/** One qualifier run: a player's attempt (1, 2, or 3 for the tie-break), a normal Word Trip run on its own seed. */
+export interface CupRun {
+  /** `${eventId}-q${attempt}-${userId}`. */
+  id: string;
+  eventId: string;
+  org: string;
+  userId: string;
+  attempt: 1 | 2 | 3;
+  seed: number;
+  status: 'live' | 'done';
+  joinedAt: Date;
+  startAt: Date;
+  /** The run as the server played it (as a match player's live). */
+  live?: CupScore;
+  score?: number;
+  endedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 /** A place in the draw: an entrant by seed (`e:12`), or the winner of a node (`n:3:7`, round 3 slot 7). */
 export type CupRef = string;
 
@@ -96,6 +132,8 @@ export interface CupEventConfig {
    * leaderboard. Absent or 0: bets are staked from their own points.
    */
   walletStart?: number;
+  /** Word Trip: round 1 is a qualifier (two runs each on letters of their own, best counts; the top power of two go on). */
+  qualifier?: boolean;
 }
 
 export interface CupEvent extends CupEventConfig {
@@ -128,6 +166,16 @@ export interface CupEvent extends CupEventConfig {
   drawnAt?: Date;
   /** With `lobbyDraw`: who has joined the lobby, in the order they joined. */
   lobbyJoined?: string[];
+  /**
+   * With `lobbyDraw`: when each lobby member's page last checked in (its poll), written every few seconds at most.
+   * The draw leaves out anyone not seen lately (closed the app, lost the connection): they would only be no-shows.
+   */
+  lobbySeen?: Record<string, Date>;
+  /** With `lobbyDraw`: the lobby closed (no more joins) at this time; the draw is made from `lobbyJoined` as it stood then. */
+  lobbyClosedAt?: Date;
+  /** Word Trip: when each person joined the lobby. */
+  lobbyJoinedAt?: Record<string, Date>;
+  qual?: CupQual;
   championId?: string;
   finishedAt?: Date;
   /** Switched off mid-tournament at this time (`cup-event.ts off`); switching back on moves every match's clock on by the pause. */
@@ -164,6 +212,13 @@ export interface CupScore {
   at: Date;
   /** Knights only: the cells with a knight on this player's board, as last reported (`score` is then the right ones). */
   knights?: number[];
+  /**
+   * Word Trip only: the run's events as the server took them (['w', stop, word, t, points] or ['s', stop, t], t in
+   * seconds on the run's clock), so a restart plays them again; `score` is the run's score, `wtAdded` the seconds its
+   * clock earned (the run ends at 60 + wtAdded).
+   */
+  wtr?: (['w', number, string, number, number] | ['s', number, number])[];
+  wtAdded?: number;
 }
 
 /** How a match was decided. Knights adds `finished` (a right board first), `resigned` and `cap` (more right at the cap); a tie after the last replay is `replays`. */
@@ -207,7 +262,8 @@ export interface CupMatch {
   live: Record<string, CupScore>;
   finals: Record<string, CupScore>;
   /** Earlier games of this match that were tied. */
-  history?: { attempt: number; scores: Record<string, number> }[];
+  /** Word Trip also keeps each tied attempt's seed and how far each player got on it (no stop shown to a player twice). */
+  history?: { attempt: number; scores: Record<string, number>; seed?: number; reached?: Record<string, number> }[];
   winnerId?: string;
   decidedBy?: CupDecision;
   decidedAt?: Date;

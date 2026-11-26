@@ -28,15 +28,54 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { Collection } from 'mongodb';
 import { env } from '../config/env';
-import { companies, gameCatalog, gameScores, getDb, users } from '../config/db';
-import type { CupDecision, CupEntrant, CupKnightsResult, CupEvent, CupMatch, CupRound, CupBet } from '../models/cup.model';
+import { companies, connectMedia, gameCatalog, gameScores, getDb, users } from '../config/db';
+import { copyKey } from './image-fit';
+import { isConnectMediaKey, readConnectMedia } from './s3-connect-media.service';
+import type { CupDecision, CupEntrant, CupKnightsResult, CupEvent, CupMatch, CupRound, CupBet, CupRun } from '../models/cup.model';
 import { catalogScoreId } from '../models/game-catalog.model';
 import type { User } from '../models/user.model';
 import { hasAllDashboardTabs } from '../middleware/admin.middleware';
 import { InFlight } from '../utils/inflight';
 import { logger } from '../utils/logger';
 import knightsBank from '../content/knights-boards.json';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { publicPageFor } from './game-catalog.service';
+import { loadWordTripGame, type WtGame } from './cup-wordtrip-game';
 import {
+  WORD_TRIP,
+
+  WT_DEFAULT_RULES,
+  WT_REPLAY_SEC,
+  WT_GRACE_SEC,
+  WT_SPAN,
+  pickFreshSeed,
+  reachedOf,
+  stopsSeen,
+  WT_LAG_SEC,
+  lobbyPresent,
+  attemptCapAt,
+  bracketRoundName,
+  firstNameOf,
+  mayJoinAttempt,
+  qualBest,
+  qualifierCut,
+  rankQualifier,
+  type QualEntry,
+  type QualResult,
+  type QualStage,
+  mayPlayWord,
+  newRun,
+  nextWordTripStep,
+  playRunSkip,
+  playRunWord,
+  replayRun,
+  runEndsSec,
+  wordTime,
+  type WtBoards,
+  type WtRules,
+  type WtRun,
+  type WtStop,
   KNIGHTS,
   buildDraw,
   buildPyramidDraw,
@@ -190,16 +229,24 @@ interface Runtime {
   boards: Map<string, LiveBoard & { at: number }>;
   /** Knights only: each player's latest board (cells with a knight), by the same key; `solved` sticks once it was right. */
   knights: Map<string, { knights: number[]; at: number; solved?: boolean }>;
+  /** Word Trip only: each player's stops as the server scored them, by the same key (written to the match every few seconds). */
+  words: Map<string, WtMem>;
+  /** Word Trip only: how many stops of each match in play have been shown, so a new stop's letters reach the pages at once. */
+  wtShown: Map<string, number>;
   persisted: Map<string, number>;
   rev: number;
   refreshedAt: number;
   refreshing: Promise<Runtime | null> | null;
-  shared?: { rev: number; count: number; json: string; current: CurrentStage | null };
+  shared?: { rev: number; count: number; json: string; current: CurrentStage | null; qual?: ReturnType<typeof qualifierView>; qualJson?: string };
+  /** The qualifier's view changes by the clock alone at this time (a run's clock out, a window closing): a new revision then. */
+  qualNextAt?: number;
   /** The company's name, for the page's header. */
   orgName?: string;
   standings?: { rev: number; rows: Standing[] };
   /** Everyone's photo address (null for none), for whoever is in the draw (or would be, before it). */
   photos?: { at: number; key: string; map: Map<string, string | null> };
+  /** Goes up when anyone's photo address changes: a Word Trip page holding this one gets no photo map with its state. */
+  photosRev?: number;
 }
 
 const runtimes = new Map<string, Runtime>();
@@ -251,7 +298,7 @@ async function refresh(eventId: string): Promise<Runtime | null> {
       : { eventId, $or: [{ status: { $ne: 'done' as const } }, { updatedAt: { $gte: new Date(rt.refreshedAt - 5000) } }] };
     const rows = await cupMatches().find(query, { projection: { _id: 0 } }).toArray();
     if (!rt) {
-      rt = { event, matches: new Map(), live: new Map(), boards: new Map(), knights: new Map(), persisted: new Map(), rev: Date.now(), refreshedAt: 0, refreshing: null };
+      rt = { event, matches: new Map(), live: new Map(), boards: new Map(), knights: new Map(), words: new Map(), wtShown: new Map(), persisted: new Map(), rev: Date.now(), refreshedAt: 0, refreshing: null };
       runtimes.set(eventId, rt);
     }
     if (rt.event.version !== event.version || rt.event.active !== event.active) rt.rev += 1;
@@ -259,7 +306,8 @@ async function refresh(eventId: string): Promise<Runtime | null> {
       const company = await companies().findOne({ id: event.org }, { projection: { _id: 0, name: 1 } });
       rt.orgName = company?.name ?? '';
     }
-    rt.event = event;
+    // Never back to an older copy: a write here (a lobby join, say) may have landed while the read ran.
+    if ((event.version ?? 0) >= (rt.event.version ?? 0) || new Date(event.createdAt).getTime() !== new Date(rt.event.createdAt).getTime()) rt.event = event;
     for (const row of rows) {
       const had = rt.matches.get(row.id);
       // Never back to an older copy: this process may have written the match (decided it, say) while the read ran.
@@ -268,6 +316,7 @@ async function refresh(eventId: string): Promise<Runtime | null> {
       rt.matches.set(row.id, row);
     }
     await refreshPhotos(rt).catch((error) => logger.error('Cup photos failed', { eventId }, error));
+    await refreshRuns(rt).catch((error) => logger.error('Cup runs failed', { eventId }, error));
     rt.refreshedAt = began;
     return rt;
   })();
@@ -351,7 +400,8 @@ function photoSignature(eventId: string, userId: string, v: string): string {
 
 async function refreshPhotos(rt: Runtime): Promise<void> {
   const event = rt.event;
-  const ids = event.phase === 'scheduled' ? (await rosterPreview(event)).map((row) => row.userId) : event.entrants.map((e) => e.userId);
+  // Before the draw (a lobby still open too) everyone who could be in it, so a lobby's faces show as people join.
+  const ids = event.phase === 'scheduled' || (event.phase === 'lobby' && !event.drawnAt) ? (await rosterPreview(event)).map((row) => row.userId) : event.entrants.map((e) => e.userId);
   const key = `${drawKey(event)}:${ids.length}`;
   if (rt.photos && rt.photos.key === key && Date.now() - rt.photos.at < PHOTOS_EVERY_MS) return;
   const rows = ids.length
@@ -374,19 +424,151 @@ async function refreshPhotos(rt: Runtime): Promise<void> {
         .toArray()
     : [];
   const map = new Map<string, string | null>();
+  const sources = new Map<string, ThumbSource>();
   for (const row of rows) {
     let url: string | null = null;
-    if (row.profilePhotoKey) url = `/media/${encodeURIComponent(row.profilePhotoKey)}`;
-    else if (row.https && row.https.length <= 2048) url = row.https;
+    // A stored photo (or an old inline one) as the small thumbnail only: never the upload itself, which is
+    // megabytes (19 Nov 2026: 13,421 full-size photo loads moved 23 GB through CloudFront in 45 minutes).
+    if (row.profilePhotoKey) {
+      const v = `k${shortHash(row.profilePhotoKey)}`;
+      url = thumbUrl(event.id, row.userId, v);
+      sources.set(`${row.userId}:${v}`, { kind: 'key', key: row.profilePhotoKey });
+    } else if (row.https && row.https.length <= 2048) url = row.https;
     else if (/^data:image\//.test(row.head)) {
-      const v = String(row.size);
-      url = `/cup/api/photo/${encodeURIComponent(event.id)}/${encodeURIComponent(row.userId)}?v=${v}&s=${photoSignature(event.id, row.userId, v)}`;
+      const v = `d${row.size}`;
+      url = thumbUrl(event.id, row.userId, v);
+      sources.set(`${row.userId}:${v}`, { kind: 'inline' });
     }
     map.set(row.userId, url);
   }
   const changed = !rt.photos || rt.photos.map.size !== map.size || [...map].some(([id, url]) => rt.photos!.map.get(id) !== url);
   rt.photos = { at: Date.now(), key, map };
-  if (changed) rt.rev += 1;
+  thumbSources.set(event.id, sources);
+  if (changed) {
+    rt.rev += 1;
+    rt.photosRev = (rt.photosRev ?? 0) + 1;
+  }
+  // Made ahead, one at a time, so the lobby's first look at everyone's face is a cache hit.
+  void warmThumbs(event, sources);
+}
+
+// ---------------------------------------------------------------- photo thumbnails
+
+/** A thumbnail's edge: a face is drawn at most ~80 px across (×3 on a phone's screen would be 240; 160 is sharp enough for a circle). */
+export const THUMB_EDGE = 160;
+type ThumbSource = { kind: 'key'; key: string } | { kind: 'inline' };
+/** By event: where each `${userId}:${v}` thumbnail comes from, as the last photo read found it. */
+const thumbSources = new Map<string, Map<string, ThumbSource>>();
+/** Made thumbnails, by `${userId}:${v}`: a few KB each. */
+const thumbs = new Map<string, Buffer>();
+const thumbMaking = new Map<string, Promise<Buffer | null>>();
+
+const shortHash = (s: string) => createHash('sha256').update(s).digest('base64url').slice(0, 10);
+/** A thumbnail's address: everything in the path (a cache in front that drops query strings still keys it right), stable per photo. */
+const thumbUrl = (eventId: string, userId: string, v: string) =>
+  `/cup/api/thumb/${encodeURIComponent(eventId)}/${encodeURIComponent(userId)}/${v}/${photoSignature(eventId, userId, `t${v}`)}.webp`;
+
+async function streamBytes(body: unknown, max: number): Promise<Buffer | null> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of body as AsyncIterable<Buffer>) {
+    size += chunk.length;
+    if (size > max) {
+      (body as { destroy?: () => void }).destroy?.();
+      return null;
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+/** The photo's bytes: its small stored copy when there is one, else the upload (read here once, never sent on). */
+async function photoBytes(org: string, userId: string, source: ThumbSource): Promise<Buffer | null> {
+  const MAX = 15 * 1024 * 1024;
+  if (source.kind === 'inline') {
+    const row = await users().findOne({ userId, org }, { projection: { _id: 0, profilePhotoUrl: 1 } });
+    const parsed = /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,([A-Za-z0-9+/=\s]+)$/.exec(row?.profilePhotoUrl ?? '');
+    return parsed ? Buffer.from(parsed[1], 'base64') : null;
+  }
+  if (source.key.startsWith('mongo/')) {
+    const doc = await connectMedia().findOne({ objectKey: source.key });
+    if (!doc) return null;
+    const bytes = doc.bytes as unknown as { buffer: ArrayBuffer } | Buffer;
+    return Buffer.isBuffer(bytes) ? bytes : Buffer.from((bytes as { buffer: ArrayBuffer }).buffer);
+  }
+  if (!isConnectMediaKey(source.key)) return null;
+  for (const key of [copyKey(source.key, 256), source.key]) {
+    const object = await readConnectMedia(key).catch(() => null);
+    if (object?.body) {
+      const bytes = await streamBytes(object.body, MAX);
+      if (bytes) return bytes;
+    }
+  }
+  return null;
+}
+
+async function makeThumb(org: string, userId: string, v: string, source: ThumbSource): Promise<Buffer | null> {
+  const id = `${userId}:${v}`;
+  const hit = thumbs.get(id);
+  if (hit) return hit;
+  let making = thumbMaking.get(id);
+  if (!making) {
+    making = (async () => {
+      const raw = await photoBytes(org, userId, source);
+      if (!raw) return null;
+      const { default: sharp } = await import('sharp');
+      const out = await sharp(raw, { failOn: 'none' }).rotate().resize(THUMB_EDGE, THUMB_EDGE, { fit: 'cover' }).webp({ quality: 68 }).toBuffer();
+      if (thumbs.size > 4000) thumbs.clear();
+      thumbs.set(id, out);
+      return out;
+    })()
+      .catch((error) => {
+        logger.warn('Cup thumbnail not made', { userId, error: error instanceof Error ? error.message : String(error) });
+        return null;
+      })
+      .finally(() => thumbMaking.delete(id));
+    thumbMaking.set(id, making);
+  }
+  return making;
+}
+
+let warming = false;
+async function warmThumbs(event: CupEvent, sources: Map<string, ThumbSource>) {
+  if (warming) return;
+  warming = true;
+  try {
+    for (const [id, source] of sources) {
+      if (thumbs.has(id)) continue;
+      const [userId, v] = [id.slice(0, id.lastIndexOf(':')), id.slice(id.lastIndexOf(':') + 1)];
+      await makeThumb(event.org, userId, v, source);
+    }
+  } finally {
+    warming = false;
+  }
+}
+
+/**
+ * `GET /cup/api/thumb/:eventId/:userId/:v/:sig.webp`: a face, small (THUMB_EDGE
+ * square WebP, a few KB), only at the address this API signed, only for
+ * someone this event shows. Kept a year by browsers and any cache in front: a
+ * new photo has a new `v`, so a new address.
+ */
+export async function cupThumb(eventId: string, userId: string, v: string, sig: string): Promise<Buffer | null> {
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(eventId) || !/^[kd][A-Za-z0-9_-]{1,20}$/.test(v)) return null;
+  const expected = Buffer.from(photoSignature(eventId, userId, `t${v}`));
+  const given = Buffer.from(String(sig).replace(/\.webp$/, ''));
+  if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
+  const hit = thumbs.get(`${userId}:${v}`);
+  if (hit) return hit;
+  const rt = await runtime(eventId);
+  if (!rt) return null;
+  let source = thumbSources.get(eventId)?.get(`${userId}:${v}`);
+  if (!source) {
+    await refreshPhotos(rt).catch(() => undefined);
+    source = thumbSources.get(eventId)?.get(`${userId}:${v}`);
+  }
+  if (!source) return null;
+  return makeThumb(rt.event.org, userId, v, source);
 }
 
 const photoOf = (rt: Runtime, userId: string | null | undefined): string | null => (userId ? rt.photos?.map.get(userId) ?? null : null);
@@ -553,15 +735,31 @@ async function openLobby(rt: Runtime, now: Date): Promise<void> {
  * joined is not drawn. Fewer than two: the tournament is over with no match.
  */
 async function makeLobbyDraw(rt: Runtime, now: Date): Promise<void> {
-  const event = rt.event;
+  // First the lobby closes (once): no join lands after this, so the draw is made from the list exactly as it then
+  // stood. (Drawing from a list read earlier dropped whoever joined in between, though their join had said yes.)
+  let event = rt.event;
+  if (!event.lobbyClosedAt) {
+    const closed = await cupEvents().findOneAndUpdate(
+      { id: event.id, phase: 'lobby', active: true, drawnAt: { $exists: false }, lobbyClosedAt: { $exists: false } },
+      { $set: { lobbyClosedAt: now, updatedAt: now }, $inc: { version: 1 } },
+      { returnDocument: 'after', projection: { _id: 0 } },
+    );
+    const fresh = closed ?? (await cupEvents().findOne({ id: event.id }, { projection: { _id: 0 } }));
+    if (!fresh || fresh.drawnAt || fresh.phase !== 'lobby' || !fresh.active) return;
+    rt.event = fresh;
+    rt.rev += 1;
+    event = fresh;
+  }
   const roster = await rosterOf(event);
-  const joined = new Set(event.lobbyJoined ?? []);
+  const present = lobbyPresent(event, now);
+  const joined = new Set(present.kept);
+  if (present.dropped.length) logger.info('Cup lobby draw: not connected, left out', { eventId: event.id, dropped: present.dropped.length, kept: present.kept.length });
   const ordered = seedOrderOf(roster.filter((p) => joined.has(p.userId)), 'lucky', cryptoRng);
   const entrants: CupEntrant[] = ordered.map((p, i) => ({ userId: p.userId, name: p.name, seed: i + 1, best: p.best, boardRank: null }));
   const rounds = buildPyramidDraw(entrants.length, event.topN, cryptoRng);
   const none = entrants.length < 2;
   const claimed = await cupEvents().findOneAndUpdate(
-    { id: event.id, phase: 'lobby', active: true, drawnAt: { $exists: false } },
+    { id: event.id, phase: 'lobby', active: true, drawnAt: { $exists: false }, lobbyClosedAt: event.lobbyClosedAt },
     {
       $set: {
         ...(none ? { phase: 'done' as const, finishedAt: now, ...(entrants[0] ? { championId: entrants[0].userId } : {}) } : {}),
@@ -595,14 +793,17 @@ export async function joinLobby(viewer: CupViewer, askedId?: unknown) {
   const event = rt.event;
   if (!event.lobbyDraw) throw new CupError(409, 'This tournament has no lobby to join');
   if (event.phase === 'scheduled') throw new CupError(409, 'The lobby is not open yet');
-  if (event.phase !== 'lobby' || event.drawnAt) throw new CupError(409, 'The lobby has closed');
+  if (event.phase !== 'lobby' || event.drawnAt || event.lobbyClosedAt) throw new CupError(409, 'The lobby has closed');
+  if (event.qual && (event.qual.stage === 'extra' || (event.qual.stage === 'a2' && Date.now() >= new Date(event.qual.openedAt).getTime() + event.qual.windowSec * 1000))) {
+    throw new CupError(409, 'The lobby has closed');
+  }
   const roster = await rosterPreview(event);
   if (!roster.some((row) => row.userId === viewer.userId)) throw new CupError(403, "You're not in this tournament");
   const now = new Date();
   if (!(event.lobbyJoined ?? []).includes(viewer.userId)) {
     const after = await cupEvents().findOneAndUpdate(
-      { id: event.id, phase: 'lobby', active: true, drawnAt: { $exists: false }, lobbyJoined: { $ne: viewer.userId } },
-      { $push: { lobbyJoined: viewer.userId }, $set: { updatedAt: now }, $inc: { version: 1 } },
+      { id: event.id, phase: 'lobby', active: true, drawnAt: { $exists: false }, lobbyClosedAt: { $exists: false }, lobbyJoined: { $ne: viewer.userId } },
+      { $push: { lobbyJoined: viewer.userId }, $set: { updatedAt: now, [`lobbySeen.${viewer.userId}`]: now, [`lobbyJoinedAt.${viewer.userId}`]: now }, $inc: { version: 1 } },
       { returnDocument: 'after', projection: { _id: 0 } },
     );
     if (after) {
@@ -613,7 +814,26 @@ export async function joinLobby(viewer: CupViewer, askedId?: unknown) {
       if (!again || !(again.event.lobbyJoined ?? []).includes(viewer.userId)) throw new CupError(409, 'The lobby has closed');
     }
   }
+  seenAt.set(`${event.id}:${viewer.userId}`, now.getTime());
   return { serverNow: new Date(), inLobby: true, lobbyCount: (rt.event.lobbyJoined ?? []).length };
+}
+
+/** Each lobby member's check-in is written at most this often (the draw wants one within LOBBY_FRESH_MS). */
+const SEEN_WRITE_MS = 8000;
+const seenAt = new Map<string, number>();
+
+/** A lobby member's page polled: noted on the event every few seconds at most (no version bump: nothing to redraw). */
+function noteSeen(rt: Runtime, userId: string) {
+  const event = rt.event;
+  if (!event.lobbyDraw || event.phase !== 'lobby' || event.drawnAt || event.lobbyClosedAt || !(event.lobbyJoined ?? []).includes(userId)) return;
+  const key = `${event.id}:${userId}`;
+  const now = Date.now();
+  if (now - (seenAt.get(key) ?? 0) < SEEN_WRITE_MS) return;
+  seenAt.set(key, now);
+  if (seenAt.size > 20_000) seenAt.clear();
+  void cupEvents()
+    .updateOne({ id: event.id, phase: 'lobby', drawnAt: { $exists: false } }, { $max: { [`lobbySeen.${userId}`]: new Date(now) } })
+    .catch((error) => logger.error('Cup lobby check-in failed', { eventId: event.id }, error));
 }
 
 /** The player a place in the draw holds, once known: an entrant, or the winner of an earlier place. */
@@ -649,6 +869,7 @@ async function createRoundMatches(rt: Runtime, n: number, now: Date, status: 'sc
     const [p, q] = node.feeders.map((ref) => holderOf(rt, ref));
     if (!p || !q) continue;
     const players: [string, string] = seedOf(p) <= seedOf(q) ? [p, q] : [q, p];
+    const seed = isWordTripEvent(event) ? freshWtSeed(rt, await wordTripGame().catch(() => null), players) : newSeed();
     docs.push({
       id,
       eventId: event.id,
@@ -659,7 +880,7 @@ async function createRoundMatches(rt: Runtime, n: number, now: Date, status: 'sc
       kind: round.kind,
       players,
       status,
-      seed: newSeed(),
+      seed,
       attempt: 0,
       joined: {},
       live: {},
@@ -756,9 +977,8 @@ async function pushLobbyOpen(rt: Runtime) {
 /** The two players, as their match opens. */
 async function pushOpen(event: CupEvent, match: CupMatch) {
   const window = event.startWindowSec >= 60 ? `${Math.round(event.startWindowSec / 60)} minutes` : `${event.startWindowSec} seconds`;
-  for (const [me, them] of [match.players, [match.players[1], match.players[0]]]) {
-    await pushCup(event, [me], 'cup_match_open', `Your ${event.name} match is on!`, `${match.label}: you v ${nameOf(event, them)}. Join in the next ${window}.`);
-  }
+  // Short and plain (27 Nov 2026): the same words for both players, one push.
+  await pushCup(event, [...match.players], 'cup_match_open', event.name, `Your match is on. Join in ${window}.`);
 }
 
 // ---------------------------------------------------------------- the runner
@@ -844,6 +1064,8 @@ export async function stopCupRunner(): Promise<void> {
 async function tickEvent(id: string): Promise<void> {
   const rt = await runtime(id, true);
   if (!rt || !rt.event.active || !runnerMoves(rt.event.org)) return;
+  // Word Trip: the game's stops and rules in hand before any run is played back or decided.
+  if (isWordTripEvent(rt.event)) await wordTripGame().catch((error) => logger.error('Word Trip game not loaded', { eventId: id }, error));
   let now = new Date();
   const event = rt.event;
   if (event.phase === 'scheduled') {
@@ -852,8 +1074,13 @@ async function tickEvent(id: string): Promise<void> {
   }
   if (event.phase === 'lobby') {
     if (now < event.startAt) return;
+    // Word Trip with a qualifier: two runs each, then the cut makes the draw.
+    if (isQualifierEvent(event) && !event.drawnAt) {
+      await tickQualifier(rt, now);
+      if (!(rt.event.phase === 'lobby' && rt.event.drawnAt)) return;
+    }
     // The lobby closes: the draw, of the people in it, before round 1 can open.
-    if (event.lobbyDraw && !event.drawnAt) await makeLobbyDraw(rt, now);
+    if (event.lobbyDraw && !event.drawnAt && !isQualifierEvent(event)) await makeLobbyDraw(rt, now);
     if (rt.event.phase === 'lobby' && rt.event.drawnAt) await openRound(rt, 1, new Date());
     return;
   }
@@ -1017,6 +1244,14 @@ function withLive(rt: Runtime, match: CupMatch): CupMatch {
     }
     return { ...match, live };
   }
+  if (isWordTripEvent(rt.event)) {
+    // Word Trip: each player's total as this server scored their words (never a score a page sent).
+    for (const p of match.players) {
+      const mem = wtPlayer(rt, match, p);
+      if (mem) live[p] = { score: mem.run.score, at: new Date(mem.at), wtAdded: mem.run.added };
+    }
+    return { ...match, live };
+  }
   for (const p of match.players) {
     const mem = rt.live.get(`${match.id}:${match.attempt}:${p}`);
     if (mem && (!live[p] || mem.score >= live[p].score)) live[p] = { score: mem.score, at: new Date(mem.at) };
@@ -1024,11 +1259,23 @@ function withLive(rt: Runtime, match: CupMatch): CupMatch {
   return { ...match, live };
 }
 
+/** The step the rules give for this match now, whichever the game. */
+function stepFor(rt: Runtime, match: CupMatch, now: Date): MatchStep {
+  if (isWordTripEvent(rt.event)) return nextWordTripStep(withLive(rt, match), rt.event, now, seedLookup(rt.event), wtRules());
+  return nextStep(withLive(rt, match), rt.event, now, seedLookup(rt.event), solutionOf(rt, match));
+}
+
 /** Moves one match on, if its time has come. */
 async function advance(rt: Runtime, match: CupMatch, now: Date): Promise<void> {
   if (match.status !== 'open' && match.status !== 'live' && match.status !== 'solo') return;
-  const step = nextStep(withLive(rt, match), rt.event, now, seedLookup(rt.event), solutionOf(rt, match));
-  await apply(rt, match, step, now);
+  // Word Trip: every word is in the match before it is decided (a restart must not decide on less).
+  if (isWordTripEvent(rt.event) && match.startAt && match.status !== 'open') {
+    const step = stepFor(rt, match, now);
+    if (step.kind === 'decide' || step.kind === 'replay') await flushWords(rt, match);
+    await apply(rt, match, step, now);
+    return;
+  }
+  await apply(rt, match, stepFor(rt, match, now), now);
 }
 
 async function apply(rt: Runtime, match: CupMatch, step: MatchStep, now: Date): Promise<void> {
@@ -1047,9 +1294,31 @@ async function apply(rt: Runtime, match: CupMatch, step: MatchStep, now: Date): 
       await write({ $set: { status: 'live', startAt: step.startAt, updatedAt: now } });
       return;
     case 'solo':
-      await write({ $set: { status: 'solo', soloUntil: step.soloUntil, updatedAt: now } });
+      await write({ $set: { status: 'solo', soloUntil: step.soloUntil, ...(step.startAt ? { startAt: step.startAt } : {}), updatedAt: now } });
       return;
     case 'replay': {
+      if (isWordTripEvent(event)) {
+        // Word Trip: both are on the page already, so the replay starts by itself a few seconds on, on new letters.
+        const after = await write({
+          $set: {
+            status: 'live',
+            seed: freshWtSeed(rt, wtGame, match.players),
+            live: {},
+            finals: {},
+            startAt: new Date(now.getTime() + WT_REPLAY_SEC * 1000),
+            updatedAt: now,
+          },
+          $unset: { soloUntil: '' },
+          $inc: { attempt: 1 },
+          $push: { history: { attempt: match.attempt, scores: step.scores, seed: match.seed, reached: Object.fromEntries(match.players.map((p) => [p, wtReached(rt, match, p)])) } },
+        });
+        if (after) {
+          logger.info('Cup match tied: replay', { matchId: match.id, attempt: after.attempt });
+          await hook('onMatchReplayed', () => cupHooks.onMatchReplayed?.(after, event));
+          void pushCup(event, [...after.players], 'cup_replay', "It's a tie!", `The replay starts in ${WT_REPLAY_SEC} seconds, on new letters.`);
+        }
+        return;
+      }
       const after = await write({
         $set: {
           status: 'open',
@@ -1211,6 +1480,8 @@ export async function reportLive(viewer: CupViewer, id: string, raw: unknown, pr
   const now = new Date();
   refuse(mayScore(match, viewer.userId, rt.event, now, false));
   if (isKnightsEvent(rt.event)) return reportKnights(rt, match, viewer, (progress as { knights?: unknown } | undefined)?.knights, now);
+  // Word Trip: a score from a page counts for nothing; the words do (`playWordIn`).
+  if (isWordTripEvent(rt.event)) return;
   const score = parseScore(raw, rt.event.maxScore);
   if (score === null) throw new CupError(400, 'Score is invalid');
   const key = `${match.id}:${match.attempt}:${viewer.userId}`;
@@ -1239,6 +1510,8 @@ export async function reportFinal(viewer: CupViewer, id: string, raw: unknown) {
   const { rt, match: held } = await playersMatch(viewer, id);
   // Knights has no final: the board decides (a right one at once, else the cap). Taken and ignored.
   if (isKnightsEvent(rt.event)) return { serverNow: new Date(), match: myMatchView(rt, held, viewer.userId) };
+  // Word Trip: the server scores every word; a page's final score is never taken.
+  if (isWordTripEvent(rt.event)) throw new CupError(409, 'Word Trip has no final score to send: the server scores every word');
   const match = (await reloadMatch(rt, id))!;
   const now = new Date();
   if (match.finals?.[viewer.userId]) return { serverNow: now, match: myMatchView(rt, match, viewer.userId) };
@@ -1367,6 +1640,648 @@ function knightsView(rt: Runtime, match: CupMatch, own = false): {
   return { knights: own || roundOver ? { n: board.n, g: board.g, f, solution: board.s } : { n: board.n, g: board.g, f }, placed, right };
 }
 
+// ---------------------------------------------------------------- word trip
+
+/** A player's run in one attempt of a match, as this server played it. */
+interface WtMem {
+  run: WtRun;
+  /** Their last word taken here (ms). */
+  at: number;
+  /** Changed since it was last written to the match. */
+  dirtyAt: number;
+  savedAt: number;
+  timer?: NodeJS.Timeout;
+}
+
+const isWordTripEvent = (event: Pick<CupEvent, 'gameKey'>) => event.gameKey === WORD_TRIP;
+
+let wtGame: WtGame | null = null;
+let wtGameAt = 0;
+let wtLoading: Promise<WtGame> | null = null;
+const WT_GAME_FILE = path.resolve(__dirname, '../../game-pages/word-trip.html');
+
+/** The game, read once and again every ten minutes (a page uploaded meanwhile is picked up; the same version is kept as it is). */
+export async function wordTripGame(): Promise<WtGame> {
+  if (wtGame && Date.now() - wtGameAt < 10 * 60_000) return wtGame;
+  if (wtLoading) return wtLoading;
+  wtLoading = (async () => {
+    const page = (await publicPageFor(WORD_TRIP).catch(() => null)) ?? { html: await readFile(WT_GAME_FILE, 'utf8'), version: 'repo' };
+    if (!wtGame || wtGame.version !== page.version || wtGame.html !== page.html) wtGame = loadWordTripGame(page.html, page.version);
+    wtGameAt = Date.now();
+    return wtGame;
+  })().finally(() => {
+    wtLoading = null;
+  });
+  return wtLoading;
+}
+const wtRules = () => wtGame?.rules ?? WT_DEFAULT_RULES;
+
+/**
+ * `GET /cup/api/wordtrip-game?v=`: the normal game's page, for the tournament
+ * page to play it in; with the version the page already holds, just that.
+ */
+export async function wordTripGameFor(viewer: CupViewer, have: unknown) {
+  void viewer;
+  const game = await wordTripGame();
+  return have === game.version ? { version: game.version, same: true } : { version: game.version, html: game.html };
+}
+
+/** How far a player got in a match's current attempt (the furthest stop; -1 none played). */
+function wtReached(rt: Runtime, match: CupMatch, userId: string): number {
+  const mem = wtPlayer(rt, match, userId);
+  return Math.max(mem?.run.gi ?? -1, reachedOf(match.live?.[userId]?.wtr));
+}
+
+/**
+ * Every stop these players have been shown in this event: their qualifier runs,
+ * their matches and each tied attempt before (to the furthest stop each got,
+ * and the one after); a run still in play keeps its first `WT_SPAN` stops.
+ */
+function stopsServed(rt: Runtime, game: WtGame, userIds: string[]): Set<string> {
+  const want = new Set(userIds);
+  const used = new Set<string>();
+  const add = (seed: unknown, reached: number) => {
+    if (typeof seed === 'number') for (const k of stopsSeen(game.keyAt, seed, reached)) used.add(k);
+  };
+  const now = Date.now();
+  for (const run of runsOf(rt).values()) {
+    if (!want.has(run.userId)) continue;
+    const playing = run.status === 'live' && now < runOverAt(rt, run);
+    add(run.seed, playing ? WT_SPAN : Math.max(runMem(rt, run)?.run.gi ?? -1, reachedOf(run.live?.wtr)));
+  }
+  for (const match of rt.matches.values()) {
+    for (const p of match.players ?? []) {
+      if (!p || !want.has(p)) continue;
+      for (const h of match.history ?? []) add(h.seed, h.reached?.[p] ?? WT_SPAN);
+      if (!match.startAt || match.status === 'scheduled' || match.status === 'betting' || match.status === 'open') continue;
+      const playing = match.status === 'live' || match.status === 'solo';
+      add(match.seed, playing ? WT_SPAN : wtReached(rt, match, p));
+    }
+  }
+  return used;
+}
+
+/** A seed for a run of these players: the normal game's run, on stops none of them has been shown in this event. */
+function freshWtSeed(rt: Runtime, game: WtGame | null, players: (string | null | undefined)[]): number {
+  if (!game) return newSeed();
+  const ids = players.filter((p): p is string => !!p);
+  const used = stopsServed(rt, game, ids);
+  const pick = pickFreshSeed(game.keyAt, used, newSeed());
+  if (pick.clash !== null) logger.warn('Word Trip: no seed with every stop new; the first repeat comes late', { eventId: rt.event.id, players: ids, clashAt: pick.clash, used: used.size });
+  return pick.seed;
+}
+
+/** A player's run in this attempt: this process's, else played again from what was last written to the match (after a restart). */
+function wtPlayer(rt: Runtime, match: CupMatch, userId: string): WtMem | undefined {
+  const key = `${match.id}:${match.attempt}:${userId}`;
+  const mem = rt.words.get(key);
+  if (mem) return mem;
+  const db = match.live?.[userId];
+  if (!db?.wtr || !wtGame) return undefined;
+  const back: WtMem = { run: replayRun(db.wtr, wtGame.boards, match.seed, wtGame.rules), at: new Date(db.at).getTime(), dirtyAt: 0, savedAt: Date.now() };
+  rt.words.set(key, back);
+  return back;
+}
+/** A player's score and clock now: the run, else what the match holds. */
+function wtScoreOf(rt: Runtime, match: CupMatch, userId: string): { score: number; added: number; words: number; gi: number } {
+  const mem = wtPlayer(rt, match, userId);
+  if (mem) return { score: mem.run.score, added: mem.run.added, words: mem.run.total, gi: mem.run.gi };
+  const db = match.live?.[userId];
+  return { score: db?.score ?? 0, added: db?.wtAdded ?? 0, words: (db?.wtr ?? []).filter((e) => e[0] === 'w').length, gi: 0 };
+}
+
+async function saveWords(match: Pick<CupMatch, 'id' | 'attempt'>, userId: string, mem: WtMem) {
+  if (mem.timer) clearTimeout(mem.timer);
+  mem.timer = undefined;
+  if (mem.dirtyAt <= mem.savedAt) return;
+  mem.savedAt = Date.now();
+  // No `updatedAt`: the runner's moves are conditional on it, and a player's words are not a move.
+  await cupMatches().updateOne(
+    { id: match.id, attempt: match.attempt },
+    { $set: { [`live.${userId}`]: { score: mem.run.score, at: new Date(mem.at), wtr: mem.run.events, wtAdded: mem.run.added } } },
+  );
+}
+
+/** Written to the match at most every few seconds per player, and once more after their last word. */
+function saveSoon(match: CupMatch, userId: string, mem: WtMem) {
+  const wait = PERSIST_EVERY_MS - (Date.now() - mem.savedAt);
+  const save = () => void saveWords(match, userId, mem).catch((error) => logger.error('Cup words save failed', { matchId: match.id }, error));
+  if (wait <= 0) return save();
+  if (!mem.timer) {
+    mem.timer = setTimeout(() => {
+      mem.timer = undefined;
+      save();
+    }, wait);
+    mem.timer.unref?.();
+  }
+}
+
+/**
+ * Words change only scores and counts on everyone else's screen: the state's revision goes up for them at most
+ * every WT_BUMP_MS, so a hundred players finding words do not make every poll a full read (the player's own run
+ * comes back with each word's answer).
+ */
+const WT_BUMP_MS = 3000;
+const bumpTimers = new WeakMap<Runtime, NodeJS.Timeout>();
+function bumpSoon(rt: Runtime) {
+  if (bumpTimers.has(rt)) return;
+  const timer = setTimeout(() => {
+    bumpTimers.delete(rt);
+    rt.rev += 1;
+  }, WT_BUMP_MS);
+  timer.unref?.();
+  bumpTimers.set(rt, timer);
+}
+
+/** Every word of the match in the database, before it is decided. */
+async function flushWords(rt: Runtime, match: CupMatch) {
+  for (const p of match.players) {
+    const mem = rt.words.get(`${match.id}:${match.attempt}:${p}`);
+    if (mem) await saveWords(match, p, mem).catch((error) => logger.error('Cup words save failed', { matchId: match.id }, error));
+  }
+}
+
+/**
+ * One word (or a skip) from a player's page, `POST /cup/api/matches/:id/word`
+ * `{ stop, word, t }` or `{ skip: true, stop, t }`: `t` is the time on the run's
+ * clock (seconds) when the page took it. Played here against the same stop and
+ * rules (`playRunWord`); the answer says whether it counted, and the run as the
+ * server has it (score, stop, seconds earned).
+ */
+export async function playWordIn(viewer: CupViewer, id: string, body: { stop?: unknown; word?: unknown; t?: unknown; skip?: unknown } | undefined) {
+  const { rt, match } = await playersMatch(viewer, id);
+  if (!isWordTripEvent(rt.event)) throw new CupError(409, 'This game has no words');
+  const game = await wordTripGame();
+  const now = new Date();
+  let mem = wtPlayer(rt, match, viewer.userId);
+  const may = mayPlayWord(match, viewer.userId, mem?.run, now, game.rules);
+  if (may.ok !== true) throw new CupError(may.status, may.message);
+  if (!mem) {
+    mem = { run: newRun(), at: now.getTime(), dirtyAt: 0, savedAt: 0 };
+    rt.words.set(`${match.id}:${match.attempt}:${viewer.userId}`, mem);
+  }
+  const run = mem.run;
+  const t = wordTime(body?.t, may.arrived);
+  const changed = () => {
+    mem!.at = now.getTime();
+    mem!.dirtyAt = now.getTime();
+    bumpSoon(rt);
+    saveSoon(match, viewer.userId, mem!);
+  };
+  if (body?.skip === true) {
+    const skipped = playRunSkip(run, body.stop, t, game.rules);
+    if (skipped.ok) changed();
+    return { serverNow: new Date(), skip: skipped, score: run.score, gi: run.gi, added: run.added };
+  }
+  const verdict = playRunWord(run, game.boards(match.seed, run.gi), body?.stop, body?.word, t, game.rules);
+  if (verdict.ok) changed();
+  return { serverNow: new Date(), verdict, score: run.score, gi: run.gi, added: run.added };
+}
+
+/** When each player's clock runs out (ms), as the server has their run. */
+function wtEndsOf(rt: Runtime, match: CupMatch): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!match.startAt) return out;
+  for (const p of match.players) out[p] = new Date(match.startAt).getTime() + runEndsSec({ added: wtScoreOf(rt, match, p).added }, wtRules()) * 1000;
+  return out;
+}
+
+/** What a Word Trip match adds to a view: each player's words found (a count) and when their clock runs out. Never their words or letters. */
+function wordTripView(rt: Runtime, match: CupMatch) {
+  if (!isWordTripEvent(rt.event) || (match.status !== 'live' && match.status !== 'solo' && match.status !== 'done')) return {};
+  const wtWords: Record<string, number> = {};
+  for (const p of match.players) wtWords[p] = wtScoreOf(rt, match, p).words;
+  return { wtWords, wtEnds: wtEndsOf(rt, match), wtRound: wtRules().ROUND };
+}
+
+/** The viewer's own run and the opponent's, for their match screen. */
+function wordTripMine(rt: Runtime, match: CupMatch, userId: string) {
+  if (!isWordTripEvent(rt.event)) return {};
+  const them = match.players[0] === userId ? match.players[1] : match.players[0];
+  const ends = wtEndsOf(rt, match);
+  const me = wtScoreOf(rt, match, userId);
+  const opp = wtScoreOf(rt, match, them);
+  const best = (wtPlayer(rt, match, userId)?.run.events ?? []).reduce((b, e) => (e[0] === 'w' && e[2].length > b.length ? e[2] : b), '');
+  return {
+    ...wordTripView(rt, match),
+    wtMe: { score: me.score, words: me.words, endsAt: ends[userId], best },
+    wtOpp: { score: opp.score, words: opp.words, endsAt: ends[them] },
+  };
+}
+
+/**
+ * The TV's live boards (dashboard only): for every match of the round being
+ * played that is on or decided, each player's stop (its letters, as dealt),
+ * their words on it, their score, words in all, and when their clock runs out.
+ */
+export function wordTripTvOf(eventId: string) {
+  const rt = runtimes.get(eventId);
+  if (!rt || !isWordTripEvent(rt.event)) return undefined;
+  const out: Record<string, Record<string, { score: number; words: number; gi: number; letters: string; found: [string, number][]; endsAt?: number }>> = {};
+  for (const m of rt.matches.values()) {
+    if (m.round !== rt.event.round && !(m.status === 'live' || m.status === 'solo')) continue;
+    if (m.status !== 'live' && m.status !== 'solo' && m.status !== 'done') continue;
+    const ends = wtEndsOf(rt, m);
+    const row: (typeof out)[string] = {};
+    for (const p of m.players) {
+      const mem = wtPlayer(rt, m, p);
+      const s = wtScoreOf(rt, m, p);
+      row[p] = { score: s.score, words: s.words, gi: s.gi, letters: wtGame && m.startAt ? wtGame.boards(m.seed, s.gi).letters : '', found: mem?.run.found[s.gi] ?? [], endsAt: ends[p] };
+    }
+    out[m.id] = row;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- the qualifier (Word Trip)
+
+/**
+ * Round 1 of a Word Trip Tournament with `qualifier`: two normal runs each,
+ * on letters of their own, best counts; the top power of two go on, ranked,
+ * into the bracket (`cup-rules.ts` rankQualifier). Each run is a `cup_runs`
+ * document (one per player per attempt, `_id` its id), played and checked
+ * exactly as a match's run. The event stays in its lobby phase until the cut
+ * is made; the lobby stays open to the end of attempt 2's start window.
+ */
+export function cupRuns(): Collection<CupRun> {
+  return getDb().collection<CupRun>('cup_runs');
+}
+const isQualifierEvent = (event: Pick<CupEvent, 'gameKey' | 'qualifier'>) => event.gameKey === WORD_TRIP && event.qualifier === true;
+const qualRunId = (eventId: string, attempt: number, userId: string) => `${eventId}-q${attempt}-${userId}`;
+const stageAttempt = (stage: QualStage) => (stage === 'a1' ? 1 : stage === 'a2' ? 2 : 3);
+
+/** The qualifier's runs, kept with the runtime (read with each refresh while the qualifier is on). */
+const qualRuns = new Map<string, Map<string, CupRun>>();
+const runsOf = (rt: Runtime) => qualRuns.get(rt.event.id) ?? new Map<string, CupRun>();
+async function refreshRuns(rt: Runtime) {
+  if (!isQualifierEvent(rt.event) || !rt.event.qual) return;
+  const rows = await cupRuns().find({ eventId: rt.event.id }, { projection: { _id: 0 } }).toArray();
+  const map = runsOf(rt);
+  for (const row of rows) {
+    const had = map.get(row.id);
+    if (had && had.updatedAt.getTime() > row.updatedAt.getTime()) continue;
+    if (!had || had.updatedAt.getTime() !== row.updatedAt.getTime()) rt.rev += 1;
+    map.set(row.id, row);
+  }
+  qualRuns.set(rt.event.id, map);
+}
+const keepRun = (rt: Runtime, run: CupRun) => {
+  const map = runsOf(rt);
+  map.set(run.id, run);
+  qualRuns.set(rt.event.id, map);
+  rt.rev += 1;
+};
+
+/** A run's player state: this process's, else played again from the run as last written. */
+function runMem(rt: Runtime, run: CupRun): WtMem | undefined {
+  const key = `run:${run.id}`;
+  const mem = rt.words.get(key);
+  if (mem) return mem;
+  if (!run.live?.wtr || !wtGame) return undefined;
+  const back: WtMem = { run: replayRun(run.live.wtr, wtGame.boards, run.seed, wtGame.rules), at: new Date(run.live.at).getTime(), dirtyAt: 0, savedAt: Date.now() };
+  rt.words.set(key, back);
+  return back;
+}
+function runScore(rt: Runtime, run: CupRun): { score: number; added: number; words: number } {
+  if (run.status === 'done' && run.score != null) return { score: run.score, added: run.live?.wtAdded ?? 0, words: (run.live?.wtr ?? []).filter((e) => e[0] === 'w').length };
+  const mem = runMem(rt, run);
+  if (mem) return { score: mem.run.score, added: mem.run.added, words: mem.run.total };
+  return { score: run.live?.score ?? 0, added: run.live?.wtAdded ?? 0, words: (run.live?.wtr ?? []).filter((e) => e[0] === 'w').length };
+}
+/** When a run's clock runs out (ms), and when its last words stop being taken. */
+const runEndsAt = (rt: Runtime, run: CupRun) => new Date(run.startAt).getTime() + runEndsSec({ added: runScore(rt, run).added }, wtRules()) * 1000;
+const runOverAt = (rt: Runtime, run: CupRun) => runEndsAt(rt, run) + WT_GRACE_SEC * 1000;
+
+async function saveRun(run: CupRun, mem: WtMem) {
+  if (mem.timer) clearTimeout(mem.timer);
+  mem.timer = undefined;
+  if (mem.dirtyAt <= mem.savedAt) return;
+  mem.savedAt = Date.now();
+  await cupRuns().updateOne({ id: run.id, status: 'live' }, { $set: { live: { score: mem.run.score, at: new Date(mem.at), wtr: mem.run.events, wtAdded: mem.run.added } } });
+}
+function saveRunSoon(run: CupRun, mem: WtMem) {
+  const wait = PERSIST_EVERY_MS - (Date.now() - mem.savedAt);
+  const save = () => void saveRun(run, mem).catch((error) => logger.error('Cup run save failed', { runId: run.id }, error));
+  if (wait <= 0) return save();
+  if (!mem.timer) {
+    mem.timer = setTimeout(() => {
+      mem.timer = undefined;
+      save();
+    }, wait);
+    mem.timer.unref?.();
+  }
+}
+
+/** `POST /cup/api/qualifier/join`: the viewer's run of the attempt open now (made once; asking again returns it). */
+export async function joinQualifier(viewer: CupViewer, askedId?: unknown) {
+  const rt = await runtimeFor(viewer, askedId);
+  if (!rt) throw new CupError(404, 'The tournament is not on');
+  const event = rt.event;
+  const q = event.qual;
+  if (!isQualifierEvent(event) || !q || event.drawnAt || event.phase !== 'lobby') throw new CupError(409, 'The qualifier is not on');
+  const attempt = stageAttempt(q.stage);
+  const id = qualRunId(event.id, attempt, viewer.userId);
+  const had = runsOf(rt).get(id);
+  const now = new Date();
+  let inLobby = (event.lobbyJoined ?? []).includes(viewer.userId);
+  let joinedAt = event.lobbyJoinedAt?.[viewer.userId];
+  if (!inLobby) {
+    // Just joined: a refresh that read the event before the join may have put back an older copy here.
+    const fresh = await cupEvents().findOne({ id: event.id }, { projection: { lobbyJoined: 1, lobbyJoinedAt: 1 } });
+    inLobby = (fresh?.lobbyJoined ?? []).includes(viewer.userId);
+    joinedAt = fresh?.lobbyJoinedAt?.[viewer.userId];
+  }
+  const verdict = mayJoinAttempt(q, viewer.userId, inLobby ? new Date(joinedAt ?? q.openedAt) : null, !!had, now);
+  if (!verdict.ok) throw new CupError(verdict.status, verdict.message);
+  if (had) return { serverNow: now, run: runView(rt, had) };
+  const doc: CupRun = {
+    id,
+    eventId: event.id,
+    org: event.org,
+    userId: viewer.userId,
+    attempt,
+    seed: freshWtSeed(rt, await wordTripGame().catch(() => null), [viewer.userId]),
+    status: 'live',
+    joinedAt: now,
+    startAt: new Date(now.getTime() + event.countdownSec * 1000),
+    createdAt: now,
+    updatedAt: now,
+  };
+  try {
+    await cupRuns().insertOne({ _id: id, ...doc } as unknown as CupRun);
+    keepRun(rt, doc);
+    return { serverNow: new Date(), run: runView(rt, doc) };
+  } catch (error) {
+    if ((error as { code?: number }).code !== 11000) throw error;
+    const row = await cupRuns().findOne({ id }, { projection: { _id: 0 } });
+    if (row) keepRun(rt, row);
+    return { serverNow: new Date(), run: row ? runView(rt, row) : null };
+  }
+}
+
+/** `POST /cup/api/runs/:id/word`: one word (or a skip) of the viewer's own qualifier run, played again here as a match's. */
+export async function playRunWordIn(viewer: CupViewer, id: string, body: { stop?: unknown; word?: unknown; t?: unknown; skip?: unknown } | undefined) {
+  const eventId = /^(.+)-q\d-.+$/.exec(id)?.[1];
+  const rt = eventId ? await runtime(eventId) : null;
+  if (!rt || rt.event.org !== viewer.org || !rt.event.active) throw new CupError(404, 'Run not found');
+  const run = runsOf(rt).get(id);
+  if (!run || run.userId !== viewer.userId) throw new CupError(404, 'Run not found');
+  if (run.status !== 'live') throw new CupError(409, 'This run is over');
+  const game = await wordTripGame();
+  const now = new Date();
+  let mem = runMem(rt, run);
+  const arrived = (now.getTime() - new Date(run.startAt).getTime()) / 1000;
+  if (arrived < -2) throw new CupError(409, 'Your run has not started');
+  if (arrived > runEndsSec(mem?.run, game.rules) + WT_GRACE_SEC + WT_LAG_SEC) throw new CupError(409, 'Your time is up');
+  if (!mem) {
+    mem = { run: newRun(), at: now.getTime(), dirtyAt: 0, savedAt: 0 };
+    rt.words.set(`run:${run.id}`, mem);
+  }
+  const t = wordTime(body?.t, arrived);
+  const changed = () => {
+    mem!.at = now.getTime();
+    mem!.dirtyAt = now.getTime();
+    bumpSoon(rt);
+    saveRunSoon(run, mem!);
+  };
+  if (body?.skip === true) {
+    const skipped = playRunSkip(mem.run, body.stop, t, game.rules);
+    if (skipped.ok) changed();
+    return { serverNow: new Date(), skip: skipped, score: mem.run.score, gi: mem.run.gi, added: mem.run.added };
+  }
+  const verdict = playRunWord(mem.run, game.boards(run.seed, mem.run.gi), body?.stop, body?.word, t, game.rules);
+  if (verdict.ok) changed();
+  return { serverNow: new Date(), verdict, score: mem.run.score, gi: mem.run.gi, added: mem.run.added };
+}
+
+function runView(rt: Runtime, run: CupRun) {
+  const s = runScore(rt, run);
+  return { id: run.id, attempt: run.attempt, status: run.status, seed: run.seed, startAt: run.startAt, endsAt: runEndsAt(rt, run), score: s.score, words: s.words };
+}
+
+/** Everyone's qualifier so far, for the ranking: attempts, the extra run, all-time best, lobby order. */
+async function qualEntries(rt: Runtime, allTime: Map<string, number> | null): Promise<QualEntry[]> {
+  const byUser = new Map<string, QualEntry>();
+  const order = new Map((rt.event.lobbyJoined ?? []).map((u, i) => [u, i]));
+  for (const run of runsOf(rt).values()) {
+    const e = byUser.get(run.userId) ?? { userId: run.userId, attempts: [null, null] as [number | null, number | null], extra: null, allTimeBest: allTime?.get(run.userId) ?? null, order: order.get(run.userId) ?? 1e6 };
+    const s = runScore(rt, run).score;
+    if (run.attempt === 1) e.attempts[0] = s;
+    else if (run.attempt === 2) e.attempts[1] = s;
+    else e.extra = s;
+    byUser.set(run.userId, e);
+  }
+  return [...byUser.values()];
+}
+async function allTimeBests(event: CupEvent): Promise<Map<string, number>> {
+  const rows = await gameScores().find({ gameId: catalogScoreId(WORD_TRIP), org: event.org }, { projection: { _id: 0, userId: 1, score: 1 } }).toArray();
+  return new Map(rows.map((r) => [r.userId, r.score]));
+}
+
+/** The runner's step for a qualifier: open attempt 1 at the start, attempt 2 when 1 is over, the tie-break if needed, then the cut. */
+async function tickQualifier(rt: Runtime, now: Date) {
+  const event = rt.event;
+  await refreshRuns(rt);
+  const q = event.qual;
+  if (!q) {
+    const claimed = await cupEvents().findOneAndUpdate(
+      { id: event.id, phase: 'lobby', active: true, qual: { $exists: false }, drawnAt: { $exists: false } },
+      { $set: { qual: { stage: 'a1', openedAt: now, windowSec: event.startWindowSec }, updatedAt: now }, $inc: { version: 1 } },
+      { returnDocument: 'after', projection: { _id: 0 } },
+    );
+    if (claimed) {
+      rt.event = claimed;
+      rt.rev += 1;
+      logger.info('Cup qualifier: attempt 1 open', { eventId: event.id });
+      void pushCup(claimed, [...(claimed.lobbyJoined ?? [])], 'cup_match_open', claimed.name, `The qualifier is on. Play attempt 1 within ${claimed.startWindowSec} seconds.`);
+    }
+    return;
+  }
+  const attempt = stageAttempt(q.stage);
+  const runs = [...runsOf(rt).values()].filter((r) => r.attempt === attempt);
+  const windowClosed = now.getTime() >= new Date(q.openedAt).getTime() + q.windowSec * 1000;
+  const cap = attemptCapAt(q.openedAt, q.windowSec, event.countdownSec, wtRules());
+  if (!windowClosed || !(runs.every((r) => now.getTime() >= runOverAt(rt, r)) || now.getTime() >= cap)) return;
+  // The attempt is over: every run's words in, its score fixed.
+  for (const run of runs.filter((r) => r.status === 'live')) {
+    const mem = rt.words.get(`run:${run.id}`);
+    if (mem) await saveRun(run, mem).catch(() => undefined);
+    const s = runScore(rt, run);
+    const after = await cupRuns().findOneAndUpdate({ id: run.id, status: 'live' }, { $set: { status: 'done', score: s.score, endedAt: now, updatedAt: now } }, { returnDocument: 'after', projection: { _id: 0 } });
+    if (after) keepRun(rt, after);
+  }
+  const at = new Date();
+  if (q.stage === 'a1') {
+    const claimed = await cupEvents().findOneAndUpdate(
+      { id: event.id, 'qual.stage': 'a1', drawnAt: { $exists: false } },
+      { $set: { qual: { stage: 'a2', openedAt: at, windowSec: q.windowSec, a1At: q.openedAt }, updatedAt: at }, $inc: { version: 1 } },
+      { returnDocument: 'after', projection: { _id: 0 } },
+    );
+    if (claimed) {
+      rt.event = claimed;
+      rt.rev += 1;
+      logger.info('Cup qualifier: attempt 2 open', { eventId: event.id });
+      void pushCup(claimed, [...(claimed.lobbyJoined ?? [])], 'cup_match_open', claimed.name, `Attempt 2 is on. Play it within ${q.windowSec} seconds: your best counts.`);
+    }
+    return;
+  }
+  const result = rankQualifier(await qualEntries(rt, await allTimeBests(event)), q.stage === 'extra');
+  if (q.stage === 'a2' && result.needExtra.length) {
+    const claimed = await cupEvents().findOneAndUpdate(
+      { id: event.id, 'qual.stage': 'a2', drawnAt: { $exists: false } },
+      { $set: { qual: { ...q, stage: 'extra', openedAt: at, extraUserIds: result.needExtra, spots: result.spots, cut: result.cut }, lobbyClosedAt: at, updatedAt: at }, $inc: { version: 1 } },
+      { returnDocument: 'after', projection: { _id: 0 } },
+    );
+    if (claimed) {
+      rt.event = claimed;
+      rt.rev += 1;
+      logger.info('Cup qualifier: tie at the cut, an extra run', { eventId: event.id, tied: result.needExtra.length, spots: result.spots });
+      void pushCup(claimed, result.needExtra, 'cup_match_open', claimed.name, `A tie at the cut! Play one extra run within ${q.windowSec} seconds.`);
+    }
+    return;
+  }
+  await finishQualifier(rt, result, at);
+}
+
+/** The cut: the top P, ranked, become the bracket's entrants (rank = seed), and round 1 is written. */
+async function finishQualifier(rt: Runtime, result: QualResult, now: Date) {
+  const event = rt.event;
+  const roster = await rosterOf(event);
+  const names = new Map(roster.map((r) => [r.userId, r.name]));
+  const entries = new Map((await qualEntries(rt, null)).map((e) => [e.userId, e]));
+  const top = result.ranked.slice(0, result.cut);
+  const entrants: CupEntrant[] = top.map((userId, i) => ({ userId, name: names.get(userId) ?? 'Colleague', seed: i + 1, best: qualBest(entries.get(userId) ?? { attempts: [null, null] }), boardRank: null }));
+  const rounds = buildDraw(entrants.length, event.topN).map((r, _, all) => ({ ...r, ...bracketRoundName(r.n, all.length, r.nodes.length) }));
+  const none = entrants.length < 2;
+  const claimed = await cupEvents().findOneAndUpdate(
+    { id: event.id, phase: 'lobby', drawnAt: { $exists: false } },
+    {
+      $set: {
+        ...(none ? { phase: 'done' as const, finishedAt: now, ...(entrants[0] ? { championId: entrants[0].userId } : {}) } : {}),
+        entrants,
+        rounds,
+        drawnAt: now,
+        round: 0,
+        lobbyClosedAt: event.lobbyClosedAt ?? now,
+        qual: { ...event.qual!, done: true, cut: result.cut, ranking: result.ranked, doneAt: now },
+        updatedAt: now,
+      },
+      $inc: { version: 1 },
+    },
+    { returnDocument: 'after', projection: { _id: 0 } },
+  );
+  if (!claimed) return;
+  rt.event = claimed;
+  rt.rev += 1;
+  logger.info('Cup qualifier: cut made', { eventId: event.id, played: result.ranked.length, cut: result.cut });
+  if (none) return;
+  await createRoundMatches(rt, 1, now, 'scheduled');
+  const out = result.ranked.slice(result.cut);
+  void pushCup(claimed, top, 'cup_match_open', claimed.name, `You're in the top ${result.cut}! Your first match is opening.`);
+  if (out.length) void pushCup(claimed, out, 'cup_lobby', claimed.name, `You didn't make the top ${result.cut} this time. Watch and bet on the last rounds.`);
+}
+
+/** The qualifier as pages and the TV draw it (the contract): stage, cut, every player's best, rank and status. */
+function qualifierView(rt: Runtime) {
+  const event = rt.event;
+  const q = event.qual;
+  if (!isQualifierEvent(event) || !q) return undefined;
+  const runs = [...runsOf(rt).values()];
+  const now = Date.now();
+  const entries: QualEntry[] = [];
+  const byUser = new Map<string, { attempts: [number | null, number | null]; extra: number | null; playing: boolean }>();
+  for (const run of runs) {
+    const row = byUser.get(run.userId) ?? { attempts: [null, null] as [number | null, number | null], extra: null, playing: false };
+    const s = runScore(rt, run).score;
+    if (run.attempt === 1) row.attempts[0] = s;
+    else if (run.attempt === 2) row.attempts[1] = s;
+    else row.extra = s;
+    if (run.status === 'live' && now < runOverAt(rt, run)) row.playing = true;
+    byUser.set(run.userId, row);
+  }
+  const order = new Map((event.lobbyJoined ?? []).map((u, i) => [u, i]));
+  for (const [userId, row] of byUser) entries.push({ userId, attempts: row.attempts, extra: row.extra, order: order.get(userId) ?? 1e6 });
+  // When this view next changes by the clock alone: a playing run's clock out, the window closing.
+  const changes = [...runs.filter((r) => r.status === 'live').map((r) => runOverAt(rt, r)), new Date(q.openedAt).getTime() + q.windowSec * 1000].filter((t) => t > now);
+  rt.qualNextAt = q.done || !changes.length ? undefined : Math.min(...changes) + 50;
+  const ranked = q.done && q.ranking ? q.ranking : rankQualifier(entries, q.stage === 'extra').ranked;
+  const cut = q.done ? q.cut ?? 0 : q.stage === 'extra' ? q.cut ?? qualifierCut(ranked.length) : qualifierCut(ranked.length);
+  const names = new Map((rosterCache.get(event.id)?.rows ?? []).map((r) => [r.userId, r.name] as const));
+  for (const e of event.entrants ?? []) names.set(e.userId, e.name);
+  const tied = new Set(q.stage === 'extra' && !q.done ? q.extraUserIds ?? [] : []);
+  const rows = ranked.map((userId, i) => {
+    const row = byUser.get(userId) ?? { attempts: [null, null] as [number | null, number | null], extra: null, playing: false };
+    const photo = photoOf(rt, userId);
+    return {
+      userId,
+      firstName: firstNameOf(names.get(userId)),
+      ...(photo ? { faceVer: /\/(k[^/]+|d\d+)\//.exec(photo)?.[1] ?? photo } : {}),
+      best: Math.max(row.attempts[0] ?? 0, row.attempts[1] ?? 0),
+      combined: (row.attempts[0] ?? 0) + (row.attempts[1] ?? 0),
+      attempts: (row.attempts[0] != null ? 1 : 0) + (row.attempts[1] != null ? 1 : 0),
+      playing: row.playing,
+      // Joined late: their first attempt is attempt 2.
+      ...(row.attempts[0] == null && row.attempts[1] != null ? { late: true } : {}),
+      ...(row.extra != null ? { extraScore: row.extra } : {}),
+      rank: i + 1,
+      status: (q.done ? (i < cut ? 'in' : 'out') : tied.has(userId) ? 'tied' : 'pending') as 'in' | 'out' | 'tied' | 'pending',
+    };
+  });
+  const attempt = q.stage === 'a1' ? 1 : 2;
+  const live = runs.filter((r) => r.attempt === stageAttempt(q.stage));
+  const windowEnd = new Date(q.openedAt).getTime() + q.windowSec * 1000;
+  // The attempt's real end: while its window is open, a run started at the last moment (its countdown, the base clock, the grace);
+  // every run's own end (with the seconds it earned) once started; never past the cap. Every row still playing ends by then.
+  const lastStart = now < windowEnd ? windowEnd + (event.countdownSec + runEndsSec(newRun(), wtRules()) + WT_GRACE_SEC) * 1000 : windowEnd;
+  const attemptEndsAt = q.done ? undefined : Math.min(attemptCapAt(q.openedAt, q.windowSec, event.countdownSec, wtRules()), Math.max(lastStart, ...live.map((r) => runOverAt(rt, r))));
+  return {
+    attempt,
+    stage: q.stage,
+    done: !!q.done,
+    windowEndsAt: windowEnd,
+    ...(attemptEndsAt ? { attemptEndsAt } : {}),
+    cut,
+    played: ranked.length,
+    rows,
+    ...(q.stage === 'extra' ? { tiebreak: { spots: q.spots ?? 0, userIds: q.extraUserIds ?? [] } } : {}),
+  };
+}
+
+/** The phase as the contract names it: lobby, qualifier, qualifier_tiebreak, bracket, done. */
+function contractPhase(event: CupEvent): 'lobby' | 'qualifier' | 'qualifier_tiebreak' | 'bracket' | 'done' {
+  if (event.phase === 'done') return 'done';
+  if (event.phase === 'running' || event.drawnAt) return 'bracket';
+  if (event.qual) return event.qual.stage === 'extra' ? 'qualifier_tiebreak' : 'qualifier';
+  return 'lobby';
+}
+
+/** The viewer's qualifier: their runs, best, rank, and whether they may play the attempt open now. */
+function qualMe(rt: Runtime, userId: string, view: ReturnType<typeof qualifierView>) {
+  const event = rt.event;
+  const q = event.qual;
+  if (!q || !view) return undefined;
+  const runs = [...runsOf(rt).values()].filter((r) => r.userId === userId).sort((a, b) => a.attempt - b.attempt);
+  const row = view.rows.find((r) => r.userId === userId);
+  const inLobby = (event.lobbyJoined ?? []).includes(userId);
+  const attempt = stageAttempt(q.stage);
+  const mine = runs.find((r) => r.attempt === attempt);
+  const canJoin = !q.done && !mine && inLobby && Date.now() < view.windowEndsAt && (q.stage !== 'extra' || (q.extraUserIds ?? []).includes(userId));
+  return {
+    stage: q.stage,
+    done: !!q.done,
+    inLobby,
+    runs: runs.map((r) => runView(rt, r)),
+    best: row?.best ?? null,
+    combined: row?.combined ?? null,
+    rank: row?.rank ?? null,
+    status: row?.status ?? null,
+    cut: view.cut,
+    played: view.played,
+    canJoin,
+    tied: (q.extraUserIds ?? []).includes(userId) && q.stage === 'extra',
+  };
+}
+
 // ---------------------------------------------------------------- void (for HR, through cup-bets)
 
 /**
@@ -1399,7 +2314,7 @@ export async function voidMatchResult(viewer: CupViewer, id: string) {
     {
       $set: {
         status: sequential ? 'scheduled' : 'open',
-        seed: newSeed(),
+        seed: isWordTripEvent(event) ? freshWtSeed(rt, await wordTripGame().catch(() => null), match.players) : newSeed(),
         joined: {},
         live: {},
         finals: {},
@@ -1462,7 +2377,8 @@ type CurrentStage = { matchId: string; kind: 'betting' | 'live' };
 const person = (rt: Runtime, userId: string | null) => {
   if (!userId) return null;
   const e = rt.event.entrants.find((x) => x.userId === userId);
-  return { userId, name: e?.name ?? 'Colleague', seed: e?.seed ?? null, photoUrl: photoOf(rt, userId) };
+  // Word Trip: faces go once, in the state's `photos` map (asked for by version), not in every match of every poll.
+  return isWordTripEvent(rt.event) ? { userId, name: e?.name ?? 'Colleague', seed: e?.seed ?? null, rank: e?.seed ?? null } : { userId, name: e?.name ?? 'Colleague', seed: e?.seed ?? null, photoUrl: photoOf(rt, userId) };
 };
 
 function liveOf(rt: Runtime, match: CupMatch): Record<string, number> | undefined {
@@ -1470,6 +2386,11 @@ function liveOf(rt: Runtime, match: CupMatch): Record<string, number> | undefine
   // Knights: no correctness count during play (`placed` is in the knights view).
   if (isKnightsEvent(rt.event)) return undefined;
   const out: Record<string, number> = {};
+  if (isWordTripEvent(rt.event)) {
+    // The server's own totals, from the words it took.
+    for (const p of match.players) out[p] = wtScoreOf(rt, match, p).score;
+    return out;
+  }
   for (const p of match.players) {
     const mem = rt.live.get(`${match.id}:${match.attempt}:${p}`)?.score;
     const db = match.finals?.[p]?.score ?? match.live?.[p]?.score;
@@ -1501,6 +2422,7 @@ function matchView(rt: Runtime, match: CupMatch) {
   const withPlaced = (p: ReturnType<typeof person>) => (p && kv.placed ? { ...p, placed: kv.placed[p.userId] ?? 0 } : p);
   return {
     ...kv,
+    ...wordTripView(rt, match),
     id: match.id,
     slot: match.slot,
     label: match.label,
@@ -1590,7 +2512,9 @@ function shared(rt: Runtime, rosterCount: number) {
     // Before the draw, everyone who would be in now; in a lobby still open, everyone in it so far.
     entrantCount: event.phase === 'scheduled' ? rosterCount : event.lobbyDraw && !event.drawnAt ? (event.lobbyJoined ?? []).length : event.entrants.length,
     lobbyDraw: event.lobbyDraw === true || undefined,
-    lobbyOpen: (event.lobbyDraw && event.phase === 'lobby' && !event.drawnAt) || undefined,
+    // Open to joins: before the draw, and with a qualifier until attempt 2's start window closes.
+    lobbyOpen: (event.lobbyDraw && event.phase === 'lobby' && !event.drawnAt && !event.lobbyClosedAt && !(event.qual && (event.qual.stage === 'extra' || (event.qual.stage === 'a2' && Date.now() >= new Date(event.qual.openedAt).getTime() + event.qual.windowSec * 1000)))) || undefined,
+    qualifier: isQualifierEvent(event) || undefined,
     gameKey: event.gameKey,
     wallet: event.walletStart && event.walletStart > 0 ? event.walletStart : undefined,
     seeding: event.seeding,
@@ -1604,9 +2528,22 @@ function shared(rt: Runtime, rosterCount: number) {
     maxScore: event.maxScore,
     championId: event.championId,
     rounds: roundsView(rt),
+    lobbyPeople: lobbyPeopleOf(rt),
   };
-  rt.shared = { rev: rt.rev, count: rosterCount, json: JSON.stringify(view), current: currentStage(rt) };
+  const qual = qualifierView(rt);
+  rt.shared = { rev: rt.rev, count: rosterCount, json: JSON.stringify(view), current: currentStage(rt), qual, qualJson: JSON.stringify({ phase: contractPhase(event), ...(qual ? { qualifier: qual } : {}) }) };
   return rt.shared;
+}
+
+/** A lobby still open: its latest members first (up to 30), each with a name and a face, for the "who's playing" grid. */
+function lobbyPeopleOf(rt: Runtime) {
+  const event = rt.event;
+  if (!event.lobbyDraw || event.phase !== 'lobby' || event.drawnAt) return undefined;
+  const names = new Map((rosterCache.get(event.id)?.rows ?? []).map((row) => [row.userId, row.name]));
+  return (event.lobbyJoined ?? [])
+    .slice(-30)
+    .reverse()
+    .map((userId) => ({ userId, name: names.get(userId) ?? 'Colleague' }));
 }
 
 /** How far each person got, best first: the champion, the runner-up, then by the round they went out in. */
@@ -1655,7 +2592,7 @@ export function standingsOf(rt: Runtime): Standing[] {
   rows.forEach((row, i) => {
     row.place = i > 0 && rows[i - 1].depth === row.depth ? rows[i - 1].place : i + 1;
   });
-  const result: Standing[] = rows.map((row) => ({ userId: row.userId, name: row.name, photoUrl: photoOf(rt, row.userId), seed: row.seed, reached: row.reached, place: row.place, alive: row.alive }));
+  const result: Standing[] = rows.map((row) => ({ userId: row.userId, name: row.name, photoUrl: isWordTripEvent(event) ? null : photoOf(rt, row.userId), seed: row.seed, reached: row.reached, place: row.place, alive: row.alive }));
   rt.standings = { rev: rt.rev, rows: result };
   return result;
 }
@@ -1671,9 +2608,11 @@ function myMatchView(rt: Runtime, match: CupMatch, userId: string) {
   const knightsMine = kv.placed
     ? { myPlaced: kv.placed[userId] ?? 0, opponentPlaced: kv.placed[them] ?? 0, myKnights: knightsOfPlayer(rt, match, userId) ?? [] }
     : {};
+  const wtMine = wordTripMine(rt, match, userId);
   return {
     ...kv,
     ...knightsMine,
+    ...wtMine,
     id: match.id,
     label: match.label,
     round: match.round,
@@ -1745,10 +2684,12 @@ async function meOf(rt: Runtime, viewer: CupViewer) {
     const roster = await rosterPreview(event);
     const mine = roster.find((row) => row.userId === viewer.userId);
     const inLobby = (event.lobbyJoined ?? []).includes(viewer.userId);
-    return { ...base, entered: !!mine, alive: !!mine, inLobby, best: mine?.best ?? null, balance: await balanceOf(viewer, event) };
+    const qual = qualMe(rt, viewer.userId, rt.shared?.qual ?? qualifierView(rt));
+    return { ...base, entered: !!mine, alive: !!mine, inLobby, best: mine?.best ?? null, ...(qual ? { qual } : {}), balance: await balanceOf(viewer, event) };
   }
   const entrant = event.entrants.find((e) => e.userId === viewer.userId);
-  if (!entrant) return { ...base, entered: false, alive: false, balance: await balanceOf(viewer, event) };
+  const qualDone = event.qual?.done ? qualMe(rt, viewer.userId, rt.shared?.qual ?? qualifierView(rt)) : undefined;
+  if (!entrant) return { ...base, entered: false, alive: false, ...(qualDone ? { qual: qualDone } : {}), balance: await balanceOf(viewer, event) };
   const outIn = eliminations(rt).get(viewer.userId);
   const mine = [...rt.matches.values()]
     .filter((m) => m.players.includes(viewer.userId))
@@ -1774,22 +2715,36 @@ async function meOf(rt: Runtime, viewer: CupViewer) {
  * Everything one person's page draws, in one round trip. With `since` equal
  * to the current version, just that nothing changed.
  */
-export async function stateFor(viewer: CupViewer, askedId: unknown, since: unknown): Promise<string> {
+export async function stateFor(viewer: CupViewer, askedId: unknown, since: unknown, photosHeld?: unknown): Promise<string> {
   const now = new Date();
   const rt = await runtimeFor(viewer, askedId);
   if (!rt) {
     return JSON.stringify({ success: true, serverNow: now, version: 0, event: null, me: { userId: viewer.userId, name: viewer.name, photoUrl: null, hr: viewer.hr, entered: false, alive: false, balance: await balanceOf(viewer) } });
   }
-  if (since !== undefined && String(since) === String(rt.rev)) {
+  // A lobby member's page is here now: the draw counts them as connected.
+  noteSeen(rt, viewer.userId);
+  // The qualifier's rows change by the clock (a run over, a window closed): a new revision when one has.
+  if (rt.qualNextAt && now.getTime() >= rt.qualNextAt) {
+    rt.qualNextAt = undefined;
+    rt.rev += 1;
+  }
+  // Word Trip: everyone's face address in one map, only when the page doesn't hold this version of it (`pv`).
+  const sendPhotos = isWordTripEvent(rt.event) && String(photosHeld ?? '') !== String(rt.photosRev ?? 0);
+  if (since !== undefined && String(since) === String(rt.rev) && !sendPhotos) {
     return JSON.stringify({ success: true, unchanged: true, version: rt.rev, serverNow: now });
   }
   const rosterCount = rt.event.phase === 'scheduled' ? (await rosterPreview(rt.event)).length : 0;
+  if (rt.event.phase === 'lobby' && !rt.event.drawnAt) await rosterPreview(rt.event);
   // The version and the event part read together, with no wait between: the page never holds a version newer than what it drew.
   const version = rt.rev;
   const common = shared(rt, rosterCount);
   const me = await meOf(rt, viewer);
   const extra: Record<string, unknown> = { current: common.current ?? undefined };
   if (rt.event.phase === 'done') extra.standings = standingsOf(rt);
+  if (sendPhotos) {
+    extra.photos = Object.fromEntries(rt.photos?.map ?? []);
+    extra.photosV = rt.photosRev ?? 0;
+  }
   if (cupHooks.state) {
     try {
       Object.assign(extra, await cupHooks.state(viewer, rt.event, common.current));
@@ -1799,8 +2754,8 @@ export async function stateFor(viewer: CupViewer, askedId: unknown, since: unkno
   }
   const head = JSON.stringify({ success: true, serverNow: now, version });
   const tail = JSON.stringify({ me, ...extra });
-  // The event part is the same for everyone, so it is serialised once per revision.
-  return `${head.slice(0, -1)},"event":${common.json},${tail.slice(1)}`;
+  // The event part is the same for everyone, so it is serialised once per revision (the qualifier's too).
+  return `${head.slice(0, -1)},"event":${common.json},${(common.qualJson ?? '{}').slice(1, -1)}${common.qualJson && common.qualJson.length > 2 ? ',' : ''}${tail.slice(1)}`;
 }
 
 /** Who is in, for the list on the page: before the draw by best score, after it by seed. */
@@ -1828,7 +2783,7 @@ export async function cupBoardFor(org: string, gameId: string) {
     ? event.entrants.slice(0, 20).map((e) => ({ rank: e.seed, userId: e.userId, playerName: e.name, score: `Seed ${e.seed}` }))
     : standingsOf(rt).slice(0, 20).map((s) => ({ rank: s.place, userId: s.userId, playerName: s.name, score: s.reached }));
   return {
-    game: { id: event.id, name: event.name, description: event.gameKey === 'trails' ? 'Trails knockout' : event.gameKey === KNIGHTS ? 'Knights knockout' : 'Odd One Out knockout', hostedUrl: '', active: event.active },
+    game: { id: event.id, name: event.name, description: event.gameKey === 'trails' ? 'Trails knockout' : event.gameKey === KNIGHTS ? 'Knights knockout' : event.gameKey === WORD_TRIP ? 'Word Trip knockout' : 'Odd One Out knockout', hostedUrl: '', active: event.active },
     leaderboard: rows,
   };
 }

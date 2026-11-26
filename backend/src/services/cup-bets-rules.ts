@@ -131,7 +131,7 @@ export interface BetContext {
 }
 
 /** The tournament's name on a points-history row. */
-export const betTitlePrefix = (game?: string) => (game === 'knights' ? 'Knights Tournament' : 'O-O-O Tournament');
+export const betTitlePrefix = (game?: string) => (game === 'knights' ? 'Knights Tournament' : game === 'word-trip' ? 'Word Trip Tournament' : 'O-O-O Tournament');
 
 /** The line the points history shows under a bet: the match, the pick and how it went. */
 export function betNote(ctx: BetContext, how?: string): string {

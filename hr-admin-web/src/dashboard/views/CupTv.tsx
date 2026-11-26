@@ -16,15 +16,19 @@ import { boardAt } from './cupBoards';
 import { trailAt } from './cupTrailsBoards';
 import knightPng from '../../assets/cup-knight.png';
 
-type Game = 'odd' | 'trails' | 'knights';
+type Game = 'odd' | 'trails' | 'knights' | 'wordtrip';
 /** Which game the tournament's matches are played in: the TV draws that game's boards. */
 const GameCtx = createContext<Game>('odd');
-const gameOf = (key?: string): Game => (key === 'trails' ? 'trails' : key === 'knights' ? 'knights' : 'odd');
+/** Word Trip: everyone's face, from the state's `photos` map (its matches carry none). */
+const PhotosCtx = createContext<Record<string, string | null> | null>(null);
+/** A tournament drawn from its lobby has no seeds: no "#3" beside anyone (after a qualifier, the #N is the rank). */
+const SeedsCtx = createContext(true);
+const gameOf = (key?: string): Game => (key === 'trails' ? 'trails' : key === 'knights' ? 'knights' : key === 'word-trip' ? 'wordtrip' : 'odd');
 
 // —— the state (the Cup page's, as much as the TV draws) ————————————————————
 
 type Status = 'pending' | 'scheduled' | 'betting' | 'open' | 'live' | 'solo' | 'done';
-interface Player { userId: string; name: string; seed: number }
+interface Player { userId: string; name: string; seed: number; photoUrl?: string | null }
 interface Match {
   id?: string;
   slot: number;
@@ -56,7 +60,14 @@ interface Match {
   deadlineAt?: string;
   startAt?: string;
   attempt?: number;
+  /** Word Trip: words found per player (a count). */
+  wtWords?: Record<string, number>;
+  /** Who has joined (a solo match: the one who came). */
+  joined?: string[];
 }
+/** Word Trip, the TV only: each player's words per stop ([word, points]) and total, by match. */
+interface WtSide { score: number; words: number; gi: number; letters: string; found: [string, number][]; endsAt?: number }
+type WtLive = Record<string, Record<string, WtSide>>;
 interface LiveBoard { board: number; tap?: number; ok?: boolean; placed?: number }
 interface Round {
   n: number;
@@ -83,6 +94,9 @@ interface CupState {
     startAt: string;
     topN: number;
     entrantCount?: number;
+    lobbyDraw?: boolean;
+    /** Word Trip: round 1 was a qualifier, so everyone has a rank. */
+    qualifier?: boolean;
     roundSec?: number;
     rounds?: Round[];
   } | null;
@@ -92,6 +106,8 @@ interface CupState {
   bets?: { onStage?: { matchId: string; a: Side; b: Side; closesAt?: string | null } };
   tipsters?: { userId: string; name: string; won: number; right: number; of: number }[];
   standings?: { userId: string; name: string; seed: number; reached: string; place: number }[];
+  wordTrip?: WtLive;
+  photos?: Record<string, string | null>;
 }
 
 /**
@@ -188,6 +204,46 @@ const CSS = `
   .cs-timer{font-size:76px}.cs-vs{font-size:30px}.cs-lead{font-size:18px}.cs-bl{font-size:15px}
 }
 .ctv:fullscreen{border-radius:0;min-height:100vh;padding:36px 44px;overflow:auto}
+.wt-duel{display:flex;flex-direction:column;gap:14px;background:${C.panel};border-radius:24px;padding:18px 20px;min-width:0}
+.wt-duel.xl{padding:24px 32px;gap:20px;flex:1}
+.wt-dh{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.wt-dl{font-family:'Baloo 2',var(--h);font-weight:800;font-size:26px;line-height:1}
+.wt-duel.xl .wt-dl{font-size:40px}.wt-duel.s .wt-dl{font-size:24px}
+.wt-dk{font-size:14px;font-weight:800;letter-spacing:1.2px;color:${C.ink2};flex:1}
+.wt-duel.xl .wt-dk{font-size:20px}.wt-duel.s .wt-dk{font-size:14px}
+.wt-dt{font-family:'Baloo 2',var(--h);font-weight:800;font-size:40px;line-height:1;color:#FFD23F;font-variant-numeric:tabular-nums}
+.wt-dt.low{color:${C.coral}}.wt-duel.xl .wt-dt{font-size:84px}.wt-duel.s .wt-dt{font-size:40px}
+.wt-dr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+.wt-duel.xl .wt-dr{gap:28px;flex:1}
+.wt-b{display:flex;flex-direction:column;gap:12px;background:#1A1636;border:3px solid #3B3668;border-radius:20px;padding:14px;min-width:0}
+.wt-b.lead{border-color:var(--pc);box-shadow:0 0 30px -6px var(--pc)}
+.wt-b.xl{padding:22px;gap:18px}.wt-b.s{padding:10px;gap:8px;border-radius:16px}
+.wt-bh{display:flex;align-items:center;gap:12px;min-width:0}
+.wt-bh .ctv-av{width:52px;height:52px;font-size:20px}
+.wt-b.xl .wt-bh .ctv-av{width:84px;height:84px;font-size:30px}.wt-b.s .wt-bh .ctv-av{width:44px;height:44px;font-size:16px}
+.wt-bn{flex:1;min-width:0;font-weight:800;font-size:26px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wt-b.xl .wt-bn{font-size:40px}.wt-b.s .wt-bn{font-size:22px}
+.wt-bs{font-family:'Baloo 2',var(--h);font-weight:800;font-size:48px;line-height:1;color:var(--pc);font-variant-numeric:tabular-nums}
+.wt-b.xl .wt-bs{font-size:88px}.wt-b.s .wt-bs{font-size:40px}
+.wt-lt{display:flex;gap:8px;justify-content:center;min-height:56px}
+.wt-lt span{width:52px;height:58px;border-radius:12px;background:#FFF6DE;box-shadow:inset 0 -4px 0 #D2BC7E;color:#2A2140;font:800 32px/58px 'Baloo 2',system-ui;text-align:center}
+.wt-b.xl .wt-lt span{width:80px;height:88px;font-size:50px;line-height:88px;border-radius:16px}
+.wt-b.s .wt-lt{gap:6px;min-height:46px}.wt-b.s .wt-lt span{width:42px;height:46px;font-size:26px;line-height:46px;border-radius:10px}
+.wt-ws{display:flex;flex-wrap:wrap;gap:8px;align-content:flex-start;min-height:120px}
+.wt-b.xl .wt-ws{min-height:260px;gap:12px}.wt-b.s .wt-ws{min-height:110px;gap:6px}
+.wt-w{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none;height:38px;padding:0 12px;border-radius:12px;background:#2B2650;font-weight:800;font-size:20px;letter-spacing:.04em;animation:wt-in .35s ease-out}
+.wt-w i{font-style:normal;font-size:14px;color:#FFD23F}.wt-w.full{background:#FFD23F;color:#15122B}.wt-w.full i{color:#15122B}
+.wt-b.xl .wt-w{height:54px;font-size:30px;padding:0 16px;border-radius:14px}.wt-b.xl .wt-w i{font-size:20px}
+.wt-b.s .wt-w{height:32px;font-size:18px;padding:0 10px;border-radius:10px}.wt-b.s .wt-w i{font-size:13px}
+.wt-none{font-size:18px;color:${C.ink2};font-weight:700}.wt-b.s .wt-none{font-size:13px}.wt-b.xl .wt-none{font-size:26px}
+.wt-bk{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:15px;font-weight:800;letter-spacing:.06em;color:${C.ink2};text-transform:uppercase}.wt-bk b{font-family:'Baloo 2',var(--h);font-size:34px;line-height:1;color:#FFD23F;letter-spacing:0;font-variant-numeric:tabular-nums}.wt-bk b.low{color:${C.coral}}.wt-b.xl .wt-bk{font-size:20px}.wt-b.xl .wt-bk b{font-size:64px}.wt-b.s .wt-bk{font-size:12px}.wt-b.s .wt-bk b{font-size:26px}
+.wt-ss{display:flex;gap:14px;flex-wrap:wrap;font-size:14px;color:${C.ink2};font-weight:700}.wt-ss b{color:${C.ink}}
+.wt-b.xl .wt-ss{font-size:20px}.wt-b.s .wt-ss{display:none}
+.wt-solo{display:grid;place-items:center;min-height:120px;border:3px dashed #3B3668;border-radius:16px;font-weight:800;font-size:22px;color:${C.ink2}}
+.wt-res{font-size:24px;font-weight:800;color:${C.green}}.wt-duel.xl .wt-res{font-size:36px}
+.wt-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@keyframes wt-in{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.wt-w{animation:none}}
 .ctv *{box-sizing:border-box}
 .ctv button{font:inherit;color:inherit;cursor:pointer}
 .ctv-top{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
@@ -299,7 +355,7 @@ const CSS = `
 @media (prefers-reduced-motion:reduce){.ctv-board .c.no,.ctv-board.ok::after{animation:none}}
 `;
 
-const FONTS = 'https://fonts.googleapis.com/css2?family=Lilita+One&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap';
+const FONTS = 'https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Lilita+One&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap';
 
 function useCupFonts() {
   useEffect(() => {
@@ -318,7 +374,13 @@ const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2)
 
 /** A player's face: their photo from the loaded directory, else their initials on their side's colour. */
 function CupFace({ p, colour }: { p: Player | null; colour: string }) {
-  const photo = usePhotoFor(p?.userId ?? null, p?.name ?? null);
+  // The state's own face (a small thumbnail, one address per photo, kept a year) when the server sends one; the
+  // directory's photo (often the full-size upload) only for a state from before thumbnails.
+  const map = useContext(PhotosCtx);
+  const raw = p ? ('photoUrl' in p ? p.photoUrl : map && p.userId in map ? map[p.userId] : undefined) : undefined;
+  const own = raw === undefined ? null : raw ? (/^https?:/.test(raw) ? raw : `${BASE_URL}${raw}`) : '';
+  const dir = usePhotoFor(own === null ? p?.userId ?? null : null, own === null ? p?.name ?? null : null);
+  const photo = own ?? dir;
   const [failed, setFailed] = useState('');
   const show = photo && photo !== failed;
   return (
@@ -330,6 +392,14 @@ function CupFace({ p, colour }: { p: Player | null; colour: string }) {
   );
 }
 const firstName = (name: string) => name.split(/\s+/)[0] || name;
+/** A seed badge, only where the draw was seeded. */
+function SeedTag({ p }: { p: Player }) {
+  return useContext(SeedsCtx) ? <span className="ctv-seed">#{p.seed}</span> : null;
+}
+function SeedEm({ p }: { p: Player | null }) {
+  const seeded = useContext(SeedsCtx);
+  return <em>{p && seeded ? `#${p.seed}` : ''}</em>;
+}
 const ms = (iso?: string | null) => (iso ? new Date(iso).getTime() : Number.NaN);
 
 function clock(msLeft: number): string {
@@ -475,9 +545,16 @@ export function CupTv() {
       : parallel && featured
         ? { match: featured, round: parallel, kicker: `FEATURED · ${fmt(parallel.matches.filter(isLive).length)} LIVE` }
         : null;
+  const wordTrip = gameOf(event?.gameKey) === 'wordtrip';
+  const wtStageOn = wordTrip && stage && ['live', 'solo', 'done'].includes(stage.match.status);
+  const wtFinal = wtStageOn && stage!.round.short === 'F' && stage!.match.status !== 'done';
+  // The rounds before the last eight: the live boards across the whole screen (the bracket of the last eight is still empty).
+  const wtWide = wordTrip && !stage && current?.kind === 'parallel' && event?.phase === 'running';
+  // The real number on the stage: the players of its first round (free passes included), else the event's top N.
+  const lastN = sequential[0] ? sequential[0].matches.length * 2 + (sequential[0].byes?.length ?? 0) : event?.topN ?? 8;
   const bracketPanel = event && (
     <section className="ctv-panel" aria-label="The last eight">
-      <h2 className="ctv-h">The last {event.topN}</h2>
+      <h2 className="ctv-h">The last {lastN}</h2>
       {sequential.length ? (
         <Bracket rounds={sequential} onStageId={stage?.match.id} onPick={hr && !stream ? (m) => setConfirming(m) : undefined} />
       ) : (
@@ -488,6 +565,8 @@ export function CupTv() {
 
   return (
     <GameCtx.Provider value={gameOf(event?.gameKey)}>
+    <PhotosCtx.Provider value={state?.photos ?? null}>
+    <SeedsCtx.Provider value={!event?.lobbyDraw || !!event?.qualifier}>
     <div ref={root} className={`ctv${stream ? ' stream' : ''}`} data-testid="cup-tv">
       <style>{CSS}</style>
       <header className="ctv-top">
@@ -512,7 +591,10 @@ export function CupTv() {
         </div>
       )}
 
-      {event && stream && onAir && (
+      {event && stream && onAir && wordTrip && (
+        <WtDuel match={onAir.match} round={onAir.round} words={state?.wordTrip?.[onAir.match.id ?? '']} serverNow={serverNow} size="xl" />
+      )}
+      {event && stream && onAir && !wordTrip && (
         <StreamDuel match={onAir.match} round={onAir.round} split={stage && onAir.match === stage.match ? stageSplit : undefined} serverNow={serverNow} roundSec={roundSec} kicker={onAir.kicker} />
       )}
       {event && stream && !onAir && (
@@ -534,10 +616,18 @@ export function CupTv() {
         </div>
       )}
 
-      {event && !stream && (
+      {event && !stream && wtFinal && (
+        <WtDuel match={stage!.match} round={stage!.round} words={state?.wordTrip?.[stage!.match.id ?? '']} serverNow={serverNow} size="xl" />
+      )}
+      {event && !stream && wtWide && current && (
+        <WtLiveGrid round={current} words={state?.wordTrip} serverNow={serverNow} />
+      )}
+      {event && !stream && !wtFinal && !wtWide && (
         <div className="ctv-grid">
           <div className="ctv-col">
-            {stage ? (
+            {wtStageOn ? (
+              <WtDuel match={stage!.match} round={stage!.round} words={state?.wordTrip?.[stage!.match.id ?? '']} serverNow={serverNow} size="l" />
+            ) : stage ? (
               <Stage
                 match={stage.match}
                 round={stage.round}
@@ -549,7 +639,9 @@ export function CupTv() {
             ) : (
               <Waiting event={event} />
             )}
-            {!stage && current?.kind === 'parallel' && <LiveNow round={current} onWatch={onWatch} />}
+            {!stage && current?.kind === 'parallel' && (wordTrip
+              ? <WtLiveGrid round={current} words={state?.wordTrip} serverNow={serverNow} />
+              : <LiveNow round={current} onWatch={onWatch} />)}
             {earlier.length > 0 && (
               <section className="ctv-panel" aria-label="Earlier rounds">
                 <h2 className="ctv-h">Earlier rounds</h2>
@@ -576,6 +668,8 @@ export function CupTv() {
       })()}
       {confirming && <VoidDialog match={confirming} onCancel={() => setConfirming(null)} onConfirm={() => doVoid(confirming)} />}
     </div>
+    </SeedsCtx.Provider>
+    </PhotosCtx.Provider>
     </GameCtx.Provider>
   );
 }
@@ -764,7 +858,7 @@ function BoardsDuel({ match, size }: { match: Match; size: number }) {
               <CupFace p={p} colour={colour} />
               <span className="ctv-nm">
                 {p ? firstName(p.name) : 'To be decided'}
-                {p && <span className="ctv-seed">#{p.seed}</span>}
+                {p && <SeedTag p={p} />}
               </span>
               <span className="ctv-sc" style={{ color: colour }}>{fmt(s)}</span>
             </div>
@@ -814,7 +908,7 @@ function leadLine(match: Match, round: Round): string {
     const w = match.winnerId === match.a.userId ? match.a : match.winnerId === match.b.userId ? match.b : null;
     if (!w) return '';
     const kn = isKnights(match);
-    const how = match.decidedBy === 'absent' ? ' (neither played: the better seed goes through)' : match.decidedBy === 'solo' ? ' (the other player did not show)'
+    const how = match.decidedBy === 'absent' ? ' (neither played: the better rank goes through)' : match.decidedBy === 'solo' ? ' (the other player did not show)'
       : kn && match.decidedBy === 'finished' ? ' (first right board)'
       : kn && match.decidedBy === 'resigned' ? ' (the other player resigned)'
       : kn ? ' (most knights right at the bell)' : '';
@@ -861,7 +955,7 @@ function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
             {pill.text}
           </span>
           <span style={{ fontFamily: "'Lilita One',system-ui,sans-serif", fontSize: 30 }}>
-            {round.label === match.label ? match.label : `${round.label} · ${match.label}`}{match.attempt ? ` · replay ${match.attempt}` : ''}
+            {round.label === match.label || match.label.startsWith(round.label) ? match.label : `${round.label} · ${match.label}`}{match.attempt ? ` · replay ${match.attempt}` : ''}
           </span>
         </div>
         {timer && (
@@ -883,7 +977,7 @@ function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
               <CupFace p={p} colour={colour} />
               <span className="ctv-nm">
                 {p ? p.name : 'To be decided'}
-                {p && <span className="ctv-seed">#{p.seed}</span>}
+                {p && <SeedTag p={p} />}
                 {won && <span className="ctv-won">THROUGH</span>}
               </span>
               <span className="ctv-sc" style={{ color: colour }}>{p && scored ? fmt(s) : ''}</span>
@@ -939,6 +1033,115 @@ function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
   );
 }
 
+// —— Word Trip: both boards, words live ———————————————————————————————————————
+
+/**
+ * One player's board, as their normal Word Trip run is now: face, name and score, their clock (each player's own:
+ * 1:00 plus what their words earned), the letters of the stop they are on, their words on it, newest last.
+ */
+const WtBoard = memo(function WtBoard({ p, colour, x, lead, size, solo, before, done, serverNow }: {
+  p: Player | null; colour: string; x?: WtSide; lead: boolean; size: 'xl' | 'l' | 's'; solo?: boolean; before: boolean; done: boolean; serverNow: number;
+}) {
+  const words = x?.found ?? [];
+  const shown = size === 's' ? words.slice(-8) : size === 'l' ? words.slice(-18) : words.slice(-30);
+  const letters = x?.letters ?? '';
+  const left = x?.endsAt ? x.endsAt - serverNow : Number.NaN;
+  const finished = done || (Number.isFinite(left) && left <= 0);
+  return (
+    <div className={`wt-b ${size}${lead ? ' lead' : ''}`} style={{ '--pc': colour } as CSSProperties}>
+      <div className="wt-bh">
+        <CupFace p={p} colour={colour} />
+        <span className="wt-bn">{p ? firstName(p.name) : 'To be decided'}</span>
+        <span className="wt-bs">{fmt(x?.score ?? 0)}</span>
+      </div>
+      {solo ? <div className="wt-solo">Didn’t come</div> : (
+        <>
+          <div className="wt-bk">
+            <span>{before ? 'Ready' : finished ? 'Finished' : `Stop ${(x?.gi ?? 0) + 1} · ${letters.length || '–'} letters`}</span>
+            <b className={!finished && !before && left <= 10_000 ? 'low' : ''}>{before ? '1:00' : finished ? 'Time!' : clock(left)}</b>
+          </div>
+          <div className="wt-lt" aria-label={letters ? `Letters ${letters.split('').join(' ')}` : 'Letters coming'}>
+            {(letters || '').toUpperCase().split('').map((c, i) => <span key={i}>{c}</span>)}
+          </div>
+          <div className="wt-ws" aria-live="polite">
+            {shown.length ? shown.map(([w, pts], i) => (
+              <span key={`${w}${i}`} className={`wt-w${letters && w.length === letters.length ? ' full' : ''}`}>{w.toUpperCase()}<i>+{fmt(pts)}</i></span>
+            )) : <span className="wt-none">{finished ? `${fmt(x?.words ?? 0)} words in all` : 'No words on these letters yet'}</span>}
+          </div>
+          {!!x?.words && <div className="wt-ss"><span>Words in all: <b>{fmt(x.words)}</b></span></div>}
+        </>
+      )}
+    </div>
+  );
+});
+
+/** A Word Trip match, both boards side by side, live. */
+function WtDuel({ match, round, words, serverNow, size }: { match: Match; round: Round; words?: WtLive[string]; serverNow: number; size: 'xl' | 'l' | 's' }) {
+  const start = ms(match.startAt);
+  const before = !Number.isFinite(start) || serverNow < start;
+  const side = (p: Player | null): WtSide | undefined => {
+    if (!p) return undefined;
+    const x = words?.[p.userId];
+    const score = num(match.result?.[p.userId]) ?? x?.score ?? num(match.live?.[p.userId]) ?? 0;
+    return { ...(x ?? { words: 0, gi: 0, letters: '', found: [] }), score };
+  };
+  const a = side(match.a);
+  const b = side(match.b);
+  const decided = match.status === 'done';
+  const winner = decided ? match.winnerId : null;
+  const pill = STATUS_PILL[match.status];
+  const label = round.label === match.label || match.label.startsWith(round.label) ? match.label : `${round.label} · ${match.label}`;
+  const timeText = decided ? 'Done' : before && Number.isFinite(start) ? `Starts in ${Math.max(1, Math.ceil((start - serverNow) / 1000))}` : '';
+  return (
+    <section className={`wt-duel ${size}`} aria-label={`${label}, live`}>
+      <div className="wt-dh">
+        <span className="ctv-pill" style={{ background: pill.bg, color: pill.fg }}>{(match.status === 'live' || match.status === 'solo') && <i aria-hidden="true" />}{pill.text}</span>
+        <span className="wt-dl">{label}{match.attempt ? ` · replay ${match.attempt}` : ''}</span>
+        <span className="wt-dk" />
+        <span className="wt-dt">{timeText}</span>
+      </div>
+      <div className="wt-dr">
+        <WtBoard p={match.a} colour={C.a} x={a} lead={decided ? winner === match.a?.userId : (a?.score ?? 0) > (b?.score ?? 0)} size={size} before={before} done={decided} serverNow={serverNow}
+          solo={match.status === 'solo' && !!match.a && !(match.joined ?? []).includes(match.a.userId)} />
+        <WtBoard p={match.b} colour={C.b} x={b} lead={decided ? winner === match.b?.userId : (b?.score ?? 0) > (a?.score ?? 0)} size={size} before={before} done={decided} serverNow={serverNow}
+          solo={match.status === 'solo' && !!match.b && !(match.joined ?? []).includes(match.b.userId)} />
+      </div>
+      {decided && winner && <span className="wt-res">{firstName((winner === match.a?.userId ? match.a : match.b)?.name ?? '')} {round.short === 'F' ? 'wins the tournament!' : 'goes through'}</span>}
+    </section>
+  );
+}
+
+/** The round before the last eight, live: the matches being played, four at a time (a new four every 10 s), in bracket order. */
+function WtLiveGrid({ round, words, serverNow }: { round: Round; words?: WtLive; serverNow: number }) {
+  const live = round.matches.filter((m) => m.status === 'live' || m.status === 'solo');
+  const decided = round.matches.filter((m) => m.status === 'done').length;
+  const [page, setPage] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setPage((x) => x + 1), 10_000);
+    return () => window.clearInterval(id);
+  }, []);
+  const per = 4;
+  const pages = Math.max(1, Math.ceil(live.length / per));
+  const at = page % pages;
+  // In bracket order, so a match stays where it is from one look to the next.
+  const order = [...live].sort((x, y) => x.slot - y.slot);
+  const shown = order.slice(at * per, at * per + per);
+  return (
+    <section className="ctv-panel" aria-label={`${round.label}, live`}>
+      <h2 className="ctv-h">{round.label} · live now</h2>
+      <div className="ctv-livecount">
+        <span style={{ color: C.coral }}>{fmt(live.length)} playing</span>
+        <span>{fmt(decided)}/{fmt(round.matches.length)} decided{pages > 1 ? ` · page ${at + 1} of ${pages}` : ''}</span>
+      </div>
+      {shown.length ? (
+        <div className="wt-grid">{shown.map((m) => <WtDuel key={m.id ?? m.slot} match={m} round={round} words={words?.[m.id ?? '']} serverNow={serverNow} size="s" />)}</div>
+      ) : (
+        <div className="ctv-empty">{decided === round.matches.length ? 'Every match is decided. The next round opens now.' : 'Players are joining. The boards show the moment a match starts.'}</div>
+      )}
+    </section>
+  );
+}
+
 // —— the bracket ——————————————————————————————————————————————————————————
 
 function Bracket({ rounds, onStageId, onPick }: { rounds: Round[]; onStageId?: string; onPick?: (m: Match) => void }) {
@@ -957,7 +1160,7 @@ function Bracket({ rounds, onStageId, onPick }: { rounds: Round[]; onStageId?: s
                   const s = scoreOf(m, p);
                   return (
                     <div key={i} className={`ctv-bp${out ? ' out' : ''}${win ? ' win' : ''}`}>
-                      <em>{p ? `#${p.seed}` : ''}</em>
+                      <SeedEm p={p} />
                       <span>{p ? p.name : '—'}</span>
                       {p && m.status !== 'pending' && m.status !== 'scheduled' && m.status !== 'betting' && <b>{fmt(s)}</b>}
                     </div>
@@ -1056,10 +1259,10 @@ function WatchDialog({ match, round, serverNow, roundSec, onClose }: { match: Ma
     ? serverNow < start ? `Starts in ${Math.max(1, Math.ceil((start - serverNow) / 1000))}` : `${clock(start + roundSec * 1000 - serverNow)} left`
     : match.status === 'done' ? 'Final score' : '';
   return (
-    <div className="ctv-veil" role="dialog" aria-modal="true" aria-label={`${round.label} · ${match.label}`} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="ctv-veil" role="dialog" aria-modal="true" aria-label={round.label === match.label || match.label.startsWith(round.label) ? match.label : `${round.label} · ${match.label}`} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="ctv-focus">
         <div className="ctv-stagehead">
-          <span style={{ fontFamily: "'Lilita One',system-ui,sans-serif", fontSize: 30 }}>{round.label} · {match.label}</span>
+          <span style={{ fontFamily: "'Lilita One',system-ui,sans-serif", fontSize: 30 }}>{round.label === match.label || match.label.startsWith(round.label) ? match.label : `${round.label} · ${match.label}`}</span>
           <span style={{ flex: 1 }} />
           <span style={{ fontFamily: "'Lilita One',system-ui,sans-serif", fontSize: 30, color: C.ink2 }}>{left}</span>
           <button type="button" className="ctv-ghost" onClick={onClose} autoFocus>Close</button>
@@ -1118,7 +1321,7 @@ function Standings({ rows }: { rows: NonNullable<CupState['standings']> }) {
         {rows.filter((r) => r.place > 1).slice(0, 7).map((r) => (
           <div className="ctv-tip" key={r.userId}>
             <span className="ctv-rank">{r.place}</span>
-            <div className="tx"><span>{r.name}</span><small>{r.reached} · seed #{r.seed}</small></div>
+            <div className="tx"><span>{r.name}</span><small>{r.reached} · rank #{r.seed}</small></div>
           </div>
         ))}
       </div>
@@ -1262,7 +1465,7 @@ function StreamDuel({ match, round, split, serverNow, roundSec, kicker }: {
           <CupFace p={p} colour={colour} />
           <span className="cs-nm">
             {p ? p.name : 'No opponent'}
-            {p && <span className="ctv-seed">#{p.seed}</span>}
+            {p && <SeedTag p={p} />}
           </span>
           <span className="cs-sc" style={{ color: colour }}>{p ? fmt(s) : ''}</span>
         </div>
@@ -1279,7 +1482,7 @@ function StreamDuel({ match, round, split, serverNow, roundSec, kicker }: {
           {pill.text}
         </span>
         <span className="cs-label">
-          {round.label === match.label ? match.label : `${round.label} · ${match.label}`}{match.attempt ? ` · replay ${match.attempt}` : ''}
+          {round.label === match.label || match.label.startsWith(round.label) ? match.label : `${round.label} · ${match.label}`}{match.attempt ? ` · replay ${match.attempt}` : ''}
         </span>
         {kicker && <span className="cs-kick">{kicker}</span>}
       </div>

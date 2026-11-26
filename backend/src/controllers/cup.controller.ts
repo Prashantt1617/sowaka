@@ -5,6 +5,11 @@ import {
   inlinePhoto,
   joinLobby,
   joinMatch,
+  playWordIn,
+  joinQualifier,
+  playRunWordIn,
+  wordTripGameFor,
+  cupThumb,
   reportFinal,
   reportLive,
   resignMatch,
@@ -52,7 +57,7 @@ export const cupHandler =
 export async function stateHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const viewer = await cupViewerOf(req);
-    noStore(res).type('application/json').send(await stateFor(viewer, eventOf(req), req.query.since));
+    noStore(res).type('application/json').send(await stateFor(viewer, eventOf(req), req.query.since, req.query.pv));
   } catch (error) {
     cupFailed(error, res, next);
   }
@@ -70,6 +75,42 @@ export const liveHandler = cupHandler(async (viewer, req) => {
   return undefined;
 });
 export const finalHandler = cupHandler((viewer, req) => reportFinal(viewer, idOf(req), req.body?.score));
+/** Word Trip: one word `{ stop, word, t }` (or a skip `{ skip: true, stop, t }`), played again by the server; the answer says whether it counted. */
+/** Word Trip: the normal game's page, to play the match in (`?v=` the version the page holds: just that it is the same). */
+export const wordTripGameHandler = cupHandler((viewer, req) => wordTripGameFor(viewer, req.query.v));
+/** Word Trip's qualifier: the viewer's run of the attempt open now, and a word of it. */
+export const qualifierJoinHandler = cupHandler((viewer, req) => joinQualifier(viewer, eventOf(req)));
+export const runWordHandler = cupHandler((viewer, req) => playRunWordIn(viewer, idOf(req), req.body));
+export const wordHandler = cupHandler((viewer, req) => playWordIn(viewer, idOf(req), req.body));
+
+/**
+ * A face for the tournament page and the TV, small (`cupThumb`): signed in its
+ * path, the same address for the same photo, kept a year by browsers and by
+ * any cache in front (`public, immutable`). Not behind the ticket: an `<img>`
+ * sends none, and the dashboard's TV has no ticket at all.
+ */
+export async function thumbHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const bytes = await cupThumb(String(req.params.eventId ?? ''), String(req.params.userId ?? ''), String(req.params.v ?? ''), String(req.params.sig ?? ''));
+    if (!bytes) {
+      res.status(404).set('Cache-Control', 'public, max-age=300').json({ success: false, message: 'No photo' });
+      return;
+    }
+    res
+      .status(200)
+      .set({
+        'Content-Type': 'image/webp',
+        'Content-Length': String(bytes.length),
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        'Cross-Origin-Resource-Policy': 'cross-origin',
+        'X-Content-Type-Options': 'nosniff',
+      })
+      .send(bytes);
+  } catch (error) {
+    cupFailed(error, res, next);
+  }
+}
+
 /** Knights: gives the match up; the opponent wins at once. */
 export const resignHandler = cupHandler((viewer, req) => resignMatch(viewer, idOf(req)));
 
