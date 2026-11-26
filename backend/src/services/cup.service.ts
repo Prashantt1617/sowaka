@@ -49,6 +49,8 @@ import {
   WT_REPLAY_SEC,
   WT_GRACE_SEC,
   WT_SPAN,
+  watchBoardsFor,
+  type WtBoardView,
   pickFreshSeed,
   reachedOf,
   stopsSeen,
@@ -1963,20 +1965,25 @@ function wordTripMine(rt: Runtime, match: CupMatch, userId: string) {
 export function wordTripTvOf(eventId: string) {
   const rt = runtimes.get(eventId);
   if (!rt || !isWordTripEvent(rt.event)) return undefined;
-  const out: Record<string, Record<string, { score: number; words: number; gi: number; letters: string; found: [string, number][]; endsAt?: number }>> = {};
+  const out: Record<string, Record<string, WtBoardView>> = {};
   for (const m of rt.matches.values()) {
     if (m.round !== rt.event.round && !(m.status === 'live' || m.status === 'solo')) continue;
     if (m.status !== 'live' && m.status !== 'solo' && m.status !== 'done') continue;
-    const ends = wtEndsOf(rt, m);
-    const row: (typeof out)[string] = {};
-    for (const p of m.players) {
-      const mem = wtPlayer(rt, m, p);
-      const s = wtScoreOf(rt, m, p);
-      row[p] = { score: s.score, words: s.words, gi: s.gi, letters: wtGame && m.startAt ? wtGame.boards(m.seed, s.gi).letters : '', found: mem?.run.found[s.gi] ?? [], endsAt: ends[p] };
-    }
-    out[m.id] = row;
+    out[m.id] = wtBoardsOf(rt, m);
   }
   return out;
+}
+
+/** Both players' boards in one match, as the TV shows them (built from what this process holds: no reads). */
+function wtBoardsOf(rt: Runtime, m: CupMatch): Record<string, WtBoardView> {
+  const ends = wtEndsOf(rt, m);
+  const row: Record<string, WtBoardView> = {};
+  for (const p of m.players) {
+    const mem = wtPlayer(rt, m, p);
+    const s = wtScoreOf(rt, m, p);
+    row[p] = { score: s.score, words: s.words, gi: s.gi, letters: wtGame && m.startAt ? wtGame.boards(m.seed, s.gi).letters : '', found: mem?.run.found[s.gi] ?? [], endsAt: ends[p] };
+  }
+  return row;
 }
 
 // ---------------------------------------------------------------- the qualifier (Word Trip)
@@ -2823,7 +2830,7 @@ async function meOf(rt: Runtime, viewer: CupViewer) {
  * Everything one person's page draws, in one round trip. With `since` equal
  * to the current version, just that nothing changed.
  */
-export async function stateFor(viewer: CupViewer, askedId: unknown, since: unknown, photosHeld?: unknown): Promise<string> {
+export async function stateFor(viewer: CupViewer, askedId: unknown, since: unknown, photosHeld?: unknown, watching?: unknown): Promise<string> {
   const now = new Date();
   const rt = await runtimeFor(viewer, askedId);
   if (!rt) {
@@ -2849,6 +2856,12 @@ export async function stateFor(viewer: CupViewer, askedId: unknown, since: unkno
   const me = await meOf(rt, viewer);
   const extra: Record<string, unknown> = { current: common.current ?? undefined };
   if (rt.event.phase === 'done') extra.standings = standingsOf(rt);
+  // Word Trip: the match this phone is watching, both boards as the TV has them; only for someone not playing in it.
+  if (typeof watching === 'string' && watching && isWordTripEvent(rt.event)) {
+    const wm = rt.matches.get(watching);
+    const watch = wm ? watchBoardsFor(viewer.userId, wm, wtBoardsOf(rt, wm)) : undefined;
+    if (watch) extra.watch = watch;
+  }
   if (sendPhotos) {
     extra.photos = Object.fromEntries(rt.photos?.map ?? []);
     extra.photosV = rt.photosRev ?? 0;

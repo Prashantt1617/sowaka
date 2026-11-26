@@ -41,6 +41,8 @@
     '.wt-ql{display:flex;flex-direction:column;gap:6px}.wt-qr{display:grid;grid-template-columns:28px 34px minmax(0,1fr) auto auto;align-items:center;gap:10px;background:#211D42;border-radius:14px;padding:8px 12px}.wt-qr.me{box-shadow:inset 0 0 0 2px #FFD23F}.wt-qr.out{opacity:.55}' +
     '.wt-qr em{font-style:normal;font-weight:800;color:#A9A3CC;text-align:right}.wt-qr .wt-f{width:34px;height:34px;font-size:12px}.wt-qr span{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wt-qr span i{font-style:normal;font-size:12px;color:#4BE39A;margin-left:4px}.wt-qr small{font-size:12px;color:#A9A3CC}.wt-qr b{font:800 20px/1 "Baloo 2",system-ui;min-width:56px;text-align:right}' +
     '.wt-cut{margin:6px 0;padding:6px 0;border-top:2px dashed #FFD23F;color:#FFD23F;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;text-align:center}' +
+    '.wt-watch .wt-wb{background:#211D42;border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:10px;box-shadow:inset 0 0 0 2px var(--c)}.wt-wbh{display:flex;align-items:center;gap:10px}.wt-wbh .wt-f{width:42px;height:42px}.wt-wbh .nm{flex:1;display:flex;flex-direction:column;font-weight:800;font-size:17px;color:#F6F1FF}.wt-wbh .nm small{font-size:12px;font-weight:700;color:#A9A3CC}.wt-wbh .sc{font:800 30px/1 "Baloo 2",system-ui;color:var(--c)}' +
+    '.wt-wbs{display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:#A9A3CC}.wt-wbs b{color:#F6F1FF}.wt-watch .wt-tiles{justify-content:flex-start}.wt-wbw{display:flex;flex-wrap:wrap;gap:6px}.wt-wbw span{background:#2B2650;border-radius:10px;padding:5px 9px;font-weight:800;font-size:14px;color:#F6F1FF}.wt-wbw i{font-style:normal;color:#4BE39A;margin-left:5px;font-size:12px}.wt-wbw em{font-style:normal;color:#A9A3CC;font-size:13px}.wt-wbp{font-size:12px;font-weight:700;color:#A9A3CC}' +
     '.wt-why{margin:0;padding:12px 14px;border-radius:14px;background:rgba(255,107,87,.14);color:#FF8A7A;font-weight:700;text-align:center}';
 
   window.CupWtScreens = function (H) {
@@ -78,7 +80,7 @@
         '<div style="flex-grow:1"></div>' +
         (me.entered
           ? '<div style="display:flex;flex-direction:column;gap:10px">' + (err ? '<p class="wt-why" role="alert">' + esc(err) + '</p>' : '') +
-            '<button type="button" class="wt-btn" data-act="lobby"' + (!open || H.ui.busy === 'lobby' ? ' disabled' : '') + '>' + (!open ? 'Opens at ' + esc(H.clock(ev.lobbyAt)) : H.ui.busy === 'lobby' ? 'Joining…' : 'Join') + '</button>' +
+            '<button type="button" class="wt-btn" data-act="lobby"' + (!open || H.ui.busy === 'lobby' ? ' disabled' : '') + '>' + (!open ? 'Opens at ' + esc(H.clock(ev.lobbyAt)) : H.ui.busy === 'lobby' ? 'Joining…' : 'Join lobby') + '</button>' +
             '<span class="wt-s">Free to play.' + (wallet() ? ' You get ' + wallet() + ' points to bet on the last rounds.' : '') + '</span></div>'
           : '<p class="wt-s">You’re not in this tournament, but you can watch every match.</p>') +
         '</section>';
@@ -289,6 +291,24 @@
       return '<section class="wt" aria-label="Qualifier scores"><div class="wt-row"><span class="wt-k">QUALIFIER · ' + esc(attemptName(board.stage).toUpperCase()) + '</span><span class="wt-k">' + num(board.played) + ' PLAYED</span></div>' +
         '<h1>Best scores</h1>' + (rows.length ? '<div class="wt-ql">' + out + '</div>' : '<p class="wt-mu">Scores show here as runs are played.</p>') + '</section>';
     }
-    return { join: join, lobby: lobby, match: match, waiting: waiting, bet: bet, result: result, face: face, tiles: tiles, qual: qual, qualOut: qualOut, qualIn: qualIn, qualBoard: qualBoard };
+    /* A match watched on the phone: both players' boards as the TV has them (stop letters, words on it newest first, score, own clock), stacked. */
+    function watchBoards(m, w) {
+      var live = m.status === 'live' || m.status === 'solo';
+      function side(p, col) {
+        if (!p) return '';
+        var b = w && w.players ? w.players[p.userId] : null, me = p.userId === H.meId();
+        var ends = b && b.endsAt ? Number(b.endsAt) : NaN, over = !isFinite(ends) || H.now() >= ends;
+        var ck = m.status === 'done' ? 'Finished' : !live || !b ? '' : over ? 'Time’s up' : '<b data-cd="' + ends + '">' + H.left(ends) + '</b> left';
+        var found = b && b.found ? b.found.slice().reverse() : [];
+        return '<div class="wt-wb" style="--c:' + col + '"><div class="wt-wbh">' + face(p, '', 'w') +
+          '<span class="nm">' + esc(me ? 'You' : first(p.name)) + (p.seed ? '<small>Rank #' + num(p.seed) + '</small>' : '') + '</span><b class="sc">' + num(b ? b.score : 0) + '</b></div>' +
+          '<div class="wt-wbs"><span>' + (b && b.letters ? 'Stop ' + (b.gi + 1) + ' · ' + b.letters.length + ' letters' : live ? 'Getting ready' : '') + '</span><span>' + ck + '</span></div>' +
+          (b && b.letters ? tiles(b.letters, false, true) : '') +
+          '<div class="wt-wbw">' + (found.length ? found.map(function (f) { return '<span>' + esc(String(f[0]).toUpperCase()) + '<i>+' + num(f[1]) + '</i></span>'; }).join('') : '<em>' + (b && b.letters ? 'No words on this stop yet' : 'Words show here as they are found') + '</em>') + '</div>' +
+          '<div class="wt-wbp">' + num(b ? b.words : 0) + ' words in all</div></div>';
+      }
+      return '<div class="wt wt-watch" style="padding:0;min-height:0;gap:12px">' + side(m.a, '#FF8A7A') + side(m.b, '#6FD3F2') + '</div>';
+    }
+    return { watchBoards: watchBoards, join: join, lobby: lobby, match: match, waiting: waiting, bet: bet, result: result, face: face, tiles: tiles, qual: qual, qualOut: qualOut, qualIn: qualIn, qualBoard: qualBoard };
   };
 })();

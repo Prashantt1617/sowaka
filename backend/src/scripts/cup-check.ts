@@ -28,6 +28,7 @@ import {
   WT_BLOCKED,
   WT_DEFAULT_RULES,
   WT_SPAN,
+  watchBoardsFor,
   pickFreshSeed,
   stopsSeen,
   bracketRoundName,
@@ -825,6 +826,23 @@ check('word trip: one end rule: a word arrives by clock out + 20 s (the match de
   // On time again: the swipe-speed check as before.
   const t2 = wordTimeOf(46, 46.2);
   assert.equal(t2.clamped, false);
+});
+
+check('word trip: watching a match on the phone: a spectator gets both boards (letters, words, score, clock); a player in it never gets them', () => {
+  const boards = {
+    a: { score: 320, words: 4, gi: 1, letters: 'tsaer', found: [['star', 120], ['rat', 60]] as [string, number][], endsAt: 70_000 },
+    b: { score: 150, words: 2, gi: 0, letters: 'nlpae', found: [['nap', 60]] as [string, number][], endsAt: 64_000 },
+  };
+  const live = { id: 'e-r1-m3', players: ['a', 'b'] as [string, string], status: 'live' as const };
+  const seen = watchBoardsFor('c', live, boards);
+  assert.ok(seen && seen.matchId === 'e-r1-m3');
+  assert.deepEqual(Object.keys(seen!.players).sort(), ['a', 'b'], 'both boards');
+  assert.deepEqual(seen!.players.a.found, [['star', 120], ['rat', 60]], 'their words with points');
+  assert.equal(seen!.players.b.letters, 'nlpae');
+  assert.equal(watchBoardsFor('a', live, boards), undefined, 'a player in the match: not the boards (the other player’s words)');
+  assert.equal(watchBoardsFor('b', live, boards), undefined);
+  assert.equal(watchBoardsFor('c', { ...live, status: 'betting' as const }, boards), undefined, 'nothing before it is played');
+  assert.ok(watchBoardsFor('c', { ...live, status: 'done' as const }, boards), 'and the final boards once done');
 });
 
 check('word trip: every run is the normal game: the final deals the same stops (letter counts) and plays by the same rules as round 1 and the qualifier', () => {

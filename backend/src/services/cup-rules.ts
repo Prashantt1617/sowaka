@@ -958,6 +958,19 @@ export function bracketRoundName(n: number, total: number, nodes: number): { lab
   return { label: `Round of ${nodes * 2}`, short: `R${nodes * 2}` };
 }
 
+/** One player's board in a Word Trip match as the TV and spectators see it: score, words, stop, its letters, the words on it, their clock. */
+export interface WtBoardView { score: number; words: number; gi: number; letters: string; found: [string, number][]; endsAt?: number }
+
+/**
+ * The match a phone is watching, both boards (as the TV has them), for a spectator only: a player in that
+ * match never gets it (no player's state holds the other player's words).
+ */
+export function watchBoardsFor(viewerId: string, match: Pick<CupMatch, 'id' | 'players' | 'status'>, boards: Record<string, WtBoardView>): { matchId: string; players: Record<string, WtBoardView> } | undefined {
+  if (match.players.includes(viewerId)) return undefined;
+  if (match.status !== 'live' && match.status !== 'solo' && match.status !== 'done') return undefined;
+  return { matchId: match.id, players: boards };
+}
+
 /** The first name only (the public screens show no full names). */
 export const firstNameOf = (name: string | null | undefined) => String(name ?? '').trim().split(/\s+/)[0] || 'Player';
 

@@ -61,7 +61,7 @@ const GHOSTS = new Set([3, 17, 29, 41, 58, 77].filter((i) => i < BOTS).map(id));
 /** In the draw (connected in the lobby) but never join a match: their opponents play alone. */
 const NO_SHOW = new Set([7, 22, 64].filter((i) => i < BOTS).map(id));
 /** Join the lobby after attempt 1's window has closed: attempt 2 only (attempt 1 refused). ~10 for 100 bots, ~15 for 170. */
-const LATE = new Set([5, 9, 11, 13, 19, 25, 33, 37, 45, 55, 61, 70, 85, 100, 115].filter((i) => i < Math.min(BOTS, 60 + BOTS / 2)).map(id));
+const LATE_AT = [5, 9, 11, 13, 19, 25, 33, 37, 45, 55, 61, 70, 85, 100, 115];
 /** Play attempt 1 only. */
 const SKIP_A2 = new Set([2, 8].filter((i) => i < BOTS).map(id));
 /**
@@ -73,6 +73,8 @@ const PLAYERS = Array.from({ length: BOTS }, (_, i) => i).filter((i) => !GHOSTS.
 const STRONG_N = Math.max(0, qualifierCut(PLAYERS.length) - 2);
 const TIE = new Set(PLAYERS.slice(STRONG_N, STRONG_N + 4).map(id));
 const WEAK = new Set(PLAYERS.slice(STRONG_N + 4).map(id));
+/** The late joiners are strong players (never one of the tied: their two attempts must match). */
+const LATE = new Set(LATE_AT.filter((i) => PLAYERS.slice(0, STRONG_N).includes(i) && i < 60 + BOTS / 2).map(id));
 
 process.env.SCRIBBLE_TICKET_SECRET = SECRET;
 process.env.MONGODB_URI = MONGO;
@@ -584,6 +586,28 @@ async function main() {
   console.log(`Backend up after ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   const bots = ids.map((u) => bot(u, tickets.get(u)!, links.get(u)!));
   const tvRun = tv();
+  // A spectator on the phone: someone not in a live match watches it (both boards); a player in it asks too (nothing).
+  const spec = { seen: 0, withWords: 0, leaked: 0, players: 0 };
+  const spectate = (async () => {
+    const dbs = client.db(DB);
+    while (!done) {
+      await sleep(5000);
+      const live = await dbs.collection('cup_matches').find({ eventId: EVENT_ID, status: 'live' }, { projection: { _id: 0, id: 1, players: 1 } }).limit(3).toArray();
+      for (const m of live) {
+        const watcher = ids.find((u) => !m.players.includes(u) && !GHOSTS.has(u));
+        if (!watcher) continue;
+        const r = await call(tickets.get(watcher)!, 'GET', `/cup/api/state?event=${EVENT_ID}&watch=${m.id}`);
+        const w = r.status === 200 ? JSON.parse(r.text).watch : null;
+        if (w && w.matchId === m.id && m.players.every((p: string) => w.players?.[p] && typeof w.players[p].letters === 'string')) {
+          spec.seen += 1;
+          if (m.players.some((p: string) => (w.players[p].found ?? []).length)) spec.withWords += 1;
+        }
+        const pr = await call(tickets.get(m.players[0])!, 'GET', `/cup/api/state?event=${EVENT_ID}&watch=${m.id}`);
+        spec.players += 1;
+        if (pr.status === 200 && JSON.parse(pr.text).watch) spec.leaked += 1;
+      }
+    }
+  })();
   const db = client.db(DB);
   const deadline = Date.now() + 60 * 60_000;
   let lastStage = '';
@@ -767,6 +791,10 @@ async function main() {
   const q = (xs: number[], p: number) => xs[Math.min(xs.length - 1, Math.floor(xs.length * p))];
   console.log(`Calls ${calls} · 5xx/failed ${callErrors} · latency p50 ${q(latencies, 0.5)} ms p95 ${q(latencies, 0.95)} ms p99 ${q(latencies, 0.99)} ms · word calls p50 ${q(wordLat, 0.5)} ms p95 ${q(wordLat, 0.95)} ms · views leak-checked ${viewsChecked} · TV max live matches with words ${maxLiveTv}`);
   if (callErrors) fail(`${callErrors} failed calls`);
+  await spectate;
+  console.log(`Spectators: ${spec.seen} watches with both boards (${spec.withWords} with words on a stop) · players asking for their own match's boards: ${spec.players}, given them: ${spec.leaked}`);
+  if (!spec.seen || !spec.withWords) fail('a spectator never saw both boards with words');
+  if (spec.leaked) fail(`${spec.leaked} times a player got the boards of their own match`);
   const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
   const sum = Object.values(bytes).reduce((a, b) => a + b, 0);
   console.log(`\nBytes downloaded (${BOTS} pages + 1 TV, whole event): page ${mb(bytes.page)} · state polls ${mb(bytes.state)} · words ${mb(bytes.words)} · other calls ${mb(bytes.other)} · photos ${mb(bytes.photos)} (${photoLoads.bots} loads, avg ${(bytes.photos / Math.max(1, photoLoads.bots) / 1024).toFixed(1)} KB) · TV state ${mb(bytes.tvState)} · TV photos ${mb(bytes.tvPhotos)} (${photoLoads.tv} loads) · TOTAL ${mb(sum)}`);

@@ -57,7 +57,7 @@ export const cupHandler =
 export async function stateHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const viewer = await cupViewerOf(req);
-    noStore(res).type('application/json').send(await stateFor(viewer, eventOf(req), req.query.since, req.query.pv));
+    noStore(res).type('application/json').send(await stateFor(viewer, eventOf(req), req.query.since, req.query.pv, req.query.watch));
   } catch (error) {
     cupFailed(error, res, next);
   }

@@ -412,6 +412,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     if (eventId) q.push('event=' + encodeURIComponent(eventId));
     if (S && version != null) q.push('since=' + encodeURIComponent(version));
     if (photosV != null) q.push('pv=' + encodeURIComponent(photosV));
+    if (ui.duel && isWordTrip()) q.push('watch=' + encodeURIComponent(ui.duel));
     api('/state' + (q.length ? '?' + q.join('&') : '')).then(function (j) {
       var t1 = Date.now(), sn = ms(j.serverNow);
       if (isFinite(sn)) {
@@ -420,6 +421,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
       }
       if (!j.unchanged) {
         S = j; version = j.version;
+        if (isWordTrip()) toastBets();
         if (j.photos) { Object.keys(j.photos).forEach(function (k) { if (j.photos[k]) photos[k] = j.photos[k]; }); photosV = j.photosV; }
         indexPhotos(j);
         if (j.event && j.event.name) { var nm = cupName(); if (nm !== lastName) { lastName = nm; store('cup-name', { id: j.event.id, n: nm }); } if (document.title !== nm) document.title = nm; }
@@ -463,6 +465,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     if (isKnights()) { var rr = m.right || (m.result && m.result.right); return rr ? (rr[uid] != null ? rr[uid] : null) : placedOf(m, uid); }
     if (m.result && m.result[uid] != null) return m.result[uid];
     if (m.live && m.live[uid] != null) return m.live[uid];
+    if (S.watch && S.watch.matchId === m.id && S.watch.players && S.watch.players[uid]) return S.watch.players[uid].score;
     return null;
   }
   function isLive(m) { return m.status === 'live' || m.status === 'solo'; }
@@ -495,8 +498,10 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
 
   /* ---------- pieces ---------- */
   /* A tournament drawn from the lobby has no seeds: the pairs are random, so no seed number shows anywhere. */
-  function seeded() { var e = ev(); return !(e && e.lobbyDraw); }
-  function seedLbl(p) { return seeded() && p && p.seed ? 'Seed ' + p.seed : ''; }
+  function seeded() { var e = ev(); return !(e && e.lobbyDraw) || !!(e && e.qualifier); }
+  /* After Word Trip's qualifier the number is the player's rank. */
+  function seedWord(p) { return p && p.seed ? (isWordTrip() ? 'Rank #' : 'Seed ') + p.seed : ''; }
+  function seedLbl(p) { return seeded() && p && p.seed ? seedWord(p) : ''; }
   /* The game played in each match, as the rules and the round name it. */
   function isTrails() { var e = ev(); return !!(e && e.gameKey === 'trails'); }
   function isKnights() { var e = ev(); return !!(e && e.gameKey === 'knights'); }
@@ -636,10 +641,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     var betOn = cur && cur.status === 'betting' && !isMine(cur) ? cur : null;
     if (e.phase === 'done') return null;
     /* A bet that just settled gets its moment first (You called it / Not this time), as on the other tournaments' stage. */
-    var settled = lastSettled(), pre = settled ? viewBetResult(settled) : '';
-    if (pre && !(m && m.round === e.round && me.alive && ['open', 'live', 'solo'].indexOf(m.status) >= 0)) {
-      var rest = viewMeWordTripMain(); return pre + (rest == null ? '' : rest);
-    }
+    /* Bet results live in Watch & Bet (Your bets) and a toast; My game is only the player's own game. */
     return viewMeWordTripMain();
   }
   function viewMeWordTripMain() {
@@ -961,8 +963,8 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     function card(p) {
       var on = (mine ? mine.pick : ui.pick) === p.userId;
       var dis = !!(mine || reason);
-      return '<button type="button" class="pick' + (on ? ' on' : '') + '" data-act="pick" data-v="' + esc(p.userId) + '" aria-pressed="' + on + '"' + (dis ? ' disabled' : '') + ' aria-label="Back ' + esc(p.name) + ', seed ' + p.seed + '">' +
-        (on ? '<span class="tag">' + (mine ? 'YOUR BET' : 'YOUR PICK') + '</span>' : '') + av(p, '', p.userId === me.userId ? 'YOU' : '', p === m.a ? '#FF8A7A' : '#6FD3F2') + '<span class="nm">' + youOr(p) + '</span><span class="sdl">Seed ' + p.seed + '</span>' +
+      return '<button type="button" class="pick' + (on ? ' on' : '') + '" data-act="pick" data-v="' + esc(p.userId) + '" aria-pressed="' + on + '"' + (dis ? ' disabled' : '') + ' aria-label="Back ' + esc(p.name) + ', ' + seedWord(p).toLowerCase() + '">' +
+        (on ? '<span class="tag">' + (mine ? 'YOUR BET' : 'YOUR PICK') + '</span>' : '') + av(p, '', p.userId === me.userId ? 'YOU' : '', p === m.a ? '#FF8A7A' : '#6FD3F2') + '<span class="nm">' + youOr(p) + '</span><span class="sdl">' + seedWord(p) + '</span>' +
         (p.best != null ? '<span class="best">Best ' + num(p.best) + '</span>' : '') + '</button>';
     }
     var a = os ? os.a : { stake: 0, count: 0 }, b = os ? os.b : { stake: 0, count: 0 };
@@ -1068,6 +1070,10 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
       '<div class="ln" style="font-size:11px;color:var(--mu);font-weight:800;letter-spacing:.6px;text-transform:uppercase"><span>' + esc(m.label) + (m.status === 'solo' ? ' · solo' : '') + '</span></div>' + ln(m.a, sa, '#FF8A7A') + ln(m.b, sb, '#6FD3F2') + '</button>';
   }
   function viewWatch() {
+    var body = viewWatchMain();
+    return isWordTrip() ? body + viewMyBets() : body;
+  }
+  function viewWatchMain() {
     var e = ev(), lm = liveMatches();
     var out = '';
     var cur = S.current && findMatch(S.current.matchId);
@@ -1092,11 +1098,12 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
   function viewDuel(id) {
     var m = findMatch(id);
     if (!m || !m.a || !m.b) { ui.duel = null; return ''; }
+    if (isWordTrip() && wtViews()) return viewDuelWordTrip(m);
     var sa = scoreOf(m, m.a.userId) || 0, sb = scoreOf(m, m.b.userId) || 0, sc = Math.max(2000, sa, sb) * 1.1;
     var bet = myBet(m.id);
     function side(p, s, col) {
       var w = m.winnerId === p.userId;
-      return '<div class="duelp">' + av(p, '', p.userId === meId() ? 'YOU' : '', col) + '<b>' + youOr(p) + (bet && bet.pick === p.userId ? ' <span class="pill y" style="font-size:10px;padding:3px 8px">YOUR PICK</span>' : '') + '</b><span class="mut t13" style="font-weight:700">Seed ' + p.seed + (w ? ' · <span style="color:var(--gr)">WINNER</span>' : '') + '</span><span class="sc" style="color:' + col + '">' + num(s) + '</span>' +
+      return '<div class="duelp">' + av(p, '', p.userId === meId() ? 'YOU' : '', col) + '<b>' + youOr(p) + (bet && bet.pick === p.userId ? ' <span class="pill y" style="font-size:10px;padding:3px 8px">YOUR PICK</span>' : '') + '</b><span class="mut t13" style="font-weight:700">' + seedWord(p) + (w ? ' · <span style="color:var(--gr)">WINNER</span>' : '') + '</span><span class="sc" style="color:' + col + '">' + num(s) + '</span>' +
         '<div class="vbar" role="img" aria-label="' + esc(p.name) + ' ' + num(s) + '"><i style="width:' + ((s / sc) * 100).toFixed(1) + '%;background:' + col + '"></i></div></div>';
     }
     return '<div class="duel" role="dialog" aria-modal="true" aria-label="' + esc(m.label) + '"><div class="in">' +
@@ -1106,6 +1113,53 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
       (hasBoards(m) ? boardsBlock(m, { duel: true, pick: bet && bet.pick }) : side(m.a, sa, '#FF8A7A') + '<span class="x" aria-hidden="true" style="align-self:center">VS</span>' + side(m.b, sb, '#6FD3F2')) + leadLine(m) +
       (bet ? '<section class="betc"><span class="lock" aria-hidden="true">' + LOCK + '</span><div class="sp"><p class="lbl">Your bet</p><b>' + num(bet.stake) + ' pts on ' + esc(first((m.a.userId === bet.pick ? m.a : m.b).name)) + '</b></div></section>' : '') +
       '</div></div>';
+  }
+
+  /* Word Trip: a match watched on the phone, both boards as the TV shows them (only a spectator gets them). */
+  function viewDuelWordTrip(m) {
+    var w = S.watch && S.watch.matchId === m.id ? S.watch : null, bet = myBet(m.id);
+    var sa = scoreOf(m, m.a.userId) || 0, sb = scoreOf(m, m.b.userId) || 0;
+    var lead = m.status === 'done' && m.winnerId
+      ? (function () { var wn = m.winnerId === m.a.userId ? m.a : m.b, l = wn === m.a ? m.b : m.a; return youOr(wn) + ' won ' + num(scoreOf(m, wn.userId) || 0) + ' to ' + num(scoreOf(m, l.userId) || 0); })()
+      : sa === sb ? 'Level at ' + num(sa) : (sa > sb ? youOr(m.a) : youOr(m.b)) + ' leads by ' + num(Math.abs(sa - sb));
+    var body = isMine(m)
+      ? '<p class="note">This is your match: play it on My game.</p>'
+      : wtViews().watchBoards(m, w) + (w || !isLive(m) ? '' : '<p class="note" style="text-align:center">Loading the boards…</p>');
+    return '<div class="duel" role="dialog" aria-modal="true" aria-label="' + esc(m.label) + '"><div class="in">' +
+      '<div class="row"><button type="button" class="close" data-act="duel-close" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F1FF" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button><span class="sp"></span>' +
+      (isLive(m) ? '<span class="livec"><i aria-hidden="true"></i>LIVE</span>' : m.status === 'done' ? '<span class="pill gr">FINAL SCORE</span>' : '<span class="pill">' + esc(m.status.toUpperCase()) + '</span>') + '</div>' +
+      '<div class="row"><h2 class="sp">' + esc(m.label) + '</h2></div>' + body + '<p class="lead">' + lead + '</p>' +
+      (bet ? '<section class="betc"><span class="lock" aria-hidden="true">' + LOCK + '</span><div class="sp"><p class="lbl">Your bet</p><b>' + num(bet.stake) + ' pts on ' + esc(first((m.a.userId === bet.pick ? m.a : m.b).name)) + '</b></div></section>' : '') +
+      '</div></div>';
+  }
+
+  /* Word Trip: your bets, newest first, at the bottom of Watch & Bet (My game is only your own game). */
+  function viewMyBets() {
+    var mine = (S.bets && S.bets.mine) || [];
+    if (!mine.length) return '';
+    var bal = (S.me && S.me.balance) || 0;
+    var rows = mine.map(function (b) {
+      var m = findMatch(b.matchId), pick = m ? (m.a && m.a.userId === b.pick ? m.a : m.b) : null;
+      var delta = b.status === 'won' ? (b.payout || 0) - b.stake : b.status === 'lost' ? -b.stake : b.status === 'held' ? -b.stake : 0;
+      var res = b.status === 'won' ? '<b style="color:var(--gr)">+' + num((b.payout || 0) - b.stake) + '</b>' : b.status === 'lost' ? '<b style="color:#FF8A7A">−' + num(b.stake) + '</b>' : b.status === 'held' ? '<b class="mut">riding</b>' : '<b class="mut">refunded</b>';
+      var row = '<div class="lr"><div class="tx"><b>' + esc(m ? m.label : 'Match') + '</b><span>' + num(b.stake) + ' on ' + esc(pick ? first(pick.name) : '') + ' · balance ' + num(bal) + '</span></div>' + res + '</div>';
+      bal -= delta;
+      return row;
+    });
+    return '<div class="row"><h2 class="sp">Your bets</h2><span class="mut t13" style="font-weight:700">' + num((S.me && S.me.balance) || 0) + ' points</span></div><div class="list">' + rows.join('') + '</div>';
+  }
+  /* A bet that settles: a moment's toast, once (the list keeps it). */
+  var betsKnown = null;
+  function toastBets() {
+    var mine = (S && S.bets && S.bets.mine) || [];
+    var now_ = {};
+    mine.forEach(function (b) { if (b.status === 'won' || b.status === 'lost') now_[b.matchId] = b; });
+    if (betsKnown) Object.keys(now_).forEach(function (k) {
+      if (betsKnown[k]) return;
+      var b = now_[k];
+      toast(b.status === 'won' ? 'You called it: +' + num((b.payout || 0) - b.stake) + ' points' : 'Not this time: −' + num(b.stake) + ' points');
+    });
+    betsKnown = now_;
   }
 
   /* ---------- Tipsters ---------- */
@@ -1163,7 +1217,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
       (tip ? '<div class="card" style="flex-direction:row;align-items:center"><div class="sp"><p class="lbl" style="color:var(--cy)">Top tipster</p><b>' + (tip.userId === u ? 'You' : esc(tip.name)) + ' · ' + tip.right + ' of ' + tip.of + ' right</b></div><b class="hd" style="color:var(--gr);font-size:20px">' + signed(tip.won) + '</b></div>' : '') +
       '<div class="row"><p class="lbl sp">Final standings</p><p class="lbl">' + plural(st.length, 'player') + '</p></div>' +
       '<label class="sr" for="sq">Find a player</label><input id="sq" class="search" type="search" placeholder="Find a player" autocomplete="off" data-in="q" value="' + esc(ui.q) + '">' +
-      '<div class="list">' + list.map(function (x) { return '<div class="lr' + (x.userId === u ? ' me' : '') + '" data-k="s' + esc(x.userId) + '"><span class="n">' + x.place + '</span>' + av(x, 'xs') + '<div class="tx"><b>' + youOr(x) + '</b>' + (seeded() ? '<span>Seed ' + x.seed + '</span>' : '') + '</div><span class="mut t12" style="font-weight:700">' + esc(x.reached) + '</span></div>'; }).join('') + '</div>' +
+      '<div class="list">' + list.map(function (x) { return '<div class="lr' + (x.userId === u ? ' me' : '') + '" data-k="s' + esc(x.userId) + '"><span class="n">' + x.place + '</span>' + av(x, 'xs') + '<div class="tx"><b>' + youOr(x) + '</b>' + (seeded() ? '<span>' + seedWord(x) + '</span>' : '') + '</div><span class="mut t12" style="font-weight:700">' + esc(x.reached) + '</span></div>'; }).join('') + '</div>' +
       (!q && !ui.standAll && st.length > 24 ? '<button type="button" class="btn2" data-act="standall">Show all ' + num(st.length) + '</button>' : '');
   }
 
@@ -1545,7 +1599,11 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     all: function (v) { ui.all = v === '1'; render(); },
     watchall: function () { ui.watchAll = true; render(); },
     standall: function () { ui.standAll = true; render(); },
-    duel: function (v) { ui.duel = v; render(); },
+    duel: function (v) {
+      ui.duel = v; render();
+      /* Word Trip: the boards of the match come with the next full state. */
+      if (isWordTrip()) { version = null; poll(); }
+    },
     'duel-close': function () { ui.duel = null; render(); },
     retry: function () { netFail = 0; render(); poll(); },
     join: function () { unlock(); matchAction('join'); },
