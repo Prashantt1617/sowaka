@@ -39,7 +39,7 @@
     'window.results=function(title,stars){if(mode!=="over")return;var st=starsEl(0),big=el("div","bigscore","0");openSheet(title,[st,big,sumLine()],[]);animateScore(st,big,score,stars,true);};' +
     'window.sheetOutside=function(){};window.sheetX=function(){};' +
     'var cs=document.createElement("style");cs.textContent="#sx{display:none!important}";document.head.appendChild(cs);' +
-    'addEventListener("message",function(e){var d=e.data;if(!d||d.cupwt!==2)return;if(d.type==="start"){try{save.best=0;save.rounds=0;}catch(x){}try{start(null,d.seed);}catch(x){post({type:"error",message:String(x)});}}});' +
+    'addEventListener("message",function(e){var d=e.data;if(!d||d.cupwt!==2)return;if(d.type==="start"){try{save.best=0;save.rounds=0;}catch(x){}try{start(null,d.seed);}catch(x){post({type:"error",message:String(x)});}}if(d.type==="resync"&&typeof d.gi==="number"){try{if(mode==="play"&&d.gi!==gi){gi=d.gi;showStop();}}catch(x){post({type:"error",message:String(x)});}}});' +
     'post({type:"ready"});' +
     '})();<\/script>';
   var CSS = '.cwt{position:absolute;inset:0;background:#15122B;color:#F6F1FF;font-family:Figtree,system-ui,sans-serif;overflow:hidden}' +
@@ -129,6 +129,11 @@
         queue.shift(); sending = false; failSince = 0; sent++;
         if (j && ((j.verdict && j.verdict.ok === false) || (j.skip && j.skip.ok === false))) rejected++;
         if (j && typeof j.score === 'number') myScore = j.score;
+        /* The server is on another stop (a word it did not take moved the game on): the game goes to the server's stop instead of every word after being refused. */
+        if (j && typeof j.gi === 'number' && ((j.verdict && j.verdict.reason === 'stop') || (j.skip && j.skip.reason === 'stop'))) {
+          queue = queue.filter(function (x) { return x.g === j.gi; });
+          try { frame.contentWindow.postMessage({ cupwt: 2, type: 'resync', gi: j.gi }, '*'); } catch (e) {}
+        }
         pump();
       }).catch(function (e) {
         if (done) return; done = true; clearTimeout(timer); sending = false;

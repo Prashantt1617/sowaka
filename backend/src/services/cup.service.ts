@@ -71,7 +71,7 @@ import {
   playRunWord,
   replayRun,
   runEndsSec,
-  wordTime,
+  wordTimeOf,
   type WtBoards,
   type WtRules,
   type WtRun,
@@ -139,6 +139,7 @@ export async function proposedCupIndexes(): Promise<void> {
   await cupMatches().createIndex({ eventId: 1, status: 1 });
   await cupBets().createIndex({ matchId: 1 });
   await cupBets().createIndex({ eventId: 1, userId: 1 });
+  await cupRuns().createIndex({ eventId: 1 });
 }
 
 // ---------------------------------------------------------------- hooks for bets
@@ -308,6 +309,7 @@ async function refresh(eventId: string): Promise<Runtime | null> {
     }
     // Never back to an older copy: a write here (a lobby join, say) may have landed while the read ran.
     if ((event.version ?? 0) >= (rt.event.version ?? 0) || new Date(event.createdAt).getTime() !== new Date(rt.event.createdAt).getTime()) rt.event = event;
+    notePin(rt.event);
     for (const row of rows) {
       const had = rt.matches.get(row.id);
       // Never back to an older copy: this process may have written the match (decided it, say) while the read ran.
@@ -807,7 +809,8 @@ export async function joinLobby(viewer: CupViewer, askedId?: unknown) {
       { returnDocument: 'after', projection: { _id: 0 } },
     );
     if (after) {
-      rt.event = after;
+      // Only forward: a refresh or another write may already hold a newer copy.
+      if ((after.version ?? 0) > (rt.event.version ?? 0)) rt.event = after;
       rt.rev += 1;
     } else {
       const again = await refresh(event.id);
@@ -1053,6 +1056,27 @@ export async function stopCupRunner(): Promise<void> {
   if (ticker) clearInterval(ticker);
   ticker = undefined;
   await runnerPasses.settle();
+  await flushCupWords();
+}
+
+/** Every Word Trip word this process holds and has not written yet, written now (a stop or restart loses none). */
+export async function flushCupWords(): Promise<void> {
+  const writes: Promise<unknown>[] = [];
+  for (const rt of runtimes.values()) {
+    for (const [key, mem] of rt.words) {
+      if (mem.dirtyAt <= mem.savedAt) continue;
+      if (key.startsWith('run:')) {
+        const run = runsOf(rt).get(key.slice(4));
+        if (run) writes.push(saveRun(run, mem));
+        continue;
+      }
+      const [matchId, attempt, userId] = key.split(':');
+      if (matchId && userId) writes.push(saveWords({ id: matchId, attempt: Number(attempt) }, userId, mem));
+    }
+  }
+  const done = await Promise.allSettled(writes);
+  const failed = done.filter((d) => d.status === 'rejected').length;
+  if (writes.length) logger.info('Cup words flushed', { writes: writes.length, failed });
 }
 
 /**
@@ -1064,8 +1088,13 @@ export async function stopCupRunner(): Promise<void> {
 async function tickEvent(id: string): Promise<void> {
   const rt = await runtime(id, true);
   if (!rt || !rt.event.active || !runnerMoves(rt.event.org)) return;
-  // Word Trip: the game's stops and rules in hand before any run is played back or decided.
-  if (isWordTripEvent(rt.event)) await wordTripGame().catch((error) => logger.error('Word Trip game not loaded', { eventId: id }, error));
+  // Word Trip: the game's stops and rules in hand before any run is played back or decided; pinned once play begins.
+  if (isWordTripEvent(rt.event)) {
+    if (!rt.event.wtGameVersion && rt.event.phase !== 'scheduled' && rt.event.phase !== 'done' && Date.now() >= new Date(rt.event.startAt).getTime()) {
+      await pinWtGame(rt).catch((error) => logger.error('Word Trip game not pinned', { eventId: id }, error));
+    }
+    await wordTripGame().catch((error) => logger.error('Word Trip game not loaded', { eventId: id }, error));
+  }
   let now = new Date();
   const event = rt.event;
   if (event.phase === 'scheduled') {
@@ -1661,7 +1690,47 @@ let wtLoading: Promise<WtGame> | null = null;
 const WT_GAME_FILE = path.resolve(__dirname, '../../game-pages/word-trip.html');
 
 /** The game, read once and again every ten minutes (a page uploaded meanwhile is picked up; the same version is kept as it is). */
+/** The game's version pinned by an event in play (set by `refresh`): no catalog reload while it is on. */
+let wtPinVersion: string | null = null;
+const wtPinned = new Map<string, WtGame>();
+export function cupWtGames(): Collection<{ _id: string; html: string; createdAt: Date }> {
+  return getDb().collection<{ _id: string; html: string; createdAt: Date }>('cup_wt_games');
+}
+/** Pins the game this event plays from now on: kept (by version) so a restart, or a republished catalog, plays the same. */
+async function pinWtGame(rt: Runtime) {
+  const game = await wordTripGame();
+  await cupWtGames().updateOne({ _id: game.version }, { $setOnInsert: { html: game.html, createdAt: new Date() } }, { upsert: true });
+  const after = await cupEvents().findOneAndUpdate(
+    { id: rt.event.id, wtGameVersion: { $exists: false } },
+    { $set: { wtGameVersion: game.version }, $inc: { version: 1 } },
+    { returnDocument: 'after', projection: { _id: 0 } },
+  );
+  if (after && (after.version ?? 0) > (rt.event.version ?? 0)) rt.event = after;
+  wtPinned.set(game.version, game);
+  wtPinVersion = game.version;
+  logger.info('Word Trip game pinned', { eventId: rt.event.id, version: game.version });
+}
+/** The event's pin, noted on every refresh (another process pinned it, or this one restarted). */
+function notePin(event: CupEvent) {
+  if (!isWordTripEvent(event)) return;
+  if (event.wtGameVersion && event.phase !== 'done' && event.active) wtPinVersion = event.wtGameVersion;
+  else if (wtPinVersion && wtPinVersion === event.wtGameVersion) wtPinVersion = null;
+}
+
 export async function wordTripGame(): Promise<WtGame> {
+  if (wtPinVersion) {
+    const pinned = wtPinned.get(wtPinVersion) ?? (await (async () => {
+      const row = await cupWtGames().findOne({ _id: wtPinVersion! });
+      if (!row) return null;
+      const g = wtGame?.version === row._id && wtGame.html === row.html ? wtGame : loadWordTripGame(row.html, row._id);
+      wtPinned.set(row._id, g);
+      return g;
+    })());
+    if (pinned) {
+      wtGame = pinned;
+      return pinned;
+    }
+  }
   if (wtGame && Date.now() - wtGameAt < 10 * 60_000) return wtGame;
   if (wtLoading) return wtLoading;
   wtLoading = (async () => {
@@ -1686,6 +1755,19 @@ export async function wordTripGameFor(viewer: CupViewer, have: unknown) {
   return have === game.version ? { version: game.version, same: true } : { version: game.version, html: game.html };
 }
 
+/** A match's attempts so far (its tied ones and the current one), for `wtSeen` before they are cleared. */
+function wtSeenOf(rt: Runtime, match: CupMatch): { seed: number; reached: Record<string, number> }[] {
+  const out = (match.history ?? []).filter((h) => typeof h.seed === 'number').map((h) => ({ seed: h.seed!, reached: h.reached ?? {} }));
+  if (match.startAt) out.push({ seed: match.seed, reached: Object.fromEntries(match.players.map((p) => [p, wtReached(rt, match, p)])) });
+  return out;
+}
+
+/** A fresh seed for a match restarted from outside the runner (`cup-event.ts on` after a pause). */
+export async function wtFreshSeedFor(eventId: string, players: string[]): Promise<number> {
+  const rt = await runtime(eventId, true);
+  return rt ? freshWtSeed(rt, await wordTripGame().catch(() => null), players) : newSeed();
+}
+
 /** How far a player got in a match's current attempt (the furthest stop; -1 none played). */
 function wtReached(rt: Runtime, match: CupMatch, userId: string): number {
   const mem = wtPlayer(rt, match, userId);
@@ -1707,12 +1789,13 @@ function stopsServed(rt: Runtime, game: WtGame, userIds: string[]): Set<string> 
   for (const run of runsOf(rt).values()) {
     if (!want.has(run.userId)) continue;
     const playing = run.status === 'live' && now < runOverAt(rt, run);
-    add(run.seed, playing ? WT_SPAN : Math.max(runMem(rt, run)?.run.gi ?? -1, reachedOf(run.live?.wtr)));
+    add(run.seed, playing ? WT_SPAN : run.reached ?? Math.max(runMem(rt, run)?.run.gi ?? -1, reachedOf(run.live?.wtr)));
   }
   for (const match of rt.matches.values()) {
     for (const p of match.players ?? []) {
       if (!p || !want.has(p)) continue;
       for (const h of match.history ?? []) add(h.seed, h.reached?.[p] ?? WT_SPAN);
+      for (const h of match.wtSeen ?? []) add(h.seed, h.reached?.[p] ?? WT_SPAN);
       if (!match.startAt || match.status === 'scheduled' || match.status === 'betting' || match.status === 'open') continue;
       const playing = match.status === 'live' || match.status === 'solo';
       add(match.seed, playing ? WT_SPAN : wtReached(rt, match, p));
@@ -1762,9 +1845,12 @@ async function saveWords(match: Pick<CupMatch, 'id' | 'attempt'>, userId: string
   );
 }
 
-/** Written to the match at most every few seconds per player, and once more after their last word. */
+/** Word Trip words are written within this long of being taken (a restart loses at most this much). */
+const WT_PERSIST_MS = 500;
+
+/** Written to the match within WT_PERSIST_MS of a word, and once more after their last word. */
 function saveSoon(match: CupMatch, userId: string, mem: WtMem) {
-  const wait = PERSIST_EVERY_MS - (Date.now() - mem.savedAt);
+  const wait = WT_PERSIST_MS - (Date.now() - mem.savedAt);
   const save = () => void saveWords(match, userId, mem).catch((error) => logger.error('Cup words save failed', { matchId: match.id }, error));
   if (wait <= 0) return save();
   if (!mem.timer) {
@@ -1821,7 +1907,7 @@ export async function playWordIn(viewer: CupViewer, id: string, body: { stop?: u
     rt.words.set(`${match.id}:${match.attempt}:${viewer.userId}`, mem);
   }
   const run = mem.run;
-  const t = wordTime(body?.t, may.arrived);
+  const { t, clamped } = wordTimeOf(body?.t, may.arrived);
   const changed = () => {
     mem!.at = now.getTime();
     mem!.dirtyAt = now.getTime();
@@ -1833,7 +1919,7 @@ export async function playWordIn(viewer: CupViewer, id: string, body: { stop?: u
     if (skipped.ok) changed();
     return { serverNow: new Date(), skip: skipped, score: run.score, gi: run.gi, added: run.added };
   }
-  const verdict = playRunWord(run, game.boards(match.seed, run.gi), body?.stop, body?.word, t, game.rules);
+  const verdict = playRunWord(run, game.boards(match.seed, run.gi), body?.stop, body?.word, t, game.rules, clamped);
   if (verdict.ok) changed();
   return { serverNow: new Date(), verdict, score: run.score, gi: run.gi, added: run.added };
 }
@@ -1913,17 +1999,32 @@ const stageAttempt = (stage: QualStage) => (stage === 'a1' ? 1 : stage === 'a2' 
 /** The qualifier's runs, kept with the runtime (read with each refresh while the qualifier is on). */
 const qualRuns = new Map<string, Map<string, CupRun>>();
 const runsOf = (rt: Runtime) => qualRuns.get(rt.event.id) ?? new Map<string, CupRun>();
+/** Events whose runs are all closed and loaded: after the cut they never change, so they are not read again. */
+const runsFinal = new Set<string>();
 async function refreshRuns(rt: Runtime) {
   if (!isQualifierEvent(rt.event) || !rt.event.qual) return;
-  const rows = await cupRuns().find({ eventId: rt.event.id }, { projection: { _id: 0 } }).toArray();
+  if (rt.event.qual.done && runsFinal.has(rt.event.id)) return;
+  // Without each run's word list: this process has the words of the runs it served; the others' (after a restart) once below.
+  const rows = await cupRuns().find({ eventId: rt.event.id }, { projection: { _id: 0, 'live.wtr': 0 } }).toArray();
   const map = runsOf(rt);
+  const need: string[] = [];
   for (const row of rows) {
     const had = map.get(row.id);
     if (had && had.updatedAt.getTime() > row.updatedAt.getTime()) continue;
     if (!had || had.updatedAt.getTime() !== row.updatedAt.getTime()) rt.rev += 1;
+    if (row.live && had?.live?.wtr) row.live.wtr = had.live.wtr;
     map.set(row.id, row);
+    if (row.live && !row.live.wtr && !rt.words.has(`run:${row.id}`) && row.reached == null) need.push(row.id);
+  }
+  if (need.length) {
+    const words = await cupRuns().find({ _id: { $in: need } as never }, { projection: { _id: 0, id: 1, 'live.wtr': 1 } }).toArray();
+    for (const w of words) {
+      const row = map.get(w.id);
+      if (row?.live && w.live?.wtr) row.live.wtr = w.live.wtr;
+    }
   }
   qualRuns.set(rt.event.id, map);
+  if (rt.event.qual.done) runsFinal.add(rt.event.id);
 }
 const keepRun = (rt: Runtime, run: CupRun) => {
   const map = runsOf(rt);
@@ -1957,7 +2058,7 @@ async function saveRun(run: CupRun, mem: WtMem) {
   mem.timer = undefined;
   if (mem.dirtyAt <= mem.savedAt) return;
   mem.savedAt = Date.now();
-  await cupRuns().updateOne({ id: run.id, status: 'live' }, { $set: { live: { score: mem.run.score, at: new Date(mem.at), wtr: mem.run.events, wtAdded: mem.run.added } } });
+  await cupRuns().updateOne({ _id: run.id as never, status: 'live' }, { $set: { live: { score: mem.run.score, at: new Date(mem.at), wtr: mem.run.events, wtAdded: mem.run.added } } });
 }
 function saveRunSoon(run: CupRun, mem: WtMem) {
   const wait = PERSIST_EVERY_MS - (Date.now() - mem.savedAt);
@@ -2013,7 +2114,7 @@ export async function joinQualifier(viewer: CupViewer, askedId?: unknown) {
     return { serverNow: new Date(), run: runView(rt, doc) };
   } catch (error) {
     if ((error as { code?: number }).code !== 11000) throw error;
-    const row = await cupRuns().findOne({ id }, { projection: { _id: 0 } });
+    const row = await cupRuns().findOne({ _id: id as never }, { projection: { _id: 0 } });
     if (row) keepRun(rt, row);
     return { serverNow: new Date(), run: row ? runView(rt, row) : null };
   }
@@ -2032,12 +2133,13 @@ export async function playRunWordIn(viewer: CupViewer, id: string, body: { stop?
   let mem = runMem(rt, run);
   const arrived = (now.getTime() - new Date(run.startAt).getTime()) / 1000;
   if (arrived < -2) throw new CupError(409, 'Your run has not started');
-  if (arrived > runEndsSec(mem?.run, game.rules) + WT_GRACE_SEC + WT_LAG_SEC) throw new CupError(409, 'Your time is up');
+  // The same rule as a match's: by the run's clock out + WT_GRACE_SEC (runOverAt), when the attempt closes.
+  if (now.getTime() > runOverAt(rt, run)) throw new CupError(409, 'Your time is up');
   if (!mem) {
     mem = { run: newRun(), at: now.getTime(), dirtyAt: 0, savedAt: 0 };
     rt.words.set(`run:${run.id}`, mem);
   }
-  const t = wordTime(body?.t, arrived);
+  const { t, clamped } = wordTimeOf(body?.t, arrived);
   const changed = () => {
     mem!.at = now.getTime();
     mem!.dirtyAt = now.getTime();
@@ -2049,7 +2151,7 @@ export async function playRunWordIn(viewer: CupViewer, id: string, body: { stop?
     if (skipped.ok) changed();
     return { serverNow: new Date(), skip: skipped, score: mem.run.score, gi: mem.run.gi, added: mem.run.added };
   }
-  const verdict = playRunWord(mem.run, game.boards(run.seed, mem.run.gi), body?.stop, body?.word, t, game.rules);
+  const verdict = playRunWord(mem.run, game.boards(run.seed, mem.run.gi), body?.stop, body?.word, t, game.rules, clamped);
   if (verdict.ok) changed();
   return { serverNow: new Date(), verdict, score: mem.run.score, gi: mem.run.gi, added: mem.run.added };
 }
@@ -2086,7 +2188,7 @@ async function tickQualifier(rt: Runtime, now: Date) {
   if (!q) {
     const claimed = await cupEvents().findOneAndUpdate(
       { id: event.id, phase: 'lobby', active: true, qual: { $exists: false }, drawnAt: { $exists: false } },
-      { $set: { qual: { stage: 'a1', openedAt: now, windowSec: event.startWindowSec }, updatedAt: now }, $inc: { version: 1 } },
+      { $set: { qual: { stage: 'a1', openedAt: now, windowSec: event.startWindowSec, bests: Object.fromEntries(await allTimeBests(event)) }, updatedAt: now }, $inc: { version: 1 } },
       { returnDocument: 'after', projection: { _id: 0 } },
     );
     if (claimed) {
@@ -2107,7 +2209,8 @@ async function tickQualifier(rt: Runtime, now: Date) {
     const mem = rt.words.get(`run:${run.id}`);
     if (mem) await saveRun(run, mem).catch(() => undefined);
     const s = runScore(rt, run);
-    const after = await cupRuns().findOneAndUpdate({ id: run.id, status: 'live' }, { $set: { status: 'done', score: s.score, endedAt: now, updatedAt: now } }, { returnDocument: 'after', projection: { _id: 0 } });
+    const reached = Math.max(runMem(rt, run)?.run.gi ?? -1, reachedOf(run.live?.wtr));
+    const after = await cupRuns().findOneAndUpdate({ _id: run.id as never, status: 'live' }, { $set: { status: 'done', score: s.score, reached, endedAt: now, updatedAt: now } }, { returnDocument: 'after', projection: { _id: 0 } });
     if (after) keepRun(rt, after);
   }
   const at = new Date();
@@ -2125,7 +2228,8 @@ async function tickQualifier(rt: Runtime, now: Date) {
     }
     return;
   }
-  const result = rankQualifier(await qualEntries(rt, await allTimeBests(event)), q.stage === 'extra');
+  // The last tie-break: the all-time bests as they were when attempt 1 opened (a run played meanwhile can't change them).
+  const result = rankQualifier(await qualEntries(rt, q.bests ? new Map(Object.entries(q.bests)) : await allTimeBests(event)), q.stage === 'extra');
   if (q.stage === 'a2' && result.needExtra.length) {
     const claimed = await cupEvents().findOneAndUpdate(
       { id: event.id, 'qual.stage': 'a2', drawnAt: { $exists: false } },
@@ -2335,7 +2439,11 @@ export async function voidMatchResult(viewer: CupViewer, id: string) {
         ...(sequential ? { openedAt: '', deadlineAt: '' } : {}),
       },
       $inc: { attempt: 1 },
-      $push: { voids: { by: viewer.userId, at: now } },
+      $push: {
+        voids: { by: viewer.userId, at: now },
+        // Word Trip: what was played stays seen (the history is cleared just above): its stops are never dealt to them again.
+        ...(isWordTripEvent(event) ? { wtSeen: { $each: wtSeenOf(rt, match) } } : {}),
+      },
     },
     { returnDocument: 'after', projection: { _id: 0 } },
   );

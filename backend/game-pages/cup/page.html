@@ -1451,7 +1451,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     if (q.canJoin && !ui.busy && ui.qJoin !== q.stage && document.visibilityState === 'visible') { ui.qJoin = q.stage; setTimeout(function () { ACT.wtqjoin(); }, 0); }
     var run = (q.runs || []).find(function (r) { return r.attempt === attempt; });
     var key = run ? 'q:' + run.id : null, start = run ? ms(run.startAt) : NaN;
-    var want = !!run && run.status === 'live' && isFinite(start) && now() >= start - 6000 && now() < Math.max(Number(run.endsAt) || start + 90000, start + 60000) + 10000;
+    var want = !!run && run.status === 'live' && isFinite(start) && now() >= start - 6000 && now() < Math.max(Number(run.endsAt) || start + 90000, start + 60000) + 22000;
     clearTimeout(wtWake);
     if (run && run.status === 'live' && now() < start - 6000) wtWake = setTimeout(render, Math.max(50, start - 6000 - now()));
     if (ui.playing && (ui.playing !== key || !want)) stopPlay();
