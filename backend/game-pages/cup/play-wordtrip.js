@@ -44,17 +44,17 @@
     '})();<\/script>';
   var CSS = '.cwt{position:absolute;inset:0;background:#15122B;color:#F6F1FF;font-family:Figtree,system-ui,sans-serif;overflow:hidden}' +
     '.cwt *{box-sizing:border-box}' +
-    '.cwt-strip{position:absolute;left:0;right:0;top:0;height:calc(52px + env(safe-area-inset-top));padding:env(safe-area-inset-top) 12px 0;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px;background:#211D42;border-bottom:1px solid #3B3668}' +
-    '.cwt-strip .vs{font:800 14px/1 "Baloo 2",system-ui;color:#A9A3CC}' +
+    '.cwt-strip{position:absolute;left:0;right:0;top:0;height:calc(62px + env(safe-area-inset-top));padding:env(safe-area-inset-top) 12px 0;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px;background:#211D42;border-bottom:1px solid #3B3668}' +
+    '.cwt-strip .cwt-x{font:800 14px/1 "Baloo 2",system-ui;color:#A9A3CC}' +
     '.cwt-side{display:flex;align-items:center;gap:8px;min-width:0}.cwt-side.r{flex-direction:row-reverse;text-align:right}' +
-    '.cwt-side .tx{min-width:0;display:flex;flex-direction:column}' +
+    '.cwt-side .tx{min-width:0;display:flex;flex-direction:column;gap:1px}' +
     '.cwt-side .nm{font-weight:800;font-size:13px;color:#A9A3CC;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
-    '.cwt-side .sc{font:800 21px/1 "Baloo 2",system-ui;font-variant-numeric:tabular-nums}' +
-    '.cwt-side .st{font-style:normal;font-weight:800;color:#4BE39A}.cwt-side .st.done{color:#A9A3CC}' +
+    '.cwt-side .sc{font:800 20px/1 "Baloo 2",system-ui;font-variant-numeric:tabular-nums}' +
+    '.cwt-side .cwt-st{font-style:normal;font-size:11px;line-height:1.2;font-weight:800;color:#4BE39A;white-space:nowrap}.cwt-side .cwt-st.done{color:#A9A3CC}' +
     '.cwt-av{position:relative;flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:12px;color:#15122B;overflow:hidden}.cwt-av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}' +
-    '.cwt-game{position:absolute;left:0;right:0;bottom:0;top:calc(52px + env(safe-area-inset-top));width:100%;height:calc(100% - 52px - env(safe-area-inset-top));border:0;display:block;background:#15122B}' +
-    '.cwt-end{position:absolute;left:0;right:0;top:calc(52px + env(safe-area-inset-top));z-index:4;padding:10px 14px;background:#FFD23F;color:#15122B;font-weight:700;font-size:15px;text-align:center}.cwt-end b{font-weight:800}.cwt-end[hidden]{display:none}.cwt-end .cwt-dots i{background:#15122B}' +
-    '.cwt-net{position:absolute;left:12px;right:12px;top:calc(58px + env(safe-area-inset-top));z-index:6;padding:9px 12px;border-radius:12px;background:#FF6B57;color:#15122B;font-weight:800;font-size:14px;text-align:center}.cwt-net[hidden]{display:none}' +
+    '.cwt-game{position:absolute;left:0;right:0;bottom:0;top:calc(62px + env(safe-area-inset-top));width:100%;height:calc(100% - 62px - env(safe-area-inset-top));border:0;display:block;background:#15122B}' +
+    '.cwt-end{position:absolute;left:0;right:0;top:calc(62px + env(safe-area-inset-top));z-index:4;padding:10px 14px;background:#FFD23F;color:#15122B;font-weight:700;font-size:15px;text-align:center}.cwt-end b{font-weight:800}.cwt-end[hidden]{display:none}.cwt-end .cwt-dots i{background:#15122B}' +
+    '.cwt-net{position:absolute;left:12px;right:12px;top:calc(68px + env(safe-area-inset-top));z-index:6;padding:9px 12px;border-radius:12px;background:#FF6B57;color:#15122B;font-weight:800;font-size:14px;text-align:center}.cwt-net[hidden]{display:none}' +
     '.cwt-cov{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;background:#15122B}.cwt-cov[hidden]{display:none}' +
     '.cwt-cov small{font-size:13px;font-weight:800;letter-spacing:.14em;color:#A9A3CC}.cwt-cov h2{margin:0;font:800 38px/1.08 "Baloo 2",system-ui;color:#F6F1FF}.cwt-cov p{margin:0;max-width:330px;font-size:17px;line-height:1.4;color:#A9A3CC}.cwt-cov p b{color:#F6F1FF}' +
     '.cwt-big{font:800 96px/1 "Baloo 2",system-ui;color:#FFD23F;font-variant-numeric:tabular-nums}' +
@@ -104,11 +104,14 @@
     /* Both players at the very top: faces, names, live scores (as the server has them), and who is still playing. */
     function strip() {
       var mine = (o.getMine && o.getMine()) || {}, mySc = Math.max(myScore, mine.score || 0);
-      var h = '<div class="cwt-side">' + face(o.me, '#FFD23F') + '<span class="tx"><span class="nm">You</span><b class="sc">' + num(mySc) + '</b></span></div><span class="vs">vs</span>';
-      if (!opp) h += '<div class="cwt-side r"><span class="tx"><span class="nm">' + esc(oppName) + '</span><span class="nm"><i class="st done">didn’t come</i></span></span></div>';
+      var side = function (p, col, name, sc, st, done, r) {
+        return '<div class="cwt-side' + (r ? ' r' : '') + '">' + (p ? face(p, col) : '') + '<span class="tx"><span class="nm">' + esc(name) + '</span><b class="sc">' + num(sc) + '</b><i class="cwt-st' + (done ? ' done' : '') + '">' + st + '</i></span></div>';
+      };
+      var h = side(o.me, '#FFD23F', 'You', mySc, ended ? 'finished' : started ? 'playing' : 'ready', ended, false) + '<span class="cwt-x">vs</span>';
+      if (!opp) h += side({ name: oppName }, '#2B2650', oppName, 0, 'didn’t come', true, true);
       else {
         var x = oppNow() || {}, done = x.endsAt && now() >= x.endsAt;
-        h += '<div class="cwt-side r">' + face(opp, '#4C9BFF') + '<span class="tx"><span class="nm">' + esc(first(opp.name)) + ' · <i class="st' + (done ? ' done' : '') + '">' + (done ? 'finished' : ended ? 'still playing…' : 'playing') + '</i></span><b class="sc">' + num(x.score) + '</b></span></div>';
+        h += side(opp, '#4C9BFF', first(opp.name), x.score, done ? 'finished' : ended ? 'still playing…' : 'playing', done, true);
       }
       if ($strip.getAttribute('data-h') !== h) { $strip.setAttribute('data-h', h); $strip.innerHTML = h; }
     }
