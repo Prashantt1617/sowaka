@@ -50,7 +50,7 @@
     '.cwt-side .tx{min-width:0;display:flex;flex-direction:column}' +
     '.cwt-side .nm{font-weight:800;font-size:13px;color:#A9A3CC;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
     '.cwt-side .sc{font:800 21px/1 "Baloo 2",system-ui;font-variant-numeric:tabular-nums}' +
-    '.cwt-side .st{font-size:11px;font-weight:800;color:#4BE39A;white-space:nowrap}.cwt-side .st.done{color:#A9A3CC}' +
+    '.cwt-side .st{font-style:normal;font-weight:800;color:#4BE39A}.cwt-side .st.done{color:#A9A3CC}' +
     '.cwt-av{position:relative;flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:12px;color:#15122B;overflow:hidden}.cwt-av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}' +
     '.cwt-game{position:absolute;left:0;right:0;bottom:0;top:calc(52px + env(safe-area-inset-top));width:100%;height:calc(100% - 52px - env(safe-area-inset-top));border:0;display:block;background:#15122B}' +
     '.cwt-end{position:absolute;left:0;right:0;top:calc(52px + env(safe-area-inset-top));z-index:4;padding:10px 14px;background:#FFD23F;color:#15122B;font-weight:700;font-size:15px;text-align:center}.cwt-end b{font-weight:800}.cwt-end[hidden]{display:none}.cwt-end .cwt-dots i{background:#15122B}' +
@@ -99,10 +99,10 @@
     function strip() {
       var mine = (o.getMine && o.getMine()) || {}, mySc = Math.max(myScore, mine.score || 0);
       var h = '<div class="cwt-side">' + face(o.me, '#FFD23F') + '<span class="tx"><span class="nm">You</span><b class="sc">' + num(mySc) + '</b></span></div><span class="vs">vs</span>';
-      if (!opp) h += '<div class="cwt-side r"><span class="tx"><span class="nm">' + esc(oppName) + '</span><span class="st done">Didn’t come</span></span></div>';
+      if (!opp) h += '<div class="cwt-side r"><span class="tx"><span class="nm">' + esc(oppName) + '</span><span class="nm"><i class="st done">didn’t come</i></span></span></div>';
       else {
         var x = oppNow() || {}, done = x.endsAt && now() >= x.endsAt;
-        h += '<div class="cwt-side r">' + face(opp, '#4C9BFF') + '<span class="tx"><span class="nm">' + esc(first(opp.name)) + '</span><b class="sc">' + num(x.score) + '</b></span><span class="st' + (done ? ' done' : '') + '">' + (done ? 'Finished' : ended ? 'Still playing…' : 'Playing') + '</span></div>';
+        h += '<div class="cwt-side r">' + face(opp, '#4C9BFF') + '<span class="tx"><span class="nm">' + esc(first(opp.name)) + ' · <i class="st' + (done ? ' done' : '') + '">' + (done ? 'finished' : ended ? 'still playing…' : 'playing') + '</i></span><b class="sc">' + num(x.score) + '</b></span></div>';
       }
       if ($strip.getAttribute('data-h') !== h) { $strip.setAttribute('data-h', h); $strip.innerHTML = h; }
     }

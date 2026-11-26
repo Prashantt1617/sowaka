@@ -1074,7 +1074,7 @@ function WtDuel({ match, round, words, serverNow, size }: { match: Match; round:
   const winner = decided ? match.winnerId : null;
   const pill = STATUS_PILL[match.status];
   const label = round.label === match.label || match.label.startsWith(round.label) ? match.label : `${round.label} · ${match.label}`;
-  const timeText = decided ? 'Done' : before && Number.isFinite(start) ? `Starts in ${Math.max(1, Math.ceil((start - serverNow) / 1000))}` : before ? '' : 'Same letters · live';
+  const timeText = decided ? 'Done' : before && Number.isFinite(start) ? `Starts in ${Math.max(1, Math.ceil((start - serverNow) / 1000))}` : '';
   return (
     <section className={`wt-duel ${size}`} aria-label={`${label}, live`}>
       <div className="wt-dh">
