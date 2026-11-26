@@ -69,7 +69,7 @@
         (me.entered
           ? '<div style="display:flex;flex-direction:column;gap:10px">' + (err ? '<p class="wt-why" role="alert">' + esc(err) + '</p>' : '') +
             '<button type="button" class="wt-btn" data-act="lobby"' + (!open || H.ui.busy === 'lobby' ? ' disabled' : '') + '>' + (!open ? 'Opens at ' + esc(H.clock(ev.lobbyAt)) : H.ui.busy === 'lobby' ? 'Joining…' : 'Join') + '</button>' +
-            '<span class="wt-s">Free to play.' + (wallet() ? ' You get ' + wallet() + ' points to bet.' : '') + '</span></div>'
+            '<span class="wt-s">Free to play.' + (wallet() ? ' You get ' + wallet() + ' points to bet on the last rounds.' : '') + '</span></div>'
           : '<p class="wt-s">You’re not in this tournament, but you can watch every match.</p>') +
         '</section>';
     }
@@ -84,7 +84,7 @@
         '<div class="wt-grid">' + shown.map(function (p) { return '<div data-k="g' + esc(p.userId) + '">' + face(p, '', 'l') + '<span>' + esc(p.userId === H.meId() ? 'You' : first(p.name)) + '</span></div>'; }).join('') + '</div>' +
         (n > shown.length ? '<span class="wt-s">+' + num(n - shown.length) + ' more</span>' : '') + '</div>' +
         '<div style="flex-grow:1"></div>' +
-        '<div class="wt-box"><b>How it works</b><span>1. We pick your opponent.</span><span>2. Same letters for both. Find words before your clock runs out.</span><span>3. More points wins. Winner goes on.</span></div>' +
+        '<div class="wt-box"><b>How it works</b><span>1. We pick your opponent.</span><span>2. Same letters for both. Find words before your clock runs out.</span><span>3. More points wins. Winner goes on.</span><span>4. Bet on the last rounds.</span></div>' +
         '</section>';
     }
 

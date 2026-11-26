@@ -680,6 +680,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
       ['1:00 on the clock', 'Words of 5 letters or more add seconds; a word with every letter adds the most and takes you to the next letters.'],
       ['Quick words, more points', 'Words within 8 seconds of each other score ×2, then ×3. Stuck? Skip costs 100 points.'],
       ['More points wins', 'When both clocks run out, the higher score goes on. A tie is played again on new letters.'],
+      ['Bet on the last rounds', 'When 8 or fewer players are left, the matches go one at a time and everyone can bet' + (ev().wallet ? ' from ' + num(ev().wallet) + ' points' : '') + ': a right pick pays back double.'],
       ['Be there', 'Your match opens with a push. If your opponent isn’t there in ' + w + ' seconds, you play alone and go to the next round.']];
     return '<section class="wt" aria-label="How to play">' + (wtViews() ? wtViews().tiles('words', true) : '') + rules.map(function (r) { return '<div class="wt-box"><b>' + esc(r[0]) + '</b><span>' + esc(r[1]) + '</span></div>'; }).join('') +
       '<button type="button" class="wt-btn" data-act="tab" data-v="me">Back</button></section>';

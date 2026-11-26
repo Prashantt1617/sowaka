@@ -120,7 +120,7 @@ const KNIGHTS_DEFAULTS: Partial<CupEventConfig> = {
 /**
  * The Word Trip Tournament's own rules (27 Nov 2026): each match is one normal Word Trip run each (the game's own 1:00
  * clock and rules, the same seed for both), a 40 s start window (a lone player then plays alone at once and goes
- * through), an 8 s countdown (the game loads behind it), ties replayed on a new seed twice, bets from the last eight from 1,000 points of their own,
+ * through), an 8 s countdown (the game loads behind it), ties replayed on a new seed twice, bets on the last rounds (8 or fewer left) from 1,000 points of their own,
  * drawn from the lobby. roundSec is only shown (the game's clock rules). Flags given on `create` still win.
  */
 const WORD_TRIP_DEFAULTS: Partial<CupEventConfig> = {
@@ -382,7 +382,7 @@ async function main() {
           subtitle: flags.subtitle ?? (knights
             ? 'One Meow-style knockout · first right board wins · bets from the quarter-finals'
             : wordTrip
-              ? 'Make words. Beat your opponent. Same letters for both · bets from the quarter-finals'
+              ? 'Make words. Beat your opponent. Same letters for both · bet on the last rounds'
               : 'Everyone is in. One Odd One Out knockout, live, with bets on the last eight.'),
           startsAtLabel: flags['starts-label'] ?? `LOBBY OPENS ${event.lobbyAt.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })}`,
           actionLabel: flags.action ?? 'Enter the tournament',
