@@ -26,7 +26,9 @@ a{color:inherit}
 .ctv-pill{align-self:flex-start;display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:800;letter-spacing:1px;border-radius:99px;padding:7px 13px;white-space:nowrap}
 .ctv-pill i{width:9px;height:9px;border-radius:50%;background:currentColor;animation:blink 1.2s ease-in-out infinite}
 @keyframes blink{50%{opacity:.25}}
-.ctv-grid{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:20px;align-items:start}
+.ctv-grid{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:20px;align-items:stretch}
+.ctv-col>.wt-duel.l,.ctv-col>.ctv-stage,.ctv-col>.wt-wide{flex:1;min-height:0}
+.ctv-stage{gap:30px}.ctv-stage .ctv-who .ctv-av{width:96px;height:96px;font-size:36px}.ctv-stage .ctv-nm{font-size:46px}
 .ctv-col{display:flex;flex-direction:column;gap:20px;min-width:0;min-height:0}
 .ctv-panel{background:var(--panel);border-radius:24px;padding:22px 24px;min-width:0}
 .ctv-h{font-family:var(--h);font-size:24px;letter-spacing:.5px;margin:0 0 14px;font-weight:400}
@@ -34,7 +36,7 @@ a{color:inherit}
 .ctv-big{font-family:var(--h);font-size:52px;line-height:1.05;text-align:center;margin:30px 0 8px}
 .ctv-av{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;font-family:var(--h);font-size:24px;color:var(--bg);flex:none;overflow:hidden}
 .ctv-av img{width:100%;height:100%;object-fit:cover;display:block;border-radius:50%}
-.ctv-seed{font-size:14px;font-weight:800;letter-spacing:.5px;background:var(--panel2);color:var(--ink2);border-radius:99px;padding:4px 10px;margin-left:10px;vertical-align:5px;white-space:nowrap}
+.ctv-rk{font-size:14px;font-weight:800;letter-spacing:.5px;background:var(--panel2);color:var(--ink2);border-radius:99px;padding:4px 10px;margin-left:10px;vertical-align:5px;white-space:nowrap}
 .ctv-won{font-size:13px;font-weight:800;letter-spacing:1px;background:var(--green);color:var(--bg);border-radius:99px;padding:4px 10px;margin-left:8px;vertical-align:5px}
 /* the match on stage (betting, players joining, or a game with no boards) */
 .ctv-stage{display:flex;flex-direction:column;gap:22px}
@@ -84,6 +86,8 @@ a{color:inherit}
 /* Word Trip: both boards, words live */
 .wt-duel{display:flex;flex-direction:column;gap:14px;background:var(--panel);border-radius:24px;padding:18px 20px;min-width:0}
 .wt-duel.xl{padding:24px 32px;gap:20px;flex:1;min-height:0}
+.wt-duel.l,.wt-duel.s{min-height:0}
+.wt-duel.l .wt-dr,.wt-duel.s .wt-dr{flex:1;min-height:0}
 .wt-dh{display:flex;align-items:center;gap:14px}
 .wt-dl{font-family:var(--b2);font-weight:800;font-size:28px;line-height:1;white-space:nowrap}
 .wt-duel.xl .wt-dl{font-size:44px}.wt-duel.s .wt-dl{font-size:24px}
@@ -94,7 +98,7 @@ a{color:inherit}
 .wt-duel.xl .wt-dr{gap:28px;flex:1;min-height:0}
 .wt-b{display:flex;flex-direction:column;gap:12px;background:#1A1636;border:3px solid #3B3668;border-radius:20px;padding:14px;min-width:0;--pc:var(--pa)}
 .wt-b.lead{border-color:var(--pc);box-shadow:0 0 30px -6px var(--pc)}
-.wt-b.xl{padding:22px;gap:18px;min-height:0}.wt-b.s{padding:10px;gap:8px;border-radius:16px}
+.wt-b.xl,.wt-b.l,.wt-b.s{min-height:0}.wt-b.xl{padding:22px;gap:18px}.wt-b.s{padding:10px;gap:8px;border-radius:16px}
 .wt-bh{display:flex;align-items:center;gap:12px;min-width:0}
 .wt-bh .ctv-av{width:56px;height:56px;font-size:22px}
 .wt-b.xl .wt-bh .ctv-av{width:92px;height:92px;font-size:34px}.wt-b.s .wt-bh .ctv-av{width:44px;height:44px;font-size:17px}
@@ -104,10 +108,11 @@ a{color:inherit}
 .wt-b.xl .wt-bs{font-size:96px}.wt-b.s .wt-bs{font-size:38px}
 .wt-lt{display:flex;gap:8px;justify-content:center;min-height:58px}
 .wt-lt span{width:52px;height:58px;border-radius:12px;background:#FFF6DE;box-shadow:inset 0 -4px 0 #D2BC7E;color:#2A2140;font:800 32px/58px 'Baloo 2',system-ui;text-align:center}
+.wt-b.l .wt-lt{min-height:72px}.wt-b.l .wt-lt span{width:64px;height:72px;font-size:40px;line-height:72px;border-radius:14px}.wt-b.l .wt-ws{flex:1;min-height:0}.wt-b.l .wt-w{height:44px;font-size:24px}.wt-b.l .wt-bs{font-size:60px}
 .wt-b.xl .wt-lt{min-height:92px}.wt-b.xl .wt-lt span{width:84px;height:92px;font-size:54px;line-height:92px;border-radius:16px}
 .wt-b.s .wt-lt{gap:6px;min-height:46px}.wt-b.s .wt-lt span{width:42px;height:46px;font-size:26px;line-height:46px;border-radius:10px}
 .wt-ws{display:flex;flex-wrap:wrap;gap:8px;align-content:flex-start;min-height:120px;overflow:hidden}
-.wt-b.xl .wt-ws{flex:1;min-height:200px;gap:12px}.wt-b.s .wt-ws{height:106px;min-height:0;gap:6px}
+.wt-b.xl .wt-ws{flex:1;min-height:200px;gap:12px}.wt-b.s .wt-ws{flex:1;min-height:0;gap:6px}
 .wt-w{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none;height:38px;padding:0 12px;border-radius:12px;background:#2B2650;font-weight:800;font-size:20px;letter-spacing:.04em;animation:wt-in .35s ease-out}
 .wt-w i{font-style:normal;font-size:14px;color:#FFD23F}.wt-w.full{background:#FFD23F;color:#15122B}.wt-w.full i{color:#15122B}
 .wt-b.xl .wt-w{height:56px;font-size:32px;padding:0 16px;border-radius:14px}.wt-b.xl .wt-w i{font-size:20px}
@@ -122,6 +127,7 @@ a{color:inherit}
 .wt-res{font-size:26px;font-weight:800;color:var(--green)}.wt-duel.xl .wt-res{font-size:38px}
 .wt-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .wt-wide{flex:1;min-height:0;display:flex;flex-direction:column}
+.wt-wide .wt-grid{flex:1;min-height:0;grid-template-rows:repeat(2,minmax(0,1fr))}
 @keyframes wt-in{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
 /* the lobby */
 .lb{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,.95fr) minmax(0,1.05fr);gap:20px}
@@ -151,6 +157,7 @@ a{color:inherit}
 .q-box.cut{background:var(--yellow);color:var(--bg)}
 .q-box.cut small{color:#5B4210}
 .q-two{display:flex;gap:28px}
+.q-two>div{display:flex;flex-direction:column;gap:6px}
 .q-now{flex-direction:row;align-items:center;gap:16px;justify-content:flex-start}
 .q-now .q-lab{display:flex;flex-direction:column;gap:4px;flex:none}
 .q-faces{display:flex;gap:8px;min-width:0;overflow:hidden}
@@ -161,7 +168,7 @@ a{color:inherit}
 .q-bh h2{margin:0;font-family:var(--h);font-weight:400;font-size:28px}
 .q-bh span{font-size:16px;font-weight:800;color:var(--ink2)}
 .q-bh .sp{flex:1}
-.q-cols{flex:1;display:grid;grid-auto-flow:column;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px 16px}
+.q-cols{flex:1;min-height:0;display:grid;grid-auto-flow:column;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px 16px}
 .q-row{display:flex;align-items:center;gap:10px;background:var(--panel2);border-radius:12px;padding:0 12px 0 8px;min-width:0;height:100%;border:2px solid transparent}
 .q-rk{font-family:var(--h);font-size:20px;width:34px;text-align:center;color:var(--ink2);flex:none}
 .q-row .ctv-av{width:30px;height:30px;font-size:14px}
@@ -202,7 +209,7 @@ a{color:inherit}
 .tb-step{display:flex;gap:14px;align-items:center;background:var(--panel2);border-radius:16px;padding:12px 16px;font-size:19px;font-weight:700}
 .tb-step b{font-family:var(--h);font-weight:400;font-size:26px;color:var(--yellow);width:26px;text-align:center}
 .tb-step.now{outline:3px solid var(--yellow)}
-.tb-side .q-cols{grid-template-columns:minmax(0,1fr)}
+.tb-side{display:flex;flex-direction:column}.tb-side .q-cols{grid-template-columns:minmax(0,1fr)}
 /* the champion */
 .ch{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:20px}
 .ch-main{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;position:relative;overflow:hidden;background:radial-gradient(circle at 50% 38%,#3A2F6E 0,var(--panel) 62%)}
@@ -231,6 +238,7 @@ a{color:inherit}
   var base = location.pathname.replace(/\/+$/, '');
   var params = new URLSearchParams(location.search);
   var stream = params.get('stream') === '1' || params.get('stream') === 'true';
+  var pinnedPage = Math.floor(Number(params.get('page')) || 0);
   var root = document.getElementById('tv');
   if (stream) root.classList.add('stream');
 
@@ -256,7 +264,7 @@ a{color:inherit}
 
   /** A player's place from the qualifier ("rank"; a seed only where the draw was seeded). Never called a seed. */
   function rankOf(p) { if (!p) return null; if (num(p.rank) !== undefined) return p.rank; var ev = state && state.event; if (ev && !ev.lobbyDraw && !qualifierOf(state) && num(p.seed) !== undefined) return p.seed; return null; }
-  function rankTag(p) { var r = rankOf(p); return r == null ? '' : '<span class="ctv-seed">#' + r + '</span>'; }
+  function rankTag(p) { var r = rankOf(p); return r == null ? '' : '<span class="ctv-rk">#' + r + '</span>'; }
   function rankEm(p) { var r = rankOf(p); return '<em>' + (r == null ? '' : '#' + r) + '</em>'; }
 
   // —— the state ————————————————————————————————————————————————————————————
@@ -425,10 +433,10 @@ a{color:inherit}
     if (cut && rows.length > 0 && rows.length <= cut) items.push('<div class="q-cut end" data-k="cut">EVERYONE SO FAR GOES THROUGH</div>');
     var per = cols * perCol;
     var pages = Math.max(1, Math.ceil(items.length / per));
-    var page = opts.page !== undefined ? Math.min(opts.page, pages - 1) : Math.floor(Date.now() / 9000) % pages;
+    // `?page=2` holds the leaderboard on one page (a second screen beside the first, say); else a new page every 9 s.
+    var page = opts.page !== undefined ? Math.min(opts.page, pages - 1) : pinnedPage > 0 ? Math.min(pinnedPage - 1, pages - 1) : Math.floor(Date.now() / 9000) % pages;
     var shown = items.slice(page * per, page * per + per);
-    var rowsUsed = Math.min(perCol, Math.max(1, Math.ceil(shown.length / cols)));
-    return { html: '<div class="q-cols" style="grid-template-columns:repeat(' + cols + ',minmax(0,1fr));grid-template-rows:repeat(' + rowsUsed + ',' + opts.rowH + 'px)">' + shown.join('') + '</div>', page: page, pages: pages, from: page * per };
+    return { html: '<div class="q-cols" style="grid-template-columns:repeat(' + cols + ',minmax(0,1fr));grid-template-rows:repeat(' + perCol + ',minmax(0,1fr))">' + shown.join('') + '</div>', page: page, pages: pages };
   }
   function qualifierView(s, Q, phase) {
     var t = now();
@@ -451,13 +459,13 @@ a{color:inherit}
           ? '<div class="q-box q-now"><div class="q-lab"><small>ON THE LETTERS NOW</small></div><div class="q-faces">' + playing.slice(0, 16).map(function (r) { return face({ userId: r.userId, name: r.firstName || r.name }); }).join('') + '</div></div>'
           : '<div class="q-box"><small>HOW IT WORKS</small><span class="q-note">Two runs each, different letters for everyone. The best run counts. The cut is the largest of 16, 32, 64, 128… that fits.</span></div>') +
       '</div>';
-    var board = qBoard(Q, rows, { cols: 4, perCol: stream ? 17 : 16, rowH: stream ? 42 : 44 });
+    var board = qBoard(Q, rows, { cols: 4, perCol: 17 });
     var title = decided ? 'Qualifier results' : 'Qualifier leaderboard';
     var note = decided
       ? fmt(inN) + ' through' + (tied ? ' · ' + fmt(tied) + ' tied at the cut: tie-break' : '') + ' · ' + fmt(rows.length - inN - tied) + ' out'
       : 'Best score of two attempts' + (Q.attempt === 2 ? ' · last chance' : '');
     return '<div class="q">' + strip +
-      '<section class="ctv-panel q-board"><div class="q-bh"><h2>' + title + '</h2><span>' + esc(note) + '</span><span class="sp"></span><span>' + (board.pages > 1 ? 'Ranks ' + fmt(board.from + 1) + '+ · page ' + (board.page + 1) + ' of ' + board.pages : '') + '</span></div>' + board.html + '</section></div>';
+      '<section class="ctv-panel q-board"><div class="q-bh"><h2>' + title + '</h2><span>' + esc(note) + '</span><span class="sp"></span><span>' + (board.pages > 1 ? 'Page ' + (board.page + 1) + ' of ' + board.pages : '') + '</span></div>' + board.html + '</section></div>';
   }
 
   // Tie-break: who is level at the cut, for how many places, and how it is settled.
@@ -479,7 +487,7 @@ a{color:inherit}
     var step = settled ? 0 : anyExtra ? 2 : 1;
     var cut = Q.cut || 0;
     var near = rows.slice(Math.max(0, cut - 6), cut + 6);
-    var side = qBoard(Object.assign({}, Q, { cut: 0 }), near, { cols: 1, perCol: 12, rowH: 52, page: 0, offset: Math.max(0, cut - 6) });
+    var side = qBoard(Object.assign({}, Q, { cut: 0 }), near, { cols: 1, perCol: 12, page: 0, offset: Math.max(0, cut - 6) });
     return '<div class="tb"><section class="ctv-panel tb-main"><div class="tb-head"><h2>Tie-break</h2><span>' + fmt(tiedRows.length) + ' level for ' + fmt(tb.spots) + ' ' + (tb.spots === 1 ? 'place' : 'places') + ' in the top ' + fmt(cut) + '</span></div>' +
       '<div class="tb-cards">' + cards + '</div>' +
       '<div class="tb-steps">' +
@@ -493,7 +501,7 @@ a{color:inherit}
   // —— Word Trip: both boards, words live (CupTv.tsx's WtBoard / WtDuel / WtLiveGrid) ——
   function wtBoard(p, colour, x, lead, size, solo, before, done) {
     var words = (x && x.found) || [];
-    var shown = size === 's' ? words.slice(-8) : size === 'l' ? words.slice(-18) : words.slice(-30);
+    var shown = size === 's' ? words.slice(-10) : size === 'l' ? words.slice(-18) : words.slice(-30);
     var letters = (x && x.letters) || '';
     var left = x && x.endsAt ? x.endsAt - now() : NaN;
     var finished = done || (isFinite(left) && left <= 0);
