@@ -2453,7 +2453,9 @@ function shared(rt: Runtime, rosterCount: number) {
     // Before the draw, everyone who would be in now; in a lobby still open, everyone in it so far.
     entrantCount: event.phase === 'scheduled' ? rosterCount : event.lobbyDraw && !event.drawnAt ? (event.lobbyJoined ?? []).length : event.entrants.length,
     lobbyDraw: event.lobbyDraw === true || undefined,
-    lobbyOpen: (event.lobbyDraw && event.phase === 'lobby' && !event.drawnAt) || undefined,
+    // Open to joins: before the draw, and with a qualifier until attempt 2's start window closes.
+    lobbyOpen: (event.lobbyDraw && event.phase === 'lobby' && !event.drawnAt && !event.lobbyClosedAt && !(event.qual && (event.qual.stage === 'extra' || (event.qual.stage === 'a2' && Date.now() >= new Date(event.qual.openedAt).getTime() + event.qual.windowSec * 1000)))) || undefined,
+    qualifier: isQualifierEvent(event) || undefined,
     gameKey: event.gameKey,
     wallet: event.walletStart && event.walletStart > 0 ? event.walletStart : undefined,
     seeding: event.seeding,
