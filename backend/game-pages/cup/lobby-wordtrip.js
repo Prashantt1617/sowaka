@@ -91,13 +91,13 @@
         '<div class="wt-row"><span style="font:800 22px/1.1 \'Baloo 2\',system-ui">Word Trip Tournament</span>' + how() + '</div>' +
         '<div class="wt-card" style="padding:22px 20px;gap:10px"><span class="wt-in"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>You’re in</span>' +
         '<span style="font-size:15px;color:#A9A3CC">' + (ev.qualifier ? 'The qualifier starts in' : 'Your match starts in') + '</span><span class="wt-big wt-l">' + H.cd(H.ms(ev.startAt)) + '</span><span style="font-size:15px">Stay on this screen.</span></div>' +
+        (ev.qualifier
+          ? '<div class="wt-box" style="border:2px solid #FFD23F;gap:8px"><b style="font-size:18px;color:#FFD23F">How it works</b><span>1. The qualifier is 2 rounds. Your best score of the 2 counts.</span><span>2. ' + num(n) + (n === 1 ? ' person' : ' people') + ' in the lobby, so ' + num(qualifyOf(n)) + ' will qualify.</span><span>3. Everyone gets their own board in the qualifier.</span><span>4. After the qualifier it’s 1v1: the same board for both. The winner moves to the next round. One attempt only.</span><span>5. Betting starts from the top 8.</span></div>'
+          : '<div class="wt-box" style="border:2px solid #FFD23F;gap:8px"><b style="font-size:18px;color:#FFD23F">How it works</b><span>1. We pick your opponent.</span><span>2. Same letters for both. Find words before your clock runs out.</span><span>3. More points wins. Winner goes on.</span><span>4. Bet on the last rounds.</span></div>') +
         '<div style="display:flex;flex-direction:column;gap:10px"><div class="wt-row" style="align-items:baseline"><span style="font-size:17px;font-weight:800">Who’s playing</span><span style="font-size:15px;font-weight:700;color:#FFD23F">' + num(n) + ' in</span></div>' +
         '<div class="wt-grid">' + shown.map(function (p) { return '<div data-k="g' + esc(p.userId) + '">' + face(p, '', 'l') + '<span>' + esc(p.userId === H.meId() ? 'You' : first(p.name)) + '</span></div>'; }).join('') + '</div>' +
         (n > shown.length ? '<span class="wt-s">+' + num(n - shown.length) + ' more</span>' : '') + '</div>' +
         '<div style="flex-grow:1"></div>' +
-        (ev.qualifier
-          ? '<div class="wt-box"><b>How it works</b><span>1. The qualifier is 2 rounds. Your best score of the 2 counts.</span><span>2. ' + num(n) + (n === 1 ? ' person' : ' people') + ' in the lobby, so ' + num(qualifyOf(n)) + ' will qualify.</span><span>3. Everyone gets their own board in the qualifier.</span><span>4. After the qualifier it’s 1v1: the same board for both. The winner moves to the next round. One attempt only.</span><span>5. Betting starts from the top 8.</span></div>'
-          : '<div class="wt-box"><b>How it works</b><span>1. We pick your opponent.</span><span>2. Same letters for both. Find words before your clock runs out.</span><span>3. More points wins. Winner goes on.</span><span>4. Bet on the last rounds.</span></div>') +
         '</section>';
     }
 
