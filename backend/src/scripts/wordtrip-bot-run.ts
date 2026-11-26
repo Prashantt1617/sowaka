@@ -274,6 +274,9 @@ async function bot(userId: string, ticket: string, linkTicket: string) {
     bytes.page += b.length;
     gz.page += wire(b);
   } else fail('page did not load');
+  // The normal game's page, once (the page keeps it by version).
+  const game = await call(ticket, 'GET', '/cup/api/wordtrip-game', undefined, 'page');
+  if (game.status !== 200 || !JSON.parse(game.text).html) fail(`wordtrip-game ${game.status}`);
   let version: string | undefined;
   let photosV: number | undefined;
   let state: Record<string, any> | null = null;
@@ -334,7 +337,8 @@ async function bot(userId: string, ticket: string, linkTicket: string) {
       }
     }
     if (event?.phase === 'done') return;
-    await sleep(rand(1200, 1700));
+    // As the page polls a Word Trip tournament: every 2.5 s.
+    await sleep(rand(2300, 2700));
   }
 }
 

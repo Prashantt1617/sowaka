@@ -605,7 +605,7 @@ render();
 }).then(function () {
 inflight = false;
 if (fatal) return;
-var wait = netFail ? Math.min(10000, 1500 * Math.pow(2, netFail - 1)) : (document.hidden ? 2000 : 1500);
+var wait = netFail ? Math.min(10000, 1500 * Math.pow(2, netFail - 1)) : isWordTrip() ? (document.hidden ? 4000 : 2500) : (document.hidden ? 2000 : 1500);
 pollT = setTimeout(poll, wait);
 });
 }

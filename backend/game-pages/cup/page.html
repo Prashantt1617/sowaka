@@ -434,7 +434,8 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     }).then(function () {
       inflight = false;
       if (fatal) return;
-      var wait = netFail ? Math.min(10000, 1500 * Math.pow(2, netFail - 1)) : (document.hidden ? 2000 : 1500);
+      // Word Trip: every 2.5 s (a match is a minute or more, and the match screen talks to the server with every word).
+      var wait = netFail ? Math.min(10000, 1500 * Math.pow(2, netFail - 1)) : isWordTrip() ? (document.hidden ? 4000 : 2500) : (document.hidden ? 2000 : 1500);
       pollT = setTimeout(poll, wait);
     });
   }
