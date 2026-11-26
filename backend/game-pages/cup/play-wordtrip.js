@@ -39,7 +39,7 @@
     'window.results=function(title,stars){if(mode!=="over")return;var st=starsEl(0),big=el("div","bigscore","0");openSheet(title,[st,big,sumLine()],[]);animateScore(st,big,score,stars,true);};' +
     'window.sheetOutside=function(){};window.sheetX=function(){};' +
     'var cs=document.createElement("style");cs.textContent="#sx{display:none!important}";document.head.appendChild(cs);' +
-    'addEventListener("message",function(e){var d=e.data;if(!d||d.cupwt!==2)return;if(d.type==="start"){try{start(null,d.seed);}catch(x){post({type:"error",message:String(x)});}}});' +
+    'addEventListener("message",function(e){var d=e.data;if(!d||d.cupwt!==2)return;if(d.type==="start"){try{save.best=0;save.rounds=0;}catch(x){}try{start(null,d.seed);}catch(x){post({type:"error",message:String(x)});}}});' +
     'post({type:"ready"});' +
     '})();<\/script>';
   var CSS = '.cwt{position:absolute;inset:0;background:#15122B;color:#F6F1FF;font-family:Figtree,system-ui,sans-serif;overflow:hidden}' +
@@ -76,7 +76,9 @@
   /* Before the game's own script: no app bridge in the frame (an app that puts window.Sowaka into every frame would
      otherwise post tournament runs to Word Trip's leaderboard and open its challenges), and its ready event stopped. */
   var GUARD = '<script>(function(){try{Object.defineProperty(window,"Sowaka",{get:function(){return undefined;},set:function(){},configurable:false});}catch(e){try{window.Sowaka=undefined;}catch(x){}}' +
-    'addEventListener("sowaka-ready",function(e){e.stopImmediatePropagation();},true);})();<\/script>';
+    'addEventListener("sowaka-ready",function(e){e.stopImmediatePropagation();},true);' +
+    'try{var si=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(String(k).indexOf("wordtrip.")===0)return;return si.call(this,k,v);};}catch(e){}' +
+    'var st=document.createElement("style");st.textContent="#foot{display:none!important}";(document.head||document.documentElement).appendChild(st);})();<\/script>';
   /* The game's page with the guard first and the bridge after its own script. */
   function withBridge(html) {
     var h = html.search(/<head[^>]*>/i);
@@ -189,7 +191,7 @@
           try { frame.focus(); } catch (e) {}
           return;
         }
-        cover('<small>' + (o.attempt ? 'REPLAY · NEW LETTERS' : 'YOUR MATCH') + '</small><div class="cwt-vs">' + face(o.me, '#FFD23F') + '<i>vs</i>' + (opp ? face(opp, '#4C9BFF') : '<i>' + esc(oppName) + '</i>') + '</div>' +
+        cover('<small>' + (o.attempt ? 'REPLAY · NEW LETTERS' : 'YOUR MATCH') + '</small><div class="cwt-vs">' + face(o.me, '#FFD23F') + '<i>vs</i>' + (opp ? face(opp, '#4C9BFF') : face(o.opponent, '#2B2650')) + '</div>' +
           '<div class="cwt-big">' + Math.max(1, Math.ceil((startAt - t) / 1000)) + '</div>' +
           '<p>' + (opp ? 'Same letters for you and ' + esc(first(opp.name)) + '. More points wins.' : esc(oppName) + ' didn’t come. You play alone and go to the next round.') + '</p>');
       }

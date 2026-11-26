@@ -21,6 +21,8 @@ type Game = 'odd' | 'trails' | 'knights' | 'wordtrip';
 const GameCtx = createContext<Game>('odd');
 /** Word Trip: everyone's face, from the state's `photos` map (its matches carry none). */
 const PhotosCtx = createContext<Record<string, string | null> | null>(null);
+/** A tournament drawn from its lobby has no seeds: no "#3" beside anyone. */
+const SeedsCtx = createContext(true);
 const gameOf = (key?: string): Game => (key === 'trails' ? 'trails' : key === 'knights' ? 'knights' : key === 'word-trip' ? 'wordtrip' : 'odd');
 
 // —— the state (the Cup page's, as much as the TV draws) ————————————————————
@@ -92,6 +94,7 @@ interface CupState {
     startAt: string;
     topN: number;
     entrantCount?: number;
+    lobbyDraw?: boolean;
     roundSec?: number;
     rounds?: Round[];
   } | null;
@@ -387,6 +390,14 @@ function CupFace({ p, colour }: { p: Player | null; colour: string }) {
   );
 }
 const firstName = (name: string) => name.split(/\s+/)[0] || name;
+/** A seed badge, only where the draw was seeded. */
+function SeedTag({ p }: { p: Player }) {
+  return useContext(SeedsCtx) ? <span className="ctv-seed">#{p.seed}</span> : null;
+}
+function SeedEm({ p }: { p: Player | null }) {
+  const seeded = useContext(SeedsCtx);
+  return <em>{p && seeded ? `#${p.seed}` : ''}</em>;
+}
 const ms = (iso?: string | null) => (iso ? new Date(iso).getTime() : Number.NaN);
 
 function clock(msLeft: number): string {
@@ -537,9 +548,11 @@ export function CupTv() {
   const wtFinal = wtStageOn && stage!.round.short === 'F' && stage!.match.status !== 'done';
   // The rounds before the last eight: the live boards across the whole screen (the bracket of the last eight is still empty).
   const wtWide = wordTrip && !stage && current?.kind === 'parallel' && event?.phase === 'running';
+  // The real number on the stage: the players of its first round (free passes included), else the event's top N.
+  const lastN = sequential[0] ? sequential[0].matches.length * 2 + (sequential[0].byes?.length ?? 0) : event?.topN ?? 8;
   const bracketPanel = event && (
     <section className="ctv-panel" aria-label="The last eight">
-      <h2 className="ctv-h">The last {event.topN}</h2>
+      <h2 className="ctv-h">The last {lastN}</h2>
       {sequential.length ? (
         <Bracket rounds={sequential} onStageId={stage?.match.id} onPick={hr && !stream ? (m) => setConfirming(m) : undefined} />
       ) : (
@@ -551,6 +564,7 @@ export function CupTv() {
   return (
     <GameCtx.Provider value={gameOf(event?.gameKey)}>
     <PhotosCtx.Provider value={state?.photos ?? null}>
+    <SeedsCtx.Provider value={!event?.lobbyDraw}>
     <div ref={root} className={`ctv${stream ? ' stream' : ''}`} data-testid="cup-tv">
       <style>{CSS}</style>
       <header className="ctv-top">
@@ -652,6 +666,7 @@ export function CupTv() {
       })()}
       {confirming && <VoidDialog match={confirming} onCancel={() => setConfirming(null)} onConfirm={() => doVoid(confirming)} />}
     </div>
+    </SeedsCtx.Provider>
     </PhotosCtx.Provider>
     </GameCtx.Provider>
   );
@@ -841,7 +856,7 @@ function BoardsDuel({ match, size }: { match: Match; size: number }) {
               <CupFace p={p} colour={colour} />
               <span className="ctv-nm">
                 {p ? firstName(p.name) : 'To be decided'}
-                {p && <span className="ctv-seed">#{p.seed}</span>}
+                {p && <SeedTag p={p} />}
               </span>
               <span className="ctv-sc" style={{ color: colour }}>{fmt(s)}</span>
             </div>
@@ -938,7 +953,7 @@ function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
             {pill.text}
           </span>
           <span style={{ fontFamily: "'Lilita One',system-ui,sans-serif", fontSize: 30 }}>
-            {round.label === match.label ? match.label : `${round.label} · ${match.label}`}{match.attempt ? ` · replay ${match.attempt}` : ''}
+            {round.label === match.label || match.label.startsWith(round.label) ? match.label : `${round.label} · ${match.label}`}{match.attempt ? ` · replay ${match.attempt}` : ''}
           </span>
         </div>
         {timer && (
@@ -960,7 +975,7 @@ function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
               <CupFace p={p} colour={colour} />
               <span className="ctv-nm">
                 {p ? p.name : 'To be decided'}
-                {p && <span className="ctv-seed">#{p.seed}</span>}
+                {p && <SeedTag p={p} />}
                 {won && <span className="ctv-won">THROUGH</span>}
               </span>
               <span className="ctv-sc" style={{ color: colour }}>{p && scored ? fmt(s) : ''}</span>
@@ -1143,7 +1158,7 @@ function Bracket({ rounds, onStageId, onPick }: { rounds: Round[]; onStageId?: s
                   const s = scoreOf(m, p);
                   return (
                     <div key={i} className={`ctv-bp${out ? ' out' : ''}${win ? ' win' : ''}`}>
-                      <em>{p ? `#${p.seed}` : ''}</em>
+                      <SeedEm p={p} />
                       <span>{p ? p.name : '—'}</span>
                       {p && m.status !== 'pending' && m.status !== 'scheduled' && m.status !== 'betting' && <b>{fmt(s)}</b>}
                     </div>
@@ -1242,10 +1257,10 @@ function WatchDialog({ match, round, serverNow, roundSec, onClose }: { match: Ma
     ? serverNow < start ? `Starts in ${Math.max(1, Math.ceil((start - serverNow) / 1000))}` : `${clock(start + roundSec * 1000 - serverNow)} left`
     : match.status === 'done' ? 'Final score' : '';
   return (
-    <div className="ctv-veil" role="dialog" aria-modal="true" aria-label={`${round.label} · ${match.label}`} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="ctv-veil" role="dialog" aria-modal="true" aria-label={round.label === match.label || match.label.startsWith(round.label) ? match.label : `${round.label} · ${match.label}`} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="ctv-focus">
         <div className="ctv-stagehead">
-          <span style={{ fontFamily: "'Lilita One',system-ui,sans-serif", fontSize: 30 }}>{round.label} · {match.label}</span>
+          <span style={{ fontFamily: "'Lilita One',system-ui,sans-serif", fontSize: 30 }}>{round.label === match.label || match.label.startsWith(round.label) ? match.label : `${round.label} · ${match.label}`}</span>
           <span style={{ flex: 1 }} />
           <span style={{ fontFamily: "'Lilita One',system-ui,sans-serif", fontSize: 30, color: C.ink2 }}>{left}</span>
           <button type="button" className="ctv-ghost" onClick={onClose} autoFocus>Close</button>
@@ -1448,7 +1463,7 @@ function StreamDuel({ match, round, split, serverNow, roundSec, kicker }: {
           <CupFace p={p} colour={colour} />
           <span className="cs-nm">
             {p ? p.name : 'No opponent'}
-            {p && <span className="ctv-seed">#{p.seed}</span>}
+            {p && <SeedTag p={p} />}
           </span>
           <span className="cs-sc" style={{ color: colour }}>{p ? fmt(s) : ''}</span>
         </div>
@@ -1465,7 +1480,7 @@ function StreamDuel({ match, round, split, serverNow, roundSec, kicker }: {
           {pill.text}
         </span>
         <span className="cs-label">
-          {round.label === match.label ? match.label : `${round.label} · ${match.label}`}{match.attempt ? ` · replay ${match.attempt}` : ''}
+          {round.label === match.label || match.label.startsWith(round.label) ? match.label : `${round.label} · ${match.label}`}{match.attempt ? ` · replay ${match.attempt}` : ''}
         </span>
         {kicker && <span className="cs-kick">{kicker}</span>}
       </div>

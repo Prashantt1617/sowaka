@@ -91,7 +91,7 @@
     function vs(m, oppHere, meHere) {
       var me = H.me(), opp = m.opponent;
       var mp = { userId: me.userId, name: me.name, photoUrl: me.photoUrl };
-      return '<div class="wt-vs"><div class="wt-pl">' + face(mp, 'me', 'v') + '<b>You</b>' + (meHere ? '<span class="wt-st"><i></i>Ready</span>' : '<span class="wt-st no">Joining…</span>') + '</div><i>vs</i>' +
+      return '<div class="wt-vs"><div class="wt-pl">' + face(mp, 'me', 'v') + '<b>You</b>' + (meHere ? '<span class="wt-st"><i></i>Ready</span>' : m.status === 'open' ? '<span class="wt-st no">Joining…</span>' : '') + '</div><i>vs</i>' +
         '<div class="wt-pl">' + face(opp, oppHere ? '' : 'away', 'v') + '<b' + (oppHere ? '' : ' class="dim"') + '>' + esc(opp ? first(opp.name) : 'To be decided') + '</b>' + (oppHere ? '<span class="wt-st"><i></i>Ready</span>' : '<span class="wt-st no">Not here yet</span>') + '</div></div>';
     }
     function facts(m) {

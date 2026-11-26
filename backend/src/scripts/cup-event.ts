@@ -34,7 +34,7 @@
  * --grace S --min-play S --max-score N --max-replays N --max-stake N --push-at-lobby true|false
  * --game odd-one-out|trails|knights|word-trip (the game in each match; knights also sets its own defaults:
  * round 300, start window 30, solo start 30, betting 120, top 8, wallet 1000, lobby draw, 2 replays; word-trip: one normal
- * Word Trip run a match, start window 40, countdown 5, betting 120, top 8, wallet 1000, lobby draw, 2 replays) --lobby-draw true|false (only the people who join
+ * Word Trip run a match, start window 40, countdown 8, betting 120, top 8, wallet 1000, lobby draw, 2 replays) --lobby-draw true|false (only the people who join
  * the lobby, paired at random when it closes) --wallet N (everyone bets from N points of their own for
  * this tournament, not their points; 0: their points)
  * Times: ISO with an offset (2026-10-23T17:25+05:30), or +Ns / +Nm / +Nh from now.
@@ -120,14 +120,14 @@ const KNIGHTS_DEFAULTS: Partial<CupEventConfig> = {
 /**
  * The Word Trip Tournament's own rules (27 Nov 2026): each match is one normal Word Trip run each (the game's own 1:00
  * clock and rules, the same seed for both), a 40 s start window (a lone player then plays alone at once and goes
- * through), a 5 s countdown, ties replayed on a new seed twice, bets from the last eight from 1,000 points of their own,
+ * through), an 8 s countdown (the game loads behind it), ties replayed on a new seed twice, bets from the last eight from 1,000 points of their own,
  * drawn from the lobby. roundSec is only shown (the game's clock rules). Flags given on `create` still win.
  */
 const WORD_TRIP_DEFAULTS: Partial<CupEventConfig> = {
   roundSec: 60,
   startWindowSec: 40,
-  countdownSec: 5,
-  soloStartSec: 30,
+  countdownSec: 8,
+  soloStartSec: 40,
   bettingSec: 120,
   topN: 8,
   walletStart: 1000,

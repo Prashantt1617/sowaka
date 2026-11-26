@@ -582,14 +582,14 @@ export function lobbyPresent(event: { lobbyJoined?: string[]; lobbySeen?: Record
  * match is decided on the server's score, never the page's.
  */
 export const WORD_TRIP = 'word-trip';
-/** After a player's clock should have run out, how long their last word is still taken (the trip here). */
-export const WT_GRACE_SEC = 3;
+/** After a player's clock should have run out, how long their last words are still taken (a slow phone, a late start). */
+export const WT_GRACE_SEC = 8;
 /** A tie replays this many seconds after it is decided (both are on the page already). */
 export const WT_REPLAY_SEC = 8;
 /** Words that are not taken, per run, before the rest are ignored (no brute force). */
 export const WT_MAX_BAD = 120;
-/** How far a word's own time (the run's clock) may trail its arrival here: words held back (offline, or to fake a combo) count from then. */
-export const WT_LAG_SEC = 8;
+/** How far a word's own time (the run's clock) may trail its arrival here (a dropped connection, its words sent when back): further back, it counts from then. */
+export const WT_LAG_SEC = 20;
 /** A word's time may run ahead of its arrival by this much (the page's clock and the server's are a little apart). */
 export const WT_AHEAD_SEC = 1.5;
 /** Two words closer than this are not a person swiping. */

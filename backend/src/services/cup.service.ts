@@ -1480,7 +1480,9 @@ export async function reportLive(viewer: CupViewer, id: string, raw: unknown, pr
 export async function reportFinal(viewer: CupViewer, id: string, raw: unknown) {
   const { rt, match: held } = await playersMatch(viewer, id);
   // Knights has no final: the board decides (a right one at once, else the cap). Taken and ignored.
-  if (isKnightsEvent(rt.event) || isWordTripEvent(rt.event)) return { serverNow: new Date(), match: myMatchView(rt, held, viewer.userId) };
+  if (isKnightsEvent(rt.event)) return { serverNow: new Date(), match: myMatchView(rt, held, viewer.userId) };
+  // Word Trip: the server scores every word; a page's final score is never taken.
+  if (isWordTripEvent(rt.event)) throw new CupError(409, 'Word Trip has no final score to send: the server scores every word');
   const match = (await reloadMatch(rt, id))!;
   const now = new Date();
   if (match.finals?.[viewer.userId]) return { serverNow: now, match: myMatchView(rt, match, viewer.userId) };

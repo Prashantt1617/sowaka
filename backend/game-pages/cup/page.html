@@ -643,6 +643,15 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     var V = wtViews(), e = ev(), me = S.me, m = me.match;
     var cur = S.current && findMatch(S.current.matchId);
     var betOn = cur && cur.status === 'betting' && !isMine(cur) ? cur : null;
+    /* A result just in: shown 10 s from the first time this phone sees it, before the next bet or match takes over
+       (unless that next match is already being played). */
+    var last0 = myLastDone();
+    if (last0) { ui.wtSeen = ui.wtSeen || {}; if (!ui.wtSeen[last0.m.id]) ui.wtSeen[last0.m.id] = now(); }
+    if (last0 && now() - ui.wtSeen[last0.m.id] < 10000 && !(m && m.id !== last0.m.id && ['open', 'live', 'solo'].indexOf(m.status) >= 0)) {
+      if (!ui.wtSeenT) ui.wtSeenT = setTimeout(function () { ui.wtSeenT = 0; render(); }, 10100);
+      var lm0 = Object.assign({}, last0.m, { round: last0.r.n });
+      return V.result(lm0, { best: wtBest(lm0), nextAt: lm0.round === e.round ? wtRoundEnds(e.round) : NaN });
+    }
     if (!me.entered) return betOn ? V.bet(betOn) : e.phase === 'scheduled' || e.lobbyOpen ? V.join() : null;
     if (e.phase === 'scheduled') return V.join();
     if (e.phase === 'lobby') {
@@ -1261,9 +1270,12 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
 
   /* ---------- playing a match (cup/play.js) ---------- */
   function syncPlay() {
-    if (!S || !S.me || !S.me.match) return;
+    if (!S || !S.me) return;
+    if (isWordTrip()) return syncWordTrip();
+    if (!S.me.match) return;
     if (isKnights()) return syncKnights();
     if (isWordTrip()) return syncWordTrip();
+    if (!S.me.match) return;
     var m = S.me.match, key = m.id + ':' + (m.attempt || 0);
     var start = ms(m.startAt);
     if ((m.status === 'live' || m.status === 'solo') && finals[key] != null && !posted[key]) postFinal(m.id, key, finals[key]);
@@ -1392,7 +1404,10 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
       return j.html;
     });
   }
+  var wtPrefetched = false;
   function syncWordTrip() {
+    if (!wtPrefetched && S && S.me && S.me.entered) { wtPrefetched = true; wtGetGame().catch(function () { wtPrefetched = false; }); }
+    if (!S.me.match) return;
     var m = S.me.match, key = m.id + ':' + (m.attempt || 0), start = ms(m.startAt), P = window.CupWordTrip, e = ev();
     if (m.status === 'open' && !m.joined && m.round === e.round && S.me.alive && !ui.busy && ui.wtJoin !== key && document.visibilityState === 'visible') {
       ui.wtJoin = key; setTimeout(function () { matchAction('join'); }, 0);
