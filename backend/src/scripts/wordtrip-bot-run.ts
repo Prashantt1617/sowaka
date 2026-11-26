@@ -26,7 +26,7 @@
  * 1 v last, first names only in the qualifier rows, every run's score its words played back.
  * Prints timings, latencies and bytes.
  */
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { createWriteStream } from 'node:fs';
@@ -60,14 +60,19 @@ const id = (i: number) => `bot-${String(i + 1).padStart(3, '0')}`;
 const GHOSTS = new Set([3, 17, 29, 41, 58, 77].filter((i) => i < BOTS).map(id));
 /** In the draw (connected in the lobby) but never join a match: their opponents play alone. */
 const NO_SHOW = new Set([7, 22, 64].filter((i) => i < BOTS).map(id));
-/** Join the lobby after attempt 1's window has closed: attempt 2 only (attempt 1 refused). */
-const LATE = new Set([5, 9, 11, 13, 19, 25, 33, 37, 45, 55].filter((i) => i < BOTS).map(id));
+/** Join the lobby after attempt 1's window has closed: attempt 2 only (attempt 1 refused). ~10 for 100 bots, ~15 for 170. */
+const LATE = new Set([5, 9, 11, 13, 19, 25, 33, 37, 45, 55, 61, 70, 85, 100, 115].filter((i) => i < Math.min(BOTS, 60 + BOTS / 2)).map(id));
 /** Play attempt 1 only. */
 const SKIP_A2 = new Set([2, 8].filter((i) => i < BOTS).map(id));
-/** The same two short words at the same moments in both attempts: a tie, placed at the cut (below the strong, above the weak). */
-const TIE = new Set([90, 91, 92, 93].filter((i) => i < BOTS).map(id));
-/** Play both attempts but find no words (score 0): below the tie. With 100 bots: 62 strong, 4 tied, 28 weak, 6 ghosts → 94 played, the cut 64, the tie across it. */
-const WEAK = new Set([...Array.from({ length: 24 }, (_, k) => 66 + k), 94, 95, 96, 97, 98].filter((i) => i < BOTS && i !== 77).map(id));
+/**
+ * The cut is the largest power of two of those who play (all but the ghosts): the first cut-2 others play well, the
+ * next 4 play the same two short words at the same moments in both attempts (a tie across the cut, 2 places), the
+ * rest find no words (score 0). 100 bots: 62 strong, 4 tied, 28 weak, cut 64; 170: 126, 4, 34, cut 128.
+ */
+const PLAYERS = Array.from({ length: BOTS }, (_, i) => i).filter((i) => !GHOSTS.has(id(i)));
+const STRONG_N = Math.max(0, qualifierCut(PLAYERS.length) - 2);
+const TIE = new Set(PLAYERS.slice(STRONG_N, STRONG_N + 4).map(id));
+const WEAK = new Set(PLAYERS.slice(STRONG_N + 4).map(id));
 
 process.env.SCRIBBLE_TICKET_SECRET = SECRET;
 process.env.MONGODB_URI = MONGO;
@@ -185,6 +190,7 @@ function startServer(): ChildProcess {
 
 let calls = 0;
 let callErrors = 0;
+let statePolls = 0;
 const latencies: number[] = [];
 const wordLat: number[] = [];
 /** Bytes as read (raw) and as they travel (the API gzips every answer over 1 KB, as compression() does; photos are WebP and travel as they are). */
@@ -326,6 +332,7 @@ async function bot(userId: string, ticket: string, linkTicket: string) {
   let photosV: number | undefined;
   let state: Record<string, any> | null = null;
   while (!done) {
+    statePolls += 1;
     const res = await call(ticket, 'GET', `/cup/api/state?event=${EVENT_ID}${version ? `&since=${version}` : ''}${photosV != null ? `&pv=${photosV}` : ''}`, undefined, 'state');
     if (res.status !== 200) {
       await sleep(1000);
@@ -580,6 +587,15 @@ async function main() {
   const db = client.db(DB);
   const deadline = Date.now() + 60 * 60_000;
   let lastStage = '';
+  const load = { rssMax: 0, cpuMax: 0, cpuSum: 0, samples: 0, opsMax: 0, opsTotal: 0, rssFirst: 0, rssLast: 0, mainOps: 0 };
+  const opsNow = async () => {
+    const st = await client.db('admin').command({ serverStatus: 1 });
+    const o = st.opcounters;
+    return Number(o.query) + Number(o.getmore) + Number(o.insert) + Number(o.update) + Number(o.delete) + Number(o.command);
+  };
+  const ops0 = await opsNow();
+  let opsPrev = ops0;
+  const polls0 = statePolls;
   let lastRound = -1;
   let lastPhase = '';
   while (Date.now() < deadline) {
@@ -596,8 +612,26 @@ async function main() {
     }
     if (event?.phase === 'done') break;
     await sleep(1000);
+    // The server's memory and CPU, and Mongo's operations a second (this loop's own two counted apart).
+    try {
+      const ps = execFileSync('ps', ['-o', 'rss=,%cpu=', '-p', String(server.pid)], { encoding: 'utf8' }).trim().split(/\s+/).map(Number);
+      if (ps[0]) {
+        load.rssMax = Math.max(load.rssMax, ps[0]);
+        load.rssFirst ||= ps[0];
+        load.rssLast = ps[0];
+        load.cpuMax = Math.max(load.cpuMax, ps[1]);
+        load.cpuSum += ps[1];
+        load.samples += 1;
+      }
+      const ops = await opsNow();
+      load.opsMax = Math.max(load.opsMax, ops - opsPrev - 3);
+      load.mainOps += 3;
+      opsPrev = ops;
+    } catch {}
   }
   done = true;
+  const opsAll = (await opsNow()) - ops0 - load.mainOps;
+  const polls = statePolls - polls0;
   const maxLiveTv = await Promise.race([tvRun, sleep(5000).then(() => -1)]);
   await Promise.race([Promise.all(bots), sleep(5000)]);
 
@@ -650,7 +684,7 @@ async function main() {
   const tieIn = [...TIE].filter((u) => drawn.has(u));
   const tb = event.qual?.extraUserIds as string[] | undefined;
   console.log(`Tie at the cut: ${tb ? `${tb.length} tied (${tb.filter((u) => TIE.has(u)).length} of the forced ${TIE.size}) for ${event.qual.spots} places · extra runs ${stats.extraRuns} · tied bots drawn ${tieIn.length}` : 'none'} · TV/page saw tiebreak: ${!!qualSeen.tiebreak}`);
-  if (TIE.size && BOTS >= 100) {
+  if (TIE.size && BOTS >= 20) {
     if (!tb || !TIE.size || [...TIE].some((u) => !tb.includes(u))) fail('the forced tie at the cut was not played off');
     if (tb && tieIn.length + tb.filter((u) => !TIE.has(u) && drawn.has(u)).length !== event.qual.spots) fail(`tied drawn ${tieIn.length}, places ${event.qual.spots}`);
     if (!qualSeen.tiebreak) fail('no state showed the tiebreak');
@@ -739,6 +773,7 @@ async function main() {
   const gsum = Object.values(gz).reduce((a, b) => a + b, 0);
   console.log(`  On the wire (gzip): page ${mb(gz.page)} · state polls ${mb(gz.state)} · words ${mb(gz.words)} · photos ${mb(gz.photos)} · TV state ${mb(gz.tvState)} · TV photos ${mb(gz.tvPhotos)} · TOTAL ${mb(gsum)}`);
   console.log(`  The same photo loads at full size would have been ${mb((photoLoads.bots + photoLoads.tv) * photoBytes)}.`);
+  console.log(`Server: peak RSS ${(load.rssMax / 1024).toFixed(0)} MB (first ${(load.rssFirst / 1024).toFixed(0)}, last ${(load.rssLast / 1024).toFixed(0)}) · CPU peak ${load.cpuMax.toFixed(0)}% avg ${(load.cpuSum / Math.max(1, load.samples)).toFixed(0)}% · Mongo ops peak ${load.opsMax}/s, ${opsAll} in all for ${polls} state polls (${(opsAll / Math.max(1, polls)).toFixed(3)} per poll, words and runner writes included)`);
   console.log(`Total ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   server.kill('SIGTERM');
   await sleep(1500);
