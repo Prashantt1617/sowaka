@@ -115,7 +115,7 @@
     var root = document.createElement('div'); root.className = 'cw';
     root.innerHTML =
       '<div class="cw-top"><div class="cw-p">' + face(me, '#FFD23F') + '<span class="tx"><span class="nm">You</span><b class="sc" data-me>0</b></span></div>' +
-      '<div class="cw-ck"><b data-clk>1:00</b><small data-stp>STOP 1 OF ' + STOPS + '</small></div>' +
+      '<div class="cw-ck"><b data-clk>1:00</b><small data-stp>SET 1 OF ' + STOPS + '</small></div>' +
       '<div class="cw-p r">' + (opp ? face(opp, '#4C9BFF') + '<span class="tx"><span class="nm">' + esc(first(opp.name)) + '</span><b class="sc" data-op>0</b></span>' : '<span class="tx"><span class="nm">Playing alone</span><b class="sc" style="font-size:15px">You go through</b></span>') + '</div></div>' +
       '<div class="cw-dots" data-dots></div>' +
       '<div class="cw-net" data-net hidden role="status">Reconnecting… your words are kept and sent when it’s back.</div>' +
@@ -315,7 +315,7 @@
       k = nk; letters = (wtNow().letters || [])[k] || '';
       order = letters.split('').map(function (c, i) { return { c: c, id: k + ':' + i }; });
       tray = []; used = {}; buildTiles(); paintTray(); paintDots(); paintWall(); msg('');
-      $('stp').textContent = 'STOP ' + (k + 1) + ' OF ' + STOPS;
+      $('stp').textContent = 'SET ' + (k + 1) + ' OF ' + STOPS;
     }
 
     /* ---------- the clock: which stop, which cover ---------- */
@@ -328,7 +328,7 @@
       if (t < 0) {
         phase = 'count';
         var n = Math.ceil(-t / 1000);
-        cover('<small>' + (o.attempt ? 'REPLAY · NEW LETTERS' : 'STOP 1 OF ' + STOPS) + '</small><div class="cw-big">' + n + '</div><p>' + (W.len || '') + ' letters. Make as many words as you can in ' + Math.round(STOP_MS / 1000) + ' seconds.</p>' + (opp ? '<p>Same letters for you and ' + esc(first(opp.name)) + '.</p>' : '<p>' + esc(first((o.opponent || {}).name || 'Your opponent')) + ' didn’t come. You play alone and go to the next round.</p>'));
+        cover('<small>' + (o.attempt ? 'REPLAY · NEW LETTERS' : 'SET 1 OF ' + STOPS) + '</small><div class="cw-big">' + n + '</div><p>' + (W.len || '') + ' letters. Make as many words as you can in ' + Math.round(STOP_MS / 1000) + ' seconds.</p>' + (opp ? '<p>Same letters for you and ' + esc(first(opp.name)) + '.</p>' : '<p>' + esc(first((o.opponent || {}).name || 'Your opponent')) + ' didn’t come. You play alone and go to the next round.</p>'));
         if (n !== lastTick) { lastTick = n; if (n <= 3) sfx.tick(); }
         return;
       }
@@ -344,12 +344,12 @@
         /* Between two stops: the next one's number and a countdown, in big plain words. */
         if (phase !== 'gap') { phase = 'gap'; clearTray(); }
         var nl = (wtNow().letters || [])[sk + 1];
-        cover('<small>STOP ' + (sk + 1) + ' DONE · ' + num(stopScore[sk]) + ' POINTS</small><h2>Stop ' + (sk + 2) + ' of ' + STOPS + '</h2><div class="cw-big">' + Math.max(1, Math.ceil((span - inStop) / 1000)) + '</div><p>' + (nl ? nl.length + ' new letters' : 'New letters') + ' coming up.</p>');
+        cover('<small>SET ' + (sk + 1) + ' DONE · ' + num(stopScore[sk]) + ' POINTS</small><h2>Stop ' + (sk + 2) + ' of ' + STOPS + '</h2><div class="cw-big">' + Math.max(1, Math.ceil((span - inStop) / 1000)) + '</div><p>' + (nl ? nl.length + ' new letters' : 'New letters') + ' coming up.</p>');
         return;
       }
       if (sk !== k || !letters) {
         dealStop(sk);
-        if (!letters) { phase = 'load'; cover('<small>STOP ' + (sk + 1) + ' OF ' + STOPS + '</small><h2>Loading the letters…</h2><p>The clock is running: they’ll be here in a moment.</p>'); k = -1; return; }
+        if (!letters) { phase = 'load'; cover('<small>SET ' + (sk + 1) + ' OF ' + STOPS + '</small><h2>Loading the letters…</h2><p>The clock is running: they’ll be here in a moment.</p>'); k = -1; return; }
         sfx.go();
       }
       if (phase !== 'play') { phase = 'play'; uncover(); paintTray(); }

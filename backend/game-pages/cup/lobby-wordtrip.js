@@ -19,7 +19,7 @@
     '.wt-tiles{display:flex;gap:8px;justify-content:center;padding:6px 0}.wt-tiles span{width:52px;height:58px;border-radius:12px;background:#FFF6DE;box-shadow:inset 0 -4px 0 #D2BC7E;color:#2A2140;font:800 30px/58px "Baloo 2",system-ui;text-align:center}.wt-tiles span.g{background:#FFD23F;box-shadow:inset 0 -4px 0 #C99E12}' +
     '.wt-tiles.sm span{width:38px;height:42px;border-radius:9px;font-size:22px;line-height:42px}' +
     '.wt-card{background:#211D42;border:1px solid #3B3668;border-radius:20px;padding:20px;display:flex;flex-direction:column;align-items:center;gap:8px}' +
-    '.wt-box{background:#211D42;border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}.wt-box b{font-size:15px}.wt-box span{font-size:14px;color:#A9A3CC}' +
+    '.wt-box{background:#211D42;border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}.wt-box b{font-size:15px}.wt-box span{font-size:14px;color:#A9A3CC}.wt-box .wt-tiles span{color:#2A2140;font-size:22px}' +
     '.wt-big{font:800 56px/1 "Baloo 2",system-ui;color:#FFD23F;font-variant-numeric:tabular-nums}.wt-big.wt-l{font-size:64px}.wt-big.wt-xl{font-size:72px}' +
     '.wt-btn{display:flex;align-items:center;justify-content:center;width:100%;height:60px;border-radius:18px;border:0;background:#FFD23F;color:#15122B;font:800 24px/1 "Baloo 2",system-ui;cursor:pointer}.wt-btn:disabled{background:#3B3668;color:#A9A3CC}' +
     '.wt-in{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 14px;border-radius:999px;background:rgba(75,227,154,.14);color:#4BE39A;font-size:15px;font-weight:800}' +
@@ -142,10 +142,10 @@
       var player = H.isMine(m);
       if (H.ui.pickFor !== m.id) { H.ui.pickFor = m.id; H.ui.pick = null; H.ui.betErr = ''; H.ui.stake = 0; }
       var a = os ? os.a : { count: 0 }, b = os ? os.b : { count: 0 }, cnt = (a.count || 0) + (b.count || 0);
-      var share = function (x) { return cnt ? Math.round(((x.count || 0) / cnt) * 100) + '%' : '0%'; };
+      var share = function (x) { return cnt ? Math.round(((x.count || 0) / cnt) * 100) + '% picked' : 'No picks yet'; };
       var pick = mine ? mine.pick : H.ui.pick, dis = !!(mine || player || !open);
       var card = function (p, x) {
-        return '<button type="button" class="' + (pick === p.userId ? 'on' : '') + '" data-act="pick" data-v="' + esc(p.userId) + '" aria-pressed="' + (pick === p.userId) + '"' + (dis ? ' disabled' : '') + '>' + face(p, '', 'b') + '<b>' + esc(p.userId === me.userId ? 'You' : first(p.name)) + '</b><span>' + share(x) + ' picked</span></button>';
+        return '<button type="button" class="' + (pick === p.userId ? 'on' : '') + '" data-act="pick" data-v="' + esc(p.userId) + '" aria-pressed="' + (pick === p.userId) + '"' + (dis ? ' disabled' : '') + '>' + face(p, '', 'b') + '<b>' + esc(p.userId === me.userId ? 'You' : first(p.name)) + '</b><span>' + share(x) + '</span></button>';
       };
       var stakes = [100, 250, 500, 'all'];
       var stake = Math.min(H.ui.stake || 0, bal), pickP = pick ? (m.a.userId === pick ? m.a : m.b) : null;

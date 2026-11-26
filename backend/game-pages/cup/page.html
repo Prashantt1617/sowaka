@@ -640,7 +640,8 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     if (betOn) return V.bet(betOn);
     var last = myLastDone();
     if (last && (!me.alive || (me.alive && !(me.freePass && me.freePass.round === e.round)))) {
-      var res = V.result(last.m, { best: wtBest(last.m), nextAt: last.m.round === e.round ? wtRoundEnds(e.round) : NaN });
+      var lm = Object.assign({}, last.m, { round: last.r.n });
+      var res = V.result(lm, { best: wtBest(lm), nextAt: lm.round === e.round ? wtRoundEnds(e.round) : NaN });
       return !me.alive && isTopN() ? res + viewStage() : res;
     }
     return null;

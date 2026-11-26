@@ -201,11 +201,11 @@ const CSS = `
 .wt-duel.xl{padding:24px 32px;gap:20px;flex:1}
 .wt-dh{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .wt-dl{font-family:'Baloo 2',var(--h);font-weight:800;font-size:26px;line-height:1}
-.wt-duel.xl .wt-dl{font-size:40px}.wt-duel.s .wt-dl{font-size:18px}
+.wt-duel.xl .wt-dl{font-size:40px}.wt-duel.s .wt-dl{font-size:24px}
 .wt-dk{font-size:14px;font-weight:800;letter-spacing:1.2px;color:${C.ink2};flex:1}
-.wt-duel.xl .wt-dk{font-size:20px}.wt-duel.s .wt-dk{font-size:11px}
+.wt-duel.xl .wt-dk{font-size:20px}.wt-duel.s .wt-dk{font-size:14px}
 .wt-dt{font-family:'Baloo 2',var(--h);font-weight:800;font-size:40px;line-height:1;color:#FFD23F;font-variant-numeric:tabular-nums}
-.wt-dt.low{color:${C.coral}}.wt-duel.xl .wt-dt{font-size:84px}.wt-duel.s .wt-dt{font-size:26px}
+.wt-dt.low{color:${C.coral}}.wt-duel.xl .wt-dt{font-size:84px}.wt-duel.s .wt-dt{font-size:40px}
 .wt-dr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
 .wt-duel.xl .wt-dr{gap:28px;flex:1}
 .wt-b{display:flex;flex-direction:column;gap:12px;background:#1A1636;border:3px solid #3B3668;border-radius:20px;padding:14px;min-width:0}
@@ -213,21 +213,21 @@ const CSS = `
 .wt-b.xl{padding:22px;gap:18px}.wt-b.s{padding:10px;gap:8px;border-radius:16px}
 .wt-bh{display:flex;align-items:center;gap:12px;min-width:0}
 .wt-bh .ctv-av{width:52px;height:52px;font-size:20px}
-.wt-b.xl .wt-bh .ctv-av{width:84px;height:84px;font-size:30px}.wt-b.s .wt-bh .ctv-av{width:34px;height:34px;font-size:13px}
+.wt-b.xl .wt-bh .ctv-av{width:84px;height:84px;font-size:30px}.wt-b.s .wt-bh .ctv-av{width:44px;height:44px;font-size:16px}
 .wt-bn{flex:1;min-width:0;font-weight:800;font-size:26px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.wt-b.xl .wt-bn{font-size:40px}.wt-b.s .wt-bn{font-size:17px}
+.wt-b.xl .wt-bn{font-size:40px}.wt-b.s .wt-bn{font-size:22px}
 .wt-bs{font-family:'Baloo 2',var(--h);font-weight:800;font-size:48px;line-height:1;color:var(--pc);font-variant-numeric:tabular-nums}
-.wt-b.xl .wt-bs{font-size:88px}.wt-b.s .wt-bs{font-size:30px}
+.wt-b.xl .wt-bs{font-size:88px}.wt-b.s .wt-bs{font-size:40px}
 .wt-lt{display:flex;gap:8px;justify-content:center;min-height:56px}
 .wt-lt span{width:52px;height:58px;border-radius:12px;background:#FFF6DE;box-shadow:inset 0 -4px 0 #D2BC7E;color:#2A2140;font:800 32px/58px 'Baloo 2',system-ui;text-align:center}
 .wt-b.xl .wt-lt span{width:80px;height:88px;font-size:50px;line-height:88px;border-radius:16px}
-.wt-b.s .wt-lt{gap:4px;min-height:36px}.wt-b.s .wt-lt span{width:30px;height:34px;font-size:19px;line-height:34px;border-radius:8px}
+.wt-b.s .wt-lt{gap:6px;min-height:46px}.wt-b.s .wt-lt span{width:42px;height:46px;font-size:26px;line-height:46px;border-radius:10px}
 .wt-ws{display:flex;flex-wrap:wrap;gap:8px;align-content:flex-start;min-height:120px}
-.wt-b.xl .wt-ws{min-height:260px;gap:12px}.wt-b.s .wt-ws{min-height:64px;gap:5px}
+.wt-b.xl .wt-ws{min-height:260px;gap:12px}.wt-b.s .wt-ws{min-height:110px;gap:6px}
 .wt-w{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none;height:38px;padding:0 12px;border-radius:12px;background:#2B2650;font-weight:800;font-size:20px;letter-spacing:.04em;animation:wt-in .35s ease-out}
 .wt-w i{font-style:normal;font-size:14px;color:#FFD23F}.wt-w.full{background:#FFD23F;color:#15122B}.wt-w.full i{color:#15122B}
 .wt-b.xl .wt-w{height:54px;font-size:30px;padding:0 16px;border-radius:14px}.wt-b.xl .wt-w i{font-size:20px}
-.wt-b.s .wt-w{height:26px;font-size:14px;padding:0 8px;border-radius:8px}.wt-b.s .wt-w i{font-size:11px}
+.wt-b.s .wt-w{height:32px;font-size:18px;padding:0 10px;border-radius:10px}.wt-b.s .wt-w i{font-size:13px}
 .wt-none{font-size:18px;color:${C.ink2};font-weight:700}.wt-b.s .wt-none{font-size:13px}.wt-b.xl .wt-none{font-size:26px}
 .wt-ss{display:flex;gap:14px;flex-wrap:wrap;font-size:14px;color:${C.ink2};font-weight:700}.wt-ss b{color:${C.ink}}
 .wt-b.xl .wt-ss{font-size:20px}.wt-b.s .wt-ss{display:none}
@@ -530,6 +530,8 @@ export function CupTv() {
   const wordTrip = gameOf(event?.gameKey) === 'wordtrip';
   const wtStageOn = wordTrip && stage && ['live', 'solo', 'done'].includes(stage.match.status) && !!stage.match.wt;
   const wtFinal = wtStageOn && stage!.round.short === 'F' && stage!.match.status !== 'done';
+  // The rounds before the last eight: the live boards across the whole screen (the bracket of the last eight is still empty).
+  const wtWide = wordTrip && !stage && current?.kind === 'parallel' && event?.phase === 'running';
   const bracketPanel = event && (
     <section className="ctv-panel" aria-label="The last eight">
       <h2 className="ctv-h">The last {event.topN}</h2>
@@ -595,7 +597,10 @@ export function CupTv() {
       {event && !stream && wtFinal && (
         <WtDuel match={stage!.match} round={stage!.round} words={state?.wordTrip?.[stage!.match.id ?? '']} serverNow={serverNow} size="xl" />
       )}
-      {event && !stream && !wtFinal && (
+      {event && !stream && wtWide && current && (
+        <WtLiveGrid round={current} words={state?.wordTrip} serverNow={serverNow} />
+      )}
+      {event && !stream && !wtFinal && !wtWide && (
         <div className="ctv-grid">
           <div className="ctv-col">
             {wtStageOn ? (
@@ -1067,7 +1072,7 @@ function WtDuel({ match, round, words, serverNow, size }: { match: Match; round:
   const decided = match.status === 'done';
   const winner = decided ? match.winnerId : null;
   const pill = STATUS_PILL[match.status];
-  const label = round.label === match.label ? match.label : `${round.label} · ${match.label}`;
+  const label = round.label === match.label || match.label.startsWith(round.label) ? match.label : `${round.label} · ${match.label}`;
   const timeText = decided ? 'Done' : where.before ? `Starts in ${Math.max(1, Math.ceil(where.left / 1000))}` : where.over ? 'Time!' : where.gap ? `Next set in ${Math.ceil(where.left / 1000)}` : clock(where.left);
   return (
     <section className={`wt-duel ${size}`} aria-label={`${label}, live`}>
@@ -1087,7 +1092,7 @@ function WtDuel({ match, round, words, serverNow, size }: { match: Match; round:
   );
 }
 
-/** The round before the last eight, live: the matches being played, four at a time (a new four every 10 s), the closest first. */
+/** The round before the last eight, live: the matches being played, four at a time (a new four every 10 s), in bracket order. */
 function WtLiveGrid({ round, words, serverNow }: { round: Round; words?: WtLive; serverNow: number }) {
   const live = round.matches.filter((m) => m.status === 'live' || m.status === 'solo');
   const decided = round.matches.filter((m) => m.status === 'done').length;
@@ -1099,8 +1104,8 @@ function WtLiveGrid({ round, words, serverNow }: { round: Round; words?: WtLive;
   const per = 4;
   const pages = Math.max(1, Math.ceil(live.length / per));
   const at = page % pages;
-  const total = (m: Match) => [m.a, m.b].reduce((t, p) => t + (p ? words?.[m.id ?? '']?.[p.userId]?.score ?? 0 : 0), 0);
-  const order = [...live].sort((x, y) => total(y) - total(x) || x.slot - y.slot);
+  // In bracket order, so a match stays where it is from one look to the next.
+  const order = [...live].sort((x, y) => x.slot - y.slot);
   const shown = order.slice(at * per, at * per + per);
   return (
     <section className="ctv-panel" aria-label={`${round.label}, live`}>
