@@ -300,7 +300,8 @@ async function refresh(eventId: string): Promise<Runtime | null> {
       const company = await companies().findOne({ id: event.org }, { projection: { _id: 0, name: 1 } });
       rt.orgName = company?.name ?? '';
     }
-    rt.event = event;
+    // Never back to an older copy: a write here (a lobby join, say) may have landed while the read ran.
+    if ((event.version ?? 0) >= (rt.event.version ?? 0) || new Date(event.createdAt).getTime() !== new Date(rt.event.createdAt).getTime()) rt.event = event;
     for (const row of rows) {
       const had = rt.matches.get(row.id);
       // Never back to an older copy: this process may have written the match (decided it, say) while the read ran.
@@ -1940,8 +1941,15 @@ export async function joinQualifier(viewer: CupViewer, askedId?: unknown) {
   const id = qualRunId(event.id, attempt, viewer.userId);
   const had = runsOf(rt).get(id);
   const now = new Date();
-  const inLobby = (event.lobbyJoined ?? []).includes(viewer.userId);
-  const verdict = mayJoinAttempt(q, viewer.userId, inLobby ? new Date(event.lobbyJoinedAt?.[viewer.userId] ?? q.openedAt) : null, !!had, now);
+  let inLobby = (event.lobbyJoined ?? []).includes(viewer.userId);
+  let joinedAt = event.lobbyJoinedAt?.[viewer.userId];
+  if (!inLobby) {
+    // Just joined: a refresh that read the event before the join may have put back an older copy here.
+    const fresh = await cupEvents().findOne({ id: event.id }, { projection: { lobbyJoined: 1, lobbyJoinedAt: 1 } });
+    inLobby = (fresh?.lobbyJoined ?? []).includes(viewer.userId);
+    joinedAt = fresh?.lobbyJoinedAt?.[viewer.userId];
+  }
+  const verdict = mayJoinAttempt(q, viewer.userId, inLobby ? new Date(joinedAt ?? q.openedAt) : null, !!had, now);
   if (!verdict.ok) throw new CupError(verdict.status, verdict.message);
   if (had) return { serverNow: now, run: runView(rt, had) };
   const doc: CupRun = {

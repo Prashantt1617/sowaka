@@ -483,6 +483,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     var e = ev();
     if (!e) return '';
     if (e.phase === 'scheduled') return '<span class="pill y">LOBBY ' + clock(e.lobbyAt) + '</span>';
+    if (e.phase === 'lobby' && S.qualifier && !e.drawnAt) return '<span class="pill">' + (S.phase === 'qualifier_tiebreak' ? 'TIE-BREAK' : 'QUALIFIER') + '</span>';
     if (e.phase === 'lobby') return '<span class="pill">LOBBY OPEN</span>';
     if (e.phase === 'done') return '<span class="pill gr">FINAL RESULTS</span>';
     var r = roundOf(e.round);
@@ -1183,7 +1184,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     // Tipsters from the top N on (the server may send an empty list from the start). Word Trip: three tabs only, How to play behind "?".
     if (!wt && S.tipsters && (S.tipsters.length || isTopN() || e.phase === 'done')) tabs.push(['tipsters', 'Tipsters']);
     if (isKnights()) tabs.push(['how', tabs.length > 3 ? 'Rules' : 'How to play']);
-    if (wt && (e.phase === 'scheduled' || (e.lobbyOpen && !S.qualifier)) && ui.tab === 'me') {
+    if (wt && (e.phase === 'scheduled' || (e.lobbyOpen && (!S.qualifier || !S.me.inLobby))) && ui.tab === 'me') {
       return '<div class="wrap"><main class="body" id="panel">' + viewMe() + '</main></div>' +
         (netFail && !(ui.playing && isWordTrip()) ? '<div class="net" role="status">Connection lost. Retrying…<button type="button" data-act="retry">Retry now</button></div>' : '') +
         (ui.toast ? '<div class="toast' + (ui.toast.err ? ' err' : '') + '" role="status">' + esc(ui.toast.text) + '</div>' : '');
@@ -1448,7 +1449,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     if (q.canJoin && !ui.busy && ui.qJoin !== q.stage && document.visibilityState === 'visible') { ui.qJoin = q.stage; setTimeout(function () { ACT.wtqjoin(); }, 0); }
     var run = (q.runs || []).find(function (r) { return r.attempt === attempt; });
     var key = run ? 'q:' + run.id : null, start = run ? ms(run.startAt) : NaN;
-    var want = !!run && run.status === 'live' && isFinite(start) && now() >= start - 6000 && now() < Math.max(Number(run.endsAt) || 0, start + 90000) + 30000;
+    var want = !!run && run.status === 'live' && isFinite(start) && now() >= start - 6000 && now() < Math.max(Number(run.endsAt) || start + 90000, start + 60000) + 10000;
     clearTimeout(wtWake);
     if (run && run.status === 'live' && now() < start - 6000) wtWake = setTimeout(render, Math.max(50, start - 6000 - now()));
     if (ui.playing && (ui.playing !== key || !want)) stopPlay();

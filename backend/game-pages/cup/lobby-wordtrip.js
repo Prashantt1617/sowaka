@@ -132,14 +132,20 @@
         '<h1>' + (m.attempt ? 'Tie! Replay' : 'Your match') + '</h1>' + vs(m, !solo && (live || m.opponentJoined), live || !!m.joined) +
         (solo ? '<div class="wt-box" style="text-align:center"><b>' + esc(on) + ' didn’t come</b><span>You play alone and go to the next round.</span></div>' : '') +
         (m.attempt ? '<div class="wt-box" style="text-align:center"><b>It was a tie</b><span>New letters, same rules.</span></div>' : '') +
+        (!solo ? madeIt(m) : '') +
         head + facts(m) + '<div style="flex-grow:1"></div>' + (tail || '<span class="wt-s" style="font-size:15px">Same letters for both of you.</span>') + '</section>';
     }
 
+    /* Round 1 after the qualifier: in, and at which rank. */
+    function madeIt(m) {
+      return m.round === 1 && !m.attempt && e().qualifier && H.me().seed ? '<div class="wt-box" style="text-align:center"><b style="color:#4BE39A">You’re in: rank #' + num(H.me().seed) + '</b><span>You made the top ' + num(e().entrantCount) + '. Win to go on.</span></div>' : '';
+    }
     function waiting(m) {
       var opp = m.opponent, on = opp ? first(opp.name) : 'your opponent', dl = H.ms(m.deadlineAt);
       var total = (e().startWindowSec || 40) * 1000, leftMs = Math.max(0, dl - H.now()), secs = Math.ceil(leftMs / 1000), deg = Math.round(Math.min(1, leftMs / total) * 360);
       return '<section class="wt" aria-label="Waiting for your opponent"><span class="wt-k">' + roundKick(m) + '</span>' +
         '<h1>Waiting for ' + esc(on) + '</h1>' + vs(m, false, true) +
+        madeIt(m) +
         '<div class="wt-ring" data-ring="' + dl + '" data-total="' + total + '" style="background:conic-gradient(#FFD23F 0 ' + deg + 'deg,#2B2650 ' + deg + 'deg 360deg)"><div><span class="wt-big" data-cs="' + dl + '">' + secs + '</span><span>seconds</span></div></div>' +
         '<div class="wt-box" style="text-align:center"><b style="font-size:16px">If ' + esc(on) + ' doesn’t come</b><span style="font-size:15px">You play alone and go to the next round.</span></div>' +
         '<div style="flex-grow:1"></div><span class="wt-s" style="font-size:15px">Don’t leave this screen.</span></section>';

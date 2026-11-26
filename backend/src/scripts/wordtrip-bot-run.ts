@@ -1,7 +1,9 @@
 /**
  * A whole Word Trip Tournament played by bots against a backend started here,
  * on a scratch database (never a shared one): the lobby (with ghosts who join
- * and close the app, and last-second joiners), the draw, every round, no-shows
+ * and close the app), the qualifier (two runs each on letters of their own,
+ * late joiners playing attempt 2 only, a tie forced at the cut and its extra
+ * run), the cut and the ranked bracket, every round, no-shows
  * (their opponents play alone and go through), ties (forced in round 1,
  * replayed on new letters), the betting gaps on the last eight, to a champion.
  * Bots read only what a page reads (`/cup/api/state`) and send words the way
@@ -19,7 +21,10 @@
  * judged as the game's rules judge it; every result is its run played back
  * from the events kept (real words on the seed's stops); no player's state
  * holds the other player's words, and no match carries photo addresses; ghosts left out of the draw,
- * every live joiner in it; bets settled. Prints timings, latencies and bytes.
+ * every live joiner in it; bets settled. The qualifier: the cut the largest power of two of those who played,
+ * best of two, late joiners attempt 2 only (attempt 1 refused), the tie at the cut played off, ranks pairing
+ * 1 v last, first names only in the qualifier rows, every run's score its words played back.
+ * Prints timings, latencies and bytes.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
@@ -29,7 +34,7 @@ import path from 'node:path';
 import { MongoClient } from 'mongodb';
 import sharp from 'sharp';
 import { readFileSync } from 'node:fs';
-import { DEFAULT_CUP_CONFIG, newRun, playRunSkip, playRunWord, replayRun, runEndsSec } from '../services/cup-rules';
+import { DEFAULT_CUP_CONFIG, newRun, playRunSkip, playRunWord, qualifierCut, replayRun, runEndsSec } from '../services/cup-rules';
 import { loadWordTripGame } from '../services/cup-wordtrip-game';
 
 const arg = (name: string, fallback: string) => {
@@ -55,8 +60,14 @@ const id = (i: number) => `bot-${String(i + 1).padStart(3, '0')}`;
 const GHOSTS = new Set([3, 17, 29, 41, 58, 77].filter((i) => i < BOTS).map(id));
 /** In the draw (connected in the lobby) but never join a match: their opponents play alone. */
 const NO_SHOW = new Set([7, 22, 64].filter((i) => i < BOTS).map(id));
-/** Join the lobby in its last second. */
-const LATE = new Set([11, 33, 55].filter((i) => i < BOTS).map(id));
+/** Join the lobby after attempt 1's window has closed: attempt 2 only (attempt 1 refused). */
+const LATE = new Set([5, 9, 11, 13, 19, 25, 33, 37, 45, 55].filter((i) => i < BOTS).map(id));
+/** Play attempt 1 only. */
+const SKIP_A2 = new Set([2, 8].filter((i) => i < BOTS).map(id));
+/** The same two short words at the same moments in both attempts: a tie, placed at the cut (below the strong, above the weak). */
+const TIE = new Set([90, 91, 92, 93].filter((i) => i < BOTS).map(id));
+/** Play both attempts but find no words (score 0): below the tie. With 100 bots: 62 strong, 4 tied, 28 weak, 6 ghosts → 94 played, the cut 64, the tie across it. */
+const WEAK = new Set([...Array.from({ length: 24 }, (_, k) => 66 + k), 94, 95, 96, 97, 98].filter((i) => i < BOTS && i !== 77).map(id));
 
 process.env.SCRIBBLE_TICKET_SECRET = SECRET;
 process.env.MONGODB_URI = MONGO;
@@ -109,6 +120,7 @@ async function seed(client: MongoClient) {
     topN: 8,
     walletStart: 1000,
     lobbyDraw: true,
+    qualifier: true,
     maxReplays: 2,
     pushAtLobby: false,
     id: EVENT_ID,
@@ -251,11 +263,36 @@ function checkState(userId: string, state: Record<string, any>) {
   if (mm && mm.wtOpp && Object.keys(mm.wtOpp).some((k) => !['score', 'words', 'endsAt'].includes(k))) fail(`${userId}: more than the opponent's score in my match`);
   if (mm?.wtMe?.best && !sentOk.get(`${userId}:${mm.id}:${mm.attempt}`)?.has(mm.wtMe.best)) fail(`${userId}: ${mm.wtMe.best} as my best word, but I never sent it`);
   if (state.wordTrip) fail(`${userId}: the TV's words in a player's state`);
+  checkQualifier(userId, state);
+  for (const round of state.event?.rounds ?? []) for (const m of round.matches ?? []) for (const p of [m.a, m.b]) if (p && p.rank !== p.seed) fail(`${m.id}: rank ${p.rank} but seed ${p.seed}`);
+}
+
+const PHASES = new Set(['lobby', 'qualifier', 'qualifier_tiebreak', 'bracket', 'done']);
+const qualSeen = { states: 0, phases: new Set<string>(), maxCut: 0, tiebreak: null as null | { spots: number; userIds: string[] } };
+function checkQualifier(who: string, state: Record<string, any>) {
+  if (!PHASES.has(state.phase)) fail(`${who}: phase ${state.phase}`);
+  qualSeen.phases.add(state.phase);
+  const q = state.qualifier;
+  if (!q) return;
+  qualSeen.states += 1;
+  if (q.attempt !== 1 && q.attempt !== 2) fail(`${who}: qualifier attempt ${q.attempt}`);
+  if (q.cut !== qualifierCut(q.played)) fail(`${who}: cut ${q.cut} for ${q.played} played`);
+  if (q.cut & (q.cut - 1)) fail(`${who}: cut ${q.cut} not a power of two`);
+  qualSeen.maxCut = Math.max(qualSeen.maxCut, q.cut);
+  if (!Array.isArray(q.rows) || q.rows.length !== q.played) fail(`${who}: ${q.rows?.length} rows for ${q.played} played`);
+  q.rows.forEach((r: any, i: number) => {
+    if (r.rank !== i + 1) fail(`${who}: row ${i} rank ${r.rank}`);
+    if ('name' in r || /\s/.test(r.firstName ?? ' ')) fail(`${who}: a full name in the qualifier rows (${r.firstName})`);
+    if (!['in', 'out', 'tied', 'pending'].includes(r.status)) fail(`${who}: status ${r.status}`);
+    if (r.attempts < 0 || r.attempts > 2) fail(`${who}: attempts ${r.attempts}`);
+    if (i && r.best > q.rows[i - 1].best && !(q.tiebreak || q.rows[i - 1].status === 'in')) fail(`${who}: rows not by best at ${i}`);
+  });
+  if (q.tiebreak) qualSeen.tiebreak = q.tiebreak;
 }
 
 // ---------------------------------------------------------------- a bot
 
-const stats = { words: 0, taken: 0, refused: 0, serverSaidNo: 0, mismatch: 0, skips: 0, junk: 0, junkTaken: 0, bets: 0, joins: 0, lobbyJoins: 0, solos: 0, forcedTies: 0 };
+const stats = { words: 0, taken: 0, refused: 0, serverSaidNo: 0, mismatch: 0, skips: 0, junk: 0, junkTaken: 0, bets: 0, joins: 0, lobbyJoins: 0, solos: 0, forcedTies: 0, runs: 0, lateA1Refused: 0, lateA1Taken: 0, extraRuns: 0 };
 const sentOk = new Map<string, Set<string>>();
 const lobbyOk = new Set<string>();
 let done = false;
@@ -266,6 +303,7 @@ async function bot(userId: string, ticket: string, linkTicket: string) {
   const playing = new Set<string>();
   const betOn = new Set<string>();
   let joinedLobby = false;
+  const attempted = new Set<number>();
   // The page itself, once (as the feed link opens it).
   const pageRes = await fetch(`${BASE}/cup/${EVENT_ID}?ticket=${encodeURIComponent(linkTicket)}`).catch(() => null);
   if (pageRes) {
@@ -297,14 +335,44 @@ async function bot(userId: string, ticket: string, linkTicket: string) {
     if (!state) continue;
     const event = state.event;
     const me = state.me ?? {};
+    const qs = state.qualifier;
     if (event?.lobbyOpen && !me.inLobby && !joinedLobby) {
-      if (!LATE.has(userId) || Date.now() > startAtMs - 1200) {
+      // A late joiner: once attempt 1's window has closed (attempt 1 is refused to them, attempt 2 is theirs).
+      const lateNow = qs && ((qs.stage === 'a1' && Date.now() > qs.windowEndsAt + 500) || qs.stage === 'a2');
+      if (!LATE.has(userId) || lateNow) {
         const r = await call(ticket, 'POST', `/cup/api/lobby?event=${EVENT_ID}`);
         if (r.status === 200) {
           joinedLobby = true;
           stats.lobbyJoins += 1;
           if (!GHOSTS.has(userId)) lobbyOk.add(userId);
+          if (LATE.has(userId) && qs.stage === 'a1') {
+            const q1 = await call(ticket, 'POST', `/cup/api/qualifier/join?event=${EVENT_ID}`);
+            if (q1.status === 409) stats.lateA1Refused += 1;
+            else {
+              stats.lateA1Taken += 1;
+              fail(`${userId}: a late joiner got attempt 1 (${q1.status} ${q1.text.slice(0, 80)})`);
+            }
+          }
+          version = undefined;
         }
+      }
+    }
+    // The qualifier: the attempt open now, joined as the page does by itself (but for those who skip attempt 2).
+    const mq = me.qual;
+    if (mq && mq.canJoin && !GHOSTS.has(userId)) {
+      const att = mq.stage === 'a1' ? 1 : mq.stage === 'a2' ? 2 : 3;
+      if (!attempted.has(att) && !(att === 2 && SKIP_A2.has(userId))) {
+        attempted.add(att);
+        await sleep(rand(200, 3000));
+        const r = await call(ticket, 'POST', `/cup/api/qualifier/join?event=${EVENT_ID}`);
+        if (r.status === 200) {
+          const j = JSON.parse(r.text);
+          stats.runs += 1;
+          if (att === 3) stats.extraRuns += 1;
+          const mode = WEAK.has(userId) ? 'none' : TIE.has(userId) && att < 3 ? 'tie' : 'normal';
+          void play(userId, ticket, { id: j.run.id, startAt: j.run.startAt, boardSeed: j.run.seed, attempt: att, round: 0, label: `q${att}`, status: 'live' }, j.serverNow, `/cup/api/runs/${j.run.id}/word`, mode);
+        } else fail(`${userId}: qualifier join ${r.status} ${r.text.slice(0, 80)}`);
+        version = undefined;
       }
     }
     // A ghost closes the app once in the lobby: no more polls until the end.
@@ -348,19 +416,34 @@ async function bot(userId: string, ticket: string, linkTicket: string) {
  * the next stop), now and then a skip, a little junk; until the run's clock (1:00 + what it earned) runs out. The bot
  * keeps its own copy of the run with the same rules, so it knows its stop and clock as the game would.
  */
-async function play(userId: string, ticket: string, first: any, serverNow: string) {
+async function play(userId: string, ticket: string, first: any, serverNow: string, url = `/cup/api/matches/${first.id}/word`, mode: 'normal' | 'tie' | 'none' = 'normal') {
   const skew = new Date(serverNow).getTime() - Date.now();
   const startAt = new Date(first.startAt).getTime();
   const seed = Number(first.boardSeed);
   const key = `${userId}:${first.id}:${first.attempt}`;
   sentOk.set(key, new Set());
-  const forcedTie = first.round === 1 && /Match [12]$/.test(first.label) && first.attempt === 0 && first.status === 'live';
+  const forcedTie = mode === 'tie' || (first.round === 1 && /Match [12]$/.test(first.label) && first.attempt === 0 && first.status === 'live');
   if (forcedTie) stats.forcedTies += 1;
   const wait = startAt - (Date.now() + skew);
   if (wait > 0) await sleep(wait + 30);
   const mine = newRun();
   const clock = () => (Date.now() + skew - startAt) / 1000;
-  const send = async (body: Record<string, unknown>) => call(ticket, 'POST', `/cup/api/matches/${first.id}/word`, body, 'words');
+  const send = async (body: Record<string, unknown>) => call(ticket, 'POST', url, body, 'words');
+  if (mode === 'none') return;
+  if (mode === 'tie') {
+    // Two common three-letter words at 2 s and 4 s: the same score on any letters.
+    const s = GAME.boards(seed, 0);
+    const words = [...s.words].filter((w) => w.length === 3).sort().slice(0, 2);
+    if (words.length < 2) fail(`${userId}: no two 3-letter words on ${s.letters}`);
+    for (const [i, w] of words.entries()) {
+      await sleep(Math.max(0, (2 + i * 2 - clock()) * 1000));
+      sentOk.get(key)!.add(w);
+      stats.words += 1;
+      const r = await send({ stop: 0, word: w, t: 2 + i * 2 });
+      if (r.status === 200 && JSON.parse(r.text).verdict?.ok) stats.taken += 1;
+    }
+    return;
+  }
   if (forcedTie) {
     // Both players: the same three words at the same moments, then nothing: a tie.
     const s = GAME.boards(seed, 0);
@@ -374,7 +457,7 @@ async function play(userId: string, ticket: string, first: any, serverNow: strin
     }
     return;
   }
-  const skill = rand(0.25, 0.9);
+  const skill = first.round === 0 ? rand(0.5, 0.9) : rand(0.25, 0.9);
   while (clock() < runEndsSec(mine, GAME.rules) - 0.3) {
     await sleep(rand(600, 3500) / skill);
     const t = clock();
@@ -439,6 +522,7 @@ async function tv() {
       const j = JSON.parse(r.text);
       const payload = j.data ?? j;
       await loadPhotos(seen, payload, true);
+      checkQualifier('tv', payload);
       const live = Object.values(payload.wordTrip ?? {}).filter((x: any) => Object.values(x).some((p: any) => p.words > 0)).length;
       maxLiveWithWords = Math.max(maxLiveWithWords, live);
     } else if (r.status !== 200) fail(`tv state ${r.status}: ${r.text.slice(0, 120)}`);
@@ -476,7 +560,8 @@ async function main() {
   const bots = ids.map((u) => bot(u, tickets.get(u)!, links.get(u)!));
   const tvRun = tv();
   const db = client.db(DB);
-  const deadline = Date.now() + 45 * 60_000;
+  const deadline = Date.now() + 60 * 60_000;
+  let lastStage = '';
   let lastRound = -1;
   let lastPhase = '';
   while (Date.now() < deadline) {
@@ -485,6 +570,11 @@ async function main() {
       lastRound = event?.round;
       lastPhase = event?.phase;
       console.log(`[${((Date.now() - t0) / 1000).toFixed(0)} s] phase ${event?.phase} round ${event?.round}${event?.round ? ` (${event.rounds[event.round - 1]?.label})` : ''}`);
+    }
+    const stage = event?.qual ? `${event.qual.stage}${event.qual.done ? ' (cut made)' : ''}` : '';
+    if (stage !== lastStage) {
+      lastStage = stage;
+      if (stage) console.log(`[${((Date.now() - t0) / 1000).toFixed(0)} s] qualifier ${stage}${event!.qual.extraUserIds ? ` · tied at the cut: ${event!.qual.extraUserIds.length} for ${event!.qual.spots} places` : ''}`);
     }
     if (event?.phase === 'done') break;
     await sleep(1000);
@@ -501,9 +591,56 @@ async function main() {
   const drawn = new Set(event.entrants.map((e: any) => e.userId));
   const ghostsIn = [...GHOSTS].filter((g) => drawn.has(g));
   if (ghostsIn.length) fail(`ghosts drawn: ${ghostsIn.join(', ')}`);
-  const lost = [...lobbyOk].filter((u) => !drawn.has(u));
-  if (lost.length) fail(`lobby joiners not drawn: ${lost.join(', ')}`);
-  console.log(`Ghosts (joined, then gone) left out: ${[...GHOSTS].length - ghostsIn.length} of ${GHOSTS.size} · late joiners drawn: ${[...LATE].filter((u) => drawn.has(u)).length} of ${LATE.size}`);
+  // ---- the qualifier
+  const runs = await db.collection('cup_runs').find({ eventId: EVENT_ID }).toArray();
+  const byUser = new Map<string, Record<number, any>>();
+  for (const r of runs) byUser.set(r.userId, { ...(byUser.get(r.userId) ?? {}), [r.attempt]: r });
+  const played = [...byUser.entries()].filter(([, a]) => a[1] || a[2]).map(([u]) => u);
+  const cut = qualifierCut(played.length);
+  console.log(`Qualifier: ${runs.length} runs · ${played.length} played · cut ${event.qual?.cut} (largest power of two: ${cut}) · ranked ${event.qual?.ranking?.length}`);
+  if (!event.qual?.done) fail('the qualifier never finished');
+  if (event.qual?.cut !== cut || event.entrants.length !== cut) fail(`cut ${event.qual?.cut}, entrants ${event.entrants.length}, want ${cut}`);
+  const silent = [...lobbyOk].filter((u) => !byUser.has(u) && !SKIP_A2.has(u));
+  if (silent.length) fail(`in the lobby, live, but no run: ${silent.join(', ')}`);
+  let runsChecked = 0;
+  for (const r of runs) {
+    const back = replayRun(r.live?.wtr ?? [], GAME.boards, r.seed, GAME.rules);
+    if ((r.score ?? 0) !== back.score) fail(`${r.id}: score ${r.score} but its words make ${back.score}`);
+    if (r.status !== 'done') fail(`${r.id}: ${r.status} after the qualifier`);
+    runsChecked += 1;
+  }
+  const seeds = new Set(runs.map((r) => r.seed));
+  if (seeds.size < runs.length * 0.95) fail(`${runs.length} runs on only ${seeds.size} seeds (own letters each)`);
+  for (const u of LATE) {
+    const a = byUser.get(u) ?? {};
+    if (a[1]) fail(`${u}: a late joiner played attempt 1`);
+    if (!a[2]) fail(`${u}: a late joiner did not get attempt 2`);
+  }
+  if (stats.lateA1Refused !== LATE.size) fail(`late joiners refused attempt 1: ${stats.lateA1Refused} of ${LATE.size}`);
+  for (const u of SKIP_A2) if (byUser.get(u)?.[2]) fail(`${u}: played attempt 2 but never asked`);
+  const bestOf = (u: string) => Math.max(byUser.get(u)?.[1]?.score ?? -1, byUser.get(u)?.[2]?.score ?? -1);
+  for (const e of event.entrants) if (e.best !== bestOf(e.userId)) fail(`${e.userId}: best ${e.best} but runs ${byUser.get(e.userId)?.[1]?.score}/${byUser.get(e.userId)?.[2]?.score}`);
+  const ranking: string[] = event.qual?.ranking ?? [];
+  for (let i = 1; i < ranking.length; i += 1) if (bestOf(ranking[i]) > bestOf(ranking[i - 1])) fail(`rank ${i + 1} has a better best than rank ${i}`);
+  event.entrants.forEach((e: any, i: number) => { if (e.seed !== i + 1 || ranking[i] !== e.userId) fail(`entrant ${i}: seed ${e.seed}, ranking ${ranking[i]} vs ${e.userId}`); });
+  const tieIn = [...TIE].filter((u) => drawn.has(u));
+  const tb = event.qual?.extraUserIds as string[] | undefined;
+  console.log(`Tie at the cut: ${tb ? `${tb.length} tied (${tb.filter((u) => TIE.has(u)).length} of the forced ${TIE.size}) for ${event.qual.spots} places · extra runs ${stats.extraRuns} · tied bots drawn ${tieIn.length}` : 'none'} · TV/page saw tiebreak: ${!!qualSeen.tiebreak}`);
+  if (TIE.size && BOTS >= 100) {
+    if (!tb || !TIE.size || [...TIE].some((u) => !tb.includes(u))) fail('the forced tie at the cut was not played off');
+    if (tb && tieIn.length + tb.filter((u) => !TIE.has(u) && drawn.has(u)).length !== event.qual.spots) fail(`tied drawn ${tieIn.length}, places ${event.qual.spots}`);
+    if (!qualSeen.tiebreak) fail('no state showed the tiebreak');
+  }
+  const wantPhases = ['lobby', 'qualifier', 'bracket', 'done', ...(tb ? ['qualifier_tiebreak'] : [])];
+  for (const p of wantPhases) if (!qualSeen.phases.has(p)) fail(`phase ${p} never seen in a state`);
+  console.log(`Qualifier runs played back: ${runsChecked} · states with the qualifier checked: ${qualSeen.states} · phases seen: ${[...qualSeen.phases].join(', ')} · late joiners: attempt 1 refused ${stats.lateA1Refused}, attempt 2 played ${[...LATE].filter((u) => byUser.get(u)?.[2]).length} of ${LATE.size}`);
+  // Ranks pair the bracket: 1 v last, 2 v last but one, ….
+  const seedOf = new Map(event.entrants.map((e: any) => [e.userId, e.seed]));
+  const r1 = matches.filter((m) => m.round === 1);
+  const pairs = r1.map((m) => m.players.map((p: string) => seedOf.get(p)).sort((a: number, b: number) => a - b));
+  for (const p of pairs) if (p[0] + p[1] !== cut + 1) fail(`round 1 pairs rank ${p[0]} with ${p[1]}`);
+  console.log(`Round 1 (${event.rounds[0]?.label}): ${r1.length} matches, every one rank k v ${cut + 1}-k: ${pairs.every((p) => p[0] + p[1] === cut + 1)} · rounds: ${event.rounds.map((r: any) => r.label).join(', ')}`);
+  console.log(`Ghosts (joined, then gone) left out: ${[...GHOSTS].length - ghostsIn.length} of ${GHOSTS.size}`);
   if (event.phase !== 'done' || !event.championId) fail(`no champion: phase ${event.phase}`);
   else console.log(`Champion: ${event.entrants.find((e: any) => e.userId === event.championId)?.name}`);
   const undecided = matches.filter((m) => m.status !== 'done');
@@ -528,7 +665,7 @@ async function main() {
       }
     }
   }
-  console.log(`Words played back against the runs: ${wordsChecked}`);
+  console.log(`Words played back against the matches: ${wordsChecked}`);
   const by: Record<string, number> = {};
   for (const m of matches) by[m.decidedBy] = (by[m.decidedBy] ?? 0) + 1;
   console.log(`Decided by: ${JSON.stringify(by)}`);

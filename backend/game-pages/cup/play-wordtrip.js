@@ -110,7 +110,7 @@
         return '<div class="cwt-side' + (r ? ' r' : '') + '">' + (p ? face(p, col) : '') + '<span class="tx"><span class="nm">' + esc(name) + '</span><b class="sc">' + num(sc) + '</b><i class="cwt-st' + (done ? ' done' : '') + '">' + st + '</i></span></div>';
       };
       var h = side(o.me, '#FFD23F', 'You', mySc, ended ? 'finished' : started ? 'playing' : 'ready', ended, false) + '<span class="cwt-x">' + (o.qual ? 'QUALIFIER' : 'vs') + '</span>';
-      if (o.qual) h += side(null, '', o.qual.label, Math.max(o.qual.best(), ended ? mySc : 0), 'your best so far', true, true);
+      if (o.qual) h += side(null, '', o.qual.label, Math.max(o.qual.best(), mySc), 'your best so far', true, true);
       else if (!opp) h += side({ name: oppName }, '#2B2650', oppName, 0, 'didn’t come', true, true);
       else {
         var x = oppNow() || {}, done = x.endsAt && now() >= x.endsAt;
