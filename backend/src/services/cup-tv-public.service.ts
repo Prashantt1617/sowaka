@@ -263,18 +263,24 @@ export interface PublicTv {
 export function publicTvPayload(raw: Record<string, unknown>, eventId: string, people: Map<string, string>, pidOf: (userId: string) => string): Omit<PublicTv, 'hash' | 'facesV'> {
   const ids = new Map<string, string>();
   const names = new Map<string, string>(people);
-  const learn = (node: unknown): void => {
-    if (Array.isArray(node)) node.forEach(learn);
+  /** The people the state itself shows (lobby, qualifier rows, matches, standings): the only faces the link gives. */
+  const shown = new Set<string>();
+  const learn = (node: unknown, show: boolean): void => {
+    if (Array.isArray(node)) node.forEach((x) => learn(x, show));
     else if (node && typeof node === 'object') {
       const o = node as Record<string, unknown>;
       if (typeof o.userId === 'string' && o.userId) {
+        if (show) shown.add(o.userId);
         const full = typeof o.name === 'string' ? o.name : typeof o.firstName === 'string' ? o.firstName : '';
         if (!names.get(o.userId)) names.set(o.userId, full);
       }
-      Object.values(o).forEach(learn);
+      // What is dropped below (and the bets but the match on stage) shows nobody.
+      for (const [k, v] of Object.entries(o)) learn(v, show && !DROP.has(k) && k !== 'photos' && !(o === raw && k === 'bets'));
     }
   };
-  learn(raw);
+  learn(raw, true);
+  const onStage = (raw.bets as Record<string, unknown> | undefined)?.onStage;
+  if (onStage) learn(onStage, true);
   const photos = (raw.photos && typeof raw.photos === 'object' ? raw.photos : {}) as Record<string, unknown>;
   for (const id of [...names.keys(), ...Object.keys(photos)]) if (id && !ids.has(id)) ids.set(id, pidOf(id));
   // Longest first, so one id inside another is never half replaced.
@@ -298,7 +304,8 @@ export function publicTvPayload(raw: Record<string, unknown>, eventId: string, p
       faces[pid] = m[3];
     } else if (!(pid in faces)) faces[pid] = null;
   };
-  for (const [userId, url] of Object.entries(photos)) faceOf(userId, url);
+  // Before the draw the engine's photo map covers the whole roster: only those on screen get a face.
+  for (const [userId, url] of Object.entries(photos)) if (shown.has(userId)) faceOf(userId, url);
   const walk = (node: unknown, person: boolean): unknown => {
     if (typeof node === 'string') return str(node);
     if (Array.isArray(node)) return node.map((x) => walk(x, false));
@@ -340,7 +347,7 @@ export function publicTvPayload(raw: Record<string, unknown>, eventId: string, p
 }
 
 let pidKey: Buffer | null = null;
-const pidOfIn = (eventId: string) => (userId: string) =>
+export const pidOfIn = (eventId: string) => (userId: string) =>
   `p${createHmac('sha256', (pidKey ??= createHash('sha256').update(`cup-tv-pid:${env.scribbleTicketSecret || env.mongoUri}`).digest())).update(`${eventId}:${userId}`).digest('base64url').slice(0, 11)}`;
 
 const BUILD_MS = 1000;
