@@ -27,6 +27,12 @@ import {
   seedOrderOf,
   WT_BLOCKED,
   WT_DEFAULT_RULES,
+  bracketRoundName,
+  firstNameOf,
+  mayJoinAttempt,
+  qualifierCut,
+  rankQualifier,
+  type QualEntry,
   WT_GRACE_SEC,
   lobbyPresent,
   mayPlayWord,
@@ -713,6 +719,76 @@ check('word trip: a run started 4 s late on a slow phone, and one with a 15 s ou
   assert.equal(out.server.score, out.game.score);
   assert.equal(out.server.total, out.game.total);
   assert.equal(out.server.combo === out.game.combo && out.server.added === out.game.added, true);
+});
+
+// ---------------------------------------------------------------- the qualifier
+const qe = (userId: string, a1: number | null, a2: number | null, more: Partial<QualEntry> = {}): QualEntry => ({ userId, attempts: [a1, a2], order: Number(userId.replace(/\D/g, '')) || 0, ...more });
+
+check('qualifier: the cut is the largest power of two not above the number who played', () => {
+  assert.deepEqual([0, 1, 2, 3, 63, 64, 65, 100, 200].map(qualifierCut), [0, 1, 2, 2, 32, 64, 64, 64, 128]);
+  // Only those who played at least one attempt count.
+  const r = rankQualifier([qe('u1', 10, null), qe('u2', null, 5), qe('u3', null, null)], false);
+  assert.deepEqual([r.ranked, r.cut], [['u1', 'u2'], 2]);
+  assert.deepEqual(rankQualifier([qe('u1', 10, null)], false).cut, 1, 'one player: the cut is 1 (the event ends with them)');
+  assert.deepEqual(rankQualifier([], false).cut, 0);
+});
+
+check('qualifier: the best of two attempts counts, then both combined', () => {
+  const r = rankQualifier([qe('u1', 300, 900), qe('u2', 900, 100), qe('u3', 800, 850), qe('u4', 100, null)], false);
+  assert.deepEqual(r.ranked, ['u1', 'u2', 'u3', 'u4'], '900+300 beats 900+100; 850 next');
+  assert.equal(r.cut, 4);
+});
+
+check('qualifier: attempt 1 only for those in the lobby by its window; a late joiner plays attempt 2 only', () => {
+  const t = (s: number) => new Date(t0 + s * 1000);
+  const a1 = { stage: 'a1' as const, openedAt: t(0), windowSec: 40 };
+  const a2 = { stage: 'a2' as const, openedAt: t(200), windowSec: 40 };
+  assert.equal(mayJoinAttempt(a1, 'u1', t(-60), false, t(10)).ok, true);
+  assert.equal(mayJoinAttempt(a1, 'u1', null, false, t(10)).ok, false, 'not in the lobby');
+  assert.equal(mayJoinAttempt(a1, 'late', t(120), false, t(41)).ok, false, 'attempt 1 has closed');
+  assert.equal(mayJoinAttempt(a2, 'late', t(120), false, t(210)).ok, true, 'a late joiner plays attempt 2');
+  assert.equal(mayJoinAttempt(a2, 'late', t(120), false, t(241)).ok, false, 'attempt 2 has closed');
+  const late = rankQualifier([qe('u1', 500, 400), qe('late', null, 700)], false);
+  assert.deepEqual(late.ranked, ['late', 'u1'], 'one attempt counts like two (the best)');
+  const extra = { stage: 'extra' as const, openedAt: t(400), windowSec: 40, extraUserIds: ['u7'] };
+  assert.equal(mayJoinAttempt(extra, 'u7', t(0), false, t(410)).ok, true);
+  assert.equal(mayJoinAttempt(extra, 'u1', t(0), false, t(410)).ok, false, 'the extra run only for the tied');
+});
+
+check('qualifier: a tie at the cut: combined first, then one extra run, then the all-time best, then the lobby order', () => {
+  // Five played: the cut is 4. u3, u4, u5 share best 500.
+  const base = () => [qe('u1', 900, null), qe('u2', 800, null), qe('u3', 500, 100, { allTimeBest: 50 }), qe('u4', 500, 200, { allTimeBest: 900 }), qe('u5', 500, 100, { allTimeBest: 2000 })];
+  // Combined settles u4 (700) above u3 and u5 (600 each), who straddle the cut: an extra run for those two, one place.
+  const first = rankQualifier(base(), false);
+  assert.deepEqual(first.ranked.slice(0, 3), ['u1', 'u2', 'u4']);
+  assert.deepEqual(first.needExtra.sort(), ['u3', 'u5']);
+  assert.equal(first.spots, 1);
+  // The extra run decides.
+  const byExtra = rankQualifier(base().map((e) => (e.userId === 'u3' ? { ...e, extra: 400 } : e.userId === 'u5' ? { ...e, extra: 300 } : e)), true);
+  assert.deepEqual(byExtra.ranked, ['u1', 'u2', 'u4', 'u3', 'u5']);
+  // Level again: the all-time best (u5's 2000).
+  const byBest = rankQualifier(base().map((e) => (e.userId === 'u3' || e.userId === 'u5' ? { ...e, extra: 300 } : e)), true);
+  assert.deepEqual(byBest.ranked.slice(3), ['u5', 'u3']);
+  // Level on that too: the lobby order.
+  const byOrder = rankQualifier(base().map((e) => (e.userId === 'u3' || e.userId === 'u5' ? { ...e, extra: 300, allTimeBest: null } : e)), true);
+  assert.deepEqual(byOrder.ranked.slice(3), ['u3', 'u5']);
+  // Not across the cut: no extra run.
+  assert.deepEqual(rankQualifier([qe('u1', 5, null), qe('u2', 5, null), qe('u3', 9, null), qe('u4', 1, null)], false).needExtra, []);
+});
+
+check('qualifier: the bracket pairs rank 1 v last, 2 v second-last …, 1 and 2 only in the final; rounds named Round of N', () => {
+  for (const n of [4, 8, 16, 32, 64, 128]) {
+    const rounds = buildDraw(n, 8).map((r, _, all) => ({ ...r, ...bracketRoundName(r.n, all.length, r.nodes.length) }));
+    assert.deepEqual(rounds[0].nodes.map((x) => x.feeders), Array.from({ length: n / 2 }, (_, k) => [`e:${k + 1}`, `e:${n - k}`]));
+    assert.ok(rounds.every((r) => r.nodes.every((x) => x.feeders.length === 2)), 'no free passes');
+    const { meetings } = play(rounds, n, (a, b) => Math.min(a, b));
+    const final = meetings[meetings.length - 1];
+    assert.deepEqual([final.a, final.b].sort((x, y) => x - y), [1, 2]);
+    const labels = rounds.map((r) => r.label);
+    assert.equal(labels[labels.length - 1], 'Final');
+    if (n >= 16) assert.equal(labels[0], `Round of ${n}`);
+  }
+  assert.equal(firstNameOf('Asha Kumari Demo'), 'Asha', 'only first names on public screens');
 });
 
 check('word trip: the page blocks the same offensive words as the server', () => {
