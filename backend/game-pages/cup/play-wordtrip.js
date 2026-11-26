@@ -73,8 +73,14 @@
     var u = p && p.photoUrl && /^(https:|\/)/.test(p.photoUrl) ? p.photoUrl : '';
     return '<span class="cwt-av" style="background:' + col + '">' + esc(initials(p && p.name)) + (u ? '<img alt="" src="' + esc(u) + '" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">' : '') + '</span>';
   }
-  /* The game's page with the bridge after its own script. */
+  /* Before the game's own script: no app bridge in the frame (an app that puts window.Sowaka into every frame would
+     otherwise post tournament runs to Word Trip's leaderboard and open its challenges), and its ready event stopped. */
+  var GUARD = '<script>(function(){try{Object.defineProperty(window,"Sowaka",{get:function(){return undefined;},set:function(){},configurable:false});}catch(e){try{window.Sowaka=undefined;}catch(x){}}' +
+    'addEventListener("sowaka-ready",function(e){e.stopImmediatePropagation();},true);})();<\/script>';
+  /* The game's page with the guard first and the bridge after its own script. */
   function withBridge(html) {
+    var h = html.search(/<head[^>]*>/i);
+    if (h >= 0) { var e = html.indexOf('>', h) + 1; html = html.slice(0, e) + GUARD + html.slice(e); } else html = GUARD + html;
     var i = html.lastIndexOf('</body>');
     return i < 0 ? html + BRIDGE : html.slice(0, i) + BRIDGE + html.slice(i);
   }
