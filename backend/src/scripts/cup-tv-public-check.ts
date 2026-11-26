@@ -275,6 +275,36 @@ async function main() {
   const q2 = (JSON.parse((await get(`/cup/tv/${links[2][1]}/state`)).text).qualifier.rows as { name: string; userId: string }[]).find((r) => r.name === firstRow.name)?.userId;
   ok('and differ from one event to another', !!q2 && q2 !== q1);
 
+  // ---------------------------------------------------------------- the engine's own qualifier (its rows, not a fixture)
+  const QUAL = 'wt-tv-engine-qualifier';
+  const joined = DEMO_PEOPLE.slice(0, 60).map((p) => p.userId);
+  await db.collection('cup_events').insertOne(eventDoc(QUAL, {
+    qualifier: true, lobbyJoined: joined, startAt: new Date(Date.now() - 150_000), startWindowSec: 40, countdownSec: 8,
+    qual: { stage: 'a2', openedAt: new Date(Date.now() - 20_000), windowSec: 40, a1At: new Date(Date.now() - 150_000) },
+  }) as never);
+  const runAt = new Date();
+  const runs = joined.flatMap((userId, i) => {
+    const out: Record<string, unknown>[] = [];
+    const run = (attempt: 1 | 2, status: 'live' | 'done', score: number, startAt: Date) => ({
+      _id: `${QUAL}-q${attempt}-${userId}`, id: `${QUAL}-q${attempt}-${userId}`, eventId: QUAL, org: ORG, userId, attempt, seed: 1000 + i, status,
+      joinedAt: startAt, startAt, live: { score, at: runAt }, ...(status === 'done' ? { score, endedAt: runAt } : {}), createdAt: runAt, updatedAt: runAt,
+    });
+    if (i < 52) out.push(run(1, 'done', 400 + ((i * 7919) % 2100), new Date(Date.now() - 140_000)));
+    if (i % 3 === 0 || i >= 52) out.push(run(2, i % 2 ? 'done' : 'live', 300 + ((i * 104729) % 2300), new Date(Date.now() - 15_000)));
+    return out;
+  });
+  await db.collection('cup_runs').insertMany(runs as never[]);
+  const qualToken = (await tv.tvLinkFor(QUAL)).token;
+  await get(`/cup/tv/${qualToken}/state`);
+  await sleep(1500);
+  const eq = await get(`/cup/tv/${qualToken}/state`);
+  const eqs = JSON.parse(eq.text) as { phase: string; qualifier?: { attempt: number; cut: number; played: number; rows: { userId: string; name?: string; firstName: string; rank: number; status: string; playing: boolean }[] } };
+  ok('the engine’s qualifier: phase and attempt 2 as the contract says', eq.status === 200 && eqs.phase === 'qualifier' && eqs.qualifier?.attempt === 2, eqs.phase);
+  ok('the engine’s qualifier: 60 played, the cut 32, ranked rows with first names', eqs.qualifier?.played === 60 && eqs.qualifier.cut === 32 && eqs.qualifier.rows.length === 60 && eqs.qualifier.rows.every((r, i) => r.rank === i + 1 && !/\s/.test(r.firstName)), eqs.qualifier && { played: eqs.qualifier.played, cut: eqs.qualifier.cut });
+  ok('the engine’s qualifier: who is playing now shows', (eqs.qualifier?.rows ?? []).some((r) => r.playing));
+  privacy('the engine’s qualifier', eq.text, QUAL);
+  links.push(['engine-qualifier', qualToken]);
+
   console.log(`\n${passed} checks passed${process.exitCode ? ', SOME FAILED' : ''}.`);
   if (SERVE) {
     console.log('\nServing (Ctrl-C to stop):');

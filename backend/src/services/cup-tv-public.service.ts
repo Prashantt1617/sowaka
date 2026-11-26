@@ -212,7 +212,7 @@ export function setCupTvSourceForChecks(next: Source | null): void {
 const DROP = new Set([
   'success', 'me', 'mine', 'email', 'emails', 'employeeId', 'employeeCode', 'empId', 'phone', 'mobile', 'designation', 'department',
   'org', 'orgName', 'managerId', 'lifecycleStatus', 'excludeUserIds', 'includeUserIds', 'lobbySeen', 'linkBase', 'linkUntil', 'imageKey',
-  'profilePhotoKey', 'profilePhotoUrl', 'boardRank', 'lastName', 'surname', 'fullName', 'hr', 'balance', 'photosV', 'catalogKey',
+  'profilePhotoKey', 'profilePhotoUrl', 'faceVer', 'boardRank', 'lastName', 'surname', 'fullName', 'hr', 'balance', 'photosV', 'catalogKey',
 ]);
 /** Keys holding a person's name: the first name only. */
 const NAME_KEYS = new Set(['name', 'firstName', 'displayName']);
