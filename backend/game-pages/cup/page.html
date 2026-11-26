@@ -632,6 +632,17 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     var cur = S.current && findMatch(S.current.matchId);
     var betOn = cur && cur.status === 'betting' && !isMine(cur) ? cur : null;
     if (e.phase === 'done') return null;
+    /* A bet that just settled gets its moment first (You called it / Not this time), as on the other tournaments' stage. */
+    var settled = lastSettled(), pre = settled ? viewBetResult(settled) : '';
+    if (pre && !(m && m.round === e.round && me.alive && ['open', 'live', 'solo'].indexOf(m.status) >= 0)) {
+      var rest = viewMeWordTripMain(); return pre + (rest == null ? '' : rest);
+    }
+    return viewMeWordTripMain();
+  }
+  function viewMeWordTripMain() {
+    var V = wtViews(), e = ev(), me = S.me, m = me.match;
+    var cur = S.current && findMatch(S.current.matchId);
+    var betOn = cur && cur.status === 'betting' && !isMine(cur) ? cur : null;
     if (!me.entered) return betOn ? V.bet(betOn) : e.phase === 'scheduled' || e.lobbyOpen ? V.join() : null;
     if (e.phase === 'scheduled') return V.join();
     if (e.phase === 'lobby') {
