@@ -599,7 +599,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     if (WT || !window.CupWtScreens) return WT;
     WT = window.CupWtScreens({
       esc: esc, num: num, first: first, initials: initials, ms: ms, now: now, cd: cd, left: left, clock: clock, photoOf: photoOf,
-      ev: ev, me: function () { return S.me; }, meId: meId, roundOf: roundOf, myBet: myBet, isMine: isMine, ui: ui,
+      ev: ev, me: function () { return S.me; }, meId: meId, state: function () { return S; }, roundOf: roundOf, myBet: myBet, isMine: isMine, ui: ui,
       onStage: function (id) { return S.bets && S.bets.onStage && S.bets.onStage.matchId === id ? S.bets.onStage : null; },
       dayLabel: function (t) { var d = new Date(ms(t)), today = new Date(now()); return (d.toDateString() === today.toDateString() ? 'TODAY · ' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }).toUpperCase() + ' · ') + clock(t); }
     });
@@ -652,11 +652,16 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
       var lm0 = Object.assign({}, last0.m, { round: last0.r.n });
       return V.result(lm0, { best: wtBest(lm0), nextAt: lm0.round === e.round ? wtRoundEnds(e.round) : NaN });
     }
-    if (!me.entered) return betOn ? V.bet(betOn) : e.phase === 'scheduled' || e.lobbyOpen ? V.join() : null;
+    if (!me.entered && me.qual && me.qual.done && me.qual.status === 'out' && !betOn && e.phase !== 'done') return V.qualOut(me.qual);
+    if (!me.entered && !(e.phase === 'lobby' && S.qualifier && !e.drawnAt)) return betOn ? V.bet(betOn) : e.phase === 'scheduled' || e.lobbyOpen ? V.join() : null;
     if (e.phase === 'scheduled') return V.join();
     if (e.phase === 'lobby') {
+      if (S.qualifier && !e.drawnAt && S.phase !== 'bracket') {
+        if (me.qual && (me.qual.inLobby || (me.qual.runs || []).length)) return V.qual(me.qual, S.qualifier);
+        return e.lobbyOpen ? V.join() : null;
+      }
       if (e.lobbyOpen) return me.inLobby ? V.lobby() : V.join();
-      return m ? V.match(m) : null;
+      return m ? V.match(m) : me.seed && e.qualifier ? V.qualIn(me) : null;
     }
     var onNow = m && m.round === e.round && me.alive && ['scheduled', 'betting', 'open', 'live', 'solo'].indexOf(m.status) >= 0;
     if (onNow) {
@@ -1178,7 +1183,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     // Tipsters from the top N on (the server may send an empty list from the start). Word Trip: three tabs only, How to play behind "?".
     if (!wt && S.tipsters && (S.tipsters.length || isTopN() || e.phase === 'done')) tabs.push(['tipsters', 'Tipsters']);
     if (isKnights()) tabs.push(['how', tabs.length > 3 ? 'Rules' : 'How to play']);
-    if (wt && (e.phase === 'scheduled' || e.lobbyOpen) && ui.tab === 'me') {
+    if (wt && (e.phase === 'scheduled' || (e.lobbyOpen && !S.qualifier)) && ui.tab === 'me') {
       return '<div class="wrap"><main class="body" id="panel">' + viewMe() + '</main></div>' +
         (netFail && !(ui.playing && isWordTrip()) ? '<div class="net" role="status">Connection lost. Retrying…<button type="button" data-act="retry">Retry now</button></div>' : '') +
         (ui.toast ? '<div class="toast' + (ui.toast.err ? ' err' : '') + '" role="status">' + esc(ui.toast.text) + '</div>' : '');
@@ -1188,7 +1193,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     var tabHtml = '<div class="tabs' + (tabs.length > 4 ? ' t5' : '') + '" role="tablist" aria-label="' + esc(cupName()) + '">' + tabs.map(function (t) {
       return '<button type="button" role="tab" id="tab-' + t[0] + '" aria-controls="panel" class="tab' + (ui.tab === t[0] ? ' on' : '') + '" aria-selected="' + (ui.tab === t[0]) + '" data-act="tab" data-v="' + t[0] + '">' + t[1] + (t[0] === 'watch' && liveN && ui.tab !== 'watch' ? '<span class="dot" aria-label="' + liveN + ' live"></span>' : '') + '</button>';
     }).join('') + '</div>';
-    var body = ui.tab === 'bracket' ? viewBracket() : ui.tab === 'watch' ? viewWatch() : ui.tab === 'tipsters' ? viewTipsters() : ui.tab === 'how' ? viewHow() : viewMe();
+    var body = ui.tab === 'bracket' ? (wt && S.qualifier && !e.drawnAt && wtViews() ? wtViews().qualBoard(S.qualifier) : viewBracket()) : ui.tab === 'watch' ? viewWatch() : ui.tab === 'tipsters' ? viewTipsters() : ui.tab === 'how' ? viewHow() : viewMe();
     return '<div class="wrap"><header class="top' + (wt ? ' wtq' : '') + '">' + wordmark() + '<span class="tr">' + phaseChip() +
       (showBalance() ? '<span class="bal" aria-label="Your balance: ' + num(S.me.balance) + ' points"><span class="coin" aria-hidden="true"></span>' + num(S.me.balance) + '</span>' : '') + '</span>' +
       (wt ? '<button type="button" class="wt-q" data-act="wthow" aria-label="How to play">?</button>' : '') + '</header>' +
@@ -1397,7 +1402,9 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
   }
   var wtPrefetched = false;
   function syncWordTrip() {
-    if (!wtPrefetched && S && S.me && S.me.entered) { wtPrefetched = true; wtGetGame().catch(function () { wtPrefetched = false; }); }
+    if (!wtPrefetched && S && S.me && (S.me.entered || S.me.inLobby)) { wtPrefetched = true; wtGetGame().catch(function () { wtPrefetched = false; }); }
+    if (S.qualifier && !ev().drawnAt && S.me.qual) return syncQualifier();
+    if (ui.playing && /^q:/.test(ui.playing)) stopPlay();
     if (!S.me.match) return;
     var m = S.me.match, key = m.id + ':' + (m.attempt || 0), start = ms(m.startAt), P = window.CupWordTrip, e = ev();
     if (m.status === 'open' && !m.joined && m.round === e.round && S.me.alive && !ui.busy && ui.wtJoin !== key && document.visibilityState === 'visible') {
@@ -1433,6 +1440,41 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
       console.error('CupWordTrip failed', err);
       stopPlay();
       ui.err = 'The game didn\'t start. Close this screen and open it again.';
+    }
+  }
+  /* A qualifier attempt: the same game on the player's own seed; the next attempt is joined by itself on this screen. */
+  function syncQualifier() {
+    var q = S.me.qual, board = S.qualifier, attempt = q.stage === 'a1' ? 1 : q.stage === 'a2' ? 2 : 3;
+    if (q.canJoin && !ui.busy && ui.qJoin !== q.stage && document.visibilityState === 'visible') { ui.qJoin = q.stage; setTimeout(function () { ACT.wtqjoin(); }, 0); }
+    var run = (q.runs || []).find(function (r) { return r.attempt === attempt; });
+    var key = run ? 'q:' + run.id : null, start = run ? ms(run.startAt) : NaN;
+    var want = !!run && run.status === 'live' && isFinite(start) && now() >= start - 6000 && now() < Math.max(Number(run.endsAt) || 0, start + 90000) + 30000;
+    clearTimeout(wtWake);
+    if (run && run.status === 'live' && now() < start - 6000) wtWake = setTimeout(render, Math.max(50, start - 6000 - now()));
+    if (ui.playing && (ui.playing !== key || !want)) stopPlay();
+    if (!want || ui.playing === key || !window.CupWordTrip) return;
+    ui.playing = key; $play.hidden = false; $play.innerHTML = '';
+    var mount = document.createElement('div'); mount.className = 'play-mount'; $play.appendChild(mount);
+    var runId = run.id, label = attempt === 3 ? 'Tie-break run' : 'Attempt ' + attempt + ' of 2';
+    function mine() { var qq = S && S.me && S.me.qual; var r = qq && (qq.runs || []).find(function (x) { return x.id === runId; }); return r ? { score: r.score, words: r.words, endsAt: r.endsAt } : null; }
+    var post = function (body) { return api('/runs/' + encodeURIComponent(runId) + '/word', { method: 'POST', body: body }); };
+    try {
+      ui.handle = window.CupWordTrip.start({
+        mount: mount, startAt: start, serverNow: now(), clockOffset: offset, attempt: 0, seed: run.seed,
+        me: { name: S.me.name, photoUrl: photoOf(S.me) || null }, opponent: null, solo: true,
+        qual: { label: label, best: function () { var qq = S.me.qual; return qq ? qq.best || 0 : 0; },
+          intro: attempt === 3 ? 'A tie at the cut: one extra run decides it. Your own letters.' : 'Your own letters. Your best of two counts.',
+          end: function () { return attempt === 1 ? 'Time’s up. Attempt 2 starts when everyone has finished attempt 1.' : attempt === 2 ? 'Time’s up. Results when everyone has finished.' : 'Time’s up. Results right after the tie-break.'; } },
+        played: !!(run.words > 0),
+        getGame: wtGetGame,
+        onWord: function (stop, word, t) { return post({ stop: stop, word: word, t: t }); },
+        onSkip: function (stop, t) { return post({ skip: true, stop: stop, t: t }); },
+        getOpponent: function () { return null; }, getMine: mine,
+        online: function () { return !netFail; }
+      });
+    } catch (err) {
+      console.error('CupWordTrip failed', err);
+      stopPlay();
     }
   }
   function finishPlay(matchId, key, score) {
@@ -1521,6 +1563,13 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     allin: function () { ui.stake = S.me.balance || 0; render(); },
     clear: function () { ui.stake = 0; render(); },
     /* Word Trip: its own How to play, from the live game itself. */
+    /* The qualifier's attempt open now: start my run. */
+    wtqjoin: function () {
+      if (ui.busy) return;
+      ui.busy = 'wtq'; ui.err = ''; render();
+      api('/qualifier/join' + (eventId ? '?event=' + encodeURIComponent(eventId) : ''), { method: 'POST', body: {} }).then(function () { ui.busy = ''; poll(); })
+        .catch(function (e) { ui.busy = ''; ui.err = e.message; render(); });
+    },
     wthow: function () { if (window.CupWordTrip && window.CupWordTrip.howTo) window.CupWordTrip.howTo(wtGetGame); },
     wtstake: function (v) { var bal = (S.me && S.me.balance) || 0; ui.stake = v === 'all' ? bal : Math.min(bal, Number(v) || 0); render(); },
     seen: function (v) { if (seen.indexOf(v) < 0) seen.push(v); store('cup-seen-bets', seen.slice(-40)); render(); },

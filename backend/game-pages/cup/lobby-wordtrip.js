@@ -37,6 +37,9 @@
     '.wt-stk{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.wt-stk button{font:inherit;cursor:pointer;height:48px;border-radius:14px;border:2px solid #3B3668;background:#211D42;color:#F6F1FF;font-size:16px;font-weight:800}.wt-stk button.on{border-color:#FFD23F;background:#FFD23F;color:#15122B}.wt-stk button:disabled{color:#5A5490}' +
     '.wt-pts{display:inline-flex;align-items:center;height:32px;padding:0 12px;border-radius:999px;background:#211D42;font-size:15px;font-weight:800;color:#FFD23F}' +
     '.wt-res{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.wt-res div{background:#211D42;border:3px solid #3B3668;border-radius:20px;padding:18px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}.wt-res div.w{border-color:#4BE39A}.wt-res .wt-f{width:44px;height:44px;font-size:15px}.wt-res b{font:800 48px/1 "Baloo 2",system-ui}.wt-res strong{font-size:15px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wt-res span{font-size:13px;color:#A9A3CC}' +
+    '.wt-ql{display:flex;flex-direction:column;gap:6px}.wt-qr{display:grid;grid-template-columns:28px 34px minmax(0,1fr) auto auto;align-items:center;gap:10px;background:#211D42;border-radius:14px;padding:8px 12px}.wt-qr.me{box-shadow:inset 0 0 0 2px #FFD23F}.wt-qr.out{opacity:.55}' +
+    '.wt-qr em{font-style:normal;font-weight:800;color:#A9A3CC;text-align:right}.wt-qr .wt-f{width:34px;height:34px;font-size:12px}.wt-qr span{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wt-qr span i{font-style:normal;font-size:12px;color:#4BE39A;margin-left:4px}.wt-qr small{font-size:12px;color:#A9A3CC}.wt-qr b{font:800 20px/1 "Baloo 2",system-ui;min-width:56px;text-align:right}' +
+    '.wt-cut{margin:6px 0;padding:6px 0;border-top:2px dashed #FFD23F;color:#FFD23F;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;text-align:center}' +
     '.wt-why{margin:0;padding:12px 14px;border-radius:14px;background:rgba(255,107,87,.14);color:#FF8A7A;font-weight:700;text-align:center}';
 
   window.CupWtScreens = function (H) {
@@ -53,7 +56,11 @@
     }
     function tiles(word, gold, sm) { return '<div class="wt-tiles' + (sm ? ' sm' : '') + '" aria-label="' + esc(word) + '">' + String(word).toUpperCase().split('').map(function (c, i) { return '<span' + (gold && i === word.length - 1 ? ' class="g"' : '') + '>' + esc(c) + '</span>'; }).join('') + '</div>'; }
     function e() { return H.ev(); }
-    function roundKick(m) { var t = (e().rounds || []).length, r = H.roundOf(m.round); return r && r.kind === 'sequential' ? String(r.label).toUpperCase() : 'ROUND ' + m.round + ' OF ' + t; }
+    function roundKick(m) {
+      var t = (e().rounds || []).length, r = H.roundOf(m.round), me = H.me();
+      var name = r && (r.kind === 'sequential' || e().qualifier) ? String(r.label).toUpperCase() : 'ROUND ' + m.round + ' OF ' + t;
+      return name + (e().qualifier && me.seed ? ' · RANK #' + me.seed : '');
+    }
     function how() { return '<button type="button" class="wt-q" data-act="wthow" aria-label="How to play">?</button>'; }
     function wallet() { var w = e().wallet; return w ? num(w) : ''; }
     function people() { return (e().lobbyPeople || []); }
@@ -65,7 +72,7 @@
         '<div class="wt-row"><span class="wt-k">' + esc(H.dayLabel(ev.startAt)) + '</span>' + how() + '</div>' +
         '<div style="display:flex;flex-direction:column;gap:6px"><h1 class="xl">Word Trip<br>Tournament</h1><p class="wt-mu">Make words. Beat your opponent.</p></div>' +
         tiles('words', true) +
-        '<div class="wt-card"><span style="font-size:14px;font-weight:600;color:#A9A3CC">' + (open ? 'Matches start in' : 'The lobby opens in') + '</span><span class="wt-big">' + H.cd(H.ms(open ? ev.startAt : ev.lobbyAt)) + '</span></div>' +
+        '<div class="wt-card"><span style="font-size:14px;font-weight:600;color:#A9A3CC">' + (open ? (ev.qualifier ? (H.state().phase === 'qualifier' ? 'The qualifier is on. Join to play' : 'The qualifier starts in') : 'Matches start in') : 'The lobby opens in') + '</span>' + (open && H.state().phase === 'qualifier' ? '' : '<span class="wt-big">' + H.cd(H.ms(open ? ev.startAt : ev.lobbyAt)) + '</span>') + '</div>' +
         (open && n ? '<div class="wt-faces"><span class="fs">' + faces.map(function (p) { return face(p, '', 'j'); }).join('') + '</span><b>' + num(n) + (n === 1 ? ' person is in' : ' people are in') + '</b></div>' : '') +
         '<div style="flex-grow:1"></div>' +
         (me.entered
@@ -81,12 +88,14 @@
       return '<section class="wt" aria-label="In the lobby">' +
         '<div class="wt-row"><span style="font:800 22px/1.1 \'Baloo 2\',system-ui">Word Trip Tournament</span>' + how() + '</div>' +
         '<div class="wt-card" style="padding:22px 20px;gap:10px"><span class="wt-in"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>You’re in</span>' +
-        '<span style="font-size:15px;color:#A9A3CC">Your match starts in</span><span class="wt-big wt-l">' + H.cd(H.ms(ev.startAt)) + '</span><span style="font-size:15px">Stay on this screen.</span></div>' +
+        '<span style="font-size:15px;color:#A9A3CC">' + (ev.qualifier ? 'The qualifier starts in' : 'Your match starts in') + '</span><span class="wt-big wt-l">' + H.cd(H.ms(ev.startAt)) + '</span><span style="font-size:15px">Stay on this screen.</span></div>' +
         '<div style="display:flex;flex-direction:column;gap:10px"><div class="wt-row" style="align-items:baseline"><span style="font-size:17px;font-weight:800">Who’s playing</span><span style="font-size:15px;font-weight:700;color:#FFD23F">' + num(n) + ' in</span></div>' +
         '<div class="wt-grid">' + shown.map(function (p) { return '<div data-k="g' + esc(p.userId) + '">' + face(p, '', 'l') + '<span>' + esc(p.userId === H.meId() ? 'You' : first(p.name)) + '</span></div>'; }).join('') + '</div>' +
         (n > shown.length ? '<span class="wt-s">+' + num(n - shown.length) + ' more</span>' : '') + '</div>' +
         '<div style="flex-grow:1"></div>' +
-        '<div class="wt-box"><b>How it works</b><span>1. We pick your opponent.</span><span>2. Same letters for both. Find words before your clock runs out.</span><span>3. More points wins. Winner goes on.</span><span>4. Bet on the last rounds.</span></div>' +
+        (ev.qualifier
+          ? '<div class="wt-box"><b>How it works</b><span>1. Qualifier: two runs on your own letters. Your best counts.</span><span>2. The top players go on to 1-on-1 matches, ranked by score.</span><span>3. Same letters for both. More points wins. Winner goes on.</span><span>4. Bet on the last rounds.</span></div>'
+          : '<div class="wt-box"><b>How it works</b><span>1. We pick your opponent.</span><span>2. Same letters for both. Find words before your clock runs out.</span><span>3. More points wins. Winner goes on.</span><span>4. Bet on the last rounds.</span></div>') +
         '</section>';
     }
 
@@ -175,7 +184,7 @@
       var ww = m.wtWords || {}, best = opts.best || '';
       var rounds = (e().rounds || []).length, nextR = H.roundOf(m.round + 1);
       var sub = won
-        ? (m.decidedBy === 'solo' ? esc(first(opp && opp.name)) + ' didn’t come. ' : m.decidedBy === 'absent' ? 'Neither of you came, so you went through by the draw. ' : m.decidedBy === 'replays' ? 'Still level after the replays: you went through by the draw. ' : '') + (m.round >= rounds ? 'You’re the champion!' : 'On to ' + (nextR ? nextR.label.toLowerCase().replace(/^round /, 'round ') : 'the next round') + '.')
+        ? (m.decidedBy === 'solo' ? esc(first(opp && opp.name)) + ' didn’t come. ' : m.decidedBy === 'absent' ? 'Neither of you came, so the better rank went through. ' : m.decidedBy === 'replays' ? 'Still level after the replays: the better rank went through. ' : '') + (m.round >= rounds ? 'You’re the champion!' : 'On to ' + (nextR ? nextR.label.toLowerCase().replace(/^round /, 'round ') : 'the next round') + '.')
         : (m.decidedBy === 'absent' ? 'Neither of you came. ' : m.decidedBy === 'replays' ? 'Still level after the replays. ' : '') + 'Good game. ' + esc(first(opp && opp.name)) + ' goes on.';
       
       return '<section class="wt" aria-label="Match result"><span class="wt-k">' + roundKick(m) + '</span>' +
@@ -190,6 +199,63 @@
         '</section>';
     }
 
-    return { join: join, lobby: lobby, match: match, waiting: waiting, bet: bet, result: result, face: face, tiles: tiles };
+    /* ---------- the qualifier ---------- */
+    function attemptName(stage) { return stage === 'extra' ? 'Tie-break run' : stage === 'a1' ? 'Attempt 1 of 2' : 'Attempt 2 of 2'; }
+    /* My game during the qualifier: play the attempt open now, or what you scored and what comes next. */
+    function qual(q, board) {
+      var me = H.me(), cut = board ? board.cut : 0, played = board ? board.played : 0;
+      var runs = q.runs || [], last = runs[runs.length - 1], cur = runs.find(function (r) { return r.attempt === (q.stage === 'a1' ? 1 : q.stage === 'a2' ? 2 : 3); });
+      var head = '<div class="wt-row"><span class="wt-k">QUALIFIER · ' + esc(attemptName(q.stage).toUpperCase()) + '</span></div>';
+      var stats = runs.length ? '<div class="wt-res">' + runs.map(function (r) {
+        return '<div class="' + (r.score === q.best && q.best ? 'w' : '') + '"><strong>' + (r.attempt === 3 ? 'Tie-break' : 'Attempt ' + r.attempt) + '</strong><b>' + num(r.score) + '</b><span>' + num(r.words) + ' words</span></div>';
+      }).join('') + '</div>' : '';
+      var rankLine = q.rank ? '<div class="wt-box" style="text-align:center"><b>Rank #' + num(q.rank) + ' of ' + num(played) + ' so far</b><span>Best so far ' + num(q.best || 0) + '. The top ' + num(cut) + ' go on.</span></div>' : '';
+      if (q.canJoin) {
+        return '<section class="wt" aria-label="Qualifier">' + head + '<h1>' + (q.stage === 'extra' ? 'Tie at the cut!' : 'Your turn') + '</h1>' +
+          '<p class="wt-mu">' + (q.stage === 'extra' ? 'One extra run decides who goes on. Your own letters.' : 'A normal Word Trip run on your own letters. Your best of two counts.') + '</p>' + stats +
+          (H.ui.err ? '<p class="wt-why" role="alert">' + esc(H.ui.err) + '</p>' : '') +
+          '<button type="button" class="wt-btn" data-act="wtqjoin"' + (H.ui.busy === 'wtq' ? ' disabled' : '') + '>' + (H.ui.busy === 'wtq' ? 'Starting…' : 'Play ' + (q.stage === 'extra' ? 'the tie-break run' : q.stage === 'a1' ? 'attempt 1' : 'attempt 2')) + '</button>' +
+          '<span class="wt-s">Start within <b data-cd="' + board.windowEndsAt + '">' + H.left(board.windowEndsAt) + '</b>.</span></section>';
+      }
+      if (cur && cur.status === 'live' && H.ms(cur.startAt) > H.now()) {
+        return '<section class="wt" aria-label="Qualifier">' + head + '<h1>Get ready</h1><div style="display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:15px;color:#A9A3CC">Starts in</span><span class="wt-big wt-xl">' + H.cd(H.ms(cur.startAt)) + '</span></div>' + stats + '</section>';
+      }
+      var next = q.stage === 'a1' ? 'Attempt 2 starts when everyone has finished attempt 1.' : q.stage === 'extra' ? (q.tied ? 'Results when the tie-break is over.' : 'A few players are playing a tie-break run. Results right after.') : 'Results when everyone has finished.';
+      var none = !runs.length;
+      return '<section class="wt" aria-label="Qualifier">' + head +
+        '<h1>' + (none ? (q.stage === 'a1' ? 'The qualifier is on' : 'Results soon') : 'Your run is over') + '</h1>' +
+        '<p class="wt-mu">' + (none ? (q.inLobby ? 'You missed this attempt. Wait here: the next one starts here.' : 'Watch the scores in Matches.') : 'Others are still playing. Wait here: your next game starts here.') + '</p>' +
+        stats + rankLine + '<div class="wt-box" style="text-align:center"><b>' + esc(next) + '</b></div><div style="flex-grow:1"></div><span class="wt-s">Don’t leave this screen.</span></section>';
+    }
+    /* After the cut, for someone who didn't make it. */
+    function qualOut(q) {
+      return '<section class="wt" aria-label="Qualifier result"><span class="wt-k">QUALIFIER</span><h1 class="xl" style="font-size:44px">You’re out</h1>' +
+        '<span style="font-size:17px;color:#A9A3CC">You didn’t make the top ' + num(q.cut) + ' this time.' + (q.rank ? ' You were rank #' + num(q.rank) + '.' : '') + '</span>' +
+        (q.runs && q.runs.length ? '<div class="wt-res">' + q.runs.map(function (r) { return '<div><strong>' + (r.attempt === 3 ? 'Tie-break' : 'Attempt ' + r.attempt) + '</strong><b>' + num(r.score) + '</b><span>' + num(r.words) + ' words</span></div>'; }).join('') + '</div>' : '') +
+        '<div style="flex-grow:1"></div><div style="display:flex;flex-direction:column;gap:10px"><button type="button" class="wt-btn" data-act="tab" data-v="watch">Watch and bet</button>' + (H.me().balance ? '<span class="wt-s">You have ' + num(H.me().balance) + ' points to bet on the last rounds.</span>' : '') + '</div></section>';
+    }
+    /* After the cut, for someone in: their rank, the first match next. */
+    function qualIn(me) {
+      return '<section class="wt" aria-label="Qualifier result"><span class="wt-k">QUALIFIER</span><h1 class="xl" style="font-size:44px;color:#4BE39A">You’re in!</h1>' +
+        '<div class="wt-card"><span style="font-size:15px;color:#A9A3CC">Your rank</span><span class="wt-big">#' + num(me.seed) + '</span></div>' +
+        '<span class="wt-s" style="font-size:15px">Your first match starts here. Stay on this screen.</span></section>';
+    }
+    /* Matches tab during the qualifier: everyone's best, the cut line. */
+    function qualBoard(board) {
+      var me = H.meId(), rows = board.rows || [];
+      var line = function (r) {
+        var cls = r.status === 'out' ? ' out' : r.status === 'in' ? ' win' : '';
+        return '<div class="wt-qr' + (r.userId === me ? ' me' : '') + cls + '" data-k="q' + esc(r.userId) + '"><em>' + num(r.rank) + '</em>' + face({ userId: r.userId, name: r.firstName }, '', 'q') +
+          '<span>' + esc(r.userId === me ? 'You' : r.firstName) + (r.playing ? ' <i>playing</i>' : r.status === 'tied' ? ' <i>tie-break</i>' : '') + '</span><small>' + num(r.attempts) + '/2</small><b>' + num(r.best) + '</b></div>';
+      };
+      var out = '', i;
+      for (i = 0; i < rows.length; i++) {
+        if (i === board.cut && board.cut) out += '<div class="wt-cut">Top ' + num(board.cut) + ' go on</div>';
+        out += line(rows[i]);
+      }
+      return '<section class="wt" aria-label="Qualifier scores"><div class="wt-row"><span class="wt-k">QUALIFIER · ' + esc(attemptName(board.stage).toUpperCase()) + '</span><span class="wt-k">' + num(board.played) + ' PLAYED</span></div>' +
+        '<h1>Best scores</h1>' + (rows.length ? '<div class="wt-ql">' + out + '</div>' : '<p class="wt-mu">Scores show here as runs are played.</p>') + '</section>';
+    }
+    return { join: join, lobby: lobby, match: match, waiting: waiting, bet: bet, result: result, face: face, tiles: tiles, qual: qual, qualOut: qualOut, qualIn: qualIn, qualBoard: qualBoard };
   };
 })();

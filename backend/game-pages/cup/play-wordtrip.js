@@ -109,8 +109,9 @@
       var side = function (p, col, name, sc, st, done, r) {
         return '<div class="cwt-side' + (r ? ' r' : '') + '">' + (p ? face(p, col) : '') + '<span class="tx"><span class="nm">' + esc(name) + '</span><b class="sc">' + num(sc) + '</b><i class="cwt-st' + (done ? ' done' : '') + '">' + st + '</i></span></div>';
       };
-      var h = side(o.me, '#FFD23F', 'You', mySc, ended ? 'finished' : started ? 'playing' : 'ready', ended, false) + '<span class="cwt-x">vs</span>';
-      if (!opp) h += side({ name: oppName }, '#2B2650', oppName, 0, 'didn’t come', true, true);
+      var h = side(o.me, '#FFD23F', 'You', mySc, ended ? 'finished' : started ? 'playing' : 'ready', ended, false) + '<span class="cwt-x">' + (o.qual ? 'QUALIFIER' : 'vs') + '</span>';
+      if (o.qual) h += side(null, '', o.qual.label, Math.max(o.qual.best(), ended ? mySc : 0), 'your best so far', true, true);
+      else if (!opp) h += side({ name: oppName }, '#2B2650', oppName, 0, 'didn’t come', true, true);
       else {
         var x = oppNow() || {}, done = x.endsAt && now() >= x.endsAt;
         h += side(opp, '#4C9BFF', first(opp.name), x.score, done ? 'finished' : ended ? 'still playing…' : 'playing', done, true);
@@ -171,7 +172,7 @@
       if (o.played && !started) {
         /* Reopened mid-run: the run can't be picked up again; what the server has stands, the clock runs on. */
         var me = (o.getMine && o.getMine()) || {};
-        cover('<small>YOUR RUN</small><h2>You left your match</h2><p>Your score stands: <b>' + num(me.score) + '</b>. The clock kept running, so the run can’t start again.</p><p>' + endLine().replace('Time’s up. ', '') + '</p>');
+        cover('<small>YOUR RUN</small><h2>You left your ' + (o.qual ? 'run' : 'match') + '</h2><p>Your score stands: <b>' + num(me.score) + '</b>. The clock kept running, so the run can’t start again.</p><p>' + endLine().replace('Time’s up. ', '') + '</p>');
         return;
       }
       if (phase === 'end' || ended) {
@@ -181,7 +182,7 @@
         $end.hidden = false;
         return;
       }
-      if (!frame || !ready) { cover('<h2>Loading the game…</h2><p>' + (t < startAt ? 'Your match starts in <b>' + Math.max(0, Math.ceil((startAt - t) / 1000)) + '</b> seconds.' : 'One moment.') + '</p>'); return; }
+      if (!frame || !ready) { cover('<h2>Loading the game…</h2><p>' + (t < startAt ? 'Your ' + (o.qual ? 'run' : 'match') + ' starts in <b>' + Math.max(0, Math.ceil((startAt - t) / 1000)) + '</b> seconds.' : 'One moment.') + '</p>'); return; }
       if (!started) {
         /* The game's own 3-2-1 takes 1.8 s: started then, its clock begins with the match's. */
         if (t >= startAt - 1900) {
@@ -191,6 +192,7 @@
           try { frame.focus(); } catch (e) {}
           return;
         }
+        if (o.qual) { cover('<small>QUALIFIER · ' + esc(o.qual.label.toUpperCase()) + '</small><div class="cwt-vs">' + face(o.me, '#FFD23F') + '</div><div class="cwt-big">' + Math.max(1, Math.ceil((startAt - t) / 1000)) + '</div><p>' + esc(o.qual.intro) + '</p>'); return; }
         cover('<small>' + (o.attempt ? 'REPLAY · NEW LETTERS' : 'YOUR MATCH') + '</small><div class="cwt-vs">' + face(o.me, '#FFD23F') + '<i>vs</i>' + (opp ? face(opp, '#4C9BFF') : face(o.opponent, '#2B2650')) + '</div>' +
           '<div class="cwt-big">' + Math.max(1, Math.ceil((startAt - t) / 1000)) + '</div>' +
           '<p>' + (opp ? 'Same letters for you and ' + esc(first(opp.name)) + '. More points wins.' : esc(oppName) + ' didn’t come. You play alone and go to the next round.') + '</p>');
@@ -198,6 +200,7 @@
     }
     /* Under "Time's up": the other player still playing (and their score so far), or the result on its way. */
     function endLine() {
+      if (o.qual) return o.qual.end();
       if (!opp) return 'Time’s up. You go to the next round. Waiting for the others to finish…';
       var x = oppNow() || {};
       if (x.endsAt && now() < x.endsAt) return 'Time’s up. <b>' + esc(first(opp.name)) + ' is still playing…</b> ' + num(x.score) + ' so far.';
