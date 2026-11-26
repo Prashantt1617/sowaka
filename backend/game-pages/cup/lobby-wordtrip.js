@@ -83,6 +83,8 @@
         '</section>';
     }
 
+    /* The qualifier's cut: the largest power of two not more than the people in the lobby. */
+    function qualifyOf(n) { if (n < 2) return n; var p = 1; while (p * 2 <= n) p *= 2; return p; }
     function lobby() {
       var ev = e(), n = ev.entrantCount || 0, ppl = people(), shown = ppl.slice(0, 15);
       return '<section class="wt" aria-label="In the lobby">' +
@@ -94,7 +96,7 @@
         (n > shown.length ? '<span class="wt-s">+' + num(n - shown.length) + ' more</span>' : '') + '</div>' +
         '<div style="flex-grow:1"></div>' +
         (ev.qualifier
-          ? '<div class="wt-box"><b>How it works</b><span>1. Qualifier: two runs on your own letters. Your best counts.</span><span>2. The top players go on to 1-on-1 matches, ranked by score.</span><span>3. Same letters for both. More points wins. Winner goes on.</span><span>4. Bet on the last rounds.</span></div>'
+          ? '<div class="wt-box"><b>How it works</b><span>1. The qualifier is 2 rounds. Your best score of the 2 counts.</span><span>2. ' + num(n) + (n === 1 ? ' person' : ' people') + ' in the lobby, so ' + num(qualifyOf(n)) + ' will qualify.</span><span>3. Everyone gets their own board in the qualifier.</span><span>4. After the qualifier it’s 1v1: the same board for both. The winner moves to the next round. One attempt only.</span><span>5. Betting starts from the top 8.</span></div>'
           : '<div class="wt-box"><b>How it works</b><span>1. We pick your opponent.</span><span>2. Same letters for both. Find words before your clock runs out.</span><span>3. More points wins. Winner goes on.</span><span>4. Bet on the last rounds.</span></div>') +
         '</section>';
     }
