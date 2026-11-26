@@ -33,8 +33,8 @@
  * --top-n N --start-window S --solo-start S --betting S --countdown S --round S
  * --grace S --min-play S --max-score N --max-replays N --max-stake N --push-at-lobby true|false
  * --game odd-one-out|trails|knights|word-trip (the game in each match; knights also sets its own defaults:
- * round 300, start window 30, solo start 30, betting 120, top 8, wallet 1000, lobby draw, 2 replays; word-trip: round 60
- * (each stop; 3 stops a match, 5 in the final), start window 40, betting 120, top 8, wallet 1000, lobby draw, 2 replays) --lobby-draw true|false (only the people who join
+ * round 300, start window 30, solo start 30, betting 120, top 8, wallet 1000, lobby draw, 2 replays; word-trip: one normal
+ * Word Trip run a match, start window 40, countdown 5, betting 120, top 8, wallet 1000, lobby draw, 2 replays) --lobby-draw true|false (only the people who join
  * the lobby, paired at random when it closes) --wallet N (everyone bets from N points of their own for
  * this tournament, not their points; 0: their points)
  * Times: ISO with an offset (2026-10-23T17:25+05:30), or +Ns / +Nm / +Nh from now.
@@ -43,7 +43,7 @@ import { randomUUID } from 'node:crypto';
 import { companies, connectDb, connectPosts, closeDb, gameCatalog, users } from '../config/db';
 import type { CupEvent, CupEventConfig, CupSeeding } from '../models/cup.model';
 import type { ConnectPost } from '../models/connect.model';
-import { DEFAULT_CUP_CONFIG, WORD_TRIP, WT_GRACE_SEC, stopsFor, wtPlaySec } from '../services/cup-rules';
+import { DEFAULT_CUP_CONFIG, WORD_TRIP, WT_DEFAULT_RULES, WT_GRACE_SEC, wtLongestSec } from '../services/cup-rules';
 import { newSeed } from '../services/game-challenge-rules';
 import { cupBets, cupEvents, cupMatches, rosterOf } from '../services/cup.service';
 import { pointEvents } from '../services/points-ledger.service';
@@ -118,13 +118,15 @@ const KNIGHTS_DEFAULTS: Partial<CupEventConfig> = {
 };
 
 /**
- * The Word Trip Tournament's own rules (27 Nov 2026): a stop is 60 s of one set of letters (3 stops a match, 5 in the
- * final), a 40 s start window (a lone player then plays alone at once and goes through), ties replayed on new letters
- * twice, bets from the last eight from 1,000 points of their own, drawn from the lobby. Flags given on `create` still win.
+ * The Word Trip Tournament's own rules (27 Nov 2026): each match is one normal Word Trip run each (the game's own 1:00
+ * clock and rules, the same seed for both), a 40 s start window (a lone player then plays alone at once and goes
+ * through), a 5 s countdown, ties replayed on a new seed twice, bets from the last eight from 1,000 points of their own,
+ * drawn from the lobby. roundSec is only shown (the game's clock rules). Flags given on `create` still win.
  */
 const WORD_TRIP_DEFAULTS: Partial<CupEventConfig> = {
   roundSec: 60,
   startWindowSec: 40,
+  countdownSec: 5,
   soloStartSec: 30,
   bettingSec: 120,
   topN: 8,
@@ -234,7 +236,7 @@ async function resume(event: CupEvent, now: Date): Promise<string> {
     const playing = (m.status === 'live' || m.status === 'solo') && m.startAt;
     if (playing) {
       // A round that had run out before the pause is decided from what came in, as usual.
-      const playSec = event.gameKey === WORD_TRIP ? wtPlaySec(stopsFor(m.round, event.rounds.length), event.roundSec) + WT_GRACE_SEC : event.roundSec + event.finishGraceSec;
+      const playSec = event.gameKey === WORD_TRIP ? wtLongestSec(WT_DEFAULT_RULES) + WT_GRACE_SEC : event.roundSec + event.finishGraceSec;
       if (new Date(m.startAt!).getTime() + playSec * 1000 <= pausedMs) continue;
       await cupMatches().updateOne(where, {
         $set: { status: 'open', seed: newSeed(), joined: {}, live: {}, finals: {}, openedAt: now, deadlineAt: new Date(now.getTime() + event.startWindowSec * 1000), updatedAt: now },

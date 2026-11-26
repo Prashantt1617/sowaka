@@ -38,30 +38,28 @@ import { hasAllDashboardTabs } from '../middleware/admin.middleware';
 import { InFlight } from '../utils/inflight';
 import { logger } from '../utils/logger';
 import knightsBank from '../content/knights-boards.json';
-import wordTripBankFile from '../content/word-trip-cup.json';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { publicPageFor } from './game-catalog.service';
+import { loadWordTripGame, type WtGame } from './cup-wordtrip-game';
 import {
   WORD_TRIP,
-  lobbyPresent,
-  WT_GAP_SEC,
+
+  WT_DEFAULT_RULES,
   WT_REPLAY_SEC,
-  commonCount,
-  emptyStop,
-  lettersFor,
+  lobbyPresent,
   mayPlayWord,
-  newWordTripSeed,
+  newRun,
   nextWordTripStep,
-  playWord,
-  stopAt,
-  stopWindow,
-  stopsFor,
+  playRunSkip,
+  playRunWord,
+  replayRun,
+  runEndsSec,
   wordTime,
-  wordTripBank,
-  wordTripStops,
-  wtPlaySec,
-  wtTotal,
-  type WordTripBankFile,
-  type WordTripStop,
-  type WtStopPlay,
+  type WtBoards,
+  type WtRules,
+  type WtRun,
+  type WtStop,
   KNIGHTS,
   buildDraw,
   buildPyramidDraw,
@@ -229,6 +227,8 @@ interface Runtime {
   standings?: { rev: number; rows: Standing[] };
   /** Everyone's photo address (null for none), for whoever is in the draw (or would be, before it). */
   photos?: { at: number; key: string; map: Map<string, string | null> };
+  /** Goes up when anyone's photo address changes: a Word Trip page holding this one gets no photo map with its state. */
+  photosRev?: number;
 }
 
 const runtimes = new Map<string, Runtime>();
@@ -424,7 +424,10 @@ async function refreshPhotos(rt: Runtime): Promise<void> {
   const changed = !rt.photos || rt.photos.map.size !== map.size || [...map].some(([id, url]) => rt.photos!.map.get(id) !== url);
   rt.photos = { at: Date.now(), key, map };
   thumbSources.set(event.id, sources);
-  if (changed) rt.rev += 1;
+  if (changed) {
+    rt.rev += 1;
+    rt.photosRev = (rt.photosRev ?? 0) + 1;
+  }
   // Made ahead, one at a time, so the lobby's first look at everyone's face is a cache hit.
   void warmThumbs(event, sources);
 }
@@ -1037,6 +1040,8 @@ export async function stopCupRunner(): Promise<void> {
 async function tickEvent(id: string): Promise<void> {
   const rt = await runtime(id, true);
   if (!rt || !rt.event.active || !runnerMoves(rt.event.org)) return;
+  // Word Trip: the game's stops and rules in hand before any run is played back or decided.
+  if (isWordTripEvent(rt.event)) await wordTripGame().catch((error) => logger.error('Word Trip game not loaded', { eventId: id }, error));
   let now = new Date();
   const event = rt.event;
   if (event.phase === 'scheduled') {
@@ -1059,7 +1064,6 @@ async function tickEvent(id: string): Promise<void> {
   const inRound = [...rt.matches.values()].filter((m) => m.round === n);
   // Round 1's start window closes on all its matches at once: a few at a time, not one by one.
   await inBatches(inRound, 16, (match) => advance(rt, match, new Date()));
-  if (isWordTripEvent(rt.event)) noteStops(rt, inRound, new Date());
   if (round.kind === 'sequential') {
     await stage(rt, n, new Date());
     if (cupHooks.reconcile && Date.now() - (lastReconcile.get(id) ?? 0) >= RECONCILE_EVERY_MS) {
@@ -1215,7 +1219,7 @@ function withLive(rt: Runtime, match: CupMatch): CupMatch {
     // Word Trip: each player's total as this server scored their words (never a score a page sent).
     for (const p of match.players) {
       const mem = wtPlayer(rt, match, p);
-      if (mem) live[p] = { score: wtTotal(mem.stops), at: new Date(mem.at) };
+      if (mem) live[p] = { score: mem.run.score, at: new Date(mem.at), wtAdded: mem.run.added };
     }
     return { ...match, live };
   }
@@ -1228,7 +1232,7 @@ function withLive(rt: Runtime, match: CupMatch): CupMatch {
 
 /** The step the rules give for this match now, whichever the game. */
 function stepFor(rt: Runtime, match: CupMatch, now: Date): MatchStep {
-  if (isWordTripEvent(rt.event)) return nextWordTripStep(withLive(rt, match), rt.event, now, seedLookup(rt.event), wtSpec(rt, match).stops);
+  if (isWordTripEvent(rt.event)) return nextWordTripStep(withLive(rt, match), rt.event, now, seedLookup(rt.event), wtRules());
   return nextStep(withLive(rt, match), rt.event, now, seedLookup(rt.event), solutionOf(rt, match));
 }
 
@@ -1269,7 +1273,7 @@ async function apply(rt: Runtime, match: CupMatch, step: MatchStep, now: Date): 
         const after = await write({
           $set: {
             status: 'live',
-            seed: newWordTripSeed(WT_BANK(), match.seed, wtSpec(rt, match).len, newSeed),
+            seed: wtGame ? newWtSeed(wtGame, match.seed) : newSeed(),
             live: {},
             finals: {},
             startAt: new Date(now.getTime() + WT_REPLAY_SEC * 1000),
@@ -1607,9 +1611,9 @@ function knightsView(rt: Runtime, match: CupMatch, own = false): {
 
 // ---------------------------------------------------------------- word trip
 
-/** A player's stops in one attempt of a match, as this server scored them. */
+/** A player's run in one attempt of a match, as this server played it. */
 interface WtMem {
-  stops: WtStopPlay[];
+  run: WtRun;
   /** Their last word taken here (ms). */
   at: number;
   /** Changed since it was last written to the match. */
@@ -1619,105 +1623,88 @@ interface WtMem {
 }
 
 const isWordTripEvent = (event: Pick<CupEvent, 'gameKey'>) => event.gameKey === WORD_TRIP;
-let wtBankLoaded: ReturnType<typeof wordTripBank> | null = null;
-/** The tournament's dictionary and letter sets (content/word-trip-cup.json), read once. */
-const WT_BANK = () => (wtBankLoaded ??= wordTripBank(wordTripBankFile as unknown as WordTripBankFile));
 
-/** A match's shape: letters per stop and stops (by its round), and each stop's seconds. */
-function wtSpec(rt: Runtime, match: Pick<CupMatch, 'round'>) {
-  const total = rt.event.rounds.length;
-  return { len: lettersFor(match.round, total), stops: stopsFor(match.round, total), stopSec: rt.event.roundSec };
+let wtGame: WtGame | null = null;
+let wtGameAt = 0;
+let wtLoading: Promise<WtGame> | null = null;
+const WT_GAME_FILE = path.resolve(__dirname, '../../game-pages/word-trip.html');
+
+/** The game, read once and again every ten minutes (a page uploaded meanwhile is picked up; the same version is kept as it is). */
+export async function wordTripGame(): Promise<WtGame> {
+  if (wtGame && Date.now() - wtGameAt < 10 * 60_000) return wtGame;
+  if (wtLoading) return wtLoading;
+  wtLoading = (async () => {
+    const page = (await publicPageFor(WORD_TRIP).catch(() => null)) ?? { html: await readFile(WT_GAME_FILE, 'utf8'), version: 'repo' };
+    if (!wtGame || wtGame.version !== page.version || wtGame.html !== page.html) wtGame = loadWordTripGame(page.html, page.version);
+    wtGameAt = Date.now();
+    return wtGame;
+  })().finally(() => {
+    wtLoading = null;
+  });
+  return wtLoading;
+}
+const wtRules = () => wtGame?.rules ?? WT_DEFAULT_RULES;
+
+/**
+ * `GET /cup/api/wordtrip-game?v=`: the normal game's page, for the tournament
+ * page to play it in; with the version the page already holds, just that.
+ */
+export async function wordTripGameFor(viewer: CupViewer, have: unknown) {
+  void viewer;
+  const game = await wordTripGame();
+  return have === game.version ? { version: game.version, same: true } : { version: game.version, html: game.html };
 }
 
-const wtStopsCache = new Map<string, { stops: WordTripStop[]; counts: number[] }>();
-/** The match's stops (this attempt's seed) and how many common words each makes. */
-function wtStopsOf(rt: Runtime, match: Pick<CupMatch, 'round' | 'seed'>) {
-  const spec = wtSpec(rt, match);
-  const key = `${match.seed}:${spec.len}:${spec.stops}`;
-  let hit = wtStopsCache.get(key);
-  if (!hit) {
-    const stops = wordTripStops(WT_BANK(), match.seed, spec.len, spec.stops);
-    hit = { stops, counts: stops.map((s) => commonCount(WT_BANK(), s.letters)) };
-    if (wtStopsCache.size > 3000) wtStopsCache.clear();
-    wtStopsCache.set(key, hit);
+/** A new seed for a replay: another first stop than the tied game's. */
+function newWtSeed(game: WtGame, old: number): number {
+  const was = game.boards(old, 0).letters.split('').sort().join('');
+  for (let i = 0; i < 30; i += 1) {
+    const seed = newSeed();
+    if (game.boards(seed, 0).letters.split('').sort().join('') !== was) return seed;
   }
-  return hit;
+  return newSeed();
 }
 
-/** How many of the match's stops the pages may see now: the first from the start, each next one as the card before it begins. */
-function wtShownCount(rt: Runtime, match: CupMatch, now: Date): number {
-  const spec = wtSpec(rt, match);
-  if (match.status === 'done') return spec.stops;
-  if ((match.status !== 'live' && match.status !== 'solo') || !match.startAt) return 0;
-  let shown = 1;
-  for (let k = 1; k < spec.stops; k += 1) if (now.getTime() >= stopWindow(match.startAt, k, spec.stopSec).from - WT_GAP_SEC * 1000) shown = k + 1;
-  return shown;
-}
-
-/** A new stop's letters reach the pages the moment they are due: the state's revision goes up then. */
-function noteStops(rt: Runtime, matches: CupMatch[], now: Date) {
-  for (const m of matches) {
-    if (m.status !== 'live' && m.status !== 'solo') continue;
-    const key = `${m.id}:${m.attempt}`;
-    const shown = wtShownCount(rt, m, now);
-    if (rt.wtShown.get(key) !== shown) {
-      rt.wtShown.set(key, shown);
-      rt.rev += 1;
-    }
-  }
-}
-
-/** A player's stops in this attempt: this process's, else as last written to the match (after a restart). */
+/** A player's run in this attempt: this process's, else played again from what was last written to the match (after a restart). */
 function wtPlayer(rt: Runtime, match: CupMatch, userId: string): WtMem | undefined {
   const key = `${match.id}:${match.attempt}:${userId}`;
   const mem = rt.words.get(key);
   if (mem) return mem;
   const db = match.live?.[userId];
-  if (!db?.wt) return undefined;
-  const spec = wtSpec(rt, match);
-  const stops: WtStopPlay[] = Array.from({ length: spec.stops }, (_, k) => {
-    const found = (db.wt?.[k] ?? []).filter((x) => Array.isArray(x) && typeof x[0] === 'string' && typeof x[1] === 'number');
-    const c = db.wtc?.[k];
-    return { found, score: found.reduce((s, [, p]) => s + p, 0), combo: c?.[0] ?? 1, comboUntil: c?.[1] ?? 0, lastT: c?.[2] ?? 0, bad: c?.[3] ?? 0 };
-  });
-  const back: WtMem = { stops, at: new Date(db.at).getTime(), dirtyAt: 0, savedAt: Date.now() };
+  if (!db?.wtr || !wtGame) return undefined;
+  const back: WtMem = { run: replayRun(db.wtr, wtGame.boards, match.seed, wtGame.rules), at: new Date(db.at).getTime(), dirtyAt: 0, savedAt: Date.now() };
   rt.words.set(key, back);
   return back;
+}
+/** A player's score and clock now: the run, else what the match holds. */
+function wtScoreOf(rt: Runtime, match: CupMatch, userId: string): { score: number; added: number; words: number; gi: number } {
+  const mem = wtPlayer(rt, match, userId);
+  if (mem) return { score: mem.run.score, added: mem.run.added, words: mem.run.total, gi: mem.run.gi };
+  const db = match.live?.[userId];
+  return { score: db?.score ?? 0, added: db?.wtAdded ?? 0, words: (db?.wtr ?? []).filter((e) => e[0] === 'w').length, gi: 0 };
 }
 
 async function saveWords(match: Pick<CupMatch, 'id' | 'attempt'>, userId: string, mem: WtMem) {
   if (mem.timer) clearTimeout(mem.timer);
   mem.timer = undefined;
   if (mem.dirtyAt <= mem.savedAt) return;
-  const savedAt = Date.now();
-  mem.savedAt = savedAt;
+  mem.savedAt = Date.now();
   // No `updatedAt`: the runner's moves are conditional on it, and a player's words are not a move.
   await cupMatches().updateOne(
     { id: match.id, attempt: match.attempt },
-    {
-      $set: {
-        [`live.${userId}`]: {
-          score: wtTotal(mem.stops),
-          at: new Date(mem.at),
-          wt: mem.stops.map((s) => s.found),
-          wtc: mem.stops.map((s) => [s.combo, s.comboUntil, s.lastT, s.bad]),
-        },
-      },
-    },
+    { $set: { [`live.${userId}`]: { score: mem.run.score, at: new Date(mem.at), wtr: mem.run.events, wtAdded: mem.run.added } } },
   );
 }
 
 /** Written to the match at most every few seconds per player, and once more after their last word. */
 function saveSoon(match: CupMatch, userId: string, mem: WtMem) {
   const wait = PERSIST_EVERY_MS - (Date.now() - mem.savedAt);
-  if (wait <= 0) {
-    void saveWords(match, userId, mem).catch((error) => logger.error('Cup words save failed', { matchId: match.id }, error));
-    return;
-  }
+  const save = () => void saveWords(match, userId, mem).catch((error) => logger.error('Cup words save failed', { matchId: match.id }, error));
+  if (wait <= 0) return save();
   if (!mem.timer) {
     mem.timer = setTimeout(() => {
       mem.timer = undefined;
-      void saveWords(match, userId, mem).catch((error) => logger.error('Cup words save failed', { matchId: match.id }, error));
+      save();
     }, wait);
     mem.timer.unref?.();
   }
@@ -1725,10 +1712,10 @@ function saveSoon(match: CupMatch, userId: string, mem: WtMem) {
 
 /**
  * Words change only scores and counts on everyone else's screen: the state's revision goes up for them at most
- * every WT_BUMP_MS, so a hundred players finding words do not make every poll a full read (the player's own words
- * come back with each word's answer).
+ * every WT_BUMP_MS, so a hundred players finding words do not make every poll a full read (the player's own run
+ * comes back with each word's answer).
  */
-const WT_BUMP_MS = 2000;
+const WT_BUMP_MS = 3000;
 const bumpTimers = new WeakMap<Runtime, NodeJS.Timeout>();
 function bumpSoon(rt: Runtime) {
   if (bumpTimers.has(rt)) return;
@@ -1749,82 +1736,93 @@ async function flushWords(rt: Runtime, match: CupMatch) {
 }
 
 /**
- * One word from a player's page (`POST /cup/api/matches/:id/word` `{ stop, word, t }`):
- * checked here against the dictionary and the stop's letters, scored with
- * Word Trip's scoring, and kept. The answer says whether it counted, what it
- * paid, and the player's totals. `t` (ms into the stop, by the page's clock)
- * only places the word for the combo, and never later than it arrived.
+ * One word (or a skip) from a player's page, `POST /cup/api/matches/:id/word`
+ * `{ stop, word, t }` or `{ skip: true, stop, t }`: `t` is the time on the run's
+ * clock (seconds) when the page took it. Played here against the same stop and
+ * rules (`playRunWord`); the answer says whether it counted, and the run as the
+ * server has it (score, stop, seconds earned).
  */
-export async function playWordIn(viewer: CupViewer, id: string, body: { stop?: unknown; word?: unknown; t?: unknown } | undefined) {
+export async function playWordIn(viewer: CupViewer, id: string, body: { stop?: unknown; word?: unknown; t?: unknown; skip?: unknown } | undefined) {
   const { rt, match } = await playersMatch(viewer, id);
   if (!isWordTripEvent(rt.event)) throw new CupError(409, 'This game has no words');
+  const game = await wordTripGame();
   const now = new Date();
-  const spec = wtSpec(rt, match);
-  const may = mayPlayWord(match, viewer.userId, body?.stop, spec.stops, spec.stopSec, now);
-  if (may.ok !== true) throw new CupError(may.status, may.message);
-  const k = may.k;
-  const { stops } = wtStopsOf(rt, match);
-  const key = `${match.id}:${match.attempt}:${viewer.userId}`;
   let mem = wtPlayer(rt, match, viewer.userId);
+  const may = mayPlayWord(match, viewer.userId, mem?.run, now, game.rules);
+  if (may.ok !== true) throw new CupError(may.status, may.message);
   if (!mem) {
-    mem = { stops: Array.from({ length: spec.stops }, emptyStop), at: now.getTime(), dirtyAt: 0, savedAt: 0 };
-    rt.words.set(key, mem);
+    mem = { run: newRun(), at: now.getTime(), dirtyAt: 0, savedAt: 0 };
+    rt.words.set(`${match.id}:${match.attempt}:${viewer.userId}`, mem);
   }
-  const stop = mem.stops[k] ?? (mem.stops[k] = emptyStop());
-  const w = stopWindow(match.startAt!, k, spec.stopSec);
-  const arrived = Math.max(0, Math.min(now.getTime() - w.from, spec.stopSec * 1000));
-  const verdict = playWord(stop, stops[k].letters, body?.word, wordTime(body?.t, arrived, stop.lastT), WT_BANK());
-  if (verdict.ok) {
-    mem.at = now.getTime();
-    mem.dirtyAt = now.getTime();
+  const run = mem.run;
+  const t = wordTime(body?.t, may.arrived);
+  const changed = () => {
+    mem!.at = now.getTime();
+    mem!.dirtyAt = now.getTime();
     bumpSoon(rt);
-    saveSoon(match, viewer.userId, mem);
+    saveSoon(match, viewer.userId, mem!);
+  };
+  if (body?.skip === true) {
+    const skipped = playRunSkip(run, body.stop, t, game.rules);
+    if (skipped.ok) changed();
+    return { serverNow: new Date(), skip: skipped, score: run.score, gi: run.gi, added: run.added };
   }
-  return { serverNow: new Date(), stop: k, verdict, stopScore: stop.score, score: wtTotal(mem.stops), words: mem.stops.reduce((n, s) => n + s.found.length, 0) };
+  const verdict = playRunWord(run, game.boards(match.seed, run.gi), body?.stop, body?.word, t, game.rules);
+  if (verdict.ok) changed();
+  return { serverNow: new Date(), verdict, score: run.score, gi: run.gi, added: run.added };
 }
 
-/** Each player's words found (all stops) and total, for one match. */
-function wtWordsOf(rt: Runtime, match: CupMatch) {
-  const out: Record<string, { score: number; words: number; stops: [string, number][][] }> = {};
-  for (const p of match.players) {
-    const mem = wtPlayer(rt, match, p);
-    out[p] = mem ? { score: wtTotal(mem.stops), words: mem.stops.reduce((n, s) => n + s.found.length, 0), stops: mem.stops.map((s) => s.found) } : { score: 0, words: 0, stops: [] };
-  }
+/** When each player's clock runs out (ms), as the server has their run. */
+function wtEndsOf(rt: Runtime, match: CupMatch): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!match.startAt) return out;
+  for (const p of match.players) out[p] = new Date(match.startAt).getTime() + runEndsSec({ added: wtScoreOf(rt, match, p).added }, wtRules()) * 1000;
   return out;
 }
 
-/**
- * What a Word Trip match adds to a view: its shape (stops, letters per stop,
- * seconds), and once it is on, the letters of every stop due so far (never a
- * later one) and how many common words each makes; each player's words found
- * as a count. The words themselves are only the player's own (`myMatchView`)
- * and the TV's (`wordTripTvOf`).
- */
-function wordTripView(rt: Runtime, match: CupMatch, now = new Date()) {
-  if (!isWordTripEvent(rt.event)) return {};
-  const spec = wtSpec(rt, match);
-  const shape = { stops: spec.stops, len: spec.len, stopSec: spec.stopSec, gapSec: WT_GAP_SEC };
-  const shown = wtShownCount(rt, match, now);
-  if (!shown) return { wt: shape };
-  const { stops, counts } = wtStopsOf(rt, match);
-  const words = wtWordsOf(rt, match);
+/** What a Word Trip match adds to a view: each player's words found (a count) and when their clock runs out. Never their words or letters. */
+function wordTripView(rt: Runtime, match: CupMatch) {
+  if (!isWordTripEvent(rt.event) || (match.status !== 'live' && match.status !== 'solo' && match.status !== 'done')) return {};
   const wtWords: Record<string, number> = {};
-  for (const p of match.players) wtWords[p] = words[p].words;
-  return { wt: { ...shape, letters: stops.slice(0, shown).map((s) => s.letters), counts: counts.slice(0, shown) }, wtWords };
+  for (const p of match.players) wtWords[p] = wtScoreOf(rt, match, p).words;
+  return { wtWords, wtEnds: wtEndsOf(rt, match), wtRound: wtRules().ROUND };
+}
+
+/** The viewer's own run and the opponent's, for their match screen. */
+function wordTripMine(rt: Runtime, match: CupMatch, userId: string) {
+  if (!isWordTripEvent(rt.event)) return {};
+  const them = match.players[0] === userId ? match.players[1] : match.players[0];
+  const ends = wtEndsOf(rt, match);
+  const me = wtScoreOf(rt, match, userId);
+  const opp = wtScoreOf(rt, match, them);
+  const best = (wtPlayer(rt, match, userId)?.run.events ?? []).reduce((b, e) => (e[0] === 'w' && e[2].length > b.length ? e[2] : b), '');
+  return {
+    ...wordTripView(rt, match),
+    wtMe: { score: me.score, words: me.words, endsAt: ends[userId], best },
+    wtOpp: { score: opp.score, words: opp.words, endsAt: ends[them] },
+  };
 }
 
 /**
- * The TV's live words (dashboard only): for every match of the round being
- * played that is on or decided, each player's words per stop and total.
+ * The TV's live boards (dashboard only): for every match of the round being
+ * played that is on or decided, each player's stop (its letters, as dealt),
+ * their words on it, their score, words in all, and when their clock runs out.
  */
 export function wordTripTvOf(eventId: string) {
   const rt = runtimes.get(eventId);
   if (!rt || !isWordTripEvent(rt.event)) return undefined;
-  const out: Record<string, ReturnType<typeof wtWordsOf>> = {};
+  const out: Record<string, Record<string, { score: number; words: number; gi: number; letters: string; found: [string, number][]; endsAt?: number }>> = {};
   for (const m of rt.matches.values()) {
     if (m.round !== rt.event.round && !(m.status === 'live' || m.status === 'solo')) continue;
     if (m.status !== 'live' && m.status !== 'solo' && m.status !== 'done') continue;
-    out[m.id] = wtWordsOf(rt, m);
+    const ends = wtEndsOf(rt, m);
+    const row: (typeof out)[string] = {};
+    for (const p of m.players) {
+      const mem = wtPlayer(rt, m, p);
+      const s = wtScoreOf(rt, m, p);
+      row[p] = { score: s.score, words: s.words, gi: s.gi, letters: wtGame && m.startAt ? wtGame.boards(m.seed, s.gi).letters : '', found: mem?.run.found[s.gi] ?? [], endsAt: ends[p] };
+    }
+    out[m.id] = row;
   }
   return out;
 }
@@ -1924,7 +1922,8 @@ type CurrentStage = { matchId: string; kind: 'betting' | 'live' };
 const person = (rt: Runtime, userId: string | null) => {
   if (!userId) return null;
   const e = rt.event.entrants.find((x) => x.userId === userId);
-  return { userId, name: e?.name ?? 'Colleague', seed: e?.seed ?? null, photoUrl: photoOf(rt, userId) };
+  // Word Trip: faces go once, in the state's `photos` map (asked for by version), not in every match of every poll.
+  return isWordTripEvent(rt.event) ? { userId, name: e?.name ?? 'Colleague', seed: e?.seed ?? null } : { userId, name: e?.name ?? 'Colleague', seed: e?.seed ?? null, photoUrl: photoOf(rt, userId) };
 };
 
 function liveOf(rt: Runtime, match: CupMatch): Record<string, number> | undefined {
@@ -1934,7 +1933,7 @@ function liveOf(rt: Runtime, match: CupMatch): Record<string, number> | undefine
   const out: Record<string, number> = {};
   if (isWordTripEvent(rt.event)) {
     // The server's own totals, from the words it took.
-    for (const p of match.players) out[p] = wtTotal(wtPlayer(rt, match, p)?.stops);
+    for (const p of match.players) out[p] = wtScoreOf(rt, match, p).score;
     return out;
   }
   for (const p of match.players) {
@@ -2086,7 +2085,7 @@ function lobbyPeopleOf(rt: Runtime) {
   return (event.lobbyJoined ?? [])
     .slice(-30)
     .reverse()
-    .map((userId) => ({ userId, name: names.get(userId) ?? 'Colleague', photoUrl: photoOf(rt, userId) }));
+    .map((userId) => ({ userId, name: names.get(userId) ?? 'Colleague' }));
 }
 
 /** How far each person got, best first: the champion, the runner-up, then by the round they went out in. */
@@ -2135,7 +2134,7 @@ export function standingsOf(rt: Runtime): Standing[] {
   rows.forEach((row, i) => {
     row.place = i > 0 && rows[i - 1].depth === row.depth ? rows[i - 1].place : i + 1;
   });
-  const result: Standing[] = rows.map((row) => ({ userId: row.userId, name: row.name, photoUrl: photoOf(rt, row.userId), seed: row.seed, reached: row.reached, place: row.place, alive: row.alive }));
+  const result: Standing[] = rows.map((row) => ({ userId: row.userId, name: row.name, photoUrl: isWordTripEvent(event) ? null : photoOf(rt, row.userId), seed: row.seed, reached: row.reached, place: row.place, alive: row.alive }));
   rt.standings = { rev: rt.rev, rows: result };
   return result;
 }
@@ -2151,9 +2150,7 @@ function myMatchView(rt: Runtime, match: CupMatch, userId: string) {
   const knightsMine = kv.placed
     ? { myPlaced: kv.placed[userId] ?? 0, opponentPlaced: kv.placed[them] ?? 0, myKnights: knightsOfPlayer(rt, match, userId) ?? [] }
     : {};
-  const wtMine = isWordTripEvent(event)
-    ? { ...wordTripView(rt, match), wtMine: wtPlayer(rt, match, userId)?.stops.map((s) => s.found) ?? [] }
-    : {};
+  const wtMine = wordTripMine(rt, match, userId);
   return {
     ...kv,
     ...knightsMine,
@@ -2258,7 +2255,7 @@ async function meOf(rt: Runtime, viewer: CupViewer) {
  * Everything one person's page draws, in one round trip. With `since` equal
  * to the current version, just that nothing changed.
  */
-export async function stateFor(viewer: CupViewer, askedId: unknown, since: unknown): Promise<string> {
+export async function stateFor(viewer: CupViewer, askedId: unknown, since: unknown, photosHeld?: unknown): Promise<string> {
   const now = new Date();
   const rt = await runtimeFor(viewer, askedId);
   if (!rt) {
@@ -2266,7 +2263,9 @@ export async function stateFor(viewer: CupViewer, askedId: unknown, since: unkno
   }
   // A lobby member's page is here now: the draw counts them as connected.
   noteSeen(rt, viewer.userId);
-  if (since !== undefined && String(since) === String(rt.rev)) {
+  // Word Trip: everyone's face address in one map, only when the page doesn't hold this version of it (`pv`).
+  const sendPhotos = isWordTripEvent(rt.event) && String(photosHeld ?? '') !== String(rt.photosRev ?? 0);
+  if (since !== undefined && String(since) === String(rt.rev) && !sendPhotos) {
     return JSON.stringify({ success: true, unchanged: true, version: rt.rev, serverNow: now });
   }
   const rosterCount = rt.event.phase === 'scheduled' ? (await rosterPreview(rt.event)).length : 0;
@@ -2277,6 +2276,10 @@ export async function stateFor(viewer: CupViewer, askedId: unknown, since: unkno
   const me = await meOf(rt, viewer);
   const extra: Record<string, unknown> = { current: common.current ?? undefined };
   if (rt.event.phase === 'done') extra.standings = standingsOf(rt);
+  if (sendPhotos) {
+    extra.photos = Object.fromEntries(rt.photos?.map ?? []);
+    extra.photosV = rt.photosRev ?? 0;
+  }
   if (cupHooks.state) {
     try {
       Object.assign(extra, await cupHooks.state(viewer, rt.event, common.current));

@@ -563,83 +563,72 @@ export function lobbyPresent(event: { lobbyJoined?: string[]; lobbySeen?: Record
 // ---------------------------------------------------------------- word trip
 
 /**
- * The Word Trip Tournament: both players get the same letters, the same
- * stops, in the same order (all fixed by the match's seed). A stop is one set
- * of letters for `stopSec` (the event's `roundSec`, 60 s); a match is 3 stops,
- * the final 5, with a short card between stops. Round 1 deals 5 letters, the
- * middle rounds 6, the semi-finals and the final 7. The server checks every
- * word (the dictionary, the stop's letters, once per stop) and scores it with
- * Word Trip's own scoring; the higher total wins at the end of the last stop.
- * A tie replays at once on new letters (up to `maxReplays`), then the better
- * seed. Nobody joins in the window: absent, as for every game; one player: they
- * play their stops alone (started at once) and go through.
+ * The Word Trip Tournament (27 Nov 2026): a match is one normal Word Trip
+ * run each, the same for both players (one seed: the same stops in the same
+ * order), played in the normal game itself (game-pages/word-trip.html, in the
+ * tournament page). Its rules, as that page plays them: one clock from 1:00;
+ * a word of 5 letters or more adds seconds (TIMEB), one with every letter 3
+ * more (FULL_TIME), up to MAX_ADDED in a run; points by length, half again if
+ * rare, FULL more for every letter, times the combo (×1 → ×MAXCOMBO for words
+ * within COMBO_WINDOW of the last); every letter used moves to the next stop
+ * a moment later; Skip moves on for SKIP_COST points. A player's run ends when
+ * their clock runs out; the higher final score wins, a tie replays at once on
+ * a new seed (up to `maxReplays`), then the better seed. Nobody joins: absent,
+ * as for every game; one player: they play their run alone and go through.
+ *
+ * The page sends every word it took (and every skip) with its stop and its
+ * time on the run's clock; the server plays them again here, against the same
+ * stops and lists (`WtBoards`, from the same page) and these rules, and the
+ * match is decided on the server's score, never the page's.
  */
 export const WORD_TRIP = 'word-trip';
-/** The card between two stops ("Stop 2 of 3"), in seconds. */
-export const WT_GAP_SEC = 4;
-/** After the last stop, how long a word sent in its last second is still taken. */
+/** After a player's clock should have run out, how long their last word is still taken (the trip here). */
 export const WT_GRACE_SEC = 3;
 /** A tie replays this many seconds after it is decided (both are on the page already). */
 export const WT_REPLAY_SEC = 8;
-/** Words that are not words, per player per stop, before the rest are ignored (no brute force). */
-export const WT_MAX_BAD = 60;
-/** How far a word's own time (the page's) may trail its arrival here: a combo is never bought by holding words back. */
-export const WT_LAG_MS = 3000;
+/** Words that are not taken, per run, before the rest are ignored (no brute force). */
+export const WT_MAX_BAD = 120;
+/** How far a word's own time (the run's clock) may trail its arrival here: words held back (offline, or to fake a combo) count from then. */
+export const WT_LAG_SEC = 8;
+/** A word's time may run ahead of its arrival by this much (the page's clock and the server's are a little apart). */
+export const WT_AHEAD_SEC = 1.5;
+/** Two words closer than this are not a person swiping. */
+export const WT_MIN_GAP_SEC = 0.3;
+/** The next stop shows this long after an all-letter word (WT_PAUSE) or a skip (WT_SKIP_PAUSE), less the page's quicker reduced-motion pause. */
+export const WT_PAUSE_SEC = 0.5;
+export const WT_SKIP_PAUSE_SEC = 0.7;
+const WT_PAUSE_SLACK_SEC = 0.45;
 
-/** Word Trip's scoring (game-pages/word-trip.html): by length, half again if rare, 150 more for every letter, times the combo. */
-export const WT_VAL: Record<number, number> = { 3: 30, 4: 50, 5: 80, 6: 120, 7: 170, 8: 230 };
-export const WT_FULL = 150;
-export const WT_COMBO_WINDOW_MS = 8000;
-export const WT_MAX_COMBO = 3;
-export const wtWorth = (len: number, rare: boolean, full: boolean, combo: number) =>
-  (Math.round((WT_VAL[len] ?? 0) * (rare ? 1.5 : 1)) + (full ? WT_FULL : 0)) * combo;
-
-/** Letters per stop in a round: semi-finals and final 7, round 1 5, every other round 6. */
-export function lettersFor(round: number, totalRounds: number): 5 | 6 | 7 {
-  if (round === totalRounds || round === totalRounds - 1) return 7;
-  if (round === 1) return 5;
-  return 6;
+/** Word Trip's own numbers (read from its page; these are what it says today). */
+export interface WtRules {
+  ROUND: number;
+  VAL: Record<number, number>;
+  FULL: number;
+  COMBO_WINDOW: number;
+  MAXCOMBO: number;
+  TIMEB: Record<number, number>;
+  FULL_TIME: number;
+  MAX_ADDED: number;
+  SKIP_COST: number;
 }
+export const WT_DEFAULT_RULES: WtRules = {
+  ROUND: 60,
+  VAL: { 3: 30, 4: 50, 5: 80, 6: 120, 7: 170, 8: 230 },
+  FULL: 150,
+  COMBO_WINDOW: 8,
+  MAXCOMBO: 3,
+  TIMEB: { 5: 2, 6: 3, 7: 4, 8: 5 },
+  FULL_TIME: 3,
+  MAX_ADDED: 30,
+  SKIP_COST: 100,
+};
+/** What a word pays: Word Trip's worthOf. */
+export const wtWorth = (r: WtRules, len: number, rare: boolean, full: boolean, combo: number) =>
+  (Math.round((r.VAL[len] ?? 0) * (rare ? 1.5 : 1)) + (full ? r.FULL : 0)) * combo;
+/** The longest a run can last, in seconds: the clock and every second it can earn. */
+export const wtLongestSec = (r: WtRules) => r.ROUND + r.MAX_ADDED;
 
-/** Stops in a match: the final 5, every other match 3. */
-export const stopsFor = (round: number, totalRounds: number) => (round === totalRounds ? 5 : 3);
-
-/** A match's playing time, from its start to the end of its last stop, in seconds. */
-export const wtPlaySec = (stops: number, stopSec: number) => stops * stopSec + Math.max(0, stops - 1) * WT_GAP_SEC;
-
-/** Stop `k`'s window from the match's start: [from, to) in ms. */
-export function stopWindow(startAt: Date, k: number, stopSec: number): { from: number; to: number } {
-  const from = at(startAt) + k * (stopSec + WT_GAP_SEC) * 1000;
-  return { from, to: from + stopSec * 1000 };
-}
-
-/** The stop on now (0-based), or -1 before the first, or `stops` after the last; `gap` when between two. */
-export function stopAt(startAt: Date, now: Date, stops: number, stopSec: number): { k: number; gap: boolean } {
-  const t = now.getTime() - at(startAt);
-  if (!(t >= 0)) return { k: -1, gap: false };
-  const span = (stopSec + WT_GAP_SEC) * 1000;
-  const k = Math.floor(t / span);
-  const gap = t - k * span >= stopSec * 1000;
-  if (k >= stops || (k === stops - 1 && gap)) return { k: stops, gap: false };
-  return { k, gap };
-}
-
-/** The bank (content/word-trip-cup.json, made by docs/word-trip-cup/gen_bank.mjs): space-separated lists. */
-export interface WordTripBankFile {
-  v: number;
-  words: string;
-  rare: string;
-  stops: Record<string, string[]>;
-}
-export interface WordTripBank {
-  common: Set<string>;
-  rare: Set<string>;
-  stops: Record<string, string[]>;
-  /** Never valid, whatever the lists say (the lists already leave them out). */
-  blocked: Set<string>;
-}
-
-/** Offensive words, refused even if a list ever held one (the bank's generator leaves the same out). */
+/** Offensive words: never a word in the tournament, on the page or here, whatever Word Trip's lists hold. */
 export const WT_BLOCKED = new Set(
   ('anal anus arse arses ass asses balls bastard bitch bitches boner boob boobs bugger bum bums butt clit cock cocks coon crap cum cunt damn dick dicks ' +
     'dildo dyke fag fags fart farts fuck gook homo honky hooker horny hump jizz kike kinky milf nazi negro nigger nipple nude nudes orgasm orgy paki ' +
@@ -647,27 +636,16 @@ export const WT_BLOCKED = new Set(
     'spic sperm spunk tit tits titty turd twat vagina wank whore wop').split(' '),
 );
 
-export function wordTripBank(file: WordTripBankFile): WordTripBank {
-  return {
-    common: new Set(file.words.split(' ').filter(Boolean)),
-    rare: new Set(file.rare.split(' ').filter(Boolean)),
-    stops: file.stops,
-    blocked: WT_BLOCKED,
-  };
+/** One stop, as the page deals it: its letters, and the words it takes (common and rare, never a blocked one). */
+export interface WtStop {
+  g: number;
+  len: number;
+  letters: string;
+  words: Set<string>;
+  rare: Set<string>;
 }
-
-/** Word Trip's own seeded generator (mulberry32), so a seed means the same letters wherever it is dealt. */
-export function wtRng(seed: number): () => number {
-  let a = seed | 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const gcd = (x: number, y: number): number => (y ? gcd(y, x % y) : x);
+/** The stops of a seed: Word Trip's own `boardAt(seed, g)`. */
+export type WtBoards = (seed: number, g: number) => WtStop;
 
 /** Whether `word` can be made from `letters`, each letter used at most as often as it is there. */
 export function canSpell(word: string, letters: string): boolean {
@@ -681,77 +659,6 @@ export function canSpell(word: string, letters: string): boolean {
   return true;
 }
 
-export interface WordTripStop {
-  /** The letters as dealt (never spelling an all-letter word). */
-  letters: string;
-  /** The stop's letters, sorted (its key in the bank). */
-  key: string;
-}
-
-/**
- * A match's stops: `count` different letter sets of `len` letters, from the
- * bank, by the match's seed (a walk with a stride coprime to the list, so no
- * set comes twice), each dealt in an order fixed by the seed and the stop.
- */
-export function wordTripStops(bank: Pick<WordTripBank, 'stops' | 'common' | 'rare'>, seed: number, len: number, count: number): WordTripStop[] {
-  const list = bank.stops[String(len)] ?? [];
-  const n = list.length;
-  if (!n) throw new Error(`No ${len}-letter Word Trip stops`);
-  const r0 = wtRng(Math.trunc(seed) * 7919 + len * 104729 + 13);
-  const start = Math.floor(r0() * n);
-  let stride = n > 1 ? 1 + Math.floor(r0() * (n - 1)) : 1;
-  while (n > 1 && gcd(stride, n) !== 1) stride = (stride % (n - 1)) + 1;
-  const out: WordTripStop[] = [];
-  for (let k = 0; k < count; k += 1) {
-    const key = list[(start + k * stride) % n];
-    const r = wtRng(Math.trunc(seed) * 15485863 + k * 32452843 + 7);
-    const t = key.split('');
-    for (let i = t.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(r() * (i + 1));
-      [t[i], t[j]] = [t[j], t[i]];
-    }
-    const full = (w: string) => bank.common.has(w) || bank.rare.has(w);
-    for (let turn = 0; turn < len && full(t.join('')); turn += 1) t.push(t.shift()!);
-    out.push({ letters: t.join(''), key });
-  }
-  return out;
-}
-
-/** How many common words a stop's letters make (the page's "3 of 14 words"). */
-export function commonCount(bank: Pick<WordTripBank, 'common'>, letters: string): number {
-  let n = 0;
-  for (const w of bank.common) if (w.length <= letters.length && canSpell(w, letters)) n += 1;
-  return n;
-}
-
-/** A new seed for a replay whose first stop is other letters than the tied game's. */
-export function newWordTripSeed(bank: Pick<WordTripBank, 'stops' | 'common' | 'rare'>, oldSeed: number, len: number, fresh: () => number): number {
-  const was = wordTripStops(bank, oldSeed, len, 1)[0].key;
-  for (let i = 0; i < 50; i += 1) {
-    const seed = fresh();
-    if (wordTripStops(bank, seed, len, 1)[0].key !== was) return seed;
-  }
-  return oldSeed + 1;
-}
-
-/** One player's stop as the server keeps it: the words taken (with what each paid), the combo, and the junk sent. */
-export interface WtStopPlay {
-  /** [word, points] in the order found. */
-  found: [string, number][];
-  score: number;
-  combo: number;
-  /** When the combo runs out, in ms from the stop's start. */
-  comboUntil: number;
-  /** The last word's time, in ms from the stop's start (never goes back). */
-  lastT: number;
-  bad: number;
-}
-export const emptyStop = (): WtStopPlay => ({ found: [], score: 0, combo: 1, comboUntil: 0, lastT: 0, bad: 0 });
-
-export type WtVerdict =
-  | { ok: true; word: string; pts: number; rare: boolean; full: boolean; combo: number; stopScore: number }
-  | { ok: false; word: string; reason: 'short' | 'letters' | 'unknown' | 'again' | 'limit' | 'junk' };
-
 /** A word as sent: lower case a-z only, else null. */
 export function parseWord(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
@@ -759,65 +666,138 @@ export function parseWord(raw: unknown): string | null {
   return /^[a-z]{1,12}$/.test(w) ? w : null;
 }
 
-/** The time a word counts at, in ms from its stop's start: the page's own, but never later than it arrived, nor more than WT_LAG_MS before. */
-export function wordTime(claimed: unknown, arrivedMs: number, lastT: number): number {
-  const c = typeof claimed === 'number' && Number.isFinite(claimed) ? claimed : arrivedMs;
-  return Math.max(lastT, Math.min(arrivedMs, Math.max(c, arrivedMs - WT_LAG_MS)));
+/** A run's event, as kept: a word ['w', stop, word, t, pts] or a skip ['s', stop, t]; t in seconds on the run's clock. */
+export type WtEvent = ['w', number, string, number, number] | ['s', number, number];
+
+/** A player's run as the server has played it. */
+export interface WtRun {
+  /** The stop they are on. */
+  gi: number;
+  score: number;
+  combo: number;
+  comboUntil: number;
+  /** Words taken in the whole run (the combo needs one before it). */
+  total: number;
+  /** Seconds the clock has earned. */
+  added: number;
+  /** The last word's time. */
+  lastT: number;
+  /** When the stop they are on showed (seconds). */
+  stopFrom: number;
+  /** Words taken per stop, [word, points]. */
+  found: [string, number][][];
+  skips: number;
+  bad: number;
+  events: WtEvent[];
+}
+export const newRun = (): WtRun => ({ gi: 0, score: 0, combo: 1, comboUntil: 0, total: 0, added: 0, lastT: 0, stopFrom: 0, found: [[]], skips: 0, bad: 0, events: [] });
+/** When the run's clock runs out, in seconds from its start. */
+export const runEndsSec = (run: Pick<WtRun, 'added'> | undefined, r: WtRules) => r.ROUND + (run?.added ?? 0);
+
+export type WtVerdict =
+  | { ok: true; word: string; pts: number; rare: boolean; full: boolean; combo: number; added: number; gi: number; score: number }
+  | { ok: false; word: string; reason: 'short' | 'letters' | 'unknown' | 'again' | 'limit' | 'junk' | 'stop' | 'time' | 'early' | 'fast' };
+
+/** The time a word counts at: the run's clock as the page sent it, never ahead of its arrival (`arrived`, the same clock here) nor more than WT_LAG_SEC behind it. */
+export function wordTime(claimed: unknown, arrived: number): number {
+  const c = typeof claimed === 'number' && Number.isFinite(claimed) ? claimed : arrived;
+  return Math.max(0, Math.min(arrived + WT_AHEAD_SEC, Math.max(c, arrived - WT_LAG_SEC)));
 }
 
 /**
- * Checks one word on a stop and, when it counts, plays it (mutates `stop`):
- * 3 letters or more, made from the stop's letters (each at most as often as
- * dealt), in the dictionary (common or rare, never a blocked one), and not
- * already found on this stop. Points as Word Trip: by length, ×1.5 rare, +150
- * for every letter, times the combo (×1 → ×3 for words within 8 s).
+ * One word of a run, checked and played (mutates `run` when it counts): on
+ * the stop the run is on, inside the run's clock, not before that stop showed,
+ * not faster than a person swipes; 3 letters or more, from the stop's letters
+ * (each at most as often as dealt), in its lists (never a blocked word), not
+ * already found on that stop. Then Word Trip's points, combo and seconds; every
+ * letter used moves the run to the next stop.
  */
-export function playWord(stop: WtStopPlay, letters: string, raw: unknown, tMs: number, bank: Pick<WordTripBank, 'common' | 'rare' | 'blocked'>): WtVerdict {
+export function playRunWord(run: WtRun, stop: WtStop, g: unknown, raw: unknown, t: number, r: WtRules): WtVerdict {
   const word = parseWord(raw);
   if (!word) return { ok: false, word: typeof raw === 'string' ? raw.slice(0, 12) : '', reason: 'junk' };
-  if (stop.bad >= WT_MAX_BAD) return { ok: false, word, reason: 'limit' };
-  const miss = (reason: 'short' | 'letters' | 'unknown' | 'again'): WtVerdict => {
-    if (reason !== 'again') stop.bad += 1;
+  if (run.bad >= WT_MAX_BAD) return { ok: false, word, reason: 'limit' };
+  const miss = (reason: 'short' | 'letters' | 'unknown' | 'again' | 'stop' | 'time' | 'early' | 'fast'): WtVerdict => {
+    run.bad += 1;
     return { ok: false, word, reason };
   };
+  if (g !== run.gi || stop.g !== run.gi) return miss('stop');
+  if (t > runEndsSec(run, r) + 0.75) return miss('time');
+  if (t < run.stopFrom - WT_PAUSE_SLACK_SEC) return miss('early');
+  const at = Math.max(t, run.lastT);
+  if (run.total > 0 && at - run.lastT < WT_MIN_GAP_SEC) return miss('fast');
   if (word.length < 3) return miss('short');
-  if (!canSpell(word, letters)) return miss('letters');
-  if (stop.found.some(([w]) => w === word)) return miss('again');
-  if (bank.blocked.has(word)) return miss('unknown');
-  const common = bank.common.has(word);
-  const rare = !common && bank.rare.has(word);
+  if (!canSpell(word, stop.letters)) return miss('letters');
+  if ((run.found[run.gi] ?? []).some(([w]) => w === word)) return miss('again');
+  if (WT_BLOCKED.has(word)) return miss('unknown');
+  const common = stop.words.has(word);
+  const rare = !common && stop.rare.has(word);
   if (!common && !rare) return miss('unknown');
-  const t = Math.max(stop.lastT, tMs);
-  if (stop.found.length > 0 && t <= stop.comboUntil) stop.combo = Math.min(WT_MAX_COMBO, stop.combo + 1);
-  else stop.combo = 1;
-  stop.comboUntil = t + WT_COMBO_WINDOW_MS;
-  stop.lastT = t;
-  const full = word.length === letters.length;
-  const pts = wtWorth(word.length, rare, full, stop.combo);
-  stop.found.push([word, pts]);
-  stop.score += pts;
-  return { ok: true, word, pts, rare, full, combo: stop.combo, stopScore: stop.score };
+  if (at <= run.comboUntil && run.total > 0) run.combo = Math.min(r.MAXCOMBO, run.combo + 1);
+  else run.combo = 1;
+  run.comboUntil = at + r.COMBO_WINDOW;
+  run.lastT = at;
+  const full = word.length === stop.len;
+  const pts = wtWorth(r, word.length, rare, full, run.combo);
+  run.score += pts;
+  run.total += 1;
+  const tb = Math.min(r.MAX_ADDED - run.added, (r.TIMEB[word.length] ?? 0) + (full ? r.FULL_TIME : 0));
+  if (tb > 0) run.added += tb;
+  (run.found[run.gi] ??= []).push([word, pts]);
+  run.events.push(['w', run.gi, word, at, pts]);
+  const combo = run.combo;
+  if (full) {
+    run.gi += 1;
+    run.stopFrom = at + WT_PAUSE_SEC;
+    run.found[run.gi] = [];
+  }
+  return { ok: true, word, pts, rare, full, combo, added: run.added, gi: run.gi, score: run.score };
 }
 
-/** A player's total over their stops. */
-export const wtTotal = (stops: ({ score: number } | undefined)[] | undefined) => (stops ?? []).reduce((sum, s) => sum + (s?.score ?? 0), 0);
+/** A skip: only on the stop the run is on, inside its clock, with SKIP_COST points to pay. */
+export function playRunSkip(run: WtRun, g: unknown, t: number, r: WtRules): { ok: true; gi: number; score: number } | { ok: false; reason: 'stop' | 'time' | 'points' } {
+  if (g !== run.gi) return { ok: false, reason: 'stop' };
+  if (t > runEndsSec(run, r) + 0.75) return { ok: false, reason: 'time' };
+  if (run.score < r.SKIP_COST) return { ok: false, reason: 'points' };
+  const at = Math.max(t, run.lastT);
+  run.score -= r.SKIP_COST;
+  run.skips += 1;
+  run.lastT = at;
+  run.events.push(['s', run.gi, at]);
+  run.gi += 1;
+  run.stopFrom = at + WT_SKIP_PAUSE_SEC;
+  run.found[run.gi] = [];
+  return { ok: true, gi: run.gi, score: run.score };
+}
+
+/** A run back from its events (as kept on the match), played again from the start: the same checks, the same result. */
+export function replayRun(events: unknown, boards: WtBoards, seed: number, r: WtRules): WtRun {
+  const run = newRun();
+  if (!Array.isArray(events)) return run;
+  for (const e of events) {
+    if (!Array.isArray(e)) continue;
+    if (e[0] === 'w') playRunWord(run, boards(seed, run.gi), e[1], e[2], Number(e[3]) || 0, r);
+    else if (e[0] === 's') playRunSkip(run, e[1], Number(e[2]) || 0, r);
+  }
+  return run;
+}
 
 /**
- * A word trip match's next step. `match.live[p].score` is each player's server
- * total (the runtime's, merged in). Pure, like `nextStep`.
- *   open:  both in → start; window over → one in: solo, started at once
- *          (`startAt` set with it); nobody: the better seed, absent.
- *   live:  at the end of the last stop (+ grace): the higher total; equal
- *          replays (up to `maxReplays`), then the better seed.
- *   solo:  at the end of their stops (+ grace) the lone player goes through,
- *          with their score against 0, whether they stayed or not.
+ * A word trip match's next step. `match.live[p]` is each player's run as the
+ * server played it (`score`, and `wtAdded`, the seconds their clock earned).
+ * Pure, like `nextStep`.
+ *   open:  both in → start; window over → one in: solo, started at once;
+ *          nobody: the better seed, absent.
+ *   live:  once both clocks have run out (each player's 1:00 + what it earned,
+ *          + a moment for the last word): the higher score; equal replays (up to
+ *          `maxReplays`), then the better seed.
+ *   solo:  once the lone player's clock has run out, they go through.
  */
-export function nextWordTripStep(match: CupMatch, t: MatchTiming, now: Date, seedOf: (userId: string) => number, stops: number): MatchStep {
+export function nextWordTripStep(match: CupMatch, t: MatchTiming, now: Date, seedOf: (userId: string) => number, r: WtRules = WT_DEFAULT_RULES): MatchStep {
   const nowMs = now.getTime();
   const [a, b] = match.players;
   const absent = (): MatchStep => ({ kind: 'decide', winnerId: betterSeed(match, seedOf), decidedBy: 'absent', result: { [a]: 0, [b]: 0 } });
-  const endsAt = (startAt: Date) => at(startAt) + (wtPlaySec(stops, t.roundSec) + WT_GRACE_SEC) * 1000;
   const scoreOf = (p: string) => match.live?.[p]?.score ?? 0;
+  const over = (p: string) => !!match.startAt && nowMs >= at(match.startAt) + (r.ROUND + (match.live?.[p]?.wtAdded ?? 0) + WT_GRACE_SEC) * 1000;
   const soloNow = (userId: string): MatchStep => ({ kind: 'solo', userId, soloUntil: new Date(nowMs), startAt: new Date(nowMs + t.countdownSec * 1000) });
   switch (match.status) {
     case 'open': {
@@ -829,7 +809,7 @@ export function nextWordTripStep(match: CupMatch, t: MatchTiming, now: Date, see
     }
     case 'live': {
       if (!match.startAt) return { kind: 'start', startAt: new Date(nowMs + t.countdownSec * 1000) };
-      if (nowMs < endsAt(match.startAt)) return { kind: 'none' };
+      if (!over(a) || !over(b)) return { kind: 'none' };
       const result = { [a]: scoreOf(a), [b]: scoreOf(b) };
       if (result[a] === result[b]) {
         if ((match.history?.length ?? 0) < t.maxReplays) return { kind: 'replay', scores: result };
@@ -842,7 +822,7 @@ export function nextWordTripStep(match: CupMatch, t: MatchTiming, now: Date, see
       if (!lone) return absent();
       const other = lone === a ? b : a;
       if (!match.startAt) return soloNow(lone);
-      if (nowMs < endsAt(match.startAt)) return { kind: 'none' };
+      if (!over(lone)) return { kind: 'none' };
       return { kind: 'decide', winnerId: lone, decidedBy: 'solo', result: { [lone]: scoreOf(lone), [other]: 0 } };
     }
     default:
@@ -850,15 +830,13 @@ export function nextWordTripStep(match: CupMatch, t: MatchTiming, now: Date, see
   }
 }
 
-/** Whether a word from `userId` on stop `k` is taken now: their match, in play, that stop on (with a little slack for the trip here). */
-export function mayPlayWord(match: CupMatch, userId: string, k: unknown, stops: number, stopSec: number, now: Date): Refusal | { ok: true; k: number } {
+/** Whether a word (or a skip) from `userId` is taken now: their match, in play, their run's clock not yet out (+ a moment). */
+export function mayPlayWord(match: CupMatch, userId: string, run: Pick<WtRun, 'added'> | undefined, now: Date, r: WtRules = WT_DEFAULT_RULES): Refusal | { ok: true; arrived: number } {
   if (!match.players.includes(userId)) return no(403, 'This is not your match');
   if ((match.status !== 'live' && match.status !== 'solo') || !match.startAt) return no(409, 'Your match is not on');
   if (match.status === 'solo' && !match.joined?.[userId]) return no(409, 'Your match is not on');
-  if (typeof k !== 'number' || !Number.isInteger(k) || k < 0 || k >= stops) return no(400, 'Which stop?');
-  const w = stopWindow(match.startAt, k, stopSec);
-  const nowMs = now.getTime();
-  if (nowMs < w.from - 1000) return no(409, 'That stop has not started');
-  if (nowMs > w.to + 2000) return no(409, 'Time is up on that stop');
-  return { ok: true, k };
+  const arrived = (now.getTime() - at(match.startAt)) / 1000;
+  if (arrived < -2) return no(409, 'Your run has not started');
+  if (arrived > runEndsSec(run, r) + WT_GRACE_SEC + WT_LAG_SEC) return no(409, 'Your time is up');
+  return { ok: true, arrived };
 }

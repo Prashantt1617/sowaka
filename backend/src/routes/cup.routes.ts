@@ -12,6 +12,7 @@ import {
   stateHandler,
   thumbHandler,
   wordHandler,
+  wordTripGameHandler,
 } from '../controllers/cup.controller';
 // Importing the bets module also fills the engine's `cupHooks` (settle on decide, ride on replay, refund on void, bets in state).
 import { myBetsHandler, placeBetHandler, voidMatchHandler } from '../services/cup-bets.service';
@@ -24,6 +25,7 @@ import { myBetsHandler, placeBetHandler, voidMatchHandler } from '../services/cu
 export const cupRouter = Router();
 cupRouter.get('/api/state', stateHandler);
 cupRouter.get('/api/entrants', entrantsHandler);
+cupRouter.get('/api/wordtrip-game', wordTripGameHandler);
 cupRouter.get('/api/photo/:eventId/:userId', photoHandler);
 cupRouter.get('/api/thumb/:eventId/:userId/:v/:sig', thumbHandler);
 cupRouter.post('/api/lobby', lobbyHandler);

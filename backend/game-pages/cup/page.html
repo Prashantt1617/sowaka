@@ -399,6 +399,8 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
   var progress = store('cup-live') || {};
   function keepLast(map, n) { var k = Object.keys(map); k.slice(0, Math.max(0, k.length - n)).forEach(function (x) { delete map[x]; }); return map; }
   var seeds = {};
+  /* Word Trip: the faces' map version this page holds (the state sends the map only when it changes). */
+  var photosV = null;
 
   function poll() {
     clearTimeout(pollT);
@@ -409,6 +411,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     var q = [];
     if (eventId) q.push('event=' + encodeURIComponent(eventId));
     if (S && version != null) q.push('since=' + encodeURIComponent(version));
+    if (photosV != null) q.push('pv=' + encodeURIComponent(photosV));
     api('/state' + (q.length ? '?' + q.join('&') : '')).then(function (j) {
       var t1 = Date.now(), sn = ms(j.serverNow);
       if (isFinite(sn)) {
@@ -417,6 +420,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
       }
       if (!j.unchanged) {
         S = j; version = j.version;
+        if (j.photos) { Object.keys(j.photos).forEach(function (k) { if (j.photos[k]) photos[k] = j.photos[k]; }); photosV = j.photosV; }
         indexPhotos(j);
         if (j.event && j.event.name) { var nm = cupName(); if (nm !== lastName) { lastName = nm; store('cup-name', { id: j.event.id, n: nm }); } if (document.title !== nm) document.title = nm; }
         if (j.event && j.event.id) eventId = j.event.id;
@@ -600,24 +604,26 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     });
     return WT;
   }
-  /* When the round being played should be over: its last match's end (start + stops + the cards between + a few seconds). */
+  /* When the round being played should be over: the last clock to run out (each player's 1:00 plus what it earned,
+     as the server has it; the longest a run can be, 1:30, for a match not started yet), and a few seconds. */
   function wtRoundEnds(n) {
     var r = roundOf(n), out = NaN;
     if (!r || r.kind === 'sequential') return NaN;
     r.matches.forEach(function (m) {
-      var w = m.wt || {}, play = ((w.stops || 3) * (w.stopSec || roundSec()) + ((w.stops || 3) - 1) * (w.gapSec || 4) + 4) * 1000, end;
+      var end = NaN;
       if (m.status === 'done') return;
-      if (m.startAt) end = ms(m.startAt) + play;
-      else if (m.deadlineAt) end = ms(m.deadlineAt) + ((ev().countdownSec || 4) * 1000) + play;
-      else return;
+      if (m.wtEnds) Object.keys(m.wtEnds).forEach(function (k) { var v = Number(m.wtEnds[k]); if (!(v <= end)) end = v; });
+      else if (m.startAt) end = ms(m.startAt) + 90000;
+      else if (m.deadlineAt) end = ms(m.deadlineAt) + ((ev().countdownSec || 5) * 1000) + 90000;
+      if (!isFinite(end)) return;
+      end += 4000;
       if (!(end <= out)) out = end;
     });
     return out;
   }
   function wtBest(m) {
-    var mm = S.me.match, list = mm && mm.id === m.id && Array.isArray(mm.wtMine) ? mm.wtMine : [], best = '';
-    list.forEach(function (stop) { (stop || []).forEach(function (x) { if (x && x[0] && x[0].length > best.length) best = x[0]; }); });
-    return best;
+    var mm = S.me.match;
+    return mm && mm.id === m.id && mm.wtMe && mm.wtMe.best ? mm.wtMe.best : '';
   }
   function viewMeWordTrip() {
     var V = wtViews(); if (!V) return null;
@@ -647,10 +653,12 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     return null;
   }
   function viewHowWordTrip() {
-    var e = ev(), sec = e.roundSec || 60, w = e.startWindowSec || 40;
-    var rules = [['Same letters for both', 'You and your opponent get the same letters, in the same order.'], ['3 sets, 1 minute each', 'Each match has 3 sets of letters (the final has 5). ' + (sec % 60 ? sec + ' seconds' : sec / 60 + ' minute') + ' for each set.'],
-      ['Make words', 'Swipe or tap the letters. 3 letters or more. Longer words score more; a word with every letter scores the most.'], ['Quick words, more points', 'Words within 8 seconds of each other score ×2, then ×3.'],
-      ['Letters get harder', 'Round 1 has 5 letters. Then 6. The semi-finals and the final have 7.'], ['More points wins', 'A tie is played again on new letters.'],
+    var w = ev().startWindowSec || 40;
+    var rules = [['The normal Word Trip', 'Each match is one Word Trip run, exactly as in the Games tab: swipe the letters into words, 3 letters or more.'],
+      ['Same letters for both', 'You and your opponent get the same letters, in the same order.'],
+      ['1:00 on the clock', 'Words of 5 letters or more add seconds; a word with every letter adds the most and takes you to the next letters.'],
+      ['Quick words, more points', 'Words within 8 seconds of each other score ×2, then ×3. Stuck? Skip costs 100 points.'],
+      ['More points wins', 'When both clocks run out, the higher score goes on. A tie is played again on new letters.'],
       ['Be there', 'Your match opens with a push. If your opponent isn’t there in ' + w + ' seconds, you play alone and go to the next round.']];
     return '<section class="wt" aria-label="How to play">' + (wtViews() ? wtViews().tiles('words', true) : '') + rules.map(function (r) { return '<div class="wt-box"><b>' + esc(r[0]) + '</b><span>' + esc(r[1]) + '</span></div>'; }).join('') +
       '<button type="button" class="wt-btn" data-act="tab" data-v="me">Back</button></section>';
@@ -1356,35 +1364,51 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
       ui.err = 'The game didn\'t start. Close this screen and open it again.';
     }
   }
-  /* A Word Trip match (cup/play-wordtrip.js): the server scores every word, so there is no final to send. The match
-     screen opens a moment before the start and closes when the match is decided (the result is the page's). Someone on
-     this screen when their match opens is joined at once (they asked to stay here); the button is there if that fails. */
-  var wtWake = 0;
+  /* A Word Trip match (cup/play-wordtrip.js): the normal game, run with the match's seed; the server scores every word,
+     so there is no final to send. The match screen opens a few seconds before the start (the game loads behind its
+     countdown) and closes when the match is decided (the result is the page's). Someone on this screen when their match
+     opens is joined at once (they asked to stay here); the button is there if that fails. */
+  var wtWake = 0, wtGame = null;
+  try { wtGame = JSON.parse(localStorage.getItem('cup-wt-game') || 'null'); } catch (e) {}
+  /* The normal game's page: kept on the phone by version, asked for again only when the server has another. */
+  function wtGetGame() {
+    return api('/wordtrip-game?v=' + encodeURIComponent((wtGame && wtGame.v) || '')).then(function (j) {
+      if (j && j.same && wtGame && wtGame.html) return wtGame.html;
+      if (!j || typeof j.html !== 'string') throw new Error('no game');
+      wtGame = { v: j.version, html: j.html };
+      try { localStorage.setItem('cup-wt-game', JSON.stringify(wtGame)); } catch (e) {}
+      return j.html;
+    });
+  }
   function syncWordTrip() {
     var m = S.me.match, key = m.id + ':' + (m.attempt || 0), start = ms(m.startAt), P = window.CupWordTrip, e = ev();
     if (m.status === 'open' && !m.joined && m.round === e.round && S.me.alive && !ui.busy && ui.wtJoin !== key && document.visibilityState === 'visible') {
       ui.wtJoin = key; setTimeout(function () { matchAction('join'); }, 0);
     }
-    var w = m.wt || {}, playMs = ((w.stops || 3) * (w.stopSec || roundSec()) + ((w.stops || 3) - 1) * (w.gapSec || 4)) * 1000;
-    var live = (m.status === 'live' || m.status === 'solo') && isFinite(start);
-    var want = live && now() >= start - 1500 && now() < start + playMs + 60000;
+    var live = (m.status === 'live' || m.status === 'solo') && isFinite(start) && m.boardSeed;
+    var ends = m.wtMe && m.wtMe.endsAt ? Number(m.wtMe.endsAt) : start + 90000;
+    var want = live && now() >= start - 6000 && now() < Math.max(ends, start + 90000) + 60000;
     clearTimeout(wtWake);
-    if (live && now() < start - 1500) wtWake = setTimeout(render, Math.max(50, start - 1500 - now()));
+    if (live && now() < start - 6000) wtWake = setTimeout(render, Math.max(50, start - 6000 - now()));
     if (ui.playing && (ui.playing !== key || !want)) stopPlay();
     if (!want || ui.playing === key || !P) return;
     ui.playing = key; $play.hidden = false; $play.innerHTML = '';
     var mount = document.createElement('div'); mount.className = 'play-mount'; $play.appendChild(mount);
     var matchId = m.id, opp = m.opponent || {};
     function latest() { var mm = S && S.me && S.me.match; return mm && mm.id === matchId ? mm : null; }
+    var post = function (body) { return api('/matches/' + encodeURIComponent(matchId) + '/word', { method: 'POST', body: body }); };
     try {
       ui.handle = P.start({
-        mount: mount, startAt: start, serverNow: now(), clockOffset: offset, attempt: m.attempt || 0,
-        wt: function () { var mm = latest(); return (mm && mm.wt) || w; },
+        mount: mount, startAt: start, serverNow: now(), clockOffset: offset, attempt: m.attempt || 0, seed: m.boardSeed,
         me: { name: S.me.name, photoUrl: photoOf(S.me) || null },
         opponent: { name: opp.name || 'Your opponent', photoUrl: photoOf(opp) || null }, solo: m.status === 'solo',
-        resume: m.wtMine || null,
-        onWord: function (stop, word, t) { return api('/matches/' + encodeURIComponent(matchId) + '/word', { method: 'POST', body: { stop: stop, word: word, t: t } }); },
-        getOpponent: function () { var mm = latest(); return mm ? { score: mm.opponentLive, words: mm.wtWords && opp.userId ? mm.wtWords[opp.userId] : null } : null; },
+        /* Reopened after the run began, with words already in: the run can't be picked up again. */
+        played: !!(m.wtMe && m.wtMe.words > 0),
+        getGame: wtGetGame,
+        onWord: function (stop, word, t) { return post({ stop: stop, word: word, t: t }); },
+        onSkip: function (stop, t) { return post({ skip: true, stop: stop, t: t }); },
+        getOpponent: function () { var mm = latest(); return mm && mm.wtOpp ? mm.wtOpp : null; },
+        getMine: function () { var mm = latest(); return mm && mm.wtMe ? mm.wtMe : null; },
         online: function () { return !netFail; }
       });
     } catch (err) {

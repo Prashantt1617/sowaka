@@ -51,8 +51,6 @@
     }
     function tiles(word, gold, sm) { return '<div class="wt-tiles' + (sm ? ' sm' : '') + '" aria-label="' + esc(word) + '">' + String(word).toUpperCase().split('').map(function (c, i) { return '<span' + (gold && i === word.length - 1 ? ' class="g"' : '') + '>' + esc(c) + '</span>'; }).join('') + '</div>'; }
     function e() { return H.ev(); }
-    function lettersOf(round) { var t = (e().rounds || []).length; return round === t || round === t - 1 ? 7 : round === 1 ? 5 : 6; }
-    function stopsOf(round) { return round === (e().rounds || []).length ? 5 : 3; }
     function roundKick(m) { var t = (e().rounds || []).length, r = H.roundOf(m.round); return r && r.kind === 'sequential' ? String(r.label).toUpperCase() : 'ROUND ' + m.round + ' OF ' + t; }
     function how() { return '<button type="button" class="wt-a" data-act="tab" data-v="how">How to play</button>'; }
     function wallet() { var w = e().wallet; return w ? num(w) : ''; }
@@ -97,8 +95,8 @@
         '<div class="wt-pl">' + face(opp, oppHere ? '' : 'away', 'v') + '<b' + (oppHere ? '' : ' class="dim"') + '>' + esc(opp ? first(opp.name) : 'To be decided') + '</b>' + (oppHere ? '<span class="wt-st"><i></i>Ready</span>' : '<span class="wt-st no">Not here yet</span>') + '</div></div>';
     }
     function facts(m) {
-      var st = stopsOf(m.round), sec = (e().roundSec || 60);
-      return '<div class="wt-facts"><div><b>' + st + '</b><span>sets of letters</span></div><div><b>' + (sec % 60 ? sec + ' s' : sec / 60 + ' min') + '</b><span>for each set</span></div><div><b>Top</b><span>points wins</span></div></div>';
+      void m;
+      return '<div class="wt-facts"><div><b>1:00</b><span>on the clock</span></div><div><b>+ secs</b><span>for long words</span></div><div><b>Top</b><span>points wins</span></div></div>';
     }
     /* Your match: drawn, opening, starting, or on (the match itself is the overlay). */
     function match(m) {
@@ -119,7 +117,7 @@
         head = '<div style="display:flex;flex-direction:column;align-items:center;gap:10px"><span style="font-size:17px;font-weight:800">Your match is on.</span><button type="button" class="wt-btn" data-act="reopen">Back to my match</button></div>';
       } else head = '<div style="display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:15px;color:#A9A3CC">Starts in</span><span class="wt-big wt-xl">' + H.cd(H.ms(e().startAt)) + '</span></div>';
       var solo = m.status === 'solo';
-      return '<section class="wt" aria-label="Your match"><div class="wt-row"><span class="wt-k">' + roundKick(m) + '</span><span class="wt-k">' + lettersOf(m.round) + ' LETTERS</span></div>' +
+      return '<section class="wt" aria-label="Your match"><div class="wt-row"><span class="wt-k">' + roundKick(m) + '</span><span class="wt-k">SAME LETTERS</span></div>' +
         '<h1>' + (m.attempt ? 'Tie! Replay' : 'Your match') + '</h1>' + vs(m, !solo && (live || m.opponentJoined), live || !!m.joined) +
         (solo ? '<div class="wt-box" style="text-align:center"><b>' + esc(on) + ' didn’t come</b><span>You play alone and go to the next round.</span></div>' : '') +
         (m.attempt ? '<div class="wt-box" style="text-align:center"><b>It was a tie</b><span>New letters, same rules.</span></div>' : '') +

@@ -6,6 +6,7 @@ import {
   joinLobby,
   joinMatch,
   playWordIn,
+  wordTripGameFor,
   cupThumb,
   reportFinal,
   reportLive,
@@ -54,7 +55,7 @@ export const cupHandler =
 export async function stateHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const viewer = await cupViewerOf(req);
-    noStore(res).type('application/json').send(await stateFor(viewer, eventOf(req), req.query.since));
+    noStore(res).type('application/json').send(await stateFor(viewer, eventOf(req), req.query.since, req.query.pv));
   } catch (error) {
     cupFailed(error, res, next);
   }
@@ -72,7 +73,9 @@ export const liveHandler = cupHandler(async (viewer, req) => {
   return undefined;
 });
 export const finalHandler = cupHandler((viewer, req) => reportFinal(viewer, idOf(req), req.body?.score));
-/** Word Trip: one word, `{ stop, word, t }`, checked and scored by the server; the answer says whether it counted. */
+/** Word Trip: one word `{ stop, word, t }` (or a skip `{ skip: true, stop, t }`), played again by the server; the answer says whether it counted. */
+/** Word Trip: the normal game's page, to play the match in (`?v=` the version the page holds: just that it is the same). */
+export const wordTripGameHandler = cupHandler((viewer, req) => wordTripGameFor(viewer, req.query.v));
 export const wordHandler = cupHandler((viewer, req) => playWordIn(viewer, idOf(req), req.body));
 
 /**

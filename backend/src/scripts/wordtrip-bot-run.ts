@@ -5,18 +5,20 @@
  * (their opponents play alone and go through), ties (forced in round 1,
  * replayed on new letters), the betting gaps on the last eight, to a champion.
  * Bots read only what a page reads (`/cup/api/state`) and send words the way
- * the page does (`POST /matches/:id/word`); they find words in the
- * tournament's own dictionary, and try junk too. A TV polls `/admin/cup/state`
+ * the page does (`POST /matches/:id/word`, with each word's time on the run's
+ * clock): each plays a normal Word Trip run on the match's seed (the stops of
+ * Word Trip's own boardAt, all-letter words to move on, skips, a little junk),
+ * keeping its own copy of the run to compare with the server's answers. A TV polls `/admin/cup/state`
  * as the dashboard does. Every byte the pages, the TV and their photos take is
  * counted (each bot has a ~1.7 MB profile photo, as the phones upload them).
  *
  *   # a mongod (replica set rs0) on 127.0.0.1:27144, the page built (game-pages/cup/build.mjs), then:
- *   node --import tsx src/scripts/wordtrip-bot-run.ts [--bots 100] [--port 4166] [--stop 15]
+ *   node --import tsx src/scripts/wordtrip-bot-run.ts [--bots 100] [--port 4166]
  *
- * Checks: a champion; every match decided; every round opened; letters per
- * round 5/6/7 and 3 stops (the final 5); no word the server took is outside
- * the dictionary or the letters, and every total is the sum of its words; no
- * player's state holds the other player's words; ghosts left out of the draw,
+ * Checks: a champion; every match decided; every round opened; every word
+ * judged as the game's rules judge it; every result is its run played back
+ * from the events kept (real words on the seed's stops); no player's state
+ * holds the other player's words, and no match carries photo addresses; ghosts left out of the draw,
  * every live joiner in it; bets settled. Prints timings, latencies and bytes.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -26,8 +28,9 @@ import { createWriteStream } from 'node:fs';
 import path from 'node:path';
 import { MongoClient } from 'mongodb';
 import sharp from 'sharp';
-import wordTripBankFile from '../content/word-trip-cup.json';
-import { DEFAULT_CUP_CONFIG, canSpell, lettersFor, stopsFor, wordTripBank, type WordTripBankFile } from '../services/cup-rules';
+import { readFileSync } from 'node:fs';
+import { DEFAULT_CUP_CONFIG, newRun, playRunSkip, playRunWord, replayRun, runEndsSec } from '../services/cup-rules';
+import { loadWordTripGame } from '../services/cup-wordtrip-game';
 
 const arg = (name: string, fallback: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -35,7 +38,6 @@ const arg = (name: string, fallback: string) => {
 };
 const BOTS = Number(arg('bots', '100'));
 const PORT = Number(arg('port', '4166'));
-const STOP_SEC = Number(arg('stop', '15'));
 const MONGO = arg('mongo', 'mongodb://127.0.0.1:27144');
 const DB = arg('db', 'wordtrip_scratch');
 if (!/_scratch$/.test(DB) || !/127\.0\.0\.1|localhost/.test(MONGO)) throw new Error('Scratch databases on this machine only');
@@ -45,8 +47,8 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const EVENT_ID = 'wordtrip-bots';
 const ORG = 'sowaka';
 const HR_TOKEN = 'wordtrip-bot-run-hr-token';
-const bank = wordTripBank(wordTripBankFile as unknown as WordTripBankFile);
-const ALL = [...bank.common, ...bank.rare];
+/** The normal game, as the server loads it here (no catalog in a scratch database: this repo's page). */
+const GAME = loadWordTripGame(readFileSync(path.resolve(__dirname, '../../game-pages/word-trip.html'), 'utf8'), 'repo');
 
 const id = (i: number) => `bot-${String(i + 1).padStart(3, '0')}`;
 /** Join the lobby, then close the app: never connected at the draw. */
@@ -98,11 +100,11 @@ async function seed(client: MongoClient) {
   const event = {
     ...DEFAULT_CUP_CONFIG,
     gameKey: 'word-trip',
-    roundSec: STOP_SEC,
+    roundSec: 60,
     startWindowSec: 10,
     soloStartSec: 10,
     bettingSec: 8,
-    countdownSec: 3,
+    countdownSec: 5,
     minPlaySec: 0,
     topN: 8,
     walletStart: 1000,
@@ -212,6 +214,8 @@ async function loadPhotos(seen: Set<string>, state: unknown, tv: boolean) {
     if (k === 'photoUrl' && typeof v === 'string') urls.add(v);
     return v;
   });
+  const map = (state as { photos?: Record<string, string | null> }).photos;
+  for (const u of Object.values(map ?? {})) if (typeof u === 'string') urls.add(u);
   for (const u of urls) {
     if (seen.has(u)) continue;
     seen.add(u);
@@ -239,30 +243,23 @@ function checkState(userId: string, state: Record<string, any>) {
   for (const round of state.event?.rounds ?? []) {
     for (const m of round.matches ?? []) {
       viewsChecked += 1;
-      for (const key of Object.keys(m)) if (/^wt(Mine|Live)$/.test(key) || key === 'words') fail(`${m.id}: ${key} in the bracket view`);
-      if (m.wt?.letters && m.status !== 'done' && m.wt.letters.length > m.wt.stops) fail(`${m.id}: more letters than stops`);
+      for (const key of Object.keys(m)) if (['wtMe', 'wtOpp', 'found', 'letters', 'words'].includes(key)) fail(`${m.id}: ${key} in the bracket view`);
+      if (m.a?.photoUrl || m.b?.photoUrl) fail(`${m.id}: a photo address in every match of every poll`);
     }
   }
   const mm = state.me?.match;
-  if (mm && Array.isArray(mm.wtMine)) {
-    // My own words only: every one must have come back from my own word calls.
-    const mine = sentOk.get(`${userId}:${mm.id}:${mm.attempt}`);
-    for (const stop of mm.wtMine) for (const [w] of stop) if (mine && !mine.has(w)) fail(`${userId}: ${w} in my words but I never sent it`);
-  }
+  if (mm && mm.wtOpp && Object.keys(mm.wtOpp).some((k) => !['score', 'words', 'endsAt'].includes(k))) fail(`${userId}: more than the opponent's score in my match`);
+  if (mm?.wtMe?.best && !sentOk.get(`${userId}:${mm.id}:${mm.attempt}`)?.has(mm.wtMe.best)) fail(`${userId}: ${mm.wtMe.best} as my best word, but I never sent it`);
   if (state.wordTrip) fail(`${userId}: the TV's words in a player's state`);
 }
 
 // ---------------------------------------------------------------- a bot
 
-const stats = { words: 0, taken: 0, refused: 0, junk: 0, junkTaken: 0, bets: 0, joins: 0, lobbyJoins: 0, solos: 0, forcedTies: 0 };
+const stats = { words: 0, taken: 0, refused: 0, serverSaidNo: 0, mismatch: 0, skips: 0, junk: 0, junkTaken: 0, bets: 0, joins: 0, lobbyJoins: 0, solos: 0, forcedTies: 0 };
 const sentOk = new Map<string, Set<string>>();
 const lobbyOk = new Set<string>();
 let done = false;
 let startAtMs = 0;
-
-function wordsFor(letters: string): string[] {
-  return ALL.filter((w) => w.length >= 3 && w.length <= letters.length && canSpell(w, letters));
-}
 
 async function bot(userId: string, ticket: string, linkTicket: string) {
   const seen = new Set<string>();
@@ -278,9 +275,10 @@ async function bot(userId: string, ticket: string, linkTicket: string) {
     gz.page += wire(b);
   } else fail('page did not load');
   let version: string | undefined;
+  let photosV: number | undefined;
   let state: Record<string, any> | null = null;
   while (!done) {
-    const res = await call(ticket, 'GET', `/cup/api/state?event=${EVENT_ID}${version ? `&since=${version}` : ''}`, undefined, 'state');
+    const res = await call(ticket, 'GET', `/cup/api/state?event=${EVENT_ID}${version ? `&since=${version}` : ''}${photosV != null ? `&pv=${photosV}` : ''}`, undefined, 'state');
     if (res.status !== 200) {
       await sleep(1000);
       continue;
@@ -289,6 +287,7 @@ async function bot(userId: string, ticket: string, linkTicket: string) {
     if (!j.unchanged) {
       state = j;
       version = String(j.version);
+      if (j.photosV != null) photosV = j.photosV;
       checkState(userId, j);
       await loadPhotos(seen, j, false);
     }
@@ -317,7 +316,7 @@ async function bot(userId: string, ticket: string, linkTicket: string) {
         const r = await call(ticket, 'POST', `/cup/api/matches/${m.id}/join`);
         if (r.status === 200) stats.joins += 1;
         version = undefined;
-      } else if ((m.status === 'live' || m.status === 'solo') && m.startAt && m.wt?.letters?.length) {
+      } else if ((m.status === 'live' || m.status === 'solo') && m.startAt && m.boardSeed) {
         const key = `${m.id}:${m.attempt}`;
         if (!playing.has(key)) {
           playing.add(key);
@@ -339,62 +338,89 @@ async function bot(userId: string, ticket: string, linkTicket: string) {
   }
 }
 
-/** Plays a match's stops: the state gives each stop's letters as it comes; words from the dictionary, some junk. */
+/**
+ * Plays a match as a person plays the normal game: from the match's start, on the stop the run is on (the seed's,
+ * dealt by Word Trip's own boardAt), words from its lists every 0.6-3.5 s, now and then the all-letter word (on to
+ * the next stop), now and then a skip, a little junk; until the run's clock (1:00 + what it earned) runs out. The bot
+ * keeps its own copy of the run with the same rules, so it knows its stop and clock as the game would.
+ */
 async function play(userId: string, ticket: string, first: any, serverNow: string) {
   const skew = new Date(serverNow).getTime() - Date.now();
   const startAt = new Date(first.startAt).getTime();
-  const w = first.wt;
+  const seed = Number(first.boardSeed);
   const key = `${userId}:${first.id}:${first.attempt}`;
   sentOk.set(key, new Set());
-  // Round 1, the first two matches, first game: both bots find the same few words, in the same order: a tie.
   const forcedTie = first.round === 1 && /Match [12]$/.test(first.label) && first.attempt === 0 && first.status === 'live';
   if (forcedTie) stats.forcedTies += 1;
-  const skill = forcedTie ? 0 : rand(0.15, 0.7);
-  for (let k = 0; k < w.stops; k += 1) {
-    const from = startAt + k * (w.stopSec + w.gapSec) * 1000;
-    const to = from + w.stopSec * 1000;
-    const wait = from - (Date.now() + skew);
-    if (wait > 0) await sleep(wait + 30);
-    // The letters as the page would have them: from a poll (they show from the card before the stop).
-    let letters: string | undefined = first.wt.letters?.[k];
-    for (let tries = 0; !letters && tries < 20; tries += 1) {
-      const s = JSON.parse((await call(ticket, 'GET', `/cup/api/state?event=${EVENT_ID}`, undefined, 'state')).text);
-      const mm = s.me?.match;
-      if (!mm || mm.id !== first.id || mm.attempt !== first.attempt) return;
-      letters = mm.wt?.letters?.[k];
-      if (!letters) await sleep(400);
-    }
-    if (!letters) {
-      fail(`${first.id}: no letters for stop ${k + 1}`);
-      return;
-    }
-    if (letters.length !== w.len) fail(`${first.id}: ${letters.length} letters, want ${w.len}`);
-    const words = wordsFor(letters).sort(() => (forcedTie ? 0 : Math.random() - 0.5));
-    const take = forcedTie ? words.slice(0, 3) : words.slice(0, Math.max(1, Math.round(words.length * skill)));
-    for (const word of take) {
-      if (Date.now() + skew > to - 400) break;
-      await sleep(forcedTie ? 700 : rand(500, 2600));
-      if (Math.random() < 0.15 && !forcedTie) {
-        stats.junk += 1;
-        const junk = letters.split('').sort(() => Math.random() - 0.5).join('').slice(0, 4);
-        sentOk.get(key)!.add(junk);
-        const r = await call(ticket, 'POST', `/cup/api/matches/${first.id}/word`, { stop: k, word: junk, t: Date.now() + skew - from }, 'words');
-        if (r.status === 200 && JSON.parse(r.text).verdict?.ok && !bank.common.has(junk) && !bank.rare.has(junk)) fail(`junk ${junk} taken`);
-      }
+  const wait = startAt - (Date.now() + skew);
+  if (wait > 0) await sleep(wait + 30);
+  const mine = newRun();
+  const clock = () => (Date.now() + skew - startAt) / 1000;
+  const send = async (body: Record<string, unknown>) => call(ticket, 'POST', `/cup/api/matches/${first.id}/word`, body, 'words');
+  if (forcedTie) {
+    // Both players: the same three words at the same moments, then nothing: a tie.
+    const s = GAME.boards(seed, 0);
+    const words = [...s.words].filter((w) => w.length < s.len).sort().slice(0, 3);
+    for (const [i, w] of words.entries()) {
+      await sleep(Math.max(0, (2 + i * 2 - clock()) * 1000));
+      sentOk.get(key)!.add(w);
       stats.words += 1;
-      sentOk.get(key)!.add(word);
-      const r = await call(ticket, 'POST', `/cup/api/matches/${first.id}/word`, { stop: k, word, t: Date.now() + skew - from }, 'words');
-      if (r.status !== 200) {
-        stats.refused += 1;
-        if (r.status === 409) return;
-        continue;
+      const r = await send({ stop: 0, word: w, t: 2 + i * 2 });
+      if (r.status === 200 && JSON.parse(r.text).verdict?.ok) stats.taken += 1;
+    }
+    return;
+  }
+  const skill = rand(0.25, 0.9);
+  while (clock() < runEndsSec(mine, GAME.rules) - 0.3) {
+    await sleep(rand(600, 3500) / skill);
+    const t = clock();
+    if (t >= runEndsSec(mine, GAME.rules) - 0.2) break;
+    const stop = GAME.boards(seed, mine.gi);
+    if (t < mine.stopFrom) continue;
+    const found = new Set((mine.found[mine.gi] ?? []).map(([w]) => w));
+    const left = [...stop.words, ...stop.rare].filter((w) => !found.has(w));
+    const full = left.filter((w) => w.length === stop.len);
+    const short = left.filter((w) => w.length < stop.len);
+    const roll = Math.random();
+    if (roll < 0.04 && mine.score >= GAME.rules.SKIP_COST) {
+      const r = await send({ skip: true, stop: mine.gi, t });
+      if (r.status === 200 && JSON.parse(r.text).skip?.ok) {
+        playRunSkip(mine, mine.gi, t, GAME.rules);
+        stats.skips += 1;
       }
-      const v = JSON.parse(r.text).verdict;
-      if (v?.ok) {
-        stats.taken += 1;
-        sentOk.get(key)!.add(word);
-        if (!canSpell(word, letters) || !(bank.common.has(word) || bank.rare.has(word))) fail(`${word} taken on ${letters}`);
+      continue;
+    }
+    if (roll < 0.12) {
+      stats.junk += 1;
+      const junk = stop.letters.split('').sort(() => Math.random() - 0.5).join('').slice(0, 4);
+      sentOk.get(key)!.add(junk);
+      const r = await send({ stop: mine.gi, word: junk, t });
+      if (r.status === 200) {
+        const v = JSON.parse(r.text).verdict;
+        if (v?.ok) {
+          playRunWord(mine, stop, mine.gi, junk, t, GAME.rules);
+          if (!stop.words.has(junk) && !stop.rare.has(junk)) stats.junkTaken += 1;
+        }
       }
+      continue;
+    }
+    const word = (roll > 0.82 && full.length) || !short.length ? pick(full) : pick(short);
+    if (!word) continue;
+    sentOk.get(key)!.add(word);
+    stats.words += 1;
+    const r = await send({ stop: mine.gi, word, t });
+    if (r.status !== 200) {
+      stats.refused += 1;
+      if (r.status === 409) return;
+      continue;
+    }
+    const j = JSON.parse(r.text);
+    const local = playRunWord(mine, stop, mine.gi, word, t, GAME.rules);
+    if (j.verdict?.ok) stats.taken += 1;
+    else stats.serverSaidNo += 1;
+    if (!!j.verdict?.ok !== local.ok || j.score !== mine.score || j.gi !== mine.gi) {
+      stats.mismatch += 1;
+      if (stats.mismatch < 5) console.log(`run mismatch ${first.id} ${userId}: server ${JSON.stringify(j.verdict)} ${j.score}/${j.gi}, bot ${JSON.stringify(local)} ${mine.score}/${mine.gi}`);
     }
   }
 }
@@ -481,34 +507,24 @@ async function main() {
   const wanted = event.rounds.reduce((s: number, r: any) => s + r.nodes.filter((x: any) => x.feeders.length === 2).length, 0);
   if (matches.length !== wanted) fail(`${matches.length} matches for ${wanted} places`);
   for (const r of event.rounds) if (!r.openedAt) fail(`${r.label} never opened`);
-  // Letters and stops per round, from the final state (done views carry every stop's letters).
-  const final = JSON.parse((await call(tickets.get(ids[0])!, 'GET', `/cup/api/state?event=${EVENT_ID}`)).text);
-  const shapes: string[] = [];
-  for (const round of final.event.rounds) {
-    const lens = new Set(round.matches.map((m: any) => m.wt?.len));
-    const stops = new Set(round.matches.map((m: any) => m.wt?.stops));
-    const wantLen = lettersFor(round.n, total);
-    const wantStops = stopsFor(round.n, total);
-    if (lens.size !== 1 || !lens.has(wantLen)) fail(`${round.label}: letters ${[...lens].join(',')} (want ${wantLen})`);
-    if (stops.size !== 1 || !stops.has(wantStops)) fail(`${round.label}: stops ${[...stops].join(',')} (want ${wantStops})`);
-    for (const m of round.matches) for (const l of m.wt?.letters ?? []) if (l.length !== wantLen) fail(`${m.id}: dealt ${l}`);
-    shapes.push(`${round.label} ${wantLen} letters × ${wantStops}`);
-  }
-  console.log(`Shapes: ${shapes.join(' · ')}`);
-  // Every total is the sum of the words the server took; every word is a word on those letters.
+  // Every result is the server's run, played back again here from its events: the same score, from real words on the stops.
   let wordsChecked = 0;
   for (const m of matches) {
     if (m.decidedBy === 'played' || m.decidedBy === 'replays' || m.decidedBy === 'solo') {
       for (const p of m.players) {
         const live = m.live?.[p];
-        const sum = (live?.wt ?? []).flat().reduce((s: number, x: [string, number]) => s + x[1], 0);
-        if ((live?.score ?? 0) !== sum) fail(`${m.id} ${p}: score ${live?.score} but words sum ${sum}`);
-        if ((m.result?.[p] ?? 0) !== (live?.score ?? 0)) fail(`${m.id} ${p}: result ${m.result?.[p]} but server total ${live?.score}`);
-        wordsChecked += (live?.wt ?? []).flat().length;
+        const back = replayRun(live?.wtr ?? [], GAME.boards, m.seed, GAME.rules);
+        if ((live?.score ?? 0) !== back.score) fail(`${m.id} ${p}: score ${live?.score} but its words make ${back.score}`);
+        if ((m.result?.[p] ?? 0) !== back.score) fail(`${m.id} ${p}: result ${m.result?.[p]} but the run makes ${back.score}`);
+        for (const e of live?.wtr ?? []) if (e[0] === 'w') {
+          const st = GAME.boards(m.seed, e[1]);
+          if (!st.words.has(e[2]) && !st.rare.has(e[2])) fail(`${m.id}: ${e[2]} taken on ${st.letters}`);
+          wordsChecked += 1;
+        }
       }
     }
   }
-  console.log(`Words checked against the totals: ${wordsChecked}`);
+  console.log(`Words played back against the runs: ${wordsChecked}`);
   const by: Record<string, number> = {};
   for (const m of matches) by[m.decidedBy] = (by[m.decidedBy] ?? 0) + 1;
   console.log(`Decided by: ${JSON.stringify(by)}`);
@@ -527,6 +543,7 @@ async function main() {
   }
   const bets = await db.collection('cup_bets').find({ eventId: EVENT_ID }).toArray();
   const held = bets.filter((b) => b.status === 'held').length;
+  if (stats.mismatch) fail(`${stats.mismatch} words judged differently by the server and the game's rules`);
   console.log(`\nBets ${bets.length} (held after the end: ${held}) · bot stats ${JSON.stringify(stats)}`);
   if (held) fail(`${held} bets still held`);
   if (stats.junkTaken) fail(`${stats.junkTaken} junk words taken`);

@@ -172,11 +172,12 @@ export interface CupScore {
   /** Knights only: the cells with a knight on this player's board, as last reported (`score` is then the right ones). */
   knights?: number[];
   /**
-   * Word Trip only: the words the server took from this player, per stop, as [word, points] (`score` is their
-   * total), and each stop's combo state [combo, comboUntil, lastT, bad], so a restart carries on where it was.
+   * Word Trip only: the run's events as the server took them (['w', stop, word, t, points] or ['s', stop, t], t in
+   * seconds on the run's clock), so a restart plays them again; `score` is the run's score, `wtAdded` the seconds its
+   * clock earned (the run ends at 60 + wtAdded).
    */
-  wt?: [string, number][][];
-  wtc?: [number, number, number, number][];
+  wtr?: (['w', number, string, number, number] | ['s', number, number])[];
+  wtAdded?: number;
 }
 
 /** How a match was decided. Knights adds `finished` (a right board first), `resigned` and `cap` (more right at the cap); a tie after the last replay is `replays`. */

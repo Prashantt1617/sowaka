@@ -26,25 +26,23 @@ import {
   parseRef,
   seedOrderOf,
   WT_BLOCKED,
-  WT_GRACE_SEC,
-  commonCount,
-  emptyStop,
-  lettersFor,
+  WT_DEFAULT_RULES,
+  lobbyPresent,
   mayPlayWord,
-  newWordTripSeed,
+  newRun,
   nextWordTripStep,
-  playWord,
-  stopAt,
-  stopWindow,
-  stopsFor,
+  playRunSkip,
+  playRunWord,
+  replayRun,
+  runEndsSec,
   wordTime,
-  wordTripBank,
-  wordTripStops,
-  wtPlaySec,
-  type WordTripBankFile,
+  wtLongestSec,
+  type WtStop,
 } from '../services/cup-rules';
-import wordTripBankFile from '../content/word-trip-cup.json';
-import { lobbyPresent } from '../services/cup-rules';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { loadWordTripGame } from '../services/cup-wordtrip-game';
+
 
 let checks = 0;
 function check(name: string, run: () => void) {
@@ -523,142 +521,156 @@ check('knights rules never touch the other games: Odd One Out ignores a knights 
   assert.deepEqual(nextStep(live, T, at(13 + 70), seedOf, SOL), { kind: 'decide', winnerId: 'lo', decidedBy: 'played', result: { hi: 10, lo: 20 } });
 });
 
-// ---------------------------------------------------------------- word trip (27 Nov)
-const WTT = { ...T, gameKey: 'word-trip', roundSec: 60, startWindowSec: 40, soloStartSec: 30, maxReplays: 2, countdownSec: 4 };
-const wtb = wordTripBank(wordTripBankFile as unknown as WordTripBankFile);
-const PLAY3 = wtPlaySec(3, 60); // 3 × 60 + 2 gaps of 4 = 188 s
-const PLAY5 = wtPlaySec(5, 60);
-const wlive = (score: number) => ({ score, at: at(50) });
+// ---------------------------------------------------------------- word trip (27 Nov): one normal Word Trip run each
+const WTT = { ...T, gameKey: 'word-trip', roundSec: 60, startWindowSec: 40, soloStartSec: 30, maxReplays: 2, countdownSec: 5 };
+const GAME = loadWordTripGame(readFileSync(path.resolve(__dirname, '../../game-pages/word-trip.html'), 'utf8'), 'repo');
+const R = GAME.rules;
+/** The live part of a match as the runner sees it: a run's score and the seconds its clock earned. */
+const run = (score: number, added = 0) => ({ score, at: at(50), wtAdded: added });
+/** A word the stop takes, of a length, common or rare, from the dictionary as the game deals it. */
+const wordOn = (stop: WtStop, len: number, rare = false) => [...(rare ? stop.rare : stop.words)].find((w) => w.length === len);
+const fullOf = (stop: WtStop) => [...stop.words, ...stop.rare].find((w) => w.length === stop.len)!;
 
-check('word trip: letters 5 in round 1, 6 in the middle rounds, 7 for the semi-finals and the final', () => {
-  assert.deepEqual([1, 2, 3, 4, 5, 6, 7].map((r) => lettersFor(r, 7)), [5, 6, 6, 6, 6, 7, 7]);
-  assert.deepEqual([1, 2, 3].map((r) => lettersFor(r, 3)), [5, 7, 7]);
-  assert.deepEqual([1, 2].map((r) => lettersFor(r, 2)), [7, 7]);
-  for (const len of [5, 6, 7]) {
-    for (const seed of [1, 7, 123456, 987654321]) {
-      const stops = wordTripStops(wtb, seed, len, 5);
-      assert.equal(new Set(stops.map((s) => s.key)).size, 5, 'no set of letters twice in a match');
-      for (const s of stops) {
-        assert.equal(s.letters.length, len);
-        assert.equal(s.letters.split('').sort().join(''), s.key);
-        assert.ok(commonCount(wtb, s.letters) >= (len === 5 ? 12 : len === 6 ? 20 : 30), `${s.key}: a healthy number of words`);
-      }
-      assert.deepEqual(wordTripStops(wtb, seed, len, 5), stops, 'the same seed deals the same letters, in the same order');
+check("word trip: the rules are read from Word Trip's own page (the normal game's numbers)", () => {
+  assert.deepEqual(R, WT_DEFAULT_RULES);
+  assert.equal(wtLongestSec(R), 90);
+});
+
+check('word trip: both players get the same stops in the same order (the seed), as the normal game deals them', () => {
+  const page = readFileSync(path.resolve(__dirname, '../../game-pages/word-trip.html'), 'utf8');
+  const block = /\/\* seeded-boards:start[\s\S]*?\/\* seeded-boards:end \*\//.exec(page)![0];
+  const { boardAt } = new Function(`${block}\nreturn { boardAt };`)();
+  for (const seed of [1, 7, 424242, 987654]) {
+    for (let g = 0; g < 9; g += 1) {
+      const b = boardAt(seed, g);
+      const s = GAME.boards(seed, g);
+      assert.equal(s.letters, b.letters, 'the letters as the page deals them');
+      assert.equal(s.len, [5, 6, 6, 7, 7, 7][g] ?? 8, 'stops grow 5, 6, 6, 7, 7, 7, then 8');
+      for (const w of s.words) assert.ok(b.words.includes(w));
     }
   }
 });
 
-check('word trip: 3 stops a match, 5 in the final (stop windows and play time follow)', () => {
-  assert.deepEqual([1, 2, 3, 4, 5, 6, 7].map((r) => stopsFor(r, 7)), [3, 3, 3, 3, 3, 3, 5]);
-  assert.equal(PLAY3, 188);
-  assert.equal(PLAY5, 316);
-  const w2 = stopWindow(at(100), 2, 60);
-  assert.deepEqual([w2.from, w2.to], [at(100 + 128).getTime(), at(100 + 188).getTime()]);
-  assert.deepEqual(stopAt(at(100), at(100 + 61), 3, 60), { k: 0, gap: true });
-  assert.deepEqual(stopAt(at(100), at(100 + 64), 3, 60), { k: 1, gap: false });
-  assert.deepEqual(stopAt(at(100), at(100 + 190), 3, 60), { k: 3, gap: false });
-  // The final is decided only after its 5th stop.
-  const final = match({ round: 7, status: 'live', joined: { hi: at(1), lo: at(2) }, startAt: at(10), live: { hi: wlive(900), lo: wlive(100) } });
-  assert.equal(nextWordTripStep(final, WTT, at(10 + PLAY3 + 10), seedOf, 5).kind, 'none');
-  assert.equal(nextWordTripStep(final, WTT, at(10 + PLAY5 + WT_GRACE_SEC), seedOf, 5).kind, 'decide');
-});
-
-check('word trip: the higher server total wins at the end of the last stop (+3 s grace)', () => {
-  const live = match({ status: 'live', joined: { hi: at(1), lo: at(2) }, startAt: at(10), live: { hi: wlive(410), lo: wlive(620) } });
-  assert.deepEqual(nextWordTripStep(live, WTT, at(10 + PLAY3 + 2), seedOf, 3), { kind: 'none' });
-  assert.deepEqual(nextWordTripStep(live, WTT, at(10 + PLAY3 + 3), seedOf, 3), { kind: 'decide', winnerId: 'lo', decidedBy: 'played', result: { hi: 410, lo: 620 } });
-  // Left mid-match: the score so far stands, the clock never stops.
-  const left = match({ status: 'live', joined: { hi: at(1), lo: at(2) }, startAt: at(10), live: { hi: wlive(80) } });
-  assert.deepEqual(nextWordTripStep(left, WTT, at(10 + PLAY3 + 3), seedOf, 3), { kind: 'decide', winnerId: 'hi', decidedBy: 'played', result: { hi: 80, lo: 0 } });
-});
-
-check('word trip: no-show at 40 s → the one who came plays their stops alone (started at once), then goes through', () => {
-  const open = match({ deadlineAt: at(40), joined: { lo: at(5) } });
-  assert.deepEqual(nextWordTripStep(open, WTT, at(39), seedOf, 3), { kind: 'none' });
-  assert.deepEqual(nextWordTripStep(open, WTT, at(40), seedOf, 3), { kind: 'solo', userId: 'lo', soloUntil: at(40), startAt: at(44) });
-  const solo = match({ status: 'solo', joined: { lo: at(5) }, soloUntil: at(40), startAt: at(44), live: { lo: wlive(300) } });
-  assert.deepEqual(nextWordTripStep(solo, WTT, at(44 + PLAY3), seedOf, 3), { kind: 'none' }, 'plays all their stops first');
-  assert.deepEqual(nextWordTripStep(solo, WTT, at(44 + PLAY3 + 3), seedOf, 3), { kind: 'decide', winnerId: 'lo', decidedBy: 'solo', result: { lo: 300, hi: 0 } });
-  // Even with no word found (or after leaving), the one who came goes through, never the no-show.
-  const empty = match({ status: 'solo', joined: { lo: at(5) }, soloUntil: at(40), startAt: at(44) });
-  assert.equal((nextWordTripStep(empty, WTT, at(44 + PLAY3 + 3), seedOf, 3) as { winnerId: string }).winnerId, 'lo');
-  // A solo written without a start (an old page): started now.
-  assert.equal(nextWordTripStep(match({ status: 'solo', joined: { lo: at(5) }, soloUntil: at(40) }), WTT, at(41), seedOf, 3).kind, 'solo');
-});
-
-check('word trip: neither joins → absent (both played nothing; the bracket carries the better seed as before)', () => {
-  assert.deepEqual(nextWordTripStep(match({ deadlineAt: at(40) }), WTT, at(40), seedOf, 3), { kind: 'decide', winnerId: 'hi', decidedBy: 'absent', result: { hi: 0, lo: 0 } });
-});
-
-check('word trip: a tie replays on new letters, up to 2 replays, then the better seed', () => {
-  const tied = match({ status: 'live', joined: { hi: at(1), lo: at(2) }, startAt: at(10), live: { hi: wlive(500), lo: wlive(500) } });
-  assert.deepEqual(nextWordTripStep(tied, WTT, at(10 + PLAY3 + 3), seedOf, 3), { kind: 'replay', scores: { hi: 500, lo: 500 } });
-  const twice = { ...tied, history: [{ attempt: 0, scores: {} }, { attempt: 1, scores: {} }] };
-  assert.deepEqual(nextWordTripStep(twice, WTT, at(10 + PLAY3 + 3), seedOf, 3), { kind: 'decide', winnerId: 'hi', decidedBy: 'replays', result: { hi: 500, lo: 500 } });
-  let n = 0;
-  const seq = [7, 7, 7, 99];
-  const fresh = newWordTripSeed(wtb, 7, 5, () => seq[n++]);
-  assert.equal(fresh, 99, 'a replay seed is never the tied game\'s letters');
-  assert.notEqual(wordTripStops(wtb, fresh, 5, 1)[0].key, wordTripStops(wtb, 7, 5, 1)[0].key);
-});
-
-check('word trip: the server checks each word (letters, counts, dictionary, offensive, once per stop) and scores it as Word Trip', () => {
-  const stop = emptyStop();
-  const L = 'tarns'; // makes rant, rants, tarn, star, arts, tsar, rat, tan, ...
-  const ok = (w: string, t: number) => playWord(stop, L, w, t, wtb);
-  const first = ok('star', 0);
-  assert.ok(first.ok && first.pts === 50 && first.combo === 1, JSON.stringify(first));
-  assert.deepEqual(ok('star', 1000), { ok: false, word: 'star', reason: 'again' }, 'a word counts once per stop');
-  assert.deepEqual(ok('STAR', 1000), { ok: false, word: 'star', reason: 'again' }, 'case does not make a new word');
-  assert.equal((ok('stars', 1000) as { reason: string }).reason, 'letters', 'each letter at most as often as dealt');
-  assert.equal((ok('start', 1000) as { reason: string }).reason, 'letters');
-  assert.equal((ok('xyz', 1000) as { reason: string }).reason, 'letters');
-  assert.equal((ok('st', 1000) as { reason: string }).reason, 'short');
-  assert.equal((ok('rtsan', 1000) as { reason: string }).reason, 'unknown', 'not a word');
-  const second = ok('rant', 3000);
-  assert.ok(second.ok && second.combo === 2 && second.pts === 100, 'within 8 s: ×2');
-  const full = ok('rants', 5000);
-  assert.ok(full.ok && full.full && full.combo === 3 && full.pts === (80 + 150) * 3, `every letter: +150, ×3 (${JSON.stringify(full)})`);
-  const late = ok('tarn', 20_000);
-  assert.ok(late.ok && late.combo === 1, 'a gap over 8 s drops the combo');
-  assert.ok(late.ok && (late.pts === 50 || late.pts === 75), 'tarn: 4 letters, common or rare');
-  assert.equal(stop.score, 50 + 100 + 690 + (late.ok ? late.pts : 0));
-  assert.deepEqual(stop.found.map(([w]) => w), ['star', 'rant', 'rants', 'tarn']);
-  // A rare find pays half again.
-  const r = emptyStop();
-  const rare = [...wtb.rare].find((w) => w.length === 4)!;
-  const v = playWord(r, rare + 'q', rare, 0, wtb);
-  assert.ok(v.ok && v.rare && v.pts === 75, JSON.stringify(v));
-  // Offensive words are never valid, wherever the letters allow them, and the dictionary holds none.
+check('word trip: a word is checked (stop, letters, counts, dictionary, offensive, once per stop) and scored as Word Trip scores it', () => {
+  const r = newRun();
+  const s0 = GAME.boards(7, 0);
+  const w4 = wordOn(s0, 4)!;
+  const v1 = playRunWord(r, s0, 0, w4, 2, R);
+  assert.ok(v1.ok && v1.pts === 50 && v1.combo === 1 && v1.added === 0, JSON.stringify(v1));
+  assert.equal((playRunWord(r, s0, 0, w4, 3, R) as { reason: string }).reason, 'again', 'a word counts once per stop');
+  assert.equal((playRunWord(r, s0, 0, w4.toUpperCase(), 4, R) as { reason: string }).reason, 'again');
+  assert.equal((playRunWord(r, s0, 0, 'zzzz', 5, R) as { reason: string }).reason, 'letters');
+  assert.equal((playRunWord(r, s0, 0, s0.letters + s0.letters[0], 6, R) as { reason: string }).reason, 'letters', 'each letter at most as often as dealt');
+  assert.equal((playRunWord(r, s0, 0, 'ab', 7, R) as { reason: string }).reason, 'short');
+  assert.equal((playRunWord(r, s0, 1, w4, 7, R) as { reason: string }).reason, 'stop', 'only the stop the run is on');
+  assert.equal(r.score, 50);
+  // Within 8 s: ×2; a 5-letter word adds 2 s; every letter adds 3 more and moves to the next stop.
+  const w3 = wordOn(s0, 3)!;
+  const v2 = playRunWord(r, s0, 0, w3, 5, R);
+  assert.ok(v2.ok && v2.combo === 2 && v2.pts === 60, JSON.stringify(v2));
+  const full = fullOf(s0);
+  const rare = !s0.words.has(full);
+  const v3 = playRunWord(r, s0, 0, full, 8, R);
+  assert.ok(v3.ok && v3.full && v3.combo === 3 && v3.pts === (Math.round(80 * (rare ? 1.5 : 1)) + 150) * 3, JSON.stringify(v3));
+  assert.equal(r.added, 2 + 3, 'TIMEB[5] + FULL_TIME');
+  assert.equal(r.gi, 1, 'every letter: the next stop');
+  assert.ok(['early', 'fast'].includes((playRunWord(r, GAME.boards(7, 1), 1, wordOn(GAME.boards(7, 1), 3), 8.1, R) as { reason: string }).reason), 'not before the next stop shows');
+  const s1 = GAME.boards(7, 1);
+  const v4 = playRunWord(r, s1, 1, wordOn(s1, 3)!, 30, R);
+  assert.ok(v4.ok && v4.combo === 1, 'over 8 s since the last: ×1');
+  // Offensive words never count, whatever the letters, and the game's lists never deal one as a word.
   for (const w of WT_BLOCKED) {
-    assert.ok(!wtb.common.has(w) && !wtb.rare.has(w), `${w} is out of the dictionary`);
-    const s = emptyStop();
-    assert.equal((playWord(s, w + 'e', w, 0, wtb) as { ok: boolean }).ok, false, `${w} refused`);
+    const fake: WtStop = { g: 0, len: w.length + 1, letters: `${w}e`, words: new Set([w]), rare: new Set() };
+    assert.equal((playRunWord(newRun(), fake, 0, w, 1, R) as { reason: string }).reason, 'unknown', `${w} refused`);
   }
-  // Junk and brute force: past 60 misses on a stop, nothing more is looked at.
-  assert.equal((playWord(emptyStop(), L, 42, 0, wtb) as { reason: string }).reason, 'junk');
-  const brute = emptyStop();
-  for (let i = 0; i < 60; i += 1) playWord(brute, L, 'zzz', 0, wtb);
-  assert.equal((playWord(brute, L, 'star', 0, wtb) as { reason: string }).reason, 'limit');
+  for (let g = 0; g < 12; g += 1) for (const w of [...GAME.boards(424242, g).words, ...GAME.boards(424242, g).rare]) assert.ok(!WT_BLOCKED.has(w));
 });
 
-check('word trip: a word\'s time is the page\'s, never later than it arrived nor 3 s before (no combo bought by holding words)', () => {
-  assert.equal(wordTime(5000, 5200, 0), 5000);
-  assert.equal(wordTime(9000, 5200, 0), 5200, 'not later than it arrived');
-  assert.equal(wordTime(0, 20_000, 0), 17_000, 'held back: placed 3 s before arrival at most');
-  assert.equal(wordTime(1000, 5200, 4000), 4000, 'never before the last word');
-  assert.equal(wordTime('x', 5200, 0), 5200);
+check('word trip: the clock is 1:00 plus what the run earned (at most 30 s); no word after it, none faster than a person, none in brute force', () => {
+  const r = newRun();
+  const s0 = GAME.boards(11, 0);
+  const words = [...s0.words, ...s0.rare].filter((w) => w.length < s0.len);
+  assert.equal((playRunWord(r, s0, 0, words[0], 61, R) as { reason: string }).reason, 'time', 'the clock has run out');
+  assert.ok(playRunWord(r, s0, 0, words[0], 10, R).ok);
+  assert.equal((playRunWord(r, s0, 0, words[1], 10.1, R) as { reason: string }).reason, 'fast', 'two words 0.1 s apart');
+  // Seconds earned never pass MAX_ADDED.
+  const many = newRun();
+  let t = 1;
+  for (let g = 0; g < 12 && many.added < R.MAX_ADDED; g += 1) {
+    const s = GAME.boards(11, many.gi);
+    t += 1;
+    playRunWord(many, s, many.gi, fullOf(s), t, R);
+  }
+  assert.equal(many.added, R.MAX_ADDED);
+  assert.equal(runEndsSec(many, R), 90);
+  const junk = newRun();
+  for (let i = 0; i < 120; i += 1) playRunWord(junk, s0, 0, 'qqq', i * 0.4, R);
+  assert.equal((playRunWord(junk, s0, 0, words[0], 50, R) as { reason: string }).reason, 'limit');
 });
 
-check('word trip: a word is taken only on its own stop while it is on (+2 s for the trip), only from a player', () => {
-  const live = match({ status: 'live', joined: { hi: at(1), lo: at(2) }, startAt: at(10) });
-  assert.equal(mayPlayWord(live, 'hi', 0, 3, 60, at(30)).ok, true);
-  assert.equal(mayPlayWord(live, 'hi', 0, 3, 60, at(73)).ok, false, 'stop 1 is over');
-  assert.equal(mayPlayWord(live, 'hi', 1, 3, 60, at(74)).ok, true);
-  assert.equal(mayPlayWord(live, 'hi', 2, 3, 60, at(74)).ok, false, 'stop 3 has not started');
-  assert.equal(mayPlayWord(live, 'hi', 3, 3, 60, at(74)).ok, false);
-  assert.equal(mayPlayWord(live, 'zed', 0, 3, 60, at(30)).ok, false);
-  assert.equal(mayPlayWord(match({ status: 'solo', joined: { lo: at(2) }, startAt: at(10) }), 'hi', 0, 3, 60, at(30)).ok, false, 'the no-show cannot score in a solo');
+check('word trip: skip costs 100 points and moves on, only with 100 to pay, as the game does', () => {
+  const r = newRun();
+  assert.deepEqual(playRunSkip(r, 0, 1, R), { ok: false, reason: 'points' });
+  const s0 = GAME.boards(5, 0);
+  for (const w of [...s0.words].filter((x) => x.length < s0.len).slice(0, 3)) playRunWord(r, s0, 0, w, 1 + r.total, R);
+  const before = r.score;
+  assert.ok(before >= 100);
+  assert.deepEqual(playRunSkip(r, 0, 9, R), { ok: true, gi: 1, score: before - 100 });
+  assert.equal((playRunWord(r, GAME.boards(5, 1), 1, wordOn(GAME.boards(5, 1), 3), 9.2, R) as { reason: string }).reason, 'early');
+});
+
+check('word trip: a run played back from its events is the same run (a restart decides the same)', () => {
+  const r = newRun();
+  let t = 1;
+  for (let i = 0; i < 20; i += 1) {
+    const s = GAME.boards(99, r.gi);
+    const w = i % 4 === 3 ? fullOf(s) : [...s.words].filter((x) => x.length < s.len)[i % 3];
+    t += 1.1;
+    playRunWord(r, s, r.gi, w, t, R);
+  }
+  const back = replayRun(JSON.parse(JSON.stringify(r.events)), GAME.boards, 99, R);
+  assert.equal(back.score, r.score);
+  assert.equal(back.added, r.added);
+  assert.equal(back.gi, r.gi);
+});
+
+check("word trip: a word's time is the run's clock as sent, never ahead of its arrival by more than 1.5 s nor 8 s behind it", () => {
+  assert.equal(wordTime(20, 20.4), 20);
+  assert.equal(wordTime(30, 20), 21.5, 'ahead of its arrival');
+  assert.equal(wordTime(1, 20), 12, 'held back: counts from 8 s before it arrived');
+  assert.equal(wordTime('x', 20), 20);
+});
+
+check('word trip: the higher score wins once both clocks have run out (each 1:00 + what it earned, + 3 s)', () => {
+  const live = match({ status: 'live', joined: { hi: at(1), lo: at(2) }, startAt: at(10), live: { hi: run(900, 12), lo: run(1200) } });
+  assert.deepEqual(nextWordTripStep(live, WTT, at(10 + 63), seedOf, R), { kind: 'none' }, 'one clock (hi, +12 s) still running');
+  assert.deepEqual(nextWordTripStep(live, WTT, at(10 + 72 + 3), seedOf, R), { kind: 'decide', winnerId: 'lo', decidedBy: 'played', result: { hi: 900, lo: 1200 } });
+  // Left mid-match: the score so far stands, the clock never stops.
+  const left = match({ status: 'live', joined: { hi: at(1), lo: at(2) }, startAt: at(10), live: { hi: run(80) } });
+  assert.deepEqual(nextWordTripStep(left, WTT, at(10 + 63), seedOf, R), { kind: 'decide', winnerId: 'hi', decidedBy: 'played', result: { hi: 80, lo: 0 } });
+});
+
+check('word trip: no-show at 40 s → the one who came plays their run alone (started at once), then goes through', () => {
+  const open = match({ deadlineAt: at(40), joined: { lo: at(5) } });
+  assert.deepEqual(nextWordTripStep(open, WTT, at(39), seedOf, R), { kind: 'none' });
+  assert.deepEqual(nextWordTripStep(open, WTT, at(40), seedOf, R), { kind: 'solo', userId: 'lo', soloUntil: at(40), startAt: at(45) });
+  const solo = match({ status: 'solo', joined: { lo: at(5) }, soloUntil: at(40), startAt: at(45), live: { lo: run(300, 6) } });
+  assert.deepEqual(nextWordTripStep(solo, WTT, at(45 + 64), seedOf, R), { kind: 'none' }, 'their run first (1:06)');
+  assert.deepEqual(nextWordTripStep(solo, WTT, at(45 + 66 + 3), seedOf, R), { kind: 'decide', winnerId: 'lo', decidedBy: 'solo', result: { lo: 300, hi: 0 } });
+  const empty = match({ status: 'solo', joined: { lo: at(5) }, soloUntil: at(40), startAt: at(45) });
+  assert.equal((nextWordTripStep(empty, WTT, at(45 + 63), seedOf, R) as { winnerId: string }).winnerId, 'lo', 'the one who came goes through, never the no-show');
+  assert.equal(mayPlayWord(solo, 'hi', undefined, at(60), R).ok, false, 'the no-show cannot score in a solo');
+});
+
+check('word trip: neither joins → absent (the bracket carries the better seed, as for every game)', () => {
+  assert.deepEqual(nextWordTripStep(match({ deadlineAt: at(40) }), WTT, at(40), seedOf, R), { kind: 'decide', winnerId: 'hi', decidedBy: 'absent', result: { hi: 0, lo: 0 } });
+});
+
+check('word trip: a tie replays (up to 2), then the better seed', () => {
+  const tied = match({ status: 'live', joined: { hi: at(1), lo: at(2) }, startAt: at(10), live: { hi: run(500), lo: run(500) } });
+  assert.deepEqual(nextWordTripStep(tied, WTT, at(10 + 63), seedOf, R), { kind: 'replay', scores: { hi: 500, lo: 500 } });
+  const twice = { ...tied, history: [{ attempt: 0, scores: {} }, { attempt: 1, scores: {} }] };
+  assert.deepEqual(nextWordTripStep(twice, WTT, at(10 + 63), seedOf, R), { kind: 'decide', winnerId: 'hi', decidedBy: 'replays', result: { hi: 500, lo: 500 } });
 });
 
 check('word trip: the lobby draw leaves out members not connected lately (and keeps a lobby with no check-ins whole)', () => {
@@ -666,6 +678,12 @@ check('word trip: the lobby draw leaves out members not connected lately (and ke
   const ev = { lobbyJoined: ['a', 'b', 'c'], lobbySeen: { a: at(990), b: at(900) } };
   assert.deepEqual(lobbyPresent(ev, now), { kept: ['a'], dropped: ['b', 'c'] });
   assert.deepEqual(lobbyPresent({ lobbyJoined: ['a', 'b'] }, now), { kept: ['a', 'b'], dropped: [] });
+});
+
+check('word trip: the page blocks the same offensive words as the server', () => {
+  const js = readFileSync(path.resolve(__dirname, '../../game-pages/cup/play-wordtrip.js'), 'utf8');
+  const list = JSON.parse(/var BLOCKED = (\[[\s\S]*?\]);/.exec(js)![1].replace(/'/g, '"'));
+  assert.deepEqual([...list].sort(), [...WT_BLOCKED].sort());
 });
 
 console.log(`\n${checks} checks passed`);
