@@ -268,7 +268,7 @@ function checkState(userId: string, state: Record<string, any>) {
 }
 
 const PHASES = new Set(['lobby', 'qualifier', 'qualifier_tiebreak', 'bracket', 'done']);
-const qualSeen = { states: 0, phases: new Set<string>(), maxCut: 0, tiebreak: null as null | { spots: number; userIds: string[] } };
+const qualSeen = { states: 0, phases: new Set<string>(), maxCut: 0, tiebreak: null as null | { spots: number; userIds: string[] }, late: new Set<string>(), extraScores: 0, clockBehind: 0 };
 function checkQualifier(who: string, state: Record<string, any>) {
   if (!PHASES.has(state.phase)) fail(`${who}: phase ${state.phase}`);
   qualSeen.phases.add(state.phase);
@@ -288,6 +288,13 @@ function checkQualifier(who: string, state: Record<string, any>) {
     if (i && r.best > q.rows[i - 1].best && !(q.tiebreak || q.rows[i - 1].status === 'in')) fail(`${who}: rows not by best at ${i}`);
   });
   if (q.tiebreak) qualSeen.tiebreak = q.tiebreak;
+  for (const r of q.rows ?? []) {
+    if (r.late) qualSeen.late.add(r.userId);
+    if (typeof r.extraScore === 'number') qualSeen.extraScores += 1;
+  }
+  // The attempt's clock never runs out while someone is still playing (the TV would say "Time!").
+  const now = Date.parse(state.serverNow ?? '') || Date.now();
+  if (!q.done && q.attemptEndsAt && q.rows?.some((r: any) => r.playing) && q.attemptEndsAt < now - 1500) qualSeen.clockBehind += 1;
 }
 
 // ---------------------------------------------------------------- a bot
@@ -618,6 +625,12 @@ async function main() {
   }
   if (stats.lateA1Refused !== LATE.size) fail(`late joiners refused attempt 1: ${stats.lateA1Refused} of ${LATE.size}`);
   for (const u of SKIP_A2) if (byUser.get(u)?.[2]) fail(`${u}: played attempt 2 but never asked`);
+  const lateMarked = [...LATE].filter((u) => qualSeen.late.has(u)).length;
+  if (lateMarked !== LATE.size) fail(`late: true on ${lateMarked} of ${LATE.size} late joiners`);
+  const wrongLate = [...qualSeen.late].filter((u) => !LATE.has(u));
+  if (wrongLate.length) fail(`late: true on players who played attempt 1: ${wrongLate.join(', ')}`);
+  if (qualSeen.clockBehind) fail(`${qualSeen.clockBehind} states with the attempt's clock out while rows still played`);
+  console.log(`Rows: late on ${lateMarked} of ${LATE.size} late joiners · extraScore seen ${qualSeen.extraScores} times · clock behind the players: ${qualSeen.clockBehind}`);
   const bestOf = (u: string) => Math.max(byUser.get(u)?.[1]?.score ?? -1, byUser.get(u)?.[2]?.score ?? -1);
   for (const e of event.entrants) if (e.best !== bestOf(e.userId)) fail(`${e.userId}: best ${e.best} but runs ${byUser.get(e.userId)?.[1]?.score}/${byUser.get(e.userId)?.[2]?.score}`);
   const ranking: string[] = event.qual?.ranking ?? [];

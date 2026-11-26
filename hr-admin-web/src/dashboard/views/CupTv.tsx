@@ -21,7 +21,7 @@ type Game = 'odd' | 'trails' | 'knights' | 'wordtrip';
 const GameCtx = createContext<Game>('odd');
 /** Word Trip: everyone's face, from the state's `photos` map (its matches carry none). */
 const PhotosCtx = createContext<Record<string, string | null> | null>(null);
-/** A tournament drawn from its lobby has no seeds: no "#3" beside anyone. */
+/** A tournament drawn from its lobby has no seeds: no "#3" beside anyone (after a qualifier, the #N is the rank). */
 const SeedsCtx = createContext(true);
 const gameOf = (key?: string): Game => (key === 'trails' ? 'trails' : key === 'knights' ? 'knights' : key === 'word-trip' ? 'wordtrip' : 'odd');
 
@@ -95,6 +95,8 @@ interface CupState {
     topN: number;
     entrantCount?: number;
     lobbyDraw?: boolean;
+    /** Word Trip: round 1 was a qualifier, so everyone has a rank. */
+    qualifier?: boolean;
     roundSec?: number;
     rounds?: Round[];
   } | null;
@@ -564,7 +566,7 @@ export function CupTv() {
   return (
     <GameCtx.Provider value={gameOf(event?.gameKey)}>
     <PhotosCtx.Provider value={state?.photos ?? null}>
-    <SeedsCtx.Provider value={!event?.lobbyDraw}>
+    <SeedsCtx.Provider value={!event?.lobbyDraw || !!event?.qualifier}>
     <div ref={root} className={`ctv${stream ? ' stream' : ''}`} data-testid="cup-tv">
       <style>{CSS}</style>
       <header className="ctv-top">
@@ -906,7 +908,7 @@ function leadLine(match: Match, round: Round): string {
     const w = match.winnerId === match.a.userId ? match.a : match.winnerId === match.b.userId ? match.b : null;
     if (!w) return '';
     const kn = isKnights(match);
-    const how = match.decidedBy === 'absent' ? ' (neither played: the better seed goes through)' : match.decidedBy === 'solo' ? ' (the other player did not show)'
+    const how = match.decidedBy === 'absent' ? ' (neither played: the better rank goes through)' : match.decidedBy === 'solo' ? ' (the other player did not show)'
       : kn && match.decidedBy === 'finished' ? ' (first right board)'
       : kn && match.decidedBy === 'resigned' ? ' (the other player resigned)'
       : kn ? ' (most knights right at the bell)' : '';
@@ -1319,7 +1321,7 @@ function Standings({ rows }: { rows: NonNullable<CupState['standings']> }) {
         {rows.filter((r) => r.place > 1).slice(0, 7).map((r) => (
           <div className="ctv-tip" key={r.userId}>
             <span className="ctv-rank">{r.place}</span>
-            <div className="tx"><span>{r.name}</span><small>{r.reached} · seed #{r.seed}</small></div>
+            <div className="tx"><span>{r.name}</span><small>{r.reached} · rank #{r.seed}</small></div>
           </div>
         ))}
       </div>

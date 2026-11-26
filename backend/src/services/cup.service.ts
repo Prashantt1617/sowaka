@@ -234,6 +234,8 @@ interface Runtime {
   refreshedAt: number;
   refreshing: Promise<Runtime | null> | null;
   shared?: { rev: number; count: number; json: string; current: CurrentStage | null; qual?: ReturnType<typeof qualifierView>; qualJson?: string };
+  /** The qualifier's view changes by the clock alone at this time (a run's clock out, a window closing): a new revision then. */
+  qualNextAt?: number;
   /** The company's name, for the page's header. */
   orgName?: string;
   standings?: { rev: number; rows: Standing[] };
@@ -2159,6 +2161,9 @@ function qualifierView(rt: Runtime) {
   }
   const order = new Map((event.lobbyJoined ?? []).map((u, i) => [u, i]));
   for (const [userId, row] of byUser) entries.push({ userId, attempts: row.attempts, extra: row.extra, order: order.get(userId) ?? 1e6 });
+  // When this view next changes by the clock alone: a playing run's clock out, the window closing.
+  const changes = [...runs.filter((r) => r.status === 'live').map((r) => runOverAt(rt, r)), new Date(q.openedAt).getTime() + q.windowSec * 1000].filter((t) => t > now);
+  rt.qualNextAt = q.done || !changes.length ? undefined : Math.min(...changes) + 50;
   const ranked = q.done && q.ranking ? q.ranking : rankQualifier(entries, q.stage === 'extra').ranked;
   const cut = q.done ? q.cut ?? 0 : q.stage === 'extra' ? q.cut ?? qualifierCut(ranked.length) : qualifierCut(ranked.length);
   const names = new Map((rosterCache.get(event.id)?.rows ?? []).map((r) => [r.userId, r.name] as const));
@@ -2175,6 +2180,9 @@ function qualifierView(rt: Runtime) {
       combined: (row.attempts[0] ?? 0) + (row.attempts[1] ?? 0),
       attempts: (row.attempts[0] != null ? 1 : 0) + (row.attempts[1] != null ? 1 : 0),
       playing: row.playing,
+      // Joined late: their first attempt is attempt 2.
+      ...(row.attempts[0] == null && row.attempts[1] != null ? { late: true } : {}),
+      ...(row.extra != null ? { extraScore: row.extra } : {}),
       rank: i + 1,
       status: (q.done ? (i < cut ? 'in' : 'out') : tied.has(userId) ? 'tied' : 'pending') as 'in' | 'out' | 'tied' | 'pending',
     };
@@ -2182,7 +2190,10 @@ function qualifierView(rt: Runtime) {
   const attempt = q.stage === 'a1' ? 1 : 2;
   const live = runs.filter((r) => r.attempt === stageAttempt(q.stage));
   const windowEnd = new Date(q.openedAt).getTime() + q.windowSec * 1000;
-  const attemptEndsAt = q.done ? undefined : Math.min(attemptCapAt(q.openedAt, q.windowSec, event.countdownSec, wtRules()), Math.max(windowEnd, ...live.map((r) => runOverAt(rt, r))));
+  // The attempt's real end: while its window is open, a run started at the last moment (its countdown, the base clock, the grace);
+  // every run's own end (with the seconds it earned) once started; never past the cap. Every row still playing ends by then.
+  const lastStart = now < windowEnd ? windowEnd + (event.countdownSec + runEndsSec(newRun(), wtRules()) + WT_GRACE_SEC) * 1000 : windowEnd;
+  const attemptEndsAt = q.done ? undefined : Math.min(attemptCapAt(q.openedAt, q.windowSec, event.countdownSec, wtRules()), Math.max(lastStart, ...live.map((r) => runOverAt(rt, r))));
   return {
     attempt,
     stage: q.stage,
@@ -2672,6 +2683,11 @@ export async function stateFor(viewer: CupViewer, askedId: unknown, since: unkno
   }
   // A lobby member's page is here now: the draw counts them as connected.
   noteSeen(rt, viewer.userId);
+  // The qualifier's rows change by the clock (a run over, a window closed): a new revision when one has.
+  if (rt.qualNextAt && now.getTime() >= rt.qualNextAt) {
+    rt.qualNextAt = undefined;
+    rt.rev += 1;
+  }
   // Word Trip: everyone's face address in one map, only when the page doesn't hold this version of it (`pv`).
   const sendPhotos = isWordTripEvent(rt.event) && String(photosHeld ?? '') !== String(rt.photosRev ?? 0);
   if (since !== undefined && String(since) === String(rt.rev) && !sendPhotos) {
