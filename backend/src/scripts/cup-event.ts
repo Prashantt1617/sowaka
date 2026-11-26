@@ -24,6 +24,8 @@
  *   # The feed post (a live_game post whose button opens the Cup, signed per viewer):
  *   node --env-file=.env --import tsx src/scripts/cup-event.ts post --id diwali-cup-2026 [--title ..] [--subtitle ..]
  *   node --env-file=.env --import tsx src/scripts/cup-event.ts unpost --id diwali-cup-2026
+ *   # The TV on a public link (no sign-in, first names and faces only); --new true makes a new one:
+ *   node --env-file=.env --import tsx src/scripts/cup-event.ts tv-link --id diwali-cup-2026 [--new true] [--link-base ..]
  *   # Sowaka only: back to before the draw (bets refunded), or gone altogether:
  *   node --env-file=.env --import tsx src/scripts/cup-event.ts reset --id cup-test-sowaka
  *   node --env-file=.env --import tsx src/scripts/cup-event.ts remove --id cup-test-sowaka
@@ -48,6 +50,7 @@ import { DEFAULT_CUP_CONFIG, WORD_TRIP, WT_DEFAULT_RULES, WT_GRACE_SEC, wtLonges
 import { newSeed } from '../services/game-challenge-rules';
 import { cupBets, cupEvents, cupMatches, cupRuns, rosterOf } from '../services/cup.service';
 import { pointEvents } from '../services/points-ledger.service';
+import { tvLinkCommand } from '../services/cup-tv-public.service';
 
 type Flags = Record<string, string>;
 
@@ -413,6 +416,9 @@ async function main() {
       console.log(`Removed ${result.deletedCount} post(s).`);
       break;
     }
+    case 'tv-link':
+      console.log(await tvLinkCommand(await requireEvent(flags.id), flags));
+      break;
     case 'reset':
     case 'remove': {
       const event = await requireEvent(flags.id);
