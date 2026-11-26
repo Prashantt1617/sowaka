@@ -15,6 +15,8 @@
     '.wt-k{font-size:13px;font-weight:800;letter-spacing:.14em;color:#A9A3CC;text-transform:uppercase}' +
     '.wt-row{display:flex;align-items:center;justify-content:space-between;gap:10px}' +
     '.wt-a{font-size:14px;font-weight:700;color:#FFD23F;background:none;border:0;padding:0;cursor:pointer}' +
+    '.wt-q{flex:none;width:40px;height:40px;border-radius:50%;border:2px solid #3B3668;background:#211D42;color:#FFD23F;font:800 20px/1 "Baloo 2",system-ui;display:grid;place-items:center;cursor:pointer;padding:0}' +
+    '.top.wtq{position:relative;padding-right:72px}.top.wtq .wt-q{position:absolute;right:20px;top:calc(12px + env(safe-area-inset-top))}' +
     '.wt-mu{margin:0;font-size:17px;color:#A9A3CC}.wt-s{font-size:14px;color:#A9A3CC;text-align:center}' +
     '.wt-tiles{display:flex;gap:8px;justify-content:center;padding:6px 0}.wt-tiles span{width:52px;height:58px;border-radius:12px;background:#FFF6DE;box-shadow:inset 0 -4px 0 #D2BC7E;color:#2A2140;font:800 30px/58px "Baloo 2",system-ui;text-align:center}.wt-tiles span.g{background:#FFD23F;box-shadow:inset 0 -4px 0 #C99E12}' +
     '.wt-tiles.sm span{width:38px;height:42px;border-radius:9px;font-size:22px;line-height:42px}' +
@@ -52,7 +54,7 @@
     function tiles(word, gold, sm) { return '<div class="wt-tiles' + (sm ? ' sm' : '') + '" aria-label="' + esc(word) + '">' + String(word).toUpperCase().split('').map(function (c, i) { return '<span' + (gold && i === word.length - 1 ? ' class="g"' : '') + '>' + esc(c) + '</span>'; }).join('') + '</div>'; }
     function e() { return H.ev(); }
     function roundKick(m) { var t = (e().rounds || []).length, r = H.roundOf(m.round); return r && r.kind === 'sequential' ? String(r.label).toUpperCase() : 'ROUND ' + m.round + ' OF ' + t; }
-    function how() { return '<button type="button" class="wt-a" data-act="tab" data-v="how">How to play</button>'; }
+    function how() { return '<button type="button" class="wt-q" data-act="wthow" aria-label="How to play">?</button>'; }
     function wallet() { var w = e().wallet; return w ? num(w) : ''; }
     function people() { return (e().lobbyPeople || []); }
 

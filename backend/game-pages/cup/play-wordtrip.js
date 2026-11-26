@@ -211,6 +211,36 @@
       state: function () { return { phase: phase, started: started, ended: ended, queue: queue.length, sent: sent, rejected: rejected, score: myScore }; }
     };
   }
+  /* Word Trip's own How to play (the live game's, not a copy): its page in a frame, opened on How to play; OK closes it. */
+  var HOW = '<script>(function(){var H=hideHowTo;window.hideHowTo=function(){H();try{parent.postMessage({cupwt:3,type:"close"},"*");}catch(e){}};' +
+    'try{showHowTo(null);}catch(e){}try{parent.postMessage({cupwt:3,type:"open"},"*");}catch(e){}})();<\/script>';
+  function howTo(getGame) {
+    css();
+    if (document.getElementById('cwt-how')) return;
+    var box = document.createElement('div'); box.id = 'cwt-how';
+    box.setAttribute('style', 'position:fixed;inset:0;z-index:80;background:#15122B');
+    box.innerHTML = '<div class="cwt-cov" data-c role="status"><h2>Loading…</h2></div>';
+    document.body.appendChild(box);
+    var frame = null;
+    function onMsg(e) {
+      if (!frame || e.source !== frame.contentWindow || !e.data || e.data.cupwt !== 3) return;
+      if (e.data.type === 'open') { var c = box.querySelector('[data-c]'); if (c) c.remove(); try { frame.focus(); } catch (x) {} }
+      if (e.data.type === 'close') close();
+    }
+    function close() { window.removeEventListener('message', onMsg); box.remove(); }
+    window.addEventListener('message', onMsg);
+    Promise.resolve().then(function () { return getGame(); }).then(function (html) {
+      frame = document.createElement('iframe');
+      frame.title = 'How to play Word Trip';
+      frame.setAttribute('style', 'position:absolute;inset:0;width:100%;height:100%;border:0;display:block;background:#15122B');
+      var page = withBridge(html), i = page.lastIndexOf('</body>');
+      frame.srcdoc = i < 0 ? page + HOW : page.slice(0, i) + HOW + page.slice(i);
+      box.appendChild(frame);
+    }).catch(function () {
+      box.innerHTML = '<div class="cwt-cov"><h2>Can’t load it</h2><p>Check your connection and try again.</p><p><button type="button" style="font:800 17px Figtree,system-ui;padding:12px 24px;border-radius:14px;border:0;background:#FFD23F;color:#15122B">Close</button></p></div>';
+      box.querySelector('button').onclick = close;
+    });
+  }
   /* The game's own sounds start on the first touch inside it; nothing to unlock out here. */
-  window.CupWordTrip = { start: start, unlockAudio: function () { return true; } };
+  window.CupWordTrip = { start: start, howTo: howTo, unlockAudio: function () { return true; } };
 })();

@@ -673,19 +673,6 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     }
     return null;
   }
-  function viewHowWordTrip() {
-    var w = ev().startWindowSec || 40;
-    var rules = [['The normal Word Trip', 'Each match is one Word Trip run, exactly as in the Games tab: swipe the letters into words, 3 letters or more.'],
-      ['Same letters for both', 'You and your opponent get the same letters, in the same order.'],
-      ['1:00 on the clock', 'Words of 5 letters or more add seconds; a word with every letter adds the most and takes you to the next letters.'],
-      ['Quick words, more points', 'Words within 8 seconds of each other score ×2, then ×3. Stuck? Skip costs 100 points.'],
-      ['More points wins', 'When both clocks run out, the higher score goes on. A tie is played again on new letters.'],
-      ['Bet on the last rounds', 'When 8 or fewer players are left, the matches go one at a time and everyone can bet' + (ev().wallet ? ' from ' + num(ev().wallet) + ' points' : '') + ': a right pick pays back double.'],
-      ['Be there', 'Your match opens with a push. If your opponent isn’t there in ' + w + ' seconds, you play alone and go to the next round.']];
-    return '<section class="wt" aria-label="How to play">' + (wtViews() ? wtViews().tiles('words', true) : '') + rules.map(function (r) { return '<div class="wt-box"><b>' + esc(r[0]) + '</b><span>' + esc(r[1]) + '</span></div>'; }).join('') +
-      '<button type="button" class="wt-btn" data-act="tab" data-v="me">Back</button></section>';
-  }
-
   function viewBefore() {
     var e = ev(), me = S.me;
     var n = e.entrantCount || S.entrants || 0;
@@ -1185,12 +1172,14 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     }
     var e = ev();
     if (!e) return fullScreen('✦', cupName() + ' isn\'t on right now', 'When it\'s switched on, your match, all the matches and the live games all show up here.');
-    var tabs = [['me', e.phase === 'done' ? 'Results' : 'Home'], ['bracket', 'Matches'], ['watch', 'Watch &amp; Bet']];
-    // Tipsters from the top N on (the server may send an empty list from the start).
-    if (S.tipsters && (S.tipsters.length || isTopN() || e.phase === 'done')) tabs.push(['tipsters', 'Tipsters']);
-    if (isKnights() || isWordTrip()) tabs.push(['how', tabs.length > 3 || isWordTrip() ? 'Rules' : 'How to play']);
-    if (isWordTrip() && (e.phase === 'scheduled' || e.lobbyOpen) && (ui.tab === 'me' || ui.tab === 'how')) {
-      return '<div class="wrap"><main class="body" id="panel">' + (ui.tab === 'how' ? viewHowWordTrip() : viewMe()) + '</main></div>' +
+    var wt = isWordTrip();
+    if (wt) wtViews();
+    var tabs = [['me', e.phase === 'done' ? 'Results' : wt ? 'My game' : 'Home'], ['bracket', 'Matches'], ['watch', 'Watch &amp; Bet']];
+    // Tipsters from the top N on (the server may send an empty list from the start). Word Trip: three tabs only, How to play behind "?".
+    if (!wt && S.tipsters && (S.tipsters.length || isTopN() || e.phase === 'done')) tabs.push(['tipsters', 'Tipsters']);
+    if (isKnights()) tabs.push(['how', tabs.length > 3 ? 'Rules' : 'How to play']);
+    if (wt && (e.phase === 'scheduled' || e.lobbyOpen) && ui.tab === 'me') {
+      return '<div class="wrap"><main class="body" id="panel">' + viewMe() + '</main></div>' +
         (netFail && !(ui.playing && isWordTrip()) ? '<div class="net" role="status">Connection lost. Retrying…<button type="button" data-act="retry">Retry now</button></div>' : '') +
         (ui.toast ? '<div class="toast' + (ui.toast.err ? ' err' : '') + '" role="status">' + esc(ui.toast.text) + '</div>' : '');
     }
@@ -1199,9 +1188,10 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     var tabHtml = '<div class="tabs' + (tabs.length > 4 ? ' t5' : '') + '" role="tablist" aria-label="' + esc(cupName()) + '">' + tabs.map(function (t) {
       return '<button type="button" role="tab" id="tab-' + t[0] + '" aria-controls="panel" class="tab' + (ui.tab === t[0] ? ' on' : '') + '" aria-selected="' + (ui.tab === t[0]) + '" data-act="tab" data-v="' + t[0] + '">' + t[1] + (t[0] === 'watch' && liveN && ui.tab !== 'watch' ? '<span class="dot" aria-label="' + liveN + ' live"></span>' : '') + '</button>';
     }).join('') + '</div>';
-    var body = ui.tab === 'bracket' ? viewBracket() : ui.tab === 'watch' ? viewWatch() : ui.tab === 'tipsters' ? viewTipsters() : ui.tab === 'how' ? (isWordTrip() ? viewHowWordTrip() : viewHow()) : viewMe();
-    return '<div class="wrap"><header class="top">' + wordmark() + '<span class="tr">' + phaseChip() +
-      (showBalance() ? '<span class="bal" aria-label="Your balance: ' + num(S.me.balance) + ' points"><span class="coin" aria-hidden="true"></span>' + num(S.me.balance) + '</span>' : '') + '</span></header>' +
+    var body = ui.tab === 'bracket' ? viewBracket() : ui.tab === 'watch' ? viewWatch() : ui.tab === 'tipsters' ? viewTipsters() : ui.tab === 'how' ? viewHow() : viewMe();
+    return '<div class="wrap"><header class="top' + (wt ? ' wtq' : '') + '">' + wordmark() + '<span class="tr">' + phaseChip() +
+      (showBalance() ? '<span class="bal" aria-label="Your balance: ' + num(S.me.balance) + ' points"><span class="coin" aria-hidden="true"></span>' + num(S.me.balance) + '</span>' : '') + '</span>' +
+      (wt ? '<button type="button" class="wt-q" data-act="wthow" aria-label="How to play">?</button>' : '') + '</header>' +
       tabHtml + '<main class="body" id="panel" role="tabpanel" aria-labelledby="tab-' + ui.tab + '">' + body + '</main></div>' +
       (ui.duel ? viewDuel(ui.duel) : '') +
       (netFail && !(ui.playing && isWordTrip()) ? '<div class="net" role="status">Connection lost. Retrying…<button type="button" data-act="retry">Retry now</button></div>' : '') +
@@ -1530,6 +1520,8 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     add: function (v) { ui.stake = Math.min((S.me.balance || 0), ui.stake + Number(v)); render(); },
     allin: function () { ui.stake = S.me.balance || 0; render(); },
     clear: function () { ui.stake = 0; render(); },
+    /* Word Trip: its own How to play, from the live game itself. */
+    wthow: function () { if (window.CupWordTrip && window.CupWordTrip.howTo) window.CupWordTrip.howTo(wtGetGame); },
     wtstake: function (v) { var bal = (S.me && S.me.balance) || 0; ui.stake = v === 'all' ? bal : Math.min(bal, Number(v) || 0); render(); },
     seen: function (v) { if (seen.indexOf(v) < 0) seen.push(v); store('cup-seen-bets', seen.slice(-40)); render(); },
     ride: function (v, el) {
