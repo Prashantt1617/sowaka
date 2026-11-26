@@ -84,7 +84,7 @@
         '<div class="wt-grid">' + shown.map(function (p) { return '<div data-k="g' + esc(p.userId) + '">' + face(p, '', 'l') + '<span>' + esc(p.userId === H.meId() ? 'You' : first(p.name)) + '</span></div>'; }).join('') + '</div>' +
         (n > shown.length ? '<span class="wt-s">+' + num(n - shown.length) + ' more</span>' : '') + '</div>' +
         '<div style="flex-grow:1"></div>' +
-        '<div class="wt-box"><b>How it works</b><span>1. We pick your opponent.</span><span>2. Same letters for both. 1 minute each.</span><span>3. More points wins. Winner goes on.</span></div>' +
+        '<div class="wt-box"><b>How it works</b><span>1. We pick your opponent.</span><span>2. Same letters for both. Find words before your clock runs out.</span><span>3. More points wins. Winner goes on.</span></div>' +
         '</section>';
     }
 

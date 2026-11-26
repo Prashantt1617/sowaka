@@ -36,18 +36,24 @@
     'var W=submitWord;window.submitWord=function(){var g=gi,n=total,w=tray.map(function(t){return t.ch;}).join("");W();if(total>n&&t0!=null)post({type:"word",g:g,w:w,t:now()-t0});};' +
     'var K=skip;window.skip=function(){var g=gi,k=skips;K();if(skips>k&&t0!=null)post({type:"skip",g:g,t:now()-t0});};' +
     'var E=endRound;window.endRound=function(){E();post({type:"end",score:score});};' +
+    'window.results=function(title,stars){if(mode!=="over")return;var st=starsEl(0),big=el("div","bigscore","0");openSheet(title,[st,big,sumLine()],[]);animateScore(st,big,score,stars,true);};' +
+    'window.sheetOutside=function(){};window.sheetX=function(){};' +
+    'var cs=document.createElement("style");cs.textContent="#sx{display:none!important}";document.head.appendChild(cs);' +
     'addEventListener("message",function(e){var d=e.data;if(!d||d.cupwt!==2)return;if(d.type==="start"){try{start(null,d.seed);}catch(x){post({type:"error",message:String(x)});}}});' +
     'post({type:"ready"});' +
     '})();<\/script>';
   var CSS = '.cwt{position:absolute;inset:0;background:#15122B;color:#F6F1FF;font-family:Figtree,system-ui,sans-serif;overflow:hidden}' +
     '.cwt *{box-sizing:border-box}' +
-    '.cwt-strip{position:absolute;left:0;right:0;top:0;height:calc(52px + env(safe-area-inset-top));padding:env(safe-area-inset-top) 14px 0;display:flex;align-items:center;gap:10px;background:#211D42;border-bottom:1px solid #3B3668}' +
+    '.cwt-strip{position:absolute;left:0;right:0;top:0;height:calc(52px + env(safe-area-inset-top));padding:env(safe-area-inset-top) 12px 0;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px;background:#211D42;border-bottom:1px solid #3B3668}' +
     '.cwt-strip .vs{font:800 14px/1 "Baloo 2",system-ui;color:#A9A3CC}' +
-    '.cwt-strip .nm{font-weight:800;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}' +
-    '.cwt-strip .sc{margin-left:auto;font:800 24px/1 "Baloo 2",system-ui;font-variant-numeric:tabular-nums}' +
-    '.cwt-strip .st{font-size:12px;font-weight:800;letter-spacing:.06em;padding:5px 9px;border-radius:999px;background:rgba(75,227,154,.14);color:#4BE39A;white-space:nowrap}.cwt-strip .st.done{background:#2B2650;color:#A9A3CC}' +
+    '.cwt-side{display:flex;align-items:center;gap:8px;min-width:0}.cwt-side.r{flex-direction:row-reverse;text-align:right}' +
+    '.cwt-side .tx{min-width:0;display:flex;flex-direction:column}' +
+    '.cwt-side .nm{font-weight:800;font-size:13px;color:#A9A3CC;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '.cwt-side .sc{font:800 21px/1 "Baloo 2",system-ui;font-variant-numeric:tabular-nums}' +
+    '.cwt-side .st{font-size:11px;font-weight:800;color:#4BE39A;white-space:nowrap}.cwt-side .st.done{color:#A9A3CC}' +
     '.cwt-av{position:relative;flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:12px;color:#15122B;overflow:hidden}.cwt-av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}' +
     '.cwt-game{position:absolute;left:0;right:0;bottom:0;top:calc(52px + env(safe-area-inset-top));width:100%;height:calc(100% - 52px - env(safe-area-inset-top));border:0;display:block;background:#15122B}' +
+    '.cwt-end{position:absolute;left:0;right:0;top:calc(52px + env(safe-area-inset-top));z-index:4;padding:10px 14px;background:#FFD23F;color:#15122B;font-weight:700;font-size:15px;text-align:center}.cwt-end b{font-weight:800}.cwt-end[hidden]{display:none}.cwt-end .cwt-dots i{background:#15122B}' +
     '.cwt-net{position:absolute;left:12px;right:12px;top:calc(58px + env(safe-area-inset-top));z-index:6;padding:9px 12px;border-radius:12px;background:#FF6B57;color:#15122B;font-weight:800;font-size:14px;text-align:center}.cwt-net[hidden]{display:none}' +
     '.cwt-cov{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;background:#15122B}.cwt-cov[hidden]{display:none}' +
     '.cwt-cov small{font-size:13px;font-weight:800;letter-spacing:.14em;color:#A9A3CC}.cwt-cov h2{margin:0;font:800 38px/1.08 "Baloo 2",system-ui;color:#F6F1FF}.cwt-cov p{margin:0;max-width:330px;font-size:17px;line-height:1.4;color:#A9A3CC}.cwt-cov p b{color:#F6F1FF}' +
@@ -82,19 +88,21 @@
     var alive = true, phase = 'load', frame = null, ready = false, started = false, ended = false, myScore = 0;
     var queue = [], sending = false, failSince = 0, rejected = 0, sent = 0;
     var root = document.createElement('div'); root.className = 'cwt';
-    root.innerHTML = '<div class="cwt-strip" data-strip></div><div class="cwt-net" data-net hidden role="status">Reconnecting… your words are kept and sent when it’s back.</div><div class="cwt-cov" data-cov role="status"></div>';
+    root.innerHTML = '<div class="cwt-strip" data-strip></div><div class="cwt-end" data-end hidden role="status"></div><div class="cwt-net" data-net hidden role="status">Reconnecting… your words are kept and sent when it’s back.</div><div class="cwt-cov" data-cov role="status"></div>';
     o.mount.appendChild(root);
     var $ = function (k) { return root.querySelector('[data-' + k + ']'); };
-    var $cov = $('cov'), $strip = $('strip'), $net = $('net');
+    var $cov = $('cov'), $strip = $('strip'), $net = $('net'), $end = $('end');
     function cover(h) { if ($cov.getAttribute('data-h') !== h) { $cov.setAttribute('data-h', h); $cov.innerHTML = h; } $cov.hidden = false; }
     function uncover() { $cov.hidden = true; }
     function oppNow() { try { return (o.getOpponent && o.getOpponent()) || null; } catch (e) { return null; } }
+    /* Both players at the very top: faces, names, live scores (as the server has them), and who is still playing. */
     function strip() {
-      var h;
-      if (!opp) h = '<span class="nm">You’re playing alone</span><span class="st">You go through</span>';
+      var mine = (o.getMine && o.getMine()) || {}, mySc = Math.max(myScore, mine.score || 0);
+      var h = '<div class="cwt-side">' + face(o.me, '#FFD23F') + '<span class="tx"><span class="nm">You</span><b class="sc">' + num(mySc) + '</b></span></div><span class="vs">vs</span>';
+      if (!opp) h += '<div class="cwt-side r"><span class="tx"><span class="nm">' + esc(oppName) + '</span><span class="st done">Didn’t come</span></span></div>';
       else {
         var x = oppNow() || {}, done = x.endsAt && now() >= x.endsAt;
-        h = '<span class="vs">vs</span>' + face(opp, '#4C9BFF') + '<span class="nm">' + esc(first(opp.name)) + '</span><span class="sc">' + num(x.score) + '</span><span class="st' + (done ? ' done' : '') + '">' + (done ? 'Finished' : 'Playing') + '</span>';
+        h += '<div class="cwt-side r">' + face(opp, '#4C9BFF') + '<span class="tx"><span class="nm">' + esc(first(opp.name)) + '</span><b class="sc">' + num(x.score) + '</b></span><span class="st' + (done ? ' done' : '') + '">' + (done ? 'Finished' : ended ? 'Still playing…' : 'Playing') + '</span></div>';
       }
       if ($strip.getAttribute('data-h') !== h) { $strip.setAttribute('data-h', h); $strip.innerHTML = h; }
     }
@@ -125,7 +133,7 @@
       else if (d.type === 'begin') { phase = 'play'; uncover(); }
       else if (d.type === 'word' && typeof d.w === 'string') { queue.push({ type: 'word', g: d.g, w: d.w, t: Math.round(d.t * 1000) / 1000 }); pump(); }
       else if (d.type === 'skip') { queue.push({ type: 'skip', g: d.g, t: Math.round(d.t * 1000) / 1000 }); pump(); }
-      else if (d.type === 'end') { ended = true; myScore = d.score; phase = 'end'; tick(); }
+      else if (d.type === 'end') { myScore = d.score; ended = true; phase = 'end'; tick(); }
       else if (d.type === 'error') { console.error('Word Trip in the tournament:', d.message); }
     }
     window.addEventListener('message', onMsg);
@@ -152,14 +160,14 @@
       if (o.played && !started) {
         /* Reopened mid-run: the run can't be picked up again; what the server has stands, the clock runs on. */
         var me = (o.getMine && o.getMine()) || {};
-        cover('<small>YOUR RUN</small><h2>You left your match</h2><p>Your score stands: <b>' + num(me.score) + '</b>. The clock kept running, so the run can’t start again.</p>' + endLine());
+        cover('<small>YOUR RUN</small><h2>You left your match</h2><p>Your score stands: <b>' + num(me.score) + '</b>. The clock kept running, so the run can’t start again.</p><p>' + endLine().replace('Time’s up. ', '') + '</p>');
         return;
       }
       if (phase === 'end' || ended) {
-        var mine = (o.getMine && o.getMine()) || {};
-        cover('<small>TIME’S UP</small><h2>Your score: ' + num(Math.max(myScore, mine.score || 0)) + '</h2>' +
-          (opp ? '<div class="cwt-sc2"><div><b>' + num(Math.max(myScore, mine.score || 0)) + '</b><span>You</span></div><div><b>' + num((oppNow() || {}).score) + '</b><span>' + esc(first(opp.name)) + '</span></div></div>' : '') + endLine() +
-          (queue.length ? '<p>Sending your last words…</p>' : ''));
+        /* The game's own end sheet stays up; under the strip, in plain words, what happens now. */
+        var line = endLine() + (queue.length ? ' Sending your last words…' : '');
+        if ($end.getAttribute('data-h') !== line) { $end.setAttribute('data-h', line); $end.innerHTML = line; }
+        $end.hidden = false;
         return;
       }
       if (!frame || !ready) { cover('<h2>Loading the game…</h2><p>' + (t < startAt ? 'Your match starts in <b>' + Math.max(0, Math.ceil((startAt - t) / 1000)) + '</b> seconds.' : 'One moment.') + '</p>'); return; }
@@ -179,10 +187,10 @@
     }
     /* Under "Time's up": the other player still playing (and their score so far), or the result on its way. */
     function endLine() {
-      if (!opp) return '<p>You go to the next round. Waiting for the others to finish…</p>';
+      if (!opp) return 'Time’s up. You go to the next round. Waiting for the others to finish…';
       var x = oppNow() || {};
-      if (x.endsAt && now() < x.endsAt) return '<p><b>' + esc(first(opp.name)) + ' is still playing</b> <span class="cwt-dots" aria-hidden="true"><i></i><i></i><i></i></span><br>' + num(x.score) + ' so far.</p>';
-      return '<p>Waiting for the result <span class="cwt-dots" aria-hidden="true"><i></i><i></i><i></i></span></p>';
+      if (x.endsAt && now() < x.endsAt) return 'Time’s up. <b>' + esc(first(opp.name)) + ' is still playing…</b> ' + num(x.score) + ' so far.';
+      return 'Time’s up. Waiting for the result <span class="cwt-dots" aria-hidden="true"><i></i><i></i><i></i></span>';
     }
     if (!o.played) load();
     var iv = setInterval(tick, 250);
