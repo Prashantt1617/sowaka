@@ -177,13 +177,13 @@
       var sub = won
         ? (m.decidedBy === 'solo' ? esc(first(opp && opp.name)) + ' didn’t come. ' : m.decidedBy === 'absent' ? 'Neither of you came, so you went through by the draw. ' : m.decidedBy === 'replays' ? 'Still level after the replays: you went through by the draw. ' : '') + (m.round >= rounds ? 'You’re the champion!' : 'On to ' + (nextR ? nextR.label.toLowerCase().replace(/^round /, 'round ') : 'the next round') + '.')
         : (m.decidedBy === 'absent' ? 'Neither of you came. ' : m.decidedBy === 'replays' ? 'Still level after the replays. ' : '') + 'Good game. ' + esc(first(opp && opp.name)) + ' goes on.';
-      var nextAt = won && m.round < rounds ? opts.nextAt : NaN;
+      
       return '<section class="wt" aria-label="Match result"><span class="wt-k">' + roundKick(m) + '</span>' +
         '<div style="display:flex;flex-direction:column;gap:6px"><h1 class="xl" style="font-size:48px;color:' + (won ? '#4BE39A' : '#F6F1FF') + '">' + (won ? 'You won!' : 'You’re out') + '</h1><span style="font-size:17px;color:#A9A3CC">' + sub + '</span></div>' +
         '<div class="wt-res"><div class="' + (won ? 'w' : '') + '">' + face({ userId: u, name: H.me().name, photoUrl: H.me().photoUrl }, '', 'r') + '<strong>You</strong><b>' + num(mine) + '</b><span>' + num(ww[u] || 0) + ' words</span></div>' +
         '<div class="' + (won ? '' : 'w') + '">' + face(opp, '', 'r') + '<strong>' + esc(opp ? first(opp.name) : '') + '</strong><b>' + num(theirs) + '</b><span>' + num(opp ? ww[opp.userId] || 0 : 0) + ' words</span></div></div>' +
         (best ? '<div class="wt-box"><b>Your best word</b>' + tiles(best, false, true).replace('wt-tiles sm', 'wt-tiles sm" style="justify-content:flex-start') + '</div>' : '') +
-        (won && m.round < rounds ? '<div style="display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:15px;color:#A9A3CC">' + (isFinite(nextAt) ? 'Next round in' : 'Your next match starts when everyone has completed this round.') + '</span>' + (isFinite(nextAt) ? '<span class="wt-big">' + H.cd(nextAt) + '</span>' : '') + '</div>' : '') +
+        (won && m.round < rounds ? '<div style="display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:15px;color:#A9A3CC;text-align:center">Your next match starts when everyone has completed this round.</span></div>' : '') +
         '<div style="flex-grow:1"></div>' +
         (won ? (m.round < rounds ? '<span class="wt-s" style="font-size:15px">Stay here. We’ll start your next match.</span>' : '')
           : '<div style="display:flex;flex-direction:column;gap:10px"><button type="button" class="wt-btn" data-act="tab" data-v="watch">Watch and bet</button>' + (H.me().balance ? '<span class="wt-s">You still have ' + num(H.me().balance) + ' points to bet.</span>' : '') + '</div>') +
