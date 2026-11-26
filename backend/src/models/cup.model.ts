@@ -23,6 +23,42 @@ export type CupSeeding = 'leaderboard' | 'lucky';
 /** Where the event has got to. */
 export type CupPhase = 'scheduled' | 'lobby' | 'running' | 'done';
 
+/** Word Trip's qualifier, on the event while round 1 is a qualifier (the lobby phase): which attempt is open, since when. */
+export interface CupQual {
+  stage: 'a1' | 'a2' | 'extra';
+  openedAt: Date;
+  windowSec: number;
+  a1At?: Date;
+  /** The tie-break run: those tied across the cut, and how many places they share. */
+  extraUserIds?: string[];
+  spots?: number;
+  cut?: number;
+  /** The cut is made: everyone who played, in rank order. */
+  done?: boolean;
+  ranking?: string[];
+  doneAt?: Date;
+}
+
+/** One qualifier run: a player's attempt (1, 2, or 3 for the tie-break), a normal Word Trip run on its own seed. */
+export interface CupRun {
+  /** `${eventId}-q${attempt}-${userId}`. */
+  id: string;
+  eventId: string;
+  org: string;
+  userId: string;
+  attempt: 1 | 2 | 3;
+  seed: number;
+  status: 'live' | 'done';
+  joinedAt: Date;
+  startAt: Date;
+  /** The run as the server played it (as a match player's live). */
+  live?: CupScore;
+  score?: number;
+  endedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 /** A place in the draw: an entrant by seed (`e:12`), or the winner of a node (`n:3:7`, round 3 slot 7). */
 export type CupRef = string;
 
@@ -96,6 +132,8 @@ export interface CupEventConfig {
    * leaderboard. Absent or 0: bets are staked from their own points.
    */
   walletStart?: number;
+  /** Word Trip: round 1 is a qualifier (two runs each on letters of their own, best counts; the top power of two go on). */
+  qualifier?: boolean;
 }
 
 export interface CupEvent extends CupEventConfig {
@@ -135,6 +173,9 @@ export interface CupEvent extends CupEventConfig {
   lobbySeen?: Record<string, Date>;
   /** With `lobbyDraw`: the lobby closed (no more joins) at this time; the draw is made from `lobbyJoined` as it stood then. */
   lobbyClosedAt?: Date;
+  /** Word Trip: when each person joined the lobby. */
+  lobbyJoinedAt?: Record<string, Date>;
+  qual?: CupQual;
   championId?: string;
   finishedAt?: Date;
   /** Switched off mid-tournament at this time (`cup-event.ts off`); switching back on moves every match's clock on by the pause. */

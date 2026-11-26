@@ -31,7 +31,7 @@ import { env } from '../config/env';
 import { companies, connectMedia, gameCatalog, gameScores, getDb, users } from '../config/db';
 import { copyKey } from './image-fit';
 import { isConnectMediaKey, readConnectMedia } from './s3-connect-media.service';
-import type { CupDecision, CupEntrant, CupKnightsResult, CupEvent, CupMatch, CupRound, CupBet } from '../models/cup.model';
+import type { CupDecision, CupEntrant, CupKnightsResult, CupEvent, CupMatch, CupRound, CupBet, CupRun } from '../models/cup.model';
 import { catalogScoreId } from '../models/game-catalog.model';
 import type { User } from '../models/user.model';
 import { hasAllDashboardTabs } from '../middleware/admin.middleware';
@@ -47,7 +47,19 @@ import {
 
   WT_DEFAULT_RULES,
   WT_REPLAY_SEC,
+  WT_GRACE_SEC,
+  WT_LAG_SEC,
   lobbyPresent,
+  attemptCapAt,
+  bracketRoundName,
+  firstNameOf,
+  mayJoinAttempt,
+  qualBest,
+  qualifierCut,
+  rankQualifier,
+  type QualEntry,
+  type QualResult,
+  type QualStage,
   mayPlayWord,
   newRun,
   nextWordTripStep,
@@ -221,7 +233,7 @@ interface Runtime {
   rev: number;
   refreshedAt: number;
   refreshing: Promise<Runtime | null> | null;
-  shared?: { rev: number; count: number; json: string; current: CurrentStage | null };
+  shared?: { rev: number; count: number; json: string; current: CurrentStage | null; qual?: ReturnType<typeof qualifierView>; qualJson?: string };
   /** The company's name, for the page's header. */
   orgName?: string;
   standings?: { rev: number; rows: Standing[] };
@@ -297,6 +309,7 @@ async function refresh(eventId: string): Promise<Runtime | null> {
       rt.matches.set(row.id, row);
     }
     await refreshPhotos(rt).catch((error) => logger.error('Cup photos failed', { eventId }, error));
+    await refreshRuns(rt).catch((error) => logger.error('Cup runs failed', { eventId }, error));
     rt.refreshedAt = began;
     return rt;
   })();
@@ -774,13 +787,16 @@ export async function joinLobby(viewer: CupViewer, askedId?: unknown) {
   if (!event.lobbyDraw) throw new CupError(409, 'This tournament has no lobby to join');
   if (event.phase === 'scheduled') throw new CupError(409, 'The lobby is not open yet');
   if (event.phase !== 'lobby' || event.drawnAt || event.lobbyClosedAt) throw new CupError(409, 'The lobby has closed');
+  if (event.qual && (event.qual.stage === 'extra' || (event.qual.stage === 'a2' && Date.now() >= new Date(event.qual.openedAt).getTime() + event.qual.windowSec * 1000))) {
+    throw new CupError(409, 'The lobby has closed');
+  }
   const roster = await rosterPreview(event);
   if (!roster.some((row) => row.userId === viewer.userId)) throw new CupError(403, "You're not in this tournament");
   const now = new Date();
   if (!(event.lobbyJoined ?? []).includes(viewer.userId)) {
     const after = await cupEvents().findOneAndUpdate(
       { id: event.id, phase: 'lobby', active: true, drawnAt: { $exists: false }, lobbyClosedAt: { $exists: false }, lobbyJoined: { $ne: viewer.userId } },
-      { $push: { lobbyJoined: viewer.userId }, $set: { updatedAt: now, [`lobbySeen.${viewer.userId}`]: now }, $inc: { version: 1 } },
+      { $push: { lobbyJoined: viewer.userId }, $set: { updatedAt: now, [`lobbySeen.${viewer.userId}`]: now, [`lobbyJoinedAt.${viewer.userId}`]: now }, $inc: { version: 1 } },
       { returnDocument: 'after', projection: { _id: 0 } },
     );
     if (after) {
@@ -1050,8 +1066,13 @@ async function tickEvent(id: string): Promise<void> {
   }
   if (event.phase === 'lobby') {
     if (now < event.startAt) return;
+    // Word Trip with a qualifier: two runs each, then the cut makes the draw.
+    if (isQualifierEvent(event) && !event.drawnAt) {
+      await tickQualifier(rt, now);
+      if (!(rt.event.phase === 'lobby' && rt.event.drawnAt)) return;
+    }
     // The lobby closes: the draw, of the people in it, before round 1 can open.
-    if (event.lobbyDraw && !event.drawnAt) await makeLobbyDraw(rt, now);
+    if (event.lobbyDraw && !event.drawnAt && !isQualifierEvent(event)) await makeLobbyDraw(rt, now);
     if (rt.event.phase === 'lobby' && rt.event.drawnAt) await openRound(rt, 1, new Date());
     return;
   }
@@ -1829,6 +1850,379 @@ export function wordTripTvOf(eventId: string) {
   return out;
 }
 
+// ---------------------------------------------------------------- the qualifier (Word Trip)
+
+/**
+ * Round 1 of a Word Trip Tournament with `qualifier`: two normal runs each,
+ * on letters of their own, best counts; the top power of two go on, ranked,
+ * into the bracket (`cup-rules.ts` rankQualifier). Each run is a `cup_runs`
+ * document (one per player per attempt, `_id` its id), played and checked
+ * exactly as a match's run. The event stays in its lobby phase until the cut
+ * is made; the lobby stays open to the end of attempt 2's start window.
+ */
+export function cupRuns(): Collection<CupRun> {
+  return getDb().collection<CupRun>('cup_runs');
+}
+const isQualifierEvent = (event: Pick<CupEvent, 'gameKey' | 'qualifier'>) => event.gameKey === WORD_TRIP && event.qualifier === true;
+const qualRunId = (eventId: string, attempt: number, userId: string) => `${eventId}-q${attempt}-${userId}`;
+const stageAttempt = (stage: QualStage) => (stage === 'a1' ? 1 : stage === 'a2' ? 2 : 3);
+
+/** The qualifier's runs, kept with the runtime (read with each refresh while the qualifier is on). */
+const qualRuns = new Map<string, Map<string, CupRun>>();
+const runsOf = (rt: Runtime) => qualRuns.get(rt.event.id) ?? new Map<string, CupRun>();
+async function refreshRuns(rt: Runtime) {
+  if (!isQualifierEvent(rt.event) || !rt.event.qual) return;
+  const rows = await cupRuns().find({ eventId: rt.event.id }, { projection: { _id: 0 } }).toArray();
+  const map = runsOf(rt);
+  for (const row of rows) {
+    const had = map.get(row.id);
+    if (had && had.updatedAt.getTime() > row.updatedAt.getTime()) continue;
+    if (!had || had.updatedAt.getTime() !== row.updatedAt.getTime()) rt.rev += 1;
+    map.set(row.id, row);
+  }
+  qualRuns.set(rt.event.id, map);
+}
+const keepRun = (rt: Runtime, run: CupRun) => {
+  const map = runsOf(rt);
+  map.set(run.id, run);
+  qualRuns.set(rt.event.id, map);
+  rt.rev += 1;
+};
+
+/** A run's player state: this process's, else played again from the run as last written. */
+function runMem(rt: Runtime, run: CupRun): WtMem | undefined {
+  const key = `run:${run.id}`;
+  const mem = rt.words.get(key);
+  if (mem) return mem;
+  if (!run.live?.wtr || !wtGame) return undefined;
+  const back: WtMem = { run: replayRun(run.live.wtr, wtGame.boards, run.seed, wtGame.rules), at: new Date(run.live.at).getTime(), dirtyAt: 0, savedAt: Date.now() };
+  rt.words.set(key, back);
+  return back;
+}
+function runScore(rt: Runtime, run: CupRun): { score: number; added: number; words: number } {
+  if (run.status === 'done' && run.score != null) return { score: run.score, added: run.live?.wtAdded ?? 0, words: (run.live?.wtr ?? []).filter((e) => e[0] === 'w').length };
+  const mem = runMem(rt, run);
+  if (mem) return { score: mem.run.score, added: mem.run.added, words: mem.run.total };
+  return { score: run.live?.score ?? 0, added: run.live?.wtAdded ?? 0, words: (run.live?.wtr ?? []).filter((e) => e[0] === 'w').length };
+}
+/** When a run's clock runs out (ms), and when its last words stop being taken. */
+const runEndsAt = (rt: Runtime, run: CupRun) => new Date(run.startAt).getTime() + runEndsSec({ added: runScore(rt, run).added }, wtRules()) * 1000;
+const runOverAt = (rt: Runtime, run: CupRun) => runEndsAt(rt, run) + WT_GRACE_SEC * 1000;
+
+async function saveRun(run: CupRun, mem: WtMem) {
+  if (mem.timer) clearTimeout(mem.timer);
+  mem.timer = undefined;
+  if (mem.dirtyAt <= mem.savedAt) return;
+  mem.savedAt = Date.now();
+  await cupRuns().updateOne({ id: run.id, status: 'live' }, { $set: { live: { score: mem.run.score, at: new Date(mem.at), wtr: mem.run.events, wtAdded: mem.run.added } } });
+}
+function saveRunSoon(run: CupRun, mem: WtMem) {
+  const wait = PERSIST_EVERY_MS - (Date.now() - mem.savedAt);
+  const save = () => void saveRun(run, mem).catch((error) => logger.error('Cup run save failed', { runId: run.id }, error));
+  if (wait <= 0) return save();
+  if (!mem.timer) {
+    mem.timer = setTimeout(() => {
+      mem.timer = undefined;
+      save();
+    }, wait);
+    mem.timer.unref?.();
+  }
+}
+
+/** `POST /cup/api/qualifier/join`: the viewer's run of the attempt open now (made once; asking again returns it). */
+export async function joinQualifier(viewer: CupViewer, askedId?: unknown) {
+  const rt = await runtimeFor(viewer, askedId);
+  if (!rt) throw new CupError(404, 'The tournament is not on');
+  const event = rt.event;
+  const q = event.qual;
+  if (!isQualifierEvent(event) || !q || event.drawnAt || event.phase !== 'lobby') throw new CupError(409, 'The qualifier is not on');
+  const attempt = stageAttempt(q.stage);
+  const id = qualRunId(event.id, attempt, viewer.userId);
+  const had = runsOf(rt).get(id);
+  const now = new Date();
+  const inLobby = (event.lobbyJoined ?? []).includes(viewer.userId);
+  const verdict = mayJoinAttempt(q, viewer.userId, inLobby ? new Date(event.lobbyJoinedAt?.[viewer.userId] ?? q.openedAt) : null, !!had, now);
+  if (!verdict.ok) throw new CupError(verdict.status, verdict.message);
+  if (had) return { serverNow: now, run: runView(rt, had) };
+  const doc: CupRun = {
+    id,
+    eventId: event.id,
+    org: event.org,
+    userId: viewer.userId,
+    attempt,
+    seed: newSeed(),
+    status: 'live',
+    joinedAt: now,
+    startAt: new Date(now.getTime() + event.countdownSec * 1000),
+    createdAt: now,
+    updatedAt: now,
+  };
+  try {
+    await cupRuns().insertOne({ _id: id, ...doc } as unknown as CupRun);
+    keepRun(rt, doc);
+    return { serverNow: new Date(), run: runView(rt, doc) };
+  } catch (error) {
+    if ((error as { code?: number }).code !== 11000) throw error;
+    const row = await cupRuns().findOne({ id }, { projection: { _id: 0 } });
+    if (row) keepRun(rt, row);
+    return { serverNow: new Date(), run: row ? runView(rt, row) : null };
+  }
+}
+
+/** `POST /cup/api/runs/:id/word`: one word (or a skip) of the viewer's own qualifier run, played again here as a match's. */
+export async function playRunWordIn(viewer: CupViewer, id: string, body: { stop?: unknown; word?: unknown; t?: unknown; skip?: unknown } | undefined) {
+  const eventId = /^(.+)-q\d-.+$/.exec(id)?.[1];
+  const rt = eventId ? await runtime(eventId) : null;
+  if (!rt || rt.event.org !== viewer.org || !rt.event.active) throw new CupError(404, 'Run not found');
+  const run = runsOf(rt).get(id);
+  if (!run || run.userId !== viewer.userId) throw new CupError(404, 'Run not found');
+  if (run.status !== 'live') throw new CupError(409, 'This run is over');
+  const game = await wordTripGame();
+  const now = new Date();
+  let mem = runMem(rt, run);
+  const arrived = (now.getTime() - new Date(run.startAt).getTime()) / 1000;
+  if (arrived < -2) throw new CupError(409, 'Your run has not started');
+  if (arrived > runEndsSec(mem?.run, game.rules) + WT_GRACE_SEC + WT_LAG_SEC) throw new CupError(409, 'Your time is up');
+  if (!mem) {
+    mem = { run: newRun(), at: now.getTime(), dirtyAt: 0, savedAt: 0 };
+    rt.words.set(`run:${run.id}`, mem);
+  }
+  const t = wordTime(body?.t, arrived);
+  const changed = () => {
+    mem!.at = now.getTime();
+    mem!.dirtyAt = now.getTime();
+    bumpSoon(rt);
+    saveRunSoon(run, mem!);
+  };
+  if (body?.skip === true) {
+    const skipped = playRunSkip(mem.run, body.stop, t, game.rules);
+    if (skipped.ok) changed();
+    return { serverNow: new Date(), skip: skipped, score: mem.run.score, gi: mem.run.gi, added: mem.run.added };
+  }
+  const verdict = playRunWord(mem.run, game.boards(run.seed, mem.run.gi), body?.stop, body?.word, t, game.rules);
+  if (verdict.ok) changed();
+  return { serverNow: new Date(), verdict, score: mem.run.score, gi: mem.run.gi, added: mem.run.added };
+}
+
+function runView(rt: Runtime, run: CupRun) {
+  const s = runScore(rt, run);
+  return { id: run.id, attempt: run.attempt, status: run.status, seed: run.seed, startAt: run.startAt, endsAt: runEndsAt(rt, run), score: s.score, words: s.words };
+}
+
+/** Everyone's qualifier so far, for the ranking: attempts, the extra run, all-time best, lobby order. */
+async function qualEntries(rt: Runtime, allTime: Map<string, number> | null): Promise<QualEntry[]> {
+  const byUser = new Map<string, QualEntry>();
+  const order = new Map((rt.event.lobbyJoined ?? []).map((u, i) => [u, i]));
+  for (const run of runsOf(rt).values()) {
+    const e = byUser.get(run.userId) ?? { userId: run.userId, attempts: [null, null] as [number | null, number | null], extra: null, allTimeBest: allTime?.get(run.userId) ?? null, order: order.get(run.userId) ?? 1e6 };
+    const s = runScore(rt, run).score;
+    if (run.attempt === 1) e.attempts[0] = s;
+    else if (run.attempt === 2) e.attempts[1] = s;
+    else e.extra = s;
+    byUser.set(run.userId, e);
+  }
+  return [...byUser.values()];
+}
+async function allTimeBests(event: CupEvent): Promise<Map<string, number>> {
+  const rows = await gameScores().find({ gameId: catalogScoreId(WORD_TRIP), org: event.org }, { projection: { _id: 0, userId: 1, score: 1 } }).toArray();
+  return new Map(rows.map((r) => [r.userId, r.score]));
+}
+
+/** The runner's step for a qualifier: open attempt 1 at the start, attempt 2 when 1 is over, the tie-break if needed, then the cut. */
+async function tickQualifier(rt: Runtime, now: Date) {
+  const event = rt.event;
+  await refreshRuns(rt);
+  const q = event.qual;
+  if (!q) {
+    const claimed = await cupEvents().findOneAndUpdate(
+      { id: event.id, phase: 'lobby', active: true, qual: { $exists: false }, drawnAt: { $exists: false } },
+      { $set: { qual: { stage: 'a1', openedAt: now, windowSec: event.startWindowSec }, updatedAt: now }, $inc: { version: 1 } },
+      { returnDocument: 'after', projection: { _id: 0 } },
+    );
+    if (claimed) {
+      rt.event = claimed;
+      rt.rev += 1;
+      logger.info('Cup qualifier: attempt 1 open', { eventId: event.id });
+      void pushCup(claimed, [...(claimed.lobbyJoined ?? [])], 'cup_match_open', claimed.name, `The qualifier is on. Play attempt 1 within ${claimed.startWindowSec} seconds.`);
+    }
+    return;
+  }
+  const attempt = stageAttempt(q.stage);
+  const runs = [...runsOf(rt).values()].filter((r) => r.attempt === attempt);
+  const windowClosed = now.getTime() >= new Date(q.openedAt).getTime() + q.windowSec * 1000;
+  const cap = attemptCapAt(q.openedAt, q.windowSec, event.countdownSec, wtRules());
+  if (!windowClosed || !(runs.every((r) => now.getTime() >= runOverAt(rt, r)) || now.getTime() >= cap)) return;
+  // The attempt is over: every run's words in, its score fixed.
+  for (const run of runs.filter((r) => r.status === 'live')) {
+    const mem = rt.words.get(`run:${run.id}`);
+    if (mem) await saveRun(run, mem).catch(() => undefined);
+    const s = runScore(rt, run);
+    const after = await cupRuns().findOneAndUpdate({ id: run.id, status: 'live' }, { $set: { status: 'done', score: s.score, endedAt: now, updatedAt: now } }, { returnDocument: 'after', projection: { _id: 0 } });
+    if (after) keepRun(rt, after);
+  }
+  const at = new Date();
+  if (q.stage === 'a1') {
+    const claimed = await cupEvents().findOneAndUpdate(
+      { id: event.id, 'qual.stage': 'a1', drawnAt: { $exists: false } },
+      { $set: { qual: { stage: 'a2', openedAt: at, windowSec: q.windowSec, a1At: q.openedAt }, updatedAt: at }, $inc: { version: 1 } },
+      { returnDocument: 'after', projection: { _id: 0 } },
+    );
+    if (claimed) {
+      rt.event = claimed;
+      rt.rev += 1;
+      logger.info('Cup qualifier: attempt 2 open', { eventId: event.id });
+      void pushCup(claimed, [...(claimed.lobbyJoined ?? [])], 'cup_match_open', claimed.name, `Attempt 2 is on. Play it within ${q.windowSec} seconds: your best counts.`);
+    }
+    return;
+  }
+  const result = rankQualifier(await qualEntries(rt, await allTimeBests(event)), q.stage === 'extra');
+  if (q.stage === 'a2' && result.needExtra.length) {
+    const claimed = await cupEvents().findOneAndUpdate(
+      { id: event.id, 'qual.stage': 'a2', drawnAt: { $exists: false } },
+      { $set: { qual: { ...q, stage: 'extra', openedAt: at, extraUserIds: result.needExtra, spots: result.spots, cut: result.cut }, lobbyClosedAt: at, updatedAt: at }, $inc: { version: 1 } },
+      { returnDocument: 'after', projection: { _id: 0 } },
+    );
+    if (claimed) {
+      rt.event = claimed;
+      rt.rev += 1;
+      logger.info('Cup qualifier: tie at the cut, an extra run', { eventId: event.id, tied: result.needExtra.length, spots: result.spots });
+      void pushCup(claimed, result.needExtra, 'cup_match_open', claimed.name, `A tie at the cut! Play one extra run within ${q.windowSec} seconds.`);
+    }
+    return;
+  }
+  await finishQualifier(rt, result, at);
+}
+
+/** The cut: the top P, ranked, become the bracket's entrants (rank = seed), and round 1 is written. */
+async function finishQualifier(rt: Runtime, result: QualResult, now: Date) {
+  const event = rt.event;
+  const roster = await rosterOf(event);
+  const names = new Map(roster.map((r) => [r.userId, r.name]));
+  const entries = new Map((await qualEntries(rt, null)).map((e) => [e.userId, e]));
+  const top = result.ranked.slice(0, result.cut);
+  const entrants: CupEntrant[] = top.map((userId, i) => ({ userId, name: names.get(userId) ?? 'Colleague', seed: i + 1, best: qualBest(entries.get(userId) ?? { attempts: [null, null] }), boardRank: null }));
+  const rounds = buildDraw(entrants.length, event.topN).map((r, _, all) => ({ ...r, ...bracketRoundName(r.n, all.length, r.nodes.length) }));
+  const none = entrants.length < 2;
+  const claimed = await cupEvents().findOneAndUpdate(
+    { id: event.id, phase: 'lobby', drawnAt: { $exists: false } },
+    {
+      $set: {
+        ...(none ? { phase: 'done' as const, finishedAt: now, ...(entrants[0] ? { championId: entrants[0].userId } : {}) } : {}),
+        entrants,
+        rounds,
+        drawnAt: now,
+        round: 0,
+        lobbyClosedAt: event.lobbyClosedAt ?? now,
+        qual: { ...event.qual!, done: true, cut: result.cut, ranking: result.ranked, doneAt: now },
+        updatedAt: now,
+      },
+      $inc: { version: 1 },
+    },
+    { returnDocument: 'after', projection: { _id: 0 } },
+  );
+  if (!claimed) return;
+  rt.event = claimed;
+  rt.rev += 1;
+  logger.info('Cup qualifier: cut made', { eventId: event.id, played: result.ranked.length, cut: result.cut });
+  if (none) return;
+  await createRoundMatches(rt, 1, now, 'scheduled');
+  const out = result.ranked.slice(result.cut);
+  void pushCup(claimed, top, 'cup_match_open', claimed.name, `You're in the top ${result.cut}! Your first match is opening.`);
+  if (out.length) void pushCup(claimed, out, 'cup_lobby', claimed.name, `You didn't make the top ${result.cut} this time. Watch and bet on the last rounds.`);
+}
+
+/** The qualifier as pages and the TV draw it (the contract): stage, cut, every player's best, rank and status. */
+function qualifierView(rt: Runtime) {
+  const event = rt.event;
+  const q = event.qual;
+  if (!isQualifierEvent(event) || !q) return undefined;
+  const runs = [...runsOf(rt).values()];
+  const now = Date.now();
+  const entries: QualEntry[] = [];
+  const byUser = new Map<string, { attempts: [number | null, number | null]; extra: number | null; playing: boolean }>();
+  for (const run of runs) {
+    const row = byUser.get(run.userId) ?? { attempts: [null, null] as [number | null, number | null], extra: null, playing: false };
+    const s = runScore(rt, run).score;
+    if (run.attempt === 1) row.attempts[0] = s;
+    else if (run.attempt === 2) row.attempts[1] = s;
+    else row.extra = s;
+    if (run.status === 'live' && now < runOverAt(rt, run)) row.playing = true;
+    byUser.set(run.userId, row);
+  }
+  const order = new Map((event.lobbyJoined ?? []).map((u, i) => [u, i]));
+  for (const [userId, row] of byUser) entries.push({ userId, attempts: row.attempts, extra: row.extra, order: order.get(userId) ?? 1e6 });
+  const ranked = q.done && q.ranking ? q.ranking : rankQualifier(entries, q.stage === 'extra').ranked;
+  const cut = q.done ? q.cut ?? 0 : q.stage === 'extra' ? q.cut ?? qualifierCut(ranked.length) : qualifierCut(ranked.length);
+  const names = new Map((rosterCache.get(event.id)?.rows ?? []).map((r) => [r.userId, r.name] as const));
+  for (const e of event.entrants ?? []) names.set(e.userId, e.name);
+  const tied = new Set(q.stage === 'extra' && !q.done ? q.extraUserIds ?? [] : []);
+  const rows = ranked.map((userId, i) => {
+    const row = byUser.get(userId) ?? { attempts: [null, null] as [number | null, number | null], extra: null, playing: false };
+    const photo = photoOf(rt, userId);
+    return {
+      userId,
+      firstName: firstNameOf(names.get(userId)),
+      ...(photo ? { faceVer: /\/(k[^/]+|d\d+)\//.exec(photo)?.[1] ?? photo } : {}),
+      best: Math.max(row.attempts[0] ?? 0, row.attempts[1] ?? 0),
+      combined: (row.attempts[0] ?? 0) + (row.attempts[1] ?? 0),
+      attempts: (row.attempts[0] != null ? 1 : 0) + (row.attempts[1] != null ? 1 : 0),
+      playing: row.playing,
+      rank: i + 1,
+      status: (q.done ? (i < cut ? 'in' : 'out') : tied.has(userId) ? 'tied' : 'pending') as 'in' | 'out' | 'tied' | 'pending',
+    };
+  });
+  const attempt = q.stage === 'a1' ? 1 : 2;
+  const live = runs.filter((r) => r.attempt === stageAttempt(q.stage));
+  const windowEnd = new Date(q.openedAt).getTime() + q.windowSec * 1000;
+  const attemptEndsAt = q.done ? undefined : Math.min(attemptCapAt(q.openedAt, q.windowSec, event.countdownSec, wtRules()), Math.max(windowEnd, ...live.map((r) => runOverAt(rt, r))));
+  return {
+    attempt,
+    stage: q.stage,
+    done: !!q.done,
+    windowEndsAt: windowEnd,
+    ...(attemptEndsAt ? { attemptEndsAt } : {}),
+    cut,
+    played: ranked.length,
+    rows,
+    ...(q.stage === 'extra' ? { tiebreak: { spots: q.spots ?? 0, userIds: q.extraUserIds ?? [] } } : {}),
+  };
+}
+
+/** The phase as the contract names it: lobby, qualifier, qualifier_tiebreak, bracket, done. */
+function contractPhase(event: CupEvent): 'lobby' | 'qualifier' | 'qualifier_tiebreak' | 'bracket' | 'done' {
+  if (event.phase === 'done') return 'done';
+  if (event.phase === 'running' || event.drawnAt) return 'bracket';
+  if (event.qual) return event.qual.stage === 'extra' ? 'qualifier_tiebreak' : 'qualifier';
+  return 'lobby';
+}
+
+/** The viewer's qualifier: their runs, best, rank, and whether they may play the attempt open now. */
+function qualMe(rt: Runtime, userId: string, view: ReturnType<typeof qualifierView>) {
+  const event = rt.event;
+  const q = event.qual;
+  if (!q || !view) return undefined;
+  const runs = [...runsOf(rt).values()].filter((r) => r.userId === userId).sort((a, b) => a.attempt - b.attempt);
+  const row = view.rows.find((r) => r.userId === userId);
+  const inLobby = (event.lobbyJoined ?? []).includes(userId);
+  const attempt = stageAttempt(q.stage);
+  const mine = runs.find((r) => r.attempt === attempt);
+  const canJoin = !q.done && !mine && inLobby && Date.now() < view.windowEndsAt && (q.stage !== 'extra' || (q.extraUserIds ?? []).includes(userId));
+  return {
+    stage: q.stage,
+    done: !!q.done,
+    inLobby,
+    runs: runs.map((r) => runView(rt, r)),
+    best: row?.best ?? null,
+    combined: row?.combined ?? null,
+    rank: row?.rank ?? null,
+    status: row?.status ?? null,
+    cut: view.cut,
+    played: view.played,
+    canJoin,
+    tied: (q.extraUserIds ?? []).includes(userId) && q.stage === 'extra',
+  };
+}
+
 // ---------------------------------------------------------------- void (for HR, through cup-bets)
 
 /**
@@ -1925,7 +2319,7 @@ const person = (rt: Runtime, userId: string | null) => {
   if (!userId) return null;
   const e = rt.event.entrants.find((x) => x.userId === userId);
   // Word Trip: faces go once, in the state's `photos` map (asked for by version), not in every match of every poll.
-  return isWordTripEvent(rt.event) ? { userId, name: e?.name ?? 'Colleague', seed: e?.seed ?? null } : { userId, name: e?.name ?? 'Colleague', seed: e?.seed ?? null, photoUrl: photoOf(rt, userId) };
+  return isWordTripEvent(rt.event) ? { userId, name: e?.name ?? 'Colleague', seed: e?.seed ?? null, rank: e?.seed ?? null } : { userId, name: e?.name ?? 'Colleague', seed: e?.seed ?? null, photoUrl: photoOf(rt, userId) };
 };
 
 function liveOf(rt: Runtime, match: CupMatch): Record<string, number> | undefined {
@@ -2075,7 +2469,8 @@ function shared(rt: Runtime, rosterCount: number) {
     rounds: roundsView(rt),
     lobbyPeople: lobbyPeopleOf(rt),
   };
-  rt.shared = { rev: rt.rev, count: rosterCount, json: JSON.stringify(view), current: currentStage(rt) };
+  const qual = qualifierView(rt);
+  rt.shared = { rev: rt.rev, count: rosterCount, json: JSON.stringify(view), current: currentStage(rt), qual, qualJson: JSON.stringify({ phase: contractPhase(event), ...(qual ? { qualifier: qual } : {}) }) };
   return rt.shared;
 }
 
@@ -2228,10 +2623,12 @@ async function meOf(rt: Runtime, viewer: CupViewer) {
     const roster = await rosterPreview(event);
     const mine = roster.find((row) => row.userId === viewer.userId);
     const inLobby = (event.lobbyJoined ?? []).includes(viewer.userId);
-    return { ...base, entered: !!mine, alive: !!mine, inLobby, best: mine?.best ?? null, balance: await balanceOf(viewer, event) };
+    const qual = qualMe(rt, viewer.userId, rt.shared?.qual ?? qualifierView(rt));
+    return { ...base, entered: !!mine, alive: !!mine, inLobby, best: mine?.best ?? null, ...(qual ? { qual } : {}), balance: await balanceOf(viewer, event) };
   }
   const entrant = event.entrants.find((e) => e.userId === viewer.userId);
-  if (!entrant) return { ...base, entered: false, alive: false, balance: await balanceOf(viewer, event) };
+  const qualDone = event.qual?.done ? qualMe(rt, viewer.userId, rt.shared?.qual ?? qualifierView(rt)) : undefined;
+  if (!entrant) return { ...base, entered: false, alive: false, ...(qualDone ? { qual: qualDone } : {}), balance: await balanceOf(viewer, event) };
   const outIn = eliminations(rt).get(viewer.userId);
   const mine = [...rt.matches.values()]
     .filter((m) => m.players.includes(viewer.userId))
@@ -2291,8 +2688,8 @@ export async function stateFor(viewer: CupViewer, askedId: unknown, since: unkno
   }
   const head = JSON.stringify({ success: true, serverNow: now, version });
   const tail = JSON.stringify({ me, ...extra });
-  // The event part is the same for everyone, so it is serialised once per revision.
-  return `${head.slice(0, -1)},"event":${common.json},${tail.slice(1)}`;
+  // The event part is the same for everyone, so it is serialised once per revision (the qualifier's too).
+  return `${head.slice(0, -1)},"event":${common.json},${(common.qualJson ?? '{}').slice(1, -1)}${common.qualJson && common.qualJson.length > 2 ? ',' : ''}${tail.slice(1)}`;
 }
 
 /** Who is in, for the list on the page: before the draw by best score, after it by seed. */

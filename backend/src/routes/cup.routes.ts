@@ -12,6 +12,8 @@ import {
   stateHandler,
   thumbHandler,
   wordHandler,
+  qualifierJoinHandler,
+  runWordHandler,
   wordTripGameHandler,
 } from '../controllers/cup.controller';
 // Importing the bets module also fills the engine's `cupHooks` (settle on decide, ride on replay, refund on void, bets in state).
@@ -35,6 +37,8 @@ cupRouter.post('/api/matches/:id/live', liveHandler);
 cupRouter.post('/api/matches/:id/final', finalHandler);
 cupRouter.post('/api/matches/:id/resign', resignHandler);
 cupRouter.post('/api/matches/:id/word', wordHandler);
+cupRouter.post('/api/qualifier/join', qualifierJoinHandler);
+cupRouter.post('/api/runs/:id/word', runWordHandler);
 // HR's void: the engine replays the match, and its bets are refunded (reconciled once more here).
 cupRouter.post('/api/matches/:id/void', voidMatchHandler);
 cupRouter.post('/api/bets', placeBetHandler);

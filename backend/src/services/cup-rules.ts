@@ -840,3 +840,109 @@ export function mayPlayWord(match: CupMatch, userId: string, run: Pick<WtRun, 'a
   if (arrived > runEndsSec(run, r) + WT_GRACE_SEC + WT_LAG_SEC) return no(409, 'Your time is up');
   return { ok: true, arrived };
 }
+
+// ---------------------------------------------------------------- the qualifier (Word Trip, 27 Nov 2026)
+
+/**
+ * Round 1 is a qualifier: everyone in the lobby plays a normal Word Trip run
+ * on letters of their own (a seed per player per attempt), twice; their best
+ * counts. Attempt 1 opens at the start for everyone (a start window); attempt
+ * 2 opens for everyone in the lobby once attempt 1 is over, late joiners
+ * included (attempt 2 only). The top P go on, P the largest power of two not
+ * above the number who played; they are ranked by best, then the two
+ * attempts combined; a tie across the cut is played off with one extra run
+ * each, then the all-time Word Trip best, then a fixed order. The ranks pair
+ * the bracket: 1 v P, 2 v P-1, … (a standard seeded bracket, 1 and 2 only in
+ * the final).
+ */
+export type QualStage = 'a1' | 'a2' | 'extra';
+
+/** The largest power of two not above n (0 for none). */
+export const qualifierCut = (n: number) => (n < 1 ? 0 : 2 ** Math.floor(Math.log2(n)));
+
+/** One player's qualifier: their attempts' scores (null: not played), the extra run's, their all-time best, and a fixed order. */
+export interface QualEntry {
+  userId: string;
+  /** Attempt 1 and 2: a number once played (started), null otherwise. */
+  attempts: [number | null, number | null];
+  /** The tie-break run, when they had one. */
+  extra?: number | null;
+  /** Their all-time Word Trip best before the event (the Games tab's), null for none. */
+  allTimeBest?: number | null;
+  /** The last word of the order: their place in the lobby (earlier first). */
+  order: number;
+}
+export const qualBest = (e: Pick<QualEntry, 'attempts'>) => Math.max(e.attempts[0] ?? -1, e.attempts[1] ?? -1);
+export const qualCombined = (e: Pick<QualEntry, 'attempts'>) => (e.attempts[0] ?? 0) + (e.attempts[1] ?? 0);
+export const qualPlayed = (e: Pick<QualEntry, 'attempts'>) => e.attempts[0] != null || e.attempts[1] != null;
+
+export interface QualResult {
+  /** Everyone who played, in rank order (rank = index + 1). */
+  ranked: string[];
+  /** How many go on. */
+  cut: number;
+  /** Those tied across the cut who must play the extra run first (empty when the ranking is settled). */
+  needExtra: string[];
+  /** How many of the cut's places the tied group shares. */
+  spots: number;
+}
+
+/**
+ * The qualifier's ranking. Best first, then combined; the group tied across
+ * the cut (same best and combined, some inside and some outside) is ordered by
+ * its extra run once played (or needs one: `needExtra`), then all-time best,
+ * then the lobby order. Ties elsewhere use the same order without an extra run.
+ */
+export function rankQualifier(entries: QualEntry[], extraPlayed: boolean): QualResult {
+  const played = entries.filter(qualPlayed);
+  const cut = qualifierCut(played.length);
+  const key = (e: QualEntry) => `${qualBest(e)}:${qualCombined(e)}`;
+  const base = (x: QualEntry, y: QualEntry) => qualBest(y) - qualBest(x) || qualCombined(y) - qualCombined(x);
+  const rest = (x: QualEntry, y: QualEntry) => (y.allTimeBest ?? -1) - (x.allTimeBest ?? -1) || x.order - y.order || (x.userId < y.userId ? -1 : 1);
+  const sorted = played.slice().sort((x, y) => base(x, y) || rest(x, y));
+  let needExtra: string[] = [];
+  let spots = 0;
+  if (cut > 0 && sorted.length > cut && key(sorted[cut - 1]) === key(sorted[cut])) {
+    const k = key(sorted[cut]);
+    const group = sorted.filter((e) => key(e) === k);
+    const first = sorted.findIndex((e) => key(e) === k);
+    spots = cut - first;
+    if (!extraPlayed) needExtra = group.map((e) => e.userId);
+    else {
+      const ordered = group.slice().sort((x, y) => (y.extra ?? -1) - (x.extra ?? -1) || rest(x, y));
+      sorted.splice(first, group.length, ...ordered);
+    }
+  }
+  return { ranked: sorted.map((e) => e.userId), cut, needExtra, spots };
+}
+
+/** Whether someone may start an attempt now: in the lobby, the attempt open (its window), and for attempt 1 in the lobby by then; the extra run only for the tied. */
+export function mayJoinAttempt(
+  q: { stage: QualStage; openedAt: Date; windowSec: number; extraUserIds?: string[] },
+  userId: string,
+  lobbyJoinedAt: Date | null,
+  already: boolean,
+  now: Date,
+): Verdict {
+  if (!lobbyJoinedAt) return no(403, 'Join the lobby to play the qualifier');
+  if (already) return yes;
+  const closes = at(q.openedAt) + q.windowSec * 1000;
+  if (now.getTime() >= closes) return no(409, 'Too late: this attempt has closed');
+  if (q.stage === 'a1' && lobbyJoinedAt.getTime() > closes) return no(409, 'Too late for attempt 1: attempt 2 is yours');
+  if (q.stage === 'extra' && !(q.extraUserIds ?? []).includes(userId)) return no(409, 'The tie-break run is only for the players tied at the cut');
+  return yes;
+}
+
+/** When an attempt is surely over: its window, the countdown, the longest run, and the grace for the last words (ms). */
+export const attemptCapAt = (openedAt: Date, windowSec: number, countdownSec: number, r: WtRules = WT_DEFAULT_RULES) =>
+  at(openedAt) + (windowSec + countdownSec + wtLongestSec(r) + WT_GRACE_SEC) * 1000;
+
+/** A bracket round's name after a qualifier: Final, Semi-finals, Quarter-finals, else "Round of N". */
+export function bracketRoundName(n: number, total: number, nodes: number): { label: string; short: string } {
+  const named = roundName(n, total, nodes);
+  if (named.short === 'F' || named.short === 'SF' || named.short === 'QF') return named;
+  return { label: `Round of ${nodes * 2}`, short: `R${nodes * 2}` };
+}
+
+/** The first name only (the public screens show no full names). */
+export const firstNameOf = (name: string | null | undefined) => String(name ?? '').trim().split(/\s+/)[0] || 'Player';

@@ -34,7 +34,8 @@
  * --grace S --min-play S --max-score N --max-replays N --max-stake N --push-at-lobby true|false
  * --game odd-one-out|trails|knights|word-trip (the game in each match; knights also sets its own defaults:
  * round 300, start window 30, solo start 30, betting 120, top 8, wallet 1000, lobby draw, 2 replays; word-trip: one normal
- * Word Trip run a match, start window 40, countdown 8, betting 120, top 8, wallet 1000, lobby draw, 2 replays) --lobby-draw true|false (only the people who join
+ * Word Trip run a match, round 1 a qualifier, start window 40, countdown 8, betting 120, top 8, wallet 1000, lobby draw, 2 replays)
+ * --qualifier true|false (word-trip: round 1 two runs each, the top power of two go on) --lobby-draw true|false (only the people who join
  * the lobby, paired at random when it closes) --wallet N (everyone bets from N points of their own for
  * this tournament, not their points; 0: their points)
  * Times: ISO with an offset (2026-10-23T17:25+05:30), or +Ns / +Nm / +Nh from now.
@@ -45,7 +46,7 @@ import type { CupEvent, CupEventConfig, CupSeeding } from '../models/cup.model';
 import type { ConnectPost } from '../models/connect.model';
 import { DEFAULT_CUP_CONFIG, WORD_TRIP, WT_DEFAULT_RULES, WT_GRACE_SEC, wtLongestSec } from '../services/cup-rules';
 import { newSeed } from '../services/game-challenge-rules';
-import { cupBets, cupEvents, cupMatches, rosterOf } from '../services/cup.service';
+import { cupBets, cupEvents, cupMatches, cupRuns, rosterOf } from '../services/cup.service';
 import { pointEvents } from '../services/points-ledger.service';
 
 type Flags = Record<string, string>;
@@ -120,7 +121,8 @@ const KNIGHTS_DEFAULTS: Partial<CupEventConfig> = {
 /**
  * The Word Trip Tournament's own rules (27 Nov 2026): each match is one normal Word Trip run each (the game's own 1:00
  * clock and rules, the same seed for both), a 40 s start window (a lone player then plays alone at once and goes
- * through), an 8 s countdown (the game loads behind it), ties replayed on a new seed twice, bets on the last rounds (8 or fewer left) from 1,000 points of their own,
+ * through), an 8 s countdown (the game loads behind it), round 1 a qualifier (two runs each on letters of their own,
+ * best counts; the top power of two go on, ranked: 1 v last), ties replayed on a new seed twice, bets on the last rounds (8 or fewer left) from 1,000 points of their own,
  * drawn from the lobby. roundSec is only shown (the game's clock rules). Flags given on `create` still win.
  */
 const WORD_TRIP_DEFAULTS: Partial<CupEventConfig> = {
@@ -134,6 +136,7 @@ const WORD_TRIP_DEFAULTS: Partial<CupEventConfig> = {
   lobbyDraw: true,
   maxReplays: 2,
   minPlaySec: 0,
+  qualifier: true,
 };
 
 /** The fields the flags set. */
@@ -156,6 +159,7 @@ function fieldsFrom(flags: Flags): Partial<CupEvent> {
   }
   if (flags['push-at-lobby']) set.pushAtLobby = flags['push-at-lobby'] === 'true';
   if (flags['lobby-draw']) set.lobbyDraw = flags['lobby-draw'] === 'true';
+  if (flags.qualifier) set.qualifier = flags.qualifier === 'true';
   if (flags.game) {
     if (!CUP_GAMES.includes(flags.game)) throw new Error(`--game is one of ${CUP_GAMES.join(', ')}`);
     set.gameKey = flags.game;
@@ -301,7 +305,7 @@ async function main() {
     case 'update': {
       const event = await requireEvent(flags.id);
       const fields = fieldsFrom(flags);
-      const structural = ['excludeUserIds', 'includeUserIds', 'seeding', 'topN', 'lobbyAt', 'lobbyDraw', 'gameKey', 'walletStart'] as const;
+      const structural = ['excludeUserIds', 'includeUserIds', 'seeding', 'topN', 'lobbyAt', 'lobbyDraw', 'gameKey', 'walletStart', 'qualifier'] as const;
       if (event.phase !== 'scheduled' && structural.some((f) => f in fields)) {
         throw new Error(`The draw is made: ${structural.join(', ')} can no longer change (reset first, in a test)`);
       }
@@ -382,7 +386,7 @@ async function main() {
           subtitle: flags.subtitle ?? (knights
             ? 'One Meow-style knockout · first right board wins · bets from the quarter-finals'
             : wordTrip
-              ? 'Make words. Beat your opponent. Same letters for both · bet on the last rounds'
+              ? 'Make words. Beat your opponent. Two qualifier runs, then 1-on-1 · bet on the last rounds'
               : 'Everyone is in. One Odd One Out knockout, live, with bets on the last eight.'),
           startsAtLabel: flags['starts-label'] ?? `LOBBY OPENS ${event.lobbyAt.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })}`,
           actionLabel: flags.action ?? 'Enter the tournament',
@@ -416,6 +420,7 @@ async function main() {
       const reverted = await revertBetPoints(event);
       await cupBets().deleteMany({ eventId: event.id });
       await cupMatches().deleteMany({ eventId: event.id });
+      await cupRuns().deleteMany({ eventId: event.id });
       if (command === 'remove') {
         await connectPosts().deleteMany({ org: event.org, type: 'live_game', 'body.cupEventId': event.id });
         await cupEvents().deleteOne({ id: event.id });
@@ -423,7 +428,7 @@ async function main() {
       } else {
         await cupEvents().updateOne(
           { id: event.id },
-          { $set: { phase: 'scheduled', round: 0, entrants: [], rounds: [], lobbyJoined: [], updatedAt: now }, $unset: { drawnAt: '', championId: '', finishedAt: '', pausedAt: '', lobbyClosedAt: '', lobbySeen: '' }, $inc: { version: 1 } },
+          { $set: { phase: 'scheduled', round: 0, entrants: [], rounds: [], lobbyJoined: [], updatedAt: now }, $unset: { drawnAt: '', championId: '', finishedAt: '', pausedAt: '', lobbyClosedAt: '', lobbySeen: '', lobbyJoinedAt: '', qual: '' }, $inc: { version: 1 } },
         );
         console.log(`Reset ${event.id} to before the draw (times unchanged: update them); ${reverted}`);
       }

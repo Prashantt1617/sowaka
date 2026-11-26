@@ -6,6 +6,8 @@ import {
   joinLobby,
   joinMatch,
   playWordIn,
+  joinQualifier,
+  playRunWordIn,
   wordTripGameFor,
   cupThumb,
   reportFinal,
@@ -76,6 +78,9 @@ export const finalHandler = cupHandler((viewer, req) => reportFinal(viewer, idOf
 /** Word Trip: one word `{ stop, word, t }` (or a skip `{ skip: true, stop, t }`), played again by the server; the answer says whether it counted. */
 /** Word Trip: the normal game's page, to play the match in (`?v=` the version the page holds: just that it is the same). */
 export const wordTripGameHandler = cupHandler((viewer, req) => wordTripGameFor(viewer, req.query.v));
+/** Word Trip's qualifier: the viewer's run of the attempt open now, and a word of it. */
+export const qualifierJoinHandler = cupHandler((viewer, req) => joinQualifier(viewer, eventOf(req)));
+export const runWordHandler = cupHandler((viewer, req) => playRunWordIn(viewer, idOf(req), req.body));
 export const wordHandler = cupHandler((viewer, req) => playWordIn(viewer, idOf(req), req.body));
 
 /**
