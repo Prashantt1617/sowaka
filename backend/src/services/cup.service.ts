@@ -1723,6 +1723,23 @@ function saveSoon(match: CupMatch, userId: string, mem: WtMem) {
   }
 }
 
+/**
+ * Words change only scores and counts on everyone else's screen: the state's revision goes up for them at most
+ * every WT_BUMP_MS, so a hundred players finding words do not make every poll a full read (the player's own words
+ * come back with each word's answer).
+ */
+const WT_BUMP_MS = 2000;
+const bumpTimers = new WeakMap<Runtime, NodeJS.Timeout>();
+function bumpSoon(rt: Runtime) {
+  if (bumpTimers.has(rt)) return;
+  const timer = setTimeout(() => {
+    bumpTimers.delete(rt);
+    rt.rev += 1;
+  }, WT_BUMP_MS);
+  timer.unref?.();
+  bumpTimers.set(rt, timer);
+}
+
 /** Every word of the match in the database, before it is decided. */
 async function flushWords(rt: Runtime, match: CupMatch) {
   for (const p of match.players) {
@@ -1760,7 +1777,7 @@ export async function playWordIn(viewer: CupViewer, id: string, body: { stop?: u
   if (verdict.ok) {
     mem.at = now.getTime();
     mem.dirtyAt = now.getTime();
-    rt.rev += 1;
+    bumpSoon(rt);
     saveSoon(match, viewer.userId, mem);
   }
   return { serverNow: new Date(), stop: k, verdict, stopScore: stop.score, score: wtTotal(mem.stops), words: mem.stops.reduce((n, s) => n + s.found.length, 0) };
