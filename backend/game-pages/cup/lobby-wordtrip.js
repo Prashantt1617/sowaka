@@ -70,7 +70,7 @@
       var faces = people().slice(0, 5);
       return '<section class="wt" aria-label="Join the tournament">' +
         '<div class="wt-row"><span class="wt-k">' + esc(H.dayLabel(ev.startAt)) + '</span>' + how() + '</div>' +
-        '<div style="display:flex;flex-direction:column;gap:6px"><h1 class="xl">Word Trip<br>Tournament</h1><p class="wt-mu">Make words. Beat your opponent.</p></div>' +
+        '<p class="wt-mu" style="margin:0;font-size:18px;font-weight:600">Make words. Beat your opponent.</p>' +
         tiles('words', true) +
         '<div class="wt-card"><span style="font-size:14px;font-weight:600;color:#A9A3CC">' + (open ? (ev.qualifier ? (H.state().phase === 'qualifier' ? 'The qualifier is on. Join to play' : 'The qualifier starts in') : 'Matches start in') : 'The lobby opens in') + '</span>' + (open && H.state().phase === 'qualifier' ? '' : '<span class="wt-big">' + H.cd(H.ms(open ? ev.startAt : ev.lobbyAt)) + '</span>') + '</div>' +
         (open && n ? '<div class="wt-faces"><span class="fs">' + faces.map(function (p) { return face(p, '', 'j'); }).join('') + '</span><b>' + num(n) + (n === 1 ? ' person is in' : ' people are in') + '</b></div>' : '') +
@@ -88,7 +88,7 @@
     function lobby() {
       var ev = e(), n = ev.entrantCount || 0, ppl = people(), shown = ppl.slice(0, 15);
       return '<section class="wt" aria-label="In the lobby">' +
-        '<div class="wt-row"><span style="font:800 22px/1.1 \'Baloo 2\',system-ui">Word Trip Tournament</span>' + how() + '</div>' +
+        '<div class="wt-row"><span></span>' + how() + '</div>' +
         '<div class="wt-card" style="padding:22px 20px;gap:10px"><span class="wt-in"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>You’re in</span>' +
         '<span style="font-size:15px;color:#A9A3CC">' + (ev.qualifier ? 'The qualifier starts in' : 'Your match starts in') + '</span><span class="wt-big wt-l">' + H.cd(H.ms(ev.startAt)) + '</span><span style="font-size:15px">Stay on this screen.</span></div>' +
         (ev.qualifier

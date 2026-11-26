@@ -1197,7 +1197,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
       return '<button type="button" role="tab" id="tab-' + t[0] + '" aria-controls="panel" class="tab' + (ui.tab === t[0] ? ' on' : '') + '" aria-selected="' + (ui.tab === t[0]) + '" data-act="tab" data-v="' + t[0] + '">' + t[1] + (t[0] === 'watch' && liveN && ui.tab !== 'watch' ? '<span class="dot" aria-label="' + liveN + ' live"></span>' : '') + '</button>';
     }).join('') + '</div>';
     var body = ui.tab === 'bracket' ? (wt && inQual() && wtViews() ? wtViews().qualBoard(S.qualifier) : viewBracket()) : ui.tab === 'watch' ? viewWatch() : ui.tab === 'tipsters' ? viewTipsters() : ui.tab === 'how' ? viewHow() : viewMe();
-    return '<div class="wrap"><header class="top' + (wt ? ' wtq' : '') + '">' + wordmark() + '<span class="tr">' + phaseChip() +
+    return '<div class="wrap"><header class="top' + (wt ? ' wtq' : '') + '">' + (wt ? '' : wordmark()) + '<span class="tr">' + phaseChip() +
       (showBalance() ? '<span class="bal" aria-label="Your balance: ' + num(S.me.balance) + ' points"><span class="coin" aria-hidden="true"></span>' + num(S.me.balance) + '</span>' : '') + '</span>' +
       (wt ? '<button type="button" class="wt-q" data-act="wthow" aria-label="How to play">?</button>' : '') + '</header>' +
       tabHtml + '<main class="body" id="panel" role="tabpanel" aria-labelledby="tab-' + ui.tab + '">' + body + '</main></div>' +
