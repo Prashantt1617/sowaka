@@ -48,6 +48,10 @@ import {
   WT_DEFAULT_RULES,
   WT_REPLAY_SEC,
   WT_GRACE_SEC,
+  WT_SPAN,
+  pickFreshSeed,
+  reachedOf,
+  stopsSeen,
   WT_LAG_SEC,
   lobbyPresent,
   attemptCapAt,
@@ -865,6 +869,7 @@ async function createRoundMatches(rt: Runtime, n: number, now: Date, status: 'sc
     const [p, q] = node.feeders.map((ref) => holderOf(rt, ref));
     if (!p || !q) continue;
     const players: [string, string] = seedOf(p) <= seedOf(q) ? [p, q] : [q, p];
+    const seed = isWordTripEvent(event) ? freshWtSeed(rt, await wordTripGame().catch(() => null), players) : newSeed();
     docs.push({
       id,
       eventId: event.id,
@@ -875,7 +880,7 @@ async function createRoundMatches(rt: Runtime, n: number, now: Date, status: 'sc
       kind: round.kind,
       players,
       status,
-      seed: newSeed(),
+      seed,
       attempt: 0,
       joined: {},
       live: {},
@@ -1297,7 +1302,7 @@ async function apply(rt: Runtime, match: CupMatch, step: MatchStep, now: Date): 
         const after = await write({
           $set: {
             status: 'live',
-            seed: wtGame ? newWtSeed(wtGame, match.seed) : newSeed(),
+            seed: freshWtSeed(rt, wtGame, match.players),
             live: {},
             finals: {},
             startAt: new Date(now.getTime() + WT_REPLAY_SEC * 1000),
@@ -1305,7 +1310,7 @@ async function apply(rt: Runtime, match: CupMatch, step: MatchStep, now: Date): 
           },
           $unset: { soloUntil: '' },
           $inc: { attempt: 1 },
-          $push: { history: { attempt: match.attempt, scores: step.scores } },
+          $push: { history: { attempt: match.attempt, scores: step.scores, seed: match.seed, reached: Object.fromEntries(match.players.map((p) => [p, wtReached(rt, match, p)])) } },
         });
         if (after) {
           logger.info('Cup match tied: replay', { matchId: match.id, attempt: after.attempt });
@@ -1681,14 +1686,49 @@ export async function wordTripGameFor(viewer: CupViewer, have: unknown) {
   return have === game.version ? { version: game.version, same: true } : { version: game.version, html: game.html };
 }
 
-/** A new seed for a replay: another first stop than the tied game's. */
-function newWtSeed(game: WtGame, old: number): number {
-  const was = game.boards(old, 0).letters.split('').sort().join('');
-  for (let i = 0; i < 30; i += 1) {
-    const seed = newSeed();
-    if (game.boards(seed, 0).letters.split('').sort().join('') !== was) return seed;
+/** How far a player got in a match's current attempt (the furthest stop; -1 none played). */
+function wtReached(rt: Runtime, match: CupMatch, userId: string): number {
+  const mem = wtPlayer(rt, match, userId);
+  return Math.max(mem?.run.gi ?? -1, reachedOf(match.live?.[userId]?.wtr));
+}
+
+/**
+ * Every stop these players have been shown in this event: their qualifier runs,
+ * their matches and each tied attempt before (to the furthest stop each got,
+ * and the one after); a run still in play keeps its first `WT_SPAN` stops.
+ */
+function stopsServed(rt: Runtime, game: WtGame, userIds: string[]): Set<string> {
+  const want = new Set(userIds);
+  const used = new Set<string>();
+  const add = (seed: unknown, reached: number) => {
+    if (typeof seed === 'number') for (const k of stopsSeen(game.keyAt, seed, reached)) used.add(k);
+  };
+  const now = Date.now();
+  for (const run of runsOf(rt).values()) {
+    if (!want.has(run.userId)) continue;
+    const playing = run.status === 'live' && now < runOverAt(rt, run);
+    add(run.seed, playing ? WT_SPAN : Math.max(runMem(rt, run)?.run.gi ?? -1, reachedOf(run.live?.wtr)));
   }
-  return newSeed();
+  for (const match of rt.matches.values()) {
+    for (const p of match.players ?? []) {
+      if (!p || !want.has(p)) continue;
+      for (const h of match.history ?? []) add(h.seed, h.reached?.[p] ?? WT_SPAN);
+      if (!match.startAt || match.status === 'scheduled' || match.status === 'betting' || match.status === 'open') continue;
+      const playing = match.status === 'live' || match.status === 'solo';
+      add(match.seed, playing ? WT_SPAN : wtReached(rt, match, p));
+    }
+  }
+  return used;
+}
+
+/** A seed for a run of these players: the normal game's run, on stops none of them has been shown in this event. */
+function freshWtSeed(rt: Runtime, game: WtGame | null, players: (string | null | undefined)[]): number {
+  if (!game) return newSeed();
+  const ids = players.filter((p): p is string => !!p);
+  const used = stopsServed(rt, game, ids);
+  const pick = pickFreshSeed(game.keyAt, used, newSeed());
+  if (pick.clash !== null) logger.warn('Word Trip: no seed with every stop new; the first repeat comes late', { eventId: rt.event.id, players: ids, clashAt: pick.clash, used: used.size });
+  return pick.seed;
 }
 
 /** A player's run in this attempt: this process's, else played again from what was last written to the match (after a restart). */
@@ -1960,7 +2000,7 @@ export async function joinQualifier(viewer: CupViewer, askedId?: unknown) {
     org: event.org,
     userId: viewer.userId,
     attempt,
-    seed: newSeed(),
+    seed: freshWtSeed(rt, await wordTripGame().catch(() => null), [viewer.userId]),
     status: 'live',
     joinedAt: now,
     startAt: new Date(now.getTime() + event.countdownSec * 1000),
@@ -2274,7 +2314,7 @@ export async function voidMatchResult(viewer: CupViewer, id: string) {
     {
       $set: {
         status: sequential ? 'scheduled' : 'open',
-        seed: newSeed(),
+        seed: isWordTripEvent(event) ? freshWtSeed(rt, await wordTripGame().catch(() => null), match.players) : newSeed(),
         joined: {},
         live: {},
         finals: {},

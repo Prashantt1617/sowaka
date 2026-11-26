@@ -27,6 +27,9 @@ import {
   seedOrderOf,
   WT_BLOCKED,
   WT_DEFAULT_RULES,
+  WT_SPAN,
+  pickFreshSeed,
+  stopsSeen,
   bracketRoundName,
   firstNameOf,
   mayJoinAttempt,
@@ -795,6 +798,61 @@ check('word trip: the page blocks the same offensive words as the server', () =>
   const js = readFileSync(path.resolve(__dirname, '../../game-pages/cup/play-wordtrip.js'), 'utf8');
   const list = JSON.parse(/var BLOCKED = (\[[\s\S]*?\]);/.exec(js)![1].replace(/'/g, '"'));
   assert.deepEqual([...list].sort(), [...WT_BLOCKED].sort());
+});
+
+check('word trip: every run is the normal game: the final deals the same stops (letter counts) and plays by the same rules as round 1 and the qualifier', () => {
+  // A run's stops and rules come from its seed and the game alone: nothing in a round changes them.
+  const shape = (seed: number) => Array.from({ length: WT_SPAN }, (_, g) => GAME.boards(seed, g).len).join(',');
+  const qualifier = shape(101), round1 = shape(202), final = shape(303);
+  assert.equal(final, round1);
+  assert.equal(final, qualifier);
+  assert.equal(final.split(',').slice(0, 7).join(','), '5,6,6,7,7,7,8', 'stops grow as in the Games tab');
+  assert.equal(GAME.rules.ROUND, 60, 'the same 1:00 clock');
+});
+
+check('word trip: across a whole 100-player event (two attempts, a tie-break, 6 rounds, replays) no player is shown the same stop twice', () => {
+  // Each pick as the server makes it: a seed whose first WT_SPAN stops are none of the players' stops so far.
+  const seen = new Map<string, Set<string>>();
+  const served = (u: string) => seen.get(u) ?? seen.set(u, new Set()).get(u)!;
+  let rnd = 12345;
+  const rand = () => ((rnd = (rnd * 1103515245 + 12345) % 2147483648) / 2147483648);
+  // How far a run gets: mostly 3-9 stops, now and then as far as 15 (bots in the 100-bot run reached 15).
+  const reach = () => Math.min(15, Math.floor(rand() * rand() * 16) + (rand() < 0.5 ? 2 : 0));
+  let clashes = 0;
+  let worstTries = 0;
+  const run = (players: string[]) => {
+    const used = new Set<string>();
+    for (const u of players) for (const k of served(u)) used.add(k);
+    const pick = pickFreshSeed(GAME.keyAt, used, 1 + Math.floor(rand() * 999_000));
+    if (pick.clash !== null) clashes += 1;
+    worstTries = Math.max(worstTries, pick.tried);
+    for (const u of players) {
+      const keys = stopsSeen(GAME.keyAt, pick.seed, reach());
+      for (const k of keys) {
+        assert.ok(!served(u).has(k), `${u} shown ${k} twice`);
+        served(u).add(k);
+      }
+    }
+  };
+  const ids = Array.from({ length: 100 }, (_, i) => `u${i + 1}`);
+  for (const u of ids) run([u]);
+  for (const u of ids) run([u]);
+  for (const u of ids.slice(60, 66)) run([u]);
+  let alive = ids.slice(0, 64);
+  while (alive.length > 1) {
+    const next: string[] = [];
+    for (let i = 0; i < alive.length; i += 2) {
+      const pair = [alive[i], alive[i + 1]];
+      run(pair);
+      // A tie now and then: replayed up to twice, on fresh letters for both.
+      if (rand() < 0.25) run(pair);
+      if (rand() < 0.1) run(pair);
+      next.push(pair[rand() < 0.5 ? 0 : 1]);
+    }
+    alive = next;
+  }
+  assert.equal(clashes, 0, 'a seed with every stop new was always found');
+  console.log(`     (finalists saw ${[...seen.values()].reduce((m, s) => Math.max(m, s.size), 0)} stops each at most, all different; worst pick tried ${worstTries} seeds)`);
 });
 
 console.log(`\n${checks} checks passed`);

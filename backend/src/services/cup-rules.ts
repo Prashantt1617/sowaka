@@ -946,3 +946,54 @@ export function bracketRoundName(n: number, total: number, nodes: number): { lab
 
 /** The first name only (the public screens show no full names). */
 export const firstNameOf = (name: string | null | undefined) => String(name ?? '').trim().split(/\s+/)[0] || 'Player';
+
+// ---------------------------------------------------------------- no stop twice (Word Trip, 27 Nov 2026)
+
+/**
+ * Across the whole event a player never gets the same stop (the same letters)
+ * twice: not in their two qualifier attempts, the tie-break run, any match or
+ * any replay. Every run is still the normal game's run for its seed (the game
+ * deals the stops from the seed, the same way in every round); the server only
+ * chooses the seed: one whose first `WT_SPAN` stops are none of the stops its
+ * players have seen.
+ */
+export const WT_SPAN = 20;
+/** A stop's identity: its letters, sorted (the same stop however they are turned). */
+export type WtKeyAt = (seed: number, g: number) => string;
+
+/** The stops a run showed: 0 to the furthest it reached, and the next one (shown once that one was done). */
+export function stopsSeen(keyAt: WtKeyAt, seed: number, reached: number): string[] {
+  const last = Math.max(0, Math.min(WT_SPAN - 1, reached + 1));
+  return Array.from({ length: last + 1 }, (_, g) => keyAt(seed, g));
+}
+
+/** The furthest stop a run's events reached (-1: none played; the first stop was still shown). */
+export function reachedOf(events: unknown): number {
+  if (!Array.isArray(events)) return -1;
+  let gi = -1;
+  for (const e of events) if (Array.isArray(e) && typeof e[1] === 'number') gi = Math.max(gi, e[1]);
+  return gi;
+}
+
+/**
+ * A seed whose first `span` stops are none of `used`: tried in order from
+ * `start` (start, start+1, …, wrapping in the seed range). When none of
+ * `tries` fits (should not happen: the bank has ~1,500 stops), the one whose
+ * first clash comes latest, with `clash` saying at which stop.
+ */
+export function pickFreshSeed(keyAt: WtKeyAt, used: Set<string>, start: number, span = WT_SPAN, tries = 4000): { seed: number; tried: number; clash: number | null } {
+  let best = { seed: start, at: -1 };
+  for (let i = 0; i < tries; i += 1) {
+    const seed = ((start - 1 + i) % 999_999) + 1;
+    let at = -1;
+    for (let g = 0; g < span; g += 1) {
+      if (used.has(keyAt(seed, g))) {
+        at = g;
+        break;
+      }
+    }
+    if (at < 0) return { seed, tried: i + 1, clash: null };
+    if (at > best.at) best = { seed, at };
+  }
+  return { seed: best.seed, tried: tries, clash: best.at };
+}

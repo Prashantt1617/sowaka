@@ -423,7 +423,19 @@ async function bot(userId: string, ticket: string, linkTicket: string) {
  * the next stop), now and then a skip, a little junk; until the run's clock (1:00 + what it earned) runs out. The bot
  * keeps its own copy of the run with the same rules, so it knows its stop and clock as the game would.
  */
+/** Every stop each bot was shown, run by run (its own copy of each run): no stop twice in the event. */
+const shown = new Map<string, { key: string; run: string }[]>();
 async function play(userId: string, ticket: string, first: any, serverNow: string, url = `/cup/api/matches/${first.id}/word`, mode: 'normal' | 'tie' | 'none' = 'normal') {
+  const mine = newRun();
+  try {
+    await playRun(userId, ticket, first, serverNow, url, mode, mine);
+  } finally {
+    const seed = Number(first.boardSeed);
+    const list = shown.get(userId) ?? shown.set(userId, []).get(userId)!;
+    for (let g = 0; g <= mine.gi; g += 1) list.push({ key: GAME.keyAt(seed, g), run: `${first.id}:${first.attempt ?? 0}` });
+  }
+}
+async function playRun(userId: string, ticket: string, first: any, serverNow: string, url: string, mode: 'normal' | 'tie' | 'none', mine: ReturnType<typeof newRun>) {
   const skew = new Date(serverNow).getTime() - Date.now();
   const startAt = new Date(first.startAt).getTime();
   const seed = Number(first.boardSeed);
@@ -433,7 +445,6 @@ async function play(userId: string, ticket: string, first: any, serverNow: strin
   if (forcedTie) stats.forcedTies += 1;
   const wait = startAt - (Date.now() + skew);
   if (wait > 0) await sleep(wait + 30);
-  const mine = newRun();
   const clock = () => (Date.now() + skew - startAt) / 1000;
   const send = async (body: Record<string, unknown>) => call(ticket, 'POST', url, body, 'words');
   if (mode === 'none') return;
@@ -679,6 +690,22 @@ async function main() {
     }
   }
   console.log(`Words played back against the matches: ${wordsChecked}`);
+  // No stop twice for anyone, across the qualifier, the tie-break, every match and replay.
+  let repeats = 0;
+  let mostStops = 0;
+  for (const [u, list] of shown) {
+    mostStops = Math.max(mostStops, list.length);
+    const at = new Map<string, string>();
+    for (const { key, run } of list) {
+      if (at.has(key)) {
+        repeats += 1;
+        if (repeats < 5) fail(`${u} shown ${key} in ${at.get(key)} and again in ${run}`);
+      }
+      at.set(key, run);
+    }
+  }
+  if (repeats) fail(`${repeats} stops shown to a player twice`);
+  console.log(`Stops: ${[...shown.values()].reduce((n, l) => n + l.length, 0)} shown to ${shown.size} bots, at most ${mostStops} to one, repeated ${repeats}`);
   const by: Record<string, number> = {};
   for (const m of matches) by[m.decidedBy] = (by[m.decidedBy] ?? 0) + 1;
   console.log(`Decided by: ${JSON.stringify(by)}`);

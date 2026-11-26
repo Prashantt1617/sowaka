@@ -262,7 +262,8 @@ export interface CupMatch {
   live: Record<string, CupScore>;
   finals: Record<string, CupScore>;
   /** Earlier games of this match that were tied. */
-  history?: { attempt: number; scores: Record<string, number> }[];
+  /** Word Trip also keeps each tied attempt's seed and how far each player got on it (no stop shown to a player twice). */
+  history?: { attempt: number; scores: Record<string, number>; seed?: number; reached?: Record<string, number> }[];
   winnerId?: string;
   decidedBy?: CupDecision;
   decidedAt?: Date;
