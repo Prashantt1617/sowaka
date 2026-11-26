@@ -10,6 +10,8 @@ import {
   resignHandler,
   soloHandler,
   stateHandler,
+  thumbHandler,
+  wordHandler,
 } from '../controllers/cup.controller';
 // Importing the bets module also fills the engine's `cupHooks` (settle on decide, ride on replay, refund on void, bets in state).
 import { myBetsHandler, placeBetHandler, voidMatchHandler } from '../services/cup-bets.service';
@@ -23,12 +25,14 @@ export const cupRouter = Router();
 cupRouter.get('/api/state', stateHandler);
 cupRouter.get('/api/entrants', entrantsHandler);
 cupRouter.get('/api/photo/:eventId/:userId', photoHandler);
+cupRouter.get('/api/thumb/:eventId/:userId/:v/:sig', thumbHandler);
 cupRouter.post('/api/lobby', lobbyHandler);
 cupRouter.post('/api/matches/:id/join', joinHandler);
 cupRouter.post('/api/matches/:id/solo', soloHandler);
 cupRouter.post('/api/matches/:id/live', liveHandler);
 cupRouter.post('/api/matches/:id/final', finalHandler);
 cupRouter.post('/api/matches/:id/resign', resignHandler);
+cupRouter.post('/api/matches/:id/word', wordHandler);
 // HR's void: the engine replays the match, and its bets are refunded (reconciled once more here).
 cupRouter.post('/api/matches/:id/void', voidMatchHandler);
 cupRouter.post('/api/bets', placeBetHandler);

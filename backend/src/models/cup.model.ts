@@ -128,6 +128,13 @@ export interface CupEvent extends CupEventConfig {
   drawnAt?: Date;
   /** With `lobbyDraw`: who has joined the lobby, in the order they joined. */
   lobbyJoined?: string[];
+  /**
+   * With `lobbyDraw`: when each lobby member's page last checked in (its poll), written every few seconds at most.
+   * The draw leaves out anyone not seen lately (closed the app, lost the connection): they would only be no-shows.
+   */
+  lobbySeen?: Record<string, Date>;
+  /** With `lobbyDraw`: the lobby closed (no more joins) at this time; the draw is made from `lobbyJoined` as it stood then. */
+  lobbyClosedAt?: Date;
   championId?: string;
   finishedAt?: Date;
   /** Switched off mid-tournament at this time (`cup-event.ts off`); switching back on moves every match's clock on by the pause. */
@@ -164,6 +171,12 @@ export interface CupScore {
   at: Date;
   /** Knights only: the cells with a knight on this player's board, as last reported (`score` is then the right ones). */
   knights?: number[];
+  /**
+   * Word Trip only: the words the server took from this player, per stop, as [word, points] (`score` is their
+   * total), and each stop's combo state [combo, comboUntil, lastT, bad], so a restart carries on where it was.
+   */
+  wt?: [string, number][][];
+  wtc?: [number, number, number, number][];
 }
 
 /** How a match was decided. Knights adds `finished` (a right board first), `resigned` and `cap` (more right at the cap); a tie after the last replay is `replays`. */

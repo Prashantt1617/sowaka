@@ -40,6 +40,7 @@ import {
   cupMatches,
   loadEvent,
   stateFor,
+  wordTripTvOf,
   touchCup,
   viewerFromTicket,
   voidMatchResult,
@@ -617,6 +618,10 @@ export async function tvStateFor(viewer: CupViewer, eventId?: string) {
   // The engine's state for this viewer, with the bet parts its hook adds.
   const state = JSON.parse(await stateFor(viewer, eventId, undefined)) as Record<string, unknown>;
   delete state.success;
+  // Word Trip: every live match's words, as found (the TV only: a player's page never gets the other's words).
+  const id = (state.event as { id?: string } | null)?.id;
+  const words = id ? wordTripTvOf(id) : undefined;
+  if (words) state.wordTrip = words;
   return state;
 }
 

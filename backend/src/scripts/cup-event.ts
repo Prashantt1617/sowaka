@@ -32,8 +32,9 @@
  * --exclude id,id --include id,id (a test: only these) --seeding leaderboard|lucky
  * --top-n N --start-window S --solo-start S --betting S --countdown S --round S
  * --grace S --min-play S --max-score N --max-replays N --max-stake N --push-at-lobby true|false
- * --game odd-one-out|trails|knights (the game in each match; knights also sets its own defaults:
- * round 300, start window 30, solo start 30, betting 120, top 8, wallet 1000, lobby draw, 2 replays) --lobby-draw true|false (only the people who join
+ * --game odd-one-out|trails|knights|word-trip (the game in each match; knights also sets its own defaults:
+ * round 300, start window 30, solo start 30, betting 120, top 8, wallet 1000, lobby draw, 2 replays; word-trip: round 60
+ * (each stop; 3 stops a match, 5 in the final), start window 40, betting 120, top 8, wallet 1000, lobby draw, 2 replays) --lobby-draw true|false (only the people who join
  * the lobby, paired at random when it closes) --wallet N (everyone bets from N points of their own for
  * this tournament, not their points; 0: their points)
  * Times: ISO with an offset (2026-10-23T17:25+05:30), or +Ns / +Nm / +Nh from now.
@@ -42,7 +43,7 @@ import { randomUUID } from 'node:crypto';
 import { companies, connectDb, connectPosts, closeDb, gameCatalog, users } from '../config/db';
 import type { CupEvent, CupEventConfig, CupSeeding } from '../models/cup.model';
 import type { ConnectPost } from '../models/connect.model';
-import { DEFAULT_CUP_CONFIG } from '../services/cup-rules';
+import { DEFAULT_CUP_CONFIG, WORD_TRIP, WT_GRACE_SEC, stopsFor, wtPlaySec } from '../services/cup-rules';
 import { newSeed } from '../services/game-challenge-rules';
 import { cupBets, cupEvents, cupMatches, rosterOf } from '../services/cup.service';
 import { pointEvents } from '../services/points-ledger.service';
@@ -97,7 +98,7 @@ const NUMBER_FLAGS: Record<string, [keyof CupEventConfig, number, number]> = {
 };
 
 /** The games a tournament can be played in: each has its round in the tournament page. */
-const CUP_GAMES = ['odd-one-out', 'trails', 'knights'];
+const CUP_GAMES = ['odd-one-out', 'trails', 'knights', 'word-trip'];
 
 /**
  * The Knights Tournament's own rules (Men's Day): 5-minute boards, a 30 s
@@ -114,6 +115,23 @@ const KNIGHTS_DEFAULTS: Partial<CupEventConfig> = {
   walletStart: 1000,
   lobbyDraw: true,
   maxReplays: 2,
+};
+
+/**
+ * The Word Trip Tournament's own rules (27 Nov 2026): a stop is 60 s of one set of letters (3 stops a match, 5 in the
+ * final), a 40 s start window (a lone player then plays alone at once and goes through), ties replayed on new letters
+ * twice, bets from the last eight from 1,000 points of their own, drawn from the lobby. Flags given on `create` still win.
+ */
+const WORD_TRIP_DEFAULTS: Partial<CupEventConfig> = {
+  roundSec: 60,
+  startWindowSec: 40,
+  soloStartSec: 30,
+  bettingSec: 120,
+  topN: 8,
+  walletStart: 1000,
+  lobbyDraw: true,
+  maxReplays: 2,
+  minPlaySec: 0,
 };
 
 /** The fields the flags set. */
@@ -216,7 +234,8 @@ async function resume(event: CupEvent, now: Date): Promise<string> {
     const playing = (m.status === 'live' || m.status === 'solo') && m.startAt;
     if (playing) {
       // A round that had run out before the pause is decided from what came in, as usual.
-      if (new Date(m.startAt!).getTime() + (event.roundSec + event.finishGraceSec) * 1000 <= pausedMs) continue;
+      const playSec = event.gameKey === WORD_TRIP ? wtPlaySec(stopsFor(m.round, event.rounds.length), event.roundSec) + WT_GRACE_SEC : event.roundSec + event.finishGraceSec;
+      if (new Date(m.startAt!).getTime() + playSec * 1000 <= pausedMs) continue;
       await cupMatches().updateOne(where, {
         $set: { status: 'open', seed: newSeed(), joined: {}, live: {}, finals: {}, openedAt: now, deadlineAt: new Date(now.getTime() + event.startWindowSec * 1000), updatedAt: now },
         $unset: { startAt: '', soloUntil: '' },
@@ -251,7 +270,7 @@ async function main() {
       const game = await gameCatalog().findOne({ key: fields.gameKey ?? DEFAULT_CUP_CONFIG.gameKey }, { projection: { _id: 0, scoring: 1 } });
       const event: CupEvent = {
         ...DEFAULT_CUP_CONFIG,
-        ...(fields.gameKey === 'knights' ? KNIGHTS_DEFAULTS : {}),
+        ...(fields.gameKey === 'knights' ? KNIGHTS_DEFAULTS : fields.gameKey === 'word-trip' ? WORD_TRIP_DEFAULTS : {}),
         ...(game?.scoring?.max ? { maxScore: game.scoring.max } : {}),
         id: flags.id,
         org: flags.org,
@@ -340,14 +359,15 @@ async function main() {
       if (existing) throw new Error(`Already posted (${existing.id}); unpost first`);
       // A Knights Tournament has its own card: the knight, cobalt, and its own line.
       const knights = event.gameKey === 'knights';
+      const wordTrip = event.gameKey === 'word-trip';
       const post: ConnectPost = {
         id: randomUUID(),
         org: event.org,
         type: 'live_game',
         tag: 'Live Game',
-        tagIcon: knights ? '♞' : '🪔',
-        tagColor: knights ? '#1F56D8' : '#E0483B',
-        tagTint: knights ? '#DCE8FF' : '#FBE2DE',
+        tagIcon: knights ? '♞' : wordTrip ? '🔤' : '🪔',
+        tagColor: knights ? '#1F56D8' : wordTrip ? '#15122B' : '#E0483B',
+        tagTint: knights ? '#DCE8FF' : wordTrip ? '#FFF6DE' : '#FBE2DE',
         // Faceless, like the Games announcements: nobody to tap through to.
         author: { userId: '', name: 'Sowaka Engagements', initials: 'S', designation: 'Games', avatarColor: '#F5B82E' },
         audience: { label: 'Company', org: event.org },
@@ -356,15 +376,17 @@ async function main() {
           cupEventId: event.id,
           cupLinkBase: event.linkBase,
           cupLinkUntil: event.linkUntil.toISOString(),
-          title: flags.title ?? (knights ? 'Knights Tournament' : event.name),
+          title: flags.title ?? (knights ? 'Knights Tournament' : wordTrip ? 'Word Trip Tournament' : event.name),
           subtitle: flags.subtitle ?? (knights
             ? 'One Meow-style knockout · first right board wins · bets from the quarter-finals'
-            : 'Everyone is in. One Odd One Out knockout, live, with bets on the last eight.'),
+            : wordTrip
+              ? 'Make words. Beat your opponent. Same letters for both · bets from the quarter-finals'
+              : 'Everyone is in. One Odd One Out knockout, live, with bets on the last eight.'),
           startsAtLabel: flags['starts-label'] ?? `LOBBY OPENS ${event.lobbyAt.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })}`,
           actionLabel: flags.action ?? 'Enter the tournament',
           actionDoneLabel: flags.action ?? 'Enter the tournament',
           hostedUrl: '',
-          accentColor: knights ? '#1F56D8' : '#F5B82E',
+          accentColor: knights ? '#1F56D8' : wordTrip ? '#FFD23F' : '#F5B82E',
           leaderboardEnabled: false,
         },
         likedBy: [],
@@ -399,7 +421,7 @@ async function main() {
       } else {
         await cupEvents().updateOne(
           { id: event.id },
-          { $set: { phase: 'scheduled', round: 0, entrants: [], rounds: [], lobbyJoined: [], updatedAt: now }, $unset: { drawnAt: '', championId: '', finishedAt: '', pausedAt: '' }, $inc: { version: 1 } },
+          { $set: { phase: 'scheduled', round: 0, entrants: [], rounds: [], lobbyJoined: [], updatedAt: now }, $unset: { drawnAt: '', championId: '', finishedAt: '', pausedAt: '', lobbyClosedAt: '', lobbySeen: '' }, $inc: { version: 1 } },
         );
         console.log(`Reset ${event.id} to before the draw (times unchanged: update them); ${reverted}`);
       }
