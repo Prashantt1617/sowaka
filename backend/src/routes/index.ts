@@ -30,6 +30,7 @@ import { placementsAdminRouter, placementsRouter } from './placements.routes';
 import { gameProgressRouter, gamesRouter, playRouter, pokerWebRouter, squadWebRouter } from './game-catalog.routes';
 import { cupRouter } from './cup.routes';
 import { cupAdminRouter } from './cup-admin.routes';
+import { cupTvPublicRouter } from './cup-tv-public.routes';
 import { engagementUsageRouter } from './engagement-usage.routes';
 import { engagementFeedRouter } from './engagement-feed.routes';
 import { engagementPlanRouter, engagementContestsRouter } from './engagement-plan.routes';
@@ -127,6 +128,8 @@ router.use('/squad', squadWebRouter);
 // Speed Poker on an office screen (see pokerTvHandler).
 router.use('/poker', pokerWebRouter);
 // The Diwali Cup's page and its API, signed in by ticket (see cup.service).
+// The tournament TV on a public link, read only (see cup-tv-public.service); ahead of the Cup's own `/cup/:eventId`.
+router.use('/cup/tv', cupTvPublicRouter);
 router.use('/cup', cupRouter);
 // Pages the app shows inside a tab (the Games home), when on for the company.
 router.use('/app-pages', appPagesRouter);
