@@ -16,6 +16,7 @@
     '.wt-row{display:flex;align-items:center;justify-content:space-between;gap:10px}' +
     '.wt-a{font-size:14px;font-weight:700;color:#FFD23F;background:none;border:0;padding:0;cursor:pointer}' +
     '.wt-q{flex:none;width:40px;height:40px;border-radius:50%;border:2px solid #3B3668;background:#211D42;color:#FFD23F;font:800 20px/1 "Baloo 2",system-ui;display:grid;place-items:center;cursor:pointer;padding:0}' +
+    '.wt-qin{position:absolute;top:12px;right:12px}.wt-qin .wt-q{width:36px;height:36px;font-size:18px}' +
     '.top.wtq{position:relative;padding-right:72px}.top.wtq .wt-q{position:absolute;right:20px;top:calc(12px + env(safe-area-inset-top))}' +
     '.wt-mu{margin:0;font-size:17px;color:#A9A3CC}.wt-s{font-size:14px;color:#A9A3CC;text-align:center}' +
     '.wt-tiles{display:flex;gap:8px;justify-content:center;padding:6px 0}.wt-tiles span{width:52px;height:58px;border-radius:12px;background:#FFF6DE;box-shadow:inset 0 -4px 0 #D2BC7E;color:#2A2140;font:800 30px/58px "Baloo 2",system-ui;text-align:center}.wt-tiles span.g{background:#FFD23F;box-shadow:inset 0 -4px 0 #C99E12}' +
@@ -69,10 +70,10 @@
       var ev = e(), me = H.me(), n = ev.entrantCount || 0, open = !!ev.lobbyOpen, err = H.ui.err;
       var faces = people().slice(0, 5);
       return '<section class="wt" aria-label="Join the tournament">' +
-        '<div class="wt-row"><span class="wt-k">' + esc(H.dayLabel(ev.startAt)) + '</span>' + how() + '</div>' +
+        '<div class="wt-row"><span class="wt-k">' + esc(H.dayLabel(ev.startAt)) + '</span></div>' +
         '<p class="wt-mu" style="margin:0;font-size:18px;font-weight:600">Make words. Beat your opponent.</p>' +
         tiles('words', true) +
-        '<div class="wt-card"><span style="font-size:14px;font-weight:600;color:#A9A3CC">' + (open ? (ev.qualifier ? (H.state().phase === 'qualifier' ? 'The qualifier is on. Join to play' : 'The qualifier starts in') : 'Matches start in') : 'The lobby opens in') + '</span>' + (open && H.state().phase === 'qualifier' ? '' : '<span class="wt-big">' + H.cd(H.ms(open ? ev.startAt : ev.lobbyAt)) + '</span>') + '</div>' +
+        '<div class="wt-card" style="position:relative"><span class="wt-qin">' + how() + '</span><span style="font-size:14px;font-weight:600;color:#A9A3CC">' + (open ? (ev.qualifier ? (H.state().phase === 'qualifier' ? 'The qualifier is on. Join to play' : 'The qualifier starts in') : 'Matches start in') : 'The lobby opens in') + '</span>' + (open && H.state().phase === 'qualifier' ? '' : '<span class="wt-big">' + H.cd(H.ms(open ? ev.startAt : ev.lobbyAt)) + '</span>') + '</div>' +
         (open && n ? '<div class="wt-faces"><span class="fs">' + faces.map(function (p) { return face(p, '', 'j'); }).join('') + '</span><b>' + num(n) + (n === 1 ? ' person is in' : ' people are in') + '</b></div>' : '') +
         '<div style="flex-grow:1"></div>' +
         (me.entered
@@ -83,17 +84,41 @@
         '</section>';
     }
 
+    /* How it works, one rule at a time: Back / Next and dots (ui.howStep). */
+    function howWizard(ev, n) {
+      var steps = ev.qualifier ? [
+        ['Qualifier: 2 rounds', 'You play 2 rounds. Your best score of the 2 counts.'],
+        ['Who qualifies', num(n) + (n === 1 ? ' person is' : ' people are') + ' in the lobby, so ' + num(qualifyOf(n)) + ' will qualify.'],
+        ['Your own board', 'In the qualifier everyone gets their own letters.'],
+        ['Then 1v1', 'Same board for both players. The winner moves to the next round. One attempt only.'],
+        ['Bets', 'Betting starts from the top 8. You get 1,000 points to bet.']
+      ] : [
+        ['Your opponent', 'We pick your opponent.'],
+        ['Same letters', 'Same letters for both. Find words before your clock runs out.'],
+        ['Winner goes on', 'More points wins. The winner moves to the next round.'],
+        ['Bets', 'Bet on the last rounds.']
+      ];
+      var k = Math.max(0, Math.min(steps.length - 1, H.ui.howStep || 0)), st = steps[k];
+      var dots = steps.map(function (_, j) { return '<i style="width:' + (j === k ? 18 : 7) + 'px;height:7px;border-radius:4px;background:' + (j === k ? '#15122B' : 'rgba(21,18,43,.3)') + ';display:inline-block"></i>'; }).join('');
+      var btn = 'border:0;border-radius:12px;padding:10px 16px;font:800 15px/1 Figtree,system-ui;cursor:pointer';
+      return '<div class="wt-box" style="background:#FFD23F;color:#15122B;border:0;gap:10px;box-shadow:0 6px 0 #C99A12;padding:18px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font:800 20px/1.1 \'Baloo 2\',system-ui;color:#15122B">📣 How it works</b><span style="font-weight:800;font-size:13px;opacity:.7">' + (k + 1) + ' of ' + steps.length + '</span></div>' +
+        '<b style="font-size:17px;color:#15122B">' + esc(st[0]) + '</b>' +
+        '<span style="color:#15122B;font-size:16px;font-weight:600;line-height:1.4;min-height:44px">' + esc(st[1]) + '</span>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><span style="display:flex;gap:5px">' + dots + '</span><span style="display:flex;gap:8px">' +
+        (k > 0 ? '<button type="button" data-act="wthowstep" data-v="-1" style="' + btn + ';background:rgba(21,18,43,.12);color:#15122B">Back</button>' : '') +
+        (k < steps.length - 1 ? '<button type="button" data-act="wthowstep" data-v="1" style="' + btn + ';background:#15122B;color:#FFD23F">Next</button>'
+          : '<button type="button" data-act="wthowstep" data-v="0" style="' + btn + ';background:#15122B;color:#FFD23F">From the start</button>') +
+        '</span></div></div>';
+    }
     /* The qualifier's cut: the largest power of two not more than the people in the lobby. */
     function qualifyOf(n) { if (n < 2) return n; var p = 1; while (p * 2 <= n) p *= 2; return p; }
     function lobby() {
       var ev = e(), n = ev.entrantCount || 0, ppl = people(), shown = ppl.slice(0, 15);
       return '<section class="wt" aria-label="In the lobby">' +
-        '<div class="wt-row"><span></span>' + how() + '</div>' +
-        '<div class="wt-card" style="padding:22px 20px;gap:10px"><span class="wt-in"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>You’re in</span>' +
+        '<div class="wt-card" style="padding:22px 20px;gap:10px;position:relative"><span class="wt-qin">' + how() + '</span><span class="wt-in"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>You’re in</span>' +
         '<span style="font-size:15px;color:#A9A3CC">' + (ev.qualifier ? 'The qualifier starts in' : 'Your match starts in') + '</span><span class="wt-big wt-l">' + H.cd(H.ms(ev.startAt)) + '</span><span style="font-size:15px">Stay on this screen.</span></div>' +
-        (ev.qualifier
-          ? '<div class="wt-box" style="background:#FFD23F;color:#15122B;border:0;gap:10px;box-shadow:0 6px 0 #C99A12;padding:18px 18px"><b style="font:800 22px/1.1 \'Baloo 2\',system-ui;color:#15122B">📣 How it works</b><span style="color:#15122B;font-size:15.5px;font-weight:600;line-height:1.35"><b style="display:inline-block;min-width:22px;height:22px;border-radius:11px;background:#15122B;color:#FFD23F;text-align:center;font:800 13px/22px Figtree,system-ui;margin-right:8px">1</b>The qualifier is 2 rounds. Your best score of the 2 counts.</span><span style="color:#15122B;font-size:15.5px;font-weight:600;line-height:1.35"><b style="display:inline-block;min-width:22px;height:22px;border-radius:11px;background:#15122B;color:#FFD23F;text-align:center;font:800 13px/22px Figtree,system-ui;margin-right:8px">2</b>' + num(n) + (n === 1 ? ' person' : ' people') + ' in the lobby, so ' + num(qualifyOf(n)) + ' will qualify.</span><span style="color:#15122B;font-size:15.5px;font-weight:600;line-height:1.35"><b style="display:inline-block;min-width:22px;height:22px;border-radius:11px;background:#15122B;color:#FFD23F;text-align:center;font:800 13px/22px Figtree,system-ui;margin-right:8px">3</b>Everyone gets their own board in the qualifier.</span><span style="color:#15122B;font-size:15.5px;font-weight:600;line-height:1.35"><b style="display:inline-block;min-width:22px;height:22px;border-radius:11px;background:#15122B;color:#FFD23F;text-align:center;font:800 13px/22px Figtree,system-ui;margin-right:8px">4</b>After the qualifier it’s 1v1: the same board for both. The winner moves to the next round. One attempt only.</span><span style="color:#15122B;font-size:15.5px;font-weight:600;line-height:1.35"><b style="display:inline-block;min-width:22px;height:22px;border-radius:11px;background:#15122B;color:#FFD23F;text-align:center;font:800 13px/22px Figtree,system-ui;margin-right:8px">5</b>Betting starts from the top 8.</span></div>'
-          : '<div class="wt-box" style="background:#FFD23F;color:#15122B;border:0;gap:10px;box-shadow:0 6px 0 #C99A12;padding:18px 18px"><b style="font:800 22px/1.1 \'Baloo 2\',system-ui;color:#15122B">📣 How it works</b><span style="color:#15122B;font-size:15.5px;font-weight:600;line-height:1.35"><b style="display:inline-block;min-width:22px;height:22px;border-radius:11px;background:#15122B;color:#FFD23F;text-align:center;font:800 13px/22px Figtree,system-ui;margin-right:8px">1</b>We pick your opponent.</span><span style="color:#15122B;font-size:15.5px;font-weight:600;line-height:1.35"><b style="display:inline-block;min-width:22px;height:22px;border-radius:11px;background:#15122B;color:#FFD23F;text-align:center;font:800 13px/22px Figtree,system-ui;margin-right:8px">2</b>Same letters for both. Find words before your clock runs out.</span><span style="color:#15122B;font-size:15.5px;font-weight:600;line-height:1.35"><b style="display:inline-block;min-width:22px;height:22px;border-radius:11px;background:#15122B;color:#FFD23F;text-align:center;font:800 13px/22px Figtree,system-ui;margin-right:8px">3</b>More points wins. Winner goes on.</span><span style="color:#15122B;font-size:15.5px;font-weight:600;line-height:1.35"><b style="display:inline-block;min-width:22px;height:22px;border-radius:11px;background:#15122B;color:#FFD23F;text-align:center;font:800 13px/22px Figtree,system-ui;margin-right:8px">4</b>Bet on the last rounds.</span></div>') +
+        howWizard(ev, n) +
         '<div style="display:flex;flex-direction:column;gap:10px"><div class="wt-row" style="align-items:baseline"><span style="font-size:17px;font-weight:800">Who’s playing</span><span style="font-size:15px;font-weight:700;color:#FFD23F">' + num(n) + ' in</span></div>' +
         '<div class="wt-grid">' + shown.map(function (p) { return '<div data-k="g' + esc(p.userId) + '">' + face(p, '', 'l') + '<span>' + esc(p.userId === H.meId() ? 'You' : first(p.name)) + '</span></div>'; }).join('') + '</div>' +
         (n > shown.length ? '<span class="wt-s">+' + num(n - shown.length) + ' more</span>' : '') + '</div>' +
