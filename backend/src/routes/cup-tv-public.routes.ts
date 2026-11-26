@@ -41,7 +41,17 @@ function pageOf() {
 }
 
 const PRIVATE = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex, nofollow', 'X-Content-Type-Options': 'nosniff' };
-const GONE = 'This TV link has expired. Ask the host for a new one.';
+const GONE = "This link isn't active. Ask the host for the current one.";
+/**
+ * A calm screen and nothing more: a removed tournament's link ("has ended"), or a token that
+ * isn't (or is no longer) a link. 200, never 404/403: the livetv CloudFront turns those into the
+ * dashboard's page.
+ */
+const calmPage = (title: string, line: string) =>
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Tournament TV</title><style>html,body{margin:0;height:100%;background:#15122B;color:#F6F1FF;font-family:system-ui,-apple-system,sans-serif}body{display:grid;place-items:center;text-align:center;padding:0 24px}h1{font-size:clamp(28px,5vw,64px);margin:0 0 12px}p{margin:0;color:#A9A3CC;font-size:clamp(16px,2vw,24px)}</style></head><body><div><h1>${title}</h1><p>${line}</p></div></body></html>`;
+const ENDED_PAGE = calmPage('This tournament has ended', 'Thanks for watching.');
+const INACTIVE_PAGE = calmPage('This link isn’t active', 'Ask the host for the current one.');
+const ENDED_CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 const tokenOf = (req: Request) => String(req.params.token ?? '');
 
@@ -60,8 +70,8 @@ cupTvPublicRouter.get('/:token', async (req, res, next) => {
     const ip = clientIp(req);
     rateLimitTv('page', ip);
     const link = await resolveTvToken(tokenOf(req), ip);
-    if (!link) {
-      res.status(404).set(PRIVATE).type('text/plain').send(GONE);
+    if (!link || link.ended) {
+      res.status(200).set({ ...PRIVATE, 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': ENDED_CSP }).send(link ? ENDED_PAGE : INACTIVE_PAGE);
       return;
     }
     const { html, csp } = pageOf();
@@ -76,7 +86,11 @@ cupTvPublicRouter.get('/:token/state', async (req, res, next) => {
     const ip = clientIp(req);
     const link = await resolveTvToken(tokenOf(req), ip);
     if (!link) {
-      res.status(404).set(PRIVATE).json({ success: false, gone: true, message: GONE });
+      res.status(410).set(PRIVATE).json({ success: false, gone: true, message: GONE });
+      return;
+    }
+    if (link.ended) {
+      res.status(410).set(PRIVATE).json({ success: false, ended: true, message: 'This tournament has ended.' });
       return;
     }
     rateLimitTv('state', ip, link.eventId);
@@ -94,9 +108,9 @@ cupTvPublicRouter.get('/:token/face/:pid/:file', async (req, res, next) => {
     rateLimitTv('face', ip);
     const link = await resolveTvToken(tokenOf(req), ip);
     const v = String(req.params.file ?? '').replace(/\.webp$/, '');
-    const bytes = link ? await tvFace(link, String(req.params.pid ?? ''), v) : null;
+    const bytes = link && !link.ended ? await tvFace(link, String(req.params.pid ?? ''), v) : null;
     if (!bytes) {
-      res.status(404).set({ ...PRIVATE, 'Cache-Control': 'no-store' }).json({ success: false, message: 'No photo' });
+      res.status(410).set({ ...PRIVATE, 'Cache-Control': 'no-store' }).json({ success: false, message: 'No photo' });
       return;
     }
     // The browser keeps it (one address per photo); no shared cache does, so an expired link shows nothing more.

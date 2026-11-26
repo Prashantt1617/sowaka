@@ -10,8 +10,11 @@
  * Checks: the host's link (made once, printed again the same, a new one ends
  * the old); the page and its policy; the poll (unchanged when nothing moved,
  * faces only when they changed); faces only at the version shown; a wrong or
- * malformed token 404; an ended event's link 404 after its 2 hours (not
- * before); a removed event's link 404 within 5 s; the rate limits (per address,
+ * malformed token: a calm "isn't active" page (200, never 404: the livetv
+ * CloudFront turns 404s into the dashboard) and 410 for the poll and faces; no
+ * expiry (an event ended days ago, or started 25 h ago, still works); revoke
+ * switches it off at once; a removed event's link shows "This tournament has
+ * ended" (nothing else) within 5 s; the same at `/tv/<token>`; the rate limits (per address,
  * wrong tokens, a working token still let through); and the payload's privacy,
  * on the engine's real lobby state and on every phase's fixture: first names
  * and faces only, no userId, full name, surname, email, employee id, role,
@@ -149,7 +152,10 @@ async function main() {
   const kept = await db.collection('cup_tv_links').findOne({ _id: LOBBY as never });
   ok('only its hash and a nonce are kept', !!kept && kept.hash !== made.token && !JSON.stringify(kept).includes(made.token));
   const printed = await tv.tvLinkCommand((await db.collection('cup_events').findOne({ id: LOBBY })) as never, {});
-  ok('the host command prints the full URL', printed.includes(`${BASE}/cup/tv/${made.token}`) && printed.includes('?stream=1'));
+  ok('the host command prints the livetv address and its stream view', printed.includes(`https://livetv.getsowaka.com/tv/${made.token}\n`) && printed.includes(`https://livetv.getsowaka.com/tv/${made.token}?stream=1`) && /no expiry/.test(printed));
+  const printedApi = await tv.tvLinkCommand({ id: LOBBY } as never, { 'link-base': BASE });
+  ok('--link-base prints the API’s own /cup/tv address', printedApi.includes(`${BASE}/cup/tv/${made.token}`));
+  ok('--tv-base prints another address', (await tv.tvLinkCommand({ id: LOBBY } as never, { 'tv-base': 'https://tv.example.test/x/' })).includes(`https://tv.example.test/x/${made.token}`));
   const T = made.token;
 
   // ---------------------------------------------------------------- the page and its poll
@@ -159,6 +165,9 @@ async function main() {
   ok('its policy runs only its own script (by hash) and reaches only this server', /script-src 'sha256-[A-Za-z0-9+/=]+'/.test(csp) && !csp.includes("script-src 'unsafe-inline'") && csp.includes("connect-src 'self'"));
   ok('no referrer, no store, no index', pageRes.headers.get('referrer-policy') === 'no-referrer' && /no-store/.test(pageRes.headers.get('cache-control') ?? '') && /noindex/.test(pageRes.headers.get('x-robots-tag') ?? ''));
   ok('the trailing-slash address works too', (await get(`/cup/tv/${T}/`)).status === 200);
+  const atTv = await get(`/tv/${T}`);
+  ok('the same page at /tv/<token> (livetv.getsowaka.com/tv/…)', atTv.status === 200 && atTv.text.includes('data-testid="cup-tv"'));
+  ok('and its poll at /tv/<token>/state', (await get(`/tv/${T}/state`)).status === 200);
 
   // The runtime reads photos as it loads: a moment for the first read.
   await get(`/cup/tv/${T}/state`);
@@ -180,33 +189,39 @@ async function main() {
   const f1 = await get(`/cup/tv/${T}/face/${pid}/${v}.webp`);
   ok('a face shown comes as a small WebP', f1.status === 200 && f1.headers.get('content-type') === 'image/webp' && f1.bytes.length < 20_000, f1.status);
   ok('kept by the browser, not by a shared cache', /private/.test(f1.headers.get('cache-control') ?? ''));
-  ok('a face at another version: 404', (await get(`/cup/tv/${T}/face/${pid}/kAAAAAAAAAA.webp`)).status === 404);
-  ok('a face of nobody shown: 404', (await get(`/cup/tv/${T}/face/pAAAAAAAAAAA/${v}.webp`)).status === 404);
-  ok('a face under a wrong token: 404', (await get(`/cup/tv/${randomBytes(32).toString('base64url')}/face/${pid}/${v}.webp`)).status === 404);
+  ok('a face at another version: 410', (await get(`/cup/tv/${T}/face/${pid}/kAAAAAAAAAA.webp`)).status === 410);
+  ok('a face of nobody shown: 410', (await get(`/cup/tv/${T}/face/pAAAAAAAAAAA/${v}.webp`)).status === 410);
+  ok('a face under a wrong token: 410', (await get(`/cup/tv/${randomBytes(32).toString('base64url')}/face/${pid}/${v}.webp`)).status === 410);
 
   // ---------------------------------------------------------------- wrong tokens
   const wrong = randomBytes(32).toString('base64url');
-  ok('a wrong token: the page 404', (await get(`/cup/tv/${wrong}`)).status === 404);
-  ok('a wrong token: the poll 404', (await get(`/cup/tv/${wrong}/state`)).status === 404);
-  ok('a malformed token: 404', (await get('/cup/tv/abc/state')).status === 404 && (await get(`/cup/tv/${T}x/state`)).status === 404);
-  ok('the event id is no token', (await get(`/cup/tv/${LOBBY}/state`)).status === 404);
+  const wrongPage = await get(`/cup/tv/${wrong}`);
+  const inactive = (r: { status: number; text: string }) => r.status === 200 && r.text.includes('This link isn’t active') && !r.text.includes('<script') && !r.text.includes('Word Trip');
+  ok('a wrong token: the page a calm "isn’t active" screen (200, nothing else)', inactive(wrongPage), wrongPage.status);
+  ok('a wrong token: the poll 410', (await get(`/cup/tv/${wrong}/state`)).status === 410);
+  ok('a wrong token at /tv: the same', inactive(await get(`/tv/${wrong}`)) && (await get(`/tv/${wrong}/state`)).status === 410);
+  ok('a malformed token: 410', (await get('/cup/tv/abc/state')).status === 410 && (await get(`/cup/tv/${T}x/state`)).status === 410 && inactive(await get('/cup/tv/abc')));
+  ok('the event id is no token', (await get(`/cup/tv/${LOBBY}/state`)).status === 410);
 
   // ---------------------------------------------------------------- a new link ends the old
   const fresh = await tv.tvLinkFor(LOBBY, true);
   ok('a new link works', (await get(`/cup/tv/${fresh.token}/state`)).status === 200);
-  ok('and the old one stops', (await get(`/cup/tv/${T}/state`)).status === 404);
+  ok('and the old one stops (410, the page "isn’t active")', (await get(`/cup/tv/${T}/state`)).status === 410 && inactive(await get(`/cup/tv/${T}`)));
 
-  // ---------------------------------------------------------------- ended, removed
+  // ---------------------------------------------------------------- no expiry, revoke, removed
   const ENDED = 'wt-tv-ended-check';
-  await db.collection('cup_events').insertOne(eventDoc(ENDED, { phase: 'done', finishedAt: new Date(Date.now() - 100 * 60_000) }) as never);
+  await db.collection('cup_events').insertOne(eventDoc(ENDED, { phase: 'done', finishedAt: new Date(Date.now() - 3 * 24 * 3600_000) }) as never);
   const ended = (await tv.tvLinkFor(ENDED)).token;
-  ok('ended 1 h 40 min ago: still works', (await get(`/cup/tv/${ended}/state`)).status === 200);
-  await db.collection('cup_events').updateOne({ id: ENDED }, { $set: { finishedAt: new Date(Date.now() - 2 * 3600_000 - 60_000) } });
-  tv.forgetTvLinks();
-  ok('ended 2 h 1 min ago: 404 (page and poll)', (await get(`/cup/tv/${ended}/state`)).status === 404 && (await get(`/cup/tv/${ended}`)).status === 404);
+  ok('no expiry: ended 3 days ago, still works (page and poll)', (await get(`/cup/tv/${ended}/state`)).status === 200 && (await get(`/cup/tv/${ended}`)).text.includes('data-testid="cup-tv"'));
   const OLD = 'wt-tv-old-check';
   await db.collection('cup_events').insertOne(eventDoc(OLD, { phase: 'running', startAt: new Date(Date.now() - 25 * 3600_000) }) as never);
-  ok('never finished, started 25 h ago: 404', (await get(`/cup/tv/${(await tv.tvLinkFor(OLD)).token}/state`)).status === 404);
+  ok('no expiry: never finished, started 25 h ago, still works', (await get(`/cup/tv/${(await tv.tvLinkFor(OLD)).token}/state`)).status === 200);
+  const off = await tv.tvLinkCommand({ id: ENDED } as never, { revoke: 'true' });
+  ok('--revoke true switches it off', /switched off/.test(off) && !(await db.collection('cup_tv_links').findOne({ _id: ENDED as never })));
+  ok('revoked: the poll 410 at once, the page "isn’t active"', (await get(`/cup/tv/${ended}/state`)).status === 410 && inactive(await get(`/cup/tv/${ended}`)));
+  ok('revoking again: nothing to switch off', /No TV link/.test(await tv.tvLinkCommand({ id: ENDED } as never, { revoke: 'true' })));
+  const back = await tv.tvLinkFor(ENDED);
+  ok('after a revoke, tv-link makes a new link (the old stays off)', back.created && back.token !== ended && (await get(`/cup/tv/${back.token}/state`)).status === 200 && (await get(`/cup/tv/${ended}/state`)).status === 410);
 
   const GONE = 'wt-tv-removed-check';
   await db.collection('cup_events').insertOne(eventDoc(GONE) as never);
@@ -214,7 +229,10 @@ async function main() {
   ok('before removal: works', (await get(`/cup/tv/${goneToken}/state`)).status === 200);
   await db.collection('cup_events').deleteOne({ id: GONE });
   await sleep(5300);
-  ok('removed: 404 within 5 s (no cache cleared by hand)', (await get(`/cup/tv/${goneToken}/state`)).status === 404 && (await get(`/cup/tv/${goneToken}`)).status === 404);
+  const gonePage = await get(`/cup/tv/${goneToken}`);
+  const goneState = await get(`/cup/tv/${goneToken}/state`);
+  ok('removed: within 5 s the page says "This tournament has ended" (200, no script, nothing about it)', gonePage.status === 200 && gonePage.text.includes('This tournament has ended') && !gonePage.text.includes('<script') && !gonePage.text.includes(GONE) && !gonePage.text.includes('Word Trip'));
+  ok('removed: the poll 410 { ended: true } and nothing else', goneState.status === 410 && JSON.parse(goneState.text).ended === true && !goneState.text.includes(GONE));
 
   // ---------------------------------------------------------------- rate limits
   tv.resetTvRateLimits();

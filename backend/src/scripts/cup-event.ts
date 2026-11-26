@@ -25,7 +25,7 @@
  *   node --env-file=.env --import tsx src/scripts/cup-event.ts post --id diwali-cup-2026 [--title ..] [--subtitle ..]
  *   node --env-file=.env --import tsx src/scripts/cup-event.ts unpost --id diwali-cup-2026
  *   # The TV on a public link (no sign-in, first names and faces only); --new true makes a new one:
- *   node --env-file=.env --import tsx src/scripts/cup-event.ts tv-link --id diwali-cup-2026 [--new true] [--link-base ..]
+ *   node --env-file=.env --import tsx src/scripts/cup-event.ts tv-link --id diwali-cup-2026 [--new true | --revoke true] [--tv-base ..]   (prints https://livetv.getsowaka.com/tv/<token>; no expiry)
  *   # Sowaka only: back to before the draw (bets refunded), or gone altogether:
  *   node --env-file=.env --import tsx src/scripts/cup-event.ts reset --id cup-test-sowaka
  *   node --env-file=.env --import tsx src/scripts/cup-event.ts remove --id cup-test-sowaka

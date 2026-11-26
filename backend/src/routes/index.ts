@@ -130,6 +130,8 @@ router.use('/poker', pokerWebRouter);
 // The Diwali Cup's page and its API, signed in by ticket (see cup.service).
 // The tournament TV on a public link, read only (see cup-tv-public.service); ahead of the Cup's own `/cup/:eventId`.
 router.use('/cup/tv', cupTvPublicRouter);
+// The same at livetv.getsowaka.com/tv/<token> (its CloudFront sends `/tv/*` here).
+router.use('/tv', cupTvPublicRouter);
 router.use('/cup', cupRouter);
 // Pages the app shows inside a tab (the Games home), when on for the company.
 router.use('/app-pages', appPagesRouter);

@@ -5,8 +5,10 @@
  * The link is the credential, made by the host (`cup-event.ts tv-link --id <event>`):
  * 256 bits, derived from a random nonce kept per event (`cup_tv_links`) and this
  * server's secret, so the host can print the same link again; only its hash is
- * looked up. It is read only, for that one event, and stops working when the
- * event is removed or 2 hours after it ends (24 hours after its start at most).
+ * looked up. It is read only, for that one event, and has no expiry: it works
+ * until the host switches it off (`tv-link --revoke true`) or makes a new one
+ * (`--new true`). An event removed while its link is on shows a calm "This
+ * tournament has ended" screen (nothing else).
  *
  * The payload is the dashboard TV's state (`tvStateFor`), made safe to show to
  * anyone holding the link: first names and faces only. Every userId becomes a
@@ -40,23 +42,14 @@ export function cupTvLinks(): Collection<CupTvLink> {
   return getDb().collection<CupTvLink>('cup_tv_links');
 }
 
-/** After the event ends, the link works this much longer. */
-export const TV_LINK_AFTER_END_MS = 2 * 60 * 60 * 1000;
-/** And never longer than this after the event's start (one that never finishes). */
-export const TV_LINK_MAX_MS = 24 * 60 * 60 * 1000;
+/** The public address: livetv.getsowaka.com's CloudFront sends `/tv/*` to this server; `--tv-base` for another. */
+export const TV_BASE = 'https://livetv.getsowaka.com/tv';
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
 let linkKey: Buffer | null = null;
 const keyOf = () => (linkKey ??= createHash('sha256').update(`cup-tv-link:${env.scribbleTicketSecret || env.mongoUri}`).digest());
 const tokenOf = (eventId: string, nonce: string) => createHmac('sha256', keyOf()).update(`${eventId}:${nonce}`).digest('base64url');
 const hashOf = (token: string) => createHash('sha256').update(token).digest('hex');
-
-/** Until when an event's TV link works. */
-export function tvLinkUntil(event: Pick<CupEvent, 'startAt' | 'finishedAt' | 'phase' | 'updatedAt'>): Date {
-  const cap = new Date(event.startAt).getTime() + TV_LINK_MAX_MS;
-  const ended = event.finishedAt ? new Date(event.finishedAt).getTime() : event.phase === 'done' ? new Date(event.updatedAt).getTime() : Number.NaN;
-  return new Date(Number.isFinite(ended) ? Math.min(cap, ended + TV_LINK_AFTER_END_MS) : cap);
-}
 
 /**
  * The event's TV token: the one made before, or (none yet, or `rotate`) a new
@@ -77,22 +70,38 @@ export async function tvLinkFor(eventId: string, rotate = false): Promise<{ toke
   return { token, created: true };
 }
 
-/** What `cup-event.ts tv-link` prints. */
-export async function tvLinkCommand(event: CupEvent, flags: Record<string, string>): Promise<string> {
+/** Switches an event's TV link off (no link works for it until a new one is made). */
+export async function revokeTvLink(eventId: string): Promise<boolean> {
+  const { deletedCount } = await cupTvLinks().deleteOne({ _id: eventId });
+  forgetTvLinks();
+  return deletedCount > 0;
+}
+
+/**
+ * What `cup-event.ts tv-link` prints: the link at `--tv-base` (default the public
+ * livetv address, which forwards to `/cup/tv/`); `--link-base <api>` prints the
+ * API's own `/cup/tv/` address instead. `--revoke true` switches it off.
+ */
+export async function tvLinkCommand(event: Pick<CupEvent, 'id'>, flags: Record<string, string>): Promise<string> {
+  if (flags.revoke === 'true') {
+    return (await revokeTvLink(event.id))
+      ? `TV link for ${event.id} switched off: it stops within 5 seconds (screens on it say it no longer works). A new one: tv-link --id ${event.id}`
+      : `No TV link to switch off for ${event.id}.`;
+  }
   const { token, created } = await tvLinkFor(event.id, flags.new === 'true');
-  const base = (flags['link-base'] || event.linkBase || env.publicApiUrl).replace(/\/+$/, '');
-  const url = `${base}/cup/tv/${token}`;
-  const until = tvLinkUntil(event).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+  const base = flags['tv-base'] ? flags['tv-base'].replace(/\/+$/, '') : flags['link-base'] ? `${flags['link-base'].replace(/\/+$/, '')}/cup/tv` : TV_BASE;
+  const url = `${base}/${token}`;
   return [
     `${created ? 'New TV link' : 'TV link'} for ${event.id} (read only, no sign-in; anyone with it sees first names and faces):`,
     `  ${url}`,
     `  stream view: ${url}?stream=1`,
-    `Works until ${until} IST at the latest (2 hours after the tournament ends), or until the event is removed.`,
-    created ? '' : 'A new one (the old stops at once): add --new true',
-  ].filter(Boolean).join('\n');
+    'It has no expiry. Switch it off: --revoke true · a new one (the old stops at once): --new true',
+  ].join('\n');
 }
 
 interface Resolved {
+  /** The link is on but its event was removed: the page says the tournament has ended, nothing more. */
+  ended?: true;
   eventId: string;
   org: string;
   /** Everyone the event knows, by userId: their full name (to keep it out of the payload). */
@@ -128,10 +137,12 @@ export async function resolveTvToken(token: string, ip: string): Promise<Resolve
         { projection: { _id: 0, id: 1, org: 1, startAt: 1, finishedAt: 1, phase: 1, updatedAt: 1, entrants: 1, lobbyJoined: 1, includeUserIds: 1 } },
       )
     : null;
-  const value = event && now < tvLinkUntil(event).getTime()
+  const value: Resolved | null = event
     ? { eventId: event.id, org: event.org, people: new Map((event.entrants ?? []).map((e) => [e.userId, e.name])) }
-    : null;
-  if (value) {
+    : link
+      ? { ended: true, eventId: link.eventId, org: '', people: new Map() }
+      : null;
+  if (value && !value.ended) {
     for (const id of [...(event?.lobbyJoined ?? []), ...(event?.includeUserIds ?? [])]) if (!value.people.has(id)) value.people.set(id, '');
     knownGood.set(hash, now);
     if (knownGood.size > 200) knownGood.clear();
@@ -149,15 +160,19 @@ export class TvLimited extends Error {
   }
 }
 
-/** Per client address, per minute (the page polls every 2.5 s: 24 a minute a screen). */
+/**
+ * Per client address, per minute (the page polls every 2.5 s: 24 a minute a screen). Every viewer
+ * comes through Vercel and CloudFront, so many screens share an address: high per address, and the
+ * event-wide cap is the real guard (the payload is built at most once a second however many poll).
+ */
 export const LIMITS = {
-  page: { max: 60, windowMs: 60_000 },
-  state: { max: 240, windowMs: 60_000 },
-  face: { max: 1500, windowMs: 60_000 },
+  page: { max: 2000, windowMs: 60_000 },
+  state: { max: 6000, windowMs: 60_000 },
+  face: { max: 60_000, windowMs: 60_000 },
   /** Wrong tokens: after this many in 10 minutes, an address gets no more lookups (a token that worked lately still does). */
   badToken: { max: 30, windowMs: 10 * 60_000 },
-  /** One event, all addresses together. */
-  event: { max: 6000, windowMs: 60_000 },
+  /** One event's polls, all addresses together (500 screens). */
+  event: { max: 12_000, windowMs: 60_000 },
 };
 
 const buckets = new Map<string, { count: number; resetAt: number }>();

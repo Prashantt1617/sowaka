@@ -242,7 +242,7 @@ a{color:inherit}
   var root = document.getElementById('tv');
   if (stream) root.classList.add('stream');
 
-  var state = null, faces = {}, facesV = '', hash = '', skew = 0, error = '', gone = false;
+  var state = null, faces = {}, facesV = '', hash = '', skew = 0, error = '', gone = false, ended = false;
   var failedFaces = {};
 
   // —— small helpers ————————————————————————————————————————————————————————
@@ -324,7 +324,7 @@ a{color:inherit}
     if (facesV) q.push('pv=' + encodeURIComponent(facesV));
     fetch(base + '/state' + (q.length ? '?' + q.join('&') : ''), { cache: 'no-store', credentials: 'omit' })
       .then(function (res) {
-        if (res.status === 404) { gone = true; return null; }
+        if (res.status === 404 || res.status === 410) { gone = true; return res.json().then(function (j) { ended = !!(j && j.ended); return null; }, function () { return null; }); }
         if (res.status === 429) { error = 'Busy, catching up…'; return null; }
         if (!res.ok) { error = 'Reconnecting…'; return null; }
         return res.json();
@@ -680,7 +680,7 @@ a{color:inherit}
   }
 
   function view() {
-    if (gone) return '<header class="ctv-top"><span class="ctv-wm">TOURNAMENT TV</span><span class="ctv-sub"></span></header><div class="gone"><div><div class="ctv-big">This TV link has expired</div><div class="ctv-empty">Ask the host for a new one.</div></div></div>';
+    if (gone) return '<header class="ctv-top"><span class="ctv-wm">TOURNAMENT TV</span><span class="ctv-sub"></span></header><div class="gone"><div><div class="ctv-big">' + (ended ? 'This tournament has ended' : 'This link isn’t active') + '</div><div class="ctv-empty">' + (ended ? 'Thanks for watching.' : 'Ask the host for the current one.') + '</div></div></div>';
     if (!state) return header(null, 'off') + '<div class="gone"><div class="ctv-empty">' + (error ? esc(error) : 'Loading the tournament…') + '</div></div>';
     var phase = phaseOf(state);
     var body;

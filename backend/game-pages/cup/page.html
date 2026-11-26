@@ -479,11 +479,13 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
   function roundName(n) { var r = roundOf(n); return r ? r.label : 'Round ' + n; }
   function roundSec() { var e = ev(); return (e && e.roundSec) || 45; }
   function myBet(matchId) { var b = S && S.bets && S.bets.mine; return b ? b.find(function (x) { return x.matchId === matchId; }) : null; }
+  /* Word Trip's qualifier is on (the state's phase: before the cut). */
+  function inQual() { return !!(S && S.qualifier && (S.phase === 'qualifier' || S.phase === 'qualifier_tiebreak')); }
   function phaseChip() {
     var e = ev();
     if (!e) return '';
     if (e.phase === 'scheduled') return '<span class="pill y">LOBBY ' + clock(e.lobbyAt) + '</span>';
-    if (e.phase === 'lobby' && S.qualifier && !e.drawnAt) return '<span class="pill">' + (S.phase === 'qualifier_tiebreak' ? 'TIE-BREAK' : 'QUALIFIER') + '</span>';
+    if (inQual()) return '<span class="pill">' + (S.phase === 'qualifier_tiebreak' ? 'TIE-BREAK' : 'QUALIFIER') + '</span>';
     if (e.phase === 'lobby') return '<span class="pill">LOBBY OPEN</span>';
     if (e.phase === 'done') return '<span class="pill gr">FINAL RESULTS</span>';
     var r = roundOf(e.round);
@@ -654,10 +656,10 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
       return V.result(lm0, { best: wtBest(lm0), nextAt: lm0.round === e.round ? wtRoundEnds(e.round) : NaN });
     }
     if (!me.entered && me.qual && me.qual.done && me.qual.status === 'out' && !betOn && e.phase !== 'done') return V.qualOut(me.qual);
-    if (!me.entered && !(e.phase === 'lobby' && S.qualifier && !e.drawnAt)) return betOn ? V.bet(betOn) : e.phase === 'scheduled' || e.lobbyOpen ? V.join() : null;
+    if (!me.entered && !inQual()) return betOn ? V.bet(betOn) : e.phase === 'scheduled' || e.lobbyOpen ? V.join() : null;
     if (e.phase === 'scheduled') return V.join();
     if (e.phase === 'lobby') {
-      if (S.qualifier && !e.drawnAt && S.phase !== 'bracket') {
+      if (inQual()) {
         if (me.qual && (me.qual.inLobby || (me.qual.runs || []).length)) return V.qual(me.qual, S.qualifier);
         return e.lobbyOpen ? V.join() : null;
       }
@@ -1194,7 +1196,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
     var tabHtml = '<div class="tabs' + (tabs.length > 4 ? ' t5' : '') + '" role="tablist" aria-label="' + esc(cupName()) + '">' + tabs.map(function (t) {
       return '<button type="button" role="tab" id="tab-' + t[0] + '" aria-controls="panel" class="tab' + (ui.tab === t[0] ? ' on' : '') + '" aria-selected="' + (ui.tab === t[0]) + '" data-act="tab" data-v="' + t[0] + '">' + t[1] + (t[0] === 'watch' && liveN && ui.tab !== 'watch' ? '<span class="dot" aria-label="' + liveN + ' live"></span>' : '') + '</button>';
     }).join('') + '</div>';
-    var body = ui.tab === 'bracket' ? (wt && S.qualifier && !e.drawnAt && wtViews() ? wtViews().qualBoard(S.qualifier) : viewBracket()) : ui.tab === 'watch' ? viewWatch() : ui.tab === 'tipsters' ? viewTipsters() : ui.tab === 'how' ? viewHow() : viewMe();
+    var body = ui.tab === 'bracket' ? (wt && inQual() && wtViews() ? wtViews().qualBoard(S.qualifier) : viewBracket()) : ui.tab === 'watch' ? viewWatch() : ui.tab === 'tipsters' ? viewTipsters() : ui.tab === 'how' ? viewHow() : viewMe();
     return '<div class="wrap"><header class="top' + (wt ? ' wtq' : '') + '">' + wordmark() + '<span class="tr">' + phaseChip() +
       (showBalance() ? '<span class="bal" aria-label="Your balance: ' + num(S.me.balance) + ' points"><span class="coin" aria-hidden="true"></span>' + num(S.me.balance) + '</span>' : '') + '</span>' +
       (wt ? '<button type="button" class="wt-q" data-act="wthow" aria-label="How to play">?</button>' : '') + '</header>' +
@@ -1404,7 +1406,7 @@ html.kn{--bg:#060B26;--p1:#0B1440;--p2:#122057;--p3:#16266A;--line:#24408F;--y:#
   var wtPrefetched = false;
   function syncWordTrip() {
     if (!wtPrefetched && S && S.me && (S.me.entered || S.me.inLobby)) { wtPrefetched = true; wtGetGame().catch(function () { wtPrefetched = false; }); }
-    if (S.qualifier && !ev().drawnAt && S.me.qual) return syncQualifier();
+    if (inQual() && S.me.qual) return syncQualifier();
     if (ui.playing && /^q:/.test(ui.playing)) stopPlay();
     if (!S.me.match) return;
     var m = S.me.match, key = m.id + ':' + (m.attempt || 0), start = ms(m.startAt), P = window.CupWordTrip, e = ev();
