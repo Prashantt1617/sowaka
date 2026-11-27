@@ -91,6 +91,9 @@ type BalanceType = { key: string; name: string; total: number; used: number; rem
 // —— The list ——
 
 /** Every active employee's balance for the year, with who of them this person may change. */
+/** Unlimited leave (the template's "Keep a leave balance" off): nobody's days are counted down, so there is no balance to show or set. */
+export const unlimitedLeave = (policy: { leave?: { balanceTracked?: boolean } } | undefined | null) => policy?.leave?.balanceTracked === false;
+
 export async function listLeaveBalances(adminUserId: string, yearInput?: unknown) {
   const year = yearOf(yearInput);
   const [editor, everyone] = await Promise.all([editorOf(adminUserId), orgUsers(adminUserId, USER_FIELDS)]);
@@ -115,12 +118,16 @@ export async function listLeaveBalances(adminUserId: string, yearInput?: unknown
         manager: p.managerUserId ? nameOf.get(p.managerUserId) ?? '' : '',
         template: policies.get(p.userId)?.shiftName ?? '',
         canEdit: mayEdit(p.userId) === null,
-        types: ((balances.get(p.userId)?.types ?? []) as BalanceType[]).map((t) => ({
-          key: t.key, name: t.name, total: t.total, used: t.used, remaining: t.remaining,
-          ...(t.editable ? { editable: true as const } : {}),
-          ...(t.unpaid ? { unpaid: true as const, unlimited: true as const } : {}),
-          ...(t.cadence ? { cadence: t.cadence, period: t.period } : {}),
-        })),
+        // A template with unlimited leave keeps no balance: its types are "Unlimited" (days taken told), never a total.
+        ...(unlimitedLeave(policies.get(p.userId)) ? { unlimitedLeave: true as const } : {}),
+        types: ((balances.get(p.userId)?.types ?? []) as BalanceType[]).map((t) => unlimitedLeave(policies.get(p.userId)) && !t.unpaid
+          ? { key: t.key, name: t.name, total: 0, used: t.used, remaining: 0, unlimited: true as const }
+          : {
+            key: t.key, name: t.name, total: t.total, used: t.used, remaining: t.remaining,
+            ...(t.editable ? { editable: true as const } : {}),
+            ...(t.unpaid ? { unpaid: true as const, unlimited: true as const } : {}),
+            ...(t.cadence ? { cadence: t.cadence, period: t.period } : {}),
+          }),
         ...(failed.has(p.userId) ? { error: failed.get(p.userId) } : {}),
       })),
   };
@@ -223,7 +230,7 @@ export async function planLeaveImport(adminUserId: string, input: { rows?: unkno
 
   // The leave types the company's people have, from their templates as their balances read them.
   const active = everyone.filter(isActive);
-  const { balances, failed } = await leaveBalancesFor(active, year);
+  const { balances, failed, policies } = await leaveBalancesFor(active, year);
   const types = typesOf(balances.values()).filter((t) => !t.unpaid);
   const fieldChoices: LeaveImportPlan['fieldChoices'] = [
     { field: 'employeeId', label: 'Employee ID' },
@@ -301,6 +308,7 @@ export async function planLeaveImport(adminUserId: string, input: { rows?: unkno
     seen.set(person.userId, row);
     const refused = mayEdit(person.userId);
     if (refused) return rowError(refused);
+    if (unlimitedLeave(policies.get(person.userId))) return rowError(`${name} is on unlimited leave (${policies.get(person.userId)?.shiftName ?? 'their template'}): there is no balance to set`);
     const balance = balances.get(person.userId);
     if (!balance) return rowError(failed.get(person.userId) ?? 'Their balance could not be worked out');
 

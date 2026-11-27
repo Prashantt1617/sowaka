@@ -116,8 +116,8 @@ export function LeaveBalances() {
         { header: 'Location', value: (p) => p.location },
         { header: 'Template', value: (p) => p.template },
         ...shownTypes.flatMap((t) => [
-          { header: `${t.name} available`, value: (p: LeaveBalancePersonDTO) => { const c = cellOf(p, t.key); return c && !c.unpaid ? days(c.remaining) : ''; } },
-          { header: `${t.name} total`, value: (p: LeaveBalancePersonDTO) => { const c = cellOf(p, t.key); return c && !c.unpaid ? days(c.total) : ''; } },
+          { header: `${t.name} available`, value: (p: LeaveBalancePersonDTO) => { const c = cellOf(p, t.key); return c && c.unlimited && !c.unpaid ? 'Unlimited' : c && !c.unpaid ? days(c.remaining) : ''; } },
+          { header: `${t.name} total`, value: (p: LeaveBalancePersonDTO) => { const c = cellOf(p, t.key); return c && c.unlimited && !c.unpaid ? 'Unlimited' : c && !c.unpaid ? days(c.total) : ''; } },
           { header: `${t.name} taken`, value: (p: LeaveBalancePersonDTO) => { const c = cellOf(p, t.key); return c ? days(c.used) : ''; } },
         ]),
       ],
@@ -237,6 +237,11 @@ export function LeaveBalances() {
                       if (c.unpaid) return (
                         <div key={t.key} style={{ display: 'flex', flexDirection: 'column', gap: 2, alignSelf: 'center' }}>
                           <span>Unpaid</span><span style={cellSub}>{days(c.used)} taken</span>
+                        </div>
+                      );
+                      if (c.unlimited) return (
+                        <div key={t.key} style={{ display: 'flex', flexDirection: 'column', gap: 2, alignSelf: 'center' }} title="Their template keeps no leave balance">
+                          <span>Unlimited</span><span style={cellSub}>{days(c.used)} taken</span>
                         </div>
                       );
                       if (open && editing) return (

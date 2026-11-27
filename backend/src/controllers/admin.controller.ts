@@ -1,3 +1,4 @@
+import { leaveRulesFor } from '../services/shift.service';
 import { peopleTasks } from '../services/peopleTasks.service';
 import { correctionsForAdmin, feedbackForAdmin, leavesForAdmin, overtimeForAdmin } from '../services/timeOfficeLists';
 import { getMyLeaveBalance, setLeaveTotal } from '../services/leave.service';
@@ -294,7 +295,12 @@ export async function employeeLeaveBalanceHandler(req: Request, res: Response, n
       return;
     }
     const year = req.query.year ? Number(req.query.year) : new Date().getUTCFullYear();
-    res.status(200).json({ success: true, balance: await getMyLeaveBalance(employee.userId, year) });
+    const [balance, rules] = await Promise.all([getMyLeaveBalance(employee.userId, year), leaveRulesFor(employee.userId)]);
+    // Unlimited leave (the template keeps no balance): every paid type reads "Unlimited", days taken told, nothing to edit.
+    const shown = rules.balanceTracked === false
+      ? { ...balance, unlimitedLeave: true, types: balance.types.map((t) => ('unpaid' in t && t.unpaid ? t : { key: t.key, name: t.name, total: 0, used: t.used, remaining: 0, unlimited: true as const })) }
+      : balance;
+    res.status(200).json({ success: true, balance: shown });
   } catch (error) { next(error); }
 }
 
