@@ -66,7 +66,8 @@ export function LeaveBalances() {
   const state: LoadState = error ? 'error' : data ? 'ready' : 'loading';
   // Setting a total writes as the profile does (People › Employees, and the right to edit details).
   const canWrite = canOpen(user, 'employees') && user?.canEditEmployees === true;
-  const people = useMemo(() => data?.people ?? [], [data]);
+  // People on unlimited leave keep no balance, so they are not on this screen (or its export).
+  const people = useMemo(() => (data?.people ?? []).filter((p) => !p.unlimitedLeave), [data]);
   const shownTypes = (data?.types ?? []).filter((t) => type === 'all' || t.key === type);
   const cellOf = (p: LeaveBalancePersonDTO, key: string) => p.types.find((t) => t.key === key);
   const runsOut = (p: LeaveBalancePersonDTO) => p.types.some((t) => counted(t) && t.total > 0 && t.remaining <= 0 && (type === 'all' || t.key === type));
@@ -200,14 +201,6 @@ export function LeaveBalances() {
                   options={[['name', 'Name A–Z'], ['code', 'Employee ID'], ['least', 'Least available'], ['taken', 'Most taken']]} />
               </FiltersPanel>
             )}
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-            <StatTile state={state} label="Employees" value={stats.people} sub={`On ${stats.templates} ${stats.templates === 1 ? 'template' : 'templates'}`} onPick={() => setPick('all')} picked={pick === 'all'} />
-            <StatTile state={state} label="Days available" value={days(stats.available)} sub={type === 'all' ? 'Every yearly leave type' : shownTypes[0]?.name} color="var(--p-green)" />
-            <StatTile state={state} label="Days taken this year" value={days(stats.taken)} sub="Approved leave, as it stays" color="var(--p-blue)" />
-            <StatTile state={state} label="None left" value={stats.none} sub={stats.none ? 'People with a type used up' : 'Everyone has some left'}
-              onPick={() => setPick(pick === 'none' ? 'all' : 'none')} picked={pick === 'none'} color="var(--p-red)" />
           </div>
 
           <div>
