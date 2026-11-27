@@ -17,6 +17,7 @@ import { enableLifecycleReadCache } from './services/lifecycle/readCache';
 import { enableBackgroundPace } from './services/background-pace';
 import { startBackgroundJobs, stopBackgroundJobs } from './services/background-jobs';
 import { startCacheBus, stopCacheBus } from './services/cache-bus';
+import { flushCupWords } from './services/cup.service';
 import { markDraining, markWarmDone, markWarmStarted } from './services/readiness';
 
 /**
@@ -123,6 +124,8 @@ logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v
     // The sockets close: each phone reconnects, through nginx, to whichever process it points at.
     closeConnectRealtime();
     await drained;
+    // Word Trip words taken by this process and not yet written (any process serves them, runner or not).
+    await flushCupWords().catch((error) => logger.error('Shutdown: cup words not flushed', {}, error));
     await clocks;
     await jobs;
     // The boot warm-up, if this process never ran the jobs and is still warming.

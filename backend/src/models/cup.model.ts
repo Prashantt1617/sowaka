@@ -37,6 +37,8 @@ export interface CupQual {
   done?: boolean;
   ranking?: string[];
   doneAt?: Date;
+  /** Everyone's all-time Word Trip best in this company when attempt 1 opened (the last tie-break): fixed then. */
+  bests?: Record<string, number>;
 }
 
 /** One qualifier run: a player's attempt (1, 2, or 3 for the tie-break), a normal Word Trip run on its own seed. */
@@ -54,6 +56,8 @@ export interface CupRun {
   /** The run as the server played it (as a match player's live). */
   live?: CupScore;
   score?: number;
+  /** How far the run got (the furthest stop), written when it closes: no stop shown to a player twice. */
+  reached?: number;
   endedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -176,6 +180,8 @@ export interface CupEvent extends CupEventConfig {
   /** Word Trip: when each person joined the lobby. */
   lobbyJoinedAt?: Record<string, Date>;
   qual?: CupQual;
+  /** Word Trip: the game's version pinned when play began (kept in cup_wt_games), so a republished catalog can't change it mid-event. */
+  wtGameVersion?: string;
   championId?: string;
   finishedAt?: Date;
   /** Switched off mid-tournament at this time (`cup-event.ts off`); switching back on moves every match's clock on by the pause. */
@@ -217,7 +223,7 @@ export interface CupScore {
    * seconds on the run's clock), so a restart plays them again; `score` is the run's score, `wtAdded` the seconds its
    * clock earned (the run ends at 60 + wtAdded).
    */
-  wtr?: (['w', number, string, number, number] | ['s', number, number])[];
+  wtr?: (['w', number, string, number, number] | ['w', number, string, number, number, 1] | ['s', number, number])[];
   wtAdded?: number;
 }
 
@@ -264,6 +270,8 @@ export interface CupMatch {
   /** Earlier games of this match that were tied. */
   /** Word Trip also keeps each tied attempt's seed and how far each player got on it (no stop shown to a player twice). */
   history?: { attempt: number; scores: Record<string, number>; seed?: number; reached?: Record<string, number> }[];
+  /** Word Trip: every attempt played before a void or a restart (never cleared): their stops are never dealt to these players again. */
+  wtSeen?: { seed: number; reached: Record<string, number> }[];
   winnerId?: string;
   decidedBy?: CupDecision;
   decidedAt?: Date;

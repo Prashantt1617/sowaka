@@ -176,7 +176,16 @@ async function main() {
   const st = JSON.parse(s1.text) as { event: { name: string; phase: string; lobbyPeople: { userId: string; name: string }[]; entrantCount: number }; faces: Record<string, string | null>; facesV: string; h: string; serverNow: string };
   ok('the poll answers the lobby (200)', s1.status === 200 && st.event?.phase === 'lobby' && st.event.name === 'Word Trip Tournament');
   ok('the lobby: 46 joined, the latest 30 with first names', st.event.entrantCount === 46 && st.event.lobbyPeople.length === 30 && st.event.lobbyPeople.every((p) => !/\s/.test(p.name)));
-  ok('faces: a version per person with a photo, null without', Object.values(st.faces).filter(Boolean).length > 50 && Object.values(st.faces).some((v) => v === null));
+  const shownPids = new Set(st.event.lobbyPeople.map((p) => p.userId));
+  ok('faces: a version per person shown with a photo, null without', Object.values(st.faces).filter(Boolean).length >= 20 && Object.values(st.faces).some((v) => v === null));
+  ok('faces: only the people on screen (not the whole roster the engine knows before the draw)', Object.keys(st.faces).every((pid) => shownPids.has(pid)), Object.keys(st.faces).length);
+  // Someone in the company (with a photo) who never joined: not in the payload, and no face under any version.
+  const never = DEMO_PEOPLE.slice(46).find((p) => p.photo)!;
+  const neverPid = tv.pidOfIn(LOBBY)(never.userId);
+  const rawLobby = await tvStateFor({ userId: 'cup-tv-public', name: 'TV', org: ORG, hr: false }, LOBBY);
+  const neverV = /\/([kd][A-Za-z0-9_-]{1,20})\/[A-Za-z0-9_-]+\.webp$/.exec(String((rawLobby.photos as Record<string, string> | undefined)?.[never.userId] ?? ''))?.[1] ?? 'kAAAAAAAAAA';
+  ok('a roster member who never joined: the engine knows their face, the link does not show it', !!(rawLobby.photos as Record<string, string> | undefined)?.[never.userId] && !(neverPid in st.faces) && !s1.text.includes(neverPid));
+  ok('…and their face 410s at its real version', (await get(`/cup/tv/${T}/face/${neverPid}/${neverV}.webp`)).status === 410);
   privacy('the engine’s lobby state', s1.text, LOBBY);
   const s2 = await get(`/cup/tv/${T}/state?h=${st.h}&pv=${st.facesV}`);
   ok('holding this version: just "unchanged"', s2.status === 200 && JSON.parse(s2.text).unchanged === true && s2.bytes.length < 120);

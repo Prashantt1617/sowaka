@@ -582,8 +582,12 @@ export function lobbyPresent(event: { lobbyJoined?: string[]; lobbySeen?: Record
  * match is decided on the server's score, never the page's.
  */
 export const WORD_TRIP = 'word-trip';
-/** After a player's clock should have run out, how long their last words are still taken (a slow phone, a late start). */
-export const WT_GRACE_SEC = 8;
+/**
+ * After a player's clock has run out, how long their last words may still arrive (a slow phone, a dropped connection,
+ * words queued on the page): one rule everywhere. A word counts if its time is inside the clock and it arrives by
+ * clock out + this; the match is decided, the qualifier attempt closed, then. The same as WT_LAG_SEC.
+ */
+export const WT_GRACE_SEC = 20;
 /** A tie replays this many seconds after it is decided (both are on the page already). */
 export const WT_REPLAY_SEC = 8;
 /** Words that are not taken, per run, before the rest are ignored (no brute force). */
@@ -667,7 +671,8 @@ export function parseWord(raw: unknown): string | null {
 }
 
 /** A run's event, as kept: a word ['w', stop, word, t, pts] or a skip ['s', stop, t]; t in seconds on the run's clock. */
-export type WtEvent = ['w', number, string, number, number] | ['s', number, number];
+/** A word: stop, word, its time, its points, and 1 when its time was held back to WT_LAG_SEC behind its arrival (it then skips the swipe-speed check). */
+export type WtEvent = ['w', number, string, number, number] | ['w', number, string, number, number, 1] | ['s', number, number];
 
 /** A player's run as the server has played it. */
 export interface WtRun {
@@ -700,9 +705,17 @@ export type WtVerdict =
 
 /** The time a word counts at: the run's clock as the page sent it, never ahead of its arrival (`arrived`, the same clock here) nor more than WT_LAG_SEC behind it. */
 export function wordTime(claimed: unknown, arrived: number): number {
-  const c = typeof claimed === 'number' && Number.isFinite(claimed) ? claimed : arrived;
-  return Math.max(0, Math.min(arrived + WT_AHEAD_SEC, Math.max(c, arrived - WT_LAG_SEC)));
+  return wordTimeOf(claimed, arrived).t;
 }
+/** The same, and whether it was held back (sent late, after a dropped connection: words queued together then share a time). */
+export function wordTimeOf(claimed: unknown, arrived: number): { t: number; clamped: boolean } {
+  const c = typeof claimed === 'number' && Number.isFinite(claimed) ? claimed : arrived;
+  const clamped = c < arrived - WT_LAG_SEC;
+  return { t: Math.max(0, Math.min(arrived + WT_AHEAD_SEC, Math.max(c, arrived - WT_LAG_SEC))), clamped };
+}
+
+/** The last moment a word may arrive (the run's clock, s): its clock out + WT_GRACE_SEC. The match is decided, the attempt closed, then. */
+export const wtLastArrival = (run: Pick<WtRun, 'added'> | undefined, r: WtRules = WT_DEFAULT_RULES) => runEndsSec(run, r) + WT_GRACE_SEC;
 
 /**
  * One word of a run, checked and played (mutates `run` when it counts): on
@@ -712,7 +725,7 @@ export function wordTime(claimed: unknown, arrived: number): number {
  * already found on that stop. Then Word Trip's points, combo and seconds; every
  * letter used moves the run to the next stop.
  */
-export function playRunWord(run: WtRun, stop: WtStop, g: unknown, raw: unknown, t: number, r: WtRules): WtVerdict {
+export function playRunWord(run: WtRun, stop: WtStop, g: unknown, raw: unknown, t: number, r: WtRules, clamped = false): WtVerdict {
   const word = parseWord(raw);
   if (!word) return { ok: false, word: typeof raw === 'string' ? raw.slice(0, 12) : '', reason: 'junk' };
   if (run.bad >= WT_MAX_BAD) return { ok: false, word, reason: 'limit' };
@@ -724,7 +737,8 @@ export function playRunWord(run: WtRun, stop: WtStop, g: unknown, raw: unknown, 
   if (t > runEndsSec(run, r) + 0.75) return miss('time');
   if (t < run.stopFrom - WT_PAUSE_SLACK_SEC) return miss('early');
   const at = Math.max(t, run.lastT);
-  if (run.total > 0 && at - run.lastT < WT_MIN_GAP_SEC) return miss('fast');
+  // Words held back to WT_LAG_SEC behind their arrival share that time: the swipe-speed check would drop all but the first.
+  if (run.total > 0 && at - run.lastT < WT_MIN_GAP_SEC && !clamped) return miss('fast');
   if (word.length < 3) return miss('short');
   if (!canSpell(word, stop.letters)) return miss('letters');
   if ((run.found[run.gi] ?? []).some(([w]) => w === word)) return miss('again');
@@ -743,7 +757,7 @@ export function playRunWord(run: WtRun, stop: WtStop, g: unknown, raw: unknown, 
   const tb = Math.min(r.MAX_ADDED - run.added, (r.TIMEB[word.length] ?? 0) + (full ? r.FULL_TIME : 0));
   if (tb > 0) run.added += tb;
   (run.found[run.gi] ??= []).push([word, pts]);
-  run.events.push(['w', run.gi, word, at, pts]);
+  run.events.push(clamped ? ['w', run.gi, word, at, pts, 1] : ['w', run.gi, word, at, pts]);
   const combo = run.combo;
   if (full) {
     run.gi += 1;
@@ -775,7 +789,7 @@ export function replayRun(events: unknown, boards: WtBoards, seed: number, r: Wt
   if (!Array.isArray(events)) return run;
   for (const e of events) {
     if (!Array.isArray(e)) continue;
-    if (e[0] === 'w') playRunWord(run, boards(seed, run.gi), e[1], e[2], Number(e[3]) || 0, r);
+    if (e[0] === 'w') playRunWord(run, boards(seed, run.gi), e[1], e[2], Number(e[3]) || 0, r, e[5] === 1);
     else if (e[0] === 's') playRunSkip(run, e[1], Number(e[2]) || 0, r);
   }
   return run;
@@ -837,7 +851,7 @@ export function mayPlayWord(match: CupMatch, userId: string, run: Pick<WtRun, 'a
   if (match.status === 'solo' && !match.joined?.[userId]) return no(409, 'Your match is not on');
   const arrived = (now.getTime() - at(match.startAt)) / 1000;
   if (arrived < -2) return no(409, 'Your run has not started');
-  if (arrived > runEndsSec(run, r) + WT_GRACE_SEC + WT_LAG_SEC) return no(409, 'Your time is up');
+  if (arrived > wtLastArrival(run, r)) return no(409, 'Your time is up');
   return { ok: true, arrived };
 }
 
@@ -942,6 +956,19 @@ export function bracketRoundName(n: number, total: number, nodes: number): { lab
   const named = roundName(n, total, nodes);
   if (named.short === 'F' || named.short === 'SF' || named.short === 'QF') return named;
   return { label: `Round of ${nodes * 2}`, short: `R${nodes * 2}` };
+}
+
+/** One player's board in a Word Trip match as the TV and spectators see it: score, words, stop, its letters, the words on it, their clock. */
+export interface WtBoardView { score: number; words: number; gi: number; letters: string; found: [string, number][]; endsAt?: number }
+
+/**
+ * The match a phone is watching, both boards (as the TV has them), for a spectator only: a player in that
+ * match never gets it (no player's state holds the other player's words).
+ */
+export function watchBoardsFor(viewerId: string, match: Pick<CupMatch, 'id' | 'players' | 'status'>, boards: Record<string, WtBoardView>): { matchId: string; players: Record<string, WtBoardView> } | undefined {
+  if (match.players.includes(viewerId)) return undefined;
+  if (match.status !== 'live' && match.status !== 'solo' && match.status !== 'done') return undefined;
+  return { matchId: match.id, players: boards };
 }
 
 /** The first name only (the public screens show no full names). */

@@ -48,7 +48,7 @@ import type { CupEvent, CupEventConfig, CupSeeding } from '../models/cup.model';
 import type { ConnectPost } from '../models/connect.model';
 import { DEFAULT_CUP_CONFIG, WORD_TRIP, WT_DEFAULT_RULES, WT_GRACE_SEC, wtLongestSec } from '../services/cup-rules';
 import { newSeed } from '../services/game-challenge-rules';
-import { cupBets, cupEvents, cupMatches, cupRuns, rosterOf } from '../services/cup.service';
+import { cupBets, cupEvents, cupMatches, cupRuns, rosterOf, wtFreshSeedFor } from '../services/cup.service';
 import { pointEvents } from '../services/points-ledger.service';
 import { tvLinkCommand } from '../services/cup-tv-public.service';
 
@@ -245,10 +245,13 @@ async function resume(event: CupEvent, now: Date): Promise<string> {
       // A round that had run out before the pause is decided from what came in, as usual.
       const playSec = event.gameKey === WORD_TRIP ? wtLongestSec(WT_DEFAULT_RULES) + WT_GRACE_SEC : event.roundSec + event.finishGraceSec;
       if (new Date(m.startAt!).getTime() + playSec * 1000 <= pausedMs) continue;
+      const wt = event.gameKey === WORD_TRIP;
       await cupMatches().updateOne(where, {
-        $set: { status: 'open', seed: newSeed(), joined: {}, live: {}, finals: {}, openedAt: now, deadlineAt: new Date(now.getTime() + event.startWindowSec * 1000), updatedAt: now },
+        $set: { status: 'open', seed: wt ? await wtFreshSeedFor(event.id, m.players) : newSeed(), joined: {}, live: {}, finals: {}, openedAt: now, deadlineAt: new Date(now.getTime() + event.startWindowSec * 1000), updatedAt: now },
         $unset: { startAt: '', soloUntil: '' },
         $inc: { attempt: 1 },
+        // Word Trip: the attempt cut short stays seen (its stops never dealt to these two again).
+        ...(wt ? { $push: { wtSeen: { seed: m.seed, reached: Object.fromEntries(m.players.map((p) => [p, Math.max(-1, ...(m.live?.[p]?.wtr ?? []).map((e) => Number(e[1])))])) } } } : {}),
       });
       restarted += 1;
       continue;
