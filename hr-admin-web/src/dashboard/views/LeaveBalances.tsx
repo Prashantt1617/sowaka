@@ -116,8 +116,8 @@ export function LeaveBalances() {
         { header: 'Location', value: (p) => p.location },
         { header: 'Template', value: (p) => p.template },
         ...shownTypes.flatMap((t) => [
-          { header: `${t.name} available`, value: (p: LeaveBalancePersonDTO) => { const c = cellOf(p, t.key); return c && c.unlimited && !c.unpaid ? 'Unlimited' : c && !c.unpaid ? days(c.remaining) : ''; } },
-          { header: `${t.name} total`, value: (p: LeaveBalancePersonDTO) => { const c = cellOf(p, t.key); return c && c.unlimited && !c.unpaid ? 'Unlimited' : c && !c.unpaid ? days(c.total) : ''; } },
+          { header: `${t.name} available`, value: (p: LeaveBalancePersonDTO) => { const c = cellOf(p, t.key); return p.unlimitedLeave ? 'Unlimited' : c && !c.unpaid ? days(c.remaining) : ''; } },
+          { header: `${t.name} total`, value: (p: LeaveBalancePersonDTO) => { const c = cellOf(p, t.key); return p.unlimitedLeave ? 'Unlimited' : c && !c.unpaid ? days(c.total) : ''; } },
           { header: `${t.name} taken`, value: (p: LeaveBalancePersonDTO) => { const c = cellOf(p, t.key); return c ? days(c.used) : ''; } },
         ]),
       ],
@@ -229,7 +229,13 @@ export function LeaveBalances() {
                       </div>
                     </div>
                     <div style={{ alignSelf: 'center', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: p.template ? 'var(--ink)' : 'var(--ink-3)' }}>{p.template || '—'}</div>
-                    {shownTypes.map((t) => {
+                    {p.unlimitedLeave && !p.error && shownTypes.length > 0 && (
+                      <div style={{ gridColumn: `span ${shownTypes.length}`, display: 'flex', flexDirection: 'column', gap: 2, alignSelf: 'center' }} title="Their template keeps no leave balance: leave is approved, never counted down">
+                        <span>Unlimited leave</span>
+                        <span style={cellSub}>{days(p.types.reduce((a, t) => a + (t.used || 0), 0))} taken this year</span>
+                      </div>
+                    )}
+                    {!(p.unlimitedLeave && !p.error) && shownTypes.map((t) => {
                       const c = cellOf(p, t.key);
                       const open = editing?.userId === p.userId && editing.key === t.key;
                       if (p.error) return <div key={t.key} style={{ ...cellSub, alignSelf: 'center' }}>—</div>;

@@ -360,7 +360,7 @@ export type EmployeeCalendarDTO = {
 export type LeaveBalanceItemDTO = { key: string; name: string; total: number; used: number; remaining: number; unlimited?: true; unpaid?: true; /** HR may change its total (a yearly, paid type). */ editable?: true };
 /** An employee's real leave balance for the year (read only). */
 export const getEmployeeLeaveBalance = (userId: string) =>
-  api<{ balance: { year: number; types: LeaveBalanceItemDTO[] } }>(`/admin/employees/${userId}/leave-balance`).then((r) => r.balance);
+  api<{ balance: { year: number; types: LeaveBalanceItemDTO[]; unlimitedLeave?: true } }>(`/admin/employees/${userId}/leave-balance`).then((r) => r.balance);
 
 /** HR sets a leave type's total for the year; taken days stay as they are. Answers the new balance. */
 export const setEmployeeLeaveTotal = (userId: string, type: string, total: number) =>
@@ -376,6 +376,8 @@ export type LeaveBalancePersonDTO = {
   /** Whether the person asking may set this person's totals (as the profile's pencil). */
   canEdit: boolean;
   types: LeaveBalanceCellDTO[];
+  /** Their template keeps no leave balance: leave is approved, never counted down. */
+  unlimitedLeave?: true;
   error?: string;
 };
 export type LeaveBalanceTypeDTO = { key: string; name: string; editable: boolean; unpaid: boolean; monthly: boolean };

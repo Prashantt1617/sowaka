@@ -115,14 +115,14 @@ const days = (n: number) => String(Math.round(n * 10) / 10);
  * approved leave and never changes here, so the total cannot go below it.
  */
 function LeaveBalanceSection({ userId, canEdit }: { userId: string; canEdit?: boolean }) {
-  const [state, setState] = useState<{ types: LeaveBalanceItemDTO[] } | 'loading' | 'error'>('loading');
+  const [state, setState] = useState<{ types: LeaveBalanceItemDTO[]; unlimitedLeave?: true } | 'loading' | 'error'>('loading');
   const [editing, setEditing] = useState<{ key: string; value: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
     let live = true;
     setState('loading');
-    getEmployeeLeaveBalance(userId).then((b) => live && setState({ types: b.types }), () => live && setState('error'));
+    getEmployeeLeaveBalance(userId).then((b) => live && setState({ types: b.types, unlimitedLeave: b.unlimitedLeave }), () => live && setState('error'));
     return () => { live = false; };
   }, [userId]);
   const save = async (b: LeaveBalanceItemDTO) => {
@@ -147,6 +147,12 @@ function LeaveBalanceSection({ userId, canEdit }: { userId: string; canEdit?: bo
       {state === 'loading' ? <SkeletonLines lines={2} />
         : state === 'error' ? <div className="pd-subnote" style={{ paddingTop: 8 }}>Couldn't load the leave balance.</div>
         : state.types.length === 0 ? <div className="pd-subnote" style={{ paddingTop: 8 }}>No leave types on this person's shift template.</div>
+        : state.unlimitedLeave ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingTop: 8 }}>
+            <span style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05 }}>Unlimited leave</span>
+            <div className="pd-subnote" style={{ marginTop: 6 }}>Their template keeps no leave balance · {days(state.types.reduce((a, t) => a + (t.used || 0), 0))} taken this year</div>
+          </div>
+        )
         : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, paddingTop: 8 }}>
             {state.types.map((b) => {
