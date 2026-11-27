@@ -168,6 +168,11 @@ function LeaveBalanceSection({ userId, canEdit }: { userId: string; canEdit?: bo
                       <span style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, marginTop: 6 }}>Unpaid</span>
                       <div className="pd-subnote" style={{ marginTop: 6 }}>No balance · {days(b.used)} taken this year</div>
                     </>
+                  ) : b.unlimited ? (
+                    <>
+                      <span style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, marginTop: 6 }}>Unlimited</span>
+                      <div className="pd-subnote" style={{ marginTop: 6 }}>Their template keeps no balance · {days(b.used)} taken this year</div>
+                    </>
                   ) : open ? (
                     <form onSubmit={(e) => { e.preventDefault(); void save(b); }} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
                       <label style={{ fontSize: 11.5, color: 'var(--ink-3)' }} htmlFor={`lt-${b.key}`}>Total for the year</label>
