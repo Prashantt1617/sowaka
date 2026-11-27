@@ -86,7 +86,7 @@ function typesOf(balances: Iterable<LeaveBalance>) {
   }
   return [...types.values()].sort((a, b) => Number(a.unpaid) - Number(b.unpaid));
 }
-type BalanceType = { key: string; name: string; total: number; used: number; remaining: number; editable?: true; unpaid?: true; unlimited?: true; cadence?: 'monthly'; period?: string };
+type BalanceType = { key: string; name: string; total: number; used: number; remaining: number; short?: number; editable?: true; unpaid?: true; unlimited?: true; cadence?: 'monthly'; period?: string };
 
 // —— The list ——
 
@@ -124,6 +124,7 @@ export async function listLeaveBalances(adminUserId: string, yearInput?: unknown
           ? { key: t.key, name: t.name, total: 0, used: t.used, remaining: 0, unlimited: true as const }
           : {
             key: t.key, name: t.name, total: t.total, used: t.used, remaining: t.remaining,
+            ...(t.short ? { short: t.short } : {}),
             ...(t.editable ? { editable: true as const } : {}),
             ...(t.unpaid ? { unpaid: true as const, unlimited: true as const } : {}),
             ...(t.cadence ? { cadence: t.cadence, period: t.period } : {}),

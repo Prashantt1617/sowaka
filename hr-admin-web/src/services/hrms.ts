@@ -357,7 +357,7 @@ export type EmployeeCalendarDTO = {
   totals: Record<CalendarDayStatus, number>;
 };
 /** One leave type's balance, as the employee's app shows it. Leave without pay is `unlimited` and `unpaid`. */
-export type LeaveBalanceItemDTO = { key: string; name: string; total: number; used: number; remaining: number; unlimited?: true; unpaid?: true; /** HR may change its total (a yearly, paid type). */ editable?: true };
+export type LeaveBalanceItemDTO = { key: string; name: string; total: number; used: number; remaining: number; /** Days taken beyond the total: shown as a negative balance, in red. */ short?: number; unlimited?: true; unpaid?: true; /** HR may change its total (a yearly, paid type). */ editable?: true };
 /** An employee's real leave balance for the year (read only). */
 export const getEmployeeLeaveBalance = (userId: string) =>
   api<{ balance: { year: number; types: LeaveBalanceItemDTO[]; unlimitedLeave?: true } }>(`/admin/employees/${userId}/leave-balance`).then((r) => r.balance);

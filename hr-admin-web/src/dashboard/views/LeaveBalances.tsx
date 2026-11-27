@@ -117,7 +117,7 @@ export function LeaveBalances() {
         { header: 'Location', value: (p) => p.location },
         { header: 'Template', value: (p) => p.template },
         ...shownTypes.flatMap((t) => [
-          { header: `${t.name} available`, value: (p: LeaveBalancePersonDTO) => { const c = cellOf(p, t.key); return p.unlimitedLeave ? 'Unlimited' : c && !c.unpaid ? days(c.remaining) : ''; } },
+          { header: `${t.name} available`, value: (p: LeaveBalancePersonDTO) => { const c = cellOf(p, t.key); return p.unlimitedLeave ? 'Unlimited' : c && !c.unpaid ? (c.short ? '-' + days(c.short) : days(c.remaining)) : ''; } },
           { header: `${t.name} total`, value: (p: LeaveBalancePersonDTO) => { const c = cellOf(p, t.key); return p.unlimitedLeave ? 'Unlimited' : c && !c.unpaid ? days(c.total) : ''; } },
           { header: `${t.name} taken`, value: (p: LeaveBalancePersonDTO) => { const c = cellOf(p, t.key); return c ? days(c.used) : ''; } },
         ]),
@@ -262,7 +262,7 @@ export function LeaveBalances() {
                         <div key={t.key} style={{ display: 'flex', flexDirection: 'column', gap: 2, alignSelf: 'center' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <span style={{ fontVariantNumeric: 'tabular-nums', color: out ? 'var(--bad)' : 'var(--ink)' }}>
-                              {days(c.remaining)}<span style={{ color: 'var(--ink-3)' }}> / {days(c.total)}</span>
+                              {c.short ? <span style={{ color: 'var(--bad)' }}>−{days(c.short)}</span> : days(c.remaining)}<span style={{ color: 'var(--ink-3)' }}> / {days(c.total)}</span>
                             </span>
                             {canWrite && p.canEdit && c.editable && (
                               <button type="button" className="pd-sec-act" aria-label={`Edit ${p.name}'s ${c.name} total`} title="Edit the total"
