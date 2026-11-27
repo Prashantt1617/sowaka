@@ -75,6 +75,7 @@
         '<div class="wt-row"><span class="wt-k">' + esc(H.dayLabel(ev.startAt)) + '</span></div>' +
         '<p class="wt-mu" style="margin:0;font-size:18px;font-weight:600">Make words. Beat your opponent.</p>' +
         tiles('words', true) +
+        (ev.qualifier ? howWizard(ev, n) : '') +
         '<div class="wt-card" style="position:relative"><span class="wt-qin">' + how() + '</span><span style="font-size:14px;font-weight:600;color:#A9A3CC">' + (open ? (ev.qualifier ? (H.state().phase === 'qualifier' ? 'The qualifier is on. Join to play' : 'The qualifier starts in') : 'Matches start in') : 'The lobby opens in') + '</span>' + (open && H.state().phase === 'qualifier' ? '' : '<span class="wt-big">' + H.cd(H.ms(open ? ev.startAt : ev.lobbyAt)) + '</span>') + '</div>' +
         (open && n ? '<div class="wt-faces"><span class="fs">' + faces.map(function (p) { return face(p, '', 'j'); }).join('') + '</span><b>' + num(n) + (n === 1 ? ' person is in' : ' people are in') + '</b></div>' : '') +
         '<div style="flex-grow:1"></div>' +
@@ -90,10 +91,10 @@
     function howWizard(ev, n) {
       var steps = ev.qualifier ? [
         ['Qualifier: 2 rounds', 'You play 2 rounds. Your best score of the 2 counts.'],
-        ['Who qualifies', num(n) + (n === 1 ? ' person is' : ' people are') + ' in the lobby, so ' + num(qualifyOf(n)) + ' will qualify.'],
+        ['Who qualifies', num(n) + (n === 1 ? ' person is' : ' people are') + ' in the lobby, so up to ' + num(qualifyOf(n)) + ' will qualify (the top 2, 4, 8, 16, 32, 64 or 128 of those who play).'],
         ['Your own board', 'In the qualifier everyone gets their own letters.'],
         ['Then 1v1', 'Same board for both players. The winner moves to the next round. One attempt only.'],
-        ['Bets', 'Betting starts from the top 8. You get 1,000 points to bet.']
+        ['Bets', 'Betting starts from the top 8.' + (wallet() ? ' You get ' + wallet() + ' points to bet.' : '')]
       ] : [
         ['Your opponent', 'We pick your opponent.'],
         ['Same letters', 'Same letters for both. Find words before your clock runs out.'],
