@@ -194,11 +194,11 @@ function LeaveBalanceSection({ userId, canEdit }: { userId: string; canEdit?: bo
                     </form>
                   ) : (
                     <>
-                      <span style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>{days(b.remaining)}<span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 500 }}> / {days(b.total)}</span></span>
+                      <span style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>{b.short ? <span style={{ color: 'var(--bad)' }}>−{days(b.short)}</span> : days(b.remaining)}<span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 500 }}> / {days(b.total)}</span></span>
                       <div className="pd-bar" style={{ marginTop: 6 }}>
                         <i style={{ width: `${pct}%`, background: leaveColour(b.key) }} />
                       </div>
-                      <div className="pd-subnote">{days(b.used)} taken · {days(b.remaining)} available</div>
+                      <div className="pd-subnote">{days(b.used)} taken · {b.short ? <span style={{ color: 'var(--bad)' }}>{days(b.short)} over</span> : <>{days(b.remaining)} available</>}</div>
                     </>
                   )}
                 </div>

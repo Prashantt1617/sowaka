@@ -1329,7 +1329,9 @@ function addUtcDays(date: Date, days: number): Date {
 }
 
 function balanceItem(total: number, used: number) {
-  return { total, used, remaining: Math.max(0, total - used) };
+  // `remaining` never goes below 0 (payroll, the final settlement and the year-end use it). More taken than
+  // the total (an over-use HR chose to keep): `short` says by how much, for the screens to show it in red.
+  return { total, used, remaining: Math.max(0, total - used), ...(used > total ? { short: Math.round((used - total) * 1000) / 1000 } : {}) };
 }
 
 /**
