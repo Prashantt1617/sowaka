@@ -41,7 +41,8 @@ export function LeaveBalanceImport({ balances, onApplied }: { balances: LeaveBal
   const [fileName, setFileName] = useState('');
   const [book, setBook] = useState<WorkBook | null>(null);
   const [file, setFile] = useState<{ rows: Record<string, string>[]; sheet: string; sheetNames: string[]; headerRow: number } | null>(null);
-  const [mode, setMode] = useState<'available' | 'total'>('available');
+  // The file's figures are always each person's current balance (available now); never totals for the year.
+  const mode = 'available' as 'available' | 'total';
   const [preview, setPreview] = useState<LeaveImportPreview | null>(null);
   const [result, setResult] = useState<LeaveImportResult | null>(null);
   const [declined, setDeclined] = useState<Set<string>>(new Set());
@@ -120,10 +121,6 @@ export function LeaveBalanceImport({ balances, onApplied }: { balances: LeaveBal
     // A field is read from one column only: the column that had it lets it go.
     if (field) for (const c of preview.fileColumns) if (c.key !== key && c.field === field) mapping[c.key] = '';
     void runPreview(fileName, file.rows, { mapping, mode });
-  };
-  const changeMode = (m: 'available' | 'total') => {
-    setMode(m);
-    if (preview && file) void runPreview(fileName, file.rows, { mapping: mappingNow(), mode: m });
   };
 
   const lines = useMemo<Line[]>(() => preview ? [...preview.changes.map((l) => ({ ...l, same: false })), ...preview.same.map((l) => ({ ...l, same: true }))].sort((a, b) => a.row - b.row || a.typeName.localeCompare(b.typeName)) : [], [preview]);
@@ -207,7 +204,7 @@ export function LeaveBalanceImport({ balances, onApplied }: { balances: LeaveBal
               {file.sheetNames.length > 1 && book && (
                 <LabeledSelect label="Sheet" value={file.sheet} onChange={(v) => void read(book, fileName, v)} options={file.sheetNames.map((n): [string, string] => [n, n.trim()])} />
               )}
-              <LabeledSelect label="The figures are" value={mode} onChange={(v) => changeMode(v as 'available' | 'total')} options={[['available', 'Available days now'], ['total', 'Totals for the year']]} />
+              <span style={{ fontSize: 12.5, color: 'var(--ink-2)' }}>The file's figures are each person's <b>current balance</b> (days available now).</span>
               <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{fileName} · header on row {file.headerRow} · {file.rows.length} rows</span>
             </div>
           )}
